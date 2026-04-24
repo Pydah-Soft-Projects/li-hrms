@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const divisionController = require('./controllers/divisionController');
+const divisionWorkflowSettingsController = require('./controllers/divisionWorkflowSettingsController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
 
 const { applyScopeFilter, applyMetadataScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
@@ -11,6 +12,17 @@ router.use(protect);
 // Get all divisions
 router.get('/', applyMetadataScopeFilter('Division'), divisionController.getDivisions);
 
+// Division workflow overrides (inherit global when not set)
+router.get(
+  '/:id/workflow-settings',
+  authorize('super_admin', 'sub_admin'),
+  divisionWorkflowSettingsController.getDivisionWorkflowSettings
+);
+router.put(
+  '/:id/workflow-settings',
+  authorize('super_admin', 'sub_admin'),
+  divisionWorkflowSettingsController.updateDivisionWorkflowSettings
+);
 
 // Get single division
 router.get('/:id', divisionController.getDivision);

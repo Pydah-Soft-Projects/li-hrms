@@ -39,18 +39,62 @@ function extractISTComponents(dateInput) {
 }
 
 /**
+ * Inclusive day comparison (avoids string edge cases; YMD must be YYYY-MM-DD with padded parts).
+ * @param {string} ymd
+ * @param {string} startYmd
+ * @param {string} endYmd
+ */
+function isYmdInInclusiveRange(ymd, startYmd, endYmd) {
+    const p = (s) => s.split('-').map((x) => parseInt(x, 10));
+    const [y, m, d] = p(ymd);
+    const [aY, aM, aD] = p(startYmd);
+    const [bY, bM, bD] = p(endYmd);
+    const t = y * 10000 + m * 100 + d;
+    const a = aY * 10000 + aM * 100 + aD;
+    const b = bY * 10000 + bM * 100 + bD;
+    return t >= a && t <= b;
+}
+
+/**
+ * @param {string} startYmd - YYYY-MM-DD
+ * @param {string} endYmd - YYYY-MM-DD
+ * @returns {string} e.g. "25 Mar 2024 – 25 Apr 2024"
+ */
+function formatPayrollPeriodRangeEnIn(startYmd, endYmd) {
+    const parts = (s) => s.split('-').map((x) => parseInt(x, 10));
+    const [y1, m1, d1] = parts(startYmd);
+    const [y2, m2, d2] = parts(endYmd);
+    const a = new Date(y1, m1 - 1, d1);
+    const b = new Date(y2, m2 - 1, d2);
+    const f = (dt) => {
+        const d = String(dt.getDate());
+        const mo = dt.toLocaleString('en-IN', { month: 'short' });
+        const y = dt.getFullYear();
+        return `${d} ${mo} ${y}`;
+    };
+    return `${f(a)} – ${f(b)}`;
+}
+
+/**
  * Get the date range for a payroll month based on settings
+ * (category `payroll` like dateCycleService, with per-key findOne fallback)
  * @param {number} year - Target year (e.g., 2026)
  * @param {number} monthNumber - Target month number (1-12)
- * @returns {Promise<{startDate: string, endDate: string, totalDays: number}>}
+ * @returns {Promise<{startDate: string, endDate: string, totalDays: number, startDay: number, endDay: number}>}
  */
 async function getPayrollDateRange(year, monthNumber) {
     const Settings = require('../../settings/model/Settings');
-    const startDaySetting = await Settings.findOne({ key: 'payroll_cycle_start_day' });
-    const endDaySetting = await Settings.findOne({ key: 'payroll_cycle_end_day' });
-
-    const startDay = startDaySetting ? parseInt(startDaySetting.value) : 1;
-    const endDay = endDaySetting ? parseInt(endDaySetting.value) : 31;
+    const payroll = (await Settings.getSettingsByCategory('payroll')) || {};
+    let s = parseInt(payroll.payroll_cycle_start_day, 10);
+    let e = parseInt(payroll.payroll_cycle_end_day, 10);
+    if (!Number.isFinite(s) || !Number.isFinite(e)) {
+        const startDaySetting = await Settings.findOne({ key: 'payroll_cycle_start_day' });
+        const endDaySetting = await Settings.findOne({ key: 'payroll_cycle_end_day' });
+        if (Number.isFinite(s) === false) s = startDaySetting ? parseInt(startDaySetting.value, 10) : NaN;
+        if (Number.isFinite(e) === false) e = endDaySetting ? parseInt(endDaySetting.value, 10) : NaN;
+    }
+    const startDay = Math.min(31, Math.max(1, Number.isFinite(s) ? s : 1));
+    const endDay = Math.min(31, Math.max(1, Number.isFinite(e) ? e : 31));
 
     if (startDay === 1 && endDay >= 28) {
         // Treat as full calendar month
@@ -128,12 +172,11 @@ async function getPayrollDateRange(year, monthNumber) {
  */
 function getAllDatesInRange(startDate, endDate) {
     const result = [];
-    let d = createISTDate(startDate);
-    const e = createISTDate(endDate);
-    while (d <= e) {
-        const { dateStr } = extractISTComponents(d);
-        result.push(dateStr);
-        d.setDate(d.getDate() + 1);
+    let cur = createISTDate(startDate, '00:00');
+    const endMs = createISTDate(endDate, '00:00').getTime();
+    while (cur.getTime() <= endMs) {
+        result.push(extractISTComponents(cur).dateStr);
+        cur = new Date(cur.getTime() + 86400000);
     }
     return result;
 }
@@ -168,11 +211,26 @@ function addCalendarMonthsToYm(ym, delta) {
 async function getPayrollMonthKeyContainingToday() {
     const dateStr = getTodayISTDateString();
     const [ty, tm] = dateStr.split('-').map(Number);
+    const baseYm = `${ty}-${String(tm).padStart(2, '0')}`;
+
+    /** Centre-out: try the calendar month’s key first, then ±1, … (matches how users read “we’re in April”). */
+    const deltaOrder = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6];
+    for (const d of deltaOrder) {
+        const key = addCalendarMonthsToYm(baseYm, d);
+        const [y, m] = key.split('-').map(Number);
+        // eslint-disable-next-line no-await-in-loop
+        const range = await getPayrollDateRange(y, m);
+        if (isYmdInInclusiveRange(dateStr, range.startDate, range.endDate)) {
+            return key;
+        }
+    }
+
     let y = ty;
     let m = tm;
     for (let step = 0; step < 24; step++) {
+        // eslint-disable-next-line no-await-in-loop
         const range = await getPayrollDateRange(y, m);
-        if (dateStr >= range.startDate && dateStr <= range.endDate) {
+        if (isYmdInInclusiveRange(dateStr, range.startDate, range.endDate)) {
             return `${y}-${String(m).padStart(2, '0')}`;
         }
         m -= 1;
@@ -184,8 +242,9 @@ async function getPayrollMonthKeyContainingToday() {
     y = ty;
     m = tm;
     for (let step = 0; step < 24; step++) {
+        // eslint-disable-next-line no-await-in-loop
         const range = await getPayrollDateRange(y, m);
-        if (dateStr >= range.startDate && dateStr <= range.endDate) {
+        if (isYmdInInclusiveRange(dateStr, range.startDate, range.endDate)) {
             return `${y}-${String(m).padStart(2, '0')}`;
         }
         m += 1;
@@ -216,4 +275,6 @@ module.exports = {
     addCalendarMonthsToYm,
     getPayrollMonthKeyContainingToday,
     getDefaultPaysheetMonthKey,
+    formatPayrollPeriodRangeEnIn,
+    isYmdInInclusiveRange,
 };

@@ -9,15 +9,23 @@ import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 import DeductionsPayrollSection from '@/components/ManualDeductions/DeductionsPayrollSection';
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
-import { Search } from 'lucide-react';
+import { ChevronDown, Search } from 'lucide-react';
 import { formatHighlightContribution, highlightBadgeSubtitle } from '@/lib/attendanceHighlight';
 import {
   type PayRegisterContribKey,
+  type PayRegisterLeaveTypeBreakdownRow,
   resolvePayRegisterContribMap,
   payRegisterContribSelectionActive,
   payRegisterBadgeCategory,
   payRegisterContribAccent,
+  getLeaveTypeBreakdownRowsFromPayRegister,
+  formatLeaveTypeBreakdownPreview,
 } from '@/lib/payRegisterContributingHighlight';
+import {
+  leaveNatureDisplayLabel,
+  mergeEditDataLeaveNatureFromTypes,
+  resolveLeaveNatureFromLeaveTypeCode,
+} from '@/lib/payRegisterLeaveNature';
 
 
 
@@ -95,6 +103,7 @@ interface PayRegisterSummary {
     totalHolidays?: number;
     lateCount?: number;
     earlyOutCount?: number;
+    leaveTypeBreakdown?: Array<{ leaveType?: string; kind?: string; days?: number }>;
   };
   status: 'draft' | 'in_review' | 'finalized';
   lastAutoSyncedAt: string | null;
@@ -170,7 +179,7 @@ export default function PayRegisterPage() {
   const [exportingExcel, setExportingExcel] = useState(false);
   const [calculatingJobId, setCalculatingJobId] = useState<string | null>(null);
   const [calculationProgress, setCalculationProgress] = useState<any>(null);
-  const [payrollStrategy, setPayrollStrategy] = useState<'new' | 'legacy' | 'dynamic'>('dynamic');
+  const payrollStrategy = 'dynamic' as const;
 
   /** Same breakdown modal as Attendance page — pay register uses stored attendanceDeductionBreakdown */
   const [attendanceDeductionInfo, setAttendanceDeductionInfo] = useState<{
@@ -178,6 +187,12 @@ export default function PayRegisterPage() {
     total: number;
     lateEarlyDays: number;
     absentExtraDays: number;
+  } | null>(null);
+
+  const [leaveTypeBreakdownModal, setLeaveTypeBreakdownModal] = useState<{
+    employeeName: string;
+    totalFromTotals: number;
+    rows: PayRegisterLeaveTypeBreakdownRow[];
   } | null>(null);
 
   // Permission Request State
@@ -203,6 +218,8 @@ export default function PayRegisterPage() {
   const [alignedToCycle, setAlignedToCycle] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [committedSearch, setCommittedSearch] = useState('');
+  /** Collapse the wide monthly totals table so the day grids below stay in focus. */
+  const [monthlySummaryExpanded, setMonthlySummaryExpanded] = useState(false);
 
   useEffect(() => {
     let pollInterval: any;
@@ -371,6 +388,17 @@ export default function PayRegisterPage() {
     loadLeaveTypes();
     loadEmployeeGroupsAndSetting();
   }, []);
+
+  useEffect(() => {
+    if (!showEditModal || leaveTypes.length === 0) return;
+    setEditData((prev) =>
+      mergeEditDataLeaveNatureFromTypes(
+        prev as Record<string, unknown>,
+        leaveTypes,
+        isHalfDayMode
+      ) as Partial<DailyRecord>
+    );
+  }, [showEditModal, leaveTypes, isHalfDayMode]);
   const loadEmployeeGroupsAndSetting = async () => {
     try {
       const [groupRes, settingRes] = await Promise.all([
@@ -961,13 +989,17 @@ export default function PayRegisterPage() {
         await api.createPayRegister(editingRecord.employeeId, monthStr);
       }
 
-      // Prepare update data with isSplit flag
-      const updatePayload = {
-        ...editData,
-        isSplit: isHalfDayMode,
-        isLate: editData.isLate,
-        isEarlyOut: editData.isEarlyOut,
-      };
+      // Prepare update data with isSplit flag; leave nature always follows leave type from settings
+      const updatePayload = mergeEditDataLeaveNatureFromTypes(
+        {
+          ...editData,
+          isSplit: isHalfDayMode,
+          isLate: editData.isLate,
+          isEarlyOut: editData.isEarlyOut,
+        } as Record<string, unknown>,
+        leaveTypes,
+        isHalfDayMode
+      ) as typeof editData & { isSplit: boolean; isLate?: boolean; isEarlyOut?: boolean };
 
       // Now update the daily record
       const response = await api.updateDailyRecord(
@@ -1013,29 +1045,35 @@ export default function PayRegisterPage() {
     const isSplit = record.isSplit || record.firstHalf.status !== record.secondHalf.status;
     setEditingRecord({ employeeId: typeof employee === 'object' ? employee._id : employee, month: monthStr, date, record, employee });
     setIsHalfDayMode(isSplit);
-    setEditData({
-      firstHalf: {
-        ...record.firstHalf,
-        leaveType: record.firstHalf.leaveType || null,
-        leaveNature: record.firstHalf.leaveNature || null,
-      },
-      secondHalf: {
-        ...record.secondHalf,
-        leaveType: record.secondHalf.leaveType || null,
-        leaveNature: record.secondHalf.leaveNature || null,
-      },
-      status: record.status,
-      leaveType: record.leaveType || null,
-      leaveNature: record.leaveNature || null,
-      isOD: record.isOD,
-      isSplit: isSplit,
-      shiftId: record.shiftId || null,
-      shiftName: record.shiftName || null,
-      otHours: record.otHours,
-      remarks: record.remarks || null,
-      isLate: record.isLate || false,
-      isEarlyOut: record.isEarlyOut || false,
-    });
+    setEditData(
+      mergeEditDataLeaveNatureFromTypes(
+        {
+          firstHalf: {
+            ...record.firstHalf,
+            leaveType: record.firstHalf.leaveType || null,
+            leaveNature: record.firstHalf.leaveNature || null,
+          },
+          secondHalf: {
+            ...record.secondHalf,
+            leaveType: record.secondHalf.leaveType || null,
+            leaveNature: record.secondHalf.leaveNature || null,
+          },
+          status: record.status,
+          leaveType: record.leaveType || null,
+          leaveNature: record.leaveNature || null,
+          isOD: record.isOD,
+          isSplit: isSplit,
+          shiftId: record.shiftId || null,
+          shiftName: record.shiftName || null,
+          otHours: record.otHours,
+          remarks: record.remarks || null,
+          isLate: record.isLate || false,
+          isEarlyOut: record.isEarlyOut || false,
+        } as Record<string, unknown>,
+        leaveTypes,
+        isSplit
+      ) as Partial<DailyRecord>
+    );
     setShowEditModal(true);
   };
 
@@ -1054,6 +1092,26 @@ export default function PayRegisterPage() {
     const n = Number(pr.totalAttendanceDeductionDays ?? br?.daysDeducted ?? 0);
     if (!Number.isFinite(n)) return '0';
     return n.toFixed(2).replace(/\.?0+$/, '') || '0';
+  };
+
+  const getAttendanceDeductionDaysNumber = (pr: PayRegisterSummary) => {
+    const n = Number(pr.totalAttendanceDeductionDays ?? pr.attendanceDeductionBreakdown?.daysDeducted ?? 0);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const getPayRegisterEmployeeDisplayName = (pr: PayRegisterSummary) =>
+    typeof pr.employeeId === 'object' && pr.employeeId && 'employee_name' in pr.employeeId
+      ? String((pr.employeeId as Employee).employee_name)
+      : pr.emp_no || 'Employee';
+
+  const openPayRegisterLeaveBreakdown = (pr: PayRegisterSummary) => {
+    if (pr.isStub) return;
+    const rows = getLeaveTypeBreakdownRowsFromPayRegister(pr);
+    setLeaveTypeBreakdownModal({
+      employeeName: getPayRegisterEmployeeDisplayName(pr),
+      totalFromTotals: getLeaveTotal(pr.totals),
+      rows,
+    });
   };
 
   const openPayRegisterAttDeductionSplit = (e: MouseEvent<HTMLTableCellElement>, pr: PayRegisterSummary) => {
@@ -1095,6 +1153,7 @@ export default function PayRegisterPage() {
       const attDedDays = Number(
         pr.totalAttendanceDeductionDays ?? pr.attendanceDeductionBreakdown?.daysDeducted ?? 0
       );
+      const leaveBreakdownRows = getLeaveTypeBreakdownRowsFromPayRegister(pr);
       return {
         pr,
         present,
@@ -1114,6 +1173,7 @@ export default function PayRegisterPage() {
         monthDays,
         countedDays,
         matchesMonth,
+        leaveBreakdownRows,
       };
     });
 
@@ -1251,6 +1311,12 @@ export default function PayRegisterPage() {
     });
   };
 
+  const onPayRegisterTotalLeavesClick = (pr: PayRegisterSummary) => {
+    if (pr.isStub) return;
+    openPayRegisterLeaveBreakdown(pr);
+    togglePayRegisterContrib(pr, ['paidLeaves', 'lopLeaves'], 'Total leaves');
+  };
+
   const shouldShowInTable = (record: DailyRecord | null, tableType: TableType): boolean => {
     if (!record) return false;
 
@@ -1290,7 +1356,7 @@ export default function PayRegisterPage() {
   const handleCalculatePayroll = async (employee: Employee) => {
     try {
       const employeeId = typeof employee === 'object' ? employee._id : employee;
-      const params = payrollStrategy === 'legacy' ? '?strategy=legacy' : payrollStrategy === 'dynamic' ? '?strategy=dynamic' : '?strategy=new';
+      const params = '?strategy=dynamic';
       setCalculatingId(employeeId);
       Swal.fire({
         icon: 'info',
@@ -1779,16 +1845,12 @@ export default function PayRegisterPage() {
                 </select>
               )}
 
-              {/* Payroll Engine selector (Previously Payroll Strategy) */}
-              <select
-                value={payrollStrategy}
-                onChange={(e) => setPayrollStrategy(e.target.value as any)}
-                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/20 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-blue-700 dark:text-blue-400 shadow-sm"
+              <span
+                className="h-8 px-2.5 inline-flex items-center shrink-0 text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/20 rounded-lg text-blue-700 dark:text-blue-400 shadow-sm"
+                title="Payroll uses the dynamic engine"
               >
-                <option value="dynamic">Engine: Dynamic</option>
-                <option value="new">Engine: New</option>
-                <option value="legacy">Engine: Legacy</option>
-              </select>
+                Engine: Dynamic
+              </span>
 
               {/* Server-side search — runs only when you press Enter */}
               <div className="relative flex-1 min-w-[140px] max-w-[220px]">
@@ -2195,13 +2257,140 @@ export default function PayRegisterPage() {
 
       {/* Summary Table - skeleton when loading */}
       {loading && (
-        <div className="mt-2 mb-6 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
-          <div className="p-4 pt-3">
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Monthly Summary</h3>
-            <table className="w-full border-collapse text-xs">
+        <div className="mt-2 mb-6 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80">
+          <div className={`px-4 pt-3 ${monthlySummaryExpanded ? 'border-b border-slate-200 pb-2 dark:border-slate-700' : 'pb-3'}`}>
+            <button
+              type="button"
+              onClick={() => setMonthlySummaryExpanded((v) => !v)}
+              className="flex w-full items-center justify-between gap-3 rounded-lg text-left outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-blue-500 dark:ring-offset-slate-900"
+              aria-expanded={monthlySummaryExpanded}
+              aria-controls="pay-register-monthly-summary-panel-loading"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 dark:text-slate-400 ${monthlySummaryExpanded ? 'rotate-0' : '-rotate-90'}`}
+                  aria-hidden
+                />
+                <span className="text-base font-semibold text-slate-900 dark:text-white">Monthly summary</span>
+              </span>
+              <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                {monthlySummaryExpanded ? 'Hide table' : 'Show table'}
+              </span>
+            </button>
+          </div>
+          {monthlySummaryExpanded && (
+            <div id="pay-register-monthly-summary-panel-loading" className="overflow-x-auto p-4 pt-2 pb-4">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                    <th rowSpan={2} className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      Employee
+                    </th>
+                    {[
+                      'Total Present',
+                      'Total Absent',
+                      'Total Leaves',
+                      'Paid Leaves',
+                      'LOP Count',
+                      'Total OD',
+                      'Total OT Hours',
+                      'Total Extra Days',
+                      'Lates (L+E)',
+                    ].map((label) => (
+                      <th
+                        key={label}
+                        rowSpan={2}
+                        className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                      >
+                        {label}
+                      </th>
+                    ))}
+                    <th
+                      colSpan={3}
+                      className="border-b border-r border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-800 dark:border-slate-700 dark:bg-rose-950/30 dark:text-rose-100 bg-rose-100/80 dark:bg-rose-950/40"
+                    >
+                      Deduction days
+                    </th>
+                    {['Holidays & Weekoffs', 'Present Days', 'Payable Shifts', 'Month Days', 'Counted Days'].map((label) => (
+                      <th
+                        key={label}
+                        rowSpan={2}
+                        className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 last:border-r-0"
+                      >
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                  <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                    <th className="border-r border-slate-200 px-1 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50/90 dark:bg-red-950/30">
+                      Absent
+                    </th>
+                    <th className="border-r border-slate-200 px-1 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50/90 dark:bg-red-950/30">
+                      LOP
+                    </th>
+                    <th className="border-r border-slate-200 px-1 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-rose-50 dark:bg-rose-900/25">
+                      Att. ded.
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <tr key={i} className="animate-pulse">
+                      <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                        <div className="h-4 w-32 rounded bg-slate-200 dark:bg-slate-700" />
+                        <div className="mt-1 h-3 w-24 rounded bg-slate-200 dark:bg-slate-700" />
+                      </td>
+                      {Array.from({ length: 17 }).map((_, j) => (
+                        <td key={j} className="px-2 py-2 text-center">
+                          <div className="h-4 w-8 mx-auto rounded bg-slate-200 dark:bg-slate-700" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Summary Table - real data */}
+      {!loading && payRegisters.length > 0 && (
+        <div className="mt-2 mb-6 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80">
+          <div className={`px-4 pt-3 ${monthlySummaryExpanded ? 'border-b border-slate-200 pb-2 dark:border-slate-700' : 'pb-3'}`}>
+            <button
+              type="button"
+              onClick={() => setMonthlySummaryExpanded((v) => !v)}
+              className="flex w-full items-center justify-between gap-3 rounded-lg text-left outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-blue-500 dark:ring-offset-slate-900"
+              aria-expanded={monthlySummaryExpanded}
+              aria-controls="pay-register-monthly-summary-panel"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 dark:text-slate-400 ${monthlySummaryExpanded ? 'rotate-0' : '-rotate-90'}`}
+                  aria-hidden
+                />
+                <span className="text-base font-semibold text-slate-900 dark:text-white">Monthly summary</span>
+              </span>
+              <span className="hidden text-right text-xs text-slate-500 dark:text-slate-400 sm:block">
+                {monthlySummaryExpanded
+                  ? 'Hide table'
+                  : paginationTotalPages > 1
+                    ? `Show table · page ${page} of ${paginationTotalPages}`
+                    : `Show table · ${payRegisters.length} row${payRegisters.length === 1 ? '' : 's'}`}
+              </span>
+              <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400 sm:hidden">
+                {monthlySummaryExpanded ? 'Hide' : 'Show'}
+              </span>
+            </button>
+          </div>
+          {monthlySummaryExpanded && (
+            <>
+              <div id="pay-register-monthly-summary-panel" className="overflow-x-auto p-4 pt-2">
+                <table className="w-full border-collapse text-xs">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                  <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  <th rowSpan={2} className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     Employee
                   </th>
                   {[
@@ -2214,77 +2403,41 @@ export default function PayRegisterPage() {
                     'Total OT Hours',
                     'Total Extra Days',
                     'Lates (L+E)',
-                    'Att. ded. days',
-                    'Holidays & Weekoffs',
-                    'Present Days',
-                    'Payable Shifts',
-                    'Month Days',
-                    'Counted Days',
                   ].map((label) => (
                     <th
                       key={label}
+                      rowSpan={2}
+                      className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                    >
+                      {label}
+                    </th>
+                  ))}
+                  <th
+                    colSpan={3}
+                    className="border-b border-r border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-800 dark:border-slate-700 dark:bg-rose-950/30 dark:text-rose-100 bg-rose-100/80 dark:bg-rose-950/40"
+                  >
+                    Deduction days
+                  </th>
+                  {['Holidays & Weekoffs', 'Present Days', 'Payable Shifts', 'Month Days', 'Counted Days'].map((label) => (
+                    <th
+                      key={label}
+                      rowSpan={2}
                       className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 last:border-r-0"
                     >
                       {label}
                     </th>
                   ))}
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <tr key={i} className="animate-pulse">
-                    <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
-                      <div className="h-4 w-32 rounded bg-slate-200 dark:bg-slate-700" />
-                      <div className="mt-1 h-3 w-24 rounded bg-slate-200 dark:bg-slate-700" />
-                    </td>
-                    {Array.from({ length: 15 }).map((_, j) => (
-                      <td key={j} className="px-2 py-2 text-center">
-                        <div className="h-4 w-8 mx-auto rounded bg-slate-200 dark:bg-slate-700" />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Summary Table - real data */}
-      {!loading && payRegisters.length > 0 && (
-        <div className="mt-2 mb-6 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
-          <div className="p-4 pt-3">
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Monthly Summary</h3>
-            <table className="w-full border-collapse text-xs">
-              <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                  <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    Employee
+                  <th className="border-r border-slate-200 px-1 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50/90 dark:bg-red-950/30">
+                    Absent
                   </th>
-                  {[
-                    'Total Present',
-                    'Total Absent',
-                    'Total Leaves',
-                    'Paid Leaves',
-                    'LOP Count',
-                    'Total OD',
-                    'Total OT Hours',
-                    'Total Extra Days',
-                    'Lates (L+E)',
-                    'Att. ded. days',
-                    'Holidays & Weekoffs',
-                    'Present Days',
-                    'Payable Shifts',
-                    'Month Days',
-                    'Counted Days',
-                  ].map((label) => (
-                    <th
-                      key={label}
-                      className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 last:border-r-0"
-                    >
-                      {label}
-                    </th>
-                  ))}
+                  <th className="border-r border-slate-200 px-1 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50/90 dark:bg-red-950/30">
+                    LOP
+                  </th>
+                  <th className="border-r border-slate-200 px-1 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-rose-50 dark:bg-rose-900/25">
+                    Att. ded.
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -2337,23 +2490,33 @@ export default function PayRegisterPage() {
                         {row.absent.toFixed(1)}
                       </td>
                       <td
-                        className={`text-center px-2 py-2 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['leaves'], 'Leaves') ? payRegisterContribAccent(['leaves']).summaryRing : ''}`}
-                        title={row.pr.isStub ? undefined : 'Click to highlight leave days'}
-                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['leaves'], 'Leaves')}
+                        className={`text-center px-2 py-2 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['paidLeaves', 'lopLeaves'], 'Total leaves') ? payRegisterContribAccent(['paidLeaves', 'lopLeaves']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click for leave-type breakdown; highlights paid + LOP days in the grid'}
+                        onClick={() => onPayRegisterTotalLeavesClick(row.pr)}
                       >
-                        {row.leave.toFixed(1)}
+                        <div className="flex flex-col items-center gap-0.5 leading-tight">
+                          <span className="font-semibold">{row.leave.toFixed(1)}</span>
+                          {!row.pr.isStub && row.leaveBreakdownRows.length > 0 ? (
+                            <span
+                              className="max-w-[min(140px,100%)] truncate text-[8px] font-normal normal-case text-slate-600 dark:text-slate-400"
+                              title={formatLeaveTypeBreakdownPreview(row.leaveBreakdownRows, 12)}
+                            >
+                              {formatLeaveTypeBreakdownPreview(row.leaveBreakdownRows, 3)}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td
-                        className={`text-center px-2 py-2 font-medium text-green-600 dark:text-green-400 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['leaves'], 'Paid leaves') ? payRegisterContribAccent(['leaves']).summaryRing : ''}`}
-                        title={row.pr.isStub ? undefined : 'Click to highlight leave days'}
-                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['leaves'], 'Paid leaves')}
+                        className={`text-center px-2 py-2 font-medium text-green-600 dark:text-green-400 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['paidLeaves'], 'Paid leaves') ? payRegisterContribAccent(['paidLeaves']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click to highlight paid-leave contribution days only'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['paidLeaves'], 'Paid leaves')}
                       >
                         {row.paidLeave.toFixed(1)}
                       </td>
                       <td
-                        className={`text-center px-2 py-2 font-medium text-red-600 dark:text-red-400 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['leaves'], 'LOP / leaves') ? payRegisterContribAccent(['leaves']).summaryRing : ''}`}
-                        title={row.pr.isStub ? undefined : 'Click to highlight leave days'}
-                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['leaves'], 'LOP / leaves')}
+                        className={`text-center px-2 py-2 font-medium text-red-600 dark:text-red-400 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['lopLeaves'], 'LOP') ? payRegisterContribAccent(['lopLeaves']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click to highlight LOP contribution days only'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['lopLeaves'], 'LOP')}
                       >
                         {row.lop.toFixed(1)}
                       </td>
@@ -2392,27 +2555,18 @@ export default function PayRegisterPage() {
                         {row.lateCount}
                       </td>
                       <td
-                        className={`text-center px-2 py-2 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['weeklyOffs', 'holidays'], 'Week offs & holidays') ? payRegisterContribAccent(['weeklyOffs', 'holidays']).summaryRing : ''}`}
-                        title={row.pr.isStub ? undefined : 'Click to highlight week offs & holidays'}
-                        onClick={() =>
-                          !row.pr.isStub && togglePayRegisterContrib(row.pr, ['weeklyOffs', 'holidays'], 'Week offs & holidays')
-                        }
+                        className={`text-center px-2 py-2 font-medium text-red-600 dark:text-red-400 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['absent'], 'Absent') ? payRegisterContribAccent(['absent']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Same as Total Absent — shown under deduction days'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['absent'], 'Absent')}
                       >
-                        {row.holidayAndWeekoffs.toFixed(1)}
+                        {row.absent.toFixed(1)}
                       </td>
                       <td
-                        className={`text-center px-2 py-2 font-medium text-green-600 dark:text-green-400 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['present'], 'Present days') ? payRegisterContribAccent(['present']).summaryRing : ''}`}
-                        title={row.pr.isStub ? undefined : 'Includes OD days — click to highlight present contributions'}
-                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['present'], 'Present days')}
+                        className={`text-center px-2 py-2 font-medium text-red-600 dark:text-red-400 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['lopLeaves'], 'LOP') ? payRegisterContribAccent(['lopLeaves']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'LOP leave days — click to highlight LOP days'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['lopLeaves'], 'LOP')}
                       >
-                        {row.present.toFixed(1)}
-                      </td>
-                      <td
-                        className={`text-center px-2 py-2 font-bold text-slate-700 dark:text-slate-300 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['payableShifts'], 'Payable shifts') ? payRegisterContribAccent(['payableShifts']).summaryRing : ''}`}
-                        title={row.pr.isStub ? undefined : 'Click to highlight payable shift days'}
-                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['payableShifts'], 'Payable shifts')}
-                      >
-                        {row.payableShifts.toFixed(1)}
+                        {row.lop.toFixed(1)}
                       </td>
                       <td
                         role="button"
@@ -2433,6 +2587,31 @@ export default function PayRegisterPage() {
                       >
                         {Number.isFinite(row.attDedDays) ? row.attDedDays.toFixed(2).replace(/\.?0+$/, '') || '0' : '0'}
                       </td>
+                      <td
+                        className={`text-center px-2 py-2 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['weeklyOffs', 'holidays'], 'Week offs & holidays') ? payRegisterContribAccent(['weeklyOffs', 'holidays']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click to highlight week offs & holidays'}
+                        onClick={() =>
+                          !row.pr.isStub && togglePayRegisterContrib(row.pr, ['weeklyOffs', 'holidays'], 'Week offs & holidays')
+                        }
+                      >
+                        {row.holidayAndWeekoffs.toFixed(1)}
+                      </td>
+                      <td
+                        className={`text-center px-2 py-2 font-medium text-green-600 dark:text-green-400 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['present'], 'Present days') ? payRegisterContribAccent(['present']).summaryRing : ''}`}
+                        title={
+                          row.pr.isStub ? undefined : 'Includes OD days — click to highlight present contributions'
+                        }
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['present'], 'Present days')}
+                      >
+                        {row.present.toFixed(1)}
+                      </td>
+                      <td
+                        className={`text-center px-2 py-2 font-bold text-slate-700 dark:text-slate-300 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['payableShifts'], 'Payable shifts') ? payRegisterContribAccent(['payableShifts']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click to highlight payable shift days'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['payableShifts'], 'Payable shifts')}
+                      >
+                        {row.payableShifts.toFixed(1)}
+                      </td>
                       <td className="text-center px-2 py-2">{row.monthDays}</td>
                       <td
                         className={`text-center px-2 py-2 font-semibold ${row.matchesMonth
@@ -2446,31 +2625,33 @@ export default function PayRegisterPage() {
                   );
                 })}
               </tbody>
-            </table>
-          </div>
-          {/* Pagination below Summary table */}
-          {paginationTotalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 p-4 border-t border-slate-200 dark:border-slate-700">
-              <button
-                type="button"
-                onClick={() => { setPage(p => Math.max(1, p - 1)); loadPayRegisters(Math.max(1, page - 1), false); }}
-                disabled={page <= 1 || loading}
-                className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Previous
-              </button>
-              <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                Page {page} of {paginationTotalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() => { setPage(p => Math.min(paginationTotalPages, p + 1)); loadPayRegisters(Math.min(paginationTotalPages, page + 1), false); }}
-                disabled={page >= paginationTotalPages || loading}
-                className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Next
-              </button>
-            </div>
+                </table>
+              </div>
+              {/* Pagination below Summary table */}
+              {paginationTotalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 p-4 border-t border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => { setPage(p => Math.max(1, p - 1)); loadPayRegisters(Math.max(1, page - 1), false); }}
+                    disabled={page <= 1 || loading}
+                    className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                    Page {page} of {paginationTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setPage(p => Math.min(paginationTotalPages, p + 1)); loadPayRegisters(Math.min(paginationTotalPages, page + 1), false); }}
+                    disabled={page >= paginationTotalPages || loading}
+                    className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       )
@@ -2602,109 +2783,193 @@ export default function PayRegisterPage() {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                    <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                      Employee
-                    </th>
-                    {daysArray.map((day) => (
-                      <th
-                        key={day}
-                        className={'w-[calc((100%-180px-' + (activeTable === 'leaves' ? '320px' : activeTable === 'all' ? '640px' : '80px') + '/' + daysArray.length + ')] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}
-                      >
-                        {parseInt(day.split('-')[2])}
-                      </th>
-                    ))}
-                    {activeTable === 'all' && (
-                      <>
-                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20" title="OD days are included in present days">
+                  {activeTable === 'all' ? (
+                    <>
+                      <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                        <th
+                          rowSpan={2}
+                          className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        >
+                          Employee
+                        </th>
+                        {daysArray.map((day) => (
+                          <th
+                            key={day}
+                            rowSpan={2}
+                            className={
+                              'w-[calc((100%-180px-960px)/' +
+                              daysArray.length +
+                              ')] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                            }
+                          >
+                            {parseInt(day.split('-')[2])}
+                          </th>
+                        ))}
+                        <th
+                          rowSpan={2}
+                          className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20"
+                          title="From monthly attendance summary (single-shift: present + partial payable − overlap). OD is in the OD column. Cell P-only sum can differ."
+                        >
                           Present Days
                         </th>
-                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700/50">
-                          Payable Shifts
-                        </th>
-                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-gray-100 dark:bg-slate-700/50">
+                        <th
+                          rowSpan={2}
+                          className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-gray-100 dark:bg-slate-700/50"
+                        >
                           Week Offs
                         </th>
-                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20">
+                        <th
+                          rowSpan={2}
+                          className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20"
+                        >
                           Holidays
                         </th>
-                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50/80 dark:bg-green-900/30">
-                          Paid Leaves
-                        </th>
-                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20" title="Payable Shifts + Week Offs + Holidays + Paid Leaves">
-                          Paid Days
+                        <th
+                          rowSpan={2}
+                          className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-yellow-50 dark:bg-yellow-900/20"
+                        >
+                          Total Leaves
                         </th>
                         <th
+                          rowSpan={2}
+                          className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20"
+                        >
+                          OD Days
+                        </th>
+                        <th
+                          rowSpan={2}
+                          className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50 dark:bg-red-900/20"
+                        >
+                          Absents
+                        </th>
+                        <th
+                          rowSpan={2}
+                          className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/60"
+                          title="Present + week offs + holidays + total leaves + OD days + absents"
+                        >
+                          Total Days
+                        </th>
+                        <th
+                          rowSpan={2}
                           className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-amber-50 dark:bg-amber-900/20"
-                          title="Late in + early out (combined). Week off / holiday excluded from totals."
+                          title="Late in + early out (combined)"
                         >
                           Lates (L+E)
                         </th>
                         <th
-                          className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-rose-50 dark:bg-rose-900/20"
-                          title="Policy attendance deduction days (late/early + absent extra), aligned with payroll"
+                          colSpan={3}
+                          className="border-b border-r border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-800 dark:border-slate-700 dark:bg-rose-950/30 dark:text-rose-100 bg-rose-100/80 dark:bg-rose-950/40"
+                          title="Absent days, LOP leave days, and policy attendance deduction days (late/early + absent extra)"
+                        >
+                          Deduction days
+                        </th>
+                        <th
+                          rowSpan={2}
+                          className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20"
+                          title="Present + week offs + holidays + OD days + paid leaves − attendance deduction days"
+                        >
+                          Paid Days
+                        </th>
+                      </tr>
+                      <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                        <th
+                          className="w-[80px] border-r border-slate-200 px-1 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50/90 dark:bg-red-950/30"
+                          title="Calendar absent total (same as Absents column)"
+                        >
+                          Absent
+                        </th>
+                        <th
+                          className="w-[80px] border-r border-slate-200 px-1 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50/90 dark:bg-red-950/30"
+                          title="LOP (loss of pay) leave days"
+                        >
+                          LOP
+                        </th>
+                        <th
+                          className="w-[80px] border-r border-slate-200 px-1 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-rose-50 dark:bg-rose-900/25"
+                          title="Policy attendance deduction days — click row cell for split"
                         >
                           Att. ded.
                         </th>
-                      </>
-                    )}
-                    {activeTable === 'present' && (
-                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
-                        Total Present Days
+                      </tr>
+                    </>
+                  ) : (
+                    <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                      <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                        Employee
                       </th>
-                    )}
-                    {activeTable === 'absent' && (
-                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50 dark:bg-red-900/20">
-                        Total Absent Days
-                      </th>
-                    )}
-                    {activeTable === 'leaves' && (
-                      <>
-                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-yellow-50 dark:bg-yellow-900/20">
-                          Total Leaves
+                      {daysArray.map((day) => (
+                        <th
+                          key={day}
+                          className={
+                            'w-[calc((100%-180px-' +
+                            (activeTable === 'leaves' ? '320px' : '80px') +
+                            '/' +
+                            daysArray.length +
+                            ')] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                          }
+                        >
+                          {parseInt(day.split('-')[2])}
                         </th>
-                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
-                          Paid Leaves
+                      ))}
+                      {activeTable === 'present' && (
+                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
+                          Total Present Days
                         </th>
-                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50 dark:bg-red-900/20">
-                          LOP
+                      )}
+                      {activeTable === 'absent' && (
+                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50 dark:bg-red-900/20">
+                          Total Absent Days
                         </th>
+                      )}
+                      {activeTable === 'leaves' && (
+                        <>
+                          <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-yellow-50 dark:bg-yellow-900/20">
+                            Total Leaves
+                          </th>
+                          <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
+                            Paid Leaves
+                          </th>
+                          <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50 dark:bg-red-900/20">
+                            LOP
+                          </th>
+                          <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">
+                            Without Pay
+                          </th>
+                        </>
+                      )}
+                      {activeTable === 'od' && (
+                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">
+                          Total OD Days
+                        </th>
+                      )}
+                      {activeTable === 'ot' && (
                         <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">
-                          Without Pay
+                          Total OT Hours
                         </th>
-                      </>
-                    )}
-                    {activeTable === 'od' && (
-                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">
-                        Total OD Days
-                      </th>
-                    )}
-                    {activeTable === 'ot' && (
-                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">
-                        Total OT Hours
-                      </th>
-                    )}
-                    {activeTable === 'extraHours' && (
-                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20">
-                        Total Extra Hours
-                      </th>
-                    )}
-                    {activeTable === 'shifts' && (
-                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-indigo-50 dark:bg-indigo-900/20">
-                        Total Shifts
-                      </th>
-                    )}
-                  </tr>
+                      )}
+                      {activeTable === 'extraHours' && (
+                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20">
+                          Total Extra Hours
+                        </th>
+                      )}
+                      {activeTable === 'shifts' && (
+                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-indigo-50 dark:bg-indigo-900/20">
+                          Total Shifts
+                        </th>
+                      )}
+                    </tr>
+                  )}
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {getFilteredPayRegisters().length === 0 ? (
                     <tr>
-                      <td colSpan={daysArray.length + (activeTable === 'leaves' ? 4 : activeTable === 'all' ? 8 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                      <td colSpan={1 + daysArray.length + (activeTable === 'leaves' ? 4 : activeTable === 'all' ? 12 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                         No records found{activeTable !== 'all' ? ` for ${activeTable === 'shifts' ? 'shifts' : activeTable} table` : ''}
                       </td>
                     </tr>
                   ) : (
                     getFilteredPayRegisters().map((pr) => {
+                      const leaveBreakdownForRow = getLeaveTypeBreakdownRowsFromPayRegister(pr);
                       const employee = typeof pr.employeeId === 'object' ? pr.employeeId : null;
                       const employeeId = typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId;
                       const emp_no = typeof pr.employeeId === 'object' ? pr.employeeId.emp_no : pr.emp_no;
@@ -2862,7 +3127,7 @@ export default function PayRegisterPage() {
                                       </span>
                                       {highlightSub ? (
                                         <span
-                                          className="text-[6px] opacity-95 truncate max-w-[44px] text-center leading-tight font-bold uppercase"
+                                          className={`text-[6px] opacity-95 truncate max-w-[44px] text-center leading-tight ${['leaves', 'paidLeaves', 'lopLeaves'].includes(badgeCategory) ? 'font-semibold normal-case' : 'font-bold uppercase'}`}
                                           title={highlightSub}
                                         >
                                           {highlightSub}
@@ -2925,27 +3190,35 @@ export default function PayRegisterPage() {
                           })}
                           {/* Dynamic columns based on active tab */}
                           {activeTable === 'all' && (() => {
-                            const payable = pr.totals?.totalPayableShifts ?? 0;
+                            const present = pr.totals?.totalPresentDays ?? 0;
                             const weekOffs = pr.totals?.totalWeeklyOffs ?? 0;
                             const holidays = pr.totals?.totalHolidays ?? 0;
+                            const totalLeaves = getLeaveTotal(pr.totals);
+                            const od = pr.totals?.totalODDays ?? 0;
+                            const absent = pr.totals?.totalAbsentDays ?? 0;
                             const paidLeaves = pr.totals?.totalPaidLeaveDays ?? 0;
-                            const paidDays = payable + weekOffs + holidays + paidLeaves;
+                            const lopDays = pr.totals?.totalLopDays ?? 0;
+                            const attDed = getAttendanceDeductionDaysNumber(pr);
+                            const totalDaysSummed = present + weekOffs + holidays + totalLeaves + od + absent;
+                            const paidDays = Math.max(0, present + weekOffs + holidays + od + paidLeaves - attDed);
                             return (
                               <>
                                 <td
                                   className={`border-r border-slate-200 bg-green-50 dark:bg-green-900/20 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['present'], 'Present days') ? payRegisterContribAccent(['present']).summaryRing : ''}`}
-                                  title="Includes OD days — click to highlight"
+                                  title="Matches monthly summary present + partial (single-shift). Click to highlight."
                                   onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['present'], 'Present days')}
                                 >
-                                  {(pr.totals?.totalPresentDays ?? 0).toFixed(1)}
+                                  {present.toFixed(1)}
                                 </td>
+                                {/*
                                 <td
                                   className={`border-r border-slate-200 bg-slate-50 dark:bg-slate-800 px-2 py-2 text-center text-[11px] font-bold text-slate-700 dark:text-slate-300 dark:bg-slate-700/50 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['payableShifts'], 'Payable shifts') ? payRegisterContribAccent(['payableShifts']).summaryRing : ''}`}
                                   title="Click to highlight payable shifts"
                                   onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['payableShifts'], 'Payable shifts')}
                                 >
-                                  {payable.toFixed(1)}
+                                  {(pr.totals?.totalPayableShifts ?? 0).toFixed(1)}
                                 </td>
+                                */}
                                 <td
                                   className={`border-r border-slate-200 bg-gray-50 dark:bg-slate-700/50 px-2 py-2 text-center text-[11px] font-bold text-slate-700 dark:text-slate-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['weeklyOffs'], 'Week offs') ? payRegisterContribAccent(['weeklyOffs']).summaryRing : ''}`}
                                   title="Click to highlight week offs"
@@ -2961,31 +3234,44 @@ export default function PayRegisterPage() {
                                   {holidays.toFixed(1)}
                                 </td>
                                 <td
-                                  className={`border-r border-slate-200 bg-green-50/80 dark:bg-green-900/30 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-400 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['leaves'], 'Paid leaves') ? payRegisterContribAccent(['leaves']).summaryRing : ''}`}
-                                  title="Click to highlight leave days"
-                                  onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['leaves'], 'Paid leaves')}
+                                  className={`border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/20 px-2 py-2 text-center text-[11px] font-bold text-yellow-800 dark:text-yellow-200 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['paidLeaves', 'lopLeaves'], 'Total leaves') ? payRegisterContribAccent(['paidLeaves', 'lopLeaves']).summaryRing : ''}`}
+                                  title="Click for leave-type breakdown; highlights paid + LOP days in the grid"
+                                  onClick={() => onPayRegisterTotalLeavesClick(pr)}
                                 >
-                                  {paidLeaves.toFixed(1)}
+                                  <div className="flex flex-col items-center gap-0.5 leading-tight">
+                                    <span>{totalLeaves.toFixed(1)}</span>
+                                    {!pr.isStub && leaveBreakdownForRow.length > 0 ? (
+                                      <span
+                                        className="max-w-[72px] truncate text-[8px] font-semibold normal-case text-yellow-900/90 dark:text-yellow-200/90"
+                                        title={formatLeaveTypeBreakdownPreview(leaveBreakdownForRow, 12)}
+                                      >
+                                        {formatLeaveTypeBreakdownPreview(leaveBreakdownForRow, 2)}
+                                      </span>
+                                    ) : null}
+                                  </div>
                                 </td>
                                 <td
-                                  className={`border-r border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:text-blue-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(
-                                    contribHighlight,
-                                    pr._id,
-                                    ['payableShifts', 'weeklyOffs', 'holidays', 'leaves'],
-                                    'Paid days components'
-                                  )
-                                    ? payRegisterContribAccent(['payableShifts', 'weeklyOffs', 'holidays', 'leaves']).summaryRing
-                                    : ''}`}
-                                  title="Payable + WO + HOL + paid leave — highlights payable / WO / HOL / leaves"
-                                  onClick={() =>
-                                    !pr.isStub &&
-                                    togglePayRegisterContrib(pr, ['payableShifts', 'weeklyOffs', 'holidays', 'leaves'], 'Paid days components')
-                                  }
+                                  className={`border-r border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:text-blue-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['ods'], 'OD') ? payRegisterContribAccent(['ods']).summaryRing : ''}`}
+                                  title="Click to highlight OD days"
+                                  onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['ods'], 'OD')}
                                 >
-                                  {paidDays.toFixed(1)}
+                                  {od.toFixed(1)}
                                 </td>
                                 <td
-                                  className={`border-r-0 border-slate-200 bg-amber-50 dark:bg-amber-900/20 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:text-amber-300 cursor-pointer hover:opacity-90 ${
+                                  className={`border-r border-slate-200 bg-red-50 dark:bg-red-900/20 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:text-red-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['absent'], 'Absent') ? payRegisterContribAccent(['absent']).summaryRing : ''}`}
+                                  title="Click to highlight absent days"
+                                  onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['absent'], 'Absent')}
+                                >
+                                  {absent.toFixed(1)}
+                                </td>
+                                <td
+                                  className="border-r border-slate-200 bg-slate-100 px-2 py-2 text-center text-[11px] font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200"
+                                  title="Present + week offs + holidays + total leaves + OD days + absents (informational)"
+                                >
+                                  {totalDaysSummed.toFixed(1)}
+                                </td>
+                                <td
+                                  className={`border-r border-slate-200 bg-amber-50 dark:bg-amber-900/20 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:text-amber-300 cursor-pointer hover:opacity-90 ${
                                     payRegisterContribSelectionActive(contribHighlight, pr._id, ['lateIn', 'earlyOut'], 'Late / early')
                                       ? payRegisterContribAccent(['lateIn', 'earlyOut']).summaryRing
                                       : ''
@@ -2994,6 +3280,20 @@ export default function PayRegisterPage() {
                                   onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['lateIn', 'earlyOut'], 'Late / early')}
                                 >
                                   {getLateAndEarlyCount(pr.totals)}
+                                </td>
+                                <td
+                                  className={`border-r border-slate-200 bg-red-50/80 dark:bg-red-950/25 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:text-red-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['absent'], 'Absent') ? payRegisterContribAccent(['absent']).summaryRing : ''}`}
+                                  title="Same total as Absents column — click to highlight absent days"
+                                  onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['absent'], 'Absent')}
+                                >
+                                  {absent.toFixed(1)}
+                                </td>
+                                <td
+                                  className={`border-r border-slate-200 bg-red-50/80 dark:bg-red-950/25 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:text-red-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['lopLeaves'], 'LOP') ? payRegisterContribAccent(['lopLeaves']).summaryRing : ''}`}
+                                  title="LOP leave days — click to highlight LOP days in the grid"
+                                  onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['lopLeaves'], 'LOP')}
+                                >
+                                  {lopDays.toFixed(1)}
                                 </td>
                                 <td
                                   role="button"
@@ -3005,7 +3305,7 @@ export default function PayRegisterPage() {
                                       openPayRegisterAttDeductionSplit(e as unknown as MouseEvent<HTMLTableCellElement>, pr);
                                     }
                                   }}
-                                  className="border-r-0 border-slate-200 bg-rose-50 dark:bg-rose-900/20 px-2 py-2 text-center text-[11px] font-bold text-rose-700 dark:text-rose-300 cursor-pointer hover:underline decoration-rose-600/70"
+                                  className="border-r border-slate-200 bg-rose-50 dark:bg-rose-900/20 px-2 py-2 text-center text-[11px] font-bold text-rose-700 dark:text-rose-300 cursor-pointer hover:underline decoration-rose-600/70"
                                   title={
                                     pr.attendanceDeductionBreakdown
                                       ? `Late/early deduction days: ${Number(pr.attendanceDeductionBreakdown.lateEarlyDaysDeducted ?? 0).toFixed(2)}, Absent extra: ${Number(pr.attendanceDeductionBreakdown.absentExtraDays ?? 0).toFixed(2)} — click for split`
@@ -3013,6 +3313,23 @@ export default function PayRegisterPage() {
                                   }
                                 >
                                   {formatAttDeductionDays(pr)}
+                                </td>
+                                <td
+                                  className={`border-r-0 border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:text-blue-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(
+                                    contribHighlight,
+                                    pr._id,
+                                    ['present', 'weeklyOffs', 'holidays', 'ods', 'paidLeaves'],
+                                    'Paid days components'
+                                  )
+                                    ? payRegisterContribAccent(['present', 'weeklyOffs', 'holidays', 'ods', 'paidLeaves']).summaryRing
+                                    : ''}`}
+                                  title="Present + week offs + holidays + OD + paid leaves − attendance deduction — click to highlight contributing days"
+                                  onClick={() =>
+                                    !pr.isStub &&
+                                    togglePayRegisterContrib(pr, ['present', 'weeklyOffs', 'holidays', 'ods', 'paidLeaves'], 'Paid days components')
+                                  }
+                                >
+                                  {paidDays.toFixed(1)}
                                 </td>
                               </>
                             );
@@ -3029,16 +3346,42 @@ export default function PayRegisterPage() {
                           )}
                           {activeTable === 'leaves' && (
                             <>
-                              <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700 dark:border-slate-700 dark:bg-yellow-900/20 dark:text-yellow-300">
-                                {pr.totals.totalLeaveDays.toFixed(1)}
+                              <td
+                                className={`border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700 dark:border-slate-700 dark:bg-yellow-900/20 dark:text-yellow-300 ${!pr.isStub ? 'cursor-pointer hover:opacity-90' : ''} ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['paidLeaves', 'lopLeaves'], 'Total leaves') ? payRegisterContribAccent(['paidLeaves', 'lopLeaves']).summaryRing : ''}`}
+                                title={pr.isStub ? undefined : 'Click for leave-type breakdown; highlights paid + LOP days in the grid'}
+                                onClick={() => onPayRegisterTotalLeavesClick(pr)}
+                              >
+                                <div className="flex flex-col items-center gap-0.5 leading-tight">
+                                  <span>{pr.totals.totalLeaveDays.toFixed(1)}</span>
+                                  {!pr.isStub && leaveBreakdownForRow.length > 0 ? (
+                                    <span
+                                      className="max-w-[72px] truncate text-[8px] font-semibold normal-case text-yellow-900 dark:text-yellow-200"
+                                      title={formatLeaveTypeBreakdownPreview(leaveBreakdownForRow, 12)}
+                                    >
+                                      {formatLeaveTypeBreakdownPreview(leaveBreakdownForRow, 2)}
+                                    </span>
+                                  ) : null}
+                                </div>
                               </td>
-                              <td className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
+                              <td
+                                className={`border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 ${!pr.isStub ? 'cursor-pointer hover:opacity-90' : ''} ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['paidLeaves'], 'Paid leaves') ? payRegisterContribAccent(['paidLeaves']).summaryRing : ''}`}
+                                title={pr.isStub ? undefined : 'Click to highlight paid-leave days only'}
+                                onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['paidLeaves'], 'Paid leaves')}
+                              >
                                 {pr.totals.totalPaidLeaveDays.toFixed(1)}
                               </td>
-                              <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300">
+                              <td
+                                className={`border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300 ${!pr.isStub ? 'cursor-pointer hover:opacity-90' : ''} ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['lopLeaves'], 'LOP') ? payRegisterContribAccent(['lopLeaves']).summaryRing : ''}`}
+                                title={pr.isStub ? undefined : 'Click to highlight LOP days only'}
+                                onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['lopLeaves'], 'LOP')}
+                              >
                                 {pr.totals.totalLopDays.toFixed(1)}
                               </td>
-                              <td className="border-r-0 border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
+                              <td
+                                className={`border-r-0 border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 ${!pr.isStub ? 'cursor-pointer hover:opacity-90' : ''} ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['lopLeaves'], 'Without pay') ? payRegisterContribAccent(['lopLeaves']).summaryRing : ''}`}
+                                title={pr.isStub ? undefined : 'Click to highlight unpaid / LOP-style leave days (same map as LOP when synced from summary)'}
+                                onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['lopLeaves'], 'Without pay')}
+                              >
                                 {pr.totals.totalUnpaidLeaveDays.toFixed(1)}
                               </td>
                             </>
@@ -3194,13 +3537,18 @@ export default function PayRegisterPage() {
                               </label>
                               <select
                                 value={editData.firstHalf?.leaveType || ''}
-                                onChange={(e) => setEditData({
-                                  ...editData,
-                                  firstHalf: {
-                                    ...editData.firstHalf!,
-                                    leaveType: e.target.value,
-                                  },
-                                })}
+                                onChange={(e) => {
+                                  const code = e.target.value ? e.target.value : null;
+                                  const nat = resolveLeaveNatureFromLeaveTypeCode(code, leaveTypes);
+                                  setEditData({
+                                    ...editData,
+                                    firstHalf: {
+                                      ...editData.firstHalf!,
+                                      leaveType: code,
+                                      leaveNature: nat,
+                                    },
+                                  });
+                                }}
                                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                               >
                                 <option value="">Select Leave Type</option>
@@ -3213,22 +3561,20 @@ export default function PayRegisterPage() {
                             </div>
                             <div>
                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                                Leave Nature
+                                Leave Nature <span className="font-normal text-slate-500">(from leave type)</span>
                               </label>
-                              <select
-                                value={editData.firstHalf?.leaveNature || 'paid'}
-                                onChange={(e) => setEditData({
-                                  ...editData,
-                                  firstHalf: {
-                                    ...editData.firstHalf!,
-                                    leaveNature: e.target.value as any,
-                                  },
-                                })}
-                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                              >
-                                <option value="paid">Paid</option>
-                                <option value="lop">LOP (Loss of Pay)</option>
-                              </select>
+                              <input
+                                type="text"
+                                readOnly
+                                tabIndex={-1}
+                                value={leaveNatureDisplayLabel(
+                                  resolveLeaveNatureFromLeaveTypeCode(
+                                    editData.firstHalf?.leaveType,
+                                    leaveTypes
+                                  )
+                                )}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-100 dark:bg-slate-600/40 text-slate-800 dark:text-slate-100 cursor-not-allowed"
+                              />
                             </div>
                           </>
                         )}
@@ -3326,13 +3672,18 @@ export default function PayRegisterPage() {
                               </label>
                               <select
                                 value={editData.secondHalf?.leaveType || ''}
-                                onChange={(e) => setEditData({
-                                  ...editData,
-                                  secondHalf: {
-                                    ...editData.secondHalf!,
-                                    leaveType: e.target.value,
-                                  },
-                                })}
+                                onChange={(e) => {
+                                  const code = e.target.value ? e.target.value : null;
+                                  const nat = resolveLeaveNatureFromLeaveTypeCode(code, leaveTypes);
+                                  setEditData({
+                                    ...editData,
+                                    secondHalf: {
+                                      ...editData.secondHalf!,
+                                      leaveType: code,
+                                      leaveNature: nat,
+                                    },
+                                  });
+                                }}
                                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                               >
                                 <option value="">Select Leave Type</option>
@@ -3345,22 +3696,20 @@ export default function PayRegisterPage() {
                             </div>
                             <div>
                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                                Leave Nature
+                                Leave Nature <span className="font-normal text-slate-500">(from leave type)</span>
                               </label>
-                              <select
-                                value={editData.secondHalf?.leaveNature || 'paid'}
-                                onChange={(e) => setEditData({
-                                  ...editData,
-                                  secondHalf: {
-                                    ...editData.secondHalf!,
-                                    leaveNature: e.target.value as any,
-                                  },
-                                })}
-                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                              >
-                                <option value="paid">Paid</option>
-                                <option value="lop">LOP (Loss of Pay)</option>
-                              </select>
+                              <input
+                                type="text"
+                                readOnly
+                                tabIndex={-1}
+                                value={leaveNatureDisplayLabel(
+                                  resolveLeaveNatureFromLeaveTypeCode(
+                                    editData.secondHalf?.leaveType,
+                                    leaveTypes
+                                  )
+                                )}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-100 dark:bg-slate-600/40 text-slate-800 dark:text-slate-100 cursor-not-allowed"
+                              />
                             </div>
                           </>
                         )}
@@ -3451,18 +3800,25 @@ export default function PayRegisterPage() {
                               </label>
                               <select
                                 value={editData.leaveType || ''}
-                                onChange={(e) => setEditData({
-                                  ...editData,
-                                  leaveType: e.target.value,
-                                  firstHalf: {
-                                    ...editData.firstHalf!,
-                                    leaveType: e.target.value,
-                                  },
-                                  secondHalf: {
-                                    ...editData.secondHalf!,
-                                    leaveType: e.target.value,
-                                  },
-                                })}
+                                onChange={(e) => {
+                                  const code = e.target.value ? e.target.value : null;
+                                  const nat = resolveLeaveNatureFromLeaveTypeCode(code, leaveTypes);
+                                  setEditData({
+                                    ...editData,
+                                    leaveType: code,
+                                    leaveNature: nat,
+                                    firstHalf: {
+                                      ...editData.firstHalf!,
+                                      leaveType: code,
+                                      leaveNature: nat,
+                                    },
+                                    secondHalf: {
+                                      ...editData.secondHalf!,
+                                      leaveType: code,
+                                      leaveNature: nat,
+                                    },
+                                  });
+                                }}
                                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                               >
                                 <option value="">Select Leave Type</option>
@@ -3475,28 +3831,17 @@ export default function PayRegisterPage() {
                             </div>
                             <div>
                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                                Leave Nature
+                                Leave Nature <span className="font-normal text-slate-500">(from leave type)</span>
                               </label>
-                              <select
-                                value={editData.leaveNature || 'paid'}
-                                onChange={(e) => setEditData({
-                                  ...editData,
-                                  leaveNature: e.target.value as any,
-                                  firstHalf: {
-                                    ...editData.firstHalf!,
-                                    leaveNature: e.target.value as any,
-                                  },
-                                  secondHalf: {
-                                    ...editData.secondHalf!,
-                                    leaveNature: e.target.value as any,
-                                  },
-                                })}
-                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                              >
-                                <option value="paid">Paid</option>
-                                <option value="lop">LOP (Loss of Pay)</option>
-                                <option value="without_pay">Without Pay</option>
-                              </select>
+                              <input
+                                type="text"
+                                readOnly
+                                tabIndex={-1}
+                                value={leaveNatureDisplayLabel(
+                                  resolveLeaveNatureFromLeaveTypeCode(editData.leaveType, leaveTypes)
+                                )}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-100 dark:bg-slate-600/40 text-slate-800 dark:text-slate-100 cursor-not-allowed"
+                              />
                             </div>
                           </>
                         )}
@@ -3653,6 +3998,89 @@ export default function PayRegisterPage() {
           </div>
         )
       }
+
+      {leaveTypeBreakdownModal && (
+        <div
+          className="fixed inset-0 z-[1100] flex items-start justify-center bg-black/20 px-4 pt-24"
+          onClick={() => setLeaveTypeBreakdownModal(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-amber-200 bg-white p-4 shadow-2xl dark:border-amber-900 dark:bg-slate-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h4 className="text-sm font-bold text-amber-900 dark:text-amber-200">Total leaves — by type</h4>
+              <button
+                type="button"
+                className="shrink-0 rounded px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                onClick={() => setLeaveTypeBreakdownModal(null)}
+              >
+                Close
+              </button>
+            </div>
+            <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">{leaveTypeBreakdownModal.employeeName}</p>
+            {(() => {
+              const sumByType = leaveTypeBreakdownModal.rows.reduce((s, r) => s + r.days, 0);
+              const drift = Math.abs(sumByType - leaveTypeBreakdownModal.totalFromTotals);
+              return (
+                <>
+                  {leaveTypeBreakdownModal.rows.length === 0 ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No leave rows found on the daily grid for this month.</p>
+                  ) : (
+                    <div className="max-h-[50vh] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                      <table className="w-full border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-200 bg-slate-50 text-left dark:border-slate-700 dark:bg-slate-800">
+                            <th className="px-2 py-2 font-semibold text-slate-700 dark:text-slate-300">Leave type</th>
+                            <th className="px-2 py-2 font-semibold text-slate-700 dark:text-slate-300">Bucket</th>
+                            <th className="px-2 py-2 text-right font-semibold text-slate-700 dark:text-slate-300">Days</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                          {leaveTypeBreakdownModal.rows.map((r, i) => (
+                            <tr key={`${r.kind}-${r.leaveTypeLabel}-${i}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                              <td className="px-2 py-1.5 font-medium text-slate-900 dark:text-slate-100">{r.leaveTypeLabel}</td>
+                              <td className="px-2 py-1.5 text-slate-600 dark:text-slate-400">
+                                {r.kind === 'lop' ? 'LOP / unpaid' : 'Paid'}
+                              </td>
+                              <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-slate-800 dark:text-slate-200">
+                                {r.days.toFixed(1).replace(/\.?0+$/, '')}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-800/80">
+                            <td colSpan={2} className="px-2 py-2 font-semibold text-slate-700 dark:text-slate-300">
+                              Sum (daily grid)
+                            </td>
+                            <td className="px-2 py-2 text-right font-bold text-slate-900 dark:text-slate-100">
+                              {sumByType.toFixed(1).replace(/\.?0+$/, '')}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td colSpan={2} className="px-2 py-1.5 text-slate-600 dark:text-slate-400">
+                              Stored monthly total
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-slate-700 dark:text-slate-300">
+                              {leaveTypeBreakdownModal.totalFromTotals.toFixed(1).replace(/\.?0+$/, '')}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                  {drift > 0.051 ? (
+                    <p className="mt-2 text-[10px] leading-snug text-amber-800 dark:text-amber-300">
+                      The sum from the daily grid can differ slightly from the stored monthly total when policy caps, split days, or sync rounding apply.
+                    </p>
+                  ) : null}
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {attendanceDeductionInfo && (
         <div

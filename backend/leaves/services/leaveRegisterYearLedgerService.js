@@ -113,14 +113,6 @@ async function recalculateRegisterBalances(employeeId, leaveType, fromDate) {
   }
   await syncEmployeeModelBalance(employeeId, leaveType, finalBalance);
 
-  // Trigger monthly summary recalculation to apply potential capping changes
-  try {
-    const summaryCalculationService = require('../../attendance/services/summaryCalculationService');
-    summaryCalculationService.recalculateOnLeaveRegisterUpdate(employeeId, fromDate);
-  } catch (err) {
-    console.error('[LeaveRegisterYearLedger] Failed to trigger summary recalculation:', err.message);
-  }
-
   return true;
 }
 
@@ -284,14 +276,6 @@ async function addTransaction(transactionData) {
       transactionData.employeeId,
       transactionData.startDate
     );
-  }
-
-  // Trigger monthly summary recalculation to apply potential capping changes
-  try {
-    const summaryCalculationService = require('../../attendance/services/summaryCalculationService');
-    summaryCalculationService.recalculateOnLeaveRegisterUpdate(transactionData.employeeId, transactionData.startDate);
-  } catch (err) {
-    console.error('[LeaveRegisterYearLedger] Failed to trigger summary recalculation:', err.message);
   }
 
   const reloaded = await LeaveRegisterYear.findById(doc._id);

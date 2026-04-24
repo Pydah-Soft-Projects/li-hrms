@@ -382,12 +382,30 @@ export interface ApiResponse<T> {
   generatedPassword?: string;
   summaries?: any[];
   isHolidayOrWeekOff?: boolean;
+  /** GET /leaves/od/check-holiday (flat) when spread on success */
+  hasPunches?: boolean;
+  suggestedOdTypeExtended?: 'half_day' | 'full_day' | null;
+  totalWorkingHours?: number | null;
+  punchContextDetail?: string | null;
   unreadCount?: number;
   updated?: number;
   /** Flat JSON from some endpoints (e.g. push helpers), not only nested under `data`. */
   subscribed?: boolean;
   configured?: boolean;
   publicKey?: string | null;
+  /** GET /promotions-transfers/payroll-months (spread on success alongside `data` array) */
+  promotionPayroll?: {
+    ongoingLabel: string;
+    incompleteOngoingLabel?: string;
+    arrearProrationEndLabel: string;
+    currentCycleLabel: string;
+    containingKey: string;
+    containingRangeDisplay: string;
+    containingRangeStart: string;
+    containingRangeEnd: string;
+    settingsStartDay: number;
+    settingsEndDay: number;
+  };
 }
 
 export interface InAppNotification {
@@ -402,6 +420,18 @@ export interface InAppNotification {
 
 export interface NotificationUnreadCountResponse {
   unreadCount: number;
+}
+
+/** GET /leaves/od/check-holiday (flat body on success) */
+export interface ODHolidayCheckResponse {
+  success: boolean;
+  isHolidayOrWeekOff: boolean;
+  message?: string;
+  date?: string;
+  hasPunches?: boolean;
+  suggestedOdTypeExtended?: 'half_day' | 'full_day' | null;
+  totalWorkingHours?: number | null;
+  punchContextDetail?: string | null;
 }
 
 /** Row in GET /dashboard/stats `leaveBalancesByType` (employee register view). */
@@ -689,6 +719,26 @@ export interface Division {
   departments?: (string | Department)[];
   shifts?: (string | { shiftId: string | Shift; gender?: string; employee_group_id?: string | EmployeeGroup | null })[];
   isActive?: boolean;
+}
+
+/** Per-division approval workflow overrides (inherit global when key omitted). */
+export type DivisionWorkflowModuleKey =
+  | 'leave'
+  | 'od'
+  | 'ccl'
+  | 'loan'
+  | 'salary_advance'
+  | 'permission'
+  | 'ot'
+  | 'promotions_transfers';
+
+export interface DivisionWorkflowSettings {
+  _id?: string;
+  division: string | Division;
+  workflows: Partial<Record<DivisionWorkflowModuleKey, Record<string, unknown> | null | undefined>>;
+  createdBy?: { name?: string; email?: string };
+  updatedBy?: { name?: string; email?: string };
+  updatedAt?: string;
 }
 
 export type DataScope = 'own' | 'department' | 'departments' | 'division' | 'divisions' | 'all';
@@ -1362,6 +1412,20 @@ export const api = {
 
   deleteDivision: async (id: string) => {
     return apiRequest<void>(`/divisions/${id}`, { method: 'DELETE' });
+  },
+
+  getDivisionWorkflowSettings: async (divisionId: string) => {
+    return apiRequest<DivisionWorkflowSettings>(`/divisions/${divisionId}/workflow-settings`, { method: 'GET' });
+  },
+
+  updateDivisionWorkflowSettings: async (
+    divisionId: string,
+    data: { workflows: Partial<Record<DivisionWorkflowModuleKey, Record<string, unknown> | null>> }
+  ) => {
+    return apiRequest<DivisionWorkflowSettings>(`/divisions/${divisionId}/workflow-settings`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
   },
 
   getEmployeeGroups: async (isActive?: boolean) => {
@@ -2710,13 +2774,13 @@ export const api = {
     });
   },
   
-  // Check if date is holiday for an employee (OD specific)
+  // Check if date is holiday for an employee (OD specific); may include punch-based half/full for HOL/WO
   checkODHoliday: async (employeeId?: string, empNo?: string, date?: string) => {
     const q = new URLSearchParams();
     if (employeeId) q.append('employeeId', employeeId);
     if (empNo) q.append('empNo', empNo);
     if (date) q.append('date', date);
-    return apiRequest<any>(`/leaves/od/check-holiday?${q.toString()}`, { method: 'GET' });
+    return apiRequest<ODHolidayCheckResponse>(`/leaves/od/check-holiday?${q.toString()}`, { method: 'GET' });
   },
 
   // Cancel OD
@@ -2869,7 +2933,7 @@ export const api = {
       params.append('count', String(opts.count));
     }
     const qs = params.toString() ? `?${params.toString()}` : '';
-    return apiRequest<any>(`/promotions-transfers/payroll-months${qs}`, { method: 'GET' });
+    return apiRequest<any[]>(`/promotions-transfers/payroll-months${qs}`, { method: 'GET' });
   },
   createPromotionTransferRequest: async (data: Record<string, unknown>) => {
     return apiRequest<any>('/promotions-transfers', {

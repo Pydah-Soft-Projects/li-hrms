@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const dateCycleService = require('../../leaves/services/dateCycleService');
+const { getPromotionPayrollContext } = require('./promotionPayrollCycleContextService');
 const { fetchAttendanceDataForEmployeeMonths } = require('../../payroll/services/attendanceRangeDataService');
 const ArrearsService = require('../../arrears/services/arrearsService');
 
@@ -9,8 +9,8 @@ function compareYm(a, b) {
 }
 
 /**
- * Prorated salary difference from effective payroll month through current payroll cycle month
- * (same approach as promotions UI + payroll attendance-range).
+ * Prorated salary difference from effective payroll month through the last closed pay month
+ * (same as promotions UI: respects payroll cycle + batch completion; excludes the open pay run).
  *
  * @param {import('mongoose').Document} promotionDoc - PromotionTransferRequest (not necessarily populated)
  * @returns {Promise<{ totalAmount: number; startLabel: string; endLabel: string; skipped: boolean; reason?: string }>}
@@ -37,13 +37,14 @@ async function computePromotionArrearAmount(promotionDoc) {
   }
 
   const startLabel = `${y}-${String(m).padStart(2, '0')}`;
-  let anchor;
+  let arrearEnd;
   try {
-    anchor = await dateCycleService.getPayrollCycleForDate(new Date());
+    const ctx = await getPromotionPayrollContext();
+    arrearEnd = ctx.arrearProrationEndLabel;
   } catch (e) {
-    return { totalAmount: 0, startLabel, endLabel: '', skipped: true, reason: `anchor_error:${e.message}` };
+    return { totalAmount: 0, startLabel, endLabel: '', skipped: true, reason: `payroll_context_error:${e.message}` };
   }
-  const endLabel = `${anchor.year}-${String(anchor.month).padStart(2, '0')}`;
+  const endLabel = arrearEnd;
 
   if (compareYm(startLabel, endLabel) > 0) {
     return {

@@ -1,20 +1,27 @@
-const mongoose = require('mongoose');
+/**
+ * Auto-OD: scan AttendanceDaily and create/update OD rows for holiday/week-off work.
+ * Invoked from AttendanceDaily pre-save when `auto_od_creation_enabled` is ON; `processAutoODForDate` for batch scans.
+ */
 const OD = require('../model/OD');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Employee = require('../../employees/model/Employee');
-const LeaveSettings = require('../model/LeaveSettings');
+const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const Settings = require('../../settings/model/Settings');
+const { getAutoOdEligibilityFromRecord } = require('../utils/holwoOdPunchResolver');
 
 /**
  * Scan AttendanceDaily for holiday/week-off punches and create OD requests
  * @param {string} dateStr - Date to scan (YYYY-MM-DD)
  */
-const processAutoODForDate = async (dateStr) => {
+const processAutoODForDate = async (dateStr, options = {}) => {
+    const results = [];
     try {
-        const autoODSetting = await Settings.findOne({ key: 'auto_od_creation_enabled' }).lean();
-        if (autoODSetting?.value !== true) {
-            console.log('[AutoOD] Skipping date scan because auto_od_creation_enabled is OFF.');
-            return;
+        if (!options.force) {
+            const autoODSetting = await Settings.findOne({ key: 'auto_od_creation_enabled' }).lean();
+            if (autoODSetting?.value !== true) {
+                console.log('[AutoOD] Skipping date scan because auto_od_creation_enabled is OFF. (use options.force in scripts to bypass.)');
+                return { skipped: 'setting_off', results: [] };
+            }
         }
 
         const query = {
@@ -24,15 +31,18 @@ const processAutoODForDate = async (dateStr) => {
         };
 
         const attendanceRecords = await AttendanceDaily.find(query);
-        if (attendanceRecords.length === 0) return;
+        if (attendanceRecords.length === 0) return { skipped: 'no_rows', results: [] };
 
         console.log(`[AutoOD] Found ${attendanceRecords.length} holiday/week-off attendance records with punches for ${dateStr}.`);
 
         for (const record of attendanceRecords) {
-            await processAutoODForEmployee(record.employeeNumber, dateStr, record);
+            const r = await processAutoODForEmployee(record.employeeNumber, dateStr, record, options);
+            if (r) results.push(r);
         }
+        return { results };
     } catch (error) {
         console.error('[AutoOD] Error processing date:', dateStr, error);
+        return { error: error?.message || String(error), results };
     }
 };
 
@@ -41,19 +51,37 @@ const processAutoODForDate = async (dateStr) => {
  * @param {string} employeeNumber - Employee number
  * @param {string} dateStr - Date (YYYY-MM-DD)
  * @param {Object} record - AttendanceDaily record
+ * @param {{ force?: boolean }} [options] - force=true skips the auto_od_creation_enabled check (e.g. backfill scripts)
+ * @returns {Promise<null|{ success: boolean, action: 'created'|'updated'|'skipped', skipCode?: string, odId?: import('mongoose').Types.ObjectId, detail?: object }>}
  */
-const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
+const processAutoODForEmployee = async (employeeNumber, dateStr, record, options = {}) => {
+    const baseOut = (partial) => ({
+        success: false,
+        action: 'skipped',
+        employeeNumber: (record && record.employeeNumber) || employeeNumber,
+        dateStr,
+        ...partial,
+    });
     try {
-        const autoODSetting = await Settings.findOne({ key: 'auto_od_creation_enabled' }).lean();
-        if (autoODSetting?.value !== true) {
-            return;
+        if (!options.force) {
+            const autoODSetting = await Settings.findOne({ key: 'auto_od_creation_enabled' }).lean();
+            if (autoODSetting?.value !== true) {
+                return baseOut({ skipCode: 'auto_od_setting_off' });
+            }
         }
 
         if (!record || !['HOLIDAY', 'WEEK_OFF'].includes(record.status) || record.totalWorkingHours <= 0) {
-            return;
+            return baseOut({ skipCode: 'not_hol_wo_or_no_hours', message: { status: record?.status, totalWorkingHours: record?.totalWorkingHours } });
         }
 
-        // 2. Extract punch details FIRST (needed regardless of create/update path)
+        const recordPlain = typeof record.toObject === 'function' ? record.toObject({ flattenMaps: true }) : record;
+        const el = getAutoOdEligibilityFromRecord(recordPlain);
+        if (!el.eligible) {
+            console.log(`[AutoOD] Skip ${record.employeeNumber} on ${dateStr}: ${el.reason || 'not_eligible'}`);
+            return baseOut({ skipCode: 'not_eligible', eligibilityReason: el.reason || 'not_eligible' });
+        }
+
+        // 2. Extract punch details FIRST (needed for updates and create when eligible)
         let punchDetails = '';
         let startT = null;
         let endT = null;
@@ -97,7 +125,7 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
         });
 
         if (existingActiveOD) {
-            // UPDATE the existing OD with fresh punch details
+            // UPDATE the existing OD with fresh punch details + half/full from shift segments
             const prevStartT = existingActiveOD.odStartTime;
             const prevEndT   = existingActiveOD.odEndTime;
             const prevHours  = existingActiveOD.durationHours;
@@ -105,8 +133,12 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
             existingActiveOD.odStartTime   = startT   || existingActiveOD.odStartTime;
             existingActiveOD.odEndTime     = endT     || existingActiveOD.odEndTime;
             existingActiveOD.durationHours = record.totalWorkingHours || existingActiveOD.durationHours;
+            existingActiveOD.odType_extended = el.odType_extended;
+            existingActiveOD.isHalfDay = el.isHalfDay;
+            existingActiveOD.halfDayType = el.halfDayType;
+            existingActiveOD.numberOfDays = el.isHalfDay ? 0.5 : 1;
 
-            const updateNote = `Biometric punches updated by system.${punchDetails}`;
+            const updateNote = `Biometric punches updated by system (${el.odType_extended || 'n/a'}).${punchDetails}`;
             existingActiveOD.workflow.history.push({
                 step: 'system',
                 action: 'status_changed',
@@ -119,7 +151,20 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
 
             await existingActiveOD.save();
             console.log(`[AutoOD] ✏️  Updated existing OD (${existingActiveOD._id}) for ${record.employeeNumber} on ${dateStr} — was [${prevStartT}→${prevEndT} ${prevHours}hrs], now [${startT}→${endT} ${record.totalWorkingHours}hrs]`);
-            return;
+            return {
+                success: true,
+                action: 'updated',
+                employeeNumber: record.employeeNumber,
+                dateStr,
+                odId: existingActiveOD._id,
+                detail: {
+                    odType_extended: el.odType_extended,
+                    durationHours: record.totalWorkingHours,
+                    isHalfDay: el.isHalfDay,
+                    before: { odStartTime: prevStartT, odEndTime: prevEndT, durationHours: prevHours },
+                    after: { odStartTime: startT, odEndTime: endT, durationHours: record.totalWorkingHours },
+                },
+            };
         }
 
         // Check if there is a fully-rejected OD on this date.
@@ -137,19 +182,21 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
             previousRejectionNote = ` | Note: A previous OD (${rejectedOD.status}) on this date was found (${rejectedAt}). New OD auto-generated.`;
         }
 
-
-        // 3. Get OD workflow settings
-        const workflowSettings = await LeaveSettings.getActiveSettings('od');
-
-        // 4. Fetch employee with full details for workflow and snapshotting
+        // 3. Fetch employee (required before workflow and for new OD)
         const employee = await Employee.findOne({ emp_no: record.employeeNumber })
             .populate('division_id', 'name')
             .populate('department_id', 'name');
 
         if (!employee) {
             console.log(`[AutoOD] Employee ${record.employeeNumber} not found in MongoDB. Skipping.`);
-            return;
+            return baseOut({ skipCode: 'employee_not_found' });
         }
+
+        // 4. Get OD workflow settings (division override → global)
+        const workflowSettings = await resolveLeaveTypeWorkflowSettings(
+            'od',
+            employee.division_id?._id || employee.division_id
+        );
 
         // 5. Initialize workflow — exactly mirrors odController.js
         const approvalSteps = [];
@@ -206,7 +253,7 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
                     actionBy: null, // System generated
                     actionByName: 'System (Auto-OD)',
                     actionByRole: 'system',
-                    comments: `Auto-generated OD for work on holiday/week-off.${punchDetails}`,
+                    comments: `Auto-generated ${el.isHalfDay ? 'half-day' : 'full-day'} OD for work on holiday/week-off (${el.punchContextDetail || 'eligible'}).${punchDetails}`,
                     timestamp: new Date(),
                 },
             ],
@@ -217,19 +264,20 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
             employeeId: employee._id,
             emp_no: employee.emp_no,
             odType: 'OFFICIAL',
-            odType_extended: 'full_day',
+            odType_extended: el.odType_extended,
             fromDate: new Date(record.date + 'T00:00:00+05:30'),
             toDate: new Date(record.date + 'T00:00:00+05:30'),
-            numberOfDays: 1,
-            isHalfDay: false,
+            numberOfDays: el.isHalfDay ? 0.5 : 1,
+            isHalfDay: el.isHalfDay,
+            halfDayType: el.halfDayType,
             odStartTime: startT,
             odEndTime: endT,
             durationHours: record.totalWorkingHours,
-            isCOEligible: true, // Always true for auto-OD since it triggers on holidays
+            isCOEligible: true, // HOL / WEEK_OFF context
             purpose: 'Work on Holiday/Week-off',
             placeVisited: 'Organization Campus (Auto)',
             contactNumber: employee.phone_number || 'N/A',
-            remarks: `Auto-generated by system based on biometric punches detected on a holiday/week-off.${punchDetails}`,
+            remarks: `Auto-generated by system (${el.odType_extended || 'n/a'}) from shift segments on a holiday/week-off.${punchDetails}${previousRejectionNote || ''}`,
             status: 'pending',
             isActive: true,
             appliedBy: null,
@@ -243,8 +291,21 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
 
         await od.save();
         console.log(`[AutoOD] ✅ Created pending OD for ${employee.emp_no} on ${dateStr}${punchDetails}`);
+        return {
+            success: true,
+            action: 'created',
+            employeeNumber: record.employeeNumber,
+            dateStr,
+            odId: od._id,
+            detail: {
+                odType_extended: el.odType_extended,
+                durationHours: record.totalWorkingHours,
+                isHalfDay: el.isHalfDay,
+            },
+        };
     } catch (error) {
         console.error(`[AutoOD] Error processing ${employeeNumber} on ${dateStr}:`, error);
+        return baseOut({ skipCode: 'error', errorMessage: error?.message || String(error) });
     }
 };
 

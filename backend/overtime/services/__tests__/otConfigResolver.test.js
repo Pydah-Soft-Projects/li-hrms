@@ -4,10 +4,12 @@
 
 jest.mock('../../model/OvertimeSettings');
 jest.mock('../../../departments/model/DepartmentSettings');
+jest.mock('../../../departments/model/DivisionWorkflowSettings');
 jest.mock('../../../settings/model/Settings');
 
 const OvertimeSettings = require('../../model/OvertimeSettings');
 const DepartmentSettings = require('../../../departments/model/DepartmentSettings');
+const DivisionWorkflowSettings = require('../../../departments/model/DivisionWorkflowSettings');
 const Settings = require('../../../settings/model/Settings');
 const { getMergedOtConfig } = require('../otConfigResolver');
 
@@ -20,6 +22,7 @@ const DEPT_RANGES = [
 ];
 
 const DEPT_ID = '507f1f77bcf86cd799439011';
+const DIV_ID = '507f1f77bcf86cd799439012';
 
 function mockSettingsLeanNull() {
   Settings.findOne.mockImplementation(() => ({
@@ -30,6 +33,9 @@ function mockSettingsLeanNull() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockSettingsLeanNull();
+  DivisionWorkflowSettings.findOne.mockReturnValue({
+    lean: jest.fn().mockResolvedValue(null),
+  });
   OvertimeSettings.getActiveSettings.mockResolvedValue({
     payPerHour: 100,
     multiplier: 1.5,
@@ -135,6 +141,38 @@ describe('getMergedOtConfig', () => {
       });
       const merged = await getMergedOtConfig(DEPT_ID, null);
       expect(merged.workflow).toEqual(globalWf);
+    });
+
+    it('merges division workflow override on top of global', async () => {
+      const globalWf = { steps: [{ stepOrder: 1 }], finalAuthority: { role: 'hr', anyHRCanApprove: true } };
+      OvertimeSettings.getActiveSettings.mockResolvedValue({
+        payPerHour: 100,
+        multiplier: 1.5,
+        minOTHours: 0,
+        roundingMinutes: 15,
+        recognitionMode: 'none',
+        thresholdHours: null,
+        roundUpIfFractionMinutesGte: null,
+        otHourRanges: GLOBAL_RANGES,
+        autoCreateOtRequest: false,
+        defaultWorkingHoursPerDay: 8,
+        allowBackdated: false,
+        maxBackdatedDays: 0,
+        allowFutureDated: true,
+        maxAdvanceDays: 365,
+        workflow: globalWf,
+      });
+      DepartmentSettings.getByDeptAndDiv.mockResolvedValue({ ot: {} });
+      DivisionWorkflowSettings.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          workflows: {
+            ot: { steps: [{ stepOrder: 1, approverRole: 'hod' }], allowHigherAuthorityToApproveLowerLevels: true },
+          },
+        }),
+      });
+      const merged = await getMergedOtConfig(DEPT_ID, DIV_ID);
+      expect(merged.workflow.steps).toEqual([{ stepOrder: 1, approverRole: 'hod' }]);
+      expect(merged.workflow.allowHigherAuthorityToApproveLowerLevels).toBe(true);
     });
   });
 });

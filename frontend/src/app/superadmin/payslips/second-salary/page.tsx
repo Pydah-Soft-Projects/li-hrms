@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { api, Division, Department } from '@/lib/api';
+import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
 import {
     Banknote,
     Search,
@@ -14,6 +16,7 @@ import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 
 export default function SecondSalaryPayslipsPage() {
+    const router = useRouter();
     const [records, setRecords] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -24,6 +27,13 @@ export default function SecondSalaryPayslipsPage() {
     const [departments, setDepartments] = useState<Department[]>([]);
     const [selectedDivision, setSelectedDivision] = useState<string>('');
     const [selectedDepartment, setSelectedDepartment] = useState<string>('');
+
+    const { secondSalaryEnabled, secondSalarySettingReady } = useSecondSalaryFeatureEnabled();
+
+    useEffect(() => {
+        if (!secondSalarySettingReady || secondSalaryEnabled) return;
+        router.replace('/superadmin/payslips');
+    }, [secondSalarySettingReady, secondSalaryEnabled, router]);
 
     useEffect(() => {
         fetchInitialData();
@@ -80,6 +90,14 @@ export default function SecondSalaryPayslipsPage() {
         record.employeeId?.employee_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         record.emp_no?.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    if (!secondSalarySettingReady || !secondSalaryEnabled) {
+        return (
+            <div className="flex min-h-[40vh] items-center justify-center p-8">
+                <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6 max-w-7xl mx-auto p-4 sm:p-6">

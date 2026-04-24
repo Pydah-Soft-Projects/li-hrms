@@ -53,6 +53,39 @@ function fmtCell(v) {
   return String(v);
 }
 
+/** Policy-only “credited” days (excludes transfer-in from prior period / FY). */
+function fmtPolicyCredits(rm, kind) {
+  if (!rm) return '—';
+  if (kind === 'cl') {
+    if (rm.policyScheduledCl != null && Number.isFinite(Number(rm.policyScheduledCl))) {
+      return fmtCell(rm.policyScheduledCl);
+    }
+    const ti = Number(rm.cl?.transferIn) || 0;
+    const s = rm.scheduledCl;
+    if (s != null && Number.isFinite(Number(s))) return fmtCell(Math.max(0, Number(s) - ti));
+    return fmtCell(s);
+  }
+  if (kind === 'ccl') {
+    if (rm.policyScheduledCco != null && Number.isFinite(Number(rm.policyScheduledCco))) {
+      return fmtCell(rm.policyScheduledCco);
+    }
+    const ti = Number(rm.ccl?.transferIn) || 0;
+    const s = rm.scheduledCco;
+    if (s != null && Number.isFinite(Number(s))) return fmtCell(Math.max(0, Number(s) - ti));
+    return fmtCell(s);
+  }
+  if (kind === 'el') {
+    if (rm.policyScheduledEl != null && Number.isFinite(Number(rm.policyScheduledEl))) {
+      return fmtCell(rm.policyScheduledEl);
+    }
+    const ti = Number(rm.el?.transferIn) || 0;
+    const s = rm.scheduledEl;
+    if (s != null && Number.isFinite(Number(s))) return fmtCell(Math.max(0, Number(s) - ti));
+    return fmtCell(s);
+  }
+  return '—';
+}
+
 /**
  * @param {boolean} includeCL
  * @param {boolean} includeCCL
@@ -65,7 +98,7 @@ function buildColumnLayout(includeCL, includeCCL, includeEL) {
   if (includeCL) {
     const g = CL_STYLE;
     cols.push(
-      { header: 'Casual leave — credited', groupStyle: g, extract: (rm) => fmtCell(rm?.scheduledCl) },
+      { header: 'Casual leave — credited', groupStyle: g, extract: (rm) => fmtPolicyCredits(rm, 'cl') },
       { header: 'Casual leave — taken', groupStyle: g, extract: (rm) => fmtCell(rm?.cl?.used) },
       { header: 'Casual leave — balance', groupStyle: g, extract: (rm) => fmtCell(rm?.clBalance) }
     );
@@ -73,7 +106,7 @@ function buildColumnLayout(includeCL, includeCCL, includeEL) {
   if (includeCCL) {
     const g = CCL_STYLE;
     cols.push(
-      { header: 'Compensatory leave — credited', groupStyle: g, extract: (rm) => fmtCell(rm?.scheduledCco) },
+      { header: 'Compensatory leave — credited', groupStyle: g, extract: (rm) => fmtPolicyCredits(rm, 'ccl') },
       { header: 'Compensatory leave — taken', groupStyle: g, extract: (rm) => fmtCell(rm?.ccl?.used) },
       { header: 'Compensatory leave — balance', groupStyle: g, extract: (rm) => fmtCell(rm?.cclBalance) }
     );
@@ -202,7 +235,7 @@ function streamLeaveRegisterPdf({
   const drawLegend = (ly) => {
     doc.font('Helvetica').fontSize(7).fillColor('#1f2937');
     let legend =
-      'Legend: All figures are in days. “Credited” is the scheduled amount for that payroll month. “Taken” is leave used in that month. “Balance” is the closing balance at month end. ';
+      'Legend: All figures are in days. “Credited” is policy-scheduled days for that payroll month (credits carried in from a prior period or FY are excluded). “Taken” is leave used in that month. “Balance” is the closing balance at month end. ';
     legend += `Colour bands: ${includedLegendParts.join('; ')}.`;
     doc.text(legend, MARGIN, ly, { width: innerW, align: 'left' });
   };

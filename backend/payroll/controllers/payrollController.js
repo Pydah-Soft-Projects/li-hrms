@@ -15,6 +15,7 @@ const {
 } = require('../utils/paysheetBundleExport');
 const User = require('../../users/model/User');
 const Settings = require('../../settings/model/Settings');
+const { isSecondSalaryGloballyEnabled } = require('../../settings/secondSalaryFeatureGate');
 const Loan = require('../../loans/model/Loan');
 const payrollCalculationService = require('../services/payrollCalculationService');
 const payrollCalculationFromOutputColumnsService = require('../services/payrollCalculationFromOutputColumnsService');
@@ -643,7 +644,8 @@ exports.calculatePayroll = async (req, res) => {
 
     let secondSalaryPayRegister = null;
     try {
-      const emp = await Employee.findById(employeeId).select('second_salary');
+      const secondOn = await isSecondSalaryGloballyEnabled();
+      const emp = secondOn ? await Employee.findById(employeeId).select('second_salary') : null;
       if (emp && Number(emp.second_salary) > 0) {
         const { calculateSecondSalaryForPayRegister } = require('../services/secondSalaryCalculationService');
         const SecondSalaryBatchService = require('../services/secondSalaryBatchService');
@@ -1019,6 +1021,14 @@ exports.getPaysheetData = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Month (YYYY-MM) is required',
+      });
+    }
+
+    if (secondSalary && !(await isSecondSalaryGloballyEnabled())) {
+      return res.status(403).json({
+        success: false,
+        message: 'Second salary is disabled in Payroll settings.',
+        code: 'SECOND_SALARY_DISABLED',
       });
     }
 

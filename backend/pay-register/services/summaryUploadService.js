@@ -1,7 +1,11 @@
 const PayRegisterSummary = require('../model/PayRegisterSummary');
 const Employee = require('../../employees/model/Employee');
 const { populatePayRegisterFromSources, getAllDatesInMonth } = require('./autoPopulationService');
-const { calculateTotals, ensureTotalsRespectRoster } = require('./totalsCalculationService');
+const {
+  calculateTotals,
+  ensureTotalsRespectRoster,
+  computeLeaveTypeBreakdownFromDailyRecords,
+} = require('./totalsCalculationService');
 const { applyContributingDatesFromDailyGrid } = require('./contributingDatesService');
 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const mongoose = require('mongoose');
@@ -179,7 +183,13 @@ async function processSummaryBulkUpload(month, rows, userId, options = {}) {
                         remaining -= 1;
                     } else if (remaining > 0) {
                         dr.isSplit = true;
-                        dr.firstHalf = { status, isOD: status === 'od', leaveNature };
+                        const leaveTypeHalf =
+                            status === 'leave' ? (leaveNature === 'paid' ? 'cl' : 'lop') : null;
+                        dr.firstHalf = {
+                            status,
+                            isOD: status === 'od',
+                            ...(status === 'leave' ? { leaveNature, leaveType: leaveTypeHalf } : {}),
+                        };
                         dr.secondHalf = { status: 'absent' };
                         remaining = 0;
                     }
@@ -226,6 +236,10 @@ async function processSummaryBulkUpload(month, rows, userId, options = {}) {
             payRegister.set('totals.totalOTHours', otHoursTotal);
             payRegister.set('totals.extraDays', extraDaysValue);
             payRegister.set('totals.totalPayableShifts', totalPresentInput + extraDaysValue);
+            payRegister.set(
+                'totals.leaveTypeBreakdown',
+                computeLeaveTypeBreakdownFromDailyRecords(payRegister.dailyRecords || [])
+            );
 
             payRegister.lastEditedBy = userId;
             payRegister.lastEditedAt = new Date();

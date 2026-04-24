@@ -106,6 +106,14 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
       min: 0,
     },
 
+    // On PARTIAL-status days only: sum(min(dayPresent, dayPayable)). Used so pay register does not double-count
+    // the same half when totalPresentDays already includes ESI/overlay present credit and totalPartialDays adds dayPayable.
+    totalPartialPresentPayableOverlap: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     // Days explicitly marked ABSENT (working days; excludes WO/HOL roster)
     totalAbsentDays: {
       type: Number,

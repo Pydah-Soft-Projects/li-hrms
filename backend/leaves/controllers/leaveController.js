@@ -27,6 +27,7 @@ const leaveRegisterYearMonthlyApplyService = require('../services/leaveRegisterY
 const leaveRegisterYearService = require('../services/leaveRegisterYearService');
 const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
 const { assertEmployeeRangeRequestsEditable } = require('../../shared/services/payrollRequestLockService');
+const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const MONTH_SLOT_EDIT_PERMISSION = 'LEAVE_REGISTER_MONTH_EDIT:write';
 
 const formatLeaveDate = (value) => dayjs(value).format('DD MMM YYYY');
@@ -142,32 +143,8 @@ const findEmployeeByIdOrEmpNo = async (identifier) => {
  * Handles CRUD operations and approval workflow
  */
 
-// Helper function to get workflow settings
-const getWorkflowSettings = async () => {
-  let settings = await LeaveSettings.getActiveSettings('leave');
-
-  // Return default workflow if no settings found
-  if (!settings) {
-    return {
-      workflow: {
-        isEnabled: true,
-        steps: [
-          { stepOrder: 1, stepName: 'HOD Approval', approverRole: 'hod', availableActions: ['approve', 'reject'], approvedStatus: 'hod_approved', rejectedStatus: 'hod_rejected', nextStepOnApprove: 2, isActive: true },
-          { stepOrder: 2, stepName: 'HR Approval', approverRole: 'hr', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'hr_rejected', nextStepOnApprove: null, isActive: true },
-        ],
-        finalAuthority: { role: 'hr', anyHRCanApprove: true },
-      },
-      settings: {
-        allowBackdated: false,
-        maxBackdatedDays: 7,
-        allowFutureDated: true,
-        maxAdvanceDays: 90,
-      },
-    };
-  }
-
-  return settings;
-};
+// Helper: global leave workflow + optional division override (not department-level)
+const getWorkflowSettings = async (divisionId) => resolveLeaveTypeWorkflowSettings('leave', divisionId);
 
 // @desc    Get all leaves (with filters)
 // @route   GET /api/leaves
@@ -690,8 +667,8 @@ exports.applyLeave = async (req, res) => {
       { path: 'designation_id', select: 'name' },
     ]);
 
-    // Get workflow settings
-    const workflowSettings = await getWorkflowSettings();
+    // Get workflow settings (division workflow override → else global)
+    const workflowSettings = await getWorkflowSettings(employee.division_id?._id || employee.division_id);
 
     // Get resolved leave settings (department + global fallback)
     let resolvedLeaveSettings = null;
@@ -1529,7 +1506,7 @@ exports.processLeaveAction = async (req, res) => {
 
     // --- Intermediate Rejection Override Check ---
     if (leave.status.endsWith('_rejected') && leave.status !== 'rejected') {
-      const workflowSettings = await getWorkflowSettings();
+      const workflowSettings = await getWorkflowSettings(leave.division_id?._id || leave.division_id);
       const allowHigher = workflowSettings?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
       if (!allowHigher) {
         return res.status(403).json({
@@ -1602,7 +1579,7 @@ exports.processLeaveAction = async (req, res) => {
 
     // 4. Setting: Allow higher authority to approve lower levels (e.g. HR can act when current step is HOD)
     if (!canProcess && leave.workflow && leave.workflow.approvalChain && leave.workflow.approvalChain.length > 0) {
-      const workflowSettings = await getWorkflowSettings();
+      const workflowSettings = await getWorkflowSettings(leave.division_id?._id || leave.division_id);
       const allowHigher = workflowSettings?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
       if (allowHigher) {
         // Build role order from approval chain (by stepOrder or array order)

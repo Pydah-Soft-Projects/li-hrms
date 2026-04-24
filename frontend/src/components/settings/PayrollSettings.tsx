@@ -18,6 +18,7 @@ const PayrollSettings = () => {
     const [enableAbsentDeduction, setEnableAbsentDeduction] = useState<boolean>(false);
     const [lopDaysPerAbsent, setLopDaysPerAbsent] = useState<number>(1);
     const [autoRejectPendingRequestsOnComplete, setAutoRejectPendingRequestsOnComplete] = useState<boolean>(false);
+    const [enableSecondSalary, setEnableSecondSalary] = useState<boolean>(true);
 
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -27,7 +28,7 @@ const PayrollSettings = () => {
     const loadSettings = async () => {
         try {
             setLoading(true);
-            const [resRelease, resHistory, resLimit, resStart, resEnd, resMissing, resAbsent, resAutoReject] = await Promise.all([
+            const [resRelease, resHistory, resLimit, resStart, resEnd, resMissing, resAbsent, resAutoReject, resSecondSalary] = await Promise.all([
                 api.getSetting('payslip_release_required'),
                 api.getSetting('payslip_history_months'),
                 api.getSetting('payslip_download_limit'),
@@ -35,7 +36,8 @@ const PayrollSettings = () => {
                 api.getSetting('payroll_cycle_end_day'),
                 api.getIncludeMissingSetting(),
                 api.getAbsentDeductionSettings(),
-                api.getSetting('auto_reject_pending_requests_on_batch_complete')
+                api.getSetting('auto_reject_pending_requests_on_batch_complete'),
+                api.getSetting('enable_second_salary'),
             ]);
 
             if (resRelease.success && resRelease.data) setPayslipReleaseRequired(!!resRelease.data.value);
@@ -50,6 +52,9 @@ const PayrollSettings = () => {
             }
             if (resAutoReject.success && resAutoReject.data) {
                 setAutoRejectPendingRequestsOnComplete(!!resAutoReject.data.value);
+            }
+            if (resSecondSalary.success && resSecondSalary.data) {
+                setEnableSecondSalary(!!resSecondSalary.data.value);
             }
         } catch (err) {
             console.error('Failed to load payroll settings', err);
@@ -76,6 +81,12 @@ const PayrollSettings = () => {
                     key: 'auto_reject_pending_requests_on_batch_complete',
                     value: autoRejectPendingRequestsOnComplete,
                     category: 'payroll'
+                }),
+                api.upsertSetting({
+                    key: 'enable_second_salary',
+                    value: enableSecondSalary,
+                    category: 'payroll',
+                    description: 'Enable second salary (2nd salary) UI, APIs, and payroll follow-up calculations',
                 }),
                 api.saveIncludeMissingSetting(includeMissing),
                 api.saveAbsentDeductionSettings(enableAbsentDeduction, lopDaysPerAbsent)
@@ -238,6 +249,24 @@ const PayrollSettings = () => {
                                 checked={includeMissing}
                                 onChange={setIncludeMissing}
                             />
+
+                            <div className="pt-8 border-t border-gray-50 dark:border-gray-800/50">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="space-y-1">
+                                        <p className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-tight">Second salary (2nd salary)</p>
+                                        <p className="text-xs text-gray-500">
+                                            When off, 2nd salary menus, paysheet mode, employee second-salary fields, and all second-salary payroll actions are hidden or blocked. Bulk pay register skips the 2nd salary phase.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setEnableSecondSalary(!enableSecondSalary)}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${enableSecondSalary ? 'bg-indigo-600 shadow-[0_0_12px_rgba(79,70,229,0.3)]' : 'bg-gray-200 dark:bg-gray-800'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${enableSecondSalary ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </section>
 
