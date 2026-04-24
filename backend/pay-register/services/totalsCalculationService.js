@@ -1,10 +1,11 @@
 /**
  * Totals Calculation Service
  * Calculates monthly totals from pay register dailyRecords (fallback when no MonthlyAttendanceSummary).
- * Pay register month totals in production are synced from MonthlyAttendanceSummary via syncTotalsFromMonthlySummary.
+ * Pay register month totals in production are synced from MonthlyAttendanceSummary via syncTotalsFromMonthlySummary (async; reads attendance settings for single-shift partial merge).
  */
 
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
+const AttendanceSettings = require('../../attendance/model/AttendanceSettings');
 
 /**
  * Get week-off and holiday counts from shift roster for the given employee and date range.
@@ -64,6 +65,158 @@ async function ensureTotalsRespectRoster(totals, emp_no, startDate, endDate) {
  * @param {Object} record - Daily pay register row
  * @returns {boolean}
  */
+function isLopNature(nRaw, ltRaw) {
+  const n = String(nRaw || '').toLowerCase();
+  const lt = String(ltRaw || '').toLowerCase();
+  return (
+    n === 'lop' ||
+    n === 'without_pay' ||
+    lt.includes('lop') ||
+    lt.includes('loss of pay') ||
+    lt.includes('sandwich')
+  );
+}
+
+/**
+ * Sum numeric `value` fields on contributingDates buckets (attendance summary → pay register).
+ * @param {Object|null|undefined} contributingDates
+ * @param {string[]} keys
+ */
+function sumContributingDateValues(contributingDates, keys) {
+  if (!contributingDates || typeof contributingDates !== 'object') return 0;
+  let t = 0;
+  for (const k of keys) {
+    const arr = contributingDates[k];
+    if (!Array.isArray(arr)) continue;
+    for (const e of arr) {
+      const v = Number(e && e.value);
+      if (Number.isFinite(v)) t += v;
+    }
+  }
+  return Math.round(t * 100) / 100;
+}
+
+/**
+ * Paid/LOP totals in contributingDates can exceed what we infer from daily cells alone
+ * (e.g. sandwich LOP, partial LOP, halves still shown as absent in the grid).
+ * Top up breakdown rows so modal "Sum (daily grid)" matches paidLeaves + lopLeaves highlights.
+ */
+function reconcileLeaveBreakdownWithContributingDates(rows, contributingDates) {
+  if (!Array.isArray(rows) || !contributingDates || typeof contributingDates !== 'object') {
+    return Array.isArray(rows) ? rows : [];
+  }
+  const targetPaid = sumContributingDateValues(contributingDates, ['paidLeaves']);
+  const targetLop = sumContributingDateValues(contributingDates, ['lopLeaves']);
+  if (targetPaid <= 0 && targetLop <= 0) return rows;
+
+  let sumPaid = 0;
+  let sumLop = 0;
+  for (const r of rows) {
+    if (r.kind === 'paid') sumPaid += Number(r.days) || 0;
+    else if (r.kind === 'lop') sumLop += Number(r.days) || 0;
+  }
+  sumPaid = Math.round(sumPaid * 100) / 100;
+  sumLop = Math.round(sumLop * 100) / 100;
+
+  let dPaid = Math.round((targetPaid - sumPaid) * 100) / 100;
+  let dLop = Math.round((targetLop - sumLop) * 100) / 100;
+  if (dPaid < 0) dPaid = 0;
+  if (dLop < 0) dLop = 0;
+
+  const out = rows.map((r) => ({ ...r, days: Number(r.days) || 0 }));
+
+  if (dPaid > 0.001) {
+    const paidRows = out.filter((r) => r.kind === 'paid');
+    if (paidRows.length === 1) {
+      paidRows[0].days = Math.round((paidRows[0].days + dPaid) * 100) / 100;
+    } else if (paidRows.length === 0) {
+      out.push({ leaveType: 'Paid leave', kind: 'paid', days: dPaid });
+    } else {
+      out.push({ leaveType: 'Paid leave (summary)', kind: 'paid', days: dPaid });
+    }
+  }
+
+  if (dLop > 0.001) {
+    const lopRows = out.filter((r) => r.kind === 'lop');
+    if (lopRows.length === 1) {
+      lopRows[0].days = Math.round((lopRows[0].days + dLop) * 100) / 100;
+    } else if (lopRows.length === 0) {
+      out.push({ leaveType: 'LOP', kind: 'lop', days: dLop });
+    } else {
+      out.push({ leaveType: 'LOP (summary)', kind: 'lop', days: dLop });
+    }
+  }
+
+  return out
+    .filter((r) => (Number(r.days) || 0) > 0.0001)
+    .sort((a, b) => b.days - a.days || String(a.leaveType).localeCompare(String(b.leaveType)));
+}
+
+/**
+ * Leave days by configured leave type (from daily grid), aligned with pay-register UI / contributingDates.
+ * Stored on payRegister.totals.leaveTypeBreakdown for reporting without re-walking dailyRecords clientside.
+ * @param {Array} dailyRecords
+ * @param {Object|null|undefined} contributingDates - When set (e.g. from monthly summary), reconcile paid/lop totals with lopLeaves/paidLeaves.
+ * @returns {Array<{ leaveType: string, kind: 'paid'|'lop', days: number }>}
+ */
+function computeLeaveTypeBreakdownFromDailyRecords(dailyRecords, contributingDates) {
+  const map = new Map();
+  const bump = (ltRaw, natureRaw, inc) => {
+    const add = Number(inc) || 0;
+    if (add <= 0) return;
+    const label = (String(ltRaw || '').trim()) || 'Unspecified';
+    const kind = isLopNature(natureRaw, ltRaw) ? 'lop' : 'paid';
+    const key = `${kind}\0${label}`;
+    const prev = map.get(key);
+    map.set(key, {
+      days: Math.round(((prev && prev.days) || 0) + add * 100) / 100,
+      kind,
+      leaveType: label,
+    });
+  };
+
+  if (!Array.isArray(dailyRecords)) return [];
+
+  for (const record of dailyRecords) {
+    if (!record || !record.date) continue;
+    const isBlank =
+      record.status === 'blank' ||
+      (record.firstHalf?.status === 'blank' && record.secondHalf?.status === 'blank');
+    if (isBlank) continue;
+
+    const h1 = record.firstHalf && record.firstHalf.status;
+    const h2 = record.secondHalf && record.secondHalf.status;
+    const split = record.isSplit === true || !!(h1 && h2 && h1 !== h2);
+
+    if (!split) {
+      const s = record.status || h1 || h2;
+      if (s === 'leave') {
+        bump(record.leaveType || record.firstHalf?.leaveType, record.leaveNature || record.firstHalf?.leaveNature, 1);
+      } else if (s === 'partial') {
+        bump(
+          record.leaveType || record.firstHalf?.leaveType || record.secondHalf?.leaveType,
+          record.leaveNature || record.firstHalf?.leaveNature || record.secondHalf?.leaveNature,
+          0.5
+        );
+      }
+    } else {
+      const halves = [record.firstHalf, record.secondHalf];
+      for (const half of halves) {
+        if (half && half.status === 'leave') {
+          bump(half.leaveType, half.leaveNature, 0.5);
+        }
+      }
+    }
+  }
+
+  const base = Array.from(map.values())
+    .filter((r) => r.days > 0)
+    .sort((a, b) => b.days - a.days || String(a.leaveType).localeCompare(String(b.leaveType)))
+    .map((v) => ({ leaveType: v.leaveType, kind: v.kind, days: v.days }));
+
+  return reconcileLeaveBreakdownWithContributingDates(base, contributingDates);
+}
+
 function isEarlyOutCountableSecondHalf(record) {
   const h2 = record.secondHalf && record.secondHalf.status;
   if (h2 === 'present' || h2 === 'od') return true;
@@ -81,9 +234,10 @@ function isEarlyOutCountableSecondHalf(record) {
 /**
  * Calculate totals from dailyRecords array
  * @param {Array} dailyRecords - Array of daily record objects
+ * @param {Object|null|undefined} contributingDates - Optional; improves leaveTypeBreakdown vs highlights
  * @returns {Object} Calculated totals
  */
-function calculateTotals(dailyRecords) {
+function calculateTotals(dailyRecords, contributingDates) {
   const totals = {
     presentDays: 0,
     presentHalfDays: 0,
@@ -112,9 +266,11 @@ function calculateTotals(dailyRecords) {
     earlyOutCount: 0,
     totalLateInMinutes: 0,
     totalEarlyOutMinutes: 0,
+    leaveTypeBreakdown: [],
   };
 
   if (!dailyRecords || dailyRecords.length === 0) {
+    totals.leaveTypeBreakdown = [];
     return totals;
   }
 
@@ -289,7 +445,11 @@ function calculateTotals(dailyRecords) {
     // So the split logic above already handles it (0.5 * payableShifts).
   }
 
-  totals.totalPayableShifts = totalPayableShiftsValue;
+  totals.totalPayableShifts = Math.round(
+    (totalPayableShiftsValue + sumPartialPayableFromDailyRecords(dailyRecords)) * 100
+  ) / 100;
+
+  totals.leaveTypeBreakdown = computeLeaveTypeBreakdownFromDailyRecords(dailyRecords, contributingDates);
 
   // Round to 2 decimal places
   Object.keys(totals).forEach(key => {
@@ -341,18 +501,134 @@ function calculatePayableShifts(totalPresentDays, totalODDays, totalPaidLeaveDay
 }
 
 /**
+ * Payable shift credit from PARTIAL halves/days (uses per-day payableShifts units).
+ * The present/OD loop in calculateTotals ignores partial; monthly summary still credits dayPayable for partial.
+ */
+function sumPartialPayableFromDailyRecords(dailyRecords) {
+  if (!Array.isArray(dailyRecords)) return 0;
+  let t = 0;
+  for (const record of dailyRecords) {
+    const isBlankDay =
+      record.status === 'blank' ||
+      (record.firstHalf?.status === 'blank' && record.secondHalf?.status === 'blank');
+    if (isBlankDay) continue;
+
+    const isHoliday =
+      record.status === 'holiday' ||
+      record.firstHalf?.status === 'holiday' ||
+      record.secondHalf?.status === 'holiday';
+    const isWeekOff =
+      record.status === 'week_off' ||
+      record.firstHalf?.status === 'week_off' ||
+      record.secondHalf?.status === 'week_off';
+    if (isHoliday || isWeekOff) continue;
+
+    const unitRaw = Number(record.payableShifts);
+    const unit = Number.isFinite(unitRaw) && unitRaw > 0 ? unitRaw : 1;
+
+    const fh = record.firstHalf?.status;
+    const sh = record.secondHalf?.status;
+    if (record.firstHalf && fh === 'partial') t += unit / 2;
+    if (record.secondHalf && sh === 'partial') t += unit / 2;
+    if (!record.isSplit && record.status === 'partial' && fh !== 'partial' && sh !== 'partial') {
+      t += unit;
+    }
+  }
+  return Math.round(t * 100) / 100;
+}
+
+/**
+ * When summary.totalPartialPresentPayableOverlap is missing (older Mongo docs), approximate the same
+ * quantity from contributingDates: same calendar date in both `present` and `partial` means the engine
+ * credited both dayPresent and dayPayable (e.g. PARTIAL + ESI half-day) — subtract min(sum) per date.
+ * @param {Object|null|undefined} summary
+ * @returns {number}
+ */
+function contributingDatesPartialPresentOverlap(summary) {
+  const cd = summary && summary.contributingDates;
+  if (!cd || typeof cd !== 'object') return 0;
+  const partialArr = cd.partial;
+  const presentArr = cd.present;
+  if (!Array.isArray(partialArr) || !Array.isArray(presentArr) || partialArr.length === 0) return 0;
+
+  const presentByDate = new Map();
+  for (const e of presentArr) {
+    if (!e || !e.date) continue;
+    const d = String(e.date);
+    const v = Number(e.value);
+    if (!Number.isFinite(v) || v <= 0) continue;
+    presentByDate.set(d, Math.round(((presentByDate.get(d) || 0) + v) * 100) / 100);
+  }
+
+  const partialByDate = new Map();
+  for (const e of partialArr) {
+    if (!e || !e.date) continue;
+    const d = String(e.date);
+    const v = Number(e.value);
+    if (!Number.isFinite(v) || v <= 0) continue;
+    partialByDate.set(d, Math.round(((partialByDate.get(d) || 0) + v) * 100) / 100);
+  }
+
+  let t = 0;
+  for (const [d, partSum] of partialByDate) {
+    const pSum = presentByDate.get(d);
+    if (pSum == null || pSum <= 0 || partSum <= 0) continue;
+    t += Math.min(pSum, partSum);
+  }
+  return Math.round(t * 100) / 100;
+}
+
+/**
+ * Overlap to subtract when folding totalPartialDays into present (single-shift).
+ * Uses max(engine, contributingDates) so stale/missing DB field still matches CD when both buckets exist.
+ * Capped at partialRollup — overlap cannot exceed the partial bucket.
+ * @param {Object|null|undefined} summary
+ * @param {number} partialRollup - summary.totalPartialDays (rounded), upper bound for overlap
+ * @returns {number}
+ */
+function getPartialPresentOverlapForSync(summary, partialRollup) {
+  if (!summary || typeof summary !== 'object') return 0;
+  const cdOverlap = contributingDatesPartialPresentOverlap(summary);
+  let stored = 0;
+  if (Object.prototype.hasOwnProperty.call(summary, 'totalPartialPresentPayableOverlap')) {
+    const n = Number(summary.totalPartialPresentPayableOverlap);
+    if (Number.isFinite(n)) stored = Math.round(n * 100) / 100;
+  }
+  const raw = Math.round(Math.max(stored, cdOverlap) * 100) / 100;
+  const partCap = Math.round((Number(partialRollup) || 0) * 100) / 100;
+  if (partCap <= 0) return 0;
+  return Math.round(Math.min(raw, partCap) * 100) / 100;
+}
+
+/**
  * Map totals from MonthlyAttendanceSummary to PayRegisterSummary structure.
  * This ensures Pay Register uses the "correct mark" from Attendance module.
  * @param {Object} payRegister - PayRegisterSummary document (mutated in place)
  * @param {Object} summary - MonthlyAttendanceSummary document
  */
-function syncTotalsFromMonthlySummary(payRegister, summary) {
+async function syncTotalsFromMonthlySummary(payRegister, summary) {
   if (!payRegister || !summary) return;
 
   const totals = payRegister.totals || {};
 
+  const settings = await AttendanceSettings.getSettings();
+  const pm = AttendanceSettings.getProcessingMode(settings);
+
   // Core attendance metrics
-  totals.totalPresentDays = summary.totalPresentDays || 0;
+  const sPresRaw = Math.round((Number(summary.totalPresentDays) || 0) * 100) / 100;
+  const sPartRaw = Math.round((Number(summary.totalPartialDays) || 0) * 100) / 100;
+  const sOverlapRaw = getPartialPresentOverlapForSync(summary, sPartRaw);
+
+  // Single-shift: fold partial payable into stored present for payroll, but not double-count halves that
+  // already contributed to totalPresentDays (e.g. PARTIAL + ESI half-day → dayPresent and dayPayable both 0.5).
+  if (pm.mode === 'single_shift') {
+    let merged = Math.round((sPresRaw + sPartRaw - sOverlapRaw) * 100) / 100;
+    const ceiling = Math.round((sPresRaw + sPartRaw) * 100) / 100;
+    merged = Math.min(ceiling, Math.max(sPresRaw, merged));
+    totals.totalPresentDays = merged;
+  } else {
+    totals.totalPresentDays = sPresRaw;
+  }
   totals.totalAbsentDays = summary.totalAbsentDays || 0;
   totals.totalODDays = summary.totalODs || 0;
   
@@ -363,6 +639,20 @@ function syncTotalsFromMonthlySummary(payRegister, summary) {
   
   // Payroll specific
   totals.totalPayableShifts = summary.totalPayableShifts || 0;
+  // Single-shift: ensure payable shifts never sit below present + partial PT + OD + paid
+  // (summary engine can differ from stored summary rows; partial halves are easy to drop on daily recompute).
+  if (pm.mode === 'single_shift') {
+    let mergedPres = Math.round((sPresRaw + sPartRaw - sOverlapRaw) * 100) / 100;
+    mergedPres = Math.min(
+      Math.round((sPresRaw + sPartRaw) * 100) / 100,
+      Math.max(sPresRaw, mergedPres)
+    );
+    const sOd = Math.round((Number(summary.totalODs) || 0) * 100) / 100;
+    const sPaid = Math.round((Number(summary.totalPaidLeaves) || 0) * 100) / 100;
+    const payableFloor = Math.round((mergedPres + sOd + sPaid) * 100) / 100;
+    const cur = Math.round((Number(totals.totalPayableShifts) || 0) * 100) / 100;
+    if (payableFloor > cur) totals.totalPayableShifts = payableFloor;
+  }
   totals.totalOTHours = summary.totalOTHours || 0;
   totals.totalWeeklyOffs = summary.totalWeeklyOffs || 0;
   totals.totalHolidays = summary.totalHolidays || 0;
@@ -389,17 +679,64 @@ function syncTotalsFromMonthlySummary(payRegister, summary) {
   totals.lopDays = Math.floor(totals.totalLopDays);
   totals.lopHalfDays = (totals.totalLopDays % 1) >= 0.5 ? 1 : 0;
 
+  totals.leaveTypeBreakdown = computeLeaveTypeBreakdownFromDailyRecords(
+    payRegister.dailyRecords || [],
+    summary.contributingDates || payRegister.contributingDates
+  );
+
   payRegister.totals = totals;
   payRegister.markModified('totals');
 }
 
+/**
+ * After grid recalculation (recalculateTotals), re-apply only MAS-merged **Present Days** and **Payable Shifts**
+ * for `processingMode.mode === 'single_shift'`, so the pay register header matches:
+ *   monthly `totalPresentDays` + `totalPartialDays` − `totalPartialPresentPayableOverlap` (same as syncTotalsFromMonthlySummary),
+ *   not a naive sum of `P` cells. Other totals (OD, leave, absent) stay from the grid pass.
+ * Returns true if single_shift merge was applied, false if skipped (multi_shift or no settings).
+ * @param {Object} totals - payRegister.totals (mutated in place)
+ * @param {Object} summary - MonthlyAttendanceSummary
+ */
+async function mergeSingleShiftPresentPayableFromSummaryIfApplicable(totals, summary) {
+  if (!totals || !summary) return false;
+  const settings = await AttendanceSettings.getSettings();
+  const pm = AttendanceSettings.getProcessingMode(settings);
+  if (pm.mode !== 'single_shift') return false;
+
+  const sPresRaw = Math.round((Number(summary.totalPresentDays) || 0) * 100) / 100;
+  const sPartRaw = Math.round((Number(summary.totalPartialDays) || 0) * 100) / 100;
+  const sOverlapRaw = getPartialPresentOverlapForSync(summary, sPartRaw);
+  let merged = Math.round((sPresRaw + sPartRaw - sOverlapRaw) * 100) / 100;
+  const ceiling = Math.round((sPresRaw + sPartRaw) * 100) / 100;
+  merged = Math.min(ceiling, Math.max(sPresRaw, merged));
+  totals.totalPresentDays = merged;
+  totals.presentDays = Math.floor(merged);
+  totals.presentHalfDays = (merged % 1) >= 0.5 ? 1 : 0;
+
+  totals.totalPayableShifts = Math.round((Number(summary.totalPayableShifts) || 0) * 100) / 100;
+  let mergedPres = merged;
+  mergedPres = Math.min(
+    Math.round((sPresRaw + sPartRaw) * 100) / 100,
+    Math.max(sPresRaw, mergedPres)
+  );
+  const sOd = Math.round((Number(summary.totalODs) || 0) * 100) / 100;
+  const sPaid = Math.round((Number(summary.totalPaidLeaves) || 0) * 100) / 100;
+  const payableFloor = Math.round((mergedPres + sOd + sPaid) * 100) / 100;
+  const cur = Math.round((Number(totals.totalPayableShifts) || 0) * 100) / 100;
+  if (payableFloor > cur) totals.totalPayableShifts = payableFloor;
+  return true;
+}
+
 module.exports = {
   calculateTotals,
+  computeLeaveTypeBreakdownFromDailyRecords,
   countDaysByCategory,
   calculatePayableShifts,
+  sumPartialPayableFromDailyRecords,
   getRosterWOHOLCounts,
   ensureTotalsRespectRoster,
   syncTotalsFromMonthlySummary,
+  mergeSingleShiftPresentPayableFromSummaryIfApplicable,
   isEarlyOutCountableSecondHalf,
 };
 

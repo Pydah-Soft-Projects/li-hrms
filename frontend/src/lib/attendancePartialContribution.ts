@@ -10,6 +10,8 @@ export type PartialContributionDailyRecord = {
 
 export type PartialContributingSummary = {
   totalPartialDays?: number | null;
+  /** PARTIAL days: sum(min(dayPresent, dayPayable)) from monthly summary calc (pay register overlap guard). */
+  totalPartialPresentPayableOverlap?: number | null;
   contributingDates?: {
     partial?: Array<string | { date?: string; value?: number; label?: string }> | null;
   } | null;
