@@ -1,5 +1,9 @@
 const mongoose = require('mongoose');
-const { isEarlyOutCountableSecondHalf } = require('../services/totalsCalculationService');
+const {
+  isEarlyOutCountableSecondHalf,
+  computeLeaveTypeBreakdownFromDailyRecords,
+  sumPartialPayableFromDailyRecords,
+} = require('../services/totalsCalculationService');
 const { contributingDatesShape } = require('../../shared/schemas/contributingDatesSchema');
 
 /**
@@ -431,6 +435,15 @@ const payRegisterSummarySchema = new mongoose.Schema(
         min: 0,
       },
 
+      /** Leave days by configured leave type (from daily grid); persisted with monthly totals. */
+      leaveTypeBreakdown: [
+        {
+          leaveType: { type: String, default: 'Unspecified' },
+          kind: { type: String, enum: ['paid', 'lop'], default: 'paid' },
+          days: { type: Number, default: 0, min: 0 },
+        },
+      ],
+
       // Lates and Early Outs
       lateCount: {
         type: Number,
@@ -694,6 +707,7 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
   }
 
   if (!this.dailyRecords || this.dailyRecords.length === 0) {
+    totals.leaveTypeBreakdown = [];
     this.totals = totals;
     return;
   }
@@ -810,10 +824,20 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
   totals.totalODDays = totals.odDays + totals.odHalfDays * 0.5;
 
   // totalPresentDays already includes OD (presentDays/presentHalfDays count both 'present' and 'od')
-  // Payable shifts (for salary) = present (includes OD) + extra days
-  totals.totalPayableShifts = totals.totalPresentDays + (totals.extraDays || 0);
+  // Payable shifts (for salary) = present (includes OD) + extra days + partial-day payable units
+  totals.totalPayableShifts = Math.round(
+    (totals.totalPresentDays +
+      (totals.extraDays || 0) +
+      sumPartialPayableFromDailyRecords(this.dailyRecords)) *
+      100
+  ) / 100;
   // This is where we will also use the shift-based payable units if implemented here
   // But for now, let's keep it consistent with the service fix I just did
+
+  totals.leaveTypeBreakdown = computeLeaveTypeBreakdownFromDailyRecords(
+    this.dailyRecords || [],
+    this.contributingDates
+  );
 
   this.totals = totals;
   this.markModified('totals');

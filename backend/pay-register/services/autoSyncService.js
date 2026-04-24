@@ -135,10 +135,10 @@ async function syncPayRegisterFromLeave(leave) {
           year,
           monthNum
         );
-        syncTotalsFromMonthlySummary(payRegister, summary);
+        await syncTotalsFromMonthlySummary(payRegister, summary);
         applyContributingDatesFromMonthlySummary(payRegister, summary);
       } else {
-        payRegister.totals = calculateTotals(dailyRecords);
+        payRegister.totals = calculateTotals(dailyRecords, payRegister.contributingDates);
         await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
         applyContributingDatesFromDailyGrid(payRegister);
       }
@@ -245,10 +245,10 @@ async function syncPayRegisterFromOD(od) {
           year,
           monthNum
         );
-        syncTotalsFromMonthlySummary(payRegister, summary);
+        await syncTotalsFromMonthlySummary(payRegister, summary);
         applyContributingDatesFromMonthlySummary(payRegister, summary);
       } else {
-        payRegister.totals = calculateTotals(dailyRecords);
+        payRegister.totals = calculateTotals(dailyRecords, payRegister.contributingDates);
         await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
         applyContributingDatesFromDailyGrid(payRegister);
       }
@@ -346,10 +346,10 @@ async function syncPayRegisterFromOT(ot) {
             year,
             monthNum
           );
-          syncTotalsFromMonthlySummary(payRegister, summary);
+          await syncTotalsFromMonthlySummary(payRegister, summary);
           applyContributingDatesFromMonthlySummary(payRegister, summary);
         } else {
-          payRegister.totals = calculateTotals(payRegister.dailyRecords);
+          payRegister.totals = calculateTotals(payRegister.dailyRecords, payRegister.contributingDates);
           await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
           applyContributingDatesFromDailyGrid(payRegister);
         }
@@ -455,10 +455,10 @@ async function manualSyncPayRegister(employeeId, month, options = {}) {
         year,
         monthNum
       );
-      syncTotalsFromMonthlySummary(payRegister, summary);
+      await syncTotalsFromMonthlySummary(payRegister, summary);
       applyContributingDatesFromMonthlySummary(payRegister, summary);
     } else {
-      payRegister.totals = calculateTotals(dailyRecords);
+      payRegister.totals = calculateTotals(dailyRecords, payRegister.contributingDates);
       await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
       applyContributingDatesFromDailyGrid(payRegister);
     }
