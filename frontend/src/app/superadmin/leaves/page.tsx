@@ -1629,22 +1629,18 @@ function LeavesPageContent() {
       const response = await api.updateOD(selectedItem._id, { endEvidence });
       if (response.success) {
         const movedToPending = response?.data?.status === 'pending';
-        Swal.fire({
-          icon: 'success',
-          title: 'Success!',
-          text: movedToPending ? 'OD OUT submitted. Request moved to pending.' : 'OD OUT evidence submitted.',
-          timer: 2000,
-          showConfirmButton: false,
-        });
         setShowOutEvidenceDialog(false);
         setOdOutEvidenceFile(null);
         setOdOutLocationData(null);
         setShowDetailDialog(false);
         setSelectedItem(null);
-        loadData();
+        await loadData();
         if (activeTab === 'pending') {
-          loadPendingData();
+          await loadPendingData();
         }
+        toast.success(
+          movedToPending ? 'OD OUT submitted. Request moved to pending.' : 'OD OUT evidence submitted.',
+        );
       } else {
         toast.error(response.error || 'Failed to submit OD OUT evidence');
       }
@@ -3404,11 +3400,12 @@ function LeavesPageContent() {
 
       {/* Apply Leave/OD Dialog */}
       {showApplyDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:p-4">
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApplyDialog(false)} />
-          <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+          <div className="relative z-50 my-auto flex h-auto min-h-0 w-full max-w-lg max-h-[min(90dvh,calc(100dvh-3rem))] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
+            <div className="shrink-0 space-y-4 border-b border-slate-100 px-6 pb-4 pt-6 dark:border-slate-800">
             {/* Type Toggle */}
-            <div className="flex gap-2 mb-6">
+            <div className="flex gap-2">
               <button
                 onClick={() => setApplyType('leave')}
                 className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'leave'
@@ -3435,11 +3432,13 @@ function LeavesPageContent() {
               </button>
             </div>
 
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
               Apply for {applyType === 'leave' ? 'Leave' : 'On Duty'}
             </h2>
+            </div>
 
-            <form onSubmit={handleApply} className="space-y-4">
+            <form onSubmit={handleApply} className="flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain space-y-4 px-6 py-4">
               {/* Apply For - Employee Selection */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
@@ -4066,9 +4065,9 @@ function LeavesPageContent() {
                   Monthly apply limit reached for this payroll period. You can’t submit a new request for the selected from-date period.
                 </div>
               )}
+              </div>
 
-              {/* Buttons */}
-              <div className="flex gap-3 pt-4">
+              <div className="flex shrink-0 gap-3 border-t border-slate-100 bg-white/95 px-6 py-4 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
                 <button
                   type="button"
                   onClick={() => setShowApplyDialog(false)}
@@ -4114,13 +4113,13 @@ function LeavesPageContent() {
 
       {/* Detail Dialog - styled like workspace */}
       {showDetailDialog && selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:p-4">
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => {
             setShowDetailDialog(false);
             setSelectedItem(null);
             setIsChangeHistoryExpanded(false);
           }} />
-          <div className="relative z-50 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+          <div className="relative z-50 my-auto flex h-auto min-h-0 w-full max-w-4xl max-h-[min(90dvh,calc(100dvh-2rem))] flex-col overflow-hidden rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl animate-in zoom-in-95 duration-300">
             {/* Header */}
             <div className={`shrink-0 px-6 py-4 sm:px-8 sm:py-6 border-b border-white/10 ${detailType === 'leave'
               ? 'bg-gradient-to-r from-blue-600 to-blue-500'
@@ -4153,17 +4152,13 @@ function LeavesPageContent() {
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8">
               {/* Top Section: Employee & Status */}
               {detailType === 'od' && (
                 <div className="rounded-2xl border-2 border-purple-200/80 dark:border-purple-800/60 bg-gradient-to-br from-purple-50/95 to-white dark:from-purple-950/40 dark:to-slate-900 p-4 sm:p-6 shadow-sm">
                   <p className="text-[10px] uppercase font-black text-purple-600 dark:text-purple-300 tracking-widest mb-4">Employee</p>
                   <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-6">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-xl bg-purple-600 shadow-purple-500/20 shrink-0">
-                        {(selectedItem.employeeId?.employee_name?.[0] || selectedItem.emp_no?.[0] || 'E').toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                         <h3 className="font-black text-slate-900 dark:text-white text-xl truncate">
                           {selectedItem.employeeId?.employee_name || `${(selectedItem.employeeId as any)?.first_name || ''} ${(selectedItem.employeeId as any)?.last_name || ''}`.trim() || selectedItem.emp_no}
                         </h3>
@@ -4182,7 +4177,6 @@ function LeavesPageContent() {
                             </span>
                           )}
                         </div>
-                      </div>
                     </div>
                     <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto justify-between sm:justify-start shrink-0">
                       <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest border ${getStatusColor(selectedItem.status)}`}>
@@ -4198,14 +4192,7 @@ function LeavesPageContent() {
               )}
               {detailType === 'leave' && (
               <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-6">
-                <div className="flex items-center gap-4">
-                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-xl ${detailType === 'leave'
-                    ? 'bg-blue-600 shadow-blue-500/20'
-                    : 'bg-purple-600 shadow-purple-500/20'
-                    }`}>
-                    {(selectedItem.employeeId?.employee_name?.[0] || selectedItem.emp_no?.[0] || 'E').toUpperCase()}
-                  </div>
-                  <div>
+                <div className="min-w-0 flex-1">
                     <h3 className="font-black text-slate-900 dark:text-white text-xl">
                       {selectedItem.employeeId?.employee_name || `${(selectedItem.employeeId as any)?.first_name || ''} ${(selectedItem.employeeId as any)?.last_name || ''}`.trim() || selectedItem.emp_no}
                     </h3>
@@ -4224,7 +4211,6 @@ function LeavesPageContent() {
                         </span>
                       )}
                     </div>
-                  </div>
                 </div>
                 <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto justify-between sm:justify-start">
                   <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest border ${getStatusColor(selectedItem.status)}`}>
@@ -4389,12 +4375,14 @@ function LeavesPageContent() {
                       selectedItem.appliedBy?._id === (auth.getUser() as any)?._id ||
                       (selectedItem as any).appliedBy === (auth.getUser() as any)?._id
                     ) && (
-                      <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-purple-200 dark:border-purple-900/40 bg-purple-50 dark:bg-purple-900/20 px-3 py-2">
-                        <p className="text-xs font-semibold text-purple-700 dark:text-purple-300">OD OUT evidence is pending for this draft request.</p>
+                      <div className="mb-3 flex flex-col gap-2 rounded-lg border border-purple-200 dark:border-purple-900/40 bg-purple-50 dark:bg-purple-900/20 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-2">
+                        <p className="text-xs font-semibold text-purple-700 dark:text-purple-300 sm:min-w-0 sm:flex-1">
+                          OD OUT evidence is pending for this draft request.
+                        </p>
                         <button
                           type="button"
                           onClick={() => setShowOutEvidenceDialog(true)}
-                          className="px-3 py-1.5 text-xs font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700"
+                          className="w-full shrink-0 rounded-lg bg-purple-600 px-3 py-2 text-xs font-bold text-white hover:bg-purple-700 sm:w-auto sm:py-1.5"
                         >
                           Submit OD OUT
                         </button>
@@ -5024,7 +5012,7 @@ function LeavesPageContent() {
               </div>
 
               {/* Footer */}
-              <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row gap-3 justify-end items-stretch sm:items-center">
+              <div className="shrink-0 border-t border-slate-200 bg-slate-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] dark:border-slate-700 dark:bg-slate-900 flex flex-col sm:flex-row gap-3 justify-end items-stretch sm:items-center">
                 <button
                   onClick={() => {
                     setShowDetailDialog(false);
@@ -5044,32 +5032,36 @@ function LeavesPageContent() {
 
       {/* OD OUT Evidence Dialog */}
       {showOutEvidenceDialog && selectedItem && detailType === 'od' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:p-4">
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => !submittingOutEvidence && setShowOutEvidenceDialog(false)} />
-          <div className="relative z-50 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Submit OD OUT Evidence</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-5">
-              This will move the OD request from Draft to Pending.
-            </p>
-            <LocationPhotoCapture
-              required
-              label="OD OUT Photo Evidence"
-              onCapture={(loc, photo) => {
-                setOdOutEvidenceFile(photo.file);
-                setOdOutLocationData(loc);
-                (photo.file as any).exifLocation = photo.exifLocation;
-              }}
-              onClear={() => {
-                setOdOutEvidenceFile(null);
-                setOdOutLocationData(null);
-              }}
-            />
-            <div className="flex gap-3 pt-4">
+          <div className="relative z-[60] my-auto flex h-auto min-h-0 w-full max-w-lg max-h-[min(92dvh,calc(100dvh-3rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="shrink-0 border-b border-slate-100 px-6 pb-4 pt-6 dark:border-slate-800">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Submit OD OUT Evidence</h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                This will move the OD request from Draft to Pending.
+              </p>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-6 py-4">
+              <LocationPhotoCapture
+                required
+                label="OD OUT Photo Evidence"
+                onCapture={(loc, photo) => {
+                  setOdOutEvidenceFile(photo.file);
+                  setOdOutLocationData(loc);
+                  (photo.file as any).exifLocation = photo.exifLocation;
+                }}
+                onClear={() => {
+                  setOdOutEvidenceFile(null);
+                  setOdOutLocationData(null);
+                }}
+              />
+            </div>
+            <div className="flex shrink-0 gap-3 border-t border-slate-100 bg-white/95 px-6 py-4 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
               <button
                 type="button"
                 onClick={() => setShowOutEvidenceDialog(false)}
                 disabled={submittingOutEvidence}
-                className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                className="flex-1 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300"
               >
                 Cancel
               </button>
@@ -5077,7 +5069,7 @@ function LeavesPageContent() {
                 type="button"
                 onClick={handleSubmitODEndEvidence}
                 disabled={submittingOutEvidence || !odOutEvidenceFile || !odOutLocationData}
-                className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-purple-600 rounded-xl hover:bg-purple-700 disabled:opacity-50"
+                className="flex-1 rounded-xl bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
               >
                 {submittingOutEvidence ? 'Submitting...' : 'Submit OUT'}
               </button>

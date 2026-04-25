@@ -1710,19 +1710,13 @@ export default function LeavesPage() {
 
       const response = await api.updateOD(selectedItem._id, { endEvidence });
       if (response.success) {
-        Swal.fire({
-          icon: 'success',
-          title: 'Success!',
-          text: 'OD OUT submitted. Request moved to pending.',
-          timer: 2000,
-          showConfirmButton: false,
-        });
         setShowOutEvidenceDialog(false);
         setOdOutEvidenceFile(null);
         setOdOutLocationData(null);
         setShowDetailDialog(false);
         setSelectedItem(null);
-        loadData();
+        await loadData();
+        toast.success('OD OUT submitted. Request moved to pending.');
       } else {
         toast.error(response.error || 'Failed to submit OD OUT evidence');
       }
@@ -4472,11 +4466,12 @@ export default function LeavesPage() {
         </div >
 
         {showApplyDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:p-4">
             <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowApplyDialog(false)} />
-            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-5 sm:p-8 animate-in zoom-in-95 duration-300">
+            <div className="relative z-50 my-auto flex h-auto min-h-0 w-full max-w-lg max-h-[min(90dvh,calc(100dvh-3rem))] flex-col overflow-hidden rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl animate-in zoom-in-95 duration-300">
+              <div className="shrink-0 space-y-4 border-b border-slate-100/80 px-5 pb-4 pt-5 dark:border-slate-800/80 sm:px-8 sm:pb-5 sm:pt-8">
               {/* Type Toggle */}
-              <div className="inline-flex w-full p-1 rounded-2xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 mb-6 sm:mb-8">
+              <div className="inline-flex w-full p-1 rounded-2xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 mb-0 sm:mb-0">
                 <button
                   type="button"
                   onClick={() => setApplyType('leave')}
@@ -4505,14 +4500,16 @@ export default function LeavesPage() {
                 </button>
               </div>
 
-              <div className="mb-6 sm:mb-8 hidden sm:block">
+              <div className="hidden sm:block">
                 <h2 className="text-lg sm:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
                   New {applyType === 'leave' ? 'Leave' : 'OD'} Application
                 </h2>
-                <p className="text-slate-500 dark:text-slate-400 text-xs sm:sm mt-1">Please fill in the details of your request.</p>
+                <p className="text-slate-500 dark:text-slate-400 mt-1 text-xs sm:text-sm">Please fill in the details of your request.</p>
+              </div>
               </div>
 
-              <form onSubmit={handleApply} className="space-y-4">
+              <form onSubmit={handleApply} className="flex min-h-0 flex-1 flex-col">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-4 space-y-4 sm:px-8 sm:py-5">
                 {/* Apply For - Employee Selection (Hidden for Employees) */}
                 {currentUser?.role !== 'employee' && (
                   <div>
@@ -5081,14 +5078,14 @@ export default function LeavesPage() {
                   />
                 </div>
 
-                {/* Actions - Sticky Bottom */}
                 {applyType === 'leave' && isCLSelected && clBalanceForMonth !== null && Number(clBalanceForMonth) <= 0 && (
                   <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-semibold text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
                     Monthly apply limit reached for this payroll period. You can’t submit a new request for the selected from-date period.
                   </div>
                 )}
+                </div>
 
-                <div className="sticky bottom-0 z-10 -mx-5 -mb-5 p-5 sm:-mx-8 sm:-mb-8 sm:p-8 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-t border-slate-100 dark:border-slate-800 flex gap-3 mt-6">
+                <div className="flex shrink-0 gap-3 border-t border-slate-100 bg-white/95 px-5 py-4 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 sm:px-8 sm:py-5 pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
                   <button
                     type="button"
                     onClick={() => setShowApplyDialog(false)}
@@ -5133,9 +5130,9 @@ export default function LeavesPage() {
         {/* Detail Dialog */}
         {
           showDetailDialog && selectedItem && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:p-4">
               <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowDetailDialog(false)} />
-              <div className="relative z-50 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+              <div className="relative z-50 my-auto flex h-auto min-h-0 w-full max-w-4xl max-h-[min(90dvh,calc(100dvh-2rem))] flex-col overflow-hidden rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl animate-in zoom-in-95 duration-300">
                 {/* Header */}
                 <div className={`shrink-0 px-6 py-4 sm:px-8 sm:py-6 border-b border-white/10 ${detailType === 'leave'
                   ? 'bg-gradient-to-r from-blue-600 to-blue-500'
@@ -5164,17 +5161,13 @@ export default function LeavesPage() {
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8">
                   {/* Top Section: Employee & Status */}
                   {detailType === 'od' && (
                     <div className="rounded-2xl border-2 border-purple-200/80 dark:border-purple-800/60 bg-gradient-to-br from-purple-50/95 to-white dark:from-purple-950/40 dark:to-slate-900 p-4 sm:p-6 shadow-sm">
                       <p className="text-[10px] uppercase font-black text-purple-600 dark:text-purple-300 tracking-widest mb-4">Employee</p>
                       <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-6">
-                        <div className="flex items-center gap-4 min-w-0">
-                          <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-xl bg-purple-600 shadow-purple-500/20 shrink-0">
-                            {(selectedItem!.employeeId?.employee_name?.[0] || selectedItem!.emp_no?.[0] || 'E').toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                             <h3 className="font-black text-slate-900 dark:text-white text-xl truncate">
                               {selectedItem!.employeeId?.employee_name || selectedItem!.emp_no}
                             </h3>
@@ -5193,7 +5186,6 @@ export default function LeavesPage() {
                                 </span>
                               )}
                             </div>
-                          </div>
                         </div>
                         <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto justify-between sm:justify-start shrink-0">
                           <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest border ${getStatusColor(selectedItem!.status)}`}>
@@ -5209,14 +5201,7 @@ export default function LeavesPage() {
                   )}
                   {detailType === 'leave' && (
                   <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-6">
-                    <div className="flex items-center gap-4">
-                      <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-xl ${detailType === 'leave'
-                        ? 'bg-blue-600 shadow-blue-500/20'
-                        : 'bg-purple-600 shadow-purple-500/20'
-                        }`}>
-                        {(selectedItem!.employeeId?.employee_name?.[0] || selectedItem!.emp_no?.[0] || 'E').toUpperCase()}
-                      </div>
-                      <div>
+                    <div className="min-w-0 flex-1">
                         <h3 className="font-black text-slate-900 dark:text-white text-xl">
                           {selectedItem!.employeeId?.employee_name || selectedItem!.emp_no}
                         </h3>
@@ -5235,7 +5220,6 @@ export default function LeavesPage() {
                             </span>
                           )}
                         </div>
-                      </div>
                     </div>
 
                     <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto justify-between sm:justify-start">
@@ -5392,12 +5376,14 @@ export default function LeavesPage() {
                       </div>
                       <p className="text-xs uppercase font-bold text-slate-400 mb-3 tracking-wider border-t border-slate-200 dark:border-slate-700 pt-4">Evidence & Location</p>
                       {canSubmitOdOutFromDetails(selectedItem as any, currentUser) && (
-                          <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-purple-200 dark:border-purple-900/40 bg-purple-50 dark:bg-purple-900/20 px-3 py-2">
-                            <p className="text-xs font-semibold text-purple-700 dark:text-purple-300">OD OUT evidence is pending for this draft request.</p>
+                          <div className="mb-3 flex flex-col gap-2 rounded-lg border border-purple-200 dark:border-purple-900/40 bg-purple-50 dark:bg-purple-900/20 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-2">
+                            <p className="text-xs font-semibold text-purple-700 dark:text-purple-300 sm:min-w-0 sm:flex-1">
+                              OD OUT evidence is pending for this draft request.
+                            </p>
                             <button
                               type="button"
                               onClick={() => setShowOutEvidenceDialog(true)}
-                              className="px-3 py-1.5 text-xs font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700"
+                              className="w-full shrink-0 rounded-lg bg-purple-600 px-3 py-2 text-xs font-bold text-white hover:bg-purple-700 sm:w-auto sm:py-1.5"
                             >
                               Submit OD OUT
                             </button>
@@ -5926,9 +5912,7 @@ export default function LeavesPage() {
                   </div>
                 </div>
 
-                {/* Footer Actions - Sticky Bottom */}
-                {/* Footer Actions - Sticky Bottom */}
-                <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row gap-3 justify-end items-stretch sm:items-center">
+                <div className="shrink-0 border-t border-slate-200 bg-slate-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] dark:border-slate-700 dark:bg-slate-900 flex flex-col sm:flex-row gap-3 justify-end items-stretch sm:items-center">
                   {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem, detailType) && (
                     <>
                       <textarea
@@ -5996,32 +5980,36 @@ export default function LeavesPage() {
 
       {
         showOutEvidenceDialog && selectedItem && detailType === 'od' && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:p-4">
             <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => !submittingOutEvidence && setShowOutEvidenceDialog(false)} />
-            <div className="relative z-50 w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl p-6 sm:p-8">
-              <h3 className="text-xl font-black text-slate-900 dark:text-white">Submit OD OUT Evidence</h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-5">
-                This will move your OD from Draft to Pending.
-              </p>
-              <LocationPhotoCapture
-                required
-                label="OD OUT Photo Evidence"
-                onCapture={(loc, photo) => {
-                  setOdOutEvidenceFile(photo.file);
-                  setOdOutLocationData(loc);
-                  (photo.file as any).exifLocation = photo.exifLocation;
-                }}
-                onClear={() => {
-                  setOdOutEvidenceFile(null);
-                  setOdOutLocationData(null);
-                }}
-              />
-              <div className="flex gap-3 mt-6">
+            <div className="relative z-[60] my-auto flex h-auto min-h-0 w-full max-w-lg max-h-[min(92dvh,calc(100dvh-3rem))] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="shrink-0 border-b border-slate-100 px-5 pb-4 pt-5 dark:border-slate-800 sm:px-8 sm:pb-5 sm:pt-8">
+                <h3 className="text-lg font-black text-slate-900 dark:text-white sm:text-xl">Submit OD OUT Evidence</h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  This will move your OD from Draft to Pending.
+                </p>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-4 sm:px-8 sm:py-5">
+                <LocationPhotoCapture
+                  required
+                  label="OD OUT Photo Evidence"
+                  onCapture={(loc, photo) => {
+                    setOdOutEvidenceFile(photo.file);
+                    setOdOutLocationData(loc);
+                    (photo.file as any).exifLocation = photo.exifLocation;
+                  }}
+                  onClear={() => {
+                    setOdOutEvidenceFile(null);
+                    setOdOutLocationData(null);
+                  }}
+                />
+              </div>
+              <div className="flex shrink-0 gap-3 border-t border-slate-100 bg-white/95 px-5 py-4 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 sm:px-8 sm:py-5 pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
                 <button
                   type="button"
                   onClick={() => setShowOutEvidenceDialog(false)}
                   disabled={submittingOutEvidence}
-                  className="flex-1 py-2.5 text-sm font-bold text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                  className="flex-1 rounded-xl bg-slate-100 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300"
                 >
                   Cancel
                 </button>
@@ -6029,7 +6017,7 @@ export default function LeavesPage() {
                   type="button"
                   onClick={handleSubmitODEndEvidence}
                   disabled={submittingOutEvidence || !odOutEvidenceFile || !odOutLocationData}
-                  className="flex-1 py-2.5 text-sm font-bold text-white bg-purple-600 rounded-xl hover:bg-purple-700 disabled:opacity-50"
+                  className="flex-1 rounded-xl bg-purple-600 py-2.5 text-sm font-bold text-white hover:bg-purple-700 disabled:opacity-50"
                 >
                   {submittingOutEvidence ? 'Submitting...' : 'Submit OUT'}
                 </button>
