@@ -18,6 +18,11 @@ import {
   getPartialColumnTotal,
   getPartialRecordPayableContribution,
 } from '@/lib/attendancePartialContribution';
+import {
+  computePayRegisterAllRowFromMonthlySummary,
+  formatPolicyAttendanceDeductionDisplay,
+  paidLopSublabel,
+} from '@/lib/payRegisterAllSummaryRow';
 import { toast } from 'react-toastify';
 import { format, parseISO } from 'date-fns';
 import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
@@ -273,6 +278,7 @@ export default function AttendancePage() {
   };
 
   const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>('complete');
+  const [attendanceProcessingMode, setAttendanceProcessingMode] = useState<'single_shift' | 'multi_shift' | null>(null);
   const [orgCompleteSummaryColumns, setOrgCompleteSummaryColumns] = useState<
     Record<SuperadminCompleteAggregateKey, boolean>
   >(() => normalizeCompleteSummaryColumns(undefined));
@@ -777,6 +783,10 @@ export default function AttendancePage() {
         }
         if (attendanceRes?.data?.completeSummaryColumns) {
           setOrgCompleteSummaryColumns(normalizeCompleteSummaryColumns(attendanceRes.data.completeSummaryColumns));
+        }
+        const mode = attendanceRes?.data?.processingMode?.mode;
+        if (mode === 'single_shift' || mode === 'multi_shift') {
+          setAttendanceProcessingMode(mode);
         }
         setOtAutoCreateEnabled(Boolean(otRes?.data?.autoCreateOtRequest));
       } catch {
@@ -2717,7 +2727,10 @@ export default function AttendancePage() {
     [orgCompleteSummaryColumns]
   );
 
+  const usePayRegisterAllComplete = attendanceProcessingMode === 'single_shift' && tableType === 'complete';
+
   const superadminTrailingSummaryCount = useMemo(() => {
+    if (tableType === 'complete' && usePayRegisterAllComplete) return 12;
     if (tableType === 'complete') return Math.max(1, visibleSuperadminCompleteKeys.length);
     if (tableType === 'present_absent') return 2;
     if (tableType === 'in_out') return 1;
@@ -2725,7 +2738,7 @@ export default function AttendancePage() {
     if (tableType === 'od') return 2;
     if (tableType === 'ot') return 2;
     return 0;
-  }, [tableType, visibleSuperadminCompleteKeys.length]);
+  }, [tableType, visibleSuperadminCompleteKeys.length, usePayRegisterAllComplete]);
 
   const superadminTableEmptyColSpan = 1 + daysArray.length + superadminTrailingSummaryCount;
 
@@ -3068,30 +3081,145 @@ export default function AttendancePage() {
           <table className="w-full text-xs box-border">
             {/* Table Header */}
             <thead className="bg-slate-50 dark:bg-slate-800 sticky top-0 z-20">
-              <tr className="border-b border-slate-200 dark:border-slate-700 w-full">
-                <th className="sticky left-0 top-0 z-30 border-r border-slate-200 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 w-[200px] min-w-[200px]">
-                  Employee
-                </th>
-                {daysArray.map((dateStr) => {
-                  const dateObj = parseISO(dateStr);
-                  const dayNum = dateObj.getDate();
-                  const dayName = format(dateObj, 'EEE');
-                  return (
+              {tableType === 'complete' && usePayRegisterAllComplete ? (
+                <>
+                  <tr className="border-b border-slate-200 dark:border-slate-700 w-full">
                     <th
-                      key={dateStr}
-                      className="sticky top-0 z-20 border-r border-slate-200 bg-slate-50 px-1 py-2 text-center text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 w-[35px] min-w-[35px]"
+                      rowSpan={2}
+                      className="sticky left-0 top-0 z-30 border-r border-slate-200 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 w-[200px] min-w-[200px]"
                     >
-                      <div className="text-[10px] font-bold">{dayNum}</div>
-                      <div className="text-[8px] font-medium uppercase tracking-tighter opacity-70">{dayName}</div>
+                      Employee
                     </th>
-                  );
-                })}
-                {tableType === 'complete' &&
+                    {daysArray.map((dateStr) => {
+                      const dateObj = parseISO(dateStr);
+                      const dayNum = dateObj.getDate();
+                      const dayName = format(dateObj, 'EEE');
+                      return (
+                        <th
+                          key={dateStr}
+                          rowSpan={2}
+                          className="sticky top-0 z-20 border-r border-slate-200 bg-slate-50 px-1 py-2 text-center text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 w-[35px] min-w-[35px]"
+                        >
+                          <div className="text-[10px] font-bold">{dayNum}</div>
+                          <div className="text-[8px] font-medium uppercase tracking-tighter opacity-70">{dayName}</div>
+                        </th>
+                      );
+                    })}
+                    <th
+                      rowSpan={2}
+                      className="w-[72px] min-w-[72px] border-r border-slate-200 bg-green-50 dark:bg-green-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-green-800 dark:text-green-200"
+                      title="Present days (pay register)"
+                    >
+                      Present
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="w-[64px] min-w-[64px] border-r border-slate-200 bg-slate-100/90 dark:bg-slate-800/50 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-slate-800"
+                    >
+                      W.off
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="w-[64px] min-w-[64px] border-r border-slate-200 bg-purple-50 dark:bg-purple-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-purple-800"
+                    >
+                      Hol
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="w-[78px] min-w-[78px] border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-yellow-900"
+                    >
+                      T.leave
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="w-[64px] min-w-[64px] border-r border-slate-200 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-indigo-800"
+                    >
+                      OD
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="w-[64px] min-w-[64px] border-r border-slate-200 bg-red-50 dark:bg-red-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-red-800"
+                    >
+                      Abs
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="w-[64px] min-w-[64px] border-r border-slate-200 bg-slate-100 dark:bg-slate-800/60 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-slate-800"
+                      title="Present + week offs + holidays + total leaves + OD + absents (informational)"
+                    >
+                      Tot
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="w-[58px] min-w-[58px] border-r border-slate-200 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-amber-900"
+                      title="Late in + early out (count)"
+                    >
+                      L/E
+                    </th>
+                    <th
+                      colSpan={3}
+                      className="border-b border-r border-slate-200 bg-rose-100/80 dark:bg-rose-950/30 px-1 py-1.5 text-center text-[9px] font-bold uppercase text-rose-900 dark:text-rose-100"
+                      title="Absent, LOP, and policy attendance deduction (pay register deduction block)"
+                    >
+                      Deduction days
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="w-[72px] min-w-[72px] border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-blue-800"
+                      title="Present + week offs + holidays + OD + paid leave − att. deduction"
+                    >
+                      Paid
+                    </th>
+                  </tr>
+                  <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800">
+                    <th
+                      className="w-[60px] min-w-[60px] border-r border-slate-200 bg-red-50/90 dark:bg-red-950/30 px-1 py-1.5 text-center text-[8px] font-bold text-red-800 dark:text-red-200"
+                      title="Absent days in deduction / same as main Abs for calendar absent total"
+                    >
+                      Absents
+                    </th>
+                    <th
+                      className="w-[60px] min-w-[60px] border-r border-slate-200 bg-red-50/90 dark:bg-red-950/30 px-1 py-1.5 text-center text-[8px] font-bold text-red-800 dark:text-red-200"
+                      title="Loss of pay leave day-units"
+                    >
+                      LOP
+                    </th>
+                    <th
+                      className="w-[64px] min-w-[64px] border-r border-slate-200 bg-rose-50/90 dark:bg-rose-900/25 px-0.5 py-1.5 text-center text-[7px] font-bold leading-tight text-rose-900 dark:text-rose-100"
+                      title="Policy attendance deduction (late/early, absent extra, etc.)"
+                    >
+                      <div className="flex flex-col items-center justify-center gap-0">
+                        <span>Attendance</span>
+                        <span>deduction</span>
+                      </div>
+                    </th>
+                  </tr>
+                </>
+              ) : (
+                <tr className="border-b border-slate-200 dark:border-slate-700 w-full">
+                  <th className="sticky left-0 top-0 z-30 border-r border-slate-200 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 w-[200px] min-w-[200px]">
+                    Employee
+                  </th>
+                  {daysArray.map((dateStr) => {
+                    const dateObj = parseISO(dateStr);
+                    const dayNum = dateObj.getDate();
+                    const dayName = format(dateObj, 'EEE');
+                    return (
+                      <th
+                        key={dateStr}
+                        className="sticky top-0 z-20 border-r border-slate-200 bg-slate-50 px-1 py-2 text-center text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 w-[35px] min-w-[35px]"
+                      >
+                        <div className="text-[10px] font-bold">{dayNum}</div>
+                        <div className="text-[8px] font-medium uppercase tracking-tighter opacity-70">{dayName}</div>
+                      </th>
+                    );
+                  })}
+                {tableType === 'complete' && !usePayRegisterAllComplete &&
                   visibleSuperadminCompleteKeys.map((colKey, idx) => {
                     const isLast = idx === visibleSuperadminCompleteKeys.length - 1;
                     const edge = isLast ? '' : 'border-r border-slate-200';
                     const base =
-                      'px-1 py-3 text-center text-[9px] font-bold uppercase dark:border-slate-700';
+                      'px-1 py-3 text-center text-[9px] font-bold uppercase dark:border-slate-200';
                     switch (colKey) {
                       case 'present':
                         return (
@@ -3246,6 +3374,7 @@ export default function AttendancePage() {
                   </>
                 )}
               </tr>
+              )}
             </thead>
             <tbody className="bg-white dark:bg-slate-900">
               {loading ? (
@@ -3265,7 +3394,17 @@ export default function AttendancePage() {
                           <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                         </td>
                       ))}
-                      {tableType === 'complete' &&
+                      {tableType === 'complete' && usePayRegisterAllComplete
+                        ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
+                            <td
+                              key={i}
+                              className="border-r border-slate-200 px-2 py-2 text-center dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/50 w-[56px] min-w-[56px]"
+                            >
+                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                            </td>
+                          ))
+                        : null}
+                      {tableType === 'complete' && !usePayRegisterAllComplete &&
                         visibleSuperadminCompleteKeys.map((colKey, skIdx) => {
                           const isLast = skIdx === visibleSuperadminCompleteKeys.length - 1;
                           const edge = isLast ? '' : 'border-r border-slate-200';
@@ -3403,6 +3542,22 @@ export default function AttendancePage() {
                   const lopLeaveCol = Number.isFinite(summaryLopLeaves) ? summaryLopLeaves : lopCount;
                   const totalODs = item.summary?.totalODs ?? dailyValues.filter((r: any) => r?.status === 'OD' || r?.hasOD).length;
                   const partialContributionTotal = getPartialColumnTotal(item.summary, dailyAttendance);
+                  const prAllRow = usePayRegisterAllComplete
+                    ? computePayRegisterAllRowFromMonthlySummary(
+                        item.summary ??
+                          ({
+                            totalPresentDays: daysPresent,
+                            totalWeeklyOffs: weekOffsCount,
+                            totalHolidays: holidaysCount,
+                            totalLeaves,
+                            totalPaidLeaves: paidLeaveCol,
+                            totalLopLeaves: lopLeaveCol,
+                            totalODs,
+                            totalAbsentDays: monthAbsent,
+                          } as any),
+                        { processingMode: 'single_shift' }
+                      )
+                    : null;
 
                   // Helper for department/division names
                   const getDeptName = (emp: Employee) => {
@@ -3626,6 +3781,97 @@ export default function AttendancePage() {
                         );
                       })}
                       {tableType === 'complete' &&
+                        (usePayRegisterAllComplete && prAllRow ? (
+                          <>
+                            <td
+                              onClick={() => item.employee && handleSummaryClick(item.employee._id, 'present')}
+                              className="border-r border-slate-200 bg-green-50 dark:bg-green-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-green-800 dark:text-green-200 w-[72px] min-w-[72px] cursor-pointer hover:opacity-90"
+                              title="From monthly summary (same layout as workspace / pay register)"
+                            >
+                              {prAllRow.present.toFixed(1)}
+                            </td>
+                            <td
+                              onClick={() => item.employee && handleSummaryClick(item.employee._id, 'weeklyOffs')}
+                              className="border-r border-slate-200 bg-slate-100/90 text-gray-800 dark:bg-slate-800/50 dark:text-slate-200 px-1.5 py-2 text-center text-[11px] font-bold w-[64px] min-w-[64px] cursor-pointer"
+                            >
+                              {prAllRow.weekOffs.toFixed(1)}
+                            </td>
+                            <td
+                              onClick={() => item.employee && handleSummaryClick(item.employee._id, 'holidays')}
+                              className="border-r border-slate-200 bg-purple-50 dark:bg-purple-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-purple-800 dark:text-purple-200 w-[64px] min-w-[64px] cursor-pointer"
+                            >
+                              {prAllRow.holidays.toFixed(1)}
+                            </td>
+                            <td
+                              onClick={() => item.employee && handleSummaryClick(item.employee._id, 'leaves')}
+                              className="border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-yellow-900 dark:text-yellow-100 w-[78px] min-w-[78px] cursor-pointer"
+                            >
+                              <div className="flex flex-col items-center gap-0.5 leading-tight">
+                                <span>{prAllRow.totalLeaves.toFixed(1)}</span>
+                                <span
+                                  className="text-[8px] font-semibold text-yellow-900/90 dark:text-yellow-200/90"
+                                  title={`Leave by nature: ${paidLopSublabel(prAllRow.paidLeaves, prAllRow.dedLop)}`}
+                                >
+                                  {paidLopSublabel(prAllRow.paidLeaves, prAllRow.dedLop)}
+                                </span>
+                              </div>
+                            </td>
+                            <td
+                              onClick={() => item.employee && handleSummaryClick(item.employee._id, 'ods')}
+                              className="border-r border-slate-200 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-indigo-800 dark:text-indigo-200 w-[64px] min-w-[64px] cursor-pointer"
+                            >
+                              {prAllRow.od.toFixed(1)}
+                            </td>
+                            <td
+                              onClick={() => item.employee && handleSummaryClick(item.employee._id, 'absent')}
+                              className="border-r border-slate-200 bg-red-50 dark:bg-red-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-red-800 dark:text-red-200 w-[64px] min-w-[64px] cursor-pointer"
+                            >
+                              {prAllRow.absent.toFixed(1)}
+                            </td>
+                            <td
+                              className="border-r border-slate-200 bg-slate-100 dark:bg-slate-800/60 px-1.5 py-2 text-center text-[11px] font-bold text-slate-800 dark:text-slate-200 w-[64px] min-w-[64px]"
+                              title="Present + week offs + holidays + total leaves + OD + absents (informational)"
+                            >
+                              {prAllRow.totalDaysSummed.toFixed(1)}
+                            </td>
+                            <td
+                              onClick={() => item.employee && handleSummaryClick(item.employee._id, 'lateIn')}
+                              className="border-r border-slate-200 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-amber-900 dark:text-amber-200 w-[58px] min-w-[58px] cursor-pointer"
+                            >
+                              {prAllRow.lates}
+                            </td>
+                            <td
+                              onClick={() => item.employee && handleSummaryClick(item.employee._id, 'absent')}
+                              className="border-r border-slate-200 bg-red-50/90 dark:bg-red-950/30 px-1.5 py-2 text-center text-[10px] font-bold text-red-800 dark:text-red-200 w-[60px] min-w-[60px] cursor-pointer"
+                            >
+                              {prAllRow.dedAbsent.toFixed(1)}
+                            </td>
+                            <td
+                              onClick={() => item.employee && handleSummaryClick(item.employee._id, 'lopLeaves')}
+                              className="border-r border-slate-200 bg-red-50/90 dark:bg-red-950/30 px-1.5 py-2 text-center text-[10px] font-bold text-red-800 dark:text-red-200 w-[60px] min-w-[60px] cursor-pointer"
+                            >
+                              {prAllRow.dedLop.toFixed(1)}
+                            </td>
+                            <td
+                              onClick={(e) => openAttendanceDeductionInfo(e, item)}
+                              className="border-r border-slate-200 bg-rose-50 dark:bg-rose-900/20 px-1.5 py-2 text-center text-[10px] font-bold text-rose-900 dark:text-rose-200 w-[64px] min-w-[64px] cursor-pointer"
+                            >
+                              {formatPolicyAttendanceDeductionDisplay(
+                                prAllRow.attDed,
+                                item.summary?.attendanceDeductionBreakdown
+                              )}
+                            </td>
+                            <td
+                              onClick={() =>
+                                item.employee && handleSummaryClick(item.employee._id, 'paidLeaves')
+                              }
+                              className="bg-blue-50 dark:bg-blue-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-blue-800 dark:text-blue-200 w-[72px] min-w-[72px] cursor-pointer"
+                              title="Present + week offs + holidays + OD + paid leave − att. deduction (pay register paid days)"
+                            >
+                              {prAllRow.paidDays.toFixed(1)}
+                            </td>
+                          </>
+                        ) : (
                         visibleSuperadminCompleteKeys.map((colKey, cIdx) => {
                           const isLast = cIdx === visibleSuperadminCompleteKeys.length - 1;
                           const edge = isLast ? '' : 'border-r border-slate-200';
@@ -3768,7 +4014,8 @@ export default function AttendancePage() {
                             default:
                               return null;
                           }
-                        })}
+                        })
+                        ))}
                       {tableType === 'present_absent' && (
                         <>
                           <td
