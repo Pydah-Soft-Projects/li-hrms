@@ -15,6 +15,10 @@ const XLSX = require('xlsx');
 const PDFDocument = require('pdfkit');
 const { calculateMonthlySummary } = require('../services/summaryCalculationService');
 const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
+const AttendanceSettings = require('../model/AttendanceSettings');
+const { payRegisterAllRowFromSummary } = require('../../shared/payRegisterAllRow');
+const { getMonthlyTableViewData } = require('../services/attendanceViewService');
+const { formatPdfDayCellText } = require('../utils/pdfDayCellText');
 
 // Date format DD-Mon-YY (e.g. 01-Dec-25)
 function formatPDate(d) {
@@ -1055,6 +1059,120 @@ const drawSummaryBox = (doc, label, value, x, y, width, height, color) => {
     doc.fillColor('#1e293b').fontSize(14).font('Helvetica-Bold').text(value, x + 10, y + 20);
 };
 
+const SUMMARY_HDR_ROW1 = 20;
+const SUMMARY_HDR_ROW2 = 18;
+const SUMMARY_HDR_H = SUMMARY_HDR_ROW1 + SUMMARY_HDR_ROW2;
+
+/**
+ * Pay-register style summary: parent header "Deduction days" with subheaders Absents, LOP, Att. deduction
+ * (aligns with attendance complete table).
+ */
+function drawPayRegisterAllSummaryTablePdf(doc, dataRows, startX, startY, colWidths, options = {}) {
+    const {
+        headerFill = '#4f46e5',
+        rowFill = '#f8fafc',
+        fontSize = 7,
+        lineBreak = false,
+        minRowHeight = 20,
+        cellPaddingY = 4,
+        cellPaddingX = 3,
+        onPageAdd = null,
+        pageLayout = 'landscape',
+    } = options;
+
+    const drawGroupedHeader = (x0, y0) => {
+        const w = (i) => colWidths[i] || 0;
+        const tableW = colWidths.reduce((a, b) => a + b, 0);
+        const tMain = ['PRES', 'WO', 'HOL', 'T.LV', 'OD', 'ABS', 'TOT', 'L/E'];
+        let x = x0;
+        for (let i = 0; i < 2; i++) {
+            doc.fillColor(headerFill).rect(x, y0, w(i), SUMMARY_HDR_H).fill();
+            doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(6.5);
+            const lab = i === 0 ? 'NAME' : 'E.NO';
+            doc.text(lab, x + 1, y0 + 10, { width: w(i) - 2, align: 'center' });
+            x += w(i);
+        }
+        for (let j = 0; j < 8; j++) {
+            const i = 2 + j;
+            doc.fillColor(headerFill).rect(x, y0, w(i), SUMMARY_HDR_H).fill();
+            doc.fillColor('#ffffff').font('Helvetica-Bold').text(tMain[j], x + 1, y0 + 10, { width: w(i) - 2, align: 'center' });
+            x += w(i);
+        }
+        const dW = w(10) + w(11) + w(12);
+        doc.fillColor('#f9a8d4');
+        doc.rect(x, y0, dW, SUMMARY_HDR_ROW1).fill();
+        doc.fillColor('#831843').font('Helvetica-Bold').fontSize(5.5)
+            .text('Deduction days', x + 2, y0 + 5, { width: dW - 4, align: 'center' });
+        const y2 = y0 + SUMMARY_HDR_ROW1;
+        const subL = ['Absents', 'LOP', 'Att. deduction'];
+        for (let j = 0; j < 3; j++) {
+            const k = 10 + j;
+            const ww = w(k);
+            doc.fillColor(j < 2 ? '#fecdd3' : '#fdbacb');
+            doc.rect(x, y2, ww, SUMMARY_HDR_ROW2).fill();
+            doc.fillColor(j < 2 ? '#991b1b' : '#9f1239');
+            doc.font('Helvetica-Bold').fontSize(4.5)
+                .text(subL[j], x + 1, y2 + 4, { width: ww - 2, align: 'center' });
+            x += ww;
+        }
+        const px = x0 + colWidths.slice(0, 13).reduce((a, b) => a + b, 0);
+        doc.fillColor(headerFill).rect(px, y0, w(13), SUMMARY_HDR_H).fill();
+        doc.fillColor('#ffffff').fontSize(6.5).font('Helvetica-Bold');
+        doc.text('PAID', px + 2, y0 + 10, { width: w(13) - 4, align: 'center' });
+        doc.lineWidth(0.5);
+        doc.strokeColor('#e0e7ff');
+        doc.rect(x0, y0, tableW, SUMMARY_HDR_H).stroke();
+    };
+
+    let y = startY;
+    const tableW = colWidths.reduce((a, b) => a + b, 0);
+    const pH = pageLayout === 'landscape' ? 595.28 : 841.89;
+    const threshold = pH - 70;
+
+    const applyHeader = () => {
+        drawGroupedHeader(startX, y);
+        y += SUMMARY_HDR_H;
+        doc.font('Helvetica').fontSize(fontSize).fillColor('#33414d');
+    };
+    applyHeader();
+
+    dataRows.forEach((row, rowIndex) => {
+        let rowHeight = minRowHeight;
+        if (lineBreak) {
+            row.forEach((cell, i) => {
+                const h = doc.heightOfString(String(cell || ''), {
+                    width: Math.max(1, colWidths[i] - (cellPaddingX * 2)),
+                    align: 'left',
+                });
+                rowHeight = Math.max(rowHeight, h + cellPaddingY * 2);
+            });
+        }
+        if (y + rowHeight > threshold) {
+            doc.addPage({ size: 'A4', layout: pageLayout, margin: 25 });
+            if (onPageAdd) onPageAdd();
+            y = onPageAdd ? 65 : 50;
+            applyHeader();
+        }
+        if (rowIndex % 2 === 0) {
+            doc.fillColor(rowFill).rect(startX, y, tableW, rowHeight).fill();
+        }
+        let xR = startX;
+        row.forEach((cell, i) => {
+            doc.fillColor('#33414d');
+            doc.text(String(cell || ''), xR + cellPaddingX, y + cellPaddingY, {
+                width: Math.max(1, colWidths[i] - (cellPaddingX * 2)),
+                align: 'left',
+                lineBreak,
+                ellipsis: true,
+            });
+            xR += colWidths[i];
+        });
+        y += rowHeight;
+        doc.strokeColor('#e2e8f0').lineWidth(0.5).moveTo(startX, y).lineTo(startX + tableW, y).stroke();
+    });
+    return y;
+}
+
 /**
  * Helper to draw a modern table in PDFKit
  */
@@ -1173,6 +1291,12 @@ exports.exportAttendanceReportPDF = async (req, res) => {
             return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
         }
 
+        const _pdfAtt = await AttendanceSettings.getSettings();
+        const _pdfPM = AttendanceSettings.getProcessingMode
+            ? AttendanceSettings.getProcessingMode(_pdfAtt)
+            : { mode: 'multi_shift' };
+        const payRegisterPresentProcessingMode = _pdfPM && _pdfPM.mode === 'single_shift' ? 'single_shift' : 'multi_shift';
+
         const isStrict = strict === 'true';
 
         // --- BRANCH: Summary Report (Division/Department aggregate) ---
@@ -1227,8 +1351,10 @@ exports.exportAttendanceReportPDF = async (req, res) => {
             doc.fontSize(10).font('Helvetica').text(`Generated on ${dayjs().format('DD MMM YYYY, hh:mm A')}`, 30, 42);
             doc.fillColor('#1e293b').fontSize(12).font('Helvetica-Bold').text(`PERIOD: ${dayjs(startDate).format('DD MMM YYYY')} TO ${dayjs(endDate).format('DD MMM YYYY')}`, 30, 80, { align: 'right' });
 
-            const headers = ['NAME / ENTITY', 'E.NO', 'PRES', 'LVE', 'OD', 'WO', 'HOL', 'OT', 'EX', 'PRM', 'L/E', 'DED', 'PAYABLE'];
-            const colWidths = [185, 55, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 60];
+            const headers = [
+                'NAME / ENTITY', 'E.NO', 'PRES', 'WO', 'HOL', 'T.LV', 'OD', 'ABS', 'TOT', 'L/E', 'A.ABS', 'LOP', 'ATT.D', 'PAID',
+            ];
+            const colWidths = [150, 52, 40, 38, 38, 40, 40, 38, 40, 34, 40, 38, 40, 48];
             const tableData = [];
 
             const monthStr = (year && month) ? `${year}-${String(month).padStart(2, '0')}` : null;
@@ -1249,11 +1375,10 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                 const childEmpNos = childEmployees.map(e => e.emp_no);
                 const childEmpIds = childEmployees.map(e => e._id);
 
-                let entityStats = {
-                    present: 0, leaves: 0, od: 0, wo: 0, hol: 0, ot: 0, extra: 0, perm: 0, lateEarly: 0, ded: 0, payable: 0
-                };
+                const z = payRegisterAllRowFromSummary(null, payRegisterPresentProcessingMode);
+                const entityStats = { ...z };
 
-                // Use MonthlyAttendanceSummary if possible for 100% parity
+                // Use MonthlyAttendanceSummary (same pay-register "All" basis)
                 if (monthStr) {
                     const summaries = await MonthlyAttendanceSummary.find({
                         employeeId: { $in: childEmpIds },
@@ -1268,60 +1393,44 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                             } catch (err) { console.error('Calc failed', err); }
                         }
                         if (s) {
-                            entityStats.present += (s.totalPresentDays || 0);
-                            entityStats.leaves += (s.totalLeaves || 0);
-                            entityStats.od += (s.totalODs || 0);
-                            entityStats.wo += (s.totalWeeklyOffs || 0);
-                            entityStats.hol += (s.totalHolidays || 0);
-                            entityStats.ot += (s.totalOTHours || 0);
-                            entityStats.extra += (s.totalExtraHours || 0);
-                            entityStats.perm += (s.totalPermissionHours || 0);
-                            entityStats.lateEarly += (s.lateOrEarlyCount || 0);
-                            entityStats.ded += (s.totalAttendanceDeductionDays || 0);
-                            entityStats.payable += (s.totalPayableShifts || 0);
+                            const r = payRegisterAllRowFromSummary(s, payRegisterPresentProcessingMode);
+                            for (const k of Object.keys(z)) {
+                                entityStats[k] = (Number(entityStats[k]) || 0) + (Number(r[k]) || 0);
+                            }
                         }
                     }
                 } else {
-                    // Fallback to legacy aggregate if no month provided (rare for PDF)
+                    // Fallback: best-effort from dailies (no full parity with pay register)
                     const stats = await AttendanceDaily.aggregate([
                         { $match: { date: { $gte: startDate, $lte: endDate }, employeeNumber: { $in: childEmpNos } } },
                         {
                             $group: {
                                 _id: null,
-                                present: { $sum: "$payableShifts" },
-                                lateEarly: { $sum: { $cond: [{ $or: [{ $gt: ["$totalLateInMinutes", 0] }, { $gt: ["$totalEarlyOutMinutes", 0] }] }, 1, 0] } },
-                                ot: { $sum: "$totalOTHours" },
-                                extra: { $sum: "$extraHours" },
-                                perm: { $sum: "$permissionHours" },
-                                ded: { $sum: "$attendanceDeductionDays" }
+                                present: { $sum: { $ifNull: ['$payableShifts', 0] } },
+                                lateEarly: { $sum: { $cond: [{ $or: [{ $gt: ['$totalLateInMinutes', 0] }, { $gt: ['$totalEarlyOutMinutes', 0] }] }, 1, 0] } },
                             }
                         }
                     ]);
-                    const s = stats[0] || {};
-                    entityStats.present = s.present || 0;
-                    entityStats.lateEarly = s.lateEarly || 0;
-                    entityStats.ot = s.ot || 0;
-                    entityStats.extra = s.extra || 0;
-                    entityStats.perm = s.perm || 0;
-                    entityStats.ded = s.ded || 0;
-                    entityStats.payable = s.present || 0;
-                    // Leaves/ODs would still be missing in this fallback case
+                    const s0 = stats[0] || {};
+                    entityStats.present = s0.present || 0;
+                    entityStats.lates = s0.lateEarly || 0;
                 }
 
                 tableData.push([
                     child.employee_name || child.name,
                     child.emp_no || '-',
-                    (entityStats.present - entityStats.od).toFixed(1),
-                    entityStats.leaves.toFixed(1),
+                    entityStats.present.toFixed(1),
+                    entityStats.weekOffs.toFixed(1),
+                    entityStats.holidays.toFixed(1),
+                    entityStats.totalLeaves.toFixed(1),
                     entityStats.od.toFixed(1),
-                    entityStats.wo.toFixed(1),
-                    entityStats.hol.toFixed(1),
-                    entityStats.ot.toFixed(2),
-                    entityStats.extra.toFixed(2),
-                    entityStats.perm.toFixed(2),
-                    entityStats.lateEarly,
-                    entityStats.ded.toFixed(1),
-                    entityStats.payable.toFixed(1)
+                    entityStats.absent.toFixed(1),
+                    entityStats.totalDaysSummed.toFixed(1),
+                    String(entityStats.lates),
+                    entityStats.dedAbsent.toFixed(1),
+                    entityStats.dedLop.toFixed(1),
+                    entityStats.attDed.toFixed(1),
+                    entityStats.paidDays.toFixed(1)
                 ]);
             }
 
@@ -1495,14 +1604,38 @@ exports.exportAttendanceReportPDF = async (req, res) => {
             grouped[div][dept].push(e);
         });
 
-        const sumHeaders = ['NAME', 'E.NO', 'PRES', 'LVE', 'OD', 'WO', 'HOL', 'OT', 'EX', 'PRM', 'L/E', 'DED', 'PAYABLE'];
-        const sumWidths = [185, 55, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 60];
+        const sumWidths = [130, 48, 40, 38, 38, 40, 40, 38, 40, 34, 40, 38, 40, 48];
         const gridHeaders = ['Employee Name', 'Emp ID', ...daysArray.map(d => dayjs(d).date().toString())];
         const employeeNameColWidth = 92;
         const employeeIdColWidth = 32;
         const availableDayColsWidth = Math.max(300, (pWidth - (2 * m)) - employeeNameColWidth - employeeIdColWidth);
         const perDayColWidth = Number((availableDayColsWidth / Math.max(1, daysArray.length)).toFixed(2));
         const gridWidths = [employeeNameColWidth, employeeIdColWidth, ...daysArray.map(() => perDayColWidth)];
+
+        const periodInfoForPdf = await dateCycleService.getPeriodInfo(dayjs.tz(startDate, 'Asia/Kolkata').toDate());
+        const pdfCycleY = periodInfoForPdf && periodInfoForPdf.payrollCycle ? periodInfoForPdf.payrollCycle.year : null;
+        const pdfCycleM = periodInfoForPdf && periodInfoForPdf.payrollCycle ? periodInfoForPdf.payrollCycle.month : null;
+        const monthStrForSummary =
+            year && month
+                ? `${parseInt(String(year), 10)}-${String(parseInt(String(month), 10)).padStart(2, '0')}`
+                : pdfCycleY && pdfCycleM
+                  ? `${pdfCycleY}-${String(pdfCycleM).padStart(2, '0')}`
+                  : null;
+        const calcSummaryYear = year && month ? parseInt(String(year), 10) : pdfCycleY;
+        const calcSummaryMonth = year && month ? parseInt(String(month), 10) : pdfCycleM;
+
+        const tableViewDataByEmpNo = {};
+        if (pdfCycleY && pdfCycleM) {
+            try {
+                const viewRows = await getMonthlyTableViewData(employees, pdfCycleY, pdfCycleM, startDate, endDate);
+                for (const r of viewRows) {
+                    const n = String(r.employee.emp_no).toUpperCase();
+                    tableViewDataByEmpNo[n] = r.dailyAttendance || {};
+                }
+            } catch (e) {
+                console.error('getMonthlyTableViewData for PDF failed', e);
+            }
+        }
 
         const sortedDivisions = Object.keys(grouped).sort();
         let firstPageProcessed = false;
@@ -1544,11 +1677,12 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                 const deptEmps = grouped[divName][deptName].sort((a, b) => (a.employee_name || '').localeCompare(b.employee_name || ''));
                 const deptSumData = [], deptGridData = [];
 
-                const monthStr = (year && month) ? `${year}-${String(month).padStart(2, '0')}` : null;
-                const summaries = monthStr ? await MonthlyAttendanceSummary.find({
-                    employeeId: { $in: deptEmps.map(e => e._id) },
-                    month: monthStr
-                }).lean() : [];
+                const summaries = monthStrForSummary
+                    ? await MonthlyAttendanceSummary.find({
+                        employeeId: { $in: deptEmps.map((e) => e._id) },
+                        month: monthStrForSummary
+                    }).lean()
+                    : [];
 
                 for (const emp of deptEmps) {
                     const eid = String(emp.emp_no).toUpperCase();
@@ -1556,9 +1690,9 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                     const empDaily = dailyRecords.filter(r => String(r.employeeNumber).toUpperCase() === eid);
 
                     let summary = summaries.find(s => String(s.employeeId) === String(emp._id));
-                    if (!summary && monthStr) {
+                    if (!summary && monthStrForSummary && calcSummaryYear && calcSummaryMonth) {
                         try {
-                            summary = await calculateMonthlySummary(emp._id, emp.emp_no, parseInt(year), parseInt(month));
+                            summary = await calculateMonthlySummary(emp._id, emp.emp_no, calcSummaryYear, calcSummaryMonth);
                         } catch (err) { console.error('Calc failed', err); }
                     }
 
@@ -1579,6 +1713,10 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                         const isOD = summary?.contributingDates?.ods?.some(cd => cd.date === dStr);
 
                         const rec = empDaily.find(r => r.date === dStr);
+                        const displayRec = tableViewDataByEmpNo[eid] && tableViewDataByEmpNo[eid][dStr];
+                        const punchRec = (displayRec && displayRec.shifts && displayRec.shifts.length
+                            ? displayRec
+                            : rec) || displayRec;
 
                         if (isBeforeJoining || isAfterResignation) {
                             gridRow.push('');
@@ -1588,13 +1726,21 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                             gridRow.push('HOL\n-\n-');
                         } else if (isWO) {
                             gridRow.push('WO\n-\n-');
+                        } else if (
+                            displayRec &&
+                            displayRec.status !== undefined &&
+                            String(displayRec.status) !== '' &&
+                            String(displayRec.status) !== '-'
+                        ) {
+                            const io = getInOutForRecord(punchRec);
+                            gridRow.push(formatPdfDayCellText(displayRec, io));
                         } else if (isLve) {
                             gridRow.push('L\n-\n-');
                         } else if (isOD) {
-                            const io = getInOutForRecord(rec);
-                            gridRow.push(`OD\n${io.in}\n${io.out}`);
+                            const io = getInOutForRecord(punchRec || rec);
+                            gridRow.push(`OD\nIN ${io.in}\nOUT ${io.out}`);
                         } else if (rec) {
-                            // Map local record status (P, PT, HD, etc)
+                            const io = getInOutForRecord(rec);
                             let s = 'A';
                             if (rec.status === 'PRESENT') s = 'P';
                             else if (rec.status === 'PARTIAL') s = 'PT';
@@ -1602,27 +1748,28 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                             else if (rec.status === 'ABSENT') s = 'A';
                             else if (rec.status === 'WEEK_OFF') s = 'WO';
                             else if (rec.status === 'HOLIDAY') s = 'HOL';
-                            const io = getInOutForRecord(rec);
-                            gridRow.push(`${s}\n${io.in}\n${io.out}`);
+                            gridRow.push(`${s}\nIN ${io.in}\nOUT ${io.out}`);
                         } else {
                             gridRow.push('A\n-\n-');
                         }
                     });
 
+                    const r = payRegisterAllRowFromSummary(summary || null, payRegisterPresentProcessingMode);
                     deptSumData.push([
                         eName,
                         emp.emp_no,
-                        ((summary?.totalPresentDays || 0) - (summary?.totalODs || 0)).toFixed(1),
-                        (summary?.totalLeaves || 0).toFixed(1),
-                        (summary?.totalODs || 0).toFixed(1),
-                        (summary?.totalWeeklyOffs || 0).toFixed(1),
-                        (summary?.totalHolidays || 0).toFixed(1),
-                        (summary?.totalOTHours || 0).toFixed(2),
-                        (summary?.totalExtraHours || 0).toFixed(2),
-                        (summary?.totalPermissionHours || 0).toFixed(2),
-                        summary?.lateOrEarlyCount || 0,
-                        (summary?.totalAttendanceDeductionDays || 0).toFixed(1),
-                        (summary?.totalPayableShifts || 0).toFixed(1)
+                        r.present.toFixed(1),
+                        r.weekOffs.toFixed(1),
+                        r.holidays.toFixed(1),
+                        r.totalLeaves.toFixed(1),
+                        r.od.toFixed(1),
+                        r.absent.toFixed(1),
+                        r.totalDaysSummed.toFixed(1),
+                        String(r.lates),
+                        r.dedAbsent.toFixed(1),
+                        r.dedLop.toFixed(1),
+                        r.attDed.toFixed(1),
+                        r.paidDays.toFixed(1)
                     ]);
                     deptGridData.push(gridRow);
                 }
@@ -1632,10 +1779,12 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                 doc.fillColor('#4f46e5').fontSize(9).font('Helvetica-Bold').text(`SUMMARY: ${deptName.toUpperCase()}`, m + 10, currentY + 6);
                 currentY += 25;
 
-                currentY = drawPDFTableModern(doc, sumHeaders, deptSumData, m, currentY, sumWidths, {
+                currentY = drawPayRegisterAllSummaryTablePdf(doc, deptSumData, m, currentY, sumWidths, {
                     fontSize: 7,
-                    headerFill: '#4f46e5',
-                    onPageAdd: () => drawMainHeader(`ATTENDANCE SUMMARY (CONT) - ${divName.toUpperCase()}`, `Dept: ${deptName.toUpperCase()}`)
+                    lineBreak: true,
+                    minRowHeight: 18,
+                    pageLayout: 'landscape',
+                    onPageAdd: () => drawMainHeader(`ATTENDANCE SUMMARY (CONT) - ${divName.toUpperCase()}`, `Dept: ${deptName.toUpperCase()}`),
                 });
 
                 currentY += 20;
@@ -1650,12 +1799,12 @@ exports.exportAttendanceReportPDF = async (req, res) => {
 
                 // 2. Dept Grid Section
                 currentY = drawPDFTableModern(doc, gridHeaders, deptGridData, m, currentY, gridWidths, {
-                    fontSize: 5.2,
+                    fontSize: 4.8,
                     lineBreak: true,
-                    minRowHeight: 26,
-                    cellPaddingY: 4,
+                    minRowHeight: 32,
+                    cellPaddingY: 2,
                     cellPaddingX: 1,
-                    onPageAdd: () => drawMainHeader(`ATTENDANCE GRID (CONT) - ${divName.toUpperCase()}`, `Dept: ${deptName.toUpperCase()}`)
+                    onPageAdd: () => drawMainHeader(`ATTENDANCE GRID (CONT) - ${divName.toUpperCase()}`, `Dept: ${deptName.toUpperCase()}`),
                 });
             }
         }

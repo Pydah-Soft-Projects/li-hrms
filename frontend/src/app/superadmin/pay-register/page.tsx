@@ -26,6 +26,7 @@ import {
   mergeEditDataLeaveNatureFromTypes,
   resolveLeaveNatureFromLeaveTypeCode,
 } from '@/lib/payRegisterLeaveNature';
+import { paidLopSublabel } from '@/lib/payRegisterAllSummaryRow';
 
 
 
@@ -2597,17 +2598,21 @@ export default function PayRegisterPage() {
                       </td>
                       <td
                         className={`text-center px-2 py-2 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['paidLeaves', 'lopLeaves'], 'Total leaves') ? payRegisterContribAccent(['paidLeaves', 'lopLeaves']).summaryRing : ''}`}
-                        title={row.pr.isStub ? undefined : 'Click for leave-type breakdown; highlights paid + LOP days in the grid'}
+                        title={row.pr.isStub ? undefined : 'Click for by-type leave details; highlights paid + LOP days in the grid'}
                         onClick={() => onPayRegisterTotalLeavesClick(row.pr)}
                       >
                         <div className="flex flex-col items-center gap-0.5 leading-tight">
                           <span className="font-semibold">{row.leave.toFixed(1)}</span>
-                          {!row.pr.isStub && row.leaveBreakdownRows.length > 0 ? (
+                          {!row.pr.isStub ? (
                             <span
                               className="max-w-[min(140px,100%)] truncate text-[8px] font-normal normal-case text-slate-600 dark:text-slate-400"
-                              title={formatLeaveTypeBreakdownPreview(row.leaveBreakdownRows, 12)}
+                              title={
+                                row.leaveBreakdownRows.length > 0
+                                  ? `${paidLopSublabel(row.paidLeave, row.lop)} · ${formatLeaveTypeBreakdownPreview(row.leaveBreakdownRows, 12)}`
+                                  : `Leave by nature: ${paidLopSublabel(row.paidLeave, row.lop)}`
+                              }
                             >
-                              {formatLeaveTypeBreakdownPreview(row.leaveBreakdownRows, 3)}
+                              {paidLopSublabel(row.paidLeave, row.lop)}
                             </span>
                           ) : null}
                         </div>
@@ -3373,17 +3378,21 @@ export default function PayRegisterPage() {
                                 </td>
                                 <td
                                   className={`border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/20 px-2 py-2 text-center text-[11px] font-bold text-yellow-800 dark:text-yellow-200 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['paidLeaves', 'lopLeaves'], 'Total leaves') ? payRegisterContribAccent(['paidLeaves', 'lopLeaves']).summaryRing : ''}`}
-                                  title="Click for leave-type breakdown; highlights paid + LOP days in the grid"
+                                  title="Click for by-type leave details; highlights paid + LOP days in the grid"
                                   onClick={() => onPayRegisterTotalLeavesClick(pr)}
                                 >
                                   <div className="flex flex-col items-center gap-0.5 leading-tight">
                                     <span>{totalLeaves.toFixed(1)}</span>
-                                    {!pr.isStub && leaveBreakdownForRow.length > 0 ? (
+                                    {!pr.isStub ? (
                                       <span
                                         className="max-w-[72px] truncate text-[8px] font-semibold normal-case text-yellow-900/90 dark:text-yellow-200/90"
-                                        title={formatLeaveTypeBreakdownPreview(leaveBreakdownForRow, 12)}
+                                        title={
+                                          leaveBreakdownForRow.length > 0
+                                            ? `${paidLopSublabel(paidLeaves, lopDays)} · ${formatLeaveTypeBreakdownPreview(leaveBreakdownForRow, 12)}`
+                                            : `Leave by nature: ${paidLopSublabel(paidLeaves, lopDays)}`
+                                        }
                                       >
-                                        {formatLeaveTypeBreakdownPreview(leaveBreakdownForRow, 2)}
+                                        {paidLopSublabel(paidLeaves, lopDays)}
                                       </span>
                                     ) : null}
                                   </div>
@@ -3486,17 +3495,21 @@ export default function PayRegisterPage() {
                             <>
                               <td
                                 className={`border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700 dark:border-slate-700 dark:bg-yellow-900/20 dark:text-yellow-300 ${!pr.isStub ? 'cursor-pointer hover:opacity-90' : ''} ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['paidLeaves', 'lopLeaves'], 'Total leaves') ? payRegisterContribAccent(['paidLeaves', 'lopLeaves']).summaryRing : ''}`}
-                                title={pr.isStub ? undefined : 'Click for leave-type breakdown; highlights paid + LOP days in the grid'}
+                                title={pr.isStub ? undefined : 'Click for by-type leave details; highlights paid + LOP days in the grid'}
                                 onClick={() => onPayRegisterTotalLeavesClick(pr)}
                               >
                                 <div className="flex flex-col items-center gap-0.5 leading-tight">
                                   <span>{pr.totals.totalLeaveDays.toFixed(1)}</span>
-                                  {!pr.isStub && leaveBreakdownForRow.length > 0 ? (
+                                  {!pr.isStub ? (
                                     <span
                                       className="max-w-[72px] truncate text-[8px] font-semibold normal-case text-yellow-900 dark:text-yellow-200"
-                                      title={formatLeaveTypeBreakdownPreview(leaveBreakdownForRow, 12)}
+                                      title={
+                                        leaveBreakdownForRow.length > 0
+                                          ? `${paidLopSublabel(pr.totals.totalPaidLeaveDays ?? 0, pr.totals.totalLopDays ?? 0)} · ${formatLeaveTypeBreakdownPreview(leaveBreakdownForRow, 12)}`
+                                          : `Leave by nature: ${paidLopSublabel(pr.totals.totalPaidLeaveDays ?? 0, pr.totals.totalLopDays ?? 0)}`
+                                      }
                                     >
-                                      {formatLeaveTypeBreakdownPreview(leaveBreakdownForRow, 2)}
+                                      {paidLopSublabel(pr.totals.totalPaidLeaveDays ?? 0, pr.totals.totalLopDays ?? 0)}
                                     </span>
                                   ) : null}
                                 </div>
