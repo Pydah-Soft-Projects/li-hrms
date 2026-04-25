@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { api, Division, Department, Designation, Shift, EmployeeGroup } from '@/lib/api';
+import { collapseShiftRowsForEditor, expandShiftRowsForApi, type DivisionShiftSelectionRow } from '@/lib/shiftAssignmentGroups';
 import Spinner from '@/components/Spinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
@@ -123,7 +124,7 @@ export default function DivisionsPage() {
         safeUnlinkedCount: number;
         addedCount: number;
     } | null>(null);
-    const [selectedShifts, setSelectedShifts] = useState<{ shiftId: string; gender: string; employee_group_id?: string | null }[]>([]);
+    const [selectedShifts, setSelectedShifts] = useState<DivisionShiftSelectionRow[]>([]);
     const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
     const [customGroupingEnabled, setCustomGroupingEnabled] = useState(false);
     const [shiftSearch, setShiftSearch] = useState('');
@@ -249,7 +250,7 @@ export default function DivisionsPage() {
                 }
             }
 
-            setSelectedShifts(existingShifts);
+            setSelectedShifts(collapseShiftRowsForEditor(existingShifts));
         };
 
         loadExistingShifts();
@@ -349,7 +350,7 @@ export default function DivisionsPage() {
         e.preventDefault();
         if (!showShiftDialog) return;
 
-        const payload: { shifts: { shiftId: string; gender: string; employee_group_id?: string | null }[]; targetType?: string; targetId?: string | { designationId: string; departmentId: string } } = { shifts: selectedShifts };
+        const payload: { shifts: { shiftId: string; gender: string; employee_group_id?: string | null }[]; targetType?: string; targetId?: string | { designationId: string; departmentId: string } } = { shifts: expandShiftRowsForApi(selectedShifts) };
 
         if (targetScope === 'division') {
             payload.targetType = 'division_general';
@@ -975,14 +976,14 @@ export default function DivisionsPage() {
                                                         if (isSelected) {
                                                             setSelectedShifts(prev => prev.filter(s => s.shiftId !== shift._id));
                                                         } else {
-                                                            setSelectedShifts(prev => [...prev, { shiftId: shift._id, gender: 'All', employee_group_id: null }]);
+                                                            setSelectedShifts(prev => [...prev, { shiftId: shift._id, gender: 'All', employee_group_ids: [] }]);
                                                         }
                                                     }}
                                                     className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-4 w-4 cursor-pointer"
                                                 />
                                                 <div className="flex-1 cursor-pointer" onClick={() => {
                                                     if (!isSelected) {
-                                                        setSelectedShifts(prev => [...prev, { shiftId: shift._id, gender: 'All', employee_group_id: null }]);
+                                                        setSelectedShifts(prev => [...prev, { shiftId: shift._id, gender: 'All', employee_group_ids: [] }]);
                                                     }
                                                 }}>
                                                     <div className="text-sm text-slate-700 dark:text-slate-300 font-semibold">{shift.name}</div>
@@ -1008,25 +1009,74 @@ export default function DivisionsPage() {
                                                             <option value="Female">Female Only</option>
                                                             <option value="Other">Other</option>
                                                         </select>
-                                                        {customGroupingEnabled && (
-                                                            <select
-                                                                value={selectedConfig?.employee_group_id || ''}
-                                                                onChange={(e) => {
-                                                                    const newGroup = e.target.value || null;
-                                                                    setSelectedShifts(prev => prev.map(s =>
-                                                                        s.shiftId === shift._id ? { ...s, employee_group_id: newGroup } : s
-                                                                    ));
-                                                                }}
-                                                                className="text-xs rounded-lg border-slate-200 bg-white px-2 py-1 focus:border-amber-500 focus:outline-none dark:bg-slate-900 dark:border-slate-700"
+                                                        {customGroupingEnabled && selectedConfig && (
+                                                            <div
+                                                                className="flex min-w-[140px] max-w-[220px] flex-col gap-1.5 rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900"
                                                                 onClick={(e) => e.stopPropagation()}
                                                             >
-                                                                <option value="">All Groups</option>
-                                                                {employeeGroups.map((group) => (
-                                                                    <option key={group._id} value={group._id}>
-                                                                        {group.name}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
+                                                                <label className="flex cursor-pointer items-center gap-2 text-[10px] font-medium text-slate-600 dark:text-slate-300">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                                                        checked={selectedConfig.employee_group_ids.length === 0}
+                                                                        onChange={() => {
+                                                                            setSelectedShifts((prev) =>
+                                                                                prev.map((s) =>
+                                                                                    s.shiftId === shift._id ? { ...s, employee_group_ids: [] } : s
+                                                                                )
+                                                                            );
+                                                                        }}
+                                                                    />
+                                                                    All groups
+                                                                </label>
+                                                                <div className="max-h-28 space-y-1 overflow-y-auto border-t border-slate-100 pt-1.5 dark:border-slate-700">
+                                                                    {employeeGroups.map((group) => {
+                                                                        const allGroups = selectedConfig.employee_group_ids.length === 0;
+                                                                        const checked =
+                                                                            !allGroups && selectedConfig.employee_group_ids.includes(group._id);
+                                                                        return (
+                                                                            <label
+                                                                                key={group._id}
+                                                                                className="flex cursor-pointer items-center gap-2 text-[10px] text-slate-700 dark:text-slate-300"
+                                                                            >
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                                                                    checked={checked}
+                                                                                    onChange={(e) => {
+                                                                                        const want = e.target.checked;
+                                                                                        setSelectedShifts((prev) =>
+                                                                                            prev.map((s) => {
+                                                                                                if (s.shiftId !== shift._id) return s;
+                                                                                                if (want) {
+                                                                                                    if (allGroups) {
+                                                                                                        return { ...s, employee_group_ids: [group._id] };
+                                                                                                    }
+                                                                                                    if (!s.employee_group_ids.includes(group._id)) {
+                                                                                                        return {
+                                                                                                            ...s,
+                                                                                                            employee_group_ids: [
+                                                                                                                ...s.employee_group_ids,
+                                                                                                                group._id,
+                                                                                                            ],
+                                                                                                        };
+                                                                                                    }
+                                                                                                    return s;
+                                                                                                }
+                                                                                                const next = s.employee_group_ids.filter(
+                                                                                                    (id) => id !== group._id
+                                                                                                );
+                                                                                                return { ...s, employee_group_ids: next };
+                                                                                            })
+                                                                                        );
+                                                                                    }}
+                                                                                />
+                                                                                <span className="truncate">{group.name}</span>
+                                                                            </label>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
                                                         )}
                                                     </div>
                                                 )}
