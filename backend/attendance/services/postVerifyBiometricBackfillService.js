@@ -1,25 +1,15 @@
 /**
  * After an employee application is verified, biometric punches from DOJ through the verified
  * calendar day may never have reached AttendanceRawLog because internal sync skips unknown emp_no.
- * This module replays those rows from the biometric MongoDB into POST /api/internal/attendance/sync.
+ *
+ * Replay is delegated to the biometric Node service only (it reads its own Mongo and POSTs to HRMS).
+ * Set BIOMETRIC_SERVICE_BASE_URL (or BIOMETRIC_SERVICE_URL) and HRMS_MICROSERVICE_SECRET_KEY.
  */
 
 const axios = require('axios');
-const { findBiometricLogsForEmployeeBackfill, resolveBiometricMongoUri } = require('./biometricReportService');
 
-const BATCH_SIZE = 200;
 const RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 2000;
-const BATCH_GAP_MS = 500;
-
-const VALID_LOG_TYPES = new Set([
-  'CHECK-IN',
-  'CHECK-OUT',
-  'BREAK-OUT',
-  'BREAK-IN',
-  'OVERTIME-IN',
-  'OVERTIME-OUT',
-]);
 
 function isBackfillEnabled() {
   const v = String(process.env.POST_VERIFY_BIOMETRIC_BACKFILL || 'true').toLowerCase();
@@ -41,51 +31,68 @@ function computeBackfillRange(doj, verifiedAt) {
   return { start, end: endDay };
 }
 
-function resolveInternalSyncUrl() {
+/**
+ * Base URL of the biometric microservice (no trailing slash).
+ * Example: http://localhost:4000
+ */
+function resolveBiometricReplayServiceUrl() {
   const base =
-    process.env.BACKEND_INTERNAL_URL ||
-    process.env.API_BASE ||
-    process.env.BACKEND_URL;
-  if (base) {
-    const trimmed = String(base).replace(/\/$/, '');
-    return `${trimmed}/api/internal/attendance/sync`;
-  }
-  const port = process.env.PORT || 5000;
-  return `http://127.0.0.1:${port}/api/internal/attendance/sync`;
+    process.env.BIOMETRIC_SERVICE_BASE_URL ||
+    process.env.BIOMETRIC_SERVICE_URL ||
+    '';
+  const trimmed = String(base).trim();
+  if (!trimmed) return null;
+  return `${trimmed.replace(/\/$/, '')}/api/internal/replay-window-to-hrms`;
 }
 
-function mapLogToSyncPayload(log, empNoUpper) {
-  const typeUpper = log.logType ? String(log.logType).toUpperCase() : '';
-  if (!VALID_LOG_TYPES.has(typeUpper)) return null;
+async function runPostVerifyBiometricBackfillViaBiometricService({
+  empNo,
+  doj,
+  verifiedAt,
+  employeeName,
+}) {
+  const url = resolveBiometricReplayServiceUrl();
+  const systemKey = process.env.HRMS_MICROSERVICE_SECRET_KEY;
 
-  const ts = log.timestamp instanceof Date ? log.timestamp : new Date(log.timestamp);
-  if (isNaN(ts.getTime())) return null;
+  const empNoUpper = String(empNo || '').trim().toUpperCase();
+  if (!empNoUpper) return { skipped: true, reason: 'no_emp_no' };
 
-  let iso = ts.toISOString();
-  if (typeof iso === 'string' && !iso.endsWith('Z')) {
-    iso = `${iso}Z`;
+  const range = computeBackfillRange(doj, verifiedAt);
+  if (!range) {
+    return { skipped: true, reason: 'invalid_date_range' };
   }
 
-  return {
-    employeeId: empNoUpper,
-    timestamp: iso,
-    logType: typeUpper,
-    deviceId: log.deviceId || 'UNKNOWN',
-    deviceName: log.deviceName || 'UNKNOWN',
-    rawStatus: log.rawType != null ? log.rawType : null,
+  const dojIso = doj instanceof Date ? doj.toISOString() : new Date(doj).toISOString();
+  const verifiedIso =
+    verifiedAt instanceof Date ? verifiedAt.toISOString() : new Date(verifiedAt).toISOString();
+
+  const body = {
+    empNo: empNoUpper,
+    doj: dojIso,
+    verifiedAt: verifiedIso,
   };
-}
+  const nameTrim = employeeName != null ? String(employeeName).trim() : '';
+  if (nameTrim) body.employeeName = nameTrim;
 
-async function postBatchToInternalSync(url, systemKey, payload) {
   let attempt = 0;
   let lastErr;
   while (attempt < RETRY_ATTEMPTS) {
     try {
-      const res = await axios.post(url, payload, {
+      const res = await axios.post(url, body, {
         headers: { 'x-system-key': systemKey },
-        timeout: 180000,
+        timeout: 300000,
       });
-      return { ok: true, data: res.data };
+      const d = res.data || {};
+      return {
+        skipped: !!d.skipped,
+        reason: d.reason,
+        via: 'biometric_service',
+        logsFound: d.logsFound ?? 0,
+        sent: d.sent ?? 0,
+        batches: d.batches ?? 0,
+        error: d.error,
+        partial: d.partial,
+      };
     } catch (err) {
       lastErr = err;
       attempt += 1;
@@ -97,19 +104,20 @@ async function postBatchToInternalSync(url, systemKey, payload) {
   const msg = lastErr?.response?.data
     ? JSON.stringify(lastErr.response.data)
     : lastErr?.message || 'unknown error';
-  return { ok: false, error: msg };
+  console.error('[PostVerifyBiometricBackfill] Biometric service replay failed:', msg);
+  return {
+    skipped: false,
+    via: 'biometric_service',
+    error: msg,
+    logsFound: 0,
+    sent: 0,
+    batches: 0,
+  };
 }
 
-/**
- * Fetches biometric logs for the window and POSTs them to the internal attendance sync (same path as the biometric microservice).
- */
-async function runPostVerifyBiometricBackfill({ empNo, doj, verifiedAt }) {
+async function runPostVerifyBiometricBackfill({ empNo, doj, verifiedAt, employeeName }) {
   if (!isBackfillEnabled()) {
     return { skipped: true, reason: 'disabled_by_env' };
-  }
-  if (!resolveBiometricMongoUri()) {
-    console.warn('[PostVerifyBiometricBackfill] No biometric Mongo URI; skip replay', { empNo });
-    return { skipped: true, reason: 'no_biometric_uri' };
   }
 
   const systemKey = process.env.HRMS_MICROSERVICE_SECRET_KEY;
@@ -118,62 +126,27 @@ async function runPostVerifyBiometricBackfill({ empNo, doj, verifiedAt }) {
     return { skipped: true, reason: 'no_system_key' };
   }
 
-  const range = computeBackfillRange(doj, verifiedAt);
-  if (!range) {
-    return { skipped: true, reason: 'invalid_date_range' };
-  }
-
-  const empNoUpper = String(empNo || '').trim().toUpperCase();
-  if (!empNoUpper) return { skipped: true, reason: 'no_emp_no' };
-
-  const rawLogs = await findBiometricLogsForEmployeeBackfill(empNo, range.start, range.end);
-  if (!rawLogs.length) {
-    console.log(
-      `[PostVerifyBiometricBackfill] No biometric rows for ${empNoUpper} between ${range.start.toISOString()} and ${range.end.toISOString()}`
+  const biometricReplayUrl = resolveBiometricReplayServiceUrl();
+  if (!biometricReplayUrl) {
+    console.warn(
+      '[PostVerifyBiometricBackfill] BIOMETRIC_SERVICE_BASE_URL (or BIOMETRIC_SERVICE_URL) not set; skip replay. ' +
+        'Post-verify punch replay runs only via the biometric microservice.'
     );
-    return { skipped: false, logsFound: 0, batches: 0 };
+    return { skipped: true, reason: 'no_biometric_service_url' };
   }
 
-  const payload = [];
-  for (const log of rawLogs) {
-    const row = mapLogToSyncPayload(log, empNoUpper);
-    if (row) payload.push(row);
-  }
-
-  if (!payload.length) {
-    console.log(`[PostVerifyBiometricBackfill] ${rawLogs.length} raw rows for ${empNoUpper} but none had valid logType`);
-    return { skipped: false, logsFound: rawLogs.length, sent: 0, batches: 0 };
-  }
-
-  const url = resolveInternalSyncUrl();
-  let batches = 0;
-  let sent = 0;
-  for (let i = 0; i < payload.length; i += BATCH_SIZE) {
-    const chunk = payload.slice(i, i + BATCH_SIZE);
-    const result = await postBatchToInternalSync(url, systemKey, chunk);
-    batches += 1;
-    if (!result.ok) {
-      console.error(
-        `[PostVerifyBiometricBackfill] Batch failed for ${empNoUpper} (${i}-${i + chunk.length}):`,
-        result.error
-      );
-      break;
-    }
-    sent += chunk.length;
-    if (i + BATCH_SIZE < payload.length) {
-      await new Promise((r) => setTimeout(r, BATCH_GAP_MS));
-    }
-  }
-
-  console.log(
-    `[PostVerifyBiometricBackfill] ${empNoUpper}: replayed ${sent}/${payload.length} punches to internal sync (${batches} batch(es))`
-  );
-  return { skipped: false, logsFound: rawLogs.length, sent, batches };
+  console.log(`[PostVerifyBiometricBackfill] Delegating replay to biometric service → ${biometricReplayUrl}`);
+  return runPostVerifyBiometricBackfillViaBiometricService({
+    empNo,
+    doj,
+    verifiedAt,
+    employeeName,
+  });
 }
 
-function schedulePostVerifyBiometricBackfill({ empNo, doj, verifiedAt }) {
+function schedulePostVerifyBiometricBackfill({ empNo, doj, verifiedAt, employeeName }) {
   setImmediate(() => {
-    runPostVerifyBiometricBackfill({ empNo, doj, verifiedAt }).catch((err) => {
+    runPostVerifyBiometricBackfill({ empNo, doj, verifiedAt, employeeName }).catch((err) => {
       console.error('[PostVerifyBiometricBackfill] Unhandled error:', err.message);
     });
   });
@@ -183,5 +156,5 @@ module.exports = {
   schedulePostVerifyBiometricBackfill,
   runPostVerifyBiometricBackfill,
   computeBackfillRange,
-  mapLogToSyncPayload,
+  resolveBiometricReplayServiceUrl,
 };

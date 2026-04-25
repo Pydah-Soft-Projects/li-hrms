@@ -9,6 +9,7 @@ const logger = require('./utils/logger');
 const DeviceService = require('./services/deviceService');
 const SyncScheduler = require('./jobs/syncScheduler');
 const apiRoutes = require('./routes/api');
+const internalReplayRoutes = require('./routes/internalReplay');
 const deviceRoutes = require('./routes/devices');
 const admsRoutes = require('./routes/adms');
 const userSyncRoutes = require('./routes/userSync');
@@ -52,7 +53,8 @@ const syncScheduler = new SyncScheduler(
 // Make device service available to routes
 app.set('deviceService', deviceService);
 
-// Routes
+// Routes (Mongo → HRMS replay; no device — must use same x-system-key as HRMS)
+app.use('/api/internal', internalReplayRoutes);
 app.use('/api', apiRoutes);
 app.use('/api', exportRoutes); // HRMS filters + attendance export (GET /api/hrms/filters, GET /api/export/attendance)
 app.use('/api/devices', deviceRoutes);
@@ -76,6 +78,8 @@ app.get('/', (req, res) => {
         endpoints: {
             logs: 'GET /api/logs?employeeId=&startDate=&endDate=&logType=',
             employeeLogs: 'GET /api/logs/employee/:employeeId',
+            internalReplay:
+                'POST /api/internal/replay-window-to-hrms JSON { empNo, doj, verifiedAt, employeeName? } + header x-system-key (Mongo only → HRMS)',
             sync: 'POST /api/sync (optional JSON { startDate, endDate } YYYY-MM-DD)',
             deviceStatus: 'GET /api/devices/status',
             stats: 'GET /api/stats',
