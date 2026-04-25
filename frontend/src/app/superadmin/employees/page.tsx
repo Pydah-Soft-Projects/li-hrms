@@ -17,6 +17,7 @@ import UpdateRequestReviewModal from '@/components/employee/UpdateRequestReviewM
 import BankUpdateDialog from '@/components/employee/BankUpdateDialog';
 import Spinner from '@/components/Spinner';
 import EmployeeExportDialog from '@/components/employee/EmployeeExportDialog';
+import EmployeeSalaryHistoryPanel from '@/components/employee/EmployeeSalaryHistoryPanel';
 import { getEmployeeGroupedDynamicFieldValue } from '@/lib/employeeDynamicFieldValue';
 import { getPayPeriodRangeForCalendarMonth } from '@/lib/payPeriodRange';
 import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
@@ -453,7 +454,7 @@ export default function EmployeesPage() {
 
   const [employeeHistory, setEmployeeHistory] = useState<any[]>([]);
   const [employeeHistoryLoading, setEmployeeHistoryLoading] = useState(false);
-  const [employeeViewTab, setEmployeeViewTab] = useState<'profile' | 'history' | 'leaves_register'>('profile');
+  const [employeeViewTab, setEmployeeViewTab] = useState<'profile' | 'history' | 'leaves_register' | 'salary_history'>('profile');
   const [leaveRegisterMonth, setLeaveRegisterMonth] = useState<string>(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -6198,7 +6199,7 @@ export default function EmployeesPage() {
                       )}
                     </div>
                     {/* Simple tabs: Profile / History (history visible for super admin users) */}
-                    <div className="inline-flex rounded-full bg-slate-100 p-1 text-xs font-medium text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                    <div className="inline-flex max-w-full flex-wrap justify-end gap-1 rounded-full bg-slate-100 p-1 text-xs font-medium text-slate-600 dark:bg-slate-900 dark:text-slate-300">
                       <button
                         type="button"
                         onClick={() => setEmployeeViewTab('profile')}
@@ -6228,6 +6229,16 @@ export default function EmployeesPage() {
                           }`}
                       >
                         Leaves Register
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEmployeeViewTab('salary_history')}
+                        className={`px-3 py-1 rounded-full transition ${employeeViewTab === 'salary_history'
+                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
+                          : 'bg-transparent'
+                          }`}
+                      >
+                        Salary history
                       </button>
                     </div>
                   </div>
@@ -7361,6 +7372,17 @@ export default function EmployeesPage() {
                           })()}
                         </ol>
                       )}
+                    </div>
+                  )}
+
+                  {employeeViewTab === 'salary_history' && viewingEmployee?.emp_no && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/60">
+                      <h3 className="mb-1 text-lg font-semibold text-slate-900 dark:text-slate-100">Salary history</h3>
+                      <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                        Gross for the current pay cycle, master record when a future month is scheduled, revisions, and related approval
+                        events (same data as the salary-history API).
+                      </p>
+                      <EmployeeSalaryHistoryPanel empNo={viewingEmployee.emp_no} />
                     </div>
                   )}
 

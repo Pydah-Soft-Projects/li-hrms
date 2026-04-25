@@ -37,6 +37,8 @@ router.put(
   ptController.approveOrReject
 );
 
+router.put('/:id', authorize('super_admin'), ptController.updateRequestBySuperAdmin);
+
 router.get('/:id', ptController.getRequestById);
 router.get('/', ptController.getRequests);
 

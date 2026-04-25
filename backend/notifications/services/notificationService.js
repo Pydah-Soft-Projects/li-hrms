@@ -243,6 +243,8 @@ async function notifyWorkflowEvent({
   message,
   nextApproverRole = null,
   priority = 'medium',
+  /** Disambiguate multiple in-flight workflow pings with the same id + status (e.g. each forward step). */
+  dedupeExtra = null,
 }) {
   const actorId = actor?._id || actor?.userId || null;
   const requesterIds = await resolveRequesterUserIds(record);
@@ -270,6 +272,17 @@ async function notifyWorkflowEvent({
     ...superAdminIds,
   ]).filter((id) => String(id) !== String(actorId));
 
+  const defaultActionUrl =
+    module === 'od' || module === 'leave'
+      ? '/leaves'
+      : module === 'ot_permission'
+        ? '/ot-permissions'
+        : module === 'promotion_transfer'
+          ? '/promotions-transfers'
+          : module
+            ? `/${module}s`
+            : '/';
+
   return createNotifications({
     recipientUserIds: recipients,
     module,
@@ -279,7 +292,7 @@ async function notifyWorkflowEvent({
     priority,
     entityType: module,
     entityId: record?._id || null,
-    actionUrl: `/${module === 'od' || module === 'leave' ? 'leaves' : module === 'ot_permission' ? 'ot-permissions' : module}s`,
+    actionUrl: defaultActionUrl,
     meta: {
       status: record?.status,
       nextApproverRole: nextApproverRole || null,
@@ -290,7 +303,7 @@ async function notifyWorkflowEvent({
       empNo: record?.employeeId?.emp_no || record?.emp_no || employee?.emp_no || null,
     },
     createdBy: actorId,
-    dedupeKey: `${module}:${eventType}:${record?._id || ''}:${record?.status || ''}`,
+    dedupeKey: `${module}:${eventType}:${record?._id || ''}:${record?.status || ''}${dedupeExtra ? `:${dedupeExtra}` : ''}`,
   });
 }
 

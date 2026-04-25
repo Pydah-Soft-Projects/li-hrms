@@ -39,6 +39,9 @@ router.get('/:empNo', employeeController.getEmployee);
 // Employee history (Super Admin only)
 router.get('/:empNo/history', authorize('super_admin'), employeeController.getEmployeeHistory);
 
+// Gross salary timeline (scheduled revisions + related audit events); employee may read own
+router.get('/:empNo/salary-history', employeeController.getEmployeeSalaryHistory);
+
 // Create employee (Super Admin, Sub Admin, HR)
 router.post('/', authorize('manager', 'super_admin', 'sub_admin', 'hr'), upload.any(), employeeController.createEmployee);
 

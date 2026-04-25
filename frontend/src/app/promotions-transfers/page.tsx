@@ -21,6 +21,9 @@ import {
   Eye,
   Trash2,
   Users,
+  Filter,
+  Ban,
+  Pencil,
 } from 'lucide-react';
 
 type PayrollMonthOption = {
@@ -55,9 +58,11 @@ type PtRequest = {
     employee_name?: string;
     emp_no?: string;
     gross_salary?: number;
-    division_id?: { name?: string };
-    department_id?: { name?: string };
-    designation_id?: { name?: string };
+    _id?: string;
+    division_id?: { _id?: string; name?: string } | string;
+    department_id?: { _id?: string; name?: string } | string;
+    designation_id?: { _id?: string; name?: string } | string;
+    employee_group_id?: { _id?: string; name?: string } | string;
   };
   requestedBy?: { _id?: string; name?: string };
   proposedDesignationId?: { name?: string };
@@ -82,7 +87,14 @@ type PtRequest = {
       updatedAt?: string;
       isCurrent?: boolean;
     }>;
-    history?: Array<{ action?: string; actionByName?: string; comments?: string; timestamp?: string }>;
+    history?: Array<{
+      step?: string;
+      action?: 'submitted' | 'approved' | 'rejected' | 'cancelled' | 'updated' | string;
+      actionByName?: string;
+      actionByRole?: string;
+      comments?: string;
+      timestamp?: string;
+    }>;
   };
 };
 
@@ -192,7 +204,7 @@ function PromotionApprovalTimeline({ workflow }: { workflow: NonNullable<PtReque
                   )}
                   {isApproved && (
                     <span className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase">
-                      {step.status === 'skipped' ? '○ Skipped' : '✓ Approved'}
+                      {step.status === 'skipped' ? '○ Skipped' : '✓ Stage approved'}
                     </span>
                   )}
                   {isRejected && (
@@ -202,7 +214,7 @@ function PromotionApprovalTimeline({ workflow }: { workflow: NonNullable<PtReque
                     <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase">⏳ Your turn</span>
                   )}
                   {isPending && !isCurrent && (
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">○ Pending</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">○ Awaiting (not started)</span>
                   )}
                 </div>
                 {roleSub && (
@@ -234,6 +246,70 @@ function PromotionApprovalTimeline({ workflow }: { workflow: NonNullable<PtReque
   );
 }
 
+/** Headline for Activity & history rows — uses workflow `step` (hod, manager, …) when present. */
+function ptWorkflowHistoryHeadline(h: NonNullable<NonNullable<PtRequest['workflow']>['history']>[number]) {
+  const action = String(h.action || '').toLowerCase();
+  const stepRaw = String(h.step || '').trim();
+  const stepKey = stepRaw.toLowerCase();
+
+  if (action === 'submitted' || stepKey === 'submitted') {
+    return 'Request submitted';
+  }
+  if (action === 'updated') {
+    return 'Updated by super admin';
+  }
+  if (action === 'cancelled') {
+    return 'Cancelled';
+  }
+
+  const roleToken =
+    stepRaw && stepKey !== 'submitted'
+      ? stepRaw.split(/[\s(]/)[0]
+      : String(h.actionByRole || '')
+          .split(/[\s(]/)[0]
+          .toLowerCase();
+  const short = roleToken ? ptRoleStatusShortLabel({ role: roleToken }) : 'Stage';
+
+  if (action === 'approved') {
+    return `${short} approved`;
+  }
+  if (action === 'rejected') {
+    return `${short} rejected`;
+  }
+  if (action) {
+    return String(h.action);
+  }
+  return 'Event';
+}
+
+function RequestActivityHistory({ history }: { history: NonNullable<PtRequest['workflow']>['history'] }) {
+  if (!history || history.length === 0) return null;
+  const rows = [...history].reverse();
+  return (
+    <div className="rounded-xl border border-slate-200/90 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/40 p-3 sm:p-4">
+      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">Activity & history</p>
+      <ul className="space-y-3">
+        {rows.map((h, i) => (
+          <li key={i} className="text-xs border-l-2 border-indigo-200/90 dark:border-indigo-800/60 pl-3">
+            <div className="font-semibold text-slate-800 dark:text-slate-100">
+              {ptWorkflowHistoryHeadline(h)}
+              {h.actionByName ? (
+                <span className="font-normal text-slate-600 dark:text-slate-300"> · {h.actionByName}</span>
+              ) : null}
+            </div>
+            {h.timestamp && (
+              <p className="text-[10px] text-slate-500 mt-0.5">{new Date(h.timestamp).toLocaleString()}</p>
+            )}
+            {h.comments && (
+              <p className="text-slate-600 dark:text-slate-300 mt-1 leading-relaxed whitespace-pre-wrap">{h.comments}</p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function formatSalary(n: number | null | undefined) {
   if (n == null || !Number.isFinite(Number(n))) return '—';
   return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Number(n));
@@ -259,18 +335,111 @@ function promotionDelta(prev: number | null | undefined, next: number | null | u
   return Number(next) - Number(prev);
 }
 
+function orgFieldName(v: unknown): string {
+  if (v == null) return '—';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'object' && v !== null && 'name' in v && typeof (v as { name?: string }).name === 'string') {
+    return (v as { name: string }).name || '—';
+  }
+  return '—';
+}
+
 function statusClass(s: string) {
   switch (s) {
     case 'approved':
       return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300';
     case 'pending':
       return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300';
+    case 'in_approval':
+      return 'bg-sky-100 text-sky-900 dark:bg-sky-900/45 dark:text-sky-200';
     case 'rejected':
     case 'cancelled':
       return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
     default:
       return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
   }
+}
+
+/** Short label for status badge: "HOD", "Manager", etc. */
+function ptRoleStatusShortLabel(step: { role?: string; label?: string; status?: string }) {
+  const r = String(step.role || '')
+    .toLowerCase()
+    .trim();
+  if (r === 'hod') return 'HOD';
+  if (r === 'hr') return 'HR';
+  if (r === 'manager') return 'Manager';
+  if (r === 'super_admin') return 'Admin';
+  if (r === 'reporting_manager') return 'Reporting mgr';
+  const h = String(step.label || '').trim();
+  if (h && h.length <= 20) return h;
+  return promotionApproverRoleLabel(step.role);
+}
+
+/** e.g. "HOD approved" or "HOD · Manager approved" from completed chain steps. */
+function ptApprovedStagesStatusLabel(chain: NonNullable<NonNullable<PtRequest['workflow']>['approvalChain']>) {
+  const sorted = [...chain]
+    .filter((s) => s.status === 'approved' || s.status === 'skipped')
+    .sort((a, b) => (a.stepOrder ?? 0) - (b.stepOrder ?? 0));
+  if (sorted.length === 0) return { label: '', title: '' };
+
+  const longTitle = sorted
+    .map((s) => {
+      const line = promotionApprovalStepHeadline(s);
+      if (s.status === 'skipped') {
+        return `${line} (skipped by higher authority)`;
+      }
+      return `${line} — approved`;
+    })
+    .join(' → ');
+
+  const names = sorted.map((s) => ptRoleStatusShortLabel(s));
+  const onlySkipped = sorted.every((s) => s.status === 'skipped');
+  if (onlySkipped) {
+    return {
+      label: names.length === 1 ? `${names[0]} (skipped)` : `${names.join(' · ')} (skipped)`,
+      title: longTitle,
+    };
+  }
+  const approvedNames = sorted.filter((s) => s.status === 'approved').map((s) => ptRoleStatusShortLabel(s));
+  const mixed = approvedNames.length > 0 && sorted.some((s) => s.status === 'skipped');
+  if (mixed) {
+    const bits = sorted.map((s) => {
+      const n = ptRoleStatusShortLabel(s);
+      return s.status === 'skipped' ? `${n} (skipped)` : n;
+    });
+    return { label: `${bits.join(' · ')} — in review`, title: longTitle };
+  }
+  if (approvedNames.length === 1) {
+    return { label: `${approvedNames[0]} approved`, title: longTitle };
+  }
+  if (approvedNames.length === 2) {
+    return { label: `${approvedNames[0]} · ${approvedNames[1]} approved`, title: longTitle };
+  }
+  return {
+    label: `${approvedNames.slice(0, 2).join(' · ')} · +${approvedNames.length - 2} approved`,
+    title: longTitle,
+  };
+}
+
+/** When document is still `pending` but at least one workflow step is already approved, show which stages completed (e.g. HOD approved). */
+function ptRequestStatusPresentation(r: PtRequest) {
+  const s = (r.status || '').toLowerCase();
+  if (s !== 'pending') {
+    return { label: r.status, className: statusClass(r.status), title: r.status };
+  }
+  const chain = r.workflow?.approvalChain;
+  if (!Array.isArray(chain) || chain.length === 0) {
+    return { label: 'Pending', className: statusClass('pending'), title: 'Awaiting first approval' };
+  }
+  const { label: byRole, title: byRoleTitle } = ptApprovedStagesStatusLabel(chain);
+  if (byRole) {
+    return {
+      label: byRole,
+      className: statusClass('in_approval'),
+      title: byRoleTitle,
+    };
+  }
+  return { label: 'Pending', className: statusClass('pending'), title: 'Awaiting first approval' };
 }
 
 function normalizeId(v: any): string {
@@ -297,6 +466,27 @@ function departmentBelongsToDivision(dept: any, divisionId: string): boolean {
   });
 }
 
+function rowMatchesPtListFilters(
+  r: PtRequest,
+  f: {
+    divisionId: string;
+    departmentId: string;
+    designationId: string;
+    groupId: string;
+    requestType: string;
+  }
+) {
+  if (f.requestType && r.requestType !== f.requestType) return false;
+  if (!f.divisionId && !f.departmentId && !f.designationId && !f.groupId) return true;
+  const e = r.employeeId;
+  if (!e) return false;
+  if (f.divisionId && normalizeId(e.division_id) !== f.divisionId) return false;
+  if (f.departmentId && normalizeId(e.department_id) !== f.departmentId) return false;
+  if (f.designationId && normalizeId(e.designation_id) !== f.designationId) return false;
+  if (f.groupId && normalizeId(e.employee_group_id) !== f.groupId) return false;
+  return true;
+}
+
 /** Backend treats any sent to* as an org change; unchanged values must be omitted (else "must change when specified"). */
 function orgDeltaForPromotionPayload(currentEmp: any, toDiv: string, toDept: string, toDesig: string) {
   const curDiv = normalizeId(currentEmp?.division_id);
@@ -321,6 +511,92 @@ interface BulkPtRow {
   remarks: string;
 }
 
+const bulkRowKey = (r: BulkPtRow) => String(r.employee?._id ?? r.employee?.emp_no ?? '');
+
+/** True when a row is included in a batch submit (same rules as the bulk “toCreate” filter). */
+function bulkRowIsToCreate(r: BulkPtRow): boolean {
+  const type = r.requestType;
+  if (type === 'promotion' || type === 'demotion') {
+    const nextGross = Number(r.newGrossSalary);
+    const prevGross = Number(r.employee.gross_salary) || 0;
+    const delta = nextGross - prevGross;
+    if (nextGross <= 0) return false;
+    if (type === 'promotion' && delta <= 0) return false;
+    if (type === 'demotion' && delta >= 0) return false;
+    return true;
+  }
+  if (type === 'increment') {
+    const inc = Number(r.newGrossSalary);
+    if (!Number.isFinite(inc) || inc <= 0) return false;
+    const prevGross = Number(r.employee.gross_salary);
+    return Number.isFinite(prevGross);
+  }
+  const tDiv = r.toDivisionId;
+  const tDept = r.toDepartmentId;
+  const tDesig = r.toDesignationId;
+  const hasDivChange = tDiv && normalizeId(r.employee.division_id) !== tDiv;
+  const hasDeptChange = tDept && normalizeId(r.employee.department_id) !== tDept;
+  const hasDesigChange = tDesig && normalizeId(r.employee.designation_id) !== tDesig;
+  return !!(hasDivChange || hasDeptChange || hasDesigChange);
+}
+
+function validateBulkToCreateRow(r: BulkPtRow, monthOptions: PayrollMonthOption[]): string[] {
+  const e: string[] = [];
+  const t = r.requestType;
+  if (t === 'promotion' || t === 'demotion' || t === 'increment') {
+    const opt = monthOptions.find((p) => p.label === r.selectedMonthLabel);
+    if (!opt) e.push('Select an effective pay month');
+  }
+  if (t === 'promotion' || t === 'demotion') {
+    const nextGross = Number(r.newGrossSalary);
+    if (!Number.isFinite(nextGross) || nextGross <= 0) e.push('Enter a valid new gross');
+  }
+  if (t === 'increment') {
+    const inc = Number(r.newGrossSalary);
+    if (!Number.isFinite(inc) || inc <= 0) e.push('Enter a valid increment amount (positive number)');
+  }
+  return e;
+}
+
+/** Hints for rows that are not yet in the submit set but look incomplete (e.g. salary set, no month). */
+function bulkRowNotReadyHints(r: BulkPtRow, monthOptions: PayrollMonthOption[]): string[] {
+  if (bulkRowIsToCreate(r)) return [];
+  const h: string[] = [];
+  if (r.requestType === 'promotion' || r.requestType === 'demotion' || r.requestType === 'increment') {
+    const hasMonth = !!monthOptions.find((m) => m.label === r.selectedMonthLabel);
+    if (r.requestType === 'increment') {
+      const inc = Number(r.newGrossSalary);
+      if (inc > 0 && !hasMonth) h.push('Select an effective pay month to submit');
+    } else {
+      const nextGross = Number(r.newGrossSalary);
+      if (Number.isFinite(nextGross) && nextGross > 0 && !hasMonth) {
+        h.push('Select an effective pay month to submit');
+      }
+    }
+  }
+  if (r.requestType === 'transfer') {
+    if (!r.toDivisionId) h.push('Select a target division');
+    if (!r.toDepartmentId) h.push('Select a target department');
+    if (!r.toDesignationId) h.push('Select a target designation');
+  }
+  return h;
+}
+
+/** If the per-row create call failed, return the user-facing error text; else null. */
+function settledResultErrorMessage(res: PromiseSettledResult<unknown>): string | null {
+  if (res.status === 'rejected') {
+    const r: any = res.reason;
+    if (r?.message) return String(r.message);
+    if (r != null) return String(r);
+    return 'Request failed';
+  }
+  const v: any = res.value;
+  if (v && v.success === true) return null;
+  const t = v && (v.message || v.error);
+  if (t && String(t).trim()) return String(t).trim();
+  return 'Request failed';
+}
+
 export default function PromotionsTransfersPage() {
   const [user, setUser] = useState<ReturnType<typeof auth.getUser>>(null);
   const [tab, setTab] = useState<'all' | 'pending'>('all');
@@ -328,6 +604,14 @@ export default function PromotionsTransfersPage() {
   const [list, setList] = useState<PtRequest[]>([]);
   const [pendingList, setPendingList] = useState<PtRequest[]>([]);
   const [search, setSearch] = useState('');
+  const [filterDivisionId, setFilterDivisionId] = useState('');
+  const [filterDepartmentId, setFilterDepartmentId] = useState('');
+  const [filterGroupId, setFilterGroupId] = useState('');
+  const [filterDesignationId, setFilterDesignationId] = useState('');
+  const [filterRequestType, setFilterRequestType] = useState<
+    '' | 'promotion' | 'demotion' | 'transfer' | 'increment'
+  >('');
+  const [employeeGroups, setEmployeeGroups] = useState<{ _id: string; name: string }[]>([]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [formType, setFormType] = useState<'promotion' | 'demotion' | 'transfer' | 'increment'>('promotion');
@@ -336,9 +620,9 @@ export default function PromotionsTransfersPage() {
   const [empSearchLoading, setEmpSearchLoading] = useState(false);
   const [selectedEmpNo, setSelectedEmpNo] = useState('');
   const [payrollMonths, setPayrollMonths] = useState<PayrollMonthOption[]>([]);
-  /** Server-derived; drives ongoing marker and proration end (last closed pay month). */
+  /** Server-derived; drives ongoing marker and proration (see `ongoingLabel` vs `containingKey`). */
   const [promotionPayroll, setPromotionPayroll] = useState<{
-    /** Oldest month with a non-complete batch (backlog). */
+    /** Operational ongoing pay month (only previous month vs current is evaluated on the server). */
     ongoingLabel: string;
     incompleteOngoingLabel?: string;
     arrearProrationEndLabel: string;
@@ -370,6 +654,13 @@ export default function PromotionsTransfersPage() {
   const [prorationLoading, setProrationLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [remarks, setRemarks] = useState('');
+  /** Pending PT row for selected employee (blocks duplicate until approved/rejected/cancelled). */
+  const [activePendingRequest, setActivePendingRequest] = useState<{
+    _id: string;
+    requestType: string;
+    createdAt?: string;
+  } | null>(null);
+  const [activePendingLoading, setActivePendingLoading] = useState(false);
 
   const [detail, setDetail] = useState<PtRequest | null>(null);
   const [detailProrationRows, setDetailProrationRows] = useState<any[]>([]);
@@ -377,6 +668,18 @@ export default function PromotionsTransfersPage() {
   const [actionComment, setActionComment] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [detailEditMode, setDetailEditMode] = useState(false);
+  const [detailEditSaving, setDetailEditSaving] = useState(false);
+  const [detailEditRemarks, setDetailEditRemarks] = useState('');
+  const [detailEditNewGross, setDetailEditNewGross] = useState('');
+  const [detailEditIncrement, setDetailEditIncrement] = useState('');
+  const [detailEditMonthLabel, setDetailEditMonthLabel] = useState('');
+  const [detailEditProposedId, setDetailEditProposedId] = useState('');
+  const [detailEditToDiv, setDetailEditToDiv] = useState('');
+  const [detailEditToDept, setDetailEditToDept] = useState('');
+  const [detailEditToDesig, setDetailEditToDesig] = useState('');
+  const [detailEditNote, setDetailEditNote] = useState('');
+  const [detailEditPayrollMonths, setDetailEditPayrollMonths] = useState<PayrollMonthOption[]>([]);
 
   // Bulk operations state
   const [bulkSectionOpen, setBulkSectionOpen] = useState(false);
@@ -386,6 +689,26 @@ export default function PromotionsTransfersPage() {
   const [bulkRows, setBulkRows] = useState<BulkPtRow[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
+  /** Per-employee (key = employee _id) messages after failed bulk validation, pre-submit check, or API errors */
+  const [bulkRowErrors, setBulkRowErrors] = useState<Record<string, string[]>>({});
+  /** Whether a row was flagged by client checks vs a failed API call (drives red vs amber row styling). */
+  const [bulkRowErrorSource, setBulkRowErrorSource] = useState<Record<string, 'client' | 'server'>>({});
+
+  const clearAllBulkRowErrors = useCallback(() => {
+    setBulkRowErrors({});
+    setBulkRowErrorSource({});
+  }, []);
+
+  const setClientBulkRowErrors = useCallback((m: Record<string, string[]>) => {
+    setBulkRowErrors(m);
+    if (!m || !Object.keys(m).length) {
+      setBulkRowErrorSource({});
+      return;
+    }
+    setBulkRowErrorSource(
+      Object.fromEntries(Object.keys(m).map((k) => [k, 'client' as const])) as Record<string, 'client'>
+    );
+  }, []);
 
   // Bulk header (apply-to-all) state
   const [headerEffectiveMonth, setHeaderEffectiveMonth] = useState('');
@@ -420,6 +743,22 @@ export default function PromotionsTransfersPage() {
     },
     [canDelete]
   );
+
+  /**
+   * When set, GET /payroll-months checks only that employee’s division+department batch for ongoing
+   * (not all company batches). HR: set when the create modal is open and an employee is chosen.
+   */
+  const empNoForPayroll = useMemo(() => {
+    if (isEmployee) {
+      const n = String(user?.emp_no || user?.employeeId || '').toUpperCase();
+      return n || undefined;
+    }
+    if (modalOpen) {
+      const n = String(selectedEmpNo || currentEmp?.emp_no || '').toUpperCase();
+      return n || undefined;
+    }
+    return undefined;
+  }, [isEmployee, user?.emp_no, user?.employeeId, modalOpen, selectedEmpNo, currentEmp?.emp_no]);
 
   /** Load department options for the modal without clearing the list when division is missing (employee may only have department). */
   const refreshModalDepartments = useCallback(async (divisionId: string, ensureDeptId: string) => {
@@ -519,6 +858,112 @@ export default function PromotionsTransfersPage() {
     }
   }, [canApprove]);
 
+  const isSuperAdmin = useMemo(() => (user?.role || '').toLowerCase() === 'super_admin', [user?.role]);
+
+  const canSuperAdminEditPendingRequest = useCallback(
+    (r: PtRequest | null) => !!(r && isSuperAdmin && r.status === 'pending'),
+    [isSuperAdmin]
+  );
+
+  useEffect(() => {
+    if (!detail) setDetailEditMode(false);
+  }, [detail]);
+
+  useEffect(() => {
+    if (!detailEditMode || !detail?.emp_no) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res: any = await api.getPromotionTransferPayrollMonths({
+          past: 5,
+          future: 5,
+          emp_no: detail.emp_no,
+        });
+        if (cancelled) return;
+        const rows = res?.data ?? res;
+        setDetailEditPayrollMonths(Array.isArray(rows) ? rows : []);
+      } catch {
+        if (!cancelled) setDetailEditPayrollMonths([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [detailEditMode, detail?.emp_no]);
+
+  const beginDetailEdit = useCallback(() => {
+    if (!detail) return;
+    setDetailEditRemarks(detail.remarks || '');
+    setDetailEditNewGross(detail.newGrossSalary != null ? String(detail.newGrossSalary) : '');
+    setDetailEditIncrement(detail.incrementAmount != null ? String(detail.incrementAmount) : '');
+    const y = detail.effectivePayrollYear;
+    const m = detail.effectivePayrollMonth;
+    setDetailEditMonthLabel(y && m ? `${y}-${String(m).padStart(2, '0')}` : '');
+    setDetailEditProposedId(normalizeId(detail.proposedDesignationId) || '');
+    setDetailEditToDiv(normalizeId(detail.toDivisionId) || '');
+    setDetailEditToDept(normalizeId(detail.toDepartmentId) || '');
+    setDetailEditToDesig(normalizeId(detail.toDesignationId) || '');
+    setDetailEditNote('');
+    setDetailEditMode(true);
+  }, [detail]);
+
+  const saveDetailEdit = useCallback(async () => {
+    if (!detail) return;
+    setDetailEditSaving(true);
+    try {
+      const body: Record<string, unknown> = {
+        remarks: detailEditRemarks,
+        ...(detailEditNote.trim() ? { editNote: detailEditNote.trim() } : {}),
+      };
+      if (detail.requestType === 'transfer') {
+        body.toDivisionId = detailEditToDiv;
+        body.toDepartmentId = detailEditToDept;
+        body.toDesignationId = detailEditToDesig;
+      } else {
+        const parts = detailEditMonthLabel.split('-');
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        if (!y || m < 1 || m > 12) throw new Error('Select a valid effective payroll month');
+        body.effectivePayrollYear = y;
+        body.effectivePayrollMonth = m;
+        if (detail.requestType === 'increment') {
+          body.incrementAmount = Number(detailEditIncrement);
+        } else {
+          body.newGrossSalary = Number(detailEditNewGross);
+        }
+        if (detail.requestType === 'promotion' || detail.requestType === 'demotion') {
+          body.proposedDesignationId = detailEditProposedId || null;
+        }
+        body.toDivisionId = detailEditToDiv || '';
+        body.toDepartmentId = detailEditToDept || '';
+        body.toDesignationId = detailEditToDesig || '';
+      }
+      const res: any = await api.updatePromotionTransferRequest(detail._id, body);
+      if (!res?.success) throw new Error(res?.message || 'Update failed');
+      const next = res.data ?? res;
+      toast.success('Request updated');
+      setDetail(next);
+      setDetailEditMode(false);
+      loadData();
+    } catch (e: any) {
+      toast.error(e?.message || 'Update failed');
+    } finally {
+      setDetailEditSaving(false);
+    }
+  }, [
+    detail,
+    detailEditRemarks,
+    detailEditNote,
+    detailEditToDiv,
+    detailEditToDept,
+    detailEditToDesig,
+    detailEditMonthLabel,
+    detailEditIncrement,
+    detailEditNewGross,
+    detailEditProposedId,
+    loadData,
+  ]);
+
   const loadBulkEmployees = async () => {
     setBulkLoading(true);
     try {
@@ -538,6 +983,7 @@ export default function PromotionsTransfersPage() {
         remarks: '',
       }));
       setBulkRows(rows);
+      clearAllBulkRowErrors();
       toast.info(rows.length ? `Loaded ${rows.length} employees` : 'No employees match filters');
     } catch (err: any) {
       toast.error(err?.message || 'Failed to load employees');
@@ -549,81 +995,103 @@ export default function PromotionsTransfersPage() {
   const updateBulkRow = (index: number, field: keyof BulkPtRow, value: any) => {
     setBulkRows((prev) => {
       const next = [...prev];
-      if (next[index]) next[index] = { ...next[index], [field]: value };
+      if (next[index]) {
+        const k = bulkRowKey(next[index]);
+        if (k) {
+          setBulkRowErrors((er) => {
+            if (!er || !er[k]) return er;
+            const o = { ...er };
+            delete o[k];
+            return o;
+          });
+          setBulkRowErrorSource((s) => {
+            if (!s || !s[k]) return s;
+            const o = { ...s };
+            delete o[k];
+            return o;
+          });
+        }
+        next[index] = { ...next[index], [field]: value };
+      }
       return next;
     });
   };
 
   const handleBulkSave = async () => {
-    const toCreate = bulkRows.filter((r) => {
-      const type = r.requestType;
-      // For promotion/demotion, check if gross salary changed and is > 0
-      if (type === 'promotion' || type === 'demotion') {
-        const nextGross = Number(r.newGrossSalary);
-        const prevGross = Number(r.employee.gross_salary) || 0;
-        const delta = nextGross - prevGross;
-        
-        if (nextGross <= 0) return false;
-        if (type === 'promotion' && delta <= 0) return false;
-        if (type === 'demotion' && delta >= 0) return false;
-        return true;
-      }
-      if (type === 'increment') {
-        const inc = Number(r.newGrossSalary);
-        if (!Number.isFinite(inc) || inc <= 0) return false;
-        const prevGross = Number(r.employee.gross_salary);
-        return Number.isFinite(prevGross);
-      }
-      
-      // For transfer, check if any org field changed relative to current
-      const tDiv = r.toDivisionId;
-      const tDept = r.toDepartmentId;
-      const tDesig = r.toDesignationId;
+    const toCreate = bulkRows.filter(bulkRowIsToCreate);
+    const errMap: Record<string, string[]> = {};
 
-      const hasDivChange = tDiv && normalizeId(r.employee.division_id) !== tDiv;
-      const hasDeptChange = tDept && normalizeId(r.employee.department_id) !== tDept;
-      const hasDesigChange = tDesig && normalizeId(r.employee.designation_id) !== tDesig;
-
-      return !!(hasDivChange || hasDeptChange || hasDesigChange);
-    });
+    for (const r of toCreate) {
+      const rowErrs = validateBulkToCreateRow(r, payrollMonths);
+      if (rowErrs.length) errMap[bulkRowKey(r)] = rowErrs;
+    }
 
     if (toCreate.length === 0) {
+      for (const r of bulkRows) {
+        const hint = bulkRowNotReadyHints(r, payrollMonths);
+        if (hint.length) errMap[bulkRowKey(r)] = hint;
+      }
+      if (Object.keys(errMap).length) {
+        setClientBulkRowErrors(errMap);
+        toast.error(
+          `No row is ready to submit. Fix the issues highlighted in ${Object.keys(errMap).length} row(s), or add valid salary/org changes.`
+        );
+        return;
+      }
+      clearAllBulkRowErrors();
       toast.warn('No valid changes detected for any row. Check salaries, increment amounts, and transfer org changes.');
       return;
     }
+
+    if (Object.keys(errMap).length) {
+      setClientBulkRowErrors(errMap);
+      toast.error(
+        `Please fix the highlighted issues in ${Object.keys(errMap).length} row(s) before submitting.`
+      );
+      return;
+    }
+
+    clearAllBulkRowErrors();
+
+    const buildRowBody = (r: BulkPtRow): any => {
+      const body: any = {
+        requestType: r.requestType,
+        emp_no: r.employee.emp_no,
+        remarks: (r.remarks || headerRemarks || `Bulk ${r.requestType}`).trim(),
+      };
+      if (r.requestType === 'promotion' || r.requestType === 'demotion' || r.requestType === 'increment') {
+        const opt = payrollMonths.find((p) => p.label === r.selectedMonthLabel);
+        if (!opt) {
+          return null;
+        }
+        body.effectivePayrollYear = opt.payrollYear;
+        body.effectivePayrollMonth = opt.payrollMonth;
+        if (r.requestType === 'increment') {
+          body.incrementAmount = Number(r.newGrossSalary);
+        } else {
+          body.newGrossSalary = Number(r.newGrossSalary);
+          if (r.toDivisionId && normalizeId(r.employee.division_id) !== r.toDivisionId) body.toDivisionId = r.toDivisionId;
+          if (r.toDepartmentId && normalizeId(r.employee.department_id) !== r.toDepartmentId) body.toDepartmentId = r.toDepartmentId;
+          if (r.toDesignationId && normalizeId(r.employee.designation_id) !== r.toDesignationId) {
+            body.proposedDesignationId = r.toDesignationId;
+            body.toDesignationId = r.toDesignationId;
+          }
+        }
+      } else {
+        body.toDivisionId = r.toDivisionId || normalizeId(r.employee.division_id);
+        body.toDepartmentId = r.toDepartmentId || normalizeId(r.employee.department_id);
+        body.toDesignationId = r.toDesignationId || normalizeId(r.employee.designation_id);
+      }
+      return body;
+    };
 
     setBulkSaving(true);
     try {
       const settled = await Promise.allSettled(
         toCreate.map((r) => {
-          const body: any = {
-            requestType: r.requestType,
-            emp_no: r.employee.emp_no,
-            remarks: (r.remarks || headerRemarks || `Bulk ${r.requestType}`).trim(),
-          };
-
-          if (r.requestType === 'promotion' || r.requestType === 'demotion' || r.requestType === 'increment') {
-            const opt = payrollMonths.find((p) => p.label === r.selectedMonthLabel);
-            if (!opt) throw new Error(`Invalid month for ${r.employee.emp_no}`);
-            body.effectivePayrollYear = opt.payrollYear;
-            body.effectivePayrollMonth = opt.payrollMonth;
-            if (r.requestType === 'increment') {
-              body.incrementAmount = Number(r.newGrossSalary);
-            } else {
-              body.newGrossSalary = Number(r.newGrossSalary);
-              // Optional org change — promotion/demotion only (not increment)
-              if (r.toDivisionId && normalizeId(r.employee.division_id) !== r.toDivisionId) body.toDivisionId = r.toDivisionId;
-              if (r.toDepartmentId && normalizeId(r.employee.department_id) !== r.toDepartmentId) body.toDepartmentId = r.toDepartmentId;
-              if (r.toDesignationId && normalizeId(r.employee.designation_id) !== r.toDesignationId) {
-                body.proposedDesignationId = r.toDesignationId;
-                body.toDesignationId = r.toDesignationId;
-              }
-            }
-          } else {
-            // For transfer, backend requires all three
-            body.toDivisionId = r.toDivisionId || normalizeId(r.employee.division_id);
-            body.toDepartmentId = r.toDepartmentId || normalizeId(r.employee.department_id);
-            body.toDesignationId = r.toDesignationId || normalizeId(r.employee.designation_id);
+          const body = buildRowBody(r);
+          if (!body) {
+            return Promise.resolve({ success: false, message: 'Invalid row after validation' });
           }
           return api.createPromotionTransferRequest(body);
         })
@@ -632,6 +1100,32 @@ export default function PromotionsTransfersPage() {
       const successCount = settled.filter((x) => x.status === 'fulfilled' && (x.value as any)?.success).length;
       const failedCount = settled.length - successCount;
 
+      const serverErrMap: Record<string, string[]> = {};
+      toCreate.forEach((r, i) => {
+        const errText = settledResultErrorMessage(settled[i]);
+        if (errText) {
+          const k = bulkRowKey(r);
+          if (k) serverErrMap[k] = [errText];
+        }
+      });
+
+      if (Object.keys(serverErrMap).length) {
+        setBulkRowErrors(serverErrMap);
+        setBulkRowErrorSource(
+          Object.fromEntries(Object.keys(serverErrMap).map((k) => [k, 'server' as const])) as Record<
+            string,
+            'server'
+          >
+        );
+        if (failedCount > 1) {
+          toast.error(
+            `${failedCount} request(s) failed. Each affected employee is highlighted in the list with the server message.`
+          );
+        } else {
+          toast.error(Object.values(serverErrMap)[0][0] || 'Request failed');
+        }
+      }
+
       if (successCount > 0) {
         toast.success(`${successCount} request(s) created successfully`);
         loadData();
@@ -639,21 +1133,15 @@ export default function PromotionsTransfersPage() {
         setBulkRows((prev) =>
           prev.filter((r) => {
             // Find if this row was one we tried to create
-            const matched = toCreate.find(tc => tc.employee._id === r.employee._id);
+            const matched = toCreate.find((tc) => tc.employee._id === r.employee._id);
             if (!matched) return true; // Keep rows we didn't touch
-            
+
             // If it was in toCreate, check if THAT specific request succeeded
             const idx = toCreate.indexOf(matched);
             const res = settled[idx];
             return !(res.status === 'fulfilled' && (res.value as any)?.success);
           })
         );
-      }
-
-      if (failedCount > 0) {
-        const firstError = settled.find(x => x.status === 'fulfilled' && !(x.value as any)?.success);
-        const errorMsg = firstError ? (firstError as any).value.message : 'Some requests failed';
-        toast.error(`${failedCount} error(s). e.g.: ${errorMsg}`);
       }
     } catch (err: any) {
       toast.error(err?.message || 'Bulk create failed');
@@ -677,14 +1165,21 @@ export default function PromotionsTransfersPage() {
     api.getDivisions(true, undefined, true).then((r: any) => { if (r?.success && r?.data) setDivisions(r.data); }).catch(() => {});
     api.getDepartments(true, undefined, true).then((r: any) => { if (r?.success && r?.data) setMasterDepartments(r.data); }).catch(() => {});
     api.getAllDesignations(true).then((r: any) => { if (r?.success && r?.data) setAllDesignations(r.data); }).catch(() => {});
+    api.getEmployeeGroups(true).then((r: any) => { if (r?.success && Array.isArray(r.data)) setEmployeeGroups(r.data); }).catch(() => {});
+  }, [user, canView, loadData]);
+
+  useEffect(() => {
+    if (!user || !canView) return;
+    const opts: { past: number; future: number; emp_no?: string } = { past: 5, future: 5 };
+    if (empNoForPayroll) opts.emp_no = empNoForPayroll;
     api
-      .getPromotionTransferPayrollMonths({ past: 5, future: 5 })
+      .getPromotionTransferPayrollMonths(opts)
       .then((r: any) => {
         if (r?.success && r?.data) setPayrollMonths(r.data);
         if (r?.success && r?.promotionPayroll) setPromotionPayroll(r.promotionPayroll);
       })
       .catch(() => {});
-  }, [user, canView, loadData]);
+  }, [user, canView, empNoForPayroll]);
 
   const openCreateModal = async () => {
     setFormType('promotion');
@@ -702,13 +1197,7 @@ export default function PromotionsTransfersPage() {
     setPaidDaysByMonth({});
     setModalOpen(true);
     try {
-      const [pm, des, divs] = await Promise.all([
-        api.getPromotionTransferPayrollMonths({ past: 5, future: 5 }),
-        api.getAllDesignations(true),
-        api.getDivisions(true, undefined, true),
-      ]);
-      if (pm?.success && Array.isArray(pm.data)) setPayrollMonths(pm.data);
-      if (pm?.success && pm?.promotionPayroll) setPromotionPayroll(pm.promotionPayroll);
+      const [des, divs] = await Promise.all([api.getAllDesignations(true), api.getDivisions(true, undefined, true)]);
       if (des?.success && Array.isArray(des.data)) setAllDesignations(des.data);
       else if (Array.isArray(des?.data)) setAllDesignations(des.data);
       if (divs?.success && Array.isArray(divs.data)) setDivisions(divs.data);
@@ -768,24 +1257,59 @@ export default function PromotionsTransfersPage() {
     };
   }, [modalOpen, currentEmp?._id, payrollMonths]);
 
+  useEffect(() => {
+    if (!modalOpen || !selectedEmpNo) {
+      setActivePendingRequest(null);
+      setActivePendingLoading(false);
+      return;
+    }
+    const emp = String(selectedEmpNo).trim().toUpperCase();
+    if (!emp) {
+      setActivePendingRequest(null);
+      return;
+    }
+    let cancelled = false;
+    setActivePendingLoading(true);
+    void api
+      .getPromotionTransferRequests({ emp_no: emp })
+      .then((res: any) => {
+        if (cancelled) return;
+        const rows = Array.isArray(res?.data) ? res.data : [];
+        const p = rows.find((r: any) => String(r?.status || '').toLowerCase() === 'pending');
+        if (p && p._id) {
+          setActivePendingRequest({
+            _id: String(p._id),
+            requestType: String(p.requestType || 'request'),
+            createdAt: p.createdAt,
+          });
+        } else {
+          setActivePendingRequest(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setActivePendingRequest(null);
+      })
+      .finally(() => {
+        if (!cancelled) setActivePendingLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [modalOpen, selectedEmpNo]);
+
   const payrollMonthsWithPaidDays = useMemo(() => {
+    const on = promotionPayroll?.ongoingLabel;
     return payrollMonths.map((p) => {
       const rec = paidDaysByMonth[p.label];
       return {
         ...p,
         paidDays: rec ? rec.paidDays : undefined,
         totalDaysInMonth: rec ? rec.totalDays : undefined,
+        /** Prefer server `ongoingLabel` so we do not infer ongoing from scanning the list. */
+        isOngoing: on != null && on !== '' ? p.label === on : p.isOngoing,
       };
     });
-  }, [payrollMonths, paidDaysByMonth]);
-
-  /** Oldest payroll still missing a complete batch (may differ from the run that contains today). */
-  const incompleteBacklogLabel = useMemo(() => {
-    if (promotionPayroll?.incompleteOngoingLabel || promotionPayroll?.ongoingLabel) {
-      return promotionPayroll.incompleteOngoingLabel || promotionPayroll.ongoingLabel;
-    }
-    return '';
-  }, [promotionPayroll?.incompleteOngoingLabel, promotionPayroll?.ongoingLabel]);
+  }, [payrollMonths, paidDaysByMonth, promotionPayroll?.ongoingLabel]);
 
   /**
    * Last closed month for server-side auto-arrears (not used for the on-screen proration range end).
@@ -795,11 +1319,14 @@ export default function PromotionsTransfersPage() {
     return '';
   }, [promotionPayroll]);
 
-  /** Current pay run id (same as the row marked ONGOING) — from server or dropdown. */
+  /**
+   * Operational ongoing pay month — always from `promotionPayroll.ongoingLabel` (not `containingKey`,
+   * and not from scanning the cycles array). May be the month before the current run when that month is still open.
+   */
   const ongoingPayMonthLabel = useMemo(() => {
-    if (promotionPayroll?.containingKey) return promotionPayroll.containingKey;
-    return payrollMonths.find((p) => p.isOngoing)?.label || '';
-  }, [promotionPayroll?.containingKey, payrollMonths]);
+    if (promotionPayroll?.ongoingLabel) return promotionPayroll.ongoingLabel;
+    return '';
+  }, [promotionPayroll?.ongoingLabel]);
 
   /**
    * Inclusive end month for paid-days proration: through the pay month **before** the ongoing run (exclude ongoing).
@@ -837,14 +1364,11 @@ export default function PromotionsTransfersPage() {
     if (!modalOpen) return;
     if (formType === 'transfer') return;
     if (selectedMonthLabel) return;
-    const def =
-      (promotionPayroll?.containingKey ||
-        promotionPayroll?.ongoingLabel ||
-        payrollMonths.find((p) => p.isOngoing)?.label) as string | undefined;
+    const def = (promotionPayroll?.ongoingLabel || promotionPayroll?.containingKey) as string | undefined;
     if (def) {
       setSelectedMonthLabel(def);
     }
-  }, [modalOpen, formType, payrollMonths, selectedMonthLabel, promotionPayroll?.containingKey, promotionPayroll?.ongoingLabel]);
+  }, [modalOpen, formType, selectedMonthLabel, promotionPayroll?.containingKey, promotionPayroll?.ongoingLabel]);
 
   // Paid-days proration: effective month → month *before* ongoing (exclude current pay run from the sum)
   useEffect(() => {
@@ -1088,15 +1612,27 @@ export default function PromotionsTransfersPage() {
     }
   };
 
+  const listFilters = useMemo(
+    () => ({
+      divisionId: filterDivisionId,
+      departmentId: filterDepartmentId,
+      designationId: filterDesignationId,
+      groupId: filterGroupId,
+      requestType: filterRequestType,
+    }),
+    [filterDivisionId, filterDepartmentId, filterDesignationId, filterGroupId, filterRequestType]
+  );
+
   const filtered = useMemo(() => {
     const src = tab === 'pending' ? pendingList : list;
     const q = search.trim().toLowerCase();
-    if (!q) return src;
     return src.filter((r) => {
+      if (!rowMatchesPtListFilters(r, listFilters)) return false;
+      if (!q) return true;
       const name = r.employeeId?.employee_name?.toLowerCase() || '';
       return r.emp_no.toLowerCase().includes(q) || name.includes(q);
     });
-  }, [list, pendingList, tab, search]);
+  }, [list, pendingList, tab, search, listFilters]);
 
   const showBulkTargetOrgColumn = useMemo(
     () => bulkRows.some((r) => r.requestType !== 'increment'),
@@ -1105,6 +1641,7 @@ export default function PromotionsTransfersPage() {
 
   const openDetail = async (id: string) => {
     try {
+      setDetailEditMode(false);
       setDetailProrationRows([]);
       const res = await api.getPromotionTransferRequest(id);
       const d = res?.data ?? res;
@@ -1118,13 +1655,17 @@ export default function PromotionsTransfersPage() {
         d.employeeId?._id
       ) {
         const startLabel = `${d.effectivePayrollYear}-${String(d.effectivePayrollMonth || '').padStart(2, '0')}`;
-        let containingKey = '';
+        let ongoingLabel = '';
         let arrearEnd = arrearProrationEndLabel;
         try {
-          const pm: any = await api.getPromotionTransferPayrollMonths({ past: 5, future: 5 });
+          const pm: any = await api.getPromotionTransferPayrollMonths({
+            past: 5,
+            future: 5,
+            ...(d.emp_no ? { emp_no: d.emp_no } : {}),
+          });
           if (pm?.success && pm?.promotionPayroll) {
             setPromotionPayroll(pm.promotionPayroll);
-            containingKey = pm.promotionPayroll.containingKey || '';
+            ongoingLabel = pm.promotionPayroll.ongoingLabel || '';
             arrearEnd = pm.promotionPayroll.arrearProrationEndLabel || arrearEnd;
           }
         } catch {
@@ -1132,8 +1673,8 @@ export default function PromotionsTransfersPage() {
         }
 
         let fetchEnd = startLabel;
-        if (containingKey) {
-          const beforeOngoing = addPayrollMonths(containingKey, -1);
+        if (ongoingLabel) {
+          const beforeOngoing = addPayrollMonths(ongoingLabel, -1);
           fetchEnd = comparePayrollYm(startLabel, beforeOngoing) > 0 ? '' : beforeOngoing;
         } else if (arrearEnd) {
           fetchEnd = comparePayrollYm(startLabel, arrearEnd) > 0 ? startLabel : arrearEnd;
@@ -1205,6 +1746,7 @@ export default function PromotionsTransfersPage() {
       const res = await api.cancelPromotionTransferRequest(id, {});
       if (!res?.success) throw new Error(res?.message || 'Cancel failed');
       toast.success('Cancelled');
+      setDetail((d) => (d?._id === id ? null : d));
       loadData();
     } catch (e: any) {
       toast.error(e?.message || 'Cancel failed');
@@ -1242,7 +1784,7 @@ export default function PromotionsTransfersPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
+    <div className="w-full max-w-[1600px] mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -1354,8 +1896,22 @@ export default function PromotionsTransfersPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {bulkRows.map((row, idx) => (
-                          <tr key={row.employee._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors align-top">
+                        {bulkRows.map((row, idx) => {
+                          const rKey = bulkRowKey(row);
+                          const rowErrs = bulkRowErrors[rKey] || [];
+                          const hasErr = rowErrs.length > 0;
+                          const isServerErr = hasErr && bulkRowErrorSource[rKey] === 'server';
+                          return (
+                          <tr
+                            key={row.employee._id}
+                            className={`align-top transition-colors ${
+                              hasErr
+                                ? isServerErr
+                                  ? 'bg-red-50/95 dark:bg-red-950/25 ring-1 ring-red-300 dark:ring-red-800/60'
+                                  : 'bg-amber-50/90 dark:bg-amber-950/20 ring-1 ring-amber-300/80 dark:ring-amber-700/50'
+                                : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/30'
+                            }`}
+                          >
                             <td className="px-3 py-4">
                               <div className="font-bold text-slate-900 dark:text-white mb-0.5">{row.employee.employee_name}</div>
                               <div className="text-[10px] text-slate-500 flex items-center gap-1.5 font-medium">
@@ -1372,6 +1928,21 @@ export default function PromotionsTransfersPage() {
                                 value={row.requestType}
                                 onChange={(e) => {
                                   const v = e.target.value as BulkPtRow['requestType'];
+                                  const rk = bulkRowKey(row);
+                                  if (rk) {
+                                    setBulkRowErrors((er) => {
+                                      if (!er || !er[rk]) return er;
+                                      const o = { ...er };
+                                      delete o[rk];
+                                      return o;
+                                    });
+                                    setBulkRowErrorSource((s) => {
+                                      if (!s || !s[rk]) return s;
+                                      const o = { ...s };
+                                      delete o[rk];
+                                      return o;
+                                    });
+                                  }
                                   setBulkRows((prev) => {
                                     const next = [...prev];
                                     const cur = next[idx];
@@ -1479,9 +2050,37 @@ export default function PromotionsTransfersPage() {
                                   className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-[10px] min-h-[46px] focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
                                 />
                               </div>
+                              {rowErrs.length > 0 && (
+                                <div
+                                  className={
+                                    isServerErr
+                                      ? 'mt-2 rounded-md border border-red-300 dark:border-red-800/60 bg-red-100/60 dark:bg-red-900/30 px-2.5 py-1.5 space-y-0.5'
+                                      : 'mt-2 rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-100/50 dark:bg-amber-900/20 px-2.5 py-1.5 space-y-0.5'
+                                  }
+                                >
+                                  {isServerErr && (
+                                    <p className="text-[9px] font-bold uppercase text-red-700 dark:text-red-300 tracking-wide">
+                                      Server
+                                    </p>
+                                  )}
+                                  {rowErrs.map((msg) => (
+                                    <p
+                                      key={`${row.employee.emp_no}-${msg}`}
+                                      className={
+                                        isServerErr
+                                          ? 'text-[10px] text-red-900 dark:text-red-100 font-medium leading-tight'
+                                          : 'text-[10px] text-amber-900 dark:text-amber-200 font-medium leading-tight'
+                                      }
+                                    >
+                                      {msg}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1493,7 +2092,10 @@ export default function PromotionsTransfersPage() {
                     <div className="flex items-center gap-3">
                       <button
                         type="button"
-                        onClick={() => setBulkRows([])}
+                        onClick={() => {
+                          setBulkRows([]);
+                          clearAllBulkRowErrors();
+                        }}
                         className="text-xs font-bold text-slate-400 hover:text-red-500 transition-colors uppercase tracking-wider px-2"
                       >
                         Clear list
@@ -1515,43 +2117,120 @@ export default function PromotionsTransfersPage() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 items-center">
-        <button
-          type="button"
-          onClick={() => setTab('all')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium ${
-            tab === 'all'
-              ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-          }`}
-        >
-          All
-        </button>
-        {canApprove && (
-          <button
-            type="button"
-            onClick={() => setTab('pending')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium ${
-              tab === 'pending'
-                ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-            }`}
+      <div className="rounded-2xl border border-slate-200/90 dark:border-slate-700/80 bg-white/90 dark:bg-slate-900/80 backdrop-blur-sm p-4 shadow-sm">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 h-10 shrink-0">
+            <Filter className="w-4 h-4 text-indigo-500 shrink-0" />
+            <span className="text-xs font-bold uppercase tracking-wider">Filters</span>
+          </div>
+          <div className="relative min-w-[min(100%,16rem)] flex-1 sm:min-w-[14rem] sm:max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            <input
+              className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
+              placeholder="Search emp no / name…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <select
+            className="h-10 w-full min-w-[8.5rem] sm:min-w-[7.5rem] sm:max-w-[11rem] sm:w-auto sm:flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium px-3"
+            value={filterRequestType}
+            onChange={(e) =>
+              setFilterRequestType(
+                (e.target.value || '') as '' | 'promotion' | 'demotion' | 'transfer' | 'increment'
+              )
+            }
+            title="Request type"
           >
-            Pending my action
-          </button>
-        )}
-        <div className="relative flex-1 min-w-[200px] max-w-md ml-auto">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
-            placeholder="Search emp no / name…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+            <option value="">All types</option>
+            <option value="promotion">Promotion</option>
+            <option value="demotion">Demotion</option>
+            <option value="transfer">Transfer</option>
+            <option value="increment">Increment</option>
+          </select>
+          <select
+            className="h-10 w-full min-w-[9rem] sm:min-w-[7.5rem] sm:max-w-[10rem] sm:w-auto sm:flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium px-3"
+            value={filterDivisionId}
+            onChange={(e) => {
+              setFilterDivisionId(e.target.value);
+              setFilterDepartmentId('');
+            }}
+          >
+            <option value="">All divisions</option>
+            {divisions.map((d) => (
+              <option key={d._id} value={d._id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="h-10 w-full min-w-[9rem] sm:min-w-[7.5rem] sm:max-w-[10rem] sm:w-auto sm:flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium px-3"
+            value={filterDepartmentId}
+            onChange={(e) => setFilterDepartmentId(e.target.value)}
+          >
+            <option value="">All departments</option>
+            {masterDepartments
+              .filter((d) => departmentBelongsToDivision(d, filterDivisionId))
+              .map((d) => (
+                <option key={d._id} value={d._id}>
+                  {d.name}
+                </option>
+              ))}
+          </select>
+          <select
+            className="h-10 w-full min-w-[8rem] sm:min-w-[6.5rem] sm:max-w-[9rem] sm:w-auto sm:flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium px-3"
+            value={filterGroupId}
+            onChange={(e) => setFilterGroupId(e.target.value)}
+          >
+            <option value="">All groups</option>
+            {employeeGroups.map((g) => (
+              <option key={g._id} value={g._id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="h-10 w-full min-w-[8rem] sm:min-w-[6.5rem] sm:max-w-[9rem] sm:w-auto sm:flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium px-3"
+            value={filterDesignationId}
+            onChange={(e) => setFilterDesignationId(e.target.value)}
+          >
+            <option value="">All designations</option>
+            {allDesignations.map((d) => (
+              <option key={d._id} value={d._id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+          <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-100/80 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 shrink-0 w-full min-[900px]:w-auto min-[900px]:ml-auto">
+            <button
+              type="button"
+              onClick={() => setTab('all')}
+              className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold ${
+                tab === 'all'
+                  ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-200 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              All
+            </button>
+            {canApprove && (
+              <button
+                type="button"
+                onClick={() => setTab('pending')}
+                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap ${
+                  tab === 'pending'
+                    ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-200 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                Pending my action
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+      <div className="rounded-2xl border border-slate-200/90 dark:border-slate-700/80 bg-white dark:bg-slate-900 overflow-hidden shadow-sm">
         {loading ? (
           <div className="flex justify-center py-16">
             <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
@@ -1559,28 +2238,56 @@ export default function PromotionsTransfersPage() {
         ) : filtered.length === 0 ? (
           <p className="py-12 text-center text-slate-500">No requests</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 dark:bg-slate-800/80 text-left">
+          <div className="overflow-x-auto min-w-0">
+            <table className="w-full text-sm min-w-[960px]">
+              <thead className="bg-slate-50 dark:bg-slate-800/80 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-4 py-3 font-semibold">Employee</th>
-                  <th className="px-4 py-3 font-semibold">Type</th>
-                  <th className="px-4 py-3 font-semibold">Summary</th>
-                  <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 py-3 font-semibold w-28">Actions</th>
+                  <th className="px-3 sm:px-4 py-3 font-semibold min-w-[160px]">Employee</th>
+                  <th className="px-3 sm:px-4 py-3 font-semibold min-w-[100px]">Division</th>
+                  <th className="px-3 sm:px-4 py-3 font-semibold min-w-[100px]">Department</th>
+                  <th className="px-3 sm:px-4 py-3 font-semibold min-w-[100px]">Group</th>
+                  <th className="px-3 sm:px-4 py-3 font-semibold min-w-[100px]">Designation</th>
+                  <th className="px-3 sm:px-4 py-3 font-semibold w-24">Type</th>
+                  <th className="px-3 sm:px-4 py-3 font-semibold min-w-[180px]">Summary</th>
+                  <th className="px-3 sm:px-4 py-3 font-semibold min-w-[10rem] w-36">Status</th>
+                  <th className="px-3 sm:px-4 py-3 font-semibold w-24 min-w-[6.5rem]">View</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filtered.map((r) => (
                   <tr key={r._id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                    <td className="px-4 py-3">
+                    <td className="px-3 sm:px-4 py-3 align-top">
                       <div className="font-medium text-slate-900 dark:text-white">
                         {r.employeeId?.employee_name || r.emp_no}
                       </div>
-                      <div className="text-xs text-slate-500">{r.emp_no}</div>
+                      <div className="text-xs text-slate-500 font-mono">{r.emp_no}</div>
                     </td>
-                    <td className="px-4 py-3 capitalize">{r.requestType}</td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                    <td
+                      className="px-3 sm:px-4 py-3 text-xs text-slate-600 dark:text-slate-300 max-w-[160px] truncate"
+                      title={orgFieldName(r.employeeId?.division_id)}
+                    >
+                      {orgFieldName(r.employeeId?.division_id)}
+                    </td>
+                    <td
+                      className="px-3 sm:px-4 py-3 text-xs text-slate-600 dark:text-slate-300 max-w-[160px] truncate"
+                      title={orgFieldName(r.employeeId?.department_id)}
+                    >
+                      {orgFieldName(r.employeeId?.department_id)}
+                    </td>
+                    <td
+                      className="px-3 sm:px-4 py-3 text-xs text-slate-600 dark:text-slate-300 max-w-[160px] truncate"
+                      title={orgFieldName(r.employeeId?.employee_group_id)}
+                    >
+                      {orgFieldName(r.employeeId?.employee_group_id)}
+                    </td>
+                    <td
+                      className="px-3 sm:px-4 py-3 text-xs text-slate-600 dark:text-slate-300 max-w-[160px] truncate"
+                      title={orgFieldName(r.employeeId?.designation_id)}
+                    >
+                      {orgFieldName(r.employeeId?.designation_id)}
+                    </td>
+                    <td className="px-3 sm:px-4 py-3 capitalize text-xs">{r.requestType}</td>
+                    <td className="px-3 sm:px-4 py-3 text-slate-600 dark:text-slate-300 text-xs">
                       {r.requestType === 'promotion' || r.requestType === 'demotion' || r.requestType === 'increment' ? (
                         <span className="text-xs leading-relaxed">
                           {r.requestType === 'increment' && r.incrementAmount != null ? (
@@ -1621,44 +2328,29 @@ export default function PromotionsTransfersPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${statusClass(r.status)}`}>
-                        {r.status}
-                      </span>
+                    <td className="px-3 sm:px-4 py-3 max-w-[13rem]">
+                      {(() => {
+                        const st = ptRequestStatusPresentation(r);
+                        return (
+                          <span
+                            className={`inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-left text-xs font-medium ${st.className}`}
+                            title={st.title}
+                          >
+                            <span className="line-clamp-2 break-words">{st.label}</span>
+                          </span>
+                        );
+                      })()}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 sm:px-4 py-3 align-middle w-24 min-w-[6.5rem]">
                       <button
                         type="button"
                         onClick={() => openDetail(r._id)}
-                        className="text-indigo-600 hover:underline inline-flex items-center gap-1"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-indigo-200/90 dark:border-indigo-700/80 bg-indigo-50/95 dark:bg-indigo-950/45 px-2.5 py-1.5 text-xs font-semibold text-indigo-800 dark:text-indigo-200 shadow-sm hover:bg-indigo-100/90 dark:hover:bg-indigo-900/55 transition-colors whitespace-nowrap"
+                        title="Open full details, approvals, cancel and delete"
                       >
-                        <Eye className="w-4 h-4" />
+                        <Eye className="w-3.5 h-3.5 shrink-0" aria-hidden />
                         View
                       </button>
-                      {canCancelRequest(r) && (
-                        <button
-                          type="button"
-                          onClick={() => doCancel(r._id)}
-                          className="block mt-1 text-xs text-red-600 hover:underline"
-                        >
-                          Cancel
-                        </button>
-                      )}
-                      {canDeleteRow(r) && (
-                        <button
-                          type="button"
-                          disabled={deletingId === r._id}
-                          onClick={() => doDelete(r._id)}
-                          className="mt-1 inline-flex items-center gap-1 text-xs text-red-700 dark:text-red-400 hover:underline disabled:opacity-50"
-                        >
-                          {deletingId === r._id ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-3 h-3" />
-                          )}
-                          Delete
-                        </button>
-                      )}
                     </td>
                   </tr>
                 ))}
@@ -1744,6 +2436,38 @@ export default function PromotionsTransfersPage() {
                   ) : (
                     <div className="text-sm text-slate-600 dark:text-slate-400">
                       Employee: <strong>{selectedEmpNo}</strong>
+                    </div>
+                  )}
+
+                  {activePendingLoading && selectedEmpNo && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden />
+                      Checking for an existing open request…
+                    </p>
+                  )}
+                  {!activePendingLoading && activePendingRequest && (
+                    <div
+                      className="rounded-xl border border-amber-300 bg-amber-50/95 dark:border-amber-800 dark:bg-amber-950/40 px-3 py-3 text-sm text-amber-950 dark:text-amber-50"
+                      role="status"
+                    >
+                      <p className="font-semibold text-amber-900 dark:text-amber-100">Open request already exists</p>
+                      <p className="mt-1 text-xs leading-relaxed text-amber-900/90 dark:text-amber-100/90">
+                        This employee has a pending{' '}
+                        <span className="capitalize font-medium">{activePendingRequest.requestType}</span> that is not fully approved.
+                        Finish the workflow (approve/reject) or cancel it before submitting a new one. Once a request is fully approved, you
+                        can raise another.
+                      </p>
+                      <button
+                        type="button"
+                        className="mt-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300 underline underline-offset-2 hover:text-indigo-900 dark:hover:text-indigo-100"
+                        onClick={() => {
+                          const id = activePendingRequest._id;
+                          setModalOpen(false);
+                          void openDetail(id);
+                        }}
+                      >
+                        View existing request
+                      </button>
                     </div>
                   )}
 
@@ -1944,9 +2668,9 @@ export default function PromotionsTransfersPage() {
                           .{' '}
                         </>
                       ) : null}
-                      {incompleteBacklogLabel &&
-                      incompleteBacklogLabel !== promotionPayroll?.containingKey ? (
-                        <span> Oldest open batch (backlog, if any): {incompleteBacklogLabel}.</span>
+                      {promotionPayroll?.ongoingLabel &&
+                      promotionPayroll.ongoingLabel !== promotionPayroll.containingKey ? (
+                        <span> Operational ongoing pay month: {promotionPayroll.ongoingLabel} (today&apos;s run: {promotionPayroll.containingKey}).</span>
                       ) : null}
                       {paidDaysLoading ? ' Loading paid days…' : ''}
                     </p>
@@ -2135,8 +2859,13 @@ export default function PromotionsTransfersPage() {
 
               <button
                 type="button"
-                disabled={submitting}
+                disabled={submitting || activePendingLoading || !!activePendingRequest}
                 onClick={submitRequest}
+                title={
+                  activePendingRequest
+                    ? 'Resolve the existing pending request before submitting a new one'
+                    : undefined
+                }
                 className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
@@ -2150,33 +2879,85 @@ export default function PromotionsTransfersPage() {
       )}
 
       {detail && (
-        <div className="fixed inset-0 z-[210] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
-          <div className="bg-white dark:bg-slate-900 w-full sm:max-w-5xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] shadow-xl flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800 shrink-0">
-              <h2 className="font-semibold">Request detail</h2>
-              <button type="button" onClick={() => setDetail(null)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
-                <X className="w-5 h-5" />
-              </button>
+        <div className="fixed inset-0 z-[210] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4 sm:px-6">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-[min(100%,calc(100vw-1.5rem))] sm:max-w-[90rem] sm:rounded-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] shadow-xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 shrink-0">
+              <h2 className="font-semibold text-base sm:text-lg min-w-0 truncate">Request detail</h2>
+              <div className="flex items-center gap-2 shrink-0">
+                {canSuperAdminEditPendingRequest(detail) && !detailEditMode && (
+                  <button
+                    type="button"
+                    onClick={beginDetailEdit}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/40 px-3 py-2 text-xs font-semibold text-violet-800 dark:text-violet-200 hover:bg-violet-100 dark:hover:bg-violet-900/50"
+                    title="Super admin: edit while this request is still pending"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Edit
+                  </button>
+                )}
+                {canSuperAdminEditPendingRequest(detail) && detailEditMode && (
+                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 px-1">Editing</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetail(null);
+                    setDetailEditMode(false);
+                  }}
+                  className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 -mr-0.5"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 min-h-0 flex flex-col text-sm">
               {/* Row 1: summary (left) + workflow & actions (right) */}
-              <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
-                <div className="min-h-0 overflow-y-auto p-4 space-y-3">
+              <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 min-w-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
+                <div className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5 lg:pr-6 space-y-4">
                   <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Employee</p>
                     <p className="font-semibold text-slate-900 dark:text-white">
                       {detail.employeeId?.employee_name || detail.emp_no}
                     </p>
-                    <p className="text-xs text-slate-500 mt-0.5">{detail.emp_no}</p>
+                    <p className="text-xs text-slate-500 mt-0.5 font-mono">{detail.emp_no}</p>
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                      <div>
+                        <span className="text-slate-500">Division: </span>
+                        <span className="text-slate-800 dark:text-slate-200">{orgFieldName(detail.employeeId?.division_id)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Department: </span>
+                        <span className="text-slate-800 dark:text-slate-200">{orgFieldName(detail.employeeId?.department_id)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Group: </span>
+                        <span className="text-slate-800 dark:text-slate-200">{orgFieldName(detail.employeeId?.employee_group_id)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Designation: </span>
+                        <span className="text-slate-800 dark:text-slate-200">{orgFieldName(detail.employeeId?.designation_id)}</span>
+                      </div>
+                    </div>
                   </div>
                   <div className="flex justify-between gap-2">
                     <span className="text-slate-500">Type</span>
                     <span className="font-medium capitalize">{detail.requestType}</span>
                   </div>
-                  <div className="flex justify-between gap-2">
-                    <span className="text-slate-500">Status</span>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusClass(detail.status)}`}>{detail.status}</span>
+                  <div className="flex justify-between gap-2 items-start">
+                    <span className="text-slate-500 shrink-0">Status</span>
+                    {(() => {
+                      const st = ptRequestStatusPresentation(detail);
+                      return (
+                        <span
+                          className={`max-w-[min(100%,14rem)] text-right px-2 py-0.5 rounded-full text-xs font-medium ${st.className}`}
+                          title={st.title}
+                        >
+                          {st.label}
+                        </span>
+                      );
+                    })()}
                   </div>
                   {(detail.requestType === 'promotion' ||
                     detail.requestType === 'demotion' ||
@@ -2250,14 +3031,230 @@ export default function PromotionsTransfersPage() {
                       </div>
                     </div>
                   )}
+                  <RequestActivityHistory history={detail.workflow?.history} />
                 </div>
 
-                <div className="min-h-0 overflow-y-auto p-4 space-y-3">
-                  {detail.workflow?.approvalChain && detail.workflow.approvalChain.length > 0 && (
-                    <PromotionApprovalTimeline workflow={detail.workflow} />
+                <div className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5 lg:pl-6 space-y-4">
+                  {canSuperAdminEditPendingRequest(detail) && detailEditMode && (
+                    <div className="rounded-xl border border-violet-200/90 dark:border-violet-800/80 bg-violet-50/50 dark:bg-violet-950/20 p-4 sm:p-5 space-y-4 text-sm">
+                      <p className="text-[10px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wider">
+                        Super admin — edit
+                      </p>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-500">Remarks</label>
+                        <textarea
+                          className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm min-h-[64px]"
+                          value={detailEditRemarks}
+                          onChange={(e) => setDetailEditRemarks(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-500">Audit note (optional)</label>
+                        <input
+                          className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                          placeholder="Reason for this change (stored in history)"
+                          value={detailEditNote}
+                          onChange={(e) => setDetailEditNote(e.target.value)}
+                        />
+                      </div>
+                      {detail.requestType === 'transfer' ? (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 min-w-0">
+                          <div className="min-w-0">
+                            <label className="text-xs font-semibold text-slate-500">To division</label>
+                            <select
+                              className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-sm"
+                              value={detailEditToDiv}
+                              onChange={(e) => {
+                                setDetailEditToDiv(e.target.value);
+                                setDetailEditToDept('');
+                              }}
+                            >
+                              {divisions.map((d) => (
+                                <option key={d._id} value={d._id}>
+                                  {d.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="min-w-0">
+                            <label className="text-xs font-semibold text-slate-500">To department</label>
+                            <select
+                              className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-sm"
+                              value={detailEditToDept}
+                              onChange={(e) => setDetailEditToDept(e.target.value)}
+                            >
+                              {masterDepartments
+                                .filter((d) => departmentBelongsToDivision(d, detailEditToDiv))
+                                .map((d) => (
+                                  <option key={d._id} value={d._id}>
+                                    {d.name}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+                          <div className="min-w-0">
+                            <label className="text-xs font-semibold text-slate-500">To designation</label>
+                            <select
+                              className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-sm"
+                              value={detailEditToDesig}
+                              onChange={(e) => setDetailEditToDesig(e.target.value)}
+                            >
+                              {allDesignations.map((d) => (
+                                <option key={d._id} value={d._id}>
+                                  {d.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {detail.requestType === 'increment' ? (
+                            <div>
+                              <label className="text-xs font-semibold text-slate-500">Increment amount</label>
+                              <input
+                                type="number"
+                                className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                                value={detailEditIncrement}
+                                onChange={(e) => setDetailEditIncrement(e.target.value)}
+                              />
+                            </div>
+                          ) : (
+                            <div>
+                              <label className="text-xs font-semibold text-slate-500">New gross salary</label>
+                              <input
+                                type="number"
+                                className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                                value={detailEditNewGross}
+                                onChange={(e) => setDetailEditNewGross(e.target.value)}
+                              />
+                            </div>
+                          )}
+                          <div>
+                            <label className="text-xs font-semibold text-slate-500">Effective payroll month</label>
+                            <select
+                              className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                              value={detailEditMonthLabel}
+                              onChange={(e) => setDetailEditMonthLabel(e.target.value)}
+                            >
+                              {detailEditMonthLabel &&
+                                !detailEditPayrollMonths.some((o) => o.label === detailEditMonthLabel) && (
+                                  <option value={detailEditMonthLabel}>{detailEditMonthLabel} (current)</option>
+                                )}
+                              {detailEditPayrollMonths.map((opt) => (
+                                <option key={opt.label} value={opt.label}>
+                                  {opt.label}
+                                  {opt.isOngoing ? ' (ongoing)' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          {(detail.requestType === 'promotion' || detail.requestType === 'demotion') && (
+                            <div>
+                              <label className="text-xs font-semibold text-slate-500">Proposed designation</label>
+                              <select
+                                className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                                value={detailEditProposedId}
+                                onChange={(e) => setDetailEditProposedId(e.target.value)}
+                              >
+                                <option value="">None / no change in title</option>
+                                {allDesignations.map((d) => (
+                                  <option key={d._id} value={d._id}>
+                                    {d.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                          <p className="text-[10px] text-slate-500">
+                            Optional org target — clear all three to keep the request unchanged.
+                          </p>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 min-w-0">
+                            <div className="min-w-0">
+                              <label className="text-xs font-semibold text-slate-500">Division</label>
+                              <select
+                                className="mt-1.5 w-full min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-sm"
+                                value={detailEditToDiv}
+                                onChange={(e) => {
+                                  setDetailEditToDiv(e.target.value);
+                                  setDetailEditToDept('');
+                                }}
+                              >
+                                <option value="">—</option>
+                                {divisions.map((d) => (
+                                  <option key={d._id} value={d._id}>
+                                    {d.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="min-w-0">
+                              <label className="text-xs font-semibold text-slate-500">Department</label>
+                              <select
+                                className="mt-1.5 w-full min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-sm"
+                                value={detailEditToDept}
+                                onChange={(e) => setDetailEditToDept(e.target.value)}
+                              >
+                                <option value="">—</option>
+                                {masterDepartments
+                                  .filter((d) => departmentBelongsToDivision(d, detailEditToDiv))
+                                  .map((d) => (
+                                    <option key={d._id} value={d._id}>
+                                      {d.name}
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
+                            <div className="min-w-0">
+                              <label className="text-xs font-semibold text-slate-500">Designation</label>
+                              <select
+                                className="mt-1.5 w-full min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-sm"
+                                value={detailEditToDesig}
+                                onChange={(e) => setDetailEditToDesig(e.target.value)}
+                              >
+                                <option value="">—</option>
+                                {allDesignations.map((d) => (
+                                  <option key={d._id} value={d._id}>
+                                    {d.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          type="button"
+                          disabled={detailEditSaving}
+                          onClick={saveDetailEdit}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 text-white font-medium px-4 py-2 text-sm hover:bg-violet-700 disabled:opacity-50"
+                        >
+                          {detailEditSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                          Save changes
+                        </button>
+                        <button
+                          type="button"
+                          disabled={detailEditSaving}
+                          onClick={() => {
+                            setDetailEditMode(false);
+                            setDetailEditNote('');
+                          }}
+                          className="rounded-xl border border-slate-200 dark:border-slate-600 px-4 py-2 text-sm font-medium"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
                   )}
-                  {detail.status === 'pending' && canApprove && (
+                  {detail.workflow?.approvalChain && detail.workflow.approvalChain.length > 0 && (
+                    <div className={detailEditMode ? 'opacity-50 pointer-events-none' : ''}>
+                      <PromotionApprovalTimeline workflow={detail.workflow} />
+                    </div>
+                  )}
+                  {detail.status === 'pending' && canApprove && !detailEditMode && (
                     <>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Your decision</p>
                       <textarea
                         className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
                         placeholder="Comment (optional)"
@@ -2286,16 +3283,31 @@ export default function PromotionsTransfersPage() {
                       </div>
                     </>
                   )}
-                  {canDeleteRow(detail) && (
-                    <button
-                      type="button"
-                      disabled={deletingId === detail._id}
-                      onClick={() => doDelete(detail._id)}
-                      className="w-full py-2 rounded-xl border border-red-300 dark:border-red-800 text-red-700 dark:text-red-400 font-medium text-sm inline-flex items-center justify-center gap-2 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-50"
-                    >
-                      {deletingId === detail._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                      Delete request permanently
-                    </button>
+                  {(canCancelRequest(detail) || canDeleteRow(detail)) && !detailEditMode && (
+                    <div className="space-y-2 pt-1 border-t border-slate-200/80 dark:border-slate-700/80">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Request actions</p>
+                      {canCancelRequest(detail) && (
+                        <button
+                          type="button"
+                          onClick={() => doCancel(detail._id)}
+                          className="w-full py-2 rounded-xl border border-amber-200/90 dark:border-amber-800/70 bg-amber-50/90 dark:bg-amber-950/30 text-amber-950 dark:text-amber-100 font-medium text-sm inline-flex items-center justify-center gap-2 hover:bg-amber-100/90 dark:hover:bg-amber-900/40 transition-colors"
+                        >
+                          <Ban className="w-4 h-4 shrink-0" />
+                          Cancel request
+                        </button>
+                      )}
+                      {canDeleteRow(detail) && (
+                        <button
+                          type="button"
+                          disabled={deletingId === detail._id}
+                          onClick={() => doDelete(detail._id)}
+                          className="w-full py-2 rounded-xl border border-red-300 dark:border-red-800 text-red-700 dark:text-red-400 font-medium text-sm inline-flex items-center justify-center gap-2 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-50"
+                        >
+                          {deletingId === detail._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                          Delete request permanently
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

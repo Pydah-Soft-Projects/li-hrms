@@ -130,7 +130,7 @@ const PromotionTransferRequestSchema = new mongoose.Schema(
           step: String,
           action: {
             type: String,
-            enum: ['submitted', 'approved', 'rejected', 'cancelled'],
+            enum: ['submitted', 'approved', 'rejected', 'cancelled', 'updated'],
           },
           actionBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
           actionByName: String,

@@ -146,7 +146,9 @@ async function resolvePermissionWorkflowSettings(divisionId) {
 
 const DEFAULT_PROMOTION_TRANSFER_WORKFLOW = {
   isEnabled: true,
-  steps: [],
+  steps: [
+    { stepOrder: 1, stepName: 'HOD approval', approverRole: 'hod' },
+  ],
   finalAuthority: { role: 'hr', anyHRCanApprove: true },
   allowHigherAuthorityToApproveLowerLevels: false,
 };

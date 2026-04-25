@@ -53,6 +53,32 @@ const employeeSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+    /**
+     * Approved promotion/demotion/increment gross changes with a **future** effective payroll month.
+     * Payroll for month M uses `resolveGrossSalaryForPayrollMonth` (latest entry with effectiveYm <= M, else `gross_salary`).
+     */
+    grossSalaryRevisions: {
+      type: [
+        {
+          effectivePayrollYear: { type: Number, required: true },
+          effectivePayrollMonth: { type: Number, required: true, min: 1, max: 12 },
+          grossSalary: { type: Number, required: true },
+          previousGrossSalary: { type: Number, default: null },
+          sourcePromotionTransferRequestId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'PromotionTransferRequest',
+            default: null,
+          },
+          requestType: {
+            type: String,
+            trim: true,
+            default: '',
+          },
+          recordedAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: undefined,
+    },
     /** Salary components (form "Salaries" group): fieldId -> amount; canonical store — not dynamicFields.salaries */
     salaries: {
       type: mongoose.Schema.Types.Mixed,

@@ -29,6 +29,7 @@ const {
   loadPriorPayrollRecordLean,
   applyExplicitElToPaidLeaveAndPayable,
 } = require('./elUsedInPayrollHelper');
+const { resolveGrossSalaryForPayrollMonth } = require('../../employees/services/employeeGrossSalaryResolver');
 
 /**
  * Normalize employee override payloads to ensure consistent structure
@@ -107,6 +108,11 @@ async function calculatePayroll(employeeId, month, userId) {
     if (!employee) {
       throw new Error('Employee not found');
     }
+
+    const py = parseInt(String(month).split('-')[0], 10);
+    const pm = parseInt(String(month).split('-')[1], 10);
+    const empPlain = employee.toObject ? employee.toObject() : { ...employee };
+    employee.gross_salary = resolveGrossSalaryForPayrollMonth(empPlain, py, pm);
 
     // Debug: Log employee allowance/deduction data
     console.log(`\n--- Employee Data Check (${employee.emp_no}) ---`);
@@ -887,6 +893,12 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     const shouldConsumePermission = options.consumeRecalculationPermission !== false;
     const employee = await Employee.findById(employeeId).populate('department_id designation_id division_id');
     if (!employee) throw new Error('Employee not found');
+
+    const py2 = parseInt(String(month).split('-')[0], 10);
+    const pm2 = parseInt(String(month).split('-')[1], 10);
+    const empPlain2 = employee.toObject ? employee.toObject() : { ...employee };
+    employee.gross_salary = resolveGrossSalaryForPayrollMonth(empPlain2, py2, pm2);
+
     // if (!employee.gross_salary || employee.gross_salary <= 0) throw new Error('Employee gross salary is missing or invalid');
     if (!employee.gross_salary || employee.gross_salary <= 0) {
       console.warn(`[Payroll] Warning: Employee ${employee.emp_no} has invalid gross salary (${employee.gross_salary}). Proceeding with 0.`);

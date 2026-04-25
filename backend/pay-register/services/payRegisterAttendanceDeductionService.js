@@ -6,6 +6,7 @@
 const Employee = require('../../employees/model/Employee');
 const deductionService = require('../../payroll/services/deductionService');
 const { getAbsentDeductionSettings } = require('../../payroll/services/allowanceDeductionResolverService');
+const { resolveGrossSalaryForPayrollMonth } = require('../../employees/services/employeeGrossSalaryResolver');
 
 function normalizeBreakdown(b) {
   if (!b || typeof b !== 'object') {
@@ -57,7 +58,7 @@ async function recalculatePayRegisterAttendanceDeduction(payRegister) {
 
   const employee = await Employee.findById(employeeId)
     .select(
-      'gross_salary department_id division_id applyAttendanceDeduction deductLateIn deductEarlyOut deductAbsent emp_no'
+      'gross_salary grossSalaryRevisions department_id division_id applyAttendanceDeduction deductLateIn deductEarlyOut deductAbsent emp_no'
     )
     .lean();
 
@@ -76,7 +77,10 @@ async function recalculatePayRegisterAttendanceDeduction(payRegister) {
     Number(payRegister.totalDaysInMonth) > 0
       ? Number(payRegister.totalDaysInMonth)
       : 30;
-  const gross = Number(employee.gross_salary) || 0;
+  const [prY, prM] = String(monthStr || '')
+    .split('-')
+    .map((n) => parseInt(n, 10));
+  const gross = resolveGrossSalaryForPayrollMonth(employee, prY, prM);
   const perDayBasicPay =
     totalDaysInMonth > 0 ? Math.round((gross / totalDaysInMonth) * 100) / 100 : 0;
 

@@ -1820,6 +1820,11 @@ export const api = {
     return apiRequest<any>(`/employees/${empNo}/history`, { method: 'GET' });
   },
 
+  getEmployeeSalaryHistory: async (empNo: string) => {
+    const enc = encodeURIComponent(empNo);
+    return apiRequest<any>(`/employees/${enc}/salary-history`, { method: 'GET' });
+  },
+
   createEmployee: async (data: any) => {
     return apiRequest<any>('/employees', {
       method: 'POST',
@@ -2925,13 +2930,20 @@ export const api = {
       body: JSON.stringify(data),
     });
   },
-  getPromotionTransferPayrollMonths: async (opts?: { count?: number; past?: number; future?: number }) => {
+  getPromotionTransferPayrollMonths: async (opts?: {
+    count?: number;
+    past?: number;
+    future?: number;
+    /** When set, ongoing batch check uses this employee’s department batch only. */
+    emp_no?: string;
+  }) => {
     const params = new URLSearchParams();
     if (opts?.past != null) params.append('past', String(opts.past));
     if (opts?.future != null) params.append('future', String(opts.future));
     if (opts?.count != null && !params.has('past') && !params.has('future')) {
       params.append('count', String(opts.count));
     }
+    if (opts?.emp_no) params.append('emp_no', String(opts.emp_no).toUpperCase());
     const qs = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any[]>(`/promotions-transfers/payroll-months${qs}`, { method: 'GET' });
   },
@@ -2952,6 +2964,13 @@ export const api = {
   },
   getPromotionTransferRequest: async (id: string) => {
     return apiRequest<any>(`/promotions-transfers/${id}`, { method: 'GET' });
+  },
+  /** Super admin only; request must still be `pending` (not fully approved). */
+  updatePromotionTransferRequest: async (id: string, data: Record<string, unknown>) => {
+    return apiRequest<any>(`/promotions-transfers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
   },
   promotionTransferAction: async (id: string, data: { action: 'approve' | 'reject'; comments?: string }) => {
     return apiRequest<any>(`/promotions-transfers/${id}/action`, {

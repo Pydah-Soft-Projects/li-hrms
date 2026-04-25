@@ -9,6 +9,7 @@ const { createISTDate, getPayrollDateRange, formatPayrollPeriodRangeEnIn } = req
 const { getPromotionPayrollContext, toLabel: ptToLabel, addMonths: ptAddMonths } = require('../services/promotionPayrollCycleContextService');
 const { createDirectArrearForApprovedPromotion } = require('../services/promotionArrearService');
 const { notifyPromotionTransferCompleted } = require('../services/promotionTransferNotificationService');
+const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
 
 const {
   buildWorkflowVisibilityFilter,
@@ -16,7 +17,22 @@ const {
   checkJurisdiction,
 } = require('../../shared/middleware/dataScopeMiddleware');
 const { resolvePromotionTransferWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
+const {
+  isPromotionSalaryEffectiveInFuture,
+} = require('../../employees/services/employeeGrossSalaryResolver');
 const { buildApprovalChain, chainStepLabel } = require('../utils/promotionWorkflowUtils');
+
+/** List/detail: employee with division, department, designation, and group names. */
+const PT_LIST_EMPLOYEE_POPULATE = {
+  path: 'employeeId',
+  select: 'employee_name emp_no department_id division_id designation_id employee_group_id gross_salary',
+  populate: [
+    { path: 'department_id', select: 'name' },
+    { path: 'division_id', select: 'name' },
+    { path: 'employee_group_id', select: 'name' },
+    { path: 'designation_id', select: 'name' },
+  ],
+};
 
 /** Normalize stored chain rows so API always returns a clear approver-type label (HOD, manager, etc.). */
 function hydrateApprovalChainLabels(doc) {
@@ -92,7 +108,36 @@ exports.getPayrollMonths = async (req, res) => {
     const toLabel = (year, month) => ptToLabel(year, month);
     const addMonths = (year, month, offset) => ptAddMonths(year, month, offset);
 
-    const ctx = await getPromotionPayrollContext();
+    let employeeScope = null;
+    const rawEmpNo = req.query.emp_no || req.query.empNo;
+    if (rawEmpNo) {
+      const emp = await Employee.findOne({ emp_no: String(rawEmpNo).toUpperCase() })
+        .select('division_id department_id')
+        .lean();
+      if (emp) {
+        const userRole = (req.user?.role || '').toLowerCase();
+        if (userRole === 'employee') {
+          const self = String(req.user?.employeeId || req.user?.emp_no || '').toUpperCase();
+          if (String(rawEmpNo).toUpperCase() !== self) {
+            return res.status(403).json({ success: false, error: 'You can only load payroll context for your own record.' });
+          }
+        } else if (!['super_admin', 'sub_admin'].includes(userRole)) {
+          const ok = checkJurisdiction(req.scopedUser, {
+            employeeId: emp._id,
+            division_id: emp.division_id,
+            department_id: emp.department_id,
+          });
+          if (!ok) {
+            return res.status(403).json({ success: false, error: 'Employee is outside your data scope' });
+          }
+        }
+        if (emp.division_id && emp.department_id) {
+          employeeScope = { divisionId: emp.division_id, departmentId: emp.department_id };
+        }
+      }
+    }
+
+    const ctx = await getPromotionPayrollContext(employeeScope);
     /** Centre the list on the pay run that *contains today* (settings-based range), not the oldest incomplete batch. */
     const anchorYear = ctx.currentCycle.year;
     const anchorMonth = ctx.currentCycle.month;
@@ -121,7 +166,8 @@ exports.getPayrollMonths = async (req, res) => {
         periodRangeDisplay,
         rangeStartDate: pr.startDate,
         rangeEndDate: pr.endDate,
-        isOngoing: label === containingKey,
+        /** True when this cycle is the operational ongoing month (previous month settled → current; else previous). */
+        isOngoing: label === ctx.ongoingLabel,
       });
     }
 
@@ -129,7 +175,11 @@ exports.getPayrollMonths = async (req, res) => {
       success: true,
       data: cycles,
       promotionPayroll: {
-        /** Oldest payroll month with a non-complete batch (backlog); may differ from containingKey. */
+        /**
+         * Ongoing pay month: the month before `containingKey` if that pay month’s batch (for the
+         * given `emp_no`’s department, or all departments if no `emp_no`) is still pending/approved;
+         * otherwise the current pay run. Only the single previous month is checked.
+         */
         ongoingLabel: ctx.ongoingLabel,
         incompleteOngoingLabel: ctx.ongoingLabel,
         arrearProrationEndLabel: ctx.arrearProrationEndLabel,
@@ -163,6 +213,27 @@ exports.createRequest = async (req, res) => {
       return res.status(resolved.error.status).json({ success: false, message: resolved.error.message });
     }
     const { employee } = resolved;
+
+    const existingPending = await PromotionTransferRequest.findOne({
+      employeeId: employee._id,
+      status: 'pending',
+    })
+      .select('_id requestType emp_no createdAt')
+      .lean();
+
+    if (existingPending) {
+      return res.status(409).json({
+        success: false,
+        code: 'ACTIVE_PT_REQUEST_EXISTS',
+        message: `This employee already has a pending ${existingPending.requestType} request that is not fully approved. Complete, cancel, or reject it before creating another.`,
+        data: {
+          existingRequestId: existingPending._id,
+          requestType: existingPending.requestType,
+          emp_no: existingPending.emp_no,
+          createdAt: existingPending.createdAt,
+        },
+      });
+    }
 
     const divisionId = employee.division_id?._id || employee.division_id || null;
     const workflowSettings = await resolvePromotionTransferWorkflowSettings(divisionId);
@@ -390,6 +461,11 @@ exports.createRequest = async (req, res) => {
         details: {
           requestId: doc._id,
           requestType: doc.requestType,
+          newGrossSalary: doc.newGrossSalary,
+          previousGrossSalary: doc.previousGrossSalary,
+          effectivePayrollYear: doc.effectivePayrollYear,
+          effectivePayrollMonth: doc.effectivePayrollMonth,
+          incrementAmount: doc.incrementAmount,
         },
         comments: remarks || '',
       });
@@ -398,7 +474,7 @@ exports.createRequest = async (req, res) => {
     }
 
     const populated = await PromotionTransferRequest.findById(doc._id)
-      .populate('employeeId', 'employee_name emp_no department_id division_id designation_id gross_salary')
+      .populate(PT_LIST_EMPLOYEE_POPULATE)
       .populate('requestedBy', 'name email')
       .populate('proposedDesignationId', 'name')
       .populate('fromDivisionId', 'name')
@@ -410,6 +486,26 @@ exports.createRequest = async (req, res) => {
       .lean();
 
     hydrateApprovalChainLabels(populated);
+
+    const subEmpName = populated.employeeId?.employee_name || populated.emp_no || 'Employee';
+    const nextRole = populated?.workflow?.nextApproverRole;
+    const nextLabel =
+      Array.isArray(populated?.workflow?.approvalChain) && populated.workflow.approvalChain.length
+        ? populated.workflow.approvalChain.find((s) => s.status === 'pending')?.label || nextRole
+        : nextRole;
+    notifyWorkflowEvent({
+      module: 'promotion_transfer',
+      eventType: 'PROMOTION_TRANSFER_SUBMITTED',
+      record: populated,
+      actor: req.user,
+      title: `${(populated.requestType || 'Request').toString()}: ${subEmpName} — action needed`,
+      message: `${subEmpName} (${String(populated.emp_no || '').trim() || '—'}) ${
+        populated.requestType
+      } request is pending. Next: ${nextLabel || nextRole || 'approver'}.`,
+      nextApproverRole: nextRole,
+      priority: 'high',
+    }).catch((err) => console.error('[Notification] PROMOTION_TRANSFER_SUBMITTED failed:', err?.message || err));
+
     res.status(201).json({
       success: true,
       message: 'Request submitted for approval',
@@ -451,7 +547,7 @@ exports.getPendingApprovals = async (req, res) => {
     }
 
     const list = await PromotionTransferRequest.find(filter)
-      .populate('employeeId', 'employee_name emp_no department_id division_id designation_id gross_salary')
+      .populate(PT_LIST_EMPLOYEE_POPULATE)
       .populate('requestedBy', 'name email')
       .populate('proposedDesignationId', 'name')
       .populate('fromDivisionId', 'name')
@@ -509,7 +605,7 @@ exports.getRequests = async (req, res) => {
     }
 
     const list = await PromotionTransferRequest.find(filter)
-      .populate('employeeId', 'employee_name emp_no department_id division_id designation_id gross_salary')
+      .populate(PT_LIST_EMPLOYEE_POPULATE)
       .populate('requestedBy', 'name email')
       .populate('proposedDesignationId', 'name')
       .populate('fromDivisionId', 'name')
@@ -532,7 +628,7 @@ exports.getRequests = async (req, res) => {
 exports.getRequestById = async (req, res) => {
   try {
     const doc = await PromotionTransferRequest.findById(req.params.id)
-      .populate('employeeId', 'employee_name emp_no department_id division_id designation_id gross_salary')
+      .populate(PT_LIST_EMPLOYEE_POPULATE)
       .populate('requestedBy', 'name email')
       .populate('proposedDesignationId', 'name')
       .populate('fromDivisionId', 'name')
@@ -698,6 +794,281 @@ exports.deleteRequest = async (req, res) => {
   }
 };
 
+/**
+ * Super admin only. Edit request fields while status is still `pending` (not yet fully approved).
+ * Rebuilds the approval chain from current settings and resets to the first step.
+ */
+exports.updateRequestBySuperAdmin = async (req, res) => {
+  try {
+    const userRole = (req.user?.role || '').toLowerCase();
+    if (userRole !== 'super_admin') {
+      return res.status(403).json({ success: false, message: 'Only super admin can edit requests' });
+    }
+    const doc = await PromotionTransferRequest.findById(req.params.id);
+    if (!doc) {
+      return res.status(404).json({ success: false, message: 'Request not found' });
+    }
+    if (doc.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only requests not yet fully approved (still pending) can be edited',
+      });
+    }
+
+    const employee = await Employee.findById(doc.employeeId)
+      .populate('department_id', 'name')
+      .populate('division_id', 'name')
+      .populate('designation_id', 'name');
+    if (!employee) {
+      return res.status(400).json({ success: false, message: 'Employee not found' });
+    }
+
+    if (req.body.remarks !== undefined) {
+      doc.remarks = String(req.body.remarks);
+    }
+
+    const b = req.body;
+    const requestType = doc.requestType;
+
+    if (requestType === 'promotion' || requestType === 'demotion' || requestType === 'increment') {
+      const { newGrossSalary, incrementAmount, effectivePayrollYear, effectivePayrollMonth, proposedDesignationId, toDivisionId, toDepartmentId, toDesignationId } = b;
+
+      const y = parseInt(effectivePayrollYear, 10);
+      const m = parseInt(effectivePayrollMonth, 10);
+      if (!y || m < 1 || m > 12) {
+        return res.status(400).json({
+          success: false,
+          message: 'effectivePayrollYear and effectivePayrollMonth (1–12) are required',
+        });
+      }
+
+      const prevGross =
+        employee.gross_salary === null || employee.gross_salary === undefined
+          ? null
+          : Number(employee.gross_salary);
+
+      let newGross;
+      if (requestType === 'increment') {
+        const inc = Number(incrementAmount);
+        if (!Number.isFinite(inc) || inc <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'incrementAmount must be a positive number',
+          });
+        }
+        if (prevGross == null || !Number.isFinite(prevGross)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Employee must have a current gross salary for increment requests',
+          });
+        }
+        newGross = prevGross + inc;
+        doc.incrementAmount = inc;
+      } else {
+        newGross = Number(newGrossSalary);
+        if (!Number.isFinite(newGross) || newGross < 0) {
+          return res.status(400).json({ success: false, message: 'newGrossSalary must be a valid non-negative number' });
+        }
+        if (prevGross !== null && Number.isFinite(prevGross) && newGross === prevGross) {
+          return res.status(400).json({
+            success: false,
+            message: 'New gross salary must differ from the current gross salary',
+          });
+        }
+      }
+
+      if (requestType === 'promotion' && prevGross != null && Number.isFinite(prevGross) && newGross <= prevGross) {
+        return res.status(400).json({
+          success: false,
+          message: 'Promotion requires new gross salary greater than current',
+        });
+      }
+      if (requestType === 'demotion' && prevGross != null && Number.isFinite(prevGross) && newGross >= prevGross) {
+        return res.status(400).json({
+          success: false,
+          message: 'Demotion requires new gross salary less than current',
+        });
+      }
+
+      if (Object.prototype.hasOwnProperty.call(b, 'proposedDesignationId')) {
+        if (proposedDesignationId) {
+          if (!mongoose.Types.ObjectId.isValid(proposedDesignationId)) {
+            return res.status(400).json({ success: false, message: 'Invalid proposedDesignationId' });
+          }
+          const des = await Designation.findById(proposedDesignationId);
+          if (!des) {
+            return res.status(400).json({ success: false, message: 'Proposed designation not found' });
+          }
+          doc.proposedDesignationId = des._id;
+        } else {
+          doc.proposedDesignationId = null;
+        }
+      }
+
+      doc.newGrossSalary = newGross;
+      doc.effectivePayrollYear = y;
+      doc.effectivePayrollMonth = m;
+      doc.previousGrossSalary = prevGross;
+      doc.previousDesignationId = employee.designation_id?._id || employee.designation_id || null;
+
+      if (['toDivisionId', 'toDepartmentId', 'toDesignationId'].some((k) => Object.prototype.hasOwnProperty.call(b, k))) {
+        const hasAnyTo = !!(toDivisionId && String(toDivisionId)) || !!(toDepartmentId && String(toDepartmentId)) || !!(toDesignationId && String(toDesignationId));
+        if (hasAnyTo) {
+          const fromDiv = employee.division_id?._id || employee.division_id;
+          const fromDept = employee.department_id?._id || employee.department_id;
+          const fromDesig = employee.designation_id?._id || employee.designation_id;
+          const ids = [
+            ['toDivisionId', toDivisionId],
+            ['toDepartmentId', toDepartmentId],
+            ['toDesignationId', toDesignationId],
+          ];
+          for (const [name, val] of ids) {
+            if (val && !mongoose.Types.ObjectId.isValid(val)) {
+              return res
+                .status(400)
+                .json({ success: false, message: `${name} is required and must be a valid id when provided` });
+            }
+          }
+          const div = toDivisionId ? await Division.findById(toDivisionId) : null;
+          const dept = toDepartmentId ? await Department.findById(toDepartmentId) : null;
+          const des = toDesignationId ? await Designation.findById(toDesignationId) : null;
+          if ((toDivisionId && !div) || (toDepartmentId && !dept) || (toDesignationId && !des)) {
+            return res
+              .status(400)
+              .json({ success: false, message: 'Target division, department, or designation not found' });
+          }
+          const anyChanged =
+            (toDivisionId && idsDiffer(fromDiv, toDivisionId)) ||
+            (toDepartmentId && idsDiffer(fromDept, toDepartmentId)) ||
+            (toDesignationId && idsDiffer(fromDesig, toDesignationId));
+          if (!anyChanged) {
+            return res.status(400).json({
+              success: false,
+              message: 'At least one of division, department, or designation must change when org fields are sent',
+            });
+          }
+          doc.fromDivisionId = fromDiv || null;
+          doc.fromDepartmentId = fromDept || null;
+          doc.fromDesignationId = fromDesig || null;
+          if (div) doc.toDivisionId = div._id;
+          if (dept) doc.toDepartmentId = dept._id;
+          if (des) doc.toDesignationId = des._id;
+        } else {
+          doc.fromDivisionId = null;
+          doc.fromDepartmentId = null;
+          doc.fromDesignationId = null;
+          doc.toDivisionId = null;
+          doc.toDepartmentId = null;
+          doc.toDesignationId = null;
+        }
+      }
+    } else if (requestType === 'transfer') {
+      const { toDivisionId, toDepartmentId, toDesignationId } = b;
+      for (const [name, val] of [
+        ['toDivisionId', toDivisionId],
+        ['toDepartmentId', toDepartmentId],
+        ['toDesignationId', toDesignationId],
+      ]) {
+        if (!val || !mongoose.Types.ObjectId.isValid(val)) {
+          return res.status(400).json({ success: false, message: `${name} is required and must be a valid id` });
+        }
+      }
+      const fromDiv = employee.division_id?._id || employee.division_id;
+      const fromDept = employee.department_id?._id || employee.department_id;
+      const fromDesig = employee.designation_id?._id || employee.designation_id;
+      const div = await Division.findById(toDivisionId);
+      const dept = await Department.findById(toDepartmentId);
+      const des = await Designation.findById(toDesignationId);
+      if (!div || !dept || !des) {
+        return res.status(400).json({ success: false, message: 'Target division, department, or designation not found' });
+      }
+      const changed =
+        idsDiffer(fromDiv, toDivisionId) || idsDiffer(fromDept, toDepartmentId) || idsDiffer(fromDesig, toDesignationId);
+      if (!changed) {
+        return res.status(400).json({
+          success: false,
+          message: 'Transfer must change at least one of division, department, or designation',
+        });
+      }
+      doc.fromDivisionId = fromDiv || null;
+      doc.fromDepartmentId = fromDept || null;
+      doc.fromDesignationId = fromDesig || null;
+      doc.toDivisionId = div._id;
+      doc.toDepartmentId = dept._id;
+      doc.toDesignationId = des._id;
+    }
+
+    if (!doc.workflow) {
+      doc.workflow = {};
+    }
+    const divisionId = employee.division_id?._id || employee.division_id || null;
+    const workflowSettings = await resolvePromotionTransferWorkflowSettings(divisionId);
+    const { approvalSteps, firstRole, finalAuthority, reportingManagerIds } = buildApprovalChain(employee, workflowSettings);
+    doc.workflow.approvalChain = approvalSteps;
+    doc.workflow.currentStepRole = firstRole;
+    doc.workflow.nextApproverRole = firstRole;
+    doc.workflow.isCompleted = false;
+    doc.workflow.finalAuthority = finalAuthority;
+    doc.workflow.reportingManagerIds = reportingManagerIds;
+
+    if (!Array.isArray(doc.workflow.history)) {
+      doc.workflow.history = [];
+    }
+    const updateNote = b?.editNote && String(b.editNote) ? String(b.editNote) : 'Request fields updated by super admin';
+    doc.workflow.history.push({
+      step: 'super_admin',
+      action: 'updated',
+      actionBy: req.user._id,
+      actionByName: req.user.name,
+      actionByRole: req.user.role,
+      comments: `${updateNote} — approval flow reset to the first step.`,
+      timestamp: new Date(),
+    });
+    doc.markModified('workflow');
+    await doc.save();
+
+    try {
+      await EmployeeHistory.create({
+        emp_no: doc.emp_no,
+        event: 'promotion_transfer_admin_updated',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          requestId: doc._id,
+          requestType: doc.requestType,
+          newGrossSalary: doc.newGrossSalary,
+          previousGrossSalary: doc.previousGrossSalary,
+          effectivePayrollYear: doc.effectivePayrollYear,
+          effectivePayrollMonth: doc.effectivePayrollMonth,
+          incrementAmount: doc.incrementAmount,
+        },
+        comments: (b?.editNote && String(b.editNote)) || 'Super admin updated pending request',
+      });
+    } catch (e) {
+      console.error('EmployeeHistory promotion_transfer_admin_updated:', e.message);
+    }
+
+    const populated = await PromotionTransferRequest.findById(doc._id)
+      .populate(PT_LIST_EMPLOYEE_POPULATE)
+      .populate('requestedBy', 'name email')
+      .populate('proposedDesignationId', 'name')
+      .populate('fromDivisionId', 'name')
+      .populate('fromDepartmentId', 'name')
+      .populate('fromDesignationId', 'name')
+      .populate('toDivisionId', 'name')
+      .populate('toDepartmentId', 'name')
+      .populate('toDesignationId', 'name')
+      .lean();
+
+    hydrateApprovalChainLabels(populated);
+    res.status(200).json({ success: true, message: 'Request updated', data: populated });
+  } catch (error) {
+    console.error('updateRequestBySuperAdmin:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to update request' });
+  }
+};
+
 async function applyApprovedChanges(doc) {
   const emp = await Employee.findById(doc.employeeId);
   if (!emp) return;
@@ -711,7 +1082,38 @@ async function applyApprovedChanges(doc) {
     if (!Number.isFinite(nextGross)) {
       throw new Error('Salary change request is missing newGrossSalary');
     }
-    emp.gross_salary = nextGross;
+
+    const effY = Number(doc.effectivePayrollYear);
+    const effM = Number(doc.effectivePayrollMonth);
+    const employeeScope = {
+      divisionId: emp.division_id?._id || emp.division_id,
+      departmentId: emp.department_id?._id || emp.department_id,
+    };
+    const deferSalary =
+      Number.isFinite(effY) &&
+      Number.isFinite(effM) &&
+      effM >= 1 &&
+      effM <= 12 &&
+      (await isPromotionSalaryEffectiveInFuture(effY, effM, employeeScope));
+
+    if (deferSalary) {
+      if (!Array.isArray(emp.grossSalaryRevisions)) {
+        emp.grossSalaryRevisions = [];
+      }
+      emp.grossSalaryRevisions.push({
+        effectivePayrollYear: effY,
+        effectivePayrollMonth: effM,
+        grossSalary: nextGross,
+        previousGrossSalary: emp.gross_salary != null ? Number(emp.gross_salary) : null,
+        sourcePromotionTransferRequestId: doc._id,
+        requestType: doc.requestType,
+        recordedAt: new Date(),
+      });
+      emp.markModified('grossSalaryRevisions');
+    } else {
+      emp.gross_salary = nextGross;
+    }
+
     if (doc.proposedDesignationId) {
       emp.designation_id = doc.proposedDesignationId;
     }
@@ -859,6 +1261,11 @@ exports.approveOrReject = async (req, res) => {
           requestType: doc.requestType,
           stepRole: actingStep.role,
           stepOrder: actingStep.stepOrder,
+          newGrossSalary: doc.newGrossSalary,
+          previousGrossSalary: doc.previousGrossSalary,
+          effectivePayrollYear: doc.effectivePayrollYear,
+          effectivePayrollMonth: doc.effectivePayrollMonth,
+          incrementAmount: doc.incrementAmount,
         },
         comments: comments || '',
       });
@@ -888,6 +1295,22 @@ exports.approveOrReject = async (req, res) => {
         });
       } catch (e) {
         console.error('EmployeeHistory rejected:', e.message);
+      }
+      {
+        const rejName = doc.employeeId && typeof doc.employeeId === 'object' ? doc.employeeId.employee_name : null;
+        const who = String(rejName || doc.emp_no || 'Employee');
+        notifyWorkflowEvent({
+          module: 'promotion_transfer',
+          eventType: 'PROMOTION_TRANSFER_REJECTED',
+          record: doc,
+          actor: req.user,
+          title: `Promotion/transfer rejected: ${who}`,
+          message: `${who} (${String(doc.emp_no || '').trim() || '—'}) ${
+            doc.requestType
+          } request was rejected. ${comments ? `Comment: ${comments}` : ''}`.trim(),
+          nextApproverRole: null,
+          priority: 'high',
+        }).catch((err) => console.error('[Notification] PROMOTION_TRANSFER_REJECTED failed:', err?.message || err));
       }
       return res.status(200).json({ success: true, message: 'Request rejected', data: doc });
     }
@@ -976,6 +1399,25 @@ exports.approveOrReject = async (req, res) => {
     doc.workflow.currentStepRole = nextStep.role;
     doc.workflow.nextApproverRole = nextStep.role;
     await doc.save();
+
+    {
+      const fwdName = doc.employeeId && typeof doc.employeeId === 'object' ? doc.employeeId.employee_name : null;
+      const who = String(fwdName || doc.emp_no || 'Employee');
+      const nextL = nextStep?.label || nextStep?.role;
+      notifyWorkflowEvent({
+        module: 'promotion_transfer',
+        eventType: 'PROMOTION_TRANSFER_FORWARD',
+        record: doc,
+        actor: req.user,
+        title: `${(doc.requestType || 'Request').toString()}: ${who} — your approval needed`,
+        message: `${who} (${String(doc.emp_no || '').trim() || '—'}) ${
+          doc.requestType
+        } is pending your step (${nextL || nextStep?.role || '—'}).`,
+        nextApproverRole: nextStep.role,
+        priority: 'high',
+        dedupeExtra: `fwd:${String(nextIndex)}`,
+      }).catch((err) => console.error('[Notification] PROMOTION_TRANSFER_FORWARD failed:', err?.message || err));
+    }
 
     res.status(200).json({
       success: true,

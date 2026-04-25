@@ -77,6 +77,10 @@ const EXCLUDED_FIELDS = [
   'rejectionComments',
   'approvedAt',
   'rejectedAt',
+  /** Web push subs are updated via notification APIs; FormData often sends `"[]"` as a string and breaks document arrays. */
+  'pushSubscriptions',
+  /** Server-managed from approved promotions; do not allow generic employee PUT to overwrite. */
+  'grossSalaryRevisions',
 ];
 
 /**

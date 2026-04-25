@@ -45,6 +45,7 @@ import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
 import Spinner from '@/components/Spinner';
 import BankUpdateDialog from '@/components/employee/BankUpdateDialog';
 import EmployeeExportDialog from '@/components/employee/EmployeeExportDialog';
+import EmployeeSalaryHistoryPanel from '@/components/employee/EmployeeSalaryHistoryPanel';
 import Swal from 'sweetalert2';
 import {
   EMPLOYEE_TEMPLATE_HEADERS,
@@ -281,6 +282,7 @@ export default function EmployeesPage() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [editingApplicationID, setEditingApplicationID] = useState<string | null>(null); // Track ID of application being edited
   const [showViewDialog, setShowViewDialog] = useState(false);
+  const [employeeViewTab, setEmployeeViewTab] = useState<'profile' | 'salary_history'>('profile');
   const [showProfileHistoryDialog, setShowProfileHistoryDialog] = useState(false);
   const [selectedProfileHistoryEmployee, setSelectedProfileHistoryEmployee] = useState<{
     employeeName: string;
@@ -2133,6 +2135,7 @@ export default function EmployeesPage() {
   };
 
   const handleViewEmployee = async (employee: Employee) => {
+    setEmployeeViewTab('profile');
     setViewingEmployee(employee);
     setShowViewDialog(true);
 
@@ -2188,6 +2191,7 @@ export default function EmployeesPage() {
       profilePhoto: (application as any).profilePhoto,
     };
 
+    setEmployeeViewTab('profile');
     setViewingEmployee(mapped as Employee);
     setShowViewDialog(true);
 
@@ -5994,7 +5998,7 @@ export default function EmployeesPage() {
       {
         showViewDialog && viewingEmployee && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowViewDialog(false)} />
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowViewDialog(false); setEmployeeViewTab('profile'); }} />
             <div className="relative z-50 max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
               <div className="mb-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -6056,7 +6060,7 @@ export default function EmployeesPage() {
                     </button>
                   )}
                   <button
-                    onClick={() => setShowViewDialog(false)}
+                    onClick={() => { setShowViewDialog(false); setEmployeeViewTab('profile'); }}
                     className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
                   >
                     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -6066,6 +6070,36 @@ export default function EmployeesPage() {
                 </div>
               </div>
 
+              <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+                <div className="inline-flex flex-wrap justify-end gap-1 rounded-full bg-slate-100 p-1 text-xs font-medium text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                  <button
+                    type="button"
+                    onClick={() => setEmployeeViewTab('profile')}
+                    className={`rounded-full px-3 py-1 transition ${
+                      employeeViewTab === 'profile'
+                        ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
+                        : 'bg-transparent'
+                    }`}
+                  >
+                    Profile
+                  </button>
+                  {userRole !== 'hod' && (
+                    <button
+                      type="button"
+                      onClick={() => setEmployeeViewTab('salary_history')}
+                      className={`rounded-full px-3 py-1 transition ${
+                        employeeViewTab === 'salary_history'
+                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
+                          : 'bg-transparent'
+                      }`}
+                    >
+                      Salary history
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {employeeViewTab === 'profile' && (
               <div className="space-y-6">
                 {/* Status Badge */}
                 <div className="flex items-center gap-2">
@@ -6498,6 +6532,7 @@ export default function EmployeesPage() {
                         <button
                           onClick={() => {
                             setShowViewDialog(false);
+                            setEmployeeViewTab('profile');
                             handleRemoveLeftDate(viewingEmployee);
                           }}
                           className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
@@ -6638,6 +6673,14 @@ export default function EmployeesPage() {
                 )}
 
               </div>
+              )}
+
+              {employeeViewTab === 'salary_history' && userRole !== 'hod' && viewingEmployee.emp_no && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Salary history</h3>
+                  <EmployeeSalaryHistoryPanel empNo={viewingEmployee.emp_no} />
+                </div>
+              )}
             </div>
           </div>
         )

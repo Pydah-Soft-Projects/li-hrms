@@ -37,6 +37,10 @@ const outputColumnService = require('./outputColumnService');
 const ArrearsPayrollIntegrationService = require('../../arrears/services/arrearsPayrollIntegrationService');
 const DeductionIntegrationService = require('./deductionIntegrationService');
 const DeductionPayrollIntegrationService = require('../../manual-deductions/services/deductionPayrollIntegrationService');
+const {
+  resolveGrossSalaryForPayrollMonth,
+  foldEmployeeMasterGrossAfterPayrollIfNeeded,
+} = require('../../employees/services/employeeGrossSalaryResolver');
 
 function normalizeOutputColumns(rawColumns) {
   const raw = Array.isArray(rawColumns) ? rawColumns : [];
@@ -1274,6 +1278,13 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
   if (!payRegisterSummary) throw new Error('Pay register not found for this month');
 
   const secondSalaryBasis = !!options.secondSalaryBasis;
+  if (!secondSalaryBasis) {
+    const [py, pm] = String(month || '')
+      .split('-')
+      .map((x) => parseInt(x, 10));
+    const empPlain = employee.toObject ? employee.toObject() : { ...employee };
+    employee.gross_salary = resolveGrossSalaryForPayrollMonth(empPlain, py, pm);
+  }
   const calcEmployee = secondSalaryBasis ? employeeForSecondSalaryBasis(employee) : employee;
 
   const config = await PayrollConfiguration.get();
@@ -1569,6 +1580,14 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
       }
     } catch (e) {
       console.error('[PayrollFromOutputColumns] Batch create/add error:', e.message);
+    }
+  }
+
+  if (!secondSalaryBasis) {
+    try {
+      await foldEmployeeMasterGrossAfterPayrollIfNeeded(employeeId, record.year, record.monthNumber);
+    } catch (e) {
+      console.warn('[PayrollFromOutputColumns] fold gross salary:', e.message);
     }
   }
 

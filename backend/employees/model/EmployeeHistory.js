@@ -61,6 +61,7 @@ const employeeHistorySchema = new mongoose.Schema(
                 'promotion_transfer_rejected',
                 'promotion_transfer_cancelled',
                 'promotion_transfer_deleted',
+                'promotion_transfer_admin_updated',
             ],
             required: true,
         },

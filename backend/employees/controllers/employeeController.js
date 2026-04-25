@@ -40,6 +40,7 @@ const {
   stripEmployeeGroupIfDisabled,
   validateEmployeeGroupIfEnabled,
 } = require('../../shared/utils/customEmployeeGrouping');
+const { checkJurisdiction } = require('../../shared/middleware/dataScopeMiddleware');
 const streamingExportService = require('../../shared/services/streamingExportService');
 const {
   normalizeEmployeeSalariesPayload,
@@ -859,6 +860,8 @@ exports.createEmployee = async (req, res) => {
 
     // 3. Merge: root-level fields take precedence
     dynamicFields = { ...dynamicFields, ...extractedDynamic };
+    delete dynamicFields.pushSubscriptions;
+    delete dynamicFields.grossSalaryRevisions;
 
     // 4. Parse specific Fields that should be arrays
     const arrayFields = ['reporting_to', 'reporting_to_'];
@@ -1107,7 +1110,9 @@ exports.updateEmployee = async (req, res) => {
         'allData', 'division', 'department', 'designation', 'employeeGroup', 'employee_group',
         '_id', 'createdAt', 'updatedAt', '__v', 'dynamicFields',
         'payroll_stats', 'leave_stats', 'password', 'plain_password',
-        'isProfileRequest', 'status', 'is_active'
+        'isProfileRequest', 'status', 'is_active',
+        'pushSubscriptions',
+        'grossSalaryRevisions',
       ];
 
       for (const key in employeeData) {
@@ -1295,6 +1300,8 @@ exports.updateEmployee = async (req, res) => {
 
     // 3. Merge: root-level fields take precedence
     dynamicFields = { ...dynamicFields, ...extractedDynamic };
+    delete dynamicFields.pushSubscriptions;
+    delete dynamicFields.grossSalaryRevisions;
 
     // 4. Parse specific Fields that should be arrays
     const arrayFields = ['reporting_to', 'reporting_to_'];
@@ -1506,9 +1513,12 @@ exports.updateEmployee = async (req, res) => {
       // Check for both snake_case (standard) and camelCase (frontend payload)
       if (employeeData.second_salary !== undefined && employeeData.second_salary !== null && employeeData.second_salary !== '') {
         updateData.second_salary = Number(employeeData.second_salary);
-      } else if (employeeData.secondSalary !== undefined && employeeData.secondSalary !== null && employeeData.secondSalary !== '') {
+      } else       if (employeeData.secondSalary !== undefined && employeeData.secondSalary !== null && employeeData.secondSalary !== '') {
         updateData.second_salary = Number(employeeData.secondSalary);
       }
+
+      delete updateData.pushSubscriptions;
+      delete updateData.grossSalaryRevisions;
 
       await Employee.findOneAndUpdate(
         { emp_no: empNo },
@@ -2037,6 +2047,153 @@ exports.getEmployeeHistory = async (req, res) => {
       success: false,
       message: 'Error fetching employee history',
       error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Gross salary schedule + related events (future-effective promotions, approvals)
+ * @route   GET /api/employees/:empNo/salary-history
+ * @access  Employee (self) or HR roles with jurisdiction
+ */
+exports.getEmployeeSalaryHistory = async (req, res) => {
+  try {
+    const { empNo } = req.params;
+    const empNoUpper = String(empNo || '').toUpperCase();
+    if (!empNoUpper) {
+      return res.status(400).json({ success: false, message: 'Employee number is required' });
+    }
+
+    const role = (req.user?.role || '').toLowerCase();
+    const empRow = await Employee.findOne({ emp_no: empNoUpper })
+      .select('_id gross_salary grossSalaryRevisions division_id department_id')
+      .lean();
+
+    if (!empRow) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    const privileged = ['super_admin', 'sub_admin'].includes(role);
+    let allowed = privileged;
+
+    if (!allowed && role === 'employee') {
+      const uEmp = String(req.user?.emp_no || '').toUpperCase();
+      if (uEmp && uEmp === empNoUpper) allowed = true;
+      if (!allowed && req.user?.employeeRef) {
+        const link = await Employee.findById(req.user.employeeRef).select('emp_no').lean();
+        if (link && String(link.emp_no).toUpperCase() === empNoUpper) allowed = true;
+      }
+      if (!allowed && req.user?.employeeId && mongoose.Types.ObjectId.isValid(req.user.employeeId)) {
+        const link = await Employee.findById(req.user.employeeId).select('emp_no').lean();
+        if (link && String(link.emp_no).toUpperCase() === empNoUpper) allowed = true;
+      }
+    }
+
+    if (!allowed && ['hr', 'manager', 'hod'].includes(role)) {
+      allowed = checkJurisdiction(req.user, {
+        employeeId: empRow._id,
+        division_id: empRow.division_id,
+        department_id: empRow.department_id,
+      });
+    }
+
+    if (!allowed) {
+      return res.status(403).json({ success: false, message: 'Not authorized to view salary history' });
+    }
+
+    const revisions = Array.isArray(empRow.grossSalaryRevisions)
+      ? [...empRow.grossSalaryRevisions].sort(
+          (a, b) =>
+            Number(a.effectivePayrollYear) * 100 +
+            Number(a.effectivePayrollMonth) -
+            (Number(b.effectivePayrollYear) * 100 + Number(b.effectivePayrollMonth))
+        )
+      : [];
+
+    const relatedHistory = await EmployeeHistory.find({
+      emp_no: empNoUpper,
+      event: {
+        $in: [
+          'promotion_transfer_final_approved',
+          'promotion_transfer_submitted',
+          'promotion_transfer_step_approved',
+          'promotion_transfer_admin_updated',
+          'salary_approved',
+        ],
+      },
+    })
+      .sort({ timestamp: -1 })
+      .limit(80)
+      .select('event performedByName performedByRole comments details timestamp')
+      .lean();
+
+    const PromotionTransferRequest = require('../../promotions-transfers/model/PromotionTransferRequest');
+    const pendingSalaryRaw = await PromotionTransferRequest.find({
+      emp_no: empNoUpper,
+      status: 'pending',
+      requestType: { $in: ['promotion', 'demotion', 'increment'] },
+      effectivePayrollYear: { $type: 'number' },
+      effectivePayrollMonth: { $gte: 1, $lte: 12 },
+    })
+      .select(
+        '_id requestType newGrossSalary previousGrossSalary effectivePayrollYear effectivePayrollMonth incrementAmount status updatedAt createdAt'
+      )
+      .sort({ updatedAt: -1 })
+      .limit(25)
+      .lean();
+
+    const pendingSalaryRequests = pendingSalaryRaw.map((r) => ({
+      requestId: r._id,
+      requestType: r.requestType,
+      status: r.status,
+      effectivePayrollYear: r.effectivePayrollYear,
+      effectivePayrollMonth: r.effectivePayrollMonth,
+      effectiveLabel: `${r.effectivePayrollYear}-${String(r.effectivePayrollMonth).padStart(2, '0')}`,
+      newGrossSalary: r.newGrossSalary != null ? Number(r.newGrossSalary) : null,
+      previousGrossSalary: r.previousGrossSalary != null ? Number(r.previousGrossSalary) : null,
+      incrementAmount: r.incrementAmount != null ? Number(r.incrementAmount) : null,
+      updatedAt: r.updatedAt,
+      createdAt: r.createdAt,
+    }));
+
+    const { getPromotionPayrollContext } = require('../../promotions-transfers/services/promotionPayrollCycleContextService');
+    const { resolveGrossSalaryForPayrollMonth } = require('../services/employeeGrossSalaryResolver');
+    const ctx = await getPromotionPayrollContext({
+      divisionId: empRow.division_id,
+      departmentId: empRow.department_id,
+    });
+    const grossForCurrentCycle = resolveGrossSalaryForPayrollMonth(
+      empRow,
+      ctx.currentCycle.year,
+      ctx.currentCycle.month
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        emp_no: empNoUpper,
+        masterGrossSalary: empRow.gross_salary,
+        grossUsedForCurrentPayCycle: grossForCurrentCycle,
+        currentPayrollMonthLabel: `${ctx.currentCycle.year}-${String(ctx.currentCycle.month).padStart(2, '0')}`,
+        revisions: revisions.map((r) => ({
+          effectivePayrollYear: r.effectivePayrollYear,
+          effectivePayrollMonth: r.effectivePayrollMonth,
+          effectiveLabel: `${r.effectivePayrollYear}-${String(r.effectivePayrollMonth).padStart(2, '0')}`,
+          grossSalary: r.grossSalary,
+          previousGrossSalary: r.previousGrossSalary,
+          requestType: r.requestType,
+          recordedAt: r.recordedAt,
+        })),
+        /** In-flight PT rows (same data edited on Promotions & transfers); not yet in grossSalaryRevisions until final approval. */
+        pendingSalaryRequests,
+        relatedHistory,
+      },
+    });
+  } catch (error) {
+    console.error('getEmployeeSalaryHistory:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to load salary history',
     });
   }
 };

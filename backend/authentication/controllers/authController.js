@@ -196,18 +196,29 @@ exports.getMe = async (req, res) => {
     let profilePhoto = user.profilePhoto || null;
     let joined = user.createdAt || null;
     let lastLogin = user.lastLogin || null;
+    /** Linked employee row for User accounts (profile / GET employee uses emp_no, not Mongo id). */
+    let linkedEmployeeLean = null;
 
     if (userType === 'user' && user.employeeRef) {
-      const emp = await Employee.findById(user.employeeRef).select('profilePhoto doj createdAt lastLogin').lean();
-      if (emp) {
-        if (emp.profilePhoto) profilePhoto = emp.profilePhoto;
-        joined = emp.doj || emp.createdAt || null;
-        lastLogin = emp.lastLogin || null;
+      linkedEmployeeLean = await Employee.findById(user.employeeRef)
+        .select('profilePhoto doj createdAt lastLogin phone_number emp_no')
+        .lean();
+      if (linkedEmployeeLean) {
+        if (linkedEmployeeLean.profilePhoto) profilePhoto = linkedEmployeeLean.profilePhoto;
+        joined = linkedEmployeeLean.doj || linkedEmployeeLean.createdAt || null;
+        lastLogin = linkedEmployeeLean.lastLogin || null;
       }
     } else if (userType === 'employee') {
       joined = user.doj || user.createdAt || null;
       lastLogin = user.lastLogin || null;
     }
+
+    const empNoOut =
+      userType === 'employee'
+        ? user.emp_no
+        : linkedEmployeeLean && linkedEmployeeLean.emp_no
+          ? linkedEmployeeLean.emp_no
+          : undefined;
 
     res.status(200).json({
       success: true,
@@ -219,7 +230,8 @@ exports.getMe = async (req, res) => {
           role: userType === 'user' ? user.role : 'employee',
           roles: userType === 'user' ? user.roles : ['employee'],
           department: userType === 'employee' ? user.department_id : undefined,
-          emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
+          emp_no: empNoOut,
+          employeeId: userType === 'user' && user.employeeRef ? String(user.employeeRef) : undefined,
           type: userType,
           featureControl: userType === 'user' ? resolveFeatureControl(user) : undefined,
           isActive: user.isActive,
@@ -228,7 +240,10 @@ exports.getMe = async (req, res) => {
           profilePhoto,
           createdAt: joined,
           lastLogin,
-          phone_number: userType === 'employee' ? user.phone_number : (user.employeeRef ? (await Employee.findById(user.employeeRef).select('phone_number')).phone_number : null),
+          phone_number:
+            userType === 'employee'
+              ? user.phone_number
+              : linkedEmployeeLean?.phone_number ?? null,
         },
       },
     });

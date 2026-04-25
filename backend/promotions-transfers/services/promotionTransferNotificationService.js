@@ -22,8 +22,8 @@ function orgLabel(node) {
 
 /**
  * In-app notifications after final approval: super admins + sub admins get full detail;
- * employee (portal user) + HR/HOD/manager/sub_admin scoped to the NEW division/department get a summary.
- * Scoped summary for org-changing transfers/promotions; salary-only still notifies employee + detail admins.
+ * employee (portal user) + HR/HOD/manager/sub_admin scoped to both FROM and TO division/department
+ * get a summary (when org changes). Salary-only / same org: employee + detail admins only.
  */
 async function notifyPromotionTransferCompleted(requestDoc, approver) {
   try {
@@ -57,6 +57,8 @@ async function notifyPromotionTransferCompleted(requestDoc, approver) {
 
   const toDivId = toDiv || null;
   const toDeptId = toDept || null;
+  const fromDivId = fromDiv || null;
+  const fromDeptId = fromDept || null;
 
   const [superAdminIds, subAdminRows, employeeUserIds] = await Promise.all([
     resolveSuperAdminUserIds(),
@@ -73,15 +75,29 @@ async function notifyPromotionTransferCompleted(requestDoc, approver) {
   ]);
   const subAdminIds = subAdminRows.map((u) => String(u._id));
 
-  let newScopedIds = [];
+  let toScopedIds = [];
   if (hasOrgMove && (toDivId || toDeptId)) {
-    newScopedIds = await resolveScopedUserIdsForEmployee({
+    toScopedIds = await resolveScopedUserIdsForEmployee({
       divisionId: toDivId,
       departmentId: toDeptId || null,
       roles: ['hr', 'hod', 'manager', 'sub_admin'],
     });
   }
-  newScopedIds = newScopedIds.filter((id) => id !== approverIdStr);
+  let fromScopedIds = [];
+  if (
+    hasOrgMove &&
+    (fromDivId || fromDeptId) &&
+    (idsDiffer(fromDiv, toDiv) || idsDiffer(fromDept, toDept))
+  ) {
+    fromScopedIds = await resolveScopedUserIdsForEmployee({
+      divisionId: fromDivId,
+      departmentId: fromDeptId || null,
+      roles: ['hr', 'hod', 'manager', 'sub_admin'],
+    });
+  }
+  const newScopedIds = uniqueIds([...toScopedIds, ...fromScopedIds]).filter(
+    (id) => id !== approverIdStr
+  );
 
   const fd = orgLabel(populated.fromDivisionId);
   const fdep = orgLabel(populated.fromDepartmentId);
@@ -165,8 +181,10 @@ async function notifyPromotionTransferCompleted(requestDoc, approver) {
   );
 
   let summaryMessage = '';
-  if (hasOrgMove && (td || tdep)) {
-    summaryMessage = `${employeeName} (${empNo}): organisation is now ${[td, tdep].filter(Boolean).join(' / ')}${tdes ? `, ${tdes}` : ''}.`;
+  if (hasOrgMove && (td || tdep || fd || fdep)) {
+    const fromLine = [fd, fdep].filter(Boolean).join(' / ') || '—';
+    const toLine = [td, tdep].filter(Boolean).join(' / ') || '—';
+    summaryMessage = `${employeeName} (${empNo}): org change from ${fromLine} to ${toLine}${tdes ? `, ${tdes}` : ''}.`;
   } else if (populated.requestType === 'increment' || populated.newGrossSalary != null) {
     summaryMessage = `${employeeName} (${empNo}): compensation update is effective (payroll ${payrollLabel}). ${salaryLine}`.trim();
   } else {

@@ -62,9 +62,30 @@ function normalizeFinalAuthorityRole(wf) {
 }
 
 /**
+ * When the built chain has no HOD (e.g. only division manager), insert HOD — after reporting manager
+ * if present, otherwise first — so a department head step is always present.
+ * @param {Array<{ role?: string; label?: string; status?: string; stepOrder?: number; isCurrent?: boolean }>} approvalSteps
+ */
+function ensureHodInChain(approvalSteps) {
+  if (!Array.isArray(approvalSteps) || approvalSteps.length === 0) return;
+  if (approvalSteps.some((s) => String(s.role || '').toLowerCase() === 'hod')) return;
+  const rmIdx = approvalSteps.findIndex((s) => String(s.role || '').toLowerCase() === 'reporting_manager');
+  const insertAt = rmIdx >= 0 ? rmIdx + 1 : 0;
+  approvalSteps.splice(insertAt, 0, {
+    stepOrder: 0,
+    role: 'hod',
+    label: chainStepLabel('hod'),
+    status: 'pending',
+    isCurrent: false,
+  });
+  approvalSteps.forEach((row, i) => {
+    row.stepOrder = i + 1;
+  });
+}
+
+/**
  * Ensures a distinct final-approval step exists when the chain does not already end with that role
  * (e.g. legacy RM/HOD-only chains otherwise complete without HR).
- *
  * @param {Array<{ role?: string; label?: string; status?: string; stepOrder?: number; isCurrent?: boolean }>} approvalSteps
  * @param {Record<string, any>} wf
  */
@@ -186,6 +207,7 @@ function buildApprovalChain(employee, settings) {
   }
 
   appendFinalAuthorityStepIfNeeded(approvalSteps, wf);
+  ensureHodInChain(approvalSteps);
 
   if (approvalSteps.length === 0) {
     approvalSteps.push({

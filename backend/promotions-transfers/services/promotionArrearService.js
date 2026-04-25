@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const Employee = require('../../employees/model/Employee');
 const { getPromotionPayrollContext } = require('./promotionPayrollCycleContextService');
 const { fetchAttendanceDataForEmployeeMonths } = require('../../payroll/services/attendanceRangeDataService');
 const ArrearsService = require('../../arrears/services/arrearsService');
@@ -39,7 +40,12 @@ async function computePromotionArrearAmount(promotionDoc) {
   const startLabel = `${y}-${String(m).padStart(2, '0')}`;
   let arrearEnd;
   try {
-    const ctx = await getPromotionPayrollContext();
+    let employeeScope = null;
+    const empRow = await Employee.findById(empId).select('division_id department_id').lean();
+    if (empRow?.division_id && empRow?.department_id) {
+      employeeScope = { divisionId: empRow.division_id, departmentId: empRow.department_id };
+    }
+    const ctx = await getPromotionPayrollContext(employeeScope);
     arrearEnd = ctx.arrearProrationEndLabel;
   } catch (e) {
     return { totalAmount: 0, startLabel, endLabel: '', skipped: true, reason: `payroll_context_error:${e.message}` };
