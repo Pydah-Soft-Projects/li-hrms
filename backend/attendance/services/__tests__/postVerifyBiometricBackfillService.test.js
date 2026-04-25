@@ -1,22 +1,17 @@
 /**
- * Unit tests for post-verify biometric replay (internal sync).
+ * Unit tests for post-verify biometric replay (delegates to biometric HTTP service only).
  */
 
 jest.mock('axios', () => ({
   post: jest.fn(),
 }));
 
-jest.mock('../biometricReportService', () => ({
-  findBiometricLogsForEmployeeBackfill: jest.fn(),
-  resolveBiometricMongoUri: jest.fn(() => 'mongodb://test-biometric'),
-}));
-
 const axios = require('axios');
-const biometricReportService = require('../biometricReportService');
 const {
   runPostVerifyBiometricBackfill,
   computeBackfillRange,
   schedulePostVerifyBiometricBackfill,
+  resolveBiometricReplayServiceUrl,
 } = require('../postVerifyBiometricBackfillService');
 
 function snapshotEnv(keys) {
@@ -30,8 +25,8 @@ function snapshotEnv(keys) {
 const envKeys = [
   'POST_VERIFY_BIOMETRIC_BACKFILL',
   'HRMS_MICROSERVICE_SECRET_KEY',
-  'BACKEND_INTERNAL_URL',
-  'MONGODB_BIOMETRIC_URI',
+  'BIOMETRIC_SERVICE_BASE_URL',
+  'BIOMETRIC_SERVICE_URL',
 ];
 const prevEnv = snapshotEnv(envKeys);
 
@@ -52,6 +47,21 @@ afterEach(() => {
   envKeys.forEach((k) => {
     if (prevEnv[k] === undefined) delete process.env[k];
     else process.env[k] = prevEnv[k];
+  });
+});
+
+describe('resolveBiometricReplayServiceUrl', () => {
+  test('returns null when unset', () => {
+    delete process.env.BIOMETRIC_SERVICE_BASE_URL;
+    delete process.env.BIOMETRIC_SERVICE_URL;
+    expect(resolveBiometricReplayServiceUrl()).toBeNull();
+  });
+
+  test('returns replay URL from BIOMETRIC_SERVICE_BASE_URL', () => {
+    process.env.BIOMETRIC_SERVICE_BASE_URL = 'http://biometric:4001/';
+    expect(resolveBiometricReplayServiceUrl()).toBe(
+      'http://biometric:4001/api/internal/replay-window-to-hrms'
+    );
   });
 });
 
@@ -86,8 +96,8 @@ describe('runPostVerifyBiometricBackfill', () => {
   beforeEach(() => {
     process.env.POST_VERIFY_BIOMETRIC_BACKFILL = 'true';
     process.env.HRMS_MICROSERVICE_SECRET_KEY = 'unit-test-system-key';
-    process.env.BACKEND_INTERNAL_URL = 'http://127.0.0.1:59999';
-    biometricReportService.resolveBiometricMongoUri.mockReturnValue('mongodb://test-biometric');
+    process.env.BIOMETRIC_SERVICE_BASE_URL = 'http://biometric-svc';
+    delete process.env.BIOMETRIC_SERVICE_URL;
   });
 
   test('skips when POST_VERIFY_BIOMETRIC_BACKFILL is false', async () => {
@@ -102,15 +112,16 @@ describe('runPostVerifyBiometricBackfill', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 
-  test('skips when no biometric URI', async () => {
-    biometricReportService.resolveBiometricMongoUri.mockReturnValue('');
+  test('skips when BIOMETRIC_SERVICE_BASE_URL and BIOMETRIC_SERVICE_URL unset', async () => {
+    delete process.env.BIOMETRIC_SERVICE_BASE_URL;
+    delete process.env.BIOMETRIC_SERVICE_URL;
     const out = await runPostVerifyBiometricBackfill({
       empNo: '9999',
       doj,
       verifiedAt,
     });
     expect(out.skipped).toBe(true);
-    expect(out.reason).toBe('no_biometric_uri');
+    expect(out.reason).toBe('no_biometric_service_url');
     expect(axios.post).not.toHaveBeenCalled();
   });
 
@@ -126,39 +137,10 @@ describe('runPostVerifyBiometricBackfill', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 
-  test('no axios calls when biometric returns no rows', async () => {
-    biometricReportService.findBiometricLogsForEmployeeBackfill.mockResolvedValue([]);
-    const out = await runPostVerifyBiometricBackfill({
-      empNo: '2146',
-      doj,
-      verifiedAt,
+  test('POSTs replay request to biometric internal endpoint', async () => {
+    axios.post.mockResolvedValue({
+      data: { success: true, skipped: false, logsFound: 2, sent: 2, batches: 1 },
     });
-    expect(out.logsFound).toBe(0);
-    expect(out.batches).toBe(0);
-    expect(axios.post).not.toHaveBeenCalled();
-  });
-
-  test('POSTs normalized payload to internal sync with system key', async () => {
-    const ts = new Date('2026-04-02T08:00:00.000Z');
-    biometricReportService.findBiometricLogsForEmployeeBackfill.mockResolvedValue([
-      {
-        employeeId: '2146',
-        timestamp: ts,
-        logType: 'check-in',
-        deviceId: 'DEV1',
-        deviceName: 'Main Gate',
-        rawType: 0,
-      },
-      {
-        employeeId: '2146',
-        timestamp: new Date('2026-04-02T17:00:00.000Z'),
-        logType: 'CHECK-OUT',
-        deviceId: 'DEV1',
-        deviceName: 'Main Gate',
-        rawType: 1,
-      },
-    ]);
-    axios.post.mockResolvedValue({ data: { processed: 2, success: true } });
 
     const out = await runPostVerifyBiometricBackfill({
       empNo: '2146',
@@ -166,65 +148,45 @@ describe('runPostVerifyBiometricBackfill', () => {
       verifiedAt,
     });
 
-    expect(out.skipped).toBe(false);
+    expect(out.via).toBe('biometric_service');
     expect(out.sent).toBe(2);
-    expect(out.batches).toBe(1);
     expect(axios.post).toHaveBeenCalledTimes(1);
-
     const [url, body, opts] = axios.post.mock.calls[0];
-    expect(url).toBe('http://127.0.0.1:59999/api/internal/attendance/sync');
+    expect(url).toBe('http://biometric-svc/api/internal/replay-window-to-hrms');
     expect(opts.headers['x-system-key']).toBe('unit-test-system-key');
-    expect(Array.isArray(body)).toBe(true);
-    expect(body).toHaveLength(2);
-    expect(body[0].employeeId).toBe('2146');
-    expect(body[0].logType).toBe('CHECK-IN');
-    expect(body[0].deviceId).toBe('DEV1');
-    expect(body[1].logType).toBe('CHECK-OUT');
-    expect(body[0].timestamp).toMatch(/Z$/);
+    expect(body.empNo).toBe('2146');
+    expect(typeof body.doj).toBe('string');
+    expect(typeof body.verifiedAt).toBe('string');
   });
 
-  test('drops rows with invalid logType and still sends valid ones', async () => {
-    biometricReportService.findBiometricLogsForEmployeeBackfill.mockResolvedValue([
-      { employeeId: '1', timestamp: new Date('2026-04-02T08:00:00.000Z'), logType: 'CHECK-IN', deviceId: 'D', deviceName: 'N' },
-      { employeeId: '1', timestamp: new Date('2026-04-02T09:00:00.000Z'), logType: 'UNKNOWN', deviceId: 'D', deviceName: 'N' },
-    ]);
-    axios.post.mockResolvedValue({ data: { processed: 1 } });
+  test('includes employeeName in body when provided', async () => {
+    axios.post.mockResolvedValue({
+      data: { success: true, skipped: false, logsFound: 0, sent: 0, batches: 0 },
+    });
+
+    await runPostVerifyBiometricBackfill({
+      empNo: '2146',
+      doj,
+      verifiedAt,
+      employeeName: 'Test User',
+    });
+
+    const [, body] = axios.post.mock.calls[0];
+    expect(body.employeeName).toBe('Test User');
+  });
+
+  test('returns error payload when biometric HTTP fails after retries', async () => {
+    axios.post.mockRejectedValue(new Error('ECONNREFUSED'));
 
     const out = await runPostVerifyBiometricBackfill({
       empNo: '1',
       doj,
       verifiedAt,
     });
-    expect(out.sent).toBe(1);
-    expect(axios.post.mock.calls[0][1]).toHaveLength(1);
-    expect(axios.post.mock.calls[0][1][0].logType).toBe('CHECK-IN');
-  });
 
-  test('splits into multiple batches when over BATCH_SIZE', async () => {
-    const many = [];
-    for (let i = 0; i < 250; i += 1) {
-      many.push({
-        employeeId: '55',
-        timestamp: new Date(`2026-04-02T${String(8 + (i % 8)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}:00.000Z`),
-        logType: 'CHECK-IN',
-        deviceId: 'D',
-        deviceName: 'N',
-      });
-    }
-    biometricReportService.findBiometricLogsForEmployeeBackfill.mockResolvedValue(many);
-    axios.post.mockResolvedValue({ data: { processed: 200 } });
-
-    const out = await runPostVerifyBiometricBackfill({
-      empNo: '55',
-      doj,
-      verifiedAt,
-    });
-
-    expect(out.sent).toBe(250);
-    expect(out.batches).toBe(2);
-    expect(axios.post).toHaveBeenCalledTimes(2);
-    expect(axios.post.mock.calls[0][1]).toHaveLength(200);
-    expect(axios.post.mock.calls[1][1]).toHaveLength(50);
+    expect(out.via).toBe('biometric_service');
+    expect(out.error).toBeDefined();
+    expect(axios.post).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -235,19 +197,16 @@ describe('schedulePostVerifyBiometricBackfill', () => {
   beforeEach(() => {
     process.env.POST_VERIFY_BIOMETRIC_BACKFILL = 'true';
     process.env.HRMS_MICROSERVICE_SECRET_KEY = 'unit-test-system-key';
-    process.env.BACKEND_INTERNAL_URL = 'http://127.0.0.1:59999';
-    biometricReportService.resolveBiometricMongoUri.mockReturnValue('mongodb://test-biometric');
-    biometricReportService.findBiometricLogsForEmployeeBackfill.mockResolvedValue([]);
+    process.env.BIOMETRIC_SERVICE_BASE_URL = 'http://biometric-svc';
+    axios.post.mockResolvedValue({ data: { logsFound: 0, sent: 0, batches: 0 } });
   });
 
-  test('invokes finder after setImmediate (async backfill)', async () => {
+  test('invokes axios.post after setImmediate (async backfill)', async () => {
     schedulePostVerifyBiometricBackfill({ empNo: '777', doj, verifiedAt });
-    expect(biometricReportService.findBiometricLogsForEmployeeBackfill).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
     await new Promise((resolve) => setImmediate(resolve));
-    expect(biometricReportService.findBiometricLogsForEmployeeBackfill).toHaveBeenCalledWith(
-      '777',
-      expect.any(Date),
-      expect.any(Date)
-    );
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    const [, body] = axios.post.mock.calls[0];
+    expect(body.empNo).toBe('777');
   });
 });
