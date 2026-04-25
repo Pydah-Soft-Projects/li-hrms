@@ -1,31 +1,38 @@
 /**
- * Live end-to-end test: read real biometric Mongo (attendancelogs), POST to real
- * POST /api/internal/attendance/sync using the same logic as post-verify backfill.
- *
- * Requires backend reachable (local or deployed) and env secrets in backend/.env.
+ * Live script: verify HRMS employee exists, then run the same post-verify biometric replay as production
+ * (HTTP → biometric service → that service reads Mongo and POSTs to HRMS internal sync).
  *
  * Usage:
  *   cd backend
  *   node scripts/liveTestPostVerifyBiometricBackfill.js --emp-no=2146 --doj=2026-04-01 --verified-date=2026-04-24
  *
- * Optional — insert two test punches into biometric DB (guarded by env):
+ * Optional — insert two test punches into biometric Mongo (requires direct URI for seed only):
  *   ALLOW_BIOMETRIC_TEST_SEED=true node scripts/liveTestPostVerifyBiometricBackfill.js --emp-no=2146 --doj=2026-04-01 --verified-date=2026-04-24 --seed
  *
  * Remove only rows created by this script:
  *   node scripts/liveTestPostVerifyBiometricBackfill.js --cleanup-seed
  *
+ * Optional:
+ *   --employee-name="Display Name" — passed to biometric replay body
+ *   --dry-run — GET /api/logs on the biometric service (same window); no HRMS writes
+ *
  * Env:
- *   MONGODB_URI                    — HRMS DB (to confirm employee exists)
- *   MONGODB_BIOMETRIC_URI or MONGODB_ATLAS_BIOMETRIC_URI
- *   HRMS_MICROSERVICE_SECRET_KEY
- *   BACKEND_URL or API_BASE or BACKEND_INTERNAL_URL — base URL of running API (e.g. http://localhost:5000)
+ *   MONGODB_URI — HRMS DB (employee existence check)
+ *   BIOMETRIC_SERVICE_BASE_URL (or BIOMETRIC_SERVICE_URL) — required for replay and --dry-run
+ *   HRMS_MICROSERVICE_SECRET_KEY — same secret as biometric service (replay + dry-run if secured later)
+ *   MONGODB_BIOMETRIC_URI — only for --seed / --cleanup-seed (optional)
  */
 
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
+const axios = require('axios');
 const mongoose = require('mongoose');
-const { runPostVerifyBiometricBackfill } = require('../attendance/services/postVerifyBiometricBackfillService');
+const {
+  runPostVerifyBiometricBackfill,
+  resolveBiometricReplayServiceUrl,
+  computeBackfillRange,
+} = require('../attendance/services/postVerifyBiometricBackfillService');
 
 const SEED_DEVICE_ID = 'HRMS_SCRIPT_TEST_POST_VERIFY';
 const SEED_DEVICE_NAME = 'HRMS_SCRIPT_TEST_POST_VERIFY';
@@ -52,9 +59,14 @@ function parseYmd(s) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+function biometricBaseUrl() {
+  const u = process.env.BIOMETRIC_SERVICE_BASE_URL || process.env.BIOMETRIC_SERVICE_URL || '';
+  return String(u).trim().replace(/\/$/, '');
+}
+
 async function getBiometricModel() {
   const uri = process.env.MONGODB_BIOMETRIC_URI || process.env.MONGODB_ATLAS_BIOMETRIC_URI;
-  if (!uri) throw new Error('Set MONGODB_BIOMETRIC_URI or MONGODB_ATLAS_BIOMETRIC_URI');
+  if (!uri) throw new Error('Set MONGODB_BIOMETRIC_URI or MONGODB_ATLAS_BIOMETRIC_URI for seed/cleanup');
   const conn = mongoose.createConnection(uri, { serverSelectionTimeoutMS: 20000 });
   await conn.asPromise();
   const schema = new mongoose.Schema(
@@ -150,7 +162,7 @@ async function main() {
 
   if (!empNo || !dojStr || !verifiedDateStr) {
     console.error(
-      'Usage: node scripts/liveTestPostVerifyBiometricBackfill.js --emp-no=EMP --doj=YYYY-MM-DD --verified-date=YYYY-MM-DD [--seed] [--dry-run]\n' +
+      'Usage: node scripts/liveTestPostVerifyBiometricBackfill.js --emp-no=EMP --doj=YYYY-MM-DD --verified-date=YYYY-MM-DD [--seed] [--dry-run] [--employee-name=Name]\n' +
         '       node scripts/liveTestPostVerifyBiometricBackfill.js --cleanup-seed'
     );
     process.exit(1);
@@ -186,50 +198,73 @@ async function main() {
     await seedPunches(empUpper, dojStr);
   }
 
+  const base = biometricBaseUrl();
+  if (!base) {
+    console.error('Set BIOMETRIC_SERVICE_BASE_URL (or BIOMETRIC_SERVICE_URL) to your biometric microservice base URL.');
+    await mongoose.disconnect();
+    process.exit(1);
+  }
+
   if (dryRun) {
-    const { findBiometricLogsForEmployeeBackfill } = require('../attendance/services/biometricReportService');
-    const { computeBackfillRange } = require('../attendance/services/postVerifyBiometricBackfillService');
     const range = computeBackfillRange(doj, verifiedDay);
-    const logs = await findBiometricLogsForEmployeeBackfill(empUpper, range.start, range.end);
-    console.log(
-      JSON.stringify(
-        {
-          dryRun: true,
-          range: { start: range.start.toISOString(), end: range.end.toISOString() },
-          biometricRowCount: logs.length,
-          sample: logs.slice(0, 3),
-        },
-        null,
-        2
-      )
-    );
+    if (!range) {
+      console.error('Invalid DOJ / verified-date range');
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+    const params = new URLSearchParams({
+      employeeId: empUpper,
+      startDate: range.start.toISOString(),
+      endDate: range.end.toISOString(),
+      limit: '5000',
+    });
+    const logsUrl = `${base}/api/logs?${params.toString()}`;
+    try {
+      const res = await axios.get(logsUrl, { timeout: 60000 });
+      const data = res.data && res.data.data ? res.data.data : [];
+      console.log(
+        JSON.stringify(
+          {
+            dryRun: true,
+            biometricLogsUrl: logsUrl.split('?')[0] + '?…',
+            range: { start: range.start.toISOString(), end: range.end.toISOString() },
+            biometricRowCount: Array.isArray(data) ? data.length : 0,
+            sample: Array.isArray(data) ? data.slice(0, 3) : [],
+          },
+          null,
+          2
+        )
+      );
+    } catch (err) {
+      console.error('Dry-run GET /api/logs failed:', err.response?.data || err.message);
+      await mongoose.disconnect();
+      process.exit(1);
+    }
     await mongoose.disconnect();
     process.exit(0);
     return;
   }
 
   if (!process.env.HRMS_MICROSERVICE_SECRET_KEY) {
-    console.error('HRMS_MICROSERVICE_SECRET_KEY is required for live sync (omit --dry-run to skip HTTP).');
+    console.error('HRMS_MICROSERVICE_SECRET_KEY is required for live replay.');
     await mongoose.disconnect();
     process.exit(1);
   }
 
-  const base =
-    process.env.BACKEND_URL || process.env.API_BASE || process.env.BACKEND_INTERNAL_URL;
-  if (!base) {
-    console.error(
-      'Set BACKEND_URL or API_BASE or BACKEND_INTERNAL_URL to your running API (e.g. http://localhost:5000).'
-    );
+  const biometricReplayUrl = resolveBiometricReplayServiceUrl();
+  if (!biometricReplayUrl) {
+    console.error('BIOMETRIC_SERVICE_BASE_URL must be set (post-verify replay no longer reads Mongo from the backend).');
     await mongoose.disconnect();
     process.exit(1);
   }
-  process.env.BACKEND_INTERNAL_URL = String(base).replace(/\/$/, '');
+  console.log('Replay path: delegate →', biometricReplayUrl);
 
-  console.log('Calling runPostVerifyBiometricBackfill →', `${process.env.BACKEND_INTERNAL_URL}/api/internal/attendance/sync`);
+  const employeeName = args.employee_name ? String(args.employee_name).trim() : undefined;
   const result = await runPostVerifyBiometricBackfill({
     empNo: empUpper,
     doj,
     verifiedAt: verifiedDay,
+    ...(employeeName ? { employeeName } : {}),
   });
 
   console.log(JSON.stringify({ result }, null, 2));

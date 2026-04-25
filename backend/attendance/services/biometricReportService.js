@@ -6,6 +6,30 @@ let atlasConn = null;
 const resolveBiometricMongoUri = () =>
     process.env.MONGODB_BIOMETRIC_URI || process.env.MONGODB_ATLAS_BIOMETRIC_URI || '';
 
+/**
+ * Device / ADMS often stores PIN as number in Mongo; HRMS emp_no is string. Match both.
+ */
+function employeeIdQueryVariants(empNo) {
+    const emp = String(empNo || '').trim();
+    if (!emp) return [];
+    const variants = new Set([emp, emp.toUpperCase(), emp.toLowerCase()]);
+    if (/^\d+$/.test(emp)) {
+        const n = Number(emp);
+        if (!Number.isNaN(n) && Number.isSafeInteger(n)) {
+            variants.add(n);
+        }
+        const normalizedDigits = String(Number(emp));
+        if (normalizedDigits !== emp) {
+            variants.add(normalizedDigits);
+            variants.add(normalizedDigits.toUpperCase());
+            variants.add(normalizedDigits.toLowerCase());
+            const nn = Number(normalizedDigits);
+            if (!Number.isNaN(nn)) variants.add(nn);
+        }
+    }
+    return [...variants];
+}
+
 const getAtlasConnection = async () => {
     if (atlasConn && atlasConn.readyState === 1) return atlasConn;
 
@@ -49,7 +73,12 @@ const getThumbReports = async (filters = {}) => {
         const query = {};
 
         if (filters.employeeId) {
-            query.employeeId = filters.employeeId;
+            const vars = employeeIdQueryVariants(filters.employeeId);
+            if (vars.length) {
+                query.employeeId = vars.length === 1 ? vars[0] : { $in: vars };
+            } else {
+                query.employeeId = filters.employeeId;
+            }
         } else if (filters.employeeIds && Array.isArray(filters.employeeIds)) {
             query.employeeId = { $in: filters.employeeIds };
         }
@@ -86,36 +115,7 @@ const getThumbReports = async (filters = {}) => {
     }
 };
 
-/**
- * All punch rows for one employee in [rangeStart, rangeEnd] from biometric Mongo (Atlas/local URI).
- * Used after application verify to replay punches that were skipped while the employee did not exist in HRMS.
- */
-const findBiometricLogsForEmployeeBackfill = async (empNo, rangeStart, rangeEnd) => {
-    if (!resolveBiometricMongoUri()) return [];
-
-    const emp = String(empNo || '').trim();
-    if (!emp || !rangeStart || !rangeEnd) return [];
-    const start = rangeStart instanceof Date ? rangeStart : new Date(rangeStart);
-    const end = rangeEnd instanceof Date ? rangeEnd : new Date(rangeEnd);
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return [];
-
-    try {
-        const Model = await getAtlasLogModel();
-        const variants = [...new Set([emp, emp.toUpperCase(), emp.toLowerCase()])];
-        return Model.find({
-            employeeId: { $in: variants },
-            timestamp: { $gte: start, $lte: end },
-        })
-            .sort({ timestamp: 1 })
-            .lean();
-    } catch (err) {
-        console.error('[findBiometricLogsForEmployeeBackfill]', err.message);
-        return [];
-    }
-};
-
 module.exports = {
     getThumbReports,
-    findBiometricLogsForEmployeeBackfill,
     resolveBiometricMongoUri,
 };
