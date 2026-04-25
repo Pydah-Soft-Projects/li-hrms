@@ -15,6 +15,7 @@ const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Settings = require('../../settings/model/Settings');
 const { isCustomEmployeeGroupingEnabled } = require('../../shared/utils/customEmployeeGrouping');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
+const { flattenShiftConfigsWithGroups } = require('../../shared/utils/shiftAssignmentConfig');
 
 /**
  * Convert time string (HH:mm) to minutes from midnight
@@ -120,7 +121,7 @@ const isWithinShiftWindow = (punchTime, shiftStartTime, gracePeriodMinutes = 15)
 /**
  * Filter shift configurations based on employee attributes.
  * Handles both new config objects and legacy ID arrays
- * @param {Array} shiftConfigs - Array of shift configs ({shiftId, gender}) or IDs
+ * @param {Array} shiftConfigs - Array of shift configs ({shiftId, gender, employee_group_id?} or employee_group_ids?) or legacy IDs
  * @param {String} employeeGender - Employee's gender (Male/Female/Other)
  * @param {String|null} employeeGroupId - Employee's custom group ObjectId
  * @param {Boolean} groupingEnabled - Whether custom grouping feature is enabled
@@ -139,8 +140,11 @@ const filterShiftsByEmployeeAttributes = (shiftConfigs, employeeGender, employee
     return shiftConfigs;
   }
 
+  // Align with assign APIs: expand employee_group_ids[] to one row per group before filtering
+  const configs = flattenShiftConfigsWithGroups(shiftConfigs);
+
   // New Structure: Filter by gender + optional employee group
-  return shiftConfigs
+  return configs
     .filter(config => {
       if (!config || !config.shiftId) return false;
 
@@ -336,6 +340,165 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
   } catch (error) {
     console.error('Error getting shifts for employee:', error);
     return { shifts: [], source: 'none' };
+  }
+};
+
+/**
+ * Organizational shift tiers only (same rules as getShiftsForEmployee after roster / DOJ checks):
+ * designation (dept-in-div → div default → legacy) → department → division baseline → global.
+ * No pre-scheduled roster. For scripts / hypotheticals when no Employee document exists.
+ *
+ * @param {Object} params
+ * @param {import('mongoose').Types.ObjectId|string|null} params.divisionId
+ * @param {import('mongoose').Types.ObjectId|string|null} params.departmentId
+ * @param {import('mongoose').Types.ObjectId|string|null} [params.designationId]
+ * @param {import('mongoose').Types.ObjectId|string|null} [params.employeeGroupId]
+ * @param {string|null} [params.gender] Male / Female / Other — omit for null (only configs with gender All match for gender-specific rows)
+ */
+const getOrganizationalShiftsForContext = async ({
+  divisionId,
+  departmentId,
+  designationId = null,
+  employeeGroupId = null,
+  gender = null,
+}) => {
+  try {
+    const groupingEnabled = await isCustomEmployeeGroupingEnabled();
+    const division = divisionId ? await Division.findById(divisionId).lean() : null;
+    const department = departmentId ? await Department.findById(departmentId).lean() : null;
+    const designation = designationId ? await Designation.findById(designationId).lean() : null;
+
+    const employee = {
+      division_id: division,
+      department_id: department,
+      designation_id: designation,
+      gender: gender || null,
+      employee_group_id: employeeGroupId || null,
+    };
+
+    const division_id = division?._id;
+    const department_id = department?._id;
+    const designation_id = designation?._id;
+    const employeeGender = employee.gender;
+    const groupId = employee.employee_group_id || null;
+
+    const allCandidateShifts = new Map();
+
+    if (designation_id && employee.designation_id) {
+      let shiftIds = [];
+      const desig = employee.designation_id;
+
+      if (division_id && department_id && desig.departmentShifts) {
+        const contextOverride = desig.departmentShifts.find(
+          (ds) =>
+            ds.division?.toString() === division_id.toString() &&
+            ds.department?.toString() === department_id.toString()
+        );
+        if (contextOverride && contextOverride.shifts?.length > 0) {
+          shiftIds = filterShiftsByEmployeeAttributes(
+            contextOverride.shifts,
+            employeeGender,
+            groupId,
+            groupingEnabled
+          );
+        }
+      }
+
+      if (shiftIds.length === 0 && division_id && desig.divisionDefaults) {
+        const divisionDefault = desig.divisionDefaults.find(
+          (dd) => dd.division?.toString() === division_id.toString()
+        );
+        if (divisionDefault && divisionDefault.shifts?.length > 0) {
+          shiftIds = filterShiftsByEmployeeAttributes(
+            divisionDefault.shifts,
+            employeeGender,
+            groupId,
+            groupingEnabled
+          );
+        }
+      }
+
+      if (shiftIds.length === 0 && !division_id && desig.shifts?.length > 0) {
+        shiftIds = filterShiftsByEmployeeAttributes(desig.shifts, employeeGender, groupId, groupingEnabled);
+      }
+
+      if (shiftIds.length > 0) {
+        const designationShifts = await Shift.find({ _id: { $in: shiftIds }, isActive: true });
+        designationShifts.forEach((s) => {
+          s.sourcePriority = 2;
+          allCandidateShifts.set(s._id.toString(), s);
+        });
+      }
+    }
+
+    if (department_id && employee.department_id) {
+      let deptShiftIds = [];
+      const dept = employee.department_id;
+
+      if (division_id && dept.divisionDefaults) {
+        const divDeptDefault = dept.divisionDefaults.find(
+          (dd) => dd.division?.toString() === division_id.toString()
+        );
+        if (divDeptDefault && divDeptDefault.shifts?.length > 0) {
+          deptShiftIds = filterShiftsByEmployeeAttributes(
+            divDeptDefault.shifts,
+            employeeGender,
+            groupId,
+            groupingEnabled
+          );
+        }
+      }
+
+      if (deptShiftIds.length === 0 && !division_id && dept.shifts?.length > 0) {
+        deptShiftIds = filterShiftsByEmployeeAttributes(dept.shifts, employeeGender, groupId, groupingEnabled);
+      }
+
+      if (deptShiftIds.length > 0) {
+        const departmentShifts = await Shift.find({ _id: { $in: deptShiftIds }, isActive: true });
+        departmentShifts.forEach((s) => {
+          if (!allCandidateShifts.has(s._id.toString())) {
+            s.sourcePriority = 3;
+            allCandidateShifts.set(s._id.toString(), s);
+          }
+        });
+      }
+    }
+
+    if (allCandidateShifts.size === 0 && division_id && employee.division_id) {
+      const div = employee.division_id;
+      if (div.shifts && div.shifts.length > 0) {
+        const filteredDivisionShifts = filterShiftsByEmployeeAttributes(
+          div.shifts,
+          employeeGender,
+          groupId,
+          groupingEnabled
+        );
+        const divisionShifts = await Shift.find({ _id: { $in: filteredDivisionShifts }, isActive: true });
+        divisionShifts.forEach((s) => {
+          s.sourcePriority = 4;
+          allCandidateShifts.set(s._id.toString(), s);
+        });
+      }
+    }
+
+    if (allCandidateShifts.size === 0) {
+      const generalShifts = await Shift.find({ isActive: true });
+      generalShifts.forEach((s) => {
+        s.sourcePriority = 5;
+        allCandidateShifts.set(s._id.toString(), s);
+      });
+    }
+
+    return {
+      shifts: Array.from(allCandidateShifts.values()),
+      source: 'organizational',
+      synthetic: true,
+      rosteredShiftId: null,
+      rosterRecordId: null,
+    };
+  } catch (error) {
+    console.error('Error in getOrganizationalShiftsForContext:', error);
+    return { shifts: [], source: 'none', synthetic: true };
   }
 };
 
@@ -1494,6 +1657,7 @@ module.exports = {
   detectAndAssignShift,
   resolveConfusedShift,
   getShiftsForEmployee,
+  getOrganizationalShiftsForContext,
   findMatchingShifts,
   findMatchingShiftsByOutTime,
   findCandidateShifts,
