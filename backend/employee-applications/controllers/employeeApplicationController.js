@@ -856,6 +856,7 @@ const verifySingleApplicationInternal = async (applicationId, approver) => {
       empNo: createdEmployee.emp_no,
       doj: finalDOJ,
       verifiedAt: application.verifiedAt,
+      employeeName: application.employee_name,
     });
 
     // Log History
