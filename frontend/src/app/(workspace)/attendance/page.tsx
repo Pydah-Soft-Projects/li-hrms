@@ -26,6 +26,12 @@ import {
   getPartialRecordPayableContribution,
 } from '@/lib/attendancePartialContribution';
 
+import {
+  computePayRegisterAllRowFromMonthlySummary,
+  formatPolicyAttendanceDeductionDisplay,
+  paidLopSublabel,
+} from '@/lib/payRegisterAllSummaryRow';
+
 import dynamic from 'next/dynamic';
 const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: false });
 
@@ -312,11 +318,18 @@ interface MonthlyAttendanceData {
 
     totalPresentDays: number;
 
+    /** Fractional absent units when policy uses half-day absent, etc. */
+    totalAbsentDays?: number;
+
     totalDaysInMonth: number;
 
     totalPayableShifts: number;
 
     lateOrEarlyCount?: number;
+
+    lateInCount?: number;
+
+    earlyOutCount?: number;
 
     totalLateOrEarlyMinutes?: number;
 
@@ -770,6 +783,8 @@ export default function AttendancePage() {
     Record<SuperadminCompleteAggregateKey, boolean>
   >(() => normalizeCompleteSummaryColumns(undefined));
 
+  const [attendanceProcessingMode, setAttendanceProcessingMode] = useState<'single_shift' | 'multi_shift' | null>(null);
+
   // Employee view: table vs day cards
 
   const [employeeViewMode, setEmployeeViewMode] = useState<'table' | 'cards'>('cards');
@@ -958,6 +973,10 @@ export default function AttendancePage() {
         }
         if (attendanceRes?.data?.completeSummaryColumns) {
           setOrgCompleteSummaryColumns(normalizeCompleteSummaryColumns(attendanceRes.data.completeSummaryColumns));
+        }
+        const mode = attendanceRes?.data?.processingMode?.mode;
+        if (mode === 'single_shift' || mode === 'multi_shift') {
+          setAttendanceProcessingMode(mode);
         }
         setOtAutoCreateEnabled(Boolean(otRes?.data?.autoCreateOtRequest));
       } catch {
@@ -3497,10 +3516,14 @@ export default function AttendancePage() {
     [orgCompleteSummaryColumns]
   );
 
+  const usePayRegisterAllComplete = attendanceProcessingMode === 'single_shift' && tableType === 'complete';
+
   /** Employee + day columns + trailing summary columns (matches thead) */
   const attendanceTableColSpan = useMemo(() => {
     const summaryCols =
-      tableType === 'complete'
+      tableType === 'complete' && usePayRegisterAllComplete
+        ? 12
+        : tableType === 'complete'
         ? Math.max(1, visibleWorkspaceCompleteKeys.length)
         : tableType === 'present_absent'
           ? 2
@@ -3514,7 +3537,7 @@ export default function AttendancePage() {
                   ? 2
                   : 0;
     return 1 + daysArray.length + summaryCols;
-  }, [tableType, daysArray.length, visibleWorkspaceCompleteKeys.length]);
+  }, [tableType, daysArray.length, visibleWorkspaceCompleteKeys.length, usePayRegisterAllComplete]);
 
   const activeHighlightDates = useMemo(() => {
 
@@ -4319,6 +4342,98 @@ export default function AttendancePage() {
               <div ref={tableScrollRef} className="max-h-[70vh] overflow-auto scrollbar-hide">
                 <table className="w-full border-separate border-spacing-0 text-xs">
                   <thead className="sticky top-0 z-20 shadow-sm">
+                    {tableType === 'complete' && usePayRegisterAllComplete ? (
+                      <>
+                        <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800">
+                          <th
+                            rowSpan={2}
+                            className="sticky left-0 top-0 z-30 w-[160px] min-w-[160px] border-r border-b border-slate-200 bg-slate-100 px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]"
+                          >
+                            Employee
+                          </th>
+                          {daysArray.map((dateStr) => {
+                            const dayNum = new Date(dateStr + 'T12:00:00').getDate();
+                            const dayName = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short' });
+                            return (
+                              <th
+                                key={dateStr}
+                                rowSpan={2}
+                                className="sticky top-0 z-20 w-[35px] min-w-[35px] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                                title={dateStr}
+                              >
+                                <div className="font-bold">{dayNum}</div>
+                                <div className="text-[8px] opacity-70">{dayName}</div>
+                              </th>
+                            );
+                          })}
+                          <th
+                            rowSpan={2}
+                            className="w-[72px] min-w-[72px] border-r border-slate-200 bg-green-50 dark:bg-green-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-green-800 dark:text-green-200"
+                            title="Present days (pay register)"
+                          >
+                            Present
+                          </th>
+                          <th rowSpan={2} className="w-[64px] min-w-[64px] border-r border-slate-200 bg-slate-100/90 dark:bg-slate-800/50 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-slate-800">
+                            W.off
+                          </th>
+                          <th rowSpan={2} className="w-[64px] min-w-[64px] border-r border-slate-200 bg-purple-50 dark:bg-purple-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-purple-800">Hol</th>
+                          <th rowSpan={2} className="w-[78px] min-w-[78px] border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-yellow-900">T.leave</th>
+                          <th rowSpan={2} className="w-[64px] min-w-[64px] border-r border-slate-200 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-indigo-800">OD</th>
+                          <th rowSpan={2} className="w-[64px] min-w-[64px] border-r border-slate-200 bg-red-50 dark:bg-red-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-red-800">Abs</th>
+                          <th
+                            rowSpan={2}
+                            className="w-[64px] min-w-[64px] border-r border-slate-200 bg-slate-100 dark:bg-slate-800/60 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-slate-800"
+                            title="Present + week offs + holidays + total leaves + OD + absents (informational)"
+                          >
+                            Tot
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[58px] min-w-[58px] border-r border-slate-200 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-amber-900"
+                            title="Late in + early out (count)"
+                          >
+                            L/E
+                          </th>
+                          <th
+                            colSpan={3}
+                            className="border-b border-r border-slate-200 bg-rose-100/80 dark:bg-rose-950/30 px-1 py-1.5 text-center text-[9px] font-bold uppercase text-rose-900 dark:text-rose-100"
+                            title="Calendar absent, LOP leave, and policy attendance deduction (pay register block)"
+                          >
+                            Deduction days
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[72px] min-w-[72px] border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-blue-800"
+                            title="Present + week offs + holidays + OD + paid leave − att. deduction"
+                          >
+                            Paid
+                          </th>
+                        </tr>
+                        <tr className="border-b border-slate-200 bg-slate-50/90 dark:border-slate-800">
+                          <th
+                            className="w-[60px] min-w-[60px] border-r border-slate-200 bg-red-50/90 dark:bg-red-950/30 px-1 py-1.5 text-center text-[8px] font-bold text-red-800 dark:text-red-200"
+                            title="Absent days (deduction / calendar absent total)"
+                          >
+                            Absents
+                          </th>
+                          <th
+                            className="w-[60px] min-w-[60px] border-r border-slate-200 bg-red-50/90 dark:bg-red-950/30 px-1 py-1.5 text-center text-[8px] font-bold text-red-800 dark:text-red-200"
+                            title="Loss of pay (LOP) leave"
+                          >
+                            LOP
+                          </th>
+                          <th
+                            className="w-[64px] min-w-[64px] border-r border-slate-200 bg-rose-50/90 dark:bg-rose-900/25 px-0.5 py-1.5 text-center text-[7px] font-bold leading-tight text-rose-900 dark:text-rose-100"
+                            title="Policy-based attendance deduction (late/early, absent extra, etc.)"
+                          >
+                            <div className="flex flex-col items-center justify-center gap-0">
+                              <span>Attendance</span>
+                              <span>deduction</span>
+                            </div>
+                          </th>
+                        </tr>
+                      </>
+                    ) : (
                     <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800">
                       <th className="sticky left-0 top-0 z-30 w-[160px] min-w-[160px] border-r border-b border-slate-200 bg-slate-100 px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
                         Employee
@@ -4337,7 +4452,7 @@ export default function AttendancePage() {
                           </th>
                         );
                       })}
-                      {tableType === 'complete' &&
+                      {tableType === 'complete' && !usePayRegisterAllComplete &&
                         visibleWorkspaceCompleteKeys.map((colKey, idx) => {
                           const isLast = idx === visibleWorkspaceCompleteKeys.length - 1;
                           const edge = isLast ? 'border-r-0' : 'border-r border-slate-200';
@@ -4488,6 +4603,7 @@ export default function AttendancePage() {
                         </>
                       )}
                     </tr>
+                    )}
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                     {loading ? (
@@ -4507,7 +4623,17 @@ export default function AttendancePage() {
                                 <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                               </td>
                             ))}
-                            {tableType === 'complete' &&
+                            {tableType === 'complete' && usePayRegisterAllComplete
+                              ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
+                                  <td
+                                    key={i}
+                                    className="border-r border-slate-200 px-2 py-2 text-center dark:border-slate-700 bg-slate-50/80"
+                                  >
+                                    <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                                  </td>
+                                ))
+                              : null}
+                            {tableType === 'complete' && !usePayRegisterAllComplete &&
                               visibleWorkspaceCompleteKeys.map((colKey, skIdx) => {
                                 const isLast = skIdx === visibleWorkspaceCompleteKeys.length - 1;
                                 const edge = isLast ? 'border-r-0' : 'border-r border-slate-200';
@@ -4624,6 +4750,26 @@ export default function AttendancePage() {
                               item.summary,
                               item.dailyAttendance
                             );
+                            const monthAbsentUnits =
+                              item.summary != null && item.summary.totalAbsentDays != null
+                                ? Number(item.summary.totalAbsentDays)
+                                : monthAbsent;
+                            const prAllRow = usePayRegisterAllComplete
+                              ? computePayRegisterAllRowFromMonthlySummary(
+                                  item.summary ??
+                                    ({
+                                      totalPresentDays: daysPresent,
+                                      totalWeeklyOffs: weekOffsCount,
+                                      totalHolidays: holidaysCount,
+                                      totalLeaves,
+                                      totalPaidLeaves: paidLeaveCol,
+                                      totalLopLeaves: lopLeaveCol,
+                                      totalODs,
+                                      totalAbsentDays: monthAbsentUnits,
+                                    } as any),
+                                  { processingMode: 'single_shift' }
+                                )
+                              : null;
 
                             const isHighAbsenteeism = monthAbsent > 2;
 
@@ -4835,6 +4981,93 @@ export default function AttendancePage() {
                                   );
                                 })}
                                 {tableType === 'complete' &&
+                                  (usePayRegisterAllComplete && prAllRow ? (
+                                    <>
+                                      <td
+                                        onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'present', 'present', item)}
+                                        className="border-r border-slate-200 bg-green-50 dark:bg-green-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-green-800 dark:text-green-200 cursor-pointer"
+                                      >
+                                        {prAllRow.present.toFixed(1)}
+                                      </td>
+                                      <td
+                                        onClick={() => handleSummaryClick(item.employee._id, 'weeklyOffs')}
+                                        className="border-r border-slate-200 bg-slate-100/90 dark:bg-slate-800/50 px-1.5 py-2 text-center text-[11px] font-bold text-slate-800 dark:text-slate-200 cursor-pointer"
+                                      >
+                                        {prAllRow.weekOffs.toFixed(1)}
+                                      </td>
+                                      <td
+                                        onClick={() => handleSummaryClick(item.employee._id, 'holidays')}
+                                        className="border-r border-slate-200 bg-purple-50 dark:bg-purple-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-purple-800 dark:text-purple-200 cursor-pointer"
+                                      >
+                                        {prAllRow.holidays.toFixed(1)}
+                                      </td>
+                                      <td
+                                        onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'leaves', 'leaves', item)}
+                                        className="border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-yellow-900 dark:text-yellow-100 cursor-pointer"
+                                      >
+                                        <div className="flex flex-col items-center gap-0.5 leading-tight">
+                                          <span>{prAllRow.totalLeaves.toFixed(1)}</span>
+                                          <span
+                                            className="text-[8px] font-semibold text-yellow-900/90"
+                                            title={`Leave by nature: ${paidLopSublabel(prAllRow.paidLeaves, prAllRow.dedLop)}`}
+                                          >
+                                            {paidLopSublabel(prAllRow.paidLeaves, prAllRow.dedLop)}
+                                          </span>
+                                        </div>
+                                      </td>
+                                      <td
+                                        onClick={() => handleSummaryClick(item.employee._id, 'ods')}
+                                        className="border-r border-slate-200 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-indigo-800 dark:text-indigo-200 cursor-pointer"
+                                      >
+                                        {prAllRow.od.toFixed(1)}
+                                      </td>
+                                      <td
+                                        onClick={() => handleSummaryClick(item.employee._id, 'absent')}
+                                        className="border-r border-slate-200 bg-red-50 dark:bg-red-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-red-800 dark:text-red-200 cursor-pointer"
+                                      >
+                                        {prAllRow.absent.toFixed(1)}
+                                      </td>
+                                      <td
+                                        className="border-r border-slate-200 bg-slate-100 dark:bg-slate-800/60 px-1.5 py-2 text-center text-[11px] font-bold text-slate-800 dark:text-slate-200"
+                                        title="Informational total"
+                                      >
+                                        {prAllRow.totalDaysSummed.toFixed(1)}
+                                      </td>
+                                      <td
+                                        onClick={() => handleSummaryClick(item.employee._id, 'lateIn')}
+                                        className="border-r border-slate-200 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-amber-900 dark:text-amber-200 cursor-pointer"
+                                      >
+                                        {prAllRow.lates}
+                                      </td>
+                                      <td
+                                        onClick={() => handleSummaryClick(item.employee._id, 'absent')}
+                                        className="border-r border-slate-200 bg-red-50/90 dark:bg-red-950/30 px-1.5 py-2 text-center text-[10px] font-bold text-red-800 dark:text-red-200 cursor-pointer"
+                                      >
+                                        {prAllRow.dedAbsent.toFixed(1)}
+                                      </td>
+                                      <td
+                                        onClick={() => handleSummaryClick(item.employee._id, 'lopLeaves')}
+                                        className="border-r border-slate-200 bg-red-50/90 dark:bg-red-950/30 px-1.5 py-2 text-center text-[10px] font-bold text-red-800 dark:text-red-200 cursor-pointer"
+                                      >
+                                        {prAllRow.dedLop.toFixed(1)}
+                                      </td>
+                                      <td
+                                        onClick={(e) => openAttendanceDeductionInfo(e, item)}
+                                        className="border-r border-slate-200 bg-rose-50 dark:bg-rose-900/20 px-1.5 py-2 text-center text-[10px] font-bold text-rose-900 dark:text-rose-200 cursor-pointer"
+                                      >
+                                        {formatPolicyAttendanceDeductionDisplay(
+                                          prAllRow.attDed,
+                                          item.summary?.attendanceDeductionBreakdown
+                                        )}
+                                      </td>
+                                      <td
+                                        onClick={() => handleSummaryClick(item.employee._id, 'paidLeaves')}
+                                        className="border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-blue-800 dark:text-blue-200 cursor-pointer"
+                                      >
+                                        {prAllRow.paidDays.toFixed(1)}
+                                      </td>
+                                    </>
+                                  ) : (
                                   visibleWorkspaceCompleteKeys.map((colKey, cIdx) => {
                                     const isLast = cIdx === visibleWorkspaceCompleteKeys.length - 1;
                                     const edge = isLast ? 'border-r-0' : 'border-r border-slate-200';
@@ -4983,7 +5216,8 @@ export default function AttendancePage() {
                                       default:
                                         return null;
                                     }
-                                  })}
+                                  })
+                                  ))}
                                 {tableType === 'present_absent' && (
                                   <>
                                     <td
