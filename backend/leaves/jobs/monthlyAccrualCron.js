@@ -1,18 +1,26 @@
 /**
  * Monthly leave accrual cron (IST).
- * Creates leave register entries and EL-related data at the END of each payroll cycle.
  *
- * Goal: run EL accruals (and CCL expiry) so that:
- * - Leave register has CREDIT transactions for the completed cycle (month, year).
- * - EL is available when payroll runs for that period.
+ * Runs once per calendar day at 23:55 Asia/Kolkata. On the **last day of each payroll cycle**
+ * only, it runs two steps in order for that cycle’s `(month, year)` label:
  *
- * Strategy:
- * - Schedule a light job every day at 00:10 IST.
- * - For each run, resolve today's payroll cycle via dateCycleService.
- * - Only when today is the LAST DAY of that payroll cycle do we trigger
- *   accrualEngine.postMonthlyAccruals(month, year) for that cycle.
- * - That posts EL credits (and CCL expiry) to the leave register for the cycle
- *   that just ended, so "next month" views and payroll see correct balances.
+ * 1) `accrualEngine.postMonthlyAccruals(month, year)`
+ *    - Per active employee: EL credit when eligible (idempotent per cycle), CCL **EXPIRY** rows
+ *      for comp-off past policy age, both via `leaveRegisterService` → `leaveRegisterYearLedgerService`.
+ *    - CCL EXPIRY shrinks the current slot’s `compensatoryOffs` in the ledger layer so pool and
+ *      balance stay aligned (see `leaveRegisterYearLedgerService.addTransaction`).
+ *
+ * 2) `monthlyPoolCarryForwardService.processPayrollCycleCarryForward(month, year)`
+ *    - For each `LeaveRegisterYear` row that has that payroll month: compute unused CL/CCL/EL
+ *      monthly apply pool after cap consumption; update **next** month’s slot totals and post
+ *      transfer OUT/IN ledger rows.
+ *    - **Correctness:** the next slot’s `compensatoryOffs` is increased here **before** the CCL
+ *      `MONTHLY_POOL_TRANSFER_IN_CCL` credit is posted; `addTransaction` must **not** bump the slot
+ *      again for that auto-type (handled in `leaveRegisterYearLedgerService`). That is what makes
+ *      each cron run write correct pools — no per-run reconcile script is required after deploy.
+ *
+ * One-time DB backfill for rows created **before** that ledger fix: optional script
+ * `scripts/reconcile_leave_register_ccl_double_transfer_in.js` (not invoked by this cron).
  */
 
 const cron = require('node-cron');
@@ -87,7 +95,7 @@ function startMonthlyAccrualCron() {
   );
 
   console.log(
-    `[AccrualCron] Scheduled: ${CRON_IST} (${TIMEZONE}) – daily check; CL/EL accrual + CCL expiry run only on payroll cycle end date`
+    `[AccrualCron] Scheduled: ${CRON_IST} (${TIMEZONE}) — on each payroll cycle end: EL accrual + CCL expiry, then monthly pool carry (CL/CCL/EL)`
   );
   return scheduledTask;
 }
