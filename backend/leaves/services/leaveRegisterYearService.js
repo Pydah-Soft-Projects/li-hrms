@@ -1533,4 +1533,6 @@ module.exports = {
   patchBulkMonthSlotsScheduledCredits,
   syncMonthApplyOnly,
   computeRegisterMonthPoolTransferOutDisplay,
+  /** CCL/CL/EL debits on a slot excluding MONTHLY_POOL_TRANSFER_OUT_* — same basis as register Xfer + applySequential carry. */
+  sumUsedDaysForType,
 };
