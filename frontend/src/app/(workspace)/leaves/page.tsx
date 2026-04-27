@@ -1155,10 +1155,13 @@ export default function LeavesPage() {
       };
 
       const wsIdStr = workspaceId ? String(workspaceId) : '';
-      const readWorkspaceApplyPerm = (settingsData: any, module: 'leave' | 'od') => {
-        if (!settingsData) return { self: undefined as boolean | undefined, others: undefined as boolean | undefined };
+      type WorkspaceApplyPermFlags = { self: boolean | undefined; others: boolean | undefined };
+      const emptyWorkspaceApplyPerm: WorkspaceApplyPermFlags = { self: undefined, others: undefined };
+
+      const readWorkspaceApplyPerm = (settingsData: any, module: 'leave' | 'od'): WorkspaceApplyPermFlags => {
+        if (!settingsData) return emptyWorkspaceApplyPerm;
         const raw = settingsData?.settings?.workspacePermissions?.[wsIdStr];
-        if (!raw) return { self: undefined as boolean | undefined, others: undefined as boolean | undefined };
+        if (!raw) return emptyWorkspaceApplyPerm;
         if (module === 'leave') {
           if (raw.leave) {
             return { self: raw.leave.canApplyForSelf, others: raw.leave.canApplyForOthers };
@@ -1171,9 +1174,10 @@ export default function LeavesPage() {
         return { self: raw.canApplyForSelf, others: raw.canApplyForOthers };
       };
 
-      const leaveWsPerm =
-        leaveSettingsRes.success && wsIdStr ? readWorkspaceApplyPerm(leaveSettingsRes.data, 'leave') : {};
-      const odWsPerm = odSettingsRes.success && wsIdStr ? readWorkspaceApplyPerm(odSettingsRes.data, 'od') : {};
+      const leaveWsPerm: WorkspaceApplyPermFlags =
+        leaveSettingsRes.success && wsIdStr ? readWorkspaceApplyPerm(leaveSettingsRes.data, 'leave') : emptyWorkspaceApplyPerm;
+      const odWsPerm: WorkspaceApplyPermFlags =
+        odSettingsRes.success && wsIdStr ? readWorkspaceApplyPerm(odSettingsRes.data, 'od') : emptyWorkspaceApplyPerm;
 
       let leaveSelf = false;
       let leaveOthers = false;
