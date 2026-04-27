@@ -8,27 +8,32 @@ const {
     validateEmployeeGroupIfEnabled,
     stripEmployeeGroupWhenDisabled,
 } = require('../../shared/utils/customEmployeeGrouping');
+const { flattenShiftConfigsWithGroups } = require('../../shared/utils/shiftAssignmentConfig');
 
 const formatAndValidateShiftConfigs = async (shifts, groupingEnabled) => {
     if (!Array.isArray(shifts)) {
         return { error: 'shifts must be an array' };
     }
 
-    if (shifts.length === 0) {
+    const flattened = flattenShiftConfigsWithGroups(shifts);
+
+    if (flattened.length === 0) {
         return { formattedShifts: [] };
     }
 
-    const shiftIds = shifts.map((s) => (typeof s === 'string' ? s : s.shiftId)).filter(Boolean);
+    const shiftIds = [...new Set(flattened.map((s) => s.shiftId).filter(Boolean))];
     const foundShifts = await Shift.find({ _id: { $in: shiftIds } }).select('_id').lean();
     if (foundShifts.length !== shiftIds.length) {
         return { error: 'One or more shifts not found' };
     }
 
     const formattedShifts = [];
-    for (const s of shifts) {
-        const config = typeof s === 'string'
-            ? { shiftId: s, gender: 'All' }
-            : { shiftId: s.shiftId, gender: s.gender || 'All', employee_group_id: s.employee_group_id || null };
+    for (const raw of flattened) {
+        const config = {
+            shiftId: raw.shiftId,
+            gender: raw.gender || 'All',
+            employee_group_id: raw.employee_group_id || null,
+        };
 
         const groupValidation = await validateEmployeeGroupIfEnabled(config.employee_group_id);
         if (groupValidation?.error) {

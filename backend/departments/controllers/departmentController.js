@@ -753,10 +753,12 @@ exports.assignShifts = async (req, res) => {
       });
     }
 
+    const { flattenShiftConfigsWithGroups } = require('../../shared/utils/shiftAssignmentConfig');
+    const flattened = flattenShiftConfigsWithGroups(shifts);
+
     // Validate all shifts exist
-    if (shifts.length > 0) {
-      // Extract IDs depending on whether input is object or string (backward compatibility)
-      const shiftIds = shifts.map(s => (typeof s === 'string' ? s : s.shiftId));
+    if (flattened.length > 0) {
+      const shiftIds = [...new Set(flattened.map((s) => s.shiftId).filter(Boolean))];
       const foundShifts = await Shift.find({ _id: { $in: shiftIds } });
       if (foundShifts.length !== shiftIds.length) {
         return res.status(400).json({
@@ -766,12 +768,14 @@ exports.assignShifts = async (req, res) => {
       }
     }
 
-    // Ensure we store in the correct format [{ shiftId, gender }]
+    // Ensure we store in the correct format [{ shiftId, gender, employee_group_id? }]
     const formattedShifts = [];
-    for (const s of shifts) {
-      const config = typeof s === 'string'
-        ? { shiftId: s, gender: 'All' }
-        : { shiftId: s.shiftId, gender: s.gender || 'All', employee_group_id: s.employee_group_id || null };
+    for (const raw of flattened) {
+      const config = {
+        shiftId: raw.shiftId,
+        gender: raw.gender || 'All',
+        employee_group_id: raw.employee_group_id || null,
+      };
 
       const groupValidation = await validateEmployeeGroupIfEnabled(config.employee_group_id);
       if (groupValidation?.error) {
