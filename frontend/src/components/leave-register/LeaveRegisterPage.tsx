@@ -153,8 +153,12 @@ function enrichRegisterMonthLiteCredits(m: RegisterMonthLite, raw?: any): Regist
   const clN = pickCred(m.cl?.credited, ledgerClCreditedNetFromRaw(src));
   const cclN = pickCred(m.ccl?.credited, ledgerCclCreditedNetFromRaw(src));
   const elN = pickCred(m.el?.credited, ledgerElCreditedNetFromRaw(src));
+  const srcAny = src as any;
   return {
     ...m,
+    clBalance: m.clBalance ?? srcAny?.clBalance,
+    elBalance: m.elBalance ?? srcAny?.elBalance,
+    cclBalance: m.cclBalance ?? srcAny?.cclBalance,
     cl: { ...m.cl, ...(Number.isFinite(Number(clN)) ? { credited: Number(clN) } : {}) },
     ccl: { ...m.ccl, ...(Number.isFinite(Number(cclN)) ? { credited: Number(cclN) } : {}) },
     el: { ...m.el, ...(Number.isFinite(Number(elN)) ? { credited: Number(elN) } : {}) },
@@ -1328,22 +1332,27 @@ export default function LeaveRegisterPage({
 
   function rowDisplayBalances(row: ListRow) {
     const ys = row.yearSnapshot;
-    const cl =
-      ys != null && ys.casualBalance != null && Number.isFinite(Number(ys.casualBalance))
-        ? Number(ys.casualBalance)
-        : row.summary?.clBalance;
-    const ccl =
-      ys != null &&
-      ys.compensatoryOffBalance != null &&
-      Number.isFinite(Number(ys.compensatoryOffBalance))
-        ? Number(ys.compensatoryOffBalance)
-        : row.summary?.cclBalance;
-    const el =
-      ys != null &&
-      ys.earnedLeaveBalance != null &&
-      Number.isFinite(Number(ys.earnedLeaveBalance))
-        ? Number(ys.earnedLeaveBalance)
-        : row.summary?.elBalance;
+    const sum = row.summary;
+    const months = row.registerMonths || [];
+    const lastMonth = months.length > 0 ? months[months.length - 1] : null;
+    /**
+     * List API `summary` is built from the monthly sub-ledger for the current payroll period (or last period).
+     * `yearSnapshot` comes from LeaveRegisterYear top-level fields, which could lag older FY rows after
+     * multi-year recalculations — prefer summary, then snapshot, then last month register column.
+     */
+    const pick = (
+      summaryVal: unknown,
+      snapshotVal: unknown,
+      registerMonthVal: unknown
+    ): number | null => {
+      if (summaryVal != null && Number.isFinite(Number(summaryVal))) return Number(summaryVal);
+      if (snapshotVal != null && Number.isFinite(Number(snapshotVal))) return Number(snapshotVal);
+      if (registerMonthVal != null && Number.isFinite(Number(registerMonthVal))) return Number(registerMonthVal);
+      return null;
+    };
+    const cl = pick(sum?.clBalance, ys?.casualBalance, lastMonth?.clBalance);
+    const ccl = pick(sum?.cclBalance, ys?.compensatoryOffBalance, lastMonth?.cclBalance);
+    const el = pick(sum?.elBalance, ys?.earnedLeaveBalance, lastMonth?.elBalance);
     const nCl = Number(cl) || 0;
     const nEl = Number(el) || 0;
     const nCcl = Number(ccl) || 0;
@@ -1906,7 +1915,7 @@ export default function LeaveRegisterPage({
                                         </th>
                                         <th
                                           className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
-                                          title="Cr + Carried in − Used (incl. pending lock) − Transfer out."
+                                          title="Month-end CCL balance from the leave register (running). If unavailable, shows unused pool in this period: Cr + Carried in − Used − Transfer out."
                                         >
                                           Bal
                                         </th>
@@ -1936,7 +1945,7 @@ export default function LeaveRegisterPage({
                                         </th>
                                         <th
                                           className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
-                                          title="Cr + Carried in − Used (incl. pending lock) − Transfer out."
+                                          title="Month-end CCL balance from the register (running). If unavailable: unused pool this period = Cr + Carried in − Used − Transfer out."
                                         >
                                           Bal
                                         </th>
@@ -2142,13 +2151,15 @@ export default function LeaveRegisterPage({
                                             className={`${typeCellClass} font-bold`}
                                           >
                                             <div>
-                                              {formatRegisterMonthEquationBal(
-                                                cclCr,
-                                                m.ccl?.transferIn,
-                                                m.ccl?.used,
-                                                m.ccl?.locked,
-                                                cclTout
-                                              )}
+                                              {m.cclBalance != null && Number.isFinite(Number(m.cclBalance))
+                                                ? formatNum(Number(m.cclBalance))
+                                                : formatRegisterMonthEquationBal(
+                                                    cclCr,
+                                                    m.ccl?.transferIn,
+                                                    m.ccl?.used,
+                                                    m.ccl?.locked,
+                                                    cclTout
+                                                  )}
                                             </div>
                                             <TypeApplyCapHint bucket={m.ccl} />
                                           </td>
