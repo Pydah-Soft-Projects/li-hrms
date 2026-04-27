@@ -28,6 +28,11 @@ import {
   ParsedRow,
 } from '@/lib/bulkUpload';
 import {
+  canonicalQualificationStatus,
+  getQualificationStatusSelectOptions,
+  qualificationStatusLabel,
+} from '@/lib/qualificationStatus';
+import {
   UserCheck,
   UserX,
   Clock as LucideClock,
@@ -477,7 +482,7 @@ export default function EmployeesPage() {
     qualificationStatus?: string;
     paidLeaves?: number;
     casualLeaves?: number;
-  }>({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'Partial', paidLeaves: 0, casualLeaves: 0 });
+  }>({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'not_submitted', paidLeaves: 0, casualLeaves: 0 });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [notificationChannels, setNotificationChannels] = useState<{ sms: boolean; whatsapp: boolean; email: boolean }>({
@@ -2676,6 +2681,31 @@ export default function EmployeesPage() {
     }
   };
 
+  const handleViewingCertificateStatusChange = async (newStatus: string) => {
+    if (!viewingEmployee?.emp_no) return;
+
+    const prev = viewingEmployee;
+    const normalized = canonicalQualificationStatus(newStatus);
+    setViewingEmployee({ ...viewingEmployee, qualificationStatus: normalized } as Employee);
+
+    try {
+      const response = await api.updateEmployee(viewingEmployee.emp_no, { qualificationStatus: normalized });
+      if (response.success) {
+        setEmployees((p) =>
+          p.map((emp) => (emp.emp_no === viewingEmployee.emp_no ? { ...emp, qualificationStatus: normalized } : emp))
+        );
+        if (response.data) setViewingEmployee(response.data as Employee);
+      } else {
+        setViewingEmployee(prev);
+        await alertError('Failed to update', response.message || 'Failed to update certificate status');
+      }
+    } catch (err: any) {
+      setViewingEmployee(prev);
+      await alertError('Error', err.message || 'An error occurred');
+      console.error(err);
+    }
+  };
+
   const handleViewEmployee = async (employee: Employee) => {
     // Initial set to show dialog immediately with available data
     setViewingEmployee(employee);
@@ -2724,6 +2754,7 @@ export default function EmployeesPage() {
       employee_group_id: (application as any).employee_group_id,
       employee_group: (application as any).employee_group,
       department: application.department,
+      division: (application as any).division,
       designation: application.designation,
       doj: application.doj,
       dob: application.dob,
@@ -3042,7 +3073,7 @@ export default function EmployeesPage() {
           doj: '',
           comments: '',
           qualifications: [],
-          qualificationStatus: 'Partial',
+          qualificationStatus: 'not_submitted',
           paidLeaves: 0,
           casualLeaves: 0
         });
@@ -3075,7 +3106,7 @@ export default function EmployeesPage() {
         setViewingEmployee(null);
         setSelectedApplication(null);
 
-        setApprovalData({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'Partial', paidLeaves: 0, casualLeaves: 0 });
+        setApprovalData({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'not_submitted', paidLeaves: 0, casualLeaves: 0 });
         loadApplications();
       } else {
         setError(response.message || 'Failed to reject application');
@@ -3106,8 +3137,15 @@ export default function EmployeesPage() {
       ...(secondSalaryEnabled ? { second_salary: application.second_salary || undefined } : {}),
       doj: dojValue,
       comments: '',
-      qualifications: application.qualifications ? structuredClone(application.qualifications) : [],
-      qualificationStatus: application.qualificationStatus || 'Partial',
+      qualifications: application.qualifications
+        ? structuredClone(application.qualifications).map((q: any) => {
+            if (!q || typeof q !== 'object') return q;
+            const s = q.status;
+            if (s === undefined || s === null || String(s).trim() === '') return q;
+            return { ...q, status: canonicalQualificationStatus(s) };
+          })
+        : [],
+      qualificationStatus: canonicalQualificationStatus(application.qualificationStatus),
       paidLeaves: application.paidLeaves ?? application.dynamicFields?.paid_leaves ?? 0,
       casualLeaves: application.casualLeaves ?? application.dynamicFields?.casual_leaves ?? 0,
     });
@@ -4978,7 +5016,7 @@ export default function EmployeesPage() {
 
                               const handleStatusChange = (newStatus: string) => {
                                 const newQuals = [...quals];
-                                newQuals[idx] = { ...newQuals[idx], status: newStatus };
+                                newQuals[idx] = { ...newQuals[idx], status: canonicalQualificationStatus(newStatus) };
                                 setApprovalData({ ...approvalData, qualifications: newQuals });
                               };
 
@@ -5028,19 +5066,16 @@ export default function EmployeesPage() {
                                   {/* Card Content Area */}
                                   <div className="flex flex-1 flex-col p-5">
                                     <div className="space-y-3">
-                                      {/* Status Dropdown */}
-                                      <div className="flex flex-col border-b border-slate-100 pb-3 last:border-0 last:pb-0 dark:border-slate-800">
-                                        <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-1">
-                                          Verification Status
-                                        </label>
+                                      <div className="border-b border-slate-100 pb-3 dark:border-slate-800">
                                         <select
-                                          value={qual.status || 'Partial'}
+                                          aria-label="Qualification certificate verification"
+                                          value={canonicalQualificationStatus(qual.status)}
                                           onChange={(e) => handleStatusChange(e.target.value)}
                                           className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                                         >
-                                          <option value="Partial">Partial</option>
-                                          <option value="Not Certified">Not Certified</option>
-                                          <option value="Certified">Certified</option>
+                                          {getQualificationStatusSelectOptions(formSettings ?? undefined).map((opt) => (
+                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                          ))}
                                         </select>
                                       </div>
 
@@ -6070,7 +6105,7 @@ export default function EmployeesPage() {
                           Gross: {viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}
                         </span>
                         <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300">
-                          Cert Status: {viewingEmployee.qualificationStatus || '—'}
+                          Cert status: {qualificationStatusLabel(viewingEmployee.qualificationStatus, formSettings ?? undefined)}
                         </span>
                         <span className={viewingEmployee.is_active !== false
                           ? 'inline-flex rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400'
@@ -6262,6 +6297,15 @@ export default function EmployeesPage() {
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('employee_name', formSettings) || 'Name'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.employee_name || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('division_id', formSettings) || 'Division'}</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).division?.name
+                                || (typeof viewingEmployee.division_id === 'object' && viewingEmployee.division_id && 'name' in (viewingEmployee.division_id as object)
+                                  ? (viewingEmployee.division_id as { name?: string }).name
+                                  : '-')}
+                            </p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('department_id', formSettings) || 'Department'}</label>
@@ -6590,34 +6634,42 @@ export default function EmployeesPage() {
                             <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                               <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Qualifications</label>
                               {(() => {
-                                const statuses = formSettings?.qualification_statuses || ['Partial', 'Not Certified', 'Certified'];
+                                const statusOpts = getQualificationStatusSelectOptions(formSettings ?? undefined);
                                 if (pendingAppForViewing) {
                                   return (
                                     <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                                      <span className="text-xs font-medium text-slate-500">Overall Status:</span>
+                                      <span className="text-xs font-medium text-slate-500">Overall status:</span>
                                       <select
-                                        value={approvalData.qualificationStatus || 'Partial'}
-                                        onChange={(e) => setApprovalData({ ...approvalData, qualificationStatus: e.target.value })}
+                                        value={canonicalQualificationStatus(approvalData.qualificationStatus)}
+                                        onChange={(e) =>
+                                          setApprovalData({
+                                            ...approvalData,
+                                            qualificationStatus: canonicalQualificationStatus(e.target.value),
+                                          })
+                                        }
                                         className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800"
                                       >
-                                        {statuses.map((st: any) => {
-                                          const val = typeof st === 'object' ? st.value : st;
-                                          const label = typeof st === 'object' ? st.label : st;
-                                          return <option key={val} value={val}>{label}</option>;
-                                        })}
+                                        {statusOpts.map((opt) => (
+                                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        ))}
                                       </select>
                                     </div>
                                   );
-                                } else {
-                                  return (
-                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                                      <span className="text-xs font-medium text-slate-500">Overall Status:</span>
-                                      <span className="rounded-full px-2.5 py-1 text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300">
-                                        {viewingEmployee.qualificationStatus || '—'}
-                                      </span>
-                                    </div>
-                                  );
                                 }
+                                return (
+                                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                    <span className="text-xs font-medium text-slate-500">Overall status:</span>
+                                    <select
+                                      value={canonicalQualificationStatus(viewingEmployee.qualificationStatus)}
+                                      onChange={(e) => handleViewingCertificateStatusChange(e.target.value)}
+                                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800"
+                                    >
+                                      {statusOpts.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                );
                               })()}
                             </div>
                             {(() => {

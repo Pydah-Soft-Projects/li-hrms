@@ -48,7 +48,12 @@ exports.getSetting = async (req, res) => {
         'auto_od_creation_enabled': false,
         'payroll_cycle_start_day': '1',
         'payroll_cycle_end_day': '31',
-        'qualification_statuses': ['Partial', 'Not Certified', 'Certified'],
+        'qualification_statuses': [
+          { value: 'verified', label: 'Verified' },
+          { value: 'partial_verified', label: 'Partially verified' },
+          { value: 'taken', label: 'Taken' },
+          { value: 'not_submitted', label: 'Not submitted' },
+        ],
         'default_apply_statutory_deductions': true,
         'default_apply_attendance_deductions': true,
         'enable_second_salary': true,
