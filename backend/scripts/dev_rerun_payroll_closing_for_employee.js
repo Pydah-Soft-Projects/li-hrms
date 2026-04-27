@@ -15,17 +15,41 @@
  *   node scripts/dev_rerun_payroll_closing_for_employee.js --all --activeOnly --closingMonth 4 --closingYear 2026 --apply
  *   node scripts/dev_rerun_payroll_closing_for_employee.js --all --apply --verbose   (include per-employee strip rows in JSON)
  *   node scripts/dev_rerun_payroll_closing_for_employee.js --printFullMongoUri …   (optional: log full URI; avoid in shared logs)
+ *   node scripts/dev_rerun_payroll_closing_for_employee.js --preferShellMongo …   (use OS/shell MONGODB_URI; do not override from .env)
  *
  * `--all`: every employee who has a LeaveRegisterYear for `--financialYear` with a slot for that closing payroll month.
  * Per employee: repair orphan transfer-in → strip edge → save → recalc → sync. Then once for everyone: postMonthlyAccruals
  * → processPayrollCycleCarryForward. Then per employee: CCL recalc + sync next-period anchor.
  *
+ * Requires MONGODB_URI in backend/.env (or process.env). By default this script loads `.env` with
+ * `override: true` so **backend/.env wins** over a MONGODB_URI already set in the OS/shell (common
+ * reason the “wrong” Atlas host is used). Use `--preferShellMongo` to keep the shell value instead.
+ *
  * Requires MONGODB_URI (see backend/.env).
  */
 
 const path = require('path');
+
+/** Log line for scripts: hides user:password in standard Mongo connection strings. */
+function redactMongoUriForLog(uri) {
+  const s = String(uri || '');
+  const m = s.match(/^(mongodb(?:\+srv)?:\/\/)([^/@]+)@/);
+  if (!m) return s.length > 200 ? `${s.slice(0, 200)}…` : s;
+  const creds = m[2];
+  if (!creds.includes(':')) return `${m[1]}***@` + s.slice(m[0].length);
+  return `${m[1]}***:***@` + s.slice(m[0].length);
+}
+
+const BACKEND_ENV_PATH = path.join(__dirname, '../.env');
+const preferShellMongo = process.argv.includes('--preferShellMongo');
+const mongodbUriBeforeEnvFile = process.env.MONGODB_URI;
+require('dotenv').config({
+  path: BACKEND_ENV_PATH,
+  /** If false, a MONGODB_URI set in Windows / terminal wins over backend/.env (dotenv default). */
+  override: !preferShellMongo,
+});
+
 const mongoose = require('mongoose');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 require('../departments/model/Designation');
 require('../departments/model/Department');
@@ -52,16 +76,6 @@ function parseArg(name) {
 
 function hasFlag(name) {
   return process.argv.includes(`--${name}`);
-}
-
-/** Log line for scripts: hides user:password in standard Mongo connection strings. */
-function redactMongoUriForLog(uri) {
-  const s = String(uri || '');
-  const m = s.match(/^(mongodb(?:\+srv)?:\/\/)([^/@]+)@/);
-  if (!m) return s.length > 200 ? `${s.slice(0, 200)}…` : s;
-  const creds = m[2];
-  if (!creds.includes(':')) return `${m[1]}***@` + s.slice(m[0].length);
-  return `${m[1]}***:***@` + s.slice(m[0].length);
 }
 
 function roundHalf(x) {
@@ -357,10 +371,24 @@ async function main() {
     console.error('MONGODB_URI missing');
     process.exit(1);
   }
-  const envPath = path.join(__dirname, '../.env');
   console.log('[dev_rerun_payroll_closing] Database: process.env.MONGODB_URI');
-  console.log('[dev_rerun_payroll_closing] .env path:', envPath);
-  console.log('[dev_rerun_payroll_closing] MONGODB_URI (redacted):', redactMongoUriForLog(uri));
+  console.log('[dev_rerun_payroll_closing] .env path:', BACKEND_ENV_PATH);
+  console.log(
+    '[dev_rerun_payroll_closing] dotenv override:',
+    preferShellMongo ? 'false (--preferShellMongo: shell/OS wins)' : 'true (backend/.env wins)'
+  );
+  if (
+    mongodbUriBeforeEnvFile &&
+    mongodbUriBeforeEnvFile !== uri &&
+    !preferShellMongo
+  ) {
+    console.log(
+      '[dev_rerun_payroll_closing] Prior MONGODB_URI was replaced by backend/.env (redacted before → after):'
+    );
+    console.log('  ', redactMongoUriForLog(mongodbUriBeforeEnvFile));
+    console.log('  ', redactMongoUriForLog(uri));
+  }
+  console.log('[dev_rerun_payroll_closing] MONGODB_URI in use (redacted):', redactMongoUriForLog(uri));
   if (hasFlag('printFullMongoUri')) {
     console.log('[dev_rerun_payroll_closing] MONGODB_URI (full):', uri);
   }
