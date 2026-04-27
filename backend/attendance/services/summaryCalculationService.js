@@ -1297,7 +1297,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
             enableAbsentDeduction: absentSettings.enableAbsentDeduction,
             lopDaysPerAbsent: absentSettings.lopDaysPerAbsent,
             employee,
+            // Recompute from dailies + rules; do not reuse PayRegisterSummary snapshot (stale vs grid/L-E).
             ignoreMonthlySummary: true,
+            ignorePayRegisterSummary: true,
             periodStartDateStr: startDateStr,
             periodEndDateStr: endDateStr,
           }

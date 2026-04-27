@@ -20,6 +20,19 @@ const {
 /**
  * Mongo / legacy rows sometimes omit nested leave buckets; avoid "cannot read casualLeave of undefined".
  */
+/** Last closingBalance on LeaveRegisterYear slot for a leave type (chronological order in array). */
+function lastLedgerClosingBalanceInSlot(slot, leaveType) {
+    const want = String(leaveType || '').toUpperCase();
+    const txs = slot?.transactions || [];
+    let last = null;
+    for (const tx of txs) {
+        if (String(tx.leaveType || '').toUpperCase() !== want) continue;
+        const c = Number(tx.closingBalance);
+        if (Number.isFinite(c)) last = c;
+    }
+    return last;
+}
+
 function ensureMonthlySubLedgerShape(sub) {
     if (!sub || typeof sub !== 'object') {
         return sub;
@@ -1224,6 +1237,8 @@ class LeaveRegisterService {
                         payPeriodEnd: slot.payPeriodEnd,
                         payrollCycleMonth: pcm,
                         payrollCycleYear: pcy,
+                        /** Month-end CCL from FY slot txns (authoritative when sub-ledger row is missing). */
+                        yearSlotLastClosingCcl: lastLedgerClosingBalanceInSlot(slot, 'CCL'),
                         storedMonthlyApply: {
                             ceiling: slot.monthlyApplyCeiling,
                             consumed: slot.monthlyApplyConsumed,
@@ -1274,6 +1289,7 @@ class LeaveRegisterService {
                         payrollCycleMonth: sub.month,
                         payrollCycleYear: sub.year,
                         scheduled: null,
+                        yearSlotLastClosingCcl: null,
                         ledger: ledgerSlice(sub),
                         transactions: txs,
                         transactionCount: txCount,
@@ -1293,6 +1309,7 @@ class LeaveRegisterService {
                         payrollCycleMonth: sub.month,
                         payrollCycleYear: sub.year,
                         scheduled: null,
+                        yearSlotLastClosingCcl: null,
                         ledger: ledgerSlice(sub),
                         transactions: txs,
                         transactionCount: txCount,
@@ -1416,7 +1433,15 @@ class LeaveRegisterService {
                     lockedCredits: m.scheduled?.lockedCredits ?? null,
                     clBalance: m.ledger?.casualLeave?.balance ?? null,
                     elBalance: m.ledger?.earnedLeave?.balance ?? null,
-                    cclBalance: m.ledger?.compensatoryOff?.balance ?? null,
+                    // Prefer FY slot txn closing (LeaveRegisterYear) so month-end CCL matches register recalcs;
+                    // pool-only math (Cr + in − used − transfer) is often 0 when unused CCL rolled to next period.
+                    cclBalance: (() => {
+                        const yc = m.yearSlotLastClosingCcl;
+                        const led = m.ledger?.compensatoryOff?.balance;
+                        if (yc != null && Number.isFinite(Number(yc))) return Number(yc);
+                        if (led != null && Number.isFinite(Number(led))) return Number(led);
+                        return null;
+                    })(),
                     transactionCount: m.transactionCount,
                     monthlyApplyLimit: applyLimit,
                     monthlyApplyRemaining,
