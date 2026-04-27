@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import dynamic from 'next/dynamic';
@@ -72,6 +72,40 @@ import {
   FileDown,
   Star
 } from 'lucide-react';
+
+/** Leave/OD type row from settings API (shape may vary). */
+type LeaveOdTypeRow = Record<string, unknown> & {
+  code?: string;
+  typeCode?: string;
+  name?: string;
+  label?: string;
+  sortOrder?: number;
+  isActive?: boolean;
+};
+
+/** Stable value/label for leave & OD type dropdowns (settings may use code/name or legacy fields). */
+function leaveOdTypeOptionKey(t: LeaveOdTypeRow | null | undefined): string {
+  const raw = t?.code ?? t?.typeCode ?? t?._id;
+  return raw != null && String(raw).trim() !== '' ? String(raw).trim() : '';
+}
+
+function leaveOdTypeOptionLabel(t: LeaveOdTypeRow | null | undefined): string {
+  const raw = t?.name ?? t?.label ?? t?.code ?? t?.typeCode;
+  return raw != null && String(raw).trim() !== '' ? String(raw).trim() : 'Type';
+}
+
+function normalizeLeaveOdTypesForSelect(types: unknown): LeaveOdTypeRow[] {
+  if (!Array.isArray(types)) return [];
+  return types
+    .filter((t): t is LeaveOdTypeRow => !!t && typeof t === 'object' && (t as LeaveOdTypeRow).isActive !== false)
+    .map((t) => {
+      const code = leaveOdTypeOptionKey(t);
+      const name = leaveOdTypeOptionLabel(t);
+      return { ...t, code, name };
+    })
+    .filter((t) => t.code)
+    .sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
+}
 
 // Custom Stat Card
 // Custom Stat Card
@@ -932,6 +966,20 @@ export default function LeavesPage() {
     }
     loadData(user, dateRange);
     loadTypes();
+    void (async () => {
+      try {
+        const response = await api.getCurrentUser();
+        if (response.success) {
+          const userData = (response as any).user || (response as any).data?.user;
+          if (userData) {
+            setCurrentUser(userData);
+            if (userData.role === 'super_admin') setIsSuperAdmin(true);
+          }
+        }
+      } catch (e) {
+        console.error('[Workspace Leaves] getCurrentUser failed:', e);
+      }
+    })();
   }, []);
 
   // Fetch pay cycle start / end day settings on mount (same source as attendance payroll month)
@@ -978,6 +1026,7 @@ export default function LeavesPage() {
       if (isAdmin || activeWorkspace) {
         loadEmployees();
         checkWorkspacePermission();
+        loadOrganizationFilters();
       }
     }
   }, [currentUser, activeWorkspace?._id]);
@@ -1100,7 +1149,32 @@ export default function LeavesPage() {
         setODWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
       }
 
-      // Do not use workspace permissions from settings; role-based only
+      const mergeRoleWithWorkspaceFlag = (roleAllowed: boolean, workspaceExplicit: boolean | undefined) => {
+        if (workspaceExplicit === undefined) return roleAllowed;
+        return Boolean(workspaceExplicit) && roleAllowed;
+      };
+
+      const wsIdStr = workspaceId ? String(workspaceId) : '';
+      const readWorkspaceApplyPerm = (settingsData: any, module: 'leave' | 'od') => {
+        if (!settingsData) return { self: undefined as boolean | undefined, others: undefined as boolean | undefined };
+        const raw = settingsData?.settings?.workspacePermissions?.[wsIdStr];
+        if (!raw) return { self: undefined as boolean | undefined, others: undefined as boolean | undefined };
+        if (module === 'leave') {
+          if (raw.leave) {
+            return { self: raw.leave.canApplyForSelf, others: raw.leave.canApplyForOthers };
+          }
+          return { self: raw.canApplyForSelf, others: raw.canApplyForOthers };
+        }
+        if (raw.od) {
+          return { self: raw.od.canApplyForSelf, others: raw.od.canApplyForOthers };
+        }
+        return { self: raw.canApplyForSelf, others: raw.canApplyForOthers };
+      };
+
+      const leaveWsPerm =
+        leaveSettingsRes.success && wsIdStr ? readWorkspaceApplyPerm(leaveSettingsRes.data, 'leave') : {};
+      const odWsPerm = odSettingsRes.success && wsIdStr ? readWorkspaceApplyPerm(odSettingsRes.data, 'od') : {};
+
       let leaveSelf = false;
       let leaveOthers = false;
       let odSelf = false;
@@ -1118,6 +1192,12 @@ export default function LeavesPage() {
           odOthers = true;
         }
       }
+
+      leaveSelf = mergeRoleWithWorkspaceFlag(leaveSelf, leaveWsPerm.self);
+      leaveOthers = mergeRoleWithWorkspaceFlag(leaveOthers, leaveWsPerm.others);
+      odSelf = mergeRoleWithWorkspaceFlag(odSelf, odWsPerm.self);
+      odOthers = mergeRoleWithWorkspaceFlag(odOthers, odWsPerm.others);
+
       setCanApplyLeaveForSelf(leaveSelf);
       setCanApplyLeaveForOthers(leaveOthers);
       setCanApplyODForSelf(odSelf);
@@ -1252,7 +1332,7 @@ export default function LeavesPage() {
       // Extract leave types from settings (field is 'types' not 'leaveTypes')
       let fetchedLeaveTypes: any[] = [];
       if (leaveSettingsRes.success && leaveSettingsRes.data?.types) {
-        fetchedLeaveTypes = leaveSettingsRes.data.types.filter((t: any) => t.isActive !== false);
+        fetchedLeaveTypes = normalizeLeaveOdTypesForSelect(leaveSettingsRes.data.types);
       }
 
       // Store leave policy settings
@@ -1276,7 +1356,7 @@ export default function LeavesPage() {
       // Extract OD types from settings (field is 'types' not 'odTypes')
       let fetchedODTypes: any[] = [];
       if (odSettingsRes.success && odSettingsRes.data?.types) {
-        fetchedODTypes = odSettingsRes.data.types.filter((t: any) => t.isActive !== false);
+        fetchedODTypes = normalizeLeaveOdTypesForSelect(odSettingsRes.data.types);
       }
 
       // Store OD policy settings
@@ -1339,7 +1419,155 @@ export default function LeavesPage() {
     }
   };
 
+  const loadOrganizationFilters = async () => {
+    try {
+      const [divRes, deptRes, desRes] = await Promise.all([
+        api.getDivisions(true),
+        api.getDepartments(true),
+        api.getAllDesignations(true),
+      ]);
+      if (divRes.success) setDivisions(divRes.data || []);
+      if (deptRes.success) setDepartments(deptRes.data || []);
+      if (desRes.success) setDesignations(desRes.data || []);
+    } catch (err) {
+      console.error('[Workspace Leaves] Failed to load org filter options:', err);
+    }
+  };
 
+  const scopedDivisions = useMemo(() => {
+    let divs = divisions;
+    if (currentUser && currentUser.dataScope !== 'all') {
+      if (currentUser.allowedDivisions && currentUser.allowedDivisions.length > 0) {
+        const allowedIds = currentUser.allowedDivisions.map((d: any) => (typeof d === 'string' ? d : d._id));
+        divs = divs.filter((d: any) => allowedIds.includes(d._id));
+      } else if (currentUser.divisionMapping && currentUser.divisionMapping.length > 0) {
+        const mappedDivIds = currentUser.divisionMapping.map((m: any) =>
+          typeof m.division === 'string' ? m.division : m.division._id
+        );
+        divs = divs.filter((d: any) => mappedDivIds.includes(d._id));
+      } else if (currentUser.division) {
+        const divId = typeof currentUser.division === 'string' ? currentUser.division : currentUser.division._id;
+        divs = divs.filter((d: any) => d._id === divId);
+      } else if (currentUser.scope === 'restricted') {
+        divs = [];
+      }
+    }
+    const sc = activeWorkspace?.scopeConfig;
+    if (sc?.divisions && sc.divisions.length > 0) {
+      const allow = new Set(sc.divisions.map((id: any) => String(typeof id === 'string' ? id : id._id)));
+      divs = divs.filter((d: any) => allow.has(String(d._id)));
+    }
+    return divs;
+  }, [currentUser, divisions, activeWorkspace?.scopeConfig]);
+
+  const departmentBelongsToDivision = useCallback(
+    (dept: any, divisionId: string) => {
+      if (!divisionId || !dept) return false;
+      const div = divisions.find((dv: any) => dv._id === divisionId);
+      if (div?.departments) {
+        const divDeptIds = div.departments.map((dd: any) => (typeof dd === 'string' ? dd : dd._id));
+        if (divDeptIds.includes(dept._id)) return true;
+      }
+      if (dept.divisions) {
+        const deptDivIds = dept.divisions.map((dv: any) => (typeof dv === 'string' ? dv : dv._id));
+        if (deptDivIds.includes(divisionId)) return true;
+      }
+      if (dept.division_id) {
+        const dDivId = typeof dept.division_id === 'string' ? dept.division_id : dept.division_id?._id;
+        if (dDivId === divisionId) return true;
+      }
+      return false;
+    },
+    [divisions]
+  );
+
+  const getScopedDepartmentsForDivision = useCallback(
+    (selectedDivisionId: string) => {
+      const eligibleDepts = departments.filter((d: any) => {
+        if (!selectedDivisionId) return true;
+        return departmentBelongsToDivision(d, selectedDivisionId);
+      });
+
+      if (!currentUser || currentUser.dataScope === 'all') return eligibleDepts;
+
+      if (currentUser.divisionMapping && currentUser.divisionMapping.length > 0) {
+        const mapping = currentUser.divisionMapping.find((m: any) => {
+          const mDivId = typeof m.division === 'string' ? m.division : m.division._id;
+          return mDivId === selectedDivisionId;
+        });
+
+        if (mapping) {
+          if (!mapping.departments || mapping.departments.length === 0) return eligibleDepts;
+          const allowedDeptIds = mapping.departments.map((dd: any) => (typeof dd === 'string' ? dd : dd._id));
+          return eligibleDepts.filter((d: any) => allowedDeptIds.includes(d._id));
+        }
+      }
+
+      if (currentUser.departments && currentUser.departments.length > 0) {
+        const allowedDeptIds = currentUser.departments.map((d: any) => d._id);
+        return eligibleDepts.filter((d: any) => allowedDeptIds.includes(d._id));
+      }
+
+      if (currentUser.department) {
+        const deptId =
+          typeof currentUser.department === 'string' ? currentUser.department : currentUser.department._id;
+        return eligibleDepts.filter((d: any) => d._id === deptId);
+      }
+
+      return eligibleDepts;
+    },
+    [currentUser, departments, departmentBelongsToDivision]
+  );
+
+  const scopedDepartmentFilterOptions = useMemo(() => {
+    const selectedDivs = leaveFilters.division;
+    let pool: any[] = [];
+    if (selectedDivs.length === 0) {
+      for (const d of scopedDivisions) {
+        pool.push(...getScopedDepartmentsForDivision(d._id));
+      }
+      pool = Array.from(new Map(pool.map((x) => [x._id, x])).values());
+    } else {
+      for (const divId of selectedDivs) {
+        pool.push(...getScopedDepartmentsForDivision(divId));
+      }
+      pool = Array.from(new Map(pool.map((x) => [x._id, x])).values());
+    }
+    const sc = activeWorkspace?.scopeConfig;
+    if (sc?.departments && sc.departments.length > 0) {
+      const allow = new Set(sc.departments.map((id: any) => String(typeof id === 'string' ? id : id._id)));
+      pool = pool.filter((d: any) => allow.has(String(d._id)));
+    }
+    return pool;
+  }, [scopedDivisions, getScopedDepartmentsForDivision, leaveFilters.division, activeWorkspace?.scopeConfig]);
+
+  const scopedDesignationFilterOptions = useMemo(() => {
+    const deptIds = new Set(scopedDepartmentFilterOptions.map((d: any) => String(d._id)));
+    const linked = designations.filter((des: any) => {
+      const depId = des?.department_id?._id ?? des?.department_id ?? des?.department?._id ?? des?.department;
+      if (depId == null || depId === '') return true;
+      return deptIds.has(String(depId));
+    });
+    return linked.length > 0 ? linked : designations;
+  }, [designations, scopedDepartmentFilterOptions]);
+
+  useEffect(() => {
+    if (scopedDivisions.length !== 1) return;
+    const onlyId = String(scopedDivisions[0]._id);
+    setLeaveFilters((prev) => {
+      if (prev.division.length > 0) return prev;
+      return { ...prev, division: [onlyId] };
+    });
+  }, [scopedDivisions]);
+
+  useEffect(() => {
+    const dIds = new Set(scopedDepartmentFilterOptions.map((d: any) => String(d._id)));
+    setLeaveFilters((prev) => {
+      const nextDept = prev.department.filter((id) => dIds.has(String(id)));
+      if (nextDept.length === prev.department.length) return prev;
+      return { ...prev, department: nextDept };
+    });
+  }, [scopedDepartmentFilterOptions]);
 
   // Filter employees based on search
   // Filter employees based on search
@@ -3217,9 +3445,25 @@ export default function LeavesPage() {
                   >
                     <option value="">All Types</option>
                     {activeTab === 'od' ? (
-                      odTypes.map(t => <option key={t.code} value={t.code}>{t.name}</option>)
+                      odTypes.map((t) => {
+                        const v = leaveOdTypeOptionKey(t);
+                        if (!v) return null;
+                        return (
+                          <option key={v} value={v}>
+                            {leaveOdTypeOptionLabel(t)}
+                          </option>
+                        );
+                      })
                     ) : (
-                      leaveTypes.map(t => <option key={t.code} value={t.code}>{t.name}</option>)
+                      leaveTypes.map((t) => {
+                        const v = leaveOdTypeOptionKey(t);
+                        if (!v) return null;
+                        return (
+                          <option key={v} value={v}>
+                            {leaveOdTypeOptionLabel(t)}
+                          </option>
+                        );
+                      })
                     )}
                   </select>
                 </div>
@@ -3243,9 +3487,12 @@ export default function LeavesPage() {
                 {currentUser?.role !== 'hod' && (
                 <MultiSelect
                     label="Division"
-                    options={divisions.map((d: any) => ({ id: d._id, name: d.name }))}
+                    options={scopedDivisions.map((d: any) => ({
+                      id: d._id,
+                      name: d.name ?? d.division_name ?? 'Division',
+                    }))}
                     selectedIds={leaveFilters.division}
-                    onChange={(vals) => setLeaveFilters(prev => ({ ...prev, division: vals }))}
+                    onChange={(vals) => setLeaveFilters(prev => ({ ...prev, division: vals, department: [] }))}
                     placeholder="All Divisions"
                     className="w-full md:w-32 xl:w-40"
                   />
@@ -3255,7 +3502,10 @@ export default function LeavesPage() {
                 {currentUser?.role !== 'hod' && (
                   <MultiSelect
                     label="Department"
-                    options={departments.map((d: any) => ({ id: d._id, name: d.name }))}
+                    options={scopedDepartmentFilterOptions.map((d: any) => ({
+                      id: d._id,
+                      name: d.name ?? d.department_name ?? 'Department',
+                    }))}
                     selectedIds={leaveFilters.department}
                     onChange={(vals) => setLeaveFilters(prev => ({ ...prev, department: vals }))}
                     placeholder="All Departments"
@@ -3267,7 +3517,10 @@ export default function LeavesPage() {
                 {currentUser?.role !== 'hod' && (
                   <MultiSelect
                     label="Designation"
-                    options={designations.map((d: any) => ({ id: d._id, name: d.name }))}
+                    options={scopedDesignationFilterOptions.map((d: any) => ({
+                      id: d._id,
+                      name: d.name ?? d.designation_name ?? 'Designation',
+                    }))}
                     selectedIds={leaveFilters.designation}
                     onChange={(vals) => setLeaveFilters(prev => ({ ...prev, designation: vals }))}
                     placeholder="All Designations"
@@ -4542,8 +4795,8 @@ export default function LeavesPage() {
                     <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-700 dark:text-white">
                       <span className="font-medium">
                         {applyType === 'leave'
-                          ? leaveTypes[0]?.name || leaveTypes[0]?.code
-                          : odTypes[0]?.name || odTypes[0]?.code}
+                          ? leaveOdTypeOptionLabel(leaveTypes[0])
+                          : leaveOdTypeOptionLabel(odTypes[0])}
                       </span>
                       <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">(Only type available)</span>
                     </div>
@@ -4561,9 +4814,15 @@ export default function LeavesPage() {
                       className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     >
                       <option value="">Select {applyType === 'leave' ? 'leave' : 'OD'} type</option>
-                      {(applyType === 'leave' ? leaveTypes : odTypes).map((type) => (
-                        <option key={type.code} value={type.code}>{type.name}</option>
-                      ))}
+                      {(applyType === 'leave' ? leaveTypes : odTypes).map((type) => {
+                        const v = leaveOdTypeOptionKey(type);
+                        if (!v) return null;
+                        return (
+                          <option key={v} value={v}>
+                            {leaveOdTypeOptionLabel(type)}
+                          </option>
+                        );
+                      })}
                     </select>
                   )}
                 </div>
@@ -5810,11 +6069,15 @@ export default function LeavesPage() {
                                     className="text-[10px] font-bold h-8 rounded-lg border border-slate-200 bg-white px-2 dark:border-slate-700 dark:bg-slate-900 dark:text-white outline-none focus:border-blue-400"
                                   >
                                     <option value="">Select Type</option>
-                                    {leaveTypes.map((lt) => (
-                                      <option key={lt.code} value={lt.code}>
-                                        {lt.name || lt.code}
-                                      </option>
-                                    ))}
+                                    {leaveTypes.map((lt) => {
+                                      const v = leaveOdTypeOptionKey(lt);
+                                      if (!v) return null;
+                                      return (
+                                        <option key={v} value={v}>
+                                          {leaveOdTypeOptionLabel(lt)}
+                                        </option>
+                                      );
+                                    })}
                                   </select>
                                   <select
                                     value={split.status}
@@ -6113,9 +6376,15 @@ export default function LeavesPage() {
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   >
                     <option value="">Select {detailType === 'leave' ? 'Leave' : 'OD'} Type</option>
-                    {(detailType === 'leave' ? leaveTypes : odTypes).map((t: any) => (
-                      <option key={t.code} value={t.code}>{t.name}</option>
-                    ))}
+                    {(detailType === 'leave' ? leaveTypes : odTypes).map((t: any) => {
+                      const v = leaveOdTypeOptionKey(t);
+                      if (!v) return null;
+                      return (
+                        <option key={v} value={v}>
+                          {leaveOdTypeOptionLabel(t)}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 
