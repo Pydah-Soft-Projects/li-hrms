@@ -97,20 +97,51 @@ async function recalculateRegisterBalances(employeeId, leaveType, fromDate) {
     doc.markModified(`months.${mi}.transactions`);
   }
 
-  for (const doc of dirty) {
-    await doc.save();
-  }
-
   const finalBalance = refs.length === 0 ? 0 : currentBalance;
+  /** Per–FY doc closing balance for this leave type (last txn on that doc in global date order). */
+  let closingByDocId = null;
   if (leaveType === 'CL' || leaveType === 'CCL' || leaveType === 'EL') {
-    const latest = await LeaveRegisterYear.findOne({ employeeId }).sort({ financialYearStart: -1 });
-    if (latest) {
-      if (leaveType === 'CL') latest.casualBalance = finalBalance;
-      if (leaveType === 'CCL') latest.compensatoryOffBalance = finalBalance;
-      if (leaveType === 'EL') latest.earnedLeaveBalance = finalBalance;
-      await latest.save();
+    if (refs.length > 0) {
+      // Closing balance after the last txn of this type on each FY doc (refs are globally sorted by date).
+      // Previously we wrote `finalBalance` only to the newest FY row, which left older years' headers stale
+      // and broke leave register / yearSnapshot CCL when viewing a past financial year.
+      closingByDocId = new Map();
+      for (const r of refs) {
+        closingByDocId.set(r.doc._id.toString(), Number(r.tx.closingBalance) || 0);
+      }
+      for (const doc of years) {
+        const id = doc._id.toString();
+        if (!closingByDocId.has(id)) continue;
+        const bal = closingByDocId.get(id);
+        if (leaveType === 'CL') doc.casualBalance = bal;
+        if (leaveType === 'CCL') doc.compensatoryOffBalance = bal;
+        if (leaveType === 'EL') doc.earnedLeaveBalance = bal;
+      }
+    } else {
+      const latest = await LeaveRegisterYear.findOne({ employeeId }).sort({ financialYearStart: -1 });
+      if (latest) {
+        if (leaveType === 'CL') latest.casualBalance = finalBalance;
+        if (leaveType === 'CCL') latest.compensatoryOffBalance = finalBalance;
+        if (leaveType === 'EL') latest.earnedLeaveBalance = finalBalance;
+        await latest.save();
+      }
     }
   }
+
+  const savedIds = new Set();
+  for (const doc of dirty) {
+    await doc.save();
+    savedIds.add(doc._id.toString());
+  }
+  // Persist FY header on rows that had no txn in this recalculation window (only header changed).
+  if (closingByDocId) {
+    for (const doc of years) {
+      const id = doc._id.toString();
+      if (savedIds.has(id) || !closingByDocId.has(id)) continue;
+      await doc.save();
+    }
+  }
+
   await syncEmployeeModelBalance(employeeId, leaveType, finalBalance);
 
   return true;
