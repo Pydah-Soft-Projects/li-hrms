@@ -52,6 +52,12 @@ import {
   validateEmployeeRow,
   ParsedRow,
 } from '@/lib/bulkUpload';
+import {
+  canonicalQualificationStatus,
+  getQualificationStatusSelectOptions,
+  qualificationStatusBadgeClass,
+  qualificationStatusLabel,
+} from '@/lib/qualificationStatus';
 
 interface Employee {
   _id: string;
@@ -2132,6 +2138,61 @@ export default function EmployeesPage() {
     }
   };
 
+  const handleQualificationStatusChange = async (newStatus: string) => {
+    if (!viewingEmployee?.emp_no) return;
+
+    const prev = viewingEmployee;
+    const normalized = canonicalQualificationStatus(newStatus);
+    setViewingEmployee({ ...viewingEmployee, qualificationStatus: normalized } as Employee);
+
+    try {
+      const response = await api.updateEmployee(viewingEmployee.emp_no, { qualificationStatus: normalized });
+      if (response.success) {
+        setEmployees((p) =>
+          p.map((emp) => (emp.emp_no === viewingEmployee.emp_no ? { ...emp, qualificationStatus: normalized } : emp))
+        );
+        if (response.data) setViewingEmployee(response.data as Employee);
+      } else {
+        setViewingEmployee(prev);
+        setError(response.message || 'Failed to update certificate status');
+      }
+    } catch (err: any) {
+      setViewingEmployee(prev);
+      setError(err.message || 'An error occurred');
+      console.error(err);
+    }
+  };
+
+  const handleQualificationRowStatusChange = async (rowIdx: number, newStatus: string) => {
+    if (!viewingEmployee?.emp_no) return;
+
+    const prev = viewingEmployee;
+    const quals = Array.isArray(viewingEmployee.qualifications) ? [...viewingEmployee.qualifications] : [];
+    if (!quals[rowIdx]) return;
+
+    const normalized = canonicalQualificationStatus(newStatus);
+    const nextQuals = [...quals];
+    nextQuals[rowIdx] = { ...nextQuals[rowIdx], status: normalized };
+    setViewingEmployee({ ...viewingEmployee, qualifications: nextQuals } as Employee);
+
+    try {
+      const response = await api.updateEmployee(viewingEmployee.emp_no, { qualifications: nextQuals });
+      if (response.success) {
+        setEmployees((p) =>
+          p.map((emp) => (emp.emp_no === viewingEmployee.emp_no ? { ...emp, qualifications: nextQuals } : emp))
+        );
+        if (response.data) setViewingEmployee(response.data as Employee);
+      } else {
+        setViewingEmployee(prev);
+        setError(response.message || 'Failed to update qualification verification');
+      }
+    } catch (err: any) {
+      setViewingEmployee(prev);
+      setError(err.message || 'An error occurred');
+      console.error(err);
+    }
+  };
+
   const handleViewEmployee = async (employee: Employee) => {
     setViewingEmployee(employee);
     setShowViewDialog(true);
@@ -2160,6 +2221,7 @@ export default function EmployeesPage() {
       employee_group_id: (application as any).employee_group_id,
       employee_group: (application as any).employee_group,
       department: application.department,
+      division: (application as any).division,
       designation: application.designation,
       doj: application.doj,
       dob: application.dob,
@@ -3608,14 +3670,9 @@ export default function EmployeesPage() {
                         )}
                         {userRole !== 'hod' && userRole !== 'employee' && (
                           <td className="whitespace-nowrap px-6 py-4">
-                            <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${employee.qualificationStatus === 'verified'
-                              ? 'bg-status-positive/10 text-status-positive'
-                              : employee.qualificationStatus === 'pending'
-                                ? 'bg-status-warning/10 text-status-warning'
-                                : 'bg-text-secondary/10 text-text-secondary'
-                              }`}>
-                              {employee.qualificationStatus === 'verified' ? <CheckCircle className="w-3 h-3" /> : <LucideClock className="w-3 h-3" />}
-                              {employee.qualificationStatus || 'Not Uploaded'}
+                            <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${qualificationStatusBadgeClass(employee.qualificationStatus)}`}>
+                              {canonicalQualificationStatus(employee.qualificationStatus) === 'verified' ? <CheckCircle className="w-3 h-3" /> : <LucideClock className="w-3 h-3" />}
+                              {qualificationStatusLabel(employee.qualificationStatus, formSettings ?? undefined)}
                             </span>
                           </td>
                         )}
@@ -3871,13 +3928,8 @@ export default function EmployeesPage() {
                     {userRole !== 'hod' && userRole !== 'employee' && (
                       <div className="flex items-center gap-1.5 text-xs text-text-secondary">
                         <span className="font-medium">Cert Status:</span>
-                        <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${employee.qualificationStatus === 'verified'
-                          ? 'bg-status-positive/10 text-status-positive'
-                          : employee.qualificationStatus === 'pending'
-                            ? 'bg-status-warning/10 text-status-warning'
-                            : 'bg-text-secondary/10 text-text-secondary'
-                          }`}>
-                          {employee.qualificationStatus || 'Not Uploaded'}
+                        <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${qualificationStatusBadgeClass(employee.qualificationStatus)}`}>
+                          {qualificationStatusLabel(employee.qualificationStatus, formSettings ?? undefined)}
                         </span>
                       </div>
                     )}
@@ -6089,6 +6141,15 @@ export default function EmployeesPage() {
                       <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.employee_name || '-'}</p>
                     </div>
                     <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('division_id', formSettings) || 'Division'}</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {(viewingEmployee as any).division?.name
+                          || (typeof viewingEmployee.division_id === 'object' && viewingEmployee.division_id && 'name' in (viewingEmployee.division_id as object)
+                            ? (viewingEmployee.division_id as { name?: string }).name
+                            : '-')}
+                      </p>
+                    </div>
+                    <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('department_id', formSettings) || 'Department'}</label>
                       <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.department?.name || '-'}</p>
                     </div>
@@ -6105,14 +6166,18 @@ export default function EmployeesPage() {
                       </div>
                     )}
                     {userRole !== 'hod' && userRole !== 'employee' && (
-                      <>
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Certificate Status</label>
-                          <p className={`mt-1 text-sm font-bold ${viewingEmployee.qualificationStatus === 'verified' ? 'text-green-600' : viewingEmployee.qualificationStatus === 'pending' ? 'text-orange-500' : 'text-slate-600'}`}>
-                            {viewingEmployee.qualificationStatus || 'Not Uploaded'}
-                          </p>
-                        </div>
-                      </>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Certificate status</label>
+                        <select
+                          value={canonicalQualificationStatus(viewingEmployee.qualificationStatus)}
+                          onChange={(e) => handleQualificationStatusChange(e.target.value)}
+                          className="mt-1 w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                        >
+                          {getQualificationStatusSelectOptions(formSettings ?? undefined).map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
                     )}
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('doj', formSettings) || 'Date of Joining'}</label>
@@ -6187,7 +6252,7 @@ export default function EmployeesPage() {
                                   const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
                                   // Filter out internal keys like certificateUrl for list display
                                   const displayEntries = Object.entries(qual).filter(([k, v]) =>
-                                    k !== 'certificateUrl' && v !== null && v !== undefined && v !== ''
+                                    k !== 'certificateUrl' && k !== 'status' && v !== null && v !== undefined && v !== ''
                                   );
 
                                   return (
@@ -6236,6 +6301,20 @@ export default function EmployeesPage() {
                                       {/* Card Content Area */}
                                       <div className="flex flex-1 flex-col p-5">
                                         <div className="space-y-3">
+                                          {userRole !== 'hod' && userRole !== 'employee' && (
+                                            <div className="border-b border-slate-100 pb-3 dark:border-slate-800">
+                                              <select
+                                                aria-label="Qualification certificate verification"
+                                                value={canonicalQualificationStatus(qual.status)}
+                                                onChange={(e) => handleQualificationRowStatusChange(idx, e.target.value)}
+                                                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                                              >
+                                                {getQualificationStatusSelectOptions(formSettings ?? undefined).map((opt) => (
+                                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                ))}
+                                              </select>
+                                            </div>
+                                          )}
                                           {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
                                             const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
                                             return (
