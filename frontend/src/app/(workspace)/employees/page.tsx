@@ -53,11 +53,17 @@ import {
   ParsedRow,
 } from '@/lib/bulkUpload';
 import {
+  appendOverallCertificateStatusToSetting,
   canonicalQualificationStatus,
   getQualificationStatusSelectOptions,
+  isVerifiedOverallStatusForIcon,
+  mergeOverallQualificationStatusOptions,
+  OVERALL_CERTIFICATE_STATUS_SELECT_ADD_SENTINEL,
+  overallQualificationStatusLabel,
   qualificationStatusBadgeClass,
-  qualificationStatusLabel,
+  sanitizeOverallQualificationStatusStore,
 } from '@/lib/qualificationStatus';
+import ManageOverallCertificateStatusDialog from '@/components/employee/ManageOverallCertificateStatusDialog';
 
 interface Employee {
   _id: string;
@@ -309,6 +315,21 @@ export default function EmployeesPage() {
   const [submittingBankUpdate, setSubmittingBankUpdate] = useState(false);
   const [formData, setFormData] = useState<Partial<Employee>>(initialFormState);
   const [formSettings, setFormSettings] = useState<any>(null); // To store dynamic settings for mapping
+  /** Shared suggestions for overall certificate status (`qualification_statuses` setting + in-use values). */
+  const [qualificationStatusesSetting, setQualificationStatusesSetting] = useState<unknown>(null);
+  const [addOverallCertDialogOpen, setAddOverallCertDialogOpen] = useState(false);
+  const [addOverallCertSubmitting, setAddOverallCertSubmitting] = useState(false);
+
+  const overallCertificateStatusOptions = useMemo(
+    () =>
+      mergeOverallQualificationStatusOptions({
+        settingList: qualificationStatusesSetting ?? formSettings?.qualification_statuses,
+        employeeValues: employees.map((e) => e.qualificationStatus),
+        current: viewingEmployee?.qualificationStatus,
+      }),
+    [qualificationStatusesSetting, formSettings?.qualification_statuses, employees, viewingEmployee?.qualificationStatus]
+  );
+
   const [applicationFormData, setApplicationFormData] = useState<Partial<EmployeeApplication & { proposedSalary: number }>>({ ...initialFormState, proposedSalary: 0 });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [approvalData, setApprovalData] = useState({ approvedSalary: 0, doj: '', comments: '' });
@@ -981,6 +1002,21 @@ export default function EmployeesPage() {
     }
   };
 
+  const loadQualificationStatusesSetting = useCallback(async () => {
+    try {
+      const res = await api.getSetting('qualification_statuses');
+      if (res.success && res.data) {
+        setQualificationStatusesSetting(res.data.value ?? null);
+      }
+    } catch {
+      setQualificationStatusesSetting(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadQualificationStatusesSetting();
+  }, [loadQualificationStatusesSetting]);
+
   const generateDynamicTemplate = (settings: any, opts?: { includeEmployeeGroup?: boolean }) => {
     if (!settings || !settings.groups) return;
 
@@ -1288,6 +1324,7 @@ export default function EmployeesPage() {
         }
 
         setDataSource(response.dataSource || 'mongodb');
+        void loadQualificationStatusesSetting();
 
         // Update pagination state
         const pagination = response.pagination;
@@ -2138,28 +2175,48 @@ export default function EmployeesPage() {
     }
   };
 
-  const handleQualificationStatusChange = async (newStatus: string) => {
-    if (!viewingEmployee?.emp_no) return;
+  const handleQualificationStatusChange = async (rawInput: string): Promise<boolean> => {
+    if (!viewingEmployee?.emp_no) return false;
 
     const prev = viewingEmployee;
-    const normalized = canonicalQualificationStatus(newStatus);
-    setViewingEmployee({ ...viewingEmployee, qualificationStatus: normalized } as Employee);
+    const stored = sanitizeOverallQualificationStatusStore(rawInput);
+    setViewingEmployee({ ...viewingEmployee, qualificationStatus: stored ?? undefined } as Employee);
 
     try {
-      const response = await api.updateEmployee(viewingEmployee.emp_no, { qualificationStatus: normalized });
+      const response = await api.updateEmployee(viewingEmployee.emp_no, { qualificationStatus: stored });
       if (response.success) {
         setEmployees((p) =>
-          p.map((emp) => (emp.emp_no === viewingEmployee.emp_no ? { ...emp, qualificationStatus: normalized } : emp))
+          p.map((emp) => (emp.emp_no === viewingEmployee.emp_no ? { ...emp, qualificationStatus: stored ?? undefined } : emp))
         );
         if (response.data) setViewingEmployee(response.data as Employee);
-      } else {
-        setViewingEmployee(prev);
-        setError(response.message || 'Failed to update certificate status');
+        return true;
       }
+      setViewingEmployee(prev);
+      setError(response.message || 'Failed to update certificate status');
+      return false;
     } catch (err: any) {
       setViewingEmployee(prev);
       setError(err.message || 'An error occurred');
       console.error(err);
+      return false;
+    }
+  };
+
+  const submitAddOverallCertificateStatus = async (raw: string) => {
+    setAddOverallCertSubmitting(true);
+    setError('');
+    try {
+      const { merged } = await appendOverallCertificateStatusToSetting(
+        { getSetting: api.getSetting, upsertSetting: api.upsertSetting },
+        raw
+      );
+      if (merged.length) setQualificationStatusesSetting(merged);
+      const ok = await handleQualificationStatusChange(raw);
+      if (ok) setAddOverallCertDialogOpen(false);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to add certificate status');
+    } finally {
+      setAddOverallCertSubmitting(false);
     }
   };
 
@@ -3671,8 +3728,8 @@ export default function EmployeesPage() {
                         {userRole !== 'hod' && userRole !== 'employee' && (
                           <td className="whitespace-nowrap px-6 py-4">
                             <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${qualificationStatusBadgeClass(employee.qualificationStatus)}`}>
-                              {canonicalQualificationStatus(employee.qualificationStatus) === 'verified' ? <CheckCircle className="w-3 h-3" /> : <LucideClock className="w-3 h-3" />}
-                              {qualificationStatusLabel(employee.qualificationStatus, formSettings ?? undefined)}
+                              {isVerifiedOverallStatusForIcon(employee.qualificationStatus) ? <CheckCircle className="w-3 h-3" /> : <LucideClock className="w-3 h-3" />}
+                              {overallQualificationStatusLabel(employee.qualificationStatus, overallCertificateStatusOptions)}
                             </span>
                           </td>
                         )}
@@ -3929,7 +3986,7 @@ export default function EmployeesPage() {
                       <div className="flex items-center gap-1.5 text-xs text-text-secondary">
                         <span className="font-medium">Cert Status:</span>
                         <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${qualificationStatusBadgeClass(employee.qualificationStatus)}`}>
-                          {qualificationStatusLabel(employee.qualificationStatus, formSettings ?? undefined)}
+                          {overallQualificationStatusLabel(employee.qualificationStatus, overallCertificateStatusOptions)}
                         </span>
                       </div>
                     )}
@@ -6169,14 +6226,36 @@ export default function EmployeesPage() {
                       <div>
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Certificate status</label>
                         <select
-                          value={canonicalQualificationStatus(viewingEmployee.qualificationStatus)}
-                          onChange={(e) => handleQualificationStatusChange(e.target.value)}
-                          className="mt-1 w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                          value={viewingEmployee.qualificationStatus ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === OVERALL_CERTIFICATE_STATUS_SELECT_ADD_SENTINEL) {
+                              setAddOverallCertDialogOpen(true);
+                              return;
+                            }
+                            void handleQualificationStatusChange(v);
+                          }}
+                          className="mt-1 w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                         >
-                          {getQualificationStatusSelectOptions(formSettings ?? undefined).map((opt) => (
+                          <option value="">Not set</option>
+                          {overallCertificateStatusOptions.map((opt) => (
                             <option key={opt.value} value={opt.value}>{opt.label}</option>
                           ))}
+                          <option value={OVERALL_CERTIFICATE_STATUS_SELECT_ADD_SENTINEL}>Add +</option>
                         </select>
+                        <p className="mt-1 max-w-xs text-[11px] text-slate-500 dark:text-slate-400">
+                          Pick a status from the list, or choose Add + at the bottom to manage shared statuses.
+                        </p>
+                        <ManageOverallCertificateStatusDialog
+                          isOpen={addOverallCertDialogOpen}
+                          onClose={() => !addOverallCertSubmitting && setAddOverallCertDialogOpen(false)}
+                          mergedOptions={overallCertificateStatusOptions}
+                          rawSetting={qualificationStatusesSetting ?? formSettings?.qualification_statuses}
+                          settingsApi={{ getSetting: api.getSetting, upsertSetting: api.upsertSetting }}
+                          onSettingSaved={(next) => setQualificationStatusesSetting(next)}
+                          onAddNewAndApply={submitAddOverallCertificateStatus}
+                          addSubmitting={addOverallCertSubmitting}
+                        />
                       </div>
                     )}
                     <div>
