@@ -2216,7 +2216,7 @@ exports.getLeaveStats = async (req, res) => {
 // Query: search, division, department, designation, fromDate, toDate. When absent = global counts; when present = filtered counts.
 exports.getDashboardStats = async (req, res) => {
   try {
-    const { search, division, department, designation, fromDate, toDate } = req.query;
+    const { search, division, department, designation, fromDate, toDate, leaveStatus, odStatus, status } = req.query;
 
     const scopeFilter = req.scopeFilter || { isActive: true };
     const workflowFilter = buildWorkflowVisibilityFilter(req.user);
@@ -2311,6 +2311,20 @@ exports.getDashboardStats = async (req, res) => {
       odFilter.employeeId = idFilter;
     }
 
+    const legacyStatus = status && String(status).trim() ? String(status).trim() : null;
+    const leaveStatusVal = leaveStatus != null && String(leaveStatus).trim() !== '' ? String(leaveStatus).trim() : null;
+    const odStatusVal = odStatus != null && String(odStatus).trim() !== '' ? String(odStatus).trim() : null;
+    if (leaveStatusVal) {
+      leaveFilter.status = leaveStatusVal;
+    }
+    if (odStatusVal) {
+      odFilter.status = odStatusVal;
+    }
+    if (!leaveStatusVal && !odStatusVal && legacyStatus) {
+      leaveFilter.status = legacyStatus;
+      odFilter.status = legacyStatus;
+    }
+
     // Categories for granular breakdown
     const finalRejectedStatuses = ['rejected', 'cancelled'];
     const intermediateStatuses = [
@@ -2333,10 +2347,30 @@ exports.getDashboardStats = async (req, res) => {
       ])
     ]);
 
-    const formatStats = (aggResults) => {
+    const buildBreakdown = (counts, { includePrincipal }) => {
+      const b = {
+        draft: counts['draft'] || 0,
+        pending: counts['pending'] || 0,
+        hod_approved: counts['hod_approved'] || 0,
+        hod_rejected: counts['hod_rejected'] || 0,
+        hr_approved: counts['hr_approved'] || 0,
+        hr_rejected: counts['hr_rejected'] || 0,
+        manager_approved: counts['manager_approved'] || 0,
+        manager_rejected: counts['manager_rejected'] || 0,
+        reporting_manager_approved: counts['reporting_manager_approved'] || 0,
+        reporting_manager_rejected: counts['reporting_manager_rejected'] || 0,
+      };
+      if (includePrincipal) {
+        b.principal_approved = counts['principal_approved'] || 0;
+        b.principal_rejected = counts['principal_rejected'] || 0;
+      }
+      return b;
+    };
+
+    const formatStats = (aggResults, { includePrincipal } = { includePrincipal: true }) => {
       const counts = {};
       aggResults.forEach(r => { counts[r._id] = r.count; });
-      
+
       const total = aggResults.reduce((sum, r) => sum + r.count, 0);
       const approved = counts['approved'] || 0;
       const rejected = finalRejectedStatuses.reduce((sum, s) => sum + (counts[s] || 0), 0);
@@ -2347,25 +2381,12 @@ exports.getDashboardStats = async (req, res) => {
         approved,
         rejected,
         pending,
-        breakdown: {
-          draft: counts['draft'] || 0,
-          pending: counts['pending'] || 0,
-          hod_approved: counts['hod_approved'] || 0,
-          hod_rejected: counts['hod_rejected'] || 0,
-          hr_approved: counts['hr_approved'] || 0,
-          hr_rejected: counts['hr_rejected'] || 0,
-          manager_approved: counts['manager_approved'] || 0,
-          manager_rejected: counts['manager_rejected'] || 0,
-          reporting_manager_approved: counts['reporting_manager_approved'] || 0,
-          reporting_manager_rejected: counts['reporting_manager_rejected'] || 0,
-          principal_approved: counts['principal_approved'] || 0,
-          principal_rejected: counts['principal_rejected'] || 0,
-        }
+        breakdown: buildBreakdown(counts, { includePrincipal }),
       };
     };
 
-    const leaves = formatStats(leaveStats);
-    const ods = formatStats(odStats);
+    const leaves = formatStats(leaveStats, { includePrincipal: true });
+    const ods = formatStats(odStats, { includePrincipal: false });
 
     res.status(200).json({
       success: true,
