@@ -10,6 +10,7 @@ const admsParser = require('../utils/admsParser');
 const { uploadAttlogBackupFile } = require('../utils/attlogS3Upload');
 const logger = require('../utils/logger');
 const DeviceUser = require('../models/DeviceUser');
+const { getEffectiveOperationMode, resolveLogType } = require('../utils/operationModeResolver');
 
 const ADMS_ATTLOG_SYNC_COMMAND = 'DATA QUERY ATTLOG';
 
@@ -24,20 +25,6 @@ function envMs(name, fallback, min, max) {
     if (!Number.isFinite(n)) return fallback;
     return Math.min(Math.max(n, min), max);
 }
-
-// Map device status codes to log types
-// Note: These mappings may vary by device model - adjust as needed
-// Different eSSL/ZKTeco models use different status codes
-const LOG_TYPE_MAP = {
-    0: 'CHECK-IN',
-    1: 'CHECK-OUT',
-    2: 'BREAK-OUT',
-    3: 'BREAK-IN',
-    4: 'OVERTIME-IN',
-    5: 'OVERTIME-OUT',
-    // Fallback/Legacy codes
-    255: 'CHECK-IN'
-};
 
 /**
  * ZK Protocol Constants (for Polyfill)
@@ -147,6 +134,8 @@ class DeviceService {
                 // Get the last log timestamp for this device to perform incremental sync
                 const deviceDoc = await Device.findOne({ deviceId: device.deviceId });
                 const lastLogTimestamp = deviceDoc ? deviceDoc.lastLogTimestamp : null;
+                const operationMode = await getEffectiveOperationMode();
+                const deviceOperationGroup = deviceDoc?.operationGroup || device?.operationGroup || null;
                 if (!rangeMode && lastLogTimestamp) {
                     logger.info(`Performing incremental sync for ${device.name}. Last log: ${lastLogTimestamp.toISOString()}`);
                 }
@@ -212,9 +201,13 @@ class DeviceService {
                             (record.attState !== undefined ? record.attState :
                                 (record.status !== undefined ? record.status : record.state));
 
-                        const logType = this.mapLogType(statusCode);
+                        const { resolvedLogType } = resolveLogType({
+                            rawStatusCode: statusCode,
+                            deviceOperationGroup,
+                            operationMode
+                        });
 
-                        if (logType === 'CHECK-IN' && statusCode === undefined && unknownCodeCount < MAX_UNKNOWN_WARNINGS) {
+                        if (resolvedLogType === 'CHECK-IN' && statusCode === undefined && unknownCodeCount < MAX_UNKNOWN_WARNINGS) {
                             // logger.warn(...) - reduced noise
                             unknownCodeCount++;
                         }
@@ -228,7 +221,7 @@ class DeviceService {
                                 document: {
                                     employeeId: empId,
                                     timestamp: currentTimestamp,
-                                    logType: logType,
+                                    logType: resolvedLogType,
                                     rawType: statusCode,
                                     rawData: record,
                                     deviceId: device.deviceId,
@@ -384,21 +377,6 @@ class DeviceService {
             logger.error(`Direct raw fetch failed:`, error.message);
             throw error;
         }
-    }
-
-    /**
-     * Map device status code to log type
-     */
-    mapLogType(statusCode) {
-        const logType = LOG_TYPE_MAP[statusCode];
-
-        if (!logType) {
-            // Log unknown status codes so we can add them to the mapping
-            logger.warn(`Unknown status code: ${statusCode} - defaulting to CHECK-IN`);
-            return 'CHECK-IN'; // Default to CHECK-IN for unknown codes
-        }
-
-        return logType;
     }
 
     /**

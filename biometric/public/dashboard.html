@@ -510,6 +510,132 @@
             color: var(--text-main);
             font-size: 0.85rem;
         }
+
+        .mode-panel {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px 20px;
+            align-items: end;
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.35);
+            padding: 12px 14px;
+            border-radius: 12px;
+        }
+
+        .mode-control {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 220px;
+        }
+
+        .mode-control label {
+            font-size: 0.78rem;
+            color: var(--text-dim);
+        }
+
+        .mode-control select {
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-main);
+        }
+
+        .mode-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .mode-chip--device {
+            border-color: rgba(16, 185, 129, 0.6);
+            color: #6ee7b7;
+        }
+
+        .mode-chip--operation {
+            border-color: rgba(99, 102, 241, 0.6);
+            color: #c7d2fe;
+        }
+
+        .op-group-badge {
+            display: inline-block;
+            margin-top: 4px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.68rem;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-main);
+        }
+
+        .op-group-badge--unset {
+            color: #fca5a5;
+            border-color: rgba(239, 68, 68, 0.4);
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .mode-impact {
+            width: 100%;
+            font-size: 0.8rem;
+            color: #c7d2fe;
+            line-height: 1.45;
+            padding-top: 4px;
+        }
+
+        .mode-device-source {
+            width: 100%;
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            line-height: 1.4;
+            padding-top: 2px;
+            border-top: 1px dashed rgba(255, 255, 255, 0.16);
+            margin-top: 2px;
+            padding-top: 8px;
+        }
+
+        .is-hidden {
+            display: none !important;
+        }
+
+        .toast-wrap {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            z-index: 1200;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: 420px;
+        }
+
+        .toast {
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: rgba(15, 23, 42, 0.92);
+            color: var(--text-main);
+            font-size: 0.82rem;
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+        }
+
+        .toast--success {
+            border-color: rgba(16, 185, 129, 0.45);
+        }
+
+        .toast--error {
+            border-color: rgba(239, 68, 68, 0.45);
+        }
+
+        .toast--info {
+            border-color: rgba(99, 102, 241, 0.45);
+        }
     </style>
 </head>
 
@@ -557,6 +683,33 @@
             <button class="btn-refresh" onclick="sendDeviceCommand('DATA QUERY FACE')">Sync Face Data</button>
             <button class="btn-refresh" onclick="sendDeviceCommand('DATA QUERY ATTLOG')">Sync All Attendance</button>
             <div id="command-status" style="margin-left: auto; font-size: 0.8rem; color: var(--accent);"></div>
+        </div>
+
+        <div class="mode-panel">
+            <div class="mode-control">
+                <label>Service Mode</label>
+                <select id="operation-mode-select" onchange="changeOperationMode(this.value)">
+                    <option value="OPERATION">Operation Mode</option>
+                    <option value="DEVICE">Device Mode</option>
+                </select>
+            </div>
+            <div id="service-mode-chip" class="mode-chip mode-chip--operation">Current: OPERATION</div>
+            <div class="mode-control" id="device-group-control">
+                <label>Selected Device Operation Group</label>
+                <select id="device-operation-group-select">
+                    <option value="">None (use device raw operation)</option>
+                    <option value="CHECK-IN">CHECK-IN</option>
+                    <option value="CHECK-OUT">CHECK-OUT</option>
+                    <option value="BREAK-IN">BREAK-IN</option>
+                    <option value="BREAK-OUT">BREAK-OUT</option>
+                    <option value="OVERTIME-IN">OVERTIME-IN</option>
+                    <option value="OVERTIME-OUT">OVERTIME-OUT</option>
+                </select>
+            </div>
+            <button class="btn-refresh" id="save-device-group-btn" onclick="saveSelectedDeviceOperationGroup()">Save Device Group</button>
+            <div id="mode-status" style="font-size: 0.8rem; color: var(--text-dim);"></div>
+            <div id="mode-impact" class="mode-impact"></div>
+            <div id="mode-device-source" class="mode-device-source"></div>
         </div>
 
         <div class="tabs">
@@ -613,6 +766,7 @@
             </div>
         </div>
     </div>
+    <div id="toast-wrap" class="toast-wrap"></div>
 
     <!-- Download Report Dialog -->
     <div class="dialog-overlay" id="download-dialog">
@@ -793,6 +947,160 @@
         let searchDebounceTimer = null;
 
         const TZ_IST = 'Asia/Kolkata';
+
+        function setModeStatus(message, color = 'var(--text-dim)') {
+            const el = document.getElementById('mode-status');
+            if (!el) return;
+            el.style.color = color;
+            el.innerText = message || '';
+        }
+
+        function showToast(message, type = 'info', ttlMs = 2800) {
+            const wrap = document.getElementById('toast-wrap');
+            if (!wrap) return;
+            const el = document.createElement('div');
+            el.className = `toast toast--${type}`;
+            el.innerText = message;
+            wrap.appendChild(el);
+            setTimeout(() => {
+                el.remove();
+            }, ttlMs);
+        }
+
+        function updateModeImpactText() {
+            const mode = document.getElementById('operation-mode-select').value;
+            const el = document.getElementById('mode-impact');
+            if (!el) return;
+            if (mode === 'DEVICE') {
+                el.innerText = 'Impact: Attendance + backend sync will use Selected Device Operation Group. Raw logs remain unchanged.';
+            } else {
+                el.innerText = 'Impact: Attendance + backend sync will use operation received from device logs (default behavior).';
+            }
+        }
+
+        function updateServiceModeChip() {
+            const mode = document.getElementById('operation-mode-select').value;
+            const chip = document.getElementById('service-mode-chip');
+            if (!chip) return;
+            chip.innerText = `Current: ${mode}`;
+            chip.classList.remove('mode-chip--device', 'mode-chip--operation');
+            chip.classList.add(mode === 'DEVICE' ? 'mode-chip--device' : 'mode-chip--operation');
+        }
+
+        function updateModeControlVisibility() {
+            const mode = document.getElementById('operation-mode-select').value;
+            const groupControl = document.getElementById('device-group-control');
+            const saveBtn = document.getElementById('save-device-group-btn');
+            const deviceSource = document.getElementById('mode-device-source');
+            const showDeviceControls = mode === 'DEVICE';
+
+            if (groupControl) groupControl.classList.toggle('is-hidden', !showDeviceControls);
+            if (saveBtn) saveBtn.classList.toggle('is-hidden', !showDeviceControls);
+            if (deviceSource) deviceSource.classList.toggle('is-hidden', !showDeviceControls);
+        }
+
+        function updateModeDeviceSourceInfo() {
+            const el = document.getElementById('mode-device-source');
+            if (!el) return;
+            if (!selectedSN) {
+                el.innerText = 'Source details: select a device to view exact SN/IP/fingerprint info used for group override.';
+                return;
+            }
+            const dev = allDevices.find(d => d.deviceId === selectedSN);
+            if (!dev) {
+                el.innerText = `Source details: selected SN ${selectedSN} (device details not loaded yet).`;
+                return;
+            }
+            const fpCount = dev?.status?.fingerCount ?? 0;
+            const group = dev.operationGroup || 'None';
+            el.innerText =
+                `Source details -> Device: ${dev.name} | SN: ${dev.deviceId} | IP: ${dev.ip || 'N/A'} | Fingerprints: ${fpCount} | Group: ${group}`;
+        }
+
+        async function loadOperationMode() {
+            try {
+                const res = await fetch('/api/settings/operation-mode');
+                const data = await res.json();
+                if (res.ok && data.success && data.data?.operationMode) {
+                    document.getElementById('operation-mode-select').value = data.data.operationMode;
+                    const source = data.data.source || 'unknown';
+                    const updatedAt = data.data.updatedAt ? formatISTShort(data.data.updatedAt) : 'N/A';
+                    setModeStatus(`Current mode: ${data.data.operationMode} | source: ${source} | updated: ${updatedAt}`);
+                    updateModeImpactText();
+                    updateModeControlVisibility();
+                    updateServiceModeChip();
+                }
+            } catch (e) {
+                setModeStatus('Could not load operation mode', '#ef4444');
+                showToast('Could not load operation mode', 'error');
+            }
+        }
+
+        async function changeOperationMode(mode) {
+            setModeStatus('Saving mode...', 'var(--primary)');
+            try {
+                const res = await fetch('/api/settings/operation-mode', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ operationMode: mode })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    setModeStatus(data.error || 'Failed to save mode', '#ef4444');
+                    showToast(data.error || 'Failed to save service mode', 'error');
+                    await loadOperationMode();
+                    return;
+                }
+                const updatedAt = data.data.updatedAt ? formatISTShort(data.data.updatedAt) : 'N/A';
+                setModeStatus(`Mode updated: ${data.data.operationMode} | stored in DB | updated: ${updatedAt}`, '#10b981');
+                updateModeImpactText();
+                updateModeControlVisibility();
+                updateServiceModeChip();
+                showToast(`Service mode changed to ${data.data.operationMode}`, 'success');
+            } catch (e) {
+                setModeStatus('Error saving mode: ' + e.message, '#ef4444');
+                showToast('Error saving mode', 'error');
+                await loadOperationMode();
+            }
+        }
+
+        function syncSelectedDeviceOperationGroup() {
+            const sel = document.getElementById('device-operation-group-select');
+            if (!sel) return;
+            const dev = allDevices.find(d => d.deviceId === selectedSN);
+            sel.value = (dev && dev.operationGroup) ? dev.operationGroup : '';
+            updateModeDeviceSourceInfo();
+        }
+
+        async function saveSelectedDeviceOperationGroup() {
+            if (!selectedSN) {
+                showToast('Select a device first.', 'info');
+                return;
+            }
+            const operationGroup = document.getElementById('device-operation-group-select').value || null;
+            setModeStatus('Saving device group...', 'var(--primary)');
+            try {
+                const res = await fetch('/api/devices/' + encodeURIComponent(selectedSN), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ operationGroup })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    setModeStatus(data.error || 'Failed to save device group', '#ef4444');
+                    showToast(data.error || 'Failed to save device group', 'error');
+                    return;
+                }
+                await loadDevices();
+                syncSelectedDeviceOperationGroup();
+                setModeStatus(`Device ${selectedSN} group saved: ${operationGroup || 'None'}`, '#10b981');
+                updateModeDeviceSourceInfo();
+                showToast(`Saved device group: ${operationGroup || 'None'}`, 'success');
+            } catch (e) {
+                setModeStatus('Error saving device group: ' + e.message, '#ef4444');
+                showToast('Error saving device group', 'error');
+            }
+        }
 
         function openManualPullDialog() {
             document.getElementById('manual-pull-dialog').classList.add('open');
@@ -1263,6 +1571,9 @@
                                     <span>Logs: <b>${health.attCount || 0}</b></span>
                                     <span>${dev.ip}</span>
                                 </div>
+                                <div style="margin-top: 4px;">
+                                    <span class="op-group-badge ${dev.operationGroup ? '' : 'op-group-badge--unset'}">Operation Group: ${dev.operationGroup || 'Not Set'}</span>
+                                </div>
                             </div>
 
                             <div style="margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
@@ -1275,8 +1586,11 @@
                         </div>
                     `}).join('');
                     refreshLiveBadgesOnly();
+                    syncSelectedDeviceOperationGroup();
+                    updateModeDeviceSourceInfo();
                 } else {
                     container.innerHTML = '<p style="color: var(--text-dim); text-align: center; margin-top: 20px;">No devices found.</p>';
+                    updateModeDeviceSourceInfo();
                 }
             } catch (err) {
                 console.error('Failed to load devices:', err);
@@ -1308,8 +1622,9 @@
                 if (selectedSN === deviceId) {
                     document.getElementById('selected-device-name').innerText = trimmed;
                 }
+                showToast('Device name updated', 'success');
             } catch (e) {
-                alert('Error: ' + e.message);
+                showToast('Error updating device name', 'error');
             }
         }
 
@@ -1326,6 +1641,8 @@
 
             // Re-render list to show active state
             loadDevices();
+            syncSelectedDeviceOperationGroup();
+            updateModeDeviceSourceInfo();
             fetchTableData();
         }
 
@@ -1774,6 +2091,11 @@
         }
 
         // Initial Load
+        loadOperationMode();
+        updateModeImpactText();
+        updateModeControlVisibility();
+        updateServiceModeChip();
+        updateModeDeviceSourceInfo();
         loadDevices();
 
         // Re-fetch device list periodically; live/offline pills also update every 5s without full reload

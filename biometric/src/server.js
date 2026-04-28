@@ -84,6 +84,8 @@ app.get('/', (req, res) => {
             deviceStatus: 'GET /api/devices/status',
             stats: 'GET /api/stats',
             latestSync: 'GET /api/logs/latest',
+            operationModeGet: 'GET /api/settings/operation-mode',
+            operationModeSet: 'PUT /api/settings/operation-mode',
             health: 'GET /health',
             devices: {
                 list: 'GET /api/devices',
