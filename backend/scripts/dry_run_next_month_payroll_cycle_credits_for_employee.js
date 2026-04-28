@@ -32,6 +32,7 @@ const earnedLeaveService = require('../leaves/services/earnedLeaveService');
 const leaveRegisterYearLedgerService = require('../leaves/services/leaveRegisterYearLedgerService');
 const leaveRegisterService = require('../leaves/services/leaveRegisterService');
 const monthlyPoolCarryForwardService = require('../leaves/services/monthlyPoolCarryForwardService');
+const { sumUsedDaysForType } = require('../leaves/services/leaveRegisterYearService');
 const monthlyApplicationCapService = require('../leaves/services/monthlyApplicationCapService');
 
 function parseArg(name) {
@@ -124,9 +125,14 @@ async function computePoolCarryOutFromCycleToNext(fromCycle, toCycle, policy, em
 
   const alloc = monthlyPoolCarryForwardService.allocatePoolConsumption(U, clS, cclS, elS);
 
-  const clCarry = clRoll ? roundHalf(alloc.clRem) : 0;
-  const cclCarry = cclRoll ? roundHalf(alloc.cclRem) : 0;
-  const elCarry = elRoll ? roundHalf(alloc.elRem) : 0;
+  const usedCl = roundHalf(sumUsedDaysForType(closingSlot, 'CL'));
+  const clLocked = roundHalf(Number(closingSlot.lockedCredits) || 0);
+  const usedCcl = roundHalf(sumUsedDaysForType(closingSlot, 'CCL'));
+  const usedEl = roundHalf(sumUsedDaysForType(closingSlot, 'EL'));
+
+  const clCarry = clRoll ? roundHalf(Math.max(0, clS - usedCl - clLocked)) : 0;
+  const cclCarry = cclRoll ? roundHalf(Math.max(0, cclS - usedCcl)) : 0;
+  const elCarry = elRoll ? roundHalf(Math.max(0, elS - usedEl)) : 0;
 
   return { cl: clCarry, ccl: cclCarry, el: elCarry, reason: 'dry_run_calc' };
 }
@@ -245,9 +251,14 @@ async function main() {
 
         const alloc = monthlyPoolCarryForwardService.allocatePoolConsumption(U, clS, cclS, elS);
 
-        const clCarry = clRoll ? roundHalf(alloc.clRem) : 0;
-        const cclCarry = cclRoll ? roundHalf(alloc.cclRem) : 0;
-        const elCarry = elRoll ? roundHalf(alloc.elRem) : 0;
+        const usedCl = roundHalf(sumUsedDaysForType(closingSlot, 'CL'));
+        const clLocked = roundHalf(Number(closingSlot.lockedCredits) || 0);
+        const usedCcl = roundHalf(sumUsedDaysForType(closingSlot, 'CCL'));
+        const usedEl = roundHalf(sumUsedDaysForType(closingSlot, 'EL'));
+
+        const clCarry = clRoll ? roundHalf(Math.max(0, clS - usedCl - clLocked)) : 0;
+        const cclCarry = cclRoll ? roundHalf(Math.max(0, cclS - usedCcl)) : 0;
+        const elCarry = elRoll ? roundHalf(Math.max(0, elS - usedEl)) : 0;
 
         carryProjection.currentMonthlyApplyConsumed = U;
         carryProjection.allocation = {
@@ -256,6 +267,8 @@ async function main() {
           cclS,
           elS,
           alloc,
+          ledgerUsed: { cl: usedCl, ccl: usedCcl, el: usedEl, clLocked },
+          carryPosted: { cl: clCarry, ccl: cclCarry, el: elCarry },
           policyCarryFlags: { clRoll, cclRoll, elRoll, elInPool },
         };
         carryProjection.increments = { cl: clCarry, ccl: cclCarry, el: elCarry };
