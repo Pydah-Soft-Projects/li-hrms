@@ -2449,7 +2449,21 @@ export const api = {
   },
 
   // Dashboard stats (global or filtered) for superadmin cards
-  getLeaveDashboardStats: async (filters?: { search?: string; division?: string | string[]; department?: string | string[]; designation?: string | string[]; placeVisited?: string; fromDate?: string; toDate?: string }) => {
+  getLeaveDashboardStats: async (filters?: {
+    search?: string;
+    division?: string | string[];
+    department?: string | string[];
+    designation?: string | string[];
+    placeVisited?: string;
+    fromDate?: string;
+    toDate?: string;
+    /** Applied only to leave aggregates */
+    leaveStatus?: string;
+    /** Applied only to OD aggregates */
+    odStatus?: string;
+    /** Legacy: when set without leaveStatus/odStatus, applies to both */
+    status?: string;
+  }) => {
     const params = new URLSearchParams();
     if (filters?.search) params.append('search', filters.search);
     if (filters?.division) params.append('division', Array.isArray(filters.division) ? filters.division.join(',') : filters.division);
@@ -2458,6 +2472,9 @@ export const api = {
     if (filters?.placeVisited) params.append('placeVisited', filters.placeVisited);
     if (filters?.fromDate) params.append('fromDate', filters.fromDate);
     if (filters?.toDate) params.append('toDate', filters.toDate);
+    if (filters?.leaveStatus) params.append('leaveStatus', filters.leaveStatus);
+    if (filters?.odStatus) params.append('odStatus', filters.odStatus);
+    if (filters?.status) params.append('status', filters.status);
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<{ data: { totalLeaves: number; totalODs: number; totalPending: number; totalApproved: number } }>(`/leaves/dashboard-stats${query}`, { method: 'GET' });
   },
