@@ -1335,16 +1335,21 @@ export default function LeaveRegisterPage({
     const sum = row.summary;
     const months = row.registerMonths || [];
     const lastMonth = months.length > 0 ? months[months.length - 1] : null;
+    /** When a FY row is loaded, `yearSnapshot` is set — header should show FY balances, not “today’s payroll month” only. */
+    const fyRegisterRow = Boolean(ys?.financialYear);
     /**
-     * List API `summary` is built from the monthly sub-ledger for the current payroll period (or last period).
-     * `yearSnapshot` comes from LeaveRegisterYear top-level fields, which could lag older FY rows after
-     * multi-year recalculations — prefer summary, then snapshot, then last month register column.
+     * FY register: prefer LeaveRegisterYear snapshot, then last month’s register columns (matches grid foot),
+     * then summary. Without FY: keep summary first (current payroll period sub-ledger).
      */
     const pick = (
       summaryVal: unknown,
       snapshotVal: unknown,
       registerMonthVal: unknown
     ): number | null => {
+      if (fyRegisterRow) {
+        if (snapshotVal != null && Number.isFinite(Number(snapshotVal))) return Number(snapshotVal);
+        if (registerMonthVal != null && Number.isFinite(Number(registerMonthVal))) return Number(registerMonthVal);
+      }
       if (summaryVal != null && Number.isFinite(Number(summaryVal))) return Number(summaryVal);
       if (snapshotVal != null && Number.isFinite(Number(snapshotVal))) return Number(snapshotVal);
       if (registerMonthVal != null && Number.isFinite(Number(registerMonthVal))) return Number(registerMonthVal);
