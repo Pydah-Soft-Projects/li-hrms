@@ -1832,6 +1832,44 @@ export default function LeavesPage() {
           setLoading(false);
           return;
         }
+        const selectedLeaveType = String(formData.leaveType || '').toUpperCase();
+        if (['CL', 'CCL', 'EL'].includes(selectedLeaveType)) {
+          const empId = hasValidEmployeeId ? String(targetEmployeeId) : undefined;
+          if (!empId) {
+            toast.error(`Please select a valid employee before applying ${selectedLeaveType}`);
+            setLoading(false);
+            return;
+          }
+          try {
+            const ctxRes = await api.getLeaveApplyPeriodContext({
+              fromDate: formData.fromDate,
+              employeeId: empId,
+              leaveType: selectedLeaveType as 'CL' | 'CCL' | 'EL',
+            });
+            const ctx = ctxRes?.success ? ctxRes?.data : null;
+            const remaining = ctx?.selectedType?.remaining != null ? Number(ctx.selectedType.remaining) : null;
+            const fyBalanceRaw =
+              selectedLeaveType === 'CL'
+                ? ctx?.balances?.cl
+                : selectedLeaveType === 'CCL'
+                  ? ctx?.balances?.ccl
+                  : ctx?.balances?.el;
+            const fyBalance = fyBalanceRaw != null ? Number(fyBalanceRaw) : null;
+            const effectiveRemaining =
+              remaining != null && fyBalance != null
+                ? Math.min(remaining, fyBalance)
+                : (remaining != null ? remaining : fyBalance);
+            if (effectiveRemaining != null && effectiveRemaining <= 0) {
+              toast.error(`Insufficient ${selectedLeaveType} balance for the selected payroll period`);
+              setLoading(false);
+              return;
+            }
+          } catch {
+            toast.error(`Could not validate ${selectedLeaveType} balance right now. Please try again.`);
+            setLoading(false);
+            return;
+          }
+        }
       } else {
         if (!formData.odType || !formData.fromDate || !formData.toDate || !formData.purpose || !formData.placeVisited) {
           toast.error('Please fill all required fields');
@@ -3879,7 +3917,7 @@ export default function LeavesPage() {
                               >
                                 View
                               </button>
-                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && (
+                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && leave.status === 'pending' && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -3957,7 +3995,7 @@ export default function LeavesPage() {
                           <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(leave.status)} border-transparent`}>
                             {leave.status?.replace('_', ' ')}
                           </span>
-                          {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && (
+                          {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && leave.status === 'pending' && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -4152,7 +4190,7 @@ export default function LeavesPage() {
                               >
                                 View
                               </button>
-                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && (
+                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && ['pending', 'draft'].includes(od.status) && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -4230,7 +4268,7 @@ export default function LeavesPage() {
                           <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(od.status)} border-transparent`}>
                             {formatOdLbl(od.status)}
                           </span>
-                          {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && (
+                          {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && ['pending', 'draft'].includes(od.status) && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -4455,7 +4493,7 @@ export default function LeavesPage() {
                               <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
                                 {formatLeaveLbl(leave.status)}
                               </span>
-                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || (leave.employeeId?._id === currentUser?.employeeRef || leave.appliedBy?._id === currentUser?._id || leave.appliedBy === currentUser?._id)) && (
+                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || (leave.employeeId?._id === currentUser?.employeeRef || leave.appliedBy?._id === currentUser?._id || leave.appliedBy === currentUser?._id)) && leave.status === 'pending' && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -4657,7 +4695,7 @@ export default function LeavesPage() {
                               <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
                                 {formatOdLbl(od.status)}
                               </span>
-                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || (od.employeeId?._id === currentUser?.employeeRef || od.appliedBy?._id === currentUser?._id || od.appliedBy === currentUser?._id)) && (
+                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || (od.employeeId?._id === currentUser?.employeeRef || od.appliedBy?._id === currentUser?._id || od.appliedBy === currentUser?._id)) && ['pending', 'draft'].includes(od.status) && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -6414,9 +6452,10 @@ export default function LeavesPage() {
                     </button>
                   )}
 
-                  {(isSuperAdmin || currentUser?.role === 'sub_admin' ||
-                    ((selectedItem.employeeId?._id === currentUser?.employeeRef || selectedItem.appliedBy?._id === currentUser?._id || selectedItem.appliedBy === currentUser?._id) &&
-                      selectedItem.status === 'pending')) && (
+                  {((detailType === 'leave' && selectedItem.status === 'pending') ||
+                    (detailType === 'od' && ['pending', 'draft'].includes(selectedItem.status))) &&
+                    (isSuperAdmin || currentUser?.role === 'sub_admin' ||
+                    (selectedItem.employeeId?._id === currentUser?.employeeRef || selectedItem.appliedBy?._id === currentUser?._id || selectedItem.appliedBy === currentUser?._id)) && (
                       <button
                         onClick={() => {
                           handleDeleteRequest(selectedItem._id, detailType);
