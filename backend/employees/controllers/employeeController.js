@@ -47,6 +47,37 @@ const {
   getSalariesGroupFieldIds,
 } = require('../utils/employeeSalariesNormalize');
 
+/**
+ * Normalize web-push subscriptions from multipart/form payloads.
+ * Some clients send `pushSubscriptions` as a JSON string (e.g. "[]"), which
+ * must be converted to an array to avoid Mongoose embedded-cast failures.
+ */
+const normalizePushSubscriptionsPayload = (employeeData) => {
+  if (!employeeData || employeeData.pushSubscriptions === undefined) return;
+
+  const { pushSubscriptions } = employeeData;
+  if (Array.isArray(pushSubscriptions)) return;
+
+  if (typeof pushSubscriptions === 'string') {
+    const trimmed = pushSubscriptions.trim();
+    if (!trimmed) {
+      delete employeeData.pushSubscriptions;
+      return;
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        employeeData.pushSubscriptions = parsed;
+        return;
+      }
+    } catch (err) {
+      // Ignore invalid string payloads from profile forms instead of failing update.
+    }
+  }
+
+  delete employeeData.pushSubscriptions;
+};
+
 // ============== Helper Functions ==============
 
 /**
@@ -742,6 +773,7 @@ exports.getEmployee = async (req, res) => {
 exports.createEmployee = async (req, res) => {
   try {
     const { passwordMode, notificationChannels, ...employeeData } = req.body;
+    normalizePushSubscriptionsPayload(employeeData);
 
     const settings = await getEmployeeSettings();
     const autoGenerate = settings.auto_generate_employee_number === true;
@@ -1060,6 +1092,7 @@ exports.updateEmployee = async (req, res) => {
   try {
     const { empNo } = req.params;
     const employeeData = req.body;
+    normalizePushSubscriptionsPayload(employeeData);
 
     // Check if employee exists
 
