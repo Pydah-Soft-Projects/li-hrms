@@ -637,6 +637,74 @@ const getRequestedDays = (fromDate: string, toDate: string, isHalfDay: boolean):
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 };
 
+const ACTIVE_REQUEST_STATUSES = new Set([
+  'draft',
+  'pending',
+  'reporting_manager_approved',
+  'manager_approved',
+  'hod_approved',
+  'hr_approved',
+  'principal_approved',
+  'approved',
+]);
+
+const normalizeRequestDate = (value: unknown) => {
+  if (!value) return '';
+  const str = typeof value === 'string' ? value : new Date(value as any).toISOString();
+  return str.length >= 10 ? str.slice(0, 10) : str;
+};
+
+const findActiveHalfDayConflict = (
+  existingRequests: Array<{ fromDate?: string; toDate?: string; isHalfDay?: boolean; halfDayType?: string | null; status?: string }>,
+  requested: {
+    fromDate: string;
+    toDate: string;
+    isHalfDay: boolean;
+    halfDayType?: string | null;
+    requestLabel: 'leave' | 'od';
+  }
+) => {
+  const requestedFrom = normalizeRequestDate(requested.fromDate);
+  const requestedTo = normalizeRequestDate(requested.toDate || requested.fromDate);
+  const requestedHalf = requested.isHalfDay ? (requested.halfDayType || 'first_half') : null;
+
+  for (const item of existingRequests) {
+    if (!ACTIVE_REQUEST_STATUSES.has(String(item?.status || ''))) continue;
+
+    const existingFrom = normalizeRequestDate(item?.fromDate);
+    const existingTo = normalizeRequestDate(item?.toDate || item?.fromDate);
+    if (!existingFrom || !existingTo) continue;
+
+    const overlaps = existingFrom <= requestedTo && requestedFrom <= existingTo;
+    if (!overlaps) continue;
+
+    const existingIsHalfDay = Boolean(item?.isHalfDay);
+    const existingHalf = existingIsHalfDay ? (item?.halfDayType || 'first_half') : null;
+
+    if (!requested.isHalfDay) {
+      if (existingIsHalfDay) {
+        return `Cannot create full-day ${requested.requestLabel.toUpperCase()} because an active ${existingHalf === 'first_half' ? 'first-half' : 'second-half'} request already exists on this date.`;
+      }
+      return `An active request already exists for the selected date(s).`;
+    }
+
+    if (!existingIsHalfDay) {
+      return `A full-day active request already exists on this date, so ${requested.requestLabel.toUpperCase()} cannot be applied for a half day.`;
+    }
+
+    if (existingFrom === requestedFrom && existingTo === requestedTo) {
+      if (existingHalf === requestedHalf) {
+        return `An active ${requestedHalf === 'first_half' ? 'first-half' : 'second-half'} request already exists on this date.`;
+      }
+      continue;
+    }
+
+    return `An active request already exists for the selected date(s).`;
+  }
+
+  return null;
+};
+
 function LeavesPageContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending'>('leaves');
@@ -1429,6 +1497,47 @@ function LeavesPageContent() {
           toast.error(`Cannot create request - Employee already has ${approvedHalf === 'first_half' ? 'First Half' : 'Second Half'} approved on this date`);
           return;
         }
+      }
+    }
+
+    // Active-request conflict rules:
+    // - opposite half on the same day is allowed
+    // - same half is blocked
+    // - any active half-day blocks a new full-day request on that date
+    // - any active full-day blocks any additional request on that date
+    if (formData.fromDate && selectedEmployee) {
+      const requestedIsHalfDay = Boolean(formData.isHalfDay);
+      const requestedFrom = normalizeRequestDate(formData.fromDate);
+      const requestedTo = normalizeRequestDate(formData.toDate || formData.fromDate);
+      const targetEmpId = String((selectedEmployee as any)._id || '').trim();
+
+      try {
+        const [leaveRes, odRes] = await Promise.all([
+          api.getLeaves({ employeeId: targetEmpId, fromDate: requestedFrom, toDate: requestedTo, page: 1, limit: 100 }),
+          api.getODs({ employeeId: targetEmpId, fromDate: requestedFrom, toDate: requestedTo, page: 1, limit: 100 }),
+        ]);
+
+        const activeLeaves = leaveRes?.success && Array.isArray(leaveRes.data) ? (leaveRes.data as LeaveApplication[]) : [];
+        const activeOds = odRes?.success && Array.isArray(odRes.data) ? (odRes.data as ODApplication[]) : [];
+
+        const conflictMessage = findActiveHalfDayConflict(
+          [...activeLeaves, ...activeOds],
+          {
+            fromDate: requestedFrom,
+            toDate: requestedTo,
+            isHalfDay: requestedIsHalfDay,
+            halfDayType: requestedIsHalfDay ? formData.halfDayType : null,
+            requestLabel: applyType,
+          }
+        );
+
+        if (conflictMessage) {
+          toast.error(conflictMessage);
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // Keep submit working if the pre-check API fails; backend validations remain authoritative.
       }
     }
 
