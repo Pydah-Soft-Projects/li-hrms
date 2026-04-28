@@ -66,6 +66,8 @@ const EXCLUDED_FIELDS = [
   '__v',
   'created_at',
   'updated_at',
+  // Managed by notification endpoints; do not overwrite via employee profile updates.
+  'pushSubscriptions',
   'dynamicFields',
   'createdBy',
   'approvedBy',
