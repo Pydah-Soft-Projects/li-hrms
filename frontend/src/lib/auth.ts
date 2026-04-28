@@ -17,7 +17,7 @@ export interface User {
   loginMethod?: string;
 }
 
-const INACTIVITY_TIMEOUT_MS = 20 * 60 * 1000;
+const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000;
 const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
 
 let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
