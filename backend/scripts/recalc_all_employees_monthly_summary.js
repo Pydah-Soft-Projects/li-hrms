@@ -24,7 +24,7 @@ async function run() {
     await mongoose.connect(process.env.MONGODB_URI);
     console.log('Connected.\n');
 
-    let monthStr = process.env.MONTH || '2026-03';
+    let monthStr = process.env.MONTH || '2026-04';
     if (!monthStr || !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthStr)) {
       const now = new Date();
       monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;

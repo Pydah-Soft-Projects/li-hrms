@@ -20,6 +20,19 @@ const {
 /**
  * Mongo / legacy rows sometimes omit nested leave buckets; avoid "cannot read casualLeave of undefined".
  */
+/** Last closingBalance on LeaveRegisterYear slot for a leave type (chronological order in array). */
+function lastLedgerClosingBalanceInSlot(slot, leaveType) {
+    const want = String(leaveType || '').toUpperCase();
+    const txs = slot?.transactions || [];
+    let last = null;
+    for (const tx of txs) {
+        if (String(tx.leaveType || '').toUpperCase() !== want) continue;
+        const c = Number(tx.closingBalance);
+        if (Number.isFinite(c)) last = c;
+    }
+    return last;
+}
+
 function ensureMonthlySubLedgerShape(sub) {
     if (!sub || typeof sub !== 'object') {
         return sub;
@@ -30,31 +43,43 @@ function ensureMonthlySubLedgerShape(sub) {
             accruedThisMonth: 0,
             earnedCCL: 0,
             usedThisMonth: 0,
+            usedThisMonthRaw: 0,
+            reversalCreditThisMonth: 0,
             expired: 0,
             balance: 0,
             carryForward: 0,
             adjustments: 0,
+            poolTransferOutRaw: 0,
         };
     }
+    if (sub.casualLeave.poolTransferOutRaw == null) sub.casualLeave.poolTransferOutRaw = 0;
     if (!sub.earnedLeave || typeof sub.earnedLeave !== 'object') {
         sub.earnedLeave = {
             openingBalance: 0,
             accruedThisMonth: 0,
             usedThisMonth: 0,
+            usedThisMonthRaw: 0,
+            reversalCreditThisMonth: 0,
             balance: 0,
             adjustments: 0,
+            poolTransferOutRaw: 0,
         };
     }
+    if (sub.earnedLeave.poolTransferOutRaw == null) sub.earnedLeave.poolTransferOutRaw = 0;
     if (!sub.compensatoryOff || typeof sub.compensatoryOff !== 'object') {
         sub.compensatoryOff = {
             openingBalance: 0,
             earned: 0,
             used: 0,
+            usedRaw: 0,
+            reversalCreditThisMonth: 0,
             expired: 0,
             balance: 0,
             adjustments: 0,
+            poolTransferOutRaw: 0,
         };
     }
+    if (sub.compensatoryOff.poolTransferOutRaw == null) sub.compensatoryOff.poolTransferOutRaw = 0;
     return sub;
 }
 
@@ -1224,6 +1249,8 @@ class LeaveRegisterService {
                         payPeriodEnd: slot.payPeriodEnd,
                         payrollCycleMonth: pcm,
                         payrollCycleYear: pcy,
+                        /** Month-end CCL from FY slot txns (authoritative when sub-ledger row is missing). */
+                        yearSlotLastClosingCcl: lastLedgerClosingBalanceInSlot(slot, 'CCL'),
                         storedMonthlyApply: {
                             ceiling: slot.monthlyApplyCeiling,
                             consumed: slot.monthlyApplyConsumed,
@@ -1274,6 +1301,7 @@ class LeaveRegisterService {
                         payrollCycleMonth: sub.month,
                         payrollCycleYear: sub.year,
                         scheduled: null,
+                        yearSlotLastClosingCcl: null,
                         ledger: ledgerSlice(sub),
                         transactions: txs,
                         transactionCount: txCount,
@@ -1293,6 +1321,7 @@ class LeaveRegisterService {
                         payrollCycleMonth: sub.month,
                         payrollCycleYear: sub.year,
                         scheduled: null,
+                        yearSlotLastClosingCcl: null,
                         ledger: ledgerSlice(sub),
                         transactions: txs,
                         transactionCount: txCount,
@@ -1416,7 +1445,15 @@ class LeaveRegisterService {
                     lockedCredits: m.scheduled?.lockedCredits ?? null,
                     clBalance: m.ledger?.casualLeave?.balance ?? null,
                     elBalance: m.ledger?.earnedLeave?.balance ?? null,
-                    cclBalance: m.ledger?.compensatoryOff?.balance ?? null,
+                    // Prefer FY slot txn closing (LeaveRegisterYear) so month-end CCL matches register recalcs;
+                    // pool-only math (Cr + in − used − transfer) is often 0 when unused CCL rolled to next period.
+                    cclBalance: (() => {
+                        const yc = m.yearSlotLastClosingCcl;
+                        const led = m.ledger?.compensatoryOff?.balance;
+                        if (yc != null && Number.isFinite(Number(yc))) return Number(yc);
+                        if (led != null && Number.isFinite(Number(led))) return Number(led);
+                        return null;
+                    })(),
                     transactionCount: m.transactionCount,
                     monthlyApplyLimit: applyLimit,
                     monthlyApplyRemaining,
@@ -1707,6 +1744,7 @@ class LeaveRegisterService {
                       balance: 0,
                       carryForward: 0,
                       adjustments: 0,
+                      poolTransferOutRaw: 0,
                     },
                     earnedLeave: {
                       openingBalance: 0,
@@ -1716,6 +1754,7 @@ class LeaveRegisterService {
                       reversalCreditThisMonth: 0,
                       balance: 0,
                       adjustments: 0,
+                      poolTransferOutRaw: 0,
                     },
                     compensatoryOff: {
                       openingBalance: 0,
@@ -1726,6 +1765,7 @@ class LeaveRegisterService {
                       expired: 0,
                       balance: 0,
                       adjustments: 0,
+                      poolTransferOutRaw: 0,
                     },
                     totalPaidBalance: 0,
                     transactions: []
@@ -1740,9 +1780,15 @@ class LeaveRegisterService {
             const days = transaction.days;
 
             const isReversalCredit = type === 'CREDIT' && String(transaction.reason || '').includes('Leave Application Cancelled/Reversed');
+            const autoGen = String(transaction.autoGeneratedType || '');
+            /**
+             * Pool OUT debits are excluded from usedThisMonthRaw (they are not leave taken) but must still
+             * reduce the month delta — otherwise only IN credits apply and the chained balance inflates (bug).
+             * Pool IN credits stay in earned/accrued (same as ledger); excluding them made carry-in months
+             * under-credit vs OUT and produced negative balances on later months.
+             */
             const isMonthlyPoolTransferOut =
-                type === 'DEBIT' &&
-                String(transaction.autoGeneratedType || '').startsWith('MONTHLY_POOL_TRANSFER_OUT_');
+                type === 'DEBIT' && autoGen.startsWith('MONTHLY_POOL_TRANSFER_OUT_');
 
             if (leaveType === 'CL') {
                 const cl = monthData.casualLeave;
@@ -1752,23 +1798,30 @@ class LeaveRegisterService {
                     else if (transaction.reason?.includes('CCL')) cl.earnedCCL += days;
                     else cl.accruedThisMonth += days;
                     if (isReversalCredit) cl.reversalCreditThisMonth += days;
-                }
-                else if (type === 'DEBIT' && !isMonthlyPoolTransferOut) cl.usedThisMonthRaw += days;
+                } else if (type === 'DEBIT' && isMonthlyPoolTransferOut) {
+                    cl.poolTransferOutRaw = (Number(cl.poolTransferOutRaw) || 0) + days;
+                } else if (type === 'DEBIT' && !isMonthlyPoolTransferOut) cl.usedThisMonthRaw += days;
                 else if (type === 'EXPIRY') cl.expired += days;
                 else if (type === 'ADJUSTMENT') cl.adjustments += days;
             } else if (leaveType === 'EL') {
                 const el = monthData.earnedLeave;
                 el.balance = transaction.closingBalance;
-                if (type === 'CREDIT') el.accruedThisMonth += days;
-                if (type === 'CREDIT' && isReversalCredit) el.reversalCreditThisMonth += days;
-                else if (type === 'DEBIT' && !isMonthlyPoolTransferOut) el.usedThisMonthRaw += days;
+                if (type === 'CREDIT') {
+                    el.accruedThisMonth += days;
+                    if (isReversalCredit) el.reversalCreditThisMonth += days;
+                } else if (type === 'DEBIT' && isMonthlyPoolTransferOut) {
+                    el.poolTransferOutRaw = (Number(el.poolTransferOutRaw) || 0) + days;
+                } else if (type === 'DEBIT' && !isMonthlyPoolTransferOut) el.usedThisMonthRaw += days;
                 else if (type === 'ADJUSTMENT') el.adjustments += days;
             } else if (leaveType === 'CCL') {
                 const ccl = monthData.compensatoryOff;
                 ccl.balance = transaction.closingBalance;
-                if (type === 'CREDIT') ccl.earned += days;
-                if (type === 'CREDIT' && isReversalCredit) ccl.reversalCreditThisMonth += days;
-                else if (type === 'DEBIT' && !isMonthlyPoolTransferOut) ccl.usedRaw += days;
+                if (type === 'CREDIT') {
+                    ccl.earned += days;
+                    if (isReversalCredit) ccl.reversalCreditThisMonth += days;
+                } else if (type === 'DEBIT' && isMonthlyPoolTransferOut) {
+                    ccl.poolTransferOutRaw = (Number(ccl.poolTransferOutRaw) || 0) + days;
+                } else if (type === 'DEBIT' && !isMonthlyPoolTransferOut) ccl.usedRaw += days;
                 else if (type === 'EXPIRY') ccl.expired += days;
                 else if (type === 'ADJUSTMENT') ccl.adjustments += days;
             }
@@ -1859,11 +1912,23 @@ class LeaveRegisterService {
                         const cclReversal = Number(m.compensatoryOff.reversalCreditThisMonth) || 0;
                         m.compensatoryOff.used = Math.max(0, cclUsedRaw - cclReversal);
 
+                        const clPoolOut = Number(m.casualLeave.poolTransferOutRaw) || 0;
+                        const elPoolOut = Number(m.earnedLeave.poolTransferOutRaw) || 0;
+                        const cclPoolOut = Number(m.compensatoryOff.poolTransferOutRaw) || 0;
                         const deltaCL =
-                          m.casualLeave.accruedThisMonth + m.casualLeave.earnedCCL - clUsedRaw - m.casualLeave.expired + m.casualLeave.adjustments;
-                        const deltaEL = m.earnedLeave.accruedThisMonth - elUsedRaw + m.earnedLeave.adjustments;
+                          m.casualLeave.accruedThisMonth +
+                          m.casualLeave.earnedCCL -
+                          clUsedRaw -
+                          clPoolOut -
+                          m.casualLeave.expired +
+                          m.casualLeave.adjustments;
+                        const deltaEL = m.earnedLeave.accruedThisMonth - elUsedRaw - elPoolOut + m.earnedLeave.adjustments;
                         const deltaCCL =
-                          m.compensatoryOff.earned - cclUsedRaw - m.compensatoryOff.expired + m.compensatoryOff.adjustments;
+                          m.compensatoryOff.earned -
+                          cclUsedRaw -
+                          cclPoolOut -
+                          m.compensatoryOff.expired +
+                          m.compensatoryOff.adjustments;
                         
                         m.casualLeave.balance = m.casualLeave.openingBalance + deltaCL;
                         m.earnedLeave.balance = m.earnedLeave.openingBalance + deltaEL;
