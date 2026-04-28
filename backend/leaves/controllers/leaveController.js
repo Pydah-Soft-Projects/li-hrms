@@ -988,17 +988,8 @@ exports.updateLeave = async (req, res) => {
       status: leave.status,
     };
 
-    // Check if can edit - Allow editing for pending, hod_approved, hr_approved (not final approved)
-    // Super Admin can edit any status except final approved
+    // Final approved leaves are editable; ownership/admin authorization is enforced below.
     const isSuperAdmin = req.user.role === 'super_admin';
-    const isFinalApproved = leave.status === 'approved';
-
-    if (isFinalApproved && !['super_admin', 'manager', 'hod'].includes(req.user.role)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Final approved leave cannot be edited',
-      });
-    }
 
     // Check ownership or admin permission
     const isOwner = leave.appliedBy.toString() === req.user._id.toString();
@@ -1207,6 +1198,22 @@ exports.updateLeave = async (req, res) => {
         }
       } catch (err) {
         console.error('Failed to sync leave register during leave update:', err);
+      }
+    }
+
+    // Keep monthly summary in sync when an approved leave (before/after edit) changes.
+    // Recalculate old and new ranges so cross-cycle date edits are covered.
+    if (affectsLedger || wasApprovedBefore !== isApprovedNow) {
+      try {
+        const { recalculateOnLeaveApproval } = require('../../attendance/services/summaryCalculationService');
+        if (wasApprovedBefore) {
+          await recalculateOnLeaveApproval(originalApprovedSnapshot);
+        }
+        if (isApprovedNow) {
+          await recalculateOnLeaveApproval(leave);
+        }
+      } catch (summaryErr) {
+        console.error('Failed to recalculate monthly summary during leave update:', summaryErr);
       }
     }
 
@@ -2056,6 +2063,16 @@ exports.revokeLeaveApproval = async (req, res) => {
 
     leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
 
+    // If a final approval was revoked, recompute monthly summary for touched payroll cycles.
+    if (originalStatus === 'approved') {
+      try {
+        const { recalculateOnLeaveApproval } = require('../../attendance/services/summaryCalculationService');
+        await recalculateOnLeaveApproval(leave);
+      } catch (summaryErr) {
+        console.error('Failed to recalculate monthly summary during leave revoke:', summaryErr);
+      }
+    }
+
     res.status(200).json({
       success: true,
       message: `Leave ${originalStatus} revoked successfully`,
@@ -2096,8 +2113,19 @@ exports.deleteLeave = async (req, res) => {
       });
     }
 
+    const wasApproved = String(leave.status) === 'approved';
+
     leave.isActive = false;
     await leave.save();
+
+    // Deleting an approved leave should also reverse register impact.
+    if (wasApproved) {
+      try {
+        await leaveRegisterService.reverseLeaveDebit(leave, req.user._id);
+      } catch (err) {
+        console.error('Failed to reverse leave register debit during delete:', err);
+      }
+    }
     try {
       const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
       if (isEsiLeaveType(leave.leaveType)) {
@@ -2108,6 +2136,16 @@ exports.deleteLeave = async (req, res) => {
     }
 
     leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
+
+    // Recompute monthly summary for all payroll cycles touched by this leave.
+    if (wasApproved) {
+      try {
+        const { recalculateOnLeaveApproval } = require('../../attendance/services/summaryCalculationService');
+        await recalculateOnLeaveApproval(leave);
+      } catch (summaryErr) {
+        console.error('Failed to recalculate monthly summary during leave delete:', summaryErr);
+      }
+    }
 
     res.status(200).json({
       success: true,

@@ -457,7 +457,7 @@ class LeaveRegisterService {
             const yearDoc = await LeaveRegisterYear.findOne({
                 employeeId: leaveRecord.employeeId,
                 financialYear: fy.name,
-            }).lean();
+            });
 
             /** One approved CL app can post multiple DEBIT rows (CL+CCL+EL substitution); reverse every matching row. */
             const matchingDebits = [];
@@ -490,21 +490,53 @@ class LeaveRegisterService {
                 reason: 'Leave Application Cancelled/Reversed',
             };
 
-            if (matchingDebits.length > 0) {
-                let lastResult = null;
-                const ordered = [...matchingDebits].reverse();
-                for (const tx of ordered) {
-                    const lt = String(tx.leaveType || '').toUpperCase() === 'LOP' ? 'LOP' : String(tx.leaveType || 'CL');
-                    lastResult = await this.addTransaction({
-                        ...base,
-                        leaveType: lt,
-                        transactionType: 'CREDIT',
-                        startDate: tx.startDate || leaveRecord.fromDate,
-                        endDate: tx.endDate || leaveRecord.toDate,
-                        days: Number(tx.days) || 0,
-                    });
+            if (matchingDebits.length > 0 && yearDoc?.months?.length) {
+                // Remove auto-posted DEBIT rows for this leave instead of posting reversal CREDITS.
+                // This avoids misleading "credit gained" entries when a leave is edited/revoked.
+                const appId = String(leaveRecord._id);
+                const affectedTypes = new Set();
+                let earliestStart = leaveRecord.fromDate ? new Date(leaveRecord.fromDate) : new Date();
+                let removedCount = 0;
+
+                for (const tx of matchingDebits) {
+                    if (tx?.leaveType) affectedTypes.add(String(tx.leaveType).toUpperCase());
+                    if (tx?.startDate) {
+                        const s = new Date(tx.startDate);
+                        if (!Number.isNaN(s.getTime()) && s < earliestStart) earliestStart = s;
+                    }
                 }
-                return lastResult;
+
+                for (const slot of yearDoc.months) {
+                    const before = Array.isArray(slot.transactions) ? slot.transactions.length : 0;
+                    slot.transactions = (slot.transactions || []).filter((tx) => !(
+                        tx?.applicationId &&
+                        String(tx.applicationId) === appId &&
+                        String(tx.transactionType || '').toUpperCase() === 'DEBIT'
+                    ));
+                    const after = Array.isArray(slot.transactions) ? slot.transactions.length : 0;
+                    removedCount += Math.max(0, before - after);
+                }
+
+                if (removedCount > 0) {
+                    yearDoc.markModified('months');
+                    await yearDoc.save();
+
+                    const typesToRecalc = affectedTypes.size > 0 ? Array.from(affectedTypes) : [String(leaveRecord.leaveType || 'CL').toUpperCase()];
+                    for (const t of typesToRecalc) {
+                        await leaveRegisterYearLedgerService.recalculateRegisterBalances(
+                            leaveRecord.employeeId,
+                            t === 'LOP' ? 'LOP' : t,
+                            earliestStart
+                        );
+                    }
+                }
+
+                return {
+                    success: true,
+                    mode: 'remove_matching_debits',
+                    removedCount,
+                    leaveId: String(leaveRecord._id),
+                };
             }
 
             const leaveType = leaveRecord.leaveType === 'LOP' ? 'LOP' : (leaveRecord.leaveType || 'CL');
