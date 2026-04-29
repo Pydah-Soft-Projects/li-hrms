@@ -309,17 +309,12 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       startComponents = extractISTComponents(payrollStart);
       endComponents = extractISTComponents(payrollEnd);
     } else {
-      // Resolve the actual period window using payroll cycle (pay-cycle aware month).
-      // Anchor must fall inside the period we want so we load the correct dailies.
-      // - Calendar month (1-31): (year, monthNumber) = that month → anchor = 15th of that month.
-      // - Custom cycle (e.g. 26-25, startDay >= 15): For month M we want the period that ENDS in M
-      //   (e.g. February → 26 Jan–25 Feb). Using 15th of the current month as anchor gives that period.
-      await dateCycleService.getPayrollCycleSettings(); // ensure settings loaded
-      const anchorDateStr = `${year}-${String(monthNumber).padStart(2, '0')}-15`;
-      const anchorDate = createISTDate(anchorDateStr);
-      const periodInfo = await dateCycleService.getPeriodInfo(anchorDate);
-      payrollStart = periodInfo.payrollCycle.startDate;
-      payrollEnd = periodInfo.payrollCycle.endDate;
+      // Resolve the exact payroll cycle for the requested month label.
+      // Use cycle end-day as anchor (same logic as dateCycleService.getPayrollCycleForMonth)
+      // so month->period mapping is correct for every custom cycle configuration.
+      const payrollCycle = await dateCycleService.getPayrollCycleForMonth(year, monthNumber);
+      payrollStart = payrollCycle.startDate;
+      payrollEnd = payrollCycle.endDate;
       startComponents = extractISTComponents(payrollStart);
       endComponents = extractISTComponents(payrollEnd);
       startDateStr = startComponents.dateStr;
