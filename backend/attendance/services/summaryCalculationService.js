@@ -884,13 +884,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         totalODDays += (odFirst + odSecond);
       }
 
-      // Guardrail: PARTIAL + approved full-day OD must contribute as OD only.
+      // Guardrail: full-day OD must contribute as OD only (no attendance-present credit).
       // Keep OD credit, but suppress attendance-present credit on this day.
-      if (
-        hasFullDayOdCoverage &&
-        day.attendance &&
-        String(day.attendance.status || '').toUpperCase() === 'PARTIAL'
-      ) {
+      if (hasFullDayOdCoverage) {
         attFirst = 0;
         attSecond = 0;
       }
