@@ -1950,6 +1950,8 @@ export default function LeavesPage() {
           toast.error('Second-half attendance already present. Attendance is preferred over leave on same half.');
           setLoading(false);
           return;
+        }
+      }
       // Active-request conflict rules:
       // - opposite half on the same day is allowed
       // - same half is blocked
