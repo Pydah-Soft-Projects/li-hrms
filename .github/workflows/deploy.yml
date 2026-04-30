@@ -75,8 +75,8 @@ jobs:
           ssh ${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }} FRONTEND_OK="${{ needs.build-frontend.result == 'success' && '1' || '0' }}" bash -s << 'EOF'
             set -euo pipefail
             cd /home/ec2-user/li-hrms
-            git reset --hard
-            git pull origin main
+            git fetch origin
+            git reset --hard origin/main
 
             cd backend && npm install --production
             cd ../biometric && npm install --production

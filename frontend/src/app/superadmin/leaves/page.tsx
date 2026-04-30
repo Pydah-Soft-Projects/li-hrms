@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, Suspense } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { api, Department, Division, Designation } from '@/lib/api';
@@ -18,6 +18,14 @@ import {
   buildLeaveODPayPeriodOptions,
   matchLeaveODPayPeriodSelectValue,
 } from '@/lib/payPeriodRange';
+import {
+  buildStatusLabelMap,
+  formatLeaveStatusLabel as fmtLeaveStatus,
+  formatOdStatusLabel as fmtOdStatus,
+  leaveStatusFilterFromDefs,
+  odStatusFilterFromDefs,
+  type LeaveOdStatusDef,
+} from '@/lib/leaveOdStatus';
 import {
   OD_WEB_TRAIL_BATCH_FLUSH,
   OD_WEB_TRAIL_FLUSH_MS,
@@ -41,18 +49,25 @@ const StatusBreakdownModal = ({
   isOpen, 
   onClose, 
   title, 
-  breakdown 
+  breakdown,
+  resolveLabel,
 }: { 
   isOpen: boolean, 
   onClose: () => void, 
   title: string, 
-  breakdown: Record<string, number> 
+  breakdown: Record<string, number>;
+  resolveLabel?: (statusCode: string) => string;
 }) => {
   if (!isOpen) return null;
 
   const entries = Object.entries(breakdown)
     .filter(([_, val]) => val > 0)
     .sort((a, b) => b[1] - a[1]);
+
+  const formatBreakdownLabel = (key: string) => {
+    if (resolveLabel) return resolveLabel(key);
+    return key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+  };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -73,7 +88,7 @@ const StatusBreakdownModal = ({
               {entries.map(([key, val]) => (
                 <div key={key} className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
                   <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    {key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                    {formatBreakdownLabel(key)}
                   </span>
                   <span className="text-lg font-black text-slate-900 dark:text-white">{val}</span>
                 </div>
@@ -505,22 +520,23 @@ const getStatusColor = (status: string) => {
     case 'pending':
       return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
     case 'hod_approved':
+    case 'manager_approved':
+    case 'reporting_manager_approved':
+    case 'hr_approved':
+    case 'principal_approved':
       return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
     case 'rejected':
     case 'hod_rejected':
     case 'hr_rejected':
+    case 'manager_rejected':
+    case 'reporting_manager_rejected':
+    case 'principal_rejected':
       return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
     case 'cancelled':
       return 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400';
     default:
       return 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400';
   }
-};
-
-const getStatusLabel = (status?: string) => {
-  if (!status) return 'Unknown';
-  if (status === 'draft') return 'Waiting for OUT evidence';
-  return status.replaceAll('_', ' ');
 };
 
 // Helper to format date for HTML date input (YYYY-MM-DD)
@@ -638,6 +654,74 @@ const getRequestedDays = (fromDate: string, toDate: string, isHalfDay: boolean):
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 };
 
+const ACTIVE_REQUEST_STATUSES = new Set([
+  'draft',
+  'pending',
+  'reporting_manager_approved',
+  'manager_approved',
+  'hod_approved',
+  'hr_approved',
+  'principal_approved',
+  'approved',
+]);
+
+const normalizeRequestDate = (value: unknown) => {
+  if (!value) return '';
+  const str = typeof value === 'string' ? value : new Date(value as any).toISOString();
+  return str.length >= 10 ? str.slice(0, 10) : str;
+};
+
+const findActiveHalfDayConflict = (
+  existingRequests: Array<{ fromDate?: string; toDate?: string; isHalfDay?: boolean; halfDayType?: string | null; status?: string }>,
+  requested: {
+    fromDate: string;
+    toDate: string;
+    isHalfDay: boolean;
+    halfDayType?: string | null;
+    requestLabel: 'leave' | 'od';
+  }
+) => {
+  const requestedFrom = normalizeRequestDate(requested.fromDate);
+  const requestedTo = normalizeRequestDate(requested.toDate || requested.fromDate);
+  const requestedHalf = requested.isHalfDay ? (requested.halfDayType || 'first_half') : null;
+
+  for (const item of existingRequests) {
+    if (!ACTIVE_REQUEST_STATUSES.has(String(item?.status || ''))) continue;
+
+    const existingFrom = normalizeRequestDate(item?.fromDate);
+    const existingTo = normalizeRequestDate(item?.toDate || item?.fromDate);
+    if (!existingFrom || !existingTo) continue;
+
+    const overlaps = existingFrom <= requestedTo && requestedFrom <= existingTo;
+    if (!overlaps) continue;
+
+    const existingIsHalfDay = Boolean(item?.isHalfDay);
+    const existingHalf = existingIsHalfDay ? (item?.halfDayType || 'first_half') : null;
+
+    if (!requested.isHalfDay) {
+      if (existingIsHalfDay) {
+        return `Cannot create full-day ${requested.requestLabel.toUpperCase()} because an active ${existingHalf === 'first_half' ? 'first-half' : 'second-half'} request already exists on this date.`;
+      }
+      return `An active request already exists for the selected date(s).`;
+    }
+
+    if (!existingIsHalfDay) {
+      return `A full-day active request already exists on this date, so ${requested.requestLabel.toUpperCase()} cannot be applied for a half day.`;
+    }
+
+    if (existingFrom === requestedFrom && existingTo === requestedTo) {
+      if (existingHalf === requestedHalf) {
+        return `An active ${requestedHalf === 'first_half' ? 'first-half' : 'second-half'} request already exists on this date.`;
+      }
+      continue;
+    }
+
+    return `An active request already exists for the selected date(s).`;
+  }
+
+  return null;
+};
+
 function LeavesPageContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending'>('leaves');
@@ -746,10 +830,16 @@ function LeavesPageContent() {
     leavesBreakdown: {} as Record<string, number>,
     odsBreakdown: {} as Record<string, number>
   });
-  const [breakdownModal, setBreakdownModal] = useState({ 
-    isOpen: false, 
-    title: '', 
-    data: {} as Record<string, number> 
+  const [breakdownModal, setBreakdownModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    data: Record<string, number>;
+    kind: 'leave' | 'od';
+  }>({
+    isOpen: false,
+    title: '',
+    data: {},
+    kind: 'leave',
   });
   const [loadingStats, setLoadingStats] = useState(true);
 
@@ -772,6 +862,8 @@ function LeavesPageContent() {
   // Leave types and OD types
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
   const [odTypes, setODTypes] = useState<any[]>([]);
+  const [leaveStatusDefs, setLeaveStatusDefs] = useState<LeaveOdStatusDef[]>([]);
+  const [odStatusDefs, setOdStatusDefs] = useState<LeaveOdStatusDef[]>([]);
 
   // Leave / OD policy (backdated & future-date bounds)
   const defaultPolicy = { allowBackdated: false, maxBackdatedDays: 0, allowFutureDated: true, maxAdvanceDays: 90 };
@@ -890,7 +982,10 @@ function LeavesPageContent() {
     division: [] as string[],
     department: [] as string[],
     designation: [] as string[],
-    status: '',
+    /** Status filter for leave lists and leave stats. */
+    leaveStatus: '',
+    /** Status filter for OD lists and OD stats. */
+    odStatus: '',
     odPlace: ''
   });
   const [showODMap, setShowODMap] = useState(false);
@@ -899,37 +994,41 @@ function LeavesPageContent() {
   const statsRequestRef = useRef(0);
   const dataRequestRef = useRef(0);
 
-  const odStatusFilterOptions = useMemo(
-    () => [
+  const leaveStatusLabelMap = useMemo(() => buildStatusLabelMap(leaveStatusDefs), [leaveStatusDefs]);
+  const odStatusLabelMap = useMemo(() => buildStatusLabelMap(odStatusDefs), [odStatusDefs]);
+
+  const formatLeaveLbl = useCallback((s?: string) => fmtLeaveStatus(s, leaveStatusLabelMap), [leaveStatusLabelMap]);
+  const formatOdLbl = useCallback((s?: string) => fmtOdStatus(s, odStatusLabelMap), [odStatusLabelMap]);
+
+  const odStatusFilterOptions = useMemo(() => odStatusFilterFromDefs(odStatusDefs, 'Status'), [odStatusDefs]);
+
+  const leaveStatusFilterOptions = useMemo(() => {
+    const fromDefs = leaveStatusFilterFromDefs(leaveStatusDefs, 'Status');
+    if (fromDefs.length > 1) return fromDefs;
+    return [
       { value: '', label: 'Status' },
       { value: 'pending', label: 'Pending' },
-      { value: 'reporting_manager_approved', label: 'Reporting Manager Approved' },
-      { value: 'manager_approved', label: 'Manager Approved' },
-      { value: 'hod_approved', label: 'HOD Approved' },
-      { value: 'hr_approved', label: 'HR Approved' },
-      { value: 'principal_approved', label: 'Principal Approved' },
-      { value: 'approved', label: 'Approved (Final)' },
-      { value: 'reporting_manager_rejected', label: 'Reporting Manager Rejected' },
-      { value: 'manager_rejected', label: 'Manager Rejected' },
-      { value: 'hod_rejected', label: 'HOD Rejected' },
-      { value: 'hr_rejected', label: 'HR Rejected' },
-      { value: 'principal_rejected', label: 'Principal Rejected' },
-      { value: 'rejected', label: 'Rejected (Final)' },
+      { value: 'approved', label: 'Approved' },
+      { value: 'rejected', label: 'Rejected' },
       { value: 'cancelled', label: 'Cancelled' },
-    ],
-    []
-  );
+    ];
+  }, [leaveStatusDefs]);
 
   const odMapFilterSummary = useMemo(() => {
     const parts: string[] = [];
-    if (leaveFilters.status) parts.push(`Status: ${leaveFilters.status.replaceAll('_', ' ')}`);
+    const selectedStatus = activeTab === 'od' ? leaveFilters.odStatus : leaveFilters.leaveStatus;
+    if (selectedStatus) {
+      const statusLabel =
+        activeTab === 'od' ? formatOdLbl(selectedStatus) : formatLeaveLbl(selectedStatus);
+      parts.push(`Status: ${statusLabel}`);
+    }
     if (leaveFilters.odPlace) parts.push(`Place: ${leaveFilters.odPlace}`);
     if (searchTerm?.trim()) parts.push(`Search: ${searchTerm.trim()}`);
     if (leaveFilters.division.length > 0) parts.push(`Divisions: ${leaveFilters.division.length}`);
     if (leaveFilters.department.length > 0) parts.push(`Departments: ${leaveFilters.department.length}`);
     if (leaveFilters.designation.length > 0) parts.push(`Designations: ${leaveFilters.designation.length}`);
     return parts.length > 0 ? parts.join(' | ') : 'All filters';
-  }, [leaveFilters, searchTerm]);
+  }, [leaveFilters, searchTerm, activeTab, formatOdLbl, formatLeaveLbl]);
 
   // Form validation for Apply button
   const isFormValid = () => {
@@ -1053,7 +1152,6 @@ function LeavesPageContent() {
   // Shared filters for Leaves and OD tabs (used for API calls) — includes backend date range
   const getLeavesODFilters = () => ({
     search: searchTerm?.trim() || undefined,
-    status: leaveFilters.status || undefined,
     placeVisited: activeTab === 'od' ? (leaveFilters.odPlace || undefined) : undefined,
     department: leaveFilters.department.length > 0 ? leaveFilters.department : undefined,
     division: leaveFilters.division.length > 0 ? leaveFilters.division : undefined,
@@ -1062,11 +1160,23 @@ function LeavesPageContent() {
     toDate: dateRange.to || undefined,
   });
 
+  const getLeaveFilters = () => ({
+    ...getLeavesODFilters(),
+    status: leaveFilters.leaveStatus || undefined,
+    placeVisited: undefined,
+  });
+
+  const getOdFilters = () => ({
+    ...getLeavesODFilters(),
+    status: leaveFilters.odStatus || undefined,
+    placeVisited: leaveFilters.odPlace || undefined,
+  });
+
   const fetchAllODMapRequests = async () => {
     if (activeTab !== 'od') return;
     setODMapLoading(true);
     try {
-      const baseFilters = getLeavesODFilters();
+      const baseFilters = getOdFilters();
       const pageSize = 200;
       const first = await api.getODs({ ...baseFilters, page: 1, limit: pageSize });
 
@@ -1106,7 +1216,7 @@ function LeavesPageContent() {
     showODMap,
     activeTab,
     searchTerm,
-    leaveFilters.status,
+    leaveFilters.odStatus,
     leaveFilters.odPlace,
     leaveFilters.division,
     leaveFilters.department,
@@ -1127,7 +1237,11 @@ function LeavesPageContent() {
     setLoadingStats(true);
     try {
       // Always pass filters to ensure stats respect date range + search/dept/div
-      const filters = getLeavesODFilters();
+      const filters = {
+        ...getLeavesODFilters(),
+        leaveStatus: leaveFilters.leaveStatus || undefined,
+        odStatus: leaveFilters.odStatus || undefined,
+      };
       const res = await api.getLeaveDashboardStats(filters);
       const data = (res as any)?.data;
       if (requestId === statsRequestRef.current && (res as any)?.success && data) {
@@ -1158,11 +1272,12 @@ function LeavesPageContent() {
   const loadData = async () => {
     const requestId = ++dataRequestRef.current;
     setLoading(true);
-    const filters = getLeavesODFilters();
+    const leaveFiltersForApi = getLeaveFilters();
+    const odFiltersForApi = getOdFilters();
     try {
       const [leavesRes, odsRes] = await Promise.all([
-        api.getLeaves({ ...filters, page: 1, limit: leavesLimit }),
-        api.getODs({ ...filters, page: 1, limit: odsLimit }),
+        api.getLeaves({ ...leaveFiltersForApi, page: 1, limit: leavesLimit }),
+        api.getODs({ ...odFiltersForApi, page: 1, limit: odsLimit }),
       ]);
       if (requestId === dataRequestRef.current && leavesRes.success) {
         setLeaves(leavesRes.data || []);
@@ -1187,7 +1302,7 @@ function LeavesPageContent() {
     const limit = limitOverride ?? leavesLimit;
     setLoading(true);
     try {
-      const res = await api.getLeaves({ ...getLeavesODFilters(), page, limit });
+      const res = await api.getLeaves({ ...getLeaveFilters(), page, limit });
       if (res.success) {
         setLeaves(res.data || []);
         setLeavesTotal((res as any).total ?? 0);
@@ -1204,7 +1319,7 @@ function LeavesPageContent() {
     const limit = limitOverride ?? odsLimit;
     setLoading(true);
     try {
-      const res = await api.getODs({ ...getLeavesODFilters(), page, limit });
+      const res = await api.getODs({ ...getOdFilters(), page, limit });
       if (res.success) {
         setODs(res.data || []);
         setODsTotal((res as any).total ?? 0);
@@ -1282,6 +1397,9 @@ function LeavesPageContent() {
         const steps = (wf.steps || []).slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
         setLeaveWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
       }
+      if (leaveSettingsRes.success && Array.isArray(leaveSettingsRes.data?.statuses)) {
+        setLeaveStatusDefs(leaveSettingsRes.data.statuses as LeaveOdStatusDef[]);
+      }
 
       // Extract OD types from settings (field is 'types' not 'odTypes')
       let fetchedODTypes: any[] = [];
@@ -1304,6 +1422,9 @@ function LeavesPageContent() {
         setODWorkflowAllowHigherAuthority(Boolean(wf.allowHigherAuthorityToApproveLowerLevels));
         const steps = (wf.steps || []).slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
         setODWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
+      }
+      if (odSettingsRes.success && Array.isArray(odSettingsRes.data?.statuses)) {
+        setOdStatusDefs(odSettingsRes.data.statuses as LeaveOdStatusDef[]);
       }
 
       // Use fetched types or defaults
@@ -1417,6 +1538,47 @@ function LeavesPageContent() {
           toast.error('Second-half attendance already present. Attendance is preferred over leave on same half.');
           return;
         }
+      }
+    }
+
+    // Active-request conflict rules:
+    // - opposite half on the same day is allowed
+    // - same half is blocked
+    // - any active half-day blocks a new full-day request on that date
+    // - any active full-day blocks any additional request on that date
+    if (formData.fromDate && selectedEmployee) {
+      const requestedIsHalfDay = Boolean(formData.isHalfDay);
+      const requestedFrom = normalizeRequestDate(formData.fromDate);
+      const requestedTo = normalizeRequestDate(formData.toDate || formData.fromDate);
+      const targetEmpId = String((selectedEmployee as any)._id || '').trim();
+
+      try {
+        const [leaveRes, odRes] = await Promise.all([
+          api.getLeaves({ employeeId: targetEmpId, fromDate: requestedFrom, toDate: requestedTo, page: 1, limit: 100 }),
+          api.getODs({ employeeId: targetEmpId, fromDate: requestedFrom, toDate: requestedTo, page: 1, limit: 100 }),
+        ]);
+
+        const activeLeaves = leaveRes?.success && Array.isArray(leaveRes.data) ? (leaveRes.data as LeaveApplication[]) : [];
+        const activeOds = odRes?.success && Array.isArray(odRes.data) ? (odRes.data as ODApplication[]) : [];
+
+        const conflictMessage = findActiveHalfDayConflict(
+          [...activeLeaves, ...activeOds],
+          {
+            fromDate: requestedFrom,
+            toDate: requestedTo,
+            isHalfDay: requestedIsHalfDay,
+            halfDayType: requestedIsHalfDay ? formData.halfDayType : null,
+            requestLabel: applyType,
+          }
+        );
+
+        if (conflictMessage) {
+          toast.error(conflictMessage);
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // Keep submit working if the pre-check API fails; backend validations remain authoritative.
       }
     }
 
@@ -1670,22 +1832,18 @@ function LeavesPageContent() {
       const response = await api.updateOD(selectedItem._id, { endEvidence });
       if (response.success) {
         const movedToPending = response?.data?.status === 'pending';
-        Swal.fire({
-          icon: 'success',
-          title: 'Success!',
-          text: movedToPending ? 'OD OUT submitted. Request moved to pending.' : 'OD OUT evidence submitted.',
-          timer: 2000,
-          showConfirmButton: false,
-        });
         setShowOutEvidenceDialog(false);
         setOdOutEvidenceFile(null);
         setOdOutLocationData(null);
         setShowDetailDialog(false);
         setSelectedItem(null);
-        loadData();
+        await loadData();
         if (activeTab === 'pending') {
-          loadPendingData();
+          await loadPendingData();
         }
+        toast.success(
+          movedToPending ? 'OD OUT submitted. Request moved to pending.' : 'OD OUT evidence submitted.',
+        );
       } else {
         toast.error(response.error || 'Failed to submit OD OUT evidence');
       }
@@ -2684,7 +2842,7 @@ function LeavesPageContent() {
               value: dashboardStats.totalPendingLeaves, 
               color: 'bg-amber-500', 
               clickable: true,
-              onClick: () => setBreakdownModal({ isOpen: true, title: 'Leave Status', data: dashboardStats.leavesBreakdown })
+              onClick: () => setBreakdownModal({ isOpen: true, title: 'Leave Status', data: dashboardStats.leavesBreakdown, kind: 'leave' })
             },
             { label: 'Rejected', value: dashboardStats.totalRejectedLeaves, color: 'bg-rose-600' },
           ]}
@@ -2702,7 +2860,7 @@ function LeavesPageContent() {
               value: dashboardStats.totalPendingODs, 
               color: 'bg-amber-500', 
               clickable: true,
-              onClick: () => setBreakdownModal({ isOpen: true, title: 'OD Status', data: dashboardStats.odsBreakdown })
+              onClick: () => setBreakdownModal({ isOpen: true, title: 'OD Status', data: dashboardStats.odsBreakdown, kind: 'od' })
             },
             { label: 'Rejected', value: dashboardStats.totalRejectedODs, color: 'bg-rose-600' },
           ]}
@@ -2777,17 +2935,17 @@ function LeavesPageContent() {
           />
 
           <select
-            value={leaveFilters.status}
-            onChange={(e) => setLeaveFilters(prev => ({ ...prev, status: e.target.value }))}
+            value={activeTab === 'od' ? leaveFilters.odStatus : leaveFilters.leaveStatus}
+            onChange={(e) =>
+              setLeaveFilters(prev => (
+                activeTab === 'od'
+                  ? { ...prev, odStatus: e.target.value }
+                  : { ...prev, leaveStatus: e.target.value }
+              ))
+            }
             className="h-9 pl-3 pr-8 text-[11px] font-bold uppercase tracking-wider bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 shadow-sm"
           >
-            {(activeTab === 'od' ? odStatusFilterOptions : [
-              { value: '', label: 'Status' },
-              { value: 'pending', label: 'Pending' },
-              { value: 'approved', label: 'Approved' },
-              { value: 'rejected', label: 'Rejected' },
-              { value: 'cancelled', label: 'Cancelled' },
-            ]).map((opt) => (
+            {(activeTab === 'od' ? odStatusFilterOptions : leaveStatusFilterOptions).map((opt) => (
               <option key={opt.value || 'all'} value={opt.value}>{opt.label}</option>
             ))}
           </select>
@@ -3188,7 +3346,7 @@ function LeavesPageContent() {
                         <td className="px-4 py-3">{leave.leaveType}</td>
                         <td className="px-4 py-3">{formatDate(leave.fromDate)} – {formatDate(leave.toDate)}</td>
                         <td className="px-4 py-3">{leave.numberOfDays}</td>
-                        <td className="px-4 py-3"><span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(leave.status)}`}>{leave.status.replace('_', ' ')}</span></td>
+                        <td className="px-4 py-3"><span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(leave.status)}`}>{formatLeaveLbl(leave.status)}</span></td>
                         <td className="px-4 py-3 text-right">
                           <button
                             type="button"
@@ -3341,7 +3499,7 @@ function LeavesPageContent() {
                         <td className="px-4 py-3 max-w-[120px] truncate" title={od.placeVisited}>{od.placeVisited || '–'}</td>
                         <td className="px-4 py-3">{formatDate(od.fromDate)} – {formatDate(od.toDate)}</td>
                         <td className="px-4 py-3">{od.numberOfDays}</td>
-                        <td className="px-4 py-3"><span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(od.status)}`}>{getStatusLabel(od.status)}</span></td>
+                        <td className="px-4 py-3"><span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(od.status)}`}>{formatOdLbl(od.status)}</span></td>
                         <td className="px-4 py-3 text-right">
                           <button
                             type="button"
@@ -3404,7 +3562,7 @@ function LeavesPageContent() {
                         <div className="text-xs text-slate-500">({formatEmpNoWithDesignation(od)}) · {od.odType} · {od.numberOfDays}d</div>
                         <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">{formatDate(od.fromDate)} – {formatDate(od.toDate)}</div>
                         {od.placeVisited && <div className="text-xs text-slate-500 mt-0.5 truncate">{od.placeVisited}</div>}
-                        <span className={`inline-block mt-2 px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(od.status)}`}>{getStatusLabel(od.status)}</span>
+                        <span className={`inline-block mt-2 px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(od.status)}`}>{formatOdLbl(od.status)}</span>
                       </div>
                       <div className="flex flex-col gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <button
@@ -3445,11 +3603,12 @@ function LeavesPageContent() {
 
       {/* Apply Leave/OD Dialog */}
       {showApplyDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:p-4">
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApplyDialog(false)} />
-          <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+          <div className="relative z-50 my-auto flex h-auto min-h-0 w-full max-w-lg max-h-[min(90dvh,calc(100dvh-3rem))] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
+            <div className="shrink-0 space-y-4 border-b border-slate-100 px-6 pb-4 pt-6 dark:border-slate-800">
             {/* Type Toggle */}
-            <div className="flex gap-2 mb-6">
+            <div className="flex gap-2">
               <button
                 onClick={() => setApplyType('leave')}
                 className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'leave'
@@ -3476,11 +3635,13 @@ function LeavesPageContent() {
               </button>
             </div>
 
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
               Apply for {applyType === 'leave' ? 'Leave' : 'On Duty'}
             </h2>
+            </div>
 
-            <form onSubmit={handleApply} className="space-y-4">
+            <form onSubmit={handleApply} className="flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain space-y-4 px-6 py-4">
               {/* Apply For - Employee Selection */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
@@ -4112,9 +4273,9 @@ function LeavesPageContent() {
                   Monthly apply limit reached for this payroll period. You can’t submit a new request for the selected from-date period.
                 </div>
               )}
+              </div>
 
-              {/* Buttons */}
-              <div className="flex gap-3 pt-4">
+              <div className="flex shrink-0 gap-3 border-t border-slate-100 bg-white/95 px-6 py-4 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
                 <button
                   type="button"
                   onClick={() => setShowApplyDialog(false)}
@@ -4160,26 +4321,90 @@ function LeavesPageContent() {
 
       {/* Detail Dialog - styled like workspace */}
       {showDetailDialog && selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:p-4">
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => {
             setShowDetailDialog(false);
             setSelectedItem(null);
             setIsChangeHistoryExpanded(false);
           }} />
-          <div className="relative z-50 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+          <div className="relative z-50 my-auto flex h-auto min-h-0 w-full max-w-4xl max-h-[min(90dvh,calc(100dvh-2rem))] flex-col overflow-hidden rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl animate-in zoom-in-95 duration-300">
             {/* Header */}
-            <div className={`shrink-0 px-6 py-4 sm:px-8 sm:py-6 border-b border-white/10 ${detailType === 'leave'
+            <div className={`shrink-0 w-full min-w-0 overflow-hidden rounded-t-3xl border-b border-white/10 ${detailType === 'leave'
               ? 'bg-gradient-to-r from-blue-600 to-blue-500'
               : 'bg-gradient-to-r from-purple-600 to-purple-500'
               }`}>
+              {detailType === 'od' ? (
+                <div className="box-border w-full min-w-0 px-4 pb-3 pt-3 sm:px-6 sm:pb-4 sm:pt-4" role="region" aria-label="On duty request">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                    <div className="flex min-w-0 w-full items-start gap-3 sm:flex-1 sm:basis-0 sm:gap-4">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-md sm:h-11 sm:w-11">
+                        <Briefcase className="h-5 w-5 text-white sm:h-[22px] sm:w-[22px]" aria-hidden />
+                      </div>
+                      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+                        <p className="break-words text-lg font-black leading-snug text-white sm:text-xl [overflow-wrap:anywhere]">
+                          {selectedItem.employeeId?.employee_name || `${(selectedItem.employeeId as any)?.first_name || ''} ${(selectedItem.employeeId as any)?.last_name || ''}`.trim() || selectedItem.emp_no}
+                        </p>
+                        <p className="mt-1 text-[11px] font-bold uppercase tracking-tight text-white/85 sm:text-xs">
+                          {formatEmpNoWithDesignation(selectedItem)}
+                        </p>
+                        {selectedItem.contactNumber && (
+                          <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-t border-white/15 pt-2 text-[12px] sm:text-[13px]">
+                            <span className="font-black uppercase tracking-wider text-[10px] text-white/65">Contact</span>
+                            <a
+                              href={`tel:${String(selectedItem.contactNumber).replace(/\s+/g, '')}`}
+                              className="font-semibold tabular-nums text-white underline-offset-2 hover:underline"
+                            >
+                              {selectedItem.contactNumber}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDetailDialog(false);
+                          setSelectedItem(null);
+                          setIsChangeHistoryExpanded(false);
+                        }}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20 sm:hidden"
+                        aria-label="Close"
+                      >
+                        <X className="h-4 w-4 text-white" />
+                      </button>
+                    </div>
+                    <div className="flex w-full min-w-0 flex-col items-center gap-2 border-t border-white/15 pt-2 sm:w-auto sm:shrink-0 sm:flex-col sm:items-end sm:border-t-0 sm:pt-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDetailDialog(false);
+                          setSelectedItem(null);
+                          setIsChangeHistoryExpanded(false);
+                        }}
+                        className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20 sm:inline-flex"
+                        aria-label="Close"
+                      >
+                        <X className="h-4 w-4 text-white" />
+                      </button>
+                      <span className={`w-full max-w-md px-3 py-1 text-center text-[10px] font-black uppercase leading-tight tracking-widest sm:max-w-[14rem] sm:text-right ${getStatusColor(selectedItem.status)} rounded-lg border border-white/20`}>
+                        {formatOdLbl(selectedItem.status)}
+                      </span>
+                      <div className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider text-white/80 sm:justify-end">
+                        <Clock3 className="h-3.5 w-3.5 shrink-0" />
+                        <span className="text-center sm:text-right">Applied {formatDate((selectedItem as any).createdAt || selectedItem.appliedAt)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+              <div className="px-6 py-4 sm:px-8 sm:py-6">
               <div className="flex items-center justify-between text-white">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-md">
-                    {detailType === 'leave' ? <Calendar className="w-5 h-5" /> : <Briefcase className="w-5 h-5" />}
+                    <Calendar className="w-5 h-5" />
                   </div>
                   <div>
                     <h2 className="text-base sm:text-lg font-black uppercase tracking-wider">
-                      {detailType === 'leave' ? 'Leave Details' : 'OD Details'}
+                      Leave Details
                     </h2>
                   </div>
                 </div>
@@ -4196,62 +4421,15 @@ function LeavesPageContent() {
                   </button>
                 </div>
               </div>
+              </div>
+              )}
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8">
-              {/* Top Section: Employee & Status */}
-              {detailType === 'od' && (
-                <div className="rounded-2xl border-2 border-purple-200/80 dark:border-purple-800/60 bg-gradient-to-br from-purple-50/95 to-white dark:from-purple-950/40 dark:to-slate-900 p-4 sm:p-6 shadow-sm">
-                  <p className="text-[10px] uppercase font-black text-purple-600 dark:text-purple-300 tracking-widest mb-4">Employee</p>
-                  <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-6">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-xl bg-purple-600 shadow-purple-500/20 shrink-0">
-                        {(selectedItem.employeeId?.employee_name?.[0] || selectedItem.emp_no?.[0] || 'E').toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="font-black text-slate-900 dark:text-white text-xl truncate">
-                          {selectedItem.employeeId?.employee_name || `${(selectedItem.employeeId as any)?.first_name || ''} ${(selectedItem.employeeId as any)?.last_name || ''}`.trim() || selectedItem.emp_no}
-                        </h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 font-bold uppercase tracking-tight truncate">
-                          {formatEmpNoWithDesignation(selectedItem)}
-                        </p>
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {selectedItem.department?.name && (
-                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-white/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-purple-100 dark:border-slate-700">
-                              {selectedItem.department.name}
-                            </span>
-                          )}
-                          {selectedItem.designation?.name && (
-                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-white/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-purple-100 dark:border-slate-700">
-                              {selectedItem.designation.name}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto justify-between sm:justify-start shrink-0">
-                      <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest border ${getStatusColor(selectedItem.status)}`}>
-                        {getStatusLabel(selectedItem.status)}
-                      </span>
-                      <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-bold text-[10px] uppercase tracking-wider">
-                        <Clock3 className="w-3.5 h-3.5" />
-                        Applied {formatDate((selectedItem as any).createdAt || selectedItem.appliedAt)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+            <div className={`min-h-0 flex-1 overflow-y-auto overscroll-y-contain ${detailType === 'od' ? 'p-4 sm:p-5 md:p-6 space-y-4' : 'p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8'}`}>
               {detailType === 'leave' && (
               <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-6">
-                <div className="flex items-center gap-4">
-                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-xl ${detailType === 'leave'
-                    ? 'bg-blue-600 shadow-blue-500/20'
-                    : 'bg-purple-600 shadow-purple-500/20'
-                    }`}>
-                    {(selectedItem.employeeId?.employee_name?.[0] || selectedItem.emp_no?.[0] || 'E').toUpperCase()}
-                  </div>
-                  <div>
+                <div className="min-w-0 flex-1">
                     <h3 className="font-black text-slate-900 dark:text-white text-xl">
                       {selectedItem.employeeId?.employee_name || `${(selectedItem.employeeId as any)?.first_name || ''} ${(selectedItem.employeeId as any)?.last_name || ''}`.trim() || selectedItem.emp_no}
                     </h3>
@@ -4270,11 +4448,10 @@ function LeavesPageContent() {
                         </span>
                       )}
                     </div>
-                  </div>
                 </div>
                 <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto justify-between sm:justify-start">
                   <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest border ${getStatusColor(selectedItem.status)}`}>
-                    {getStatusLabel(selectedItem.status)}
+                    {formatLeaveLbl(selectedItem.status)}
                   </span>
                   <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px] uppercase tracking-wider">
                     <Clock3 className="w-3.5 h-3.5" />
@@ -4381,71 +4558,43 @@ function LeavesPageContent() {
 
               {/* Photo Evidence & Location */}
               {detailType === 'od' && (
-                <div className="rounded-xl bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-5 border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs uppercase font-bold text-slate-400 mb-3 tracking-wider">Request details</p>
-                  <div className="space-y-4 mb-6">
-                    <div className="p-3 rounded-xl bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 shadow-sm">
-                      <p className="text-[11px] font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider">Place of visit</p>
-                      <p className="mt-2 text-sm font-bold text-slate-900 dark:text-white leading-snug break-words">
-                        {(selectedItem as ODApplication).placeVisited || (selectedItem as any).geoLocation?.address || 'No location specified'}
-                      </p>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 sm:p-3 dark:border-slate-700 dark:bg-slate-900/50">
+                  <p className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">Request details</p>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-b border-slate-200 pb-1.5 dark:border-slate-600 sm:grid-cols-4">
+                    <div className="min-w-0">
+                      <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">From</span>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white sm:text-sm">{formatDate(selectedItem.fromDate)}</span>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 shadow-sm">
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">From</p>
-                        <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem.fromDate)}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">To</p>
-                        <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem.toDate)}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Duration</p>
-                        <p className="text-sm font-bold text-slate-900 dark:text-white">{selectedItem.numberOfDays}d</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Type</p>
-                        <p className="text-sm font-bold text-slate-900 dark:text-white capitalize">
-                          {((selectedItem as ODApplication).odType || '-').replace(/_/g, ' ')}
-                        </p>
-                      </div>
+                    <div className="min-w-0">
+                      <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">To</span>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white sm:text-sm">{formatDate(selectedItem.toDate)}</span>
                     </div>
-                    <div className="p-3 rounded-xl bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 shadow-sm">
-                      <p className="text-[11px] font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider">Purpose</p>
-                      <p className="mt-2 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                        {selectedItem.purpose || 'No purpose specified'}
-                      </p>
+                    <div className="min-w-0">
+                      <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Duration</span>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white sm:text-sm">{selectedItem.numberOfDays}d</span>
                     </div>
-                    {selectedItem.contactNumber && (
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 pt-2 border-t border-slate-200 dark:border-slate-700 text-sm text-slate-700 dark:text-slate-300">
-                        <span className="font-bold text-xs uppercase text-slate-400 tracking-wider shrink-0">Contact</span>
-                        <span className="font-medium text-slate-900 dark:text-white break-all">{selectedItem.contactNumber}</span>
-                      </div>
-                    )}
+                    <div className="min-w-0">
+                      <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Type</span>
+                      <span className="text-xs font-bold capitalize text-slate-900 dark:text-white sm:text-sm">
+                        {((selectedItem as ODApplication).odType || '-').replace(/_/g, ' ')}
+                      </span>
+                    </div>
                   </div>
-                  <p className="text-xs uppercase font-bold text-slate-400 mb-3 tracking-wider border-t border-slate-200 dark:border-slate-700 pt-4">Evidence & Location</p>
-                  {selectedItem.status === 'draft' &&
-                    !(selectedItem as any).endEvidence?.submittedAt &&
-                    (
-                      isSuperAdmin ||
-                      isSubAdmin ||
-                      isHR ||
-                      isManager ||
-                      isHOD ||
-                      selectedItem.appliedBy?._id === (auth.getUser() as any)?._id ||
-                      (selectedItem as any).appliedBy === (auth.getUser() as any)?._id
-                    ) && (
-                      <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-purple-200 dark:border-purple-900/40 bg-purple-50 dark:bg-purple-900/20 px-3 py-2">
-                        <p className="text-xs font-semibold text-purple-700 dark:text-purple-300">OD OUT evidence is pending for this draft request.</p>
-                        <button
-                          type="button"
-                          onClick={() => setShowOutEvidenceDialog(true)}
-                          className="px-3 py-1.5 text-xs font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700"
-                        >
-                          Submit OD OUT
-                        </button>
-                      </div>
-                    )}
+                  <dl className="mt-1.5 grid grid-cols-2 gap-2 text-sm sm:gap-x-3">
+                    <div className="min-w-0 rounded-md border border-slate-100 bg-white/80 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/40">
+                      <dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">Place of visit</dt>
+                      <dd className="mt-0.5 min-w-0 break-words font-bold leading-snug text-slate-900 dark:text-white">
+                        {(selectedItem as ODApplication).placeVisited || (selectedItem as any).geoLocation?.address || 'No location specified'}
+                      </dd>
+                    </div>
+                    <div className="min-w-0 rounded-md border border-slate-100 bg-white/80 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/40">
+                      <dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">Purpose</dt>
+                      <dd className="mt-0.5 min-w-0 break-words leading-snug text-slate-700 dark:text-slate-300">
+                        {selectedItem.purpose || 'No purpose specified'}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="mb-2 mt-2 border-t border-slate-200 pt-2 text-xs font-bold uppercase tracking-wider text-slate-400 dark:border-slate-700">Evidence & Location</p>
                   {(() => {
                     const minutes = (selectedItem as any).evidenceDurationMinutes;
                     if (minutes == null) return null;
@@ -4465,6 +4614,18 @@ function LeavesPageContent() {
                         submittedAt: (selectedItem as any).createdAt || (selectedItem as any).appliedAt,
                       };
                       const endEvidence = (selectedItem as any).endEvidence || null;
+                      const showSubmitOdOutInCard =
+                        selectedItem.status === 'draft' &&
+                        !(selectedItem as any).endEvidence?.submittedAt &&
+                        (
+                          isSuperAdmin ||
+                          isSubAdmin ||
+                          isHR ||
+                          isManager ||
+                          isHOD ||
+                          selectedItem.appliedBy?._id === (auth.getUser() as any)?._id ||
+                          (selectedItem as any).appliedBy === (auth.getUser() as any)?._id
+                        );
                       const rows = [
                         { title: 'OD IN', data: startEvidence },
                         { title: 'OD OUT', data: endEvidence },
@@ -4473,12 +4634,32 @@ function LeavesPageContent() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {rows.map((row) => (
                             <div key={row.title} className="p-3 rounded-lg bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700">
-                              <div className="flex items-center justify-between mb-2">
+                              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                                 <p className="text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">{row.title}</p>
-                                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                                <span
+                                  className={`shrink-0 rounded-lg border px-2.5 py-1 text-[11px] font-black tabular-nums ${
+                                    row.data?.submittedAt
+                                      ? 'border-purple-300 bg-purple-100 text-purple-950 dark:border-purple-600 dark:bg-purple-950/70 dark:text-purple-50'
+                                      : 'border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-600 dark:bg-amber-950/50 dark:text-amber-100'
+                                  }`}
+                                >
                                   {row.data?.submittedAt ? new Date(row.data.submittedAt).toLocaleString() : 'Not submitted'}
-                                </p>
+                                </span>
                               </div>
+                              {row.title === 'OD OUT' && showSubmitOdOutInCard && (
+                                <div className="mb-2 flex flex-col items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2.5 text-center dark:border-purple-900/50 dark:bg-purple-900/25 sm:items-stretch sm:border-0 sm:bg-transparent sm:p-0 sm:text-left dark:sm:bg-transparent">
+                                  <p className="text-[11px] font-semibold leading-snug text-purple-800 dark:text-purple-200 sm:text-xs">
+                                    OD OUT evidence is pending for this draft request.
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowOutEvidenceDialog(true)}
+                                    className="mx-auto w-full max-w-xs shrink-0 rounded-lg bg-purple-600 px-3 py-2 text-xs font-bold text-white hover:bg-purple-700 sm:w-auto sm:max-w-none sm:py-1.5"
+                                  >
+                                    Submit OD OUT
+                                  </button>
+                                </div>
+                              )}
                               {row.data?.photoEvidence?.url ? (
                                 <a href={row.data.photoEvidence.url} target="_blank" rel="noopener noreferrer">
                                   <img src={row.data.photoEvidence.url} alt={`${row.title} evidence`} className="w-full h-32 rounded-lg object-cover border border-slate-200 dark:border-slate-700 mb-2" />
@@ -5070,7 +5251,7 @@ function LeavesPageContent() {
               </div>
 
               {/* Footer */}
-              <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row gap-3 justify-end items-stretch sm:items-center">
+              <div className="shrink-0 border-t border-slate-200 bg-slate-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] dark:border-slate-700 dark:bg-slate-900 flex flex-col sm:flex-row gap-3 justify-end items-stretch sm:items-center">
                 <button
                   onClick={() => {
                     setShowDetailDialog(false);
@@ -5090,32 +5271,36 @@ function LeavesPageContent() {
 
       {/* OD OUT Evidence Dialog */}
       {showOutEvidenceDialog && selectedItem && detailType === 'od' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:p-4">
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => !submittingOutEvidence && setShowOutEvidenceDialog(false)} />
-          <div className="relative z-50 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Submit OD OUT Evidence</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-5">
-              This will move the OD request from Draft to Pending.
-            </p>
-            <LocationPhotoCapture
-              required
-              label="OD OUT Photo Evidence"
-              onCapture={(loc, photo) => {
-                setOdOutEvidenceFile(photo.file);
-                setOdOutLocationData(loc);
-                (photo.file as any).exifLocation = photo.exifLocation;
-              }}
-              onClear={() => {
-                setOdOutEvidenceFile(null);
-                setOdOutLocationData(null);
-              }}
-            />
-            <div className="flex gap-3 pt-4">
+          <div className="relative z-[60] my-auto flex h-auto min-h-0 w-full max-w-lg max-h-[min(92dvh,calc(100dvh-3rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="shrink-0 border-b border-slate-100 px-6 pb-4 pt-6 dark:border-slate-800">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Submit OD OUT Evidence</h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                This will move the OD request from Draft to Pending.
+              </p>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-6 py-4">
+              <LocationPhotoCapture
+                required
+                label="OD OUT Photo Evidence"
+                onCapture={(loc, photo) => {
+                  setOdOutEvidenceFile(photo.file);
+                  setOdOutLocationData(loc);
+                  (photo.file as any).exifLocation = photo.exifLocation;
+                }}
+                onClear={() => {
+                  setOdOutEvidenceFile(null);
+                  setOdOutLocationData(null);
+                }}
+              />
+            </div>
+            <div className="flex shrink-0 gap-3 border-t border-slate-100 bg-white/95 px-6 py-4 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
               <button
                 type="button"
                 onClick={() => setShowOutEvidenceDialog(false)}
                 disabled={submittingOutEvidence}
-                className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                className="flex-1 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300"
               >
                 Cancel
               </button>
@@ -5123,7 +5308,7 @@ function LeavesPageContent() {
                 type="button"
                 onClick={handleSubmitODEndEvidence}
                 disabled={submittingOutEvidence || !odOutEvidenceFile || !odOutLocationData}
-                className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-purple-600 rounded-xl hover:bg-purple-700 disabled:opacity-50"
+                className="flex-1 rounded-xl bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
               >
                 {submittingOutEvidence ? 'Submitting...' : 'Submit OUT'}
               </button>
@@ -5600,6 +5785,11 @@ function LeavesPageContent() {
         onClose={() => setBreakdownModal(prev => ({ ...prev, isOpen: false }))}
         title={breakdownModal.title}
         breakdown={breakdownModal.data}
+        resolveLabel={(key) =>
+          breakdownModal.kind === 'od'
+            ? fmtOdStatus(key, odStatusLabelMap)
+            : fmtLeaveStatus(key, leaveStatusLabelMap)
+        }
       />
     </div >
   );

@@ -52,6 +52,18 @@ import {
   validateEmployeeRow,
   ParsedRow,
 } from '@/lib/bulkUpload';
+import {
+  appendOverallCertificateStatusToSetting,
+  canonicalQualificationStatus,
+  getQualificationStatusSelectOptions,
+  isVerifiedOverallStatusForIcon,
+  mergeOverallQualificationStatusOptions,
+  OVERALL_CERTIFICATE_STATUS_SELECT_ADD_SENTINEL,
+  overallQualificationStatusLabel,
+  qualificationStatusBadgeClass,
+  sanitizeOverallQualificationStatusStore,
+} from '@/lib/qualificationStatus';
+import ManageOverallCertificateStatusDialog from '@/components/employee/ManageOverallCertificateStatusDialog';
 
 interface Employee {
   _id: string;
@@ -303,6 +315,21 @@ export default function EmployeesPage() {
   const [submittingBankUpdate, setSubmittingBankUpdate] = useState(false);
   const [formData, setFormData] = useState<Partial<Employee>>(initialFormState);
   const [formSettings, setFormSettings] = useState<any>(null); // To store dynamic settings for mapping
+  /** Shared suggestions for overall certificate status (`qualification_statuses` setting + in-use values). */
+  const [qualificationStatusesSetting, setQualificationStatusesSetting] = useState<unknown>(null);
+  const [addOverallCertDialogOpen, setAddOverallCertDialogOpen] = useState(false);
+  const [addOverallCertSubmitting, setAddOverallCertSubmitting] = useState(false);
+
+  const overallCertificateStatusOptions = useMemo(
+    () =>
+      mergeOverallQualificationStatusOptions({
+        settingList: qualificationStatusesSetting ?? formSettings?.qualification_statuses,
+        employeeValues: employees.map((e) => e.qualificationStatus),
+        current: viewingEmployee?.qualificationStatus,
+      }),
+    [qualificationStatusesSetting, formSettings?.qualification_statuses, employees, viewingEmployee?.qualificationStatus]
+  );
+
   const [applicationFormData, setApplicationFormData] = useState<Partial<EmployeeApplication & { proposedSalary: number }>>({ ...initialFormState, proposedSalary: 0 });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [approvalData, setApprovalData] = useState({ approvedSalary: 0, doj: '', comments: '' });
@@ -975,6 +1002,21 @@ export default function EmployeesPage() {
     }
   };
 
+  const loadQualificationStatusesSetting = useCallback(async () => {
+    try {
+      const res = await api.getSetting('qualification_statuses');
+      if (res.success && res.data) {
+        setQualificationStatusesSetting(res.data.value ?? null);
+      }
+    } catch {
+      setQualificationStatusesSetting(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadQualificationStatusesSetting();
+  }, [loadQualificationStatusesSetting]);
+
   const generateDynamicTemplate = (settings: any, opts?: { includeEmployeeGroup?: boolean }) => {
     if (!settings || !settings.groups) return;
 
@@ -1282,6 +1324,7 @@ export default function EmployeesPage() {
         }
 
         setDataSource(response.dataSource || 'mongodb');
+        void loadQualificationStatusesSetting();
 
         // Update pagination state
         const pagination = response.pagination;
@@ -2132,6 +2175,81 @@ export default function EmployeesPage() {
     }
   };
 
+  const handleQualificationStatusChange = async (rawInput: string): Promise<boolean> => {
+    if (!viewingEmployee?.emp_no) return false;
+
+    const prev = viewingEmployee;
+    const stored = sanitizeOverallQualificationStatusStore(rawInput);
+    setViewingEmployee({ ...viewingEmployee, qualificationStatus: stored ?? undefined } as Employee);
+
+    try {
+      const response = await api.updateEmployee(viewingEmployee.emp_no, { qualificationStatus: stored });
+      if (response.success) {
+        setEmployees((p) =>
+          p.map((emp) => (emp.emp_no === viewingEmployee.emp_no ? { ...emp, qualificationStatus: stored ?? undefined } : emp))
+        );
+        if (response.data) setViewingEmployee(response.data as Employee);
+        return true;
+      }
+      setViewingEmployee(prev);
+      setError(response.message || 'Failed to update certificate status');
+      return false;
+    } catch (err: any) {
+      setViewingEmployee(prev);
+      setError(err.message || 'An error occurred');
+      console.error(err);
+      return false;
+    }
+  };
+
+  const submitAddOverallCertificateStatus = async (raw: string) => {
+    setAddOverallCertSubmitting(true);
+    setError('');
+    try {
+      const { merged } = await appendOverallCertificateStatusToSetting(
+        { getSetting: api.getSetting, upsertSetting: api.upsertSetting },
+        raw
+      );
+      if (merged.length) setQualificationStatusesSetting(merged);
+      const ok = await handleQualificationStatusChange(raw);
+      if (ok) setAddOverallCertDialogOpen(false);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to add certificate status');
+    } finally {
+      setAddOverallCertSubmitting(false);
+    }
+  };
+
+  const handleQualificationRowStatusChange = async (rowIdx: number, newStatus: string) => {
+    if (!viewingEmployee?.emp_no) return;
+
+    const prev = viewingEmployee;
+    const quals = Array.isArray(viewingEmployee.qualifications) ? [...viewingEmployee.qualifications] : [];
+    if (!quals[rowIdx]) return;
+
+    const normalized = canonicalQualificationStatus(newStatus);
+    const nextQuals = [...quals];
+    nextQuals[rowIdx] = { ...nextQuals[rowIdx], status: normalized };
+    setViewingEmployee({ ...viewingEmployee, qualifications: nextQuals } as Employee);
+
+    try {
+      const response = await api.updateEmployee(viewingEmployee.emp_no, { qualifications: nextQuals });
+      if (response.success) {
+        setEmployees((p) =>
+          p.map((emp) => (emp.emp_no === viewingEmployee.emp_no ? { ...emp, qualifications: nextQuals } : emp))
+        );
+        if (response.data) setViewingEmployee(response.data as Employee);
+      } else {
+        setViewingEmployee(prev);
+        setError(response.message || 'Failed to update qualification verification');
+      }
+    } catch (err: any) {
+      setViewingEmployee(prev);
+      setError(err.message || 'An error occurred');
+      console.error(err);
+    }
+  };
+
   const handleViewEmployee = async (employee: Employee) => {
     setViewingEmployee(employee);
     setShowViewDialog(true);
@@ -2160,6 +2278,7 @@ export default function EmployeesPage() {
       employee_group_id: (application as any).employee_group_id,
       employee_group: (application as any).employee_group,
       department: application.department,
+      division: (application as any).division,
       designation: application.designation,
       doj: application.doj,
       dob: application.dob,
@@ -3608,14 +3727,9 @@ export default function EmployeesPage() {
                         )}
                         {userRole !== 'hod' && userRole !== 'employee' && (
                           <td className="whitespace-nowrap px-6 py-4">
-                            <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${employee.qualificationStatus === 'verified'
-                              ? 'bg-status-positive/10 text-status-positive'
-                              : employee.qualificationStatus === 'pending'
-                                ? 'bg-status-warning/10 text-status-warning'
-                                : 'bg-text-secondary/10 text-text-secondary'
-                              }`}>
-                              {employee.qualificationStatus === 'verified' ? <CheckCircle className="w-3 h-3" /> : <LucideClock className="w-3 h-3" />}
-                              {employee.qualificationStatus || 'Not Uploaded'}
+                            <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${qualificationStatusBadgeClass(employee.qualificationStatus)}`}>
+                              {isVerifiedOverallStatusForIcon(employee.qualificationStatus) ? <CheckCircle className="w-3 h-3" /> : <LucideClock className="w-3 h-3" />}
+                              {overallQualificationStatusLabel(employee.qualificationStatus, overallCertificateStatusOptions)}
                             </span>
                           </td>
                         )}
@@ -3871,13 +3985,8 @@ export default function EmployeesPage() {
                     {userRole !== 'hod' && userRole !== 'employee' && (
                       <div className="flex items-center gap-1.5 text-xs text-text-secondary">
                         <span className="font-medium">Cert Status:</span>
-                        <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${employee.qualificationStatus === 'verified'
-                          ? 'bg-status-positive/10 text-status-positive'
-                          : employee.qualificationStatus === 'pending'
-                            ? 'bg-status-warning/10 text-status-warning'
-                            : 'bg-text-secondary/10 text-text-secondary'
-                          }`}>
-                          {employee.qualificationStatus || 'Not Uploaded'}
+                        <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${qualificationStatusBadgeClass(employee.qualificationStatus)}`}>
+                          {overallQualificationStatusLabel(employee.qualificationStatus, overallCertificateStatusOptions)}
                         </span>
                       </div>
                     )}
@@ -6089,6 +6198,15 @@ export default function EmployeesPage() {
                       <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.employee_name || '-'}</p>
                     </div>
                     <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('division_id', formSettings) || 'Division'}</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {(viewingEmployee as any).division?.name
+                          || (typeof viewingEmployee.division_id === 'object' && viewingEmployee.division_id && 'name' in (viewingEmployee.division_id as object)
+                            ? (viewingEmployee.division_id as { name?: string }).name
+                            : '-')}
+                      </p>
+                    </div>
+                    <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('department_id', formSettings) || 'Department'}</label>
                       <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.department?.name || '-'}</p>
                     </div>
@@ -6105,14 +6223,40 @@ export default function EmployeesPage() {
                       </div>
                     )}
                     {userRole !== 'hod' && userRole !== 'employee' && (
-                      <>
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Certificate Status</label>
-                          <p className={`mt-1 text-sm font-bold ${viewingEmployee.qualificationStatus === 'verified' ? 'text-green-600' : viewingEmployee.qualificationStatus === 'pending' ? 'text-orange-500' : 'text-slate-600'}`}>
-                            {viewingEmployee.qualificationStatus || 'Not Uploaded'}
-                          </p>
-                        </div>
-                      </>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Certificate status</label>
+                        <select
+                          value={viewingEmployee.qualificationStatus ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === OVERALL_CERTIFICATE_STATUS_SELECT_ADD_SENTINEL) {
+                              setAddOverallCertDialogOpen(true);
+                              return;
+                            }
+                            void handleQualificationStatusChange(v);
+                          }}
+                          className="mt-1 w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                        >
+                          <option value="">Not set</option>
+                          {overallCertificateStatusOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                          <option value={OVERALL_CERTIFICATE_STATUS_SELECT_ADD_SENTINEL}>Add +</option>
+                        </select>
+                        <p className="mt-1 max-w-xs text-[11px] text-slate-500 dark:text-slate-400">
+                          Pick a status from the list, or choose Add + at the bottom to manage shared statuses.
+                        </p>
+                        <ManageOverallCertificateStatusDialog
+                          isOpen={addOverallCertDialogOpen}
+                          onClose={() => !addOverallCertSubmitting && setAddOverallCertDialogOpen(false)}
+                          mergedOptions={overallCertificateStatusOptions}
+                          rawSetting={qualificationStatusesSetting ?? formSettings?.qualification_statuses}
+                          settingsApi={{ getSetting: api.getSetting, upsertSetting: api.upsertSetting }}
+                          onSettingSaved={(next) => setQualificationStatusesSetting(next)}
+                          onAddNewAndApply={submitAddOverallCertificateStatus}
+                          addSubmitting={addOverallCertSubmitting}
+                        />
+                      </div>
                     )}
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('doj', formSettings) || 'Date of Joining'}</label>
@@ -6141,26 +6285,112 @@ export default function EmployeesPage() {
                 {/* Contact Information */}
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                   <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{getGroupLabel('contact_info', formSettings, 'Contact Information')}</h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('phone_number', formSettings) || 'Phone Number'}</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.phone_number || '-'}</p>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {viewingEmployee.phone_number ||
+                          (viewingEmployee as any).contact_number ||
+                          (viewingEmployee as any).dynamicFields?.phone_number ||
+                          (viewingEmployee as any).dynamicFields?.contact_number ||
+                          '-'}
+                      </p>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('alt_phone_number', formSettings) || 'Alternate Phone'}</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.alt_phone_number || '-'}</p>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {viewingEmployee.alt_phone_number ||
+                          (viewingEmployee as any).dynamicFields?.alt_phone_number ||
+                          '-'}
+                      </p>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('email', formSettings) || 'Email'}</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.email || '-'}</p>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {viewingEmployee.email ||
+                          (viewingEmployee as any).dynamicFields?.email ||
+                          '-'}
+                      </p>
                     </div>
-                    <div className="sm:col-span-2 lg:col-span-3">
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('father_name', formSettings) || 'Father Name'}</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {(viewingEmployee as any).father_name ||
+                          (viewingEmployee as any).dynamicFields?.father_name ||
+                          '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('mother_name', formSettings) || 'Mother Name'}</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {(viewingEmployee as any).mother_name ||
+                          (viewingEmployee as any).dynamicFields?.mother_name ||
+                          '-'}
+                      </p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Present Address</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {(viewingEmployee as any).present_address ||
+                          (viewingEmployee as any).dynamicFields?.present_address ||
+                          viewingEmployee.address ||
+                          (viewingEmployee as any).dynamicFields?.address ||
+                          '-'}
+                      </p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('permanent_address', formSettings) || 'Permanent Address'}</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {(viewingEmployee as any).permanent_address ||
+                          (viewingEmployee as any).dynamicFields?.permanent_address ||
+                          '-'}
+                      </p>
+                    </div>
+                    <div className="sm:col-span-2 xl:col-span-2">
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Address</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.address || '-'}</p>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {(() => {
+                          const dynamic = (viewingEmployee as any).dynamicFields || {};
+                          const address =
+                            viewingEmployee.address ||
+                            (viewingEmployee as any).present_address ||
+                            dynamic.address ||
+                            dynamic.present_address ||
+                            (viewingEmployee as any).permanent_address ||
+                            dynamic.permanent_address ||
+                            '';
+
+                          if (!address) return '-';
+
+                          const permanentAddress =
+                            (viewingEmployee as any).permanent_address || dynamic.permanent_address || '';
+
+                          if (permanentAddress && permanentAddress !== address) {
+                            return `${address} | ${permanentAddress}`;
+                          }
+                          return address;
+                        })()}
+                      </p>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</label>
                       <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.location || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Relative Contact 1</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {(viewingEmployee as any).relative_contact_1 ||
+                          (viewingEmployee as any).dynamicFields?.relative_contact_1 ||
+                          '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Relative Contact 2</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {(viewingEmployee as any).relative_contact_2 ||
+                          (viewingEmployee as any).dynamicFields?.relative_contact_2 ||
+                          '-'}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -6178,82 +6408,41 @@ export default function EmployeesPage() {
                             return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
                           }
 
-                          // Handle array of objects (new format)
                           if (Array.isArray(quals)) {
+                            const qualFields = (formSettings?.qualifications?.fields || [])
+                              .filter((f: any) => f.isEnabled !== false)
+                              .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+
                             return (
-                              <div className="grid gap-6 sm:grid-cols-2">
-                                {quals.map((qual: any, idx: number) => {
-                                  const certificateUrl = qual.certificateUrl;
-                                  const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
-                                  // Filter out internal keys like certificateUrl for list display
-                                  const displayEntries = Object.entries(qual).filter(([k, v]) =>
-                                    k !== 'certificateUrl' && v !== null && v !== undefined && v !== ''
-                                  );
-
-                                  return (
-                                    <div key={idx} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:border-blue-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-700 flex flex-col h-full">
-                                      {/* Card Image Area */}
-                                      <div className="aspect-[3/2] w-full overflow-hidden bg-slate-100 dark:bg-slate-800 relative group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 transition-colors">
-                                        {certificateUrl ? (
-                                          isPDF ? (
-                                            <div className="absolute inset-0 flex items-center justify-center">
-                                              <svg className="h-20 w-20 text-red-500 opacity-80 group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
-                                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9v-2h2v2zm0-4H9V7h2v5z" />
-                                              </svg>
-                                              <span className="absolute bottom-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">PDF Document</span>
-                                            </div>
-                                          ) : (
-                                            <img
-                                              src={certificateUrl}
-                                              alt="Certificate Preview"
-                                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                            />
-                                          )
-                                        ) : (
-                                          <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 dark:text-slate-600">
-                                            <svg className="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                            </svg>
-                                            <span className="text-xs font-medium">No Certificate</span>
-                                          </div>
-                                        )}
-
-                                        {/* Overlay Action */}
-                                        {certificateUrl && (
-                                          <a
-                                            href={certificateUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="absolute inset-0 z-10 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-300 group-hover:bg-black/10 group-hover:opacity-100"
-                                          >
-                                            <div className="rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm backdrop-blur-sm hover:bg-white hover:scale-105 transition-all">
-                                              View Full {isPDF ? 'Document' : 'Image'}
-                                            </div>
-                                          </a>
-                                        )}
-                                      </div>
-
-                                      {/* Card Content Area */}
-                                      <div className="flex flex-1 flex-col p-5">
-                                        <div className="space-y-3">
-                                          {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
-                                            const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
+                              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                                <table className="w-full min-w-[700px] text-left text-sm">
+                                  <thead>
+                                    <tr className="border-b border-slate-200 bg-slate-100/80 dark:border-slate-700 dark:bg-slate-800/80">
+                                      {qualFields.map((f: any) => (
+                                        <th key={f.id} className="whitespace-nowrap px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">
+                                          {f.label}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {quals.map((qual: any, idx: number) => {
+                                      return (
+                                        <tr key={idx} className="border-b border-slate-100 dark:border-slate-700/50">
+                                          {qualFields.map((f: any) => {
+                                            const val = qual[f.id] ?? qual[f.label];
+                                            const display = val != null && val !== '' ? (f.type === 'boolean' ? (val ? 'Yes' : 'No') : String(val)) : '—';
                                             return (
-                                              <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
-                                                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
-                                                  {fieldLabel}
-                                                </span>
-                                                <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
-                                                  {String(value)}
-                                                </span>
-                                              </div>
+                                              <td key={f.id} className="px-3 py-2 text-slate-700 dark:text-slate-300">
+                                                {display}
+                                              </td>
                                             );
-                                          }) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
+                                          })}
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
                               </div>
                             );
                           }
