@@ -940,6 +940,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         isPartialDay &&
         !day.isWO &&
         !day.isHOL &&
+        !hasFullDayOdCoverage &&
         !hasFullDayEsiLeave &&
         leaveContrib < 0.999;
 

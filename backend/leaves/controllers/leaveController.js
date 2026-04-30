@@ -25,12 +25,14 @@ const { buildLeaveRegisterXlsxBuffer } = require('../services/leaveRegisterXlsxE
 const dateCycleService = require('../services/dateCycleService');
 const leaveRegisterYearMonthlyApplyService = require('../services/leaveRegisterYearMonthlyApplyService');
 const leaveRegisterYearService = require('../services/leaveRegisterYearService');
+const { extractISTComponents } = require('../../shared/utils/dateUtils');
 const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
 const { assertEmployeeRangeRequestsEditable } = require('../../shared/services/payrollRequestLockService');
 const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const MONTH_SLOT_EDIT_PERMISSION = 'LEAVE_REGISTER_MONTH_EDIT:write';
 
 const formatLeaveDate = (value) => dayjs(value).format('DD MMM YYYY');
+const isSameIstDay = (a, b) => extractISTComponents(a).dateStr === extractISTComponents(b).dateStr;
 
 function canEditLeaveRegisterMonthSlot(user) {
   if (!user) return false;
@@ -781,6 +783,55 @@ exports.applyLeave = async (req, res) => {
         warnings: validation.warnings,
         conflictingODs: validation.conflictingODs,
       });
+    }
+
+    // Attendance-first guard for single-day leave apply:
+    // if same-half/full-day attendance already exists, do not create leave that would be auto-rejected.
+    if (isSameIstDay(from, to)) {
+      try {
+        const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+        const dateStr = extractISTComponents(from).dateStr;
+        const daily = await AttendanceDaily.findOne({
+          employeeNumber: String(employee.emp_no || '').toUpperCase(),
+          date: dateStr,
+        }).select('status totalEarlyOutMinutes totalLateInMinutes');
+        if (daily) {
+          const st = String(daily.status || '').toUpperCase();
+          let attFirst = false;
+          let attSecond = false;
+          if (st === 'PRESENT') {
+            attFirst = true;
+            attSecond = true;
+          } else if (st === 'HALF_DAY') {
+            const eo = Number(daily.totalEarlyOutMinutes) || 0;
+            const li = Number(daily.totalLateInMinutes) || 0;
+            if (eo > li) attFirst = true;
+            else if (li > eo) attSecond = true;
+            else attFirst = true;
+          }
+
+          if (!isHalfDay && (attFirst || attSecond)) {
+            return res.status(400).json({
+              success: false,
+              error: 'Attendance already exists on this date. Attendance is preferred over leave.',
+            });
+          }
+          if (isHalfDay && halfDayType === 'first_half' && attFirst) {
+            return res.status(400).json({
+              success: false,
+              error: 'First-half attendance already present. Attendance is preferred over leave on same half.',
+            });
+          }
+          if (isHalfDay && halfDayType === 'second_half' && attSecond) {
+            return res.status(400).json({
+              success: false,
+              error: 'Second-half attendance already present. Attendance is preferred over leave on same half.',
+            });
+          }
+        }
+      } catch (attErr) {
+        console.error('Attendance apply-time guard failed:', attErr);
+      }
     }
 
     // Store warnings to include in success response

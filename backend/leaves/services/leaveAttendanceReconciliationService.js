@@ -413,7 +413,8 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
       const leave = await Leave.findById(l._id);
       if (!leave || leave.status !== 'approved') continue;
 
-      const detail = 'Half-day leave auto-rejected: attendance supersedes this half.';
+      const detail =
+        'Half-day leave auto-rejected: same-half attendance is present, so system selected attendance over leave.';
       if (!isSingle) {
         const splitRes = await splitAndAdjustMultiDayLeave({
           leave,

@@ -849,6 +849,14 @@ function LeavesPageContent() {
     hasOD: boolean;
     leaveInfo: any;
     odInfo: any;
+    attendanceInfo?: {
+      hasAttendance: boolean;
+      status: string | null;
+      firstHalfPresent: boolean;
+      secondHalfPresent: boolean;
+      fullDayPresent: boolean;
+      label: string | null;
+    } | null;
   } | null>(null);
   const [checkingApprovedRecords, setCheckingApprovedRecords] = useState(false);
 
@@ -1391,6 +1399,22 @@ function LeavesPageContent() {
 
         if (approvedHalf === formData.halfDayType) {
           toast.error(`Cannot create request - Employee already has ${approvedHalf === 'first_half' ? 'First Half' : 'Second Half'} approved on this date`);
+          return;
+        }
+      }
+
+      if (applyType === 'leave' && approvedRecordsInfo.attendanceInfo) {
+        const a = approvedRecordsInfo.attendanceInfo;
+        if (a.fullDayPresent) {
+          toast.error('Attendance exists for full day on this date. Attendance is preferred over leave.');
+          return;
+        }
+        if (formData.isHalfDay && formData.halfDayType === 'first_half' && a.firstHalfPresent) {
+          toast.error('First-half attendance already present. Attendance is preferred over leave on same half.');
+          return;
+        }
+        if (formData.isHalfDay && formData.halfDayType === 'second_half' && a.secondHalfPresent) {
+          toast.error('Second-half attendance already present. Attendance is preferred over leave on same half.');
           return;
         }
       }
@@ -3895,11 +3919,16 @@ function LeavesPageContent() {
               })()}
 
               {/* Approved Records Info */}
-              {approvedRecordsInfo && (approvedRecordsInfo.hasLeave || approvedRecordsInfo.hasOD) && (
+              {approvedRecordsInfo && (approvedRecordsInfo.hasLeave || approvedRecordsInfo.hasOD || approvedRecordsInfo.attendanceInfo?.hasAttendance) && (
                 <div className="p-3 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">
                   <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-2">
-                    ⚠️ Approved Record Found on This Date:
+                    ⚠️ Existing Attendance / Approved Record:
                   </p>
+                  {approvedRecordsInfo?.attendanceInfo?.hasAttendance && (
+                    <div className="text-xs text-amber-700 dark:text-amber-400 mb-1">
+                      <strong>Attendance:</strong> {approvedRecordsInfo.attendanceInfo.label || 'Attendance present'}
+                    </div>
+                  )}
                   {approvedRecordsInfo?.hasLeave && approvedRecordsInfo?.leaveInfo && (
                     <div className="text-xs text-amber-700 dark:text-amber-400 mb-1">
                       <strong>Leave:</strong> {approvedRecordsInfo?.leaveInfo?.isHalfDay
