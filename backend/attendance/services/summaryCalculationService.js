@@ -309,17 +309,12 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       startComponents = extractISTComponents(payrollStart);
       endComponents = extractISTComponents(payrollEnd);
     } else {
-      // Resolve the actual period window using payroll cycle (pay-cycle aware month).
-      // Anchor must fall inside the period we want so we load the correct dailies.
-      // - Calendar month (1-31): (year, monthNumber) = that month → anchor = 15th of that month.
-      // - Custom cycle (e.g. 26-25, startDay >= 15): For month M we want the period that ENDS in M
-      //   (e.g. February → 26 Jan–25 Feb). Using 15th of the current month as anchor gives that period.
-      await dateCycleService.getPayrollCycleSettings(); // ensure settings loaded
-      const anchorDateStr = `${year}-${String(monthNumber).padStart(2, '0')}-15`;
-      const anchorDate = createISTDate(anchorDateStr);
-      const periodInfo = await dateCycleService.getPeriodInfo(anchorDate);
-      payrollStart = periodInfo.payrollCycle.startDate;
-      payrollEnd = periodInfo.payrollCycle.endDate;
+      // Resolve the exact payroll cycle for the requested month label.
+      // Use cycle end-day as anchor (same logic as dateCycleService.getPayrollCycleForMonth)
+      // so month->period mapping is correct for every custom cycle configuration.
+      const payrollCycle = await dateCycleService.getPayrollCycleForMonth(year, monthNumber);
+      payrollStart = payrollCycle.startDate;
+      payrollEnd = payrollCycle.endDate;
       startComponents = extractISTComponents(payrollStart);
       endComponents = extractISTComponents(payrollEnd);
       startDateStr = startComponents.dateStr;
@@ -859,10 +854,17 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       }
 
       // Overlay ODs
+      let hasFullDayOdCoverage = false;
       if (day.ods.length > 0 && !day.isWO && !day.isHOL) {
         for (const od of day.ods) {
-          if (!od.isHalfDay || od.odType_extended === 'full_day') {
+          const odDays = Number(od.numberOfDays) || 0;
+          const isFullDayOd =
+            (!od.isHalfDay && String(od.odType_extended || '') !== 'hours') ||
+            od.odType_extended === 'full_day' ||
+            odDays >= 1 - 1e-6;
+          if (isFullDayOd) {
             odFirst = 0.5; odSecond = 0.5;
+            hasFullDayOdCoverage = true;
             day.lateInWaved = true;
             day.earlyOutWaved = true;
           } else if (od.halfDayType === 'first_half') {
@@ -880,6 +882,13 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           contributingDates.ods.push({ date: dStr, value: odFirst + odSecond, label: 'OD' });
         }
         totalODDays += (odFirst + odSecond);
+      }
+
+      // Guardrail: full-day OD must contribute as OD only (no attendance-present credit).
+      // Keep OD credit, but suppress attendance-present credit on this day.
+      if (hasFullDayOdCoverage) {
+        attFirst = 0;
+        attSecond = 0;
       }
 
       // Half-day ESI with user-declared OT:
@@ -931,6 +940,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         isPartialDay &&
         !day.isWO &&
         !day.isHOL &&
+        !hasFullDayOdCoverage &&
         !hasFullDayEsiLeave &&
         leaveContrib < 0.999;
 
@@ -1533,7 +1543,7 @@ async function recalculateOnAttendanceUpdate(emp_no, date) {
     const dateStr = extractISTComponents(baseDate).dateStr;
     console.log('[OD-FLOW] recalculateOnAttendanceUpdate period', { year, monthNumber, startDateStr, endDateStr });
 
-    // Reconcile single-day approved leave with punches before aggregating (reject / narrow + register credits)
+    // Reconcile approved leave/OD with punches before aggregating (reject / narrow + register credits)
     try {
       const AttendanceDaily = require('../model/AttendanceDaily');
       const daily = await AttendanceDaily.findOne({ employeeNumber: empNoNorm, date: dateStr });
@@ -1545,12 +1555,12 @@ async function recalculateOnAttendanceUpdate(emp_no, date) {
             (x) => x && x.action && !['none', 'skip'].includes(x.action) && !String(x.action).startsWith('no_')
           );
           if (interesting.length) {
-            console.log('[leaveAttendanceReconciliation]', { emp: empNoNorm, date: dateStr, results: interesting });
+            console.log('[attendanceRequestReconciliation]', { emp: empNoNorm, date: dateStr, results: interesting });
           }
         }
       }
     } catch (reconErr) {
-      console.error('[leaveAttendanceReconciliation] error:', reconErr);
+      console.error('[attendanceRequestReconciliation] error:', reconErr);
     }
 
     // Pass period so we always aggregate the exact cycle that contains this date (avoids anchor mismatch)
@@ -1572,11 +1582,41 @@ async function recalculateOnLeaveApproval(leave) {
       return;
     }
 
-    const Employee = require('../../employees/model/Employee');
     const employee = await Employee.findById(leave.employeeId);
     if (!employee) {
       console.warn(`Employee not found for leave: ${leave._id}`);
       return;
+    }
+
+    const empNoNorm =
+      employee.emp_no && String(employee.emp_no).trim()
+        ? String(employee.emp_no).trim().toUpperCase()
+        : '';
+    const fromStr = extractISTComponents(leave.fromDate).dateStr;
+    const toStr = extractISTComponents(leave.toDate).dateStr;
+    const leaveDateRange = getAllDatesInRange(fromStr, toStr);
+
+    // Attendance may be finalized before leave approval; reconciliation only ran on punch sync.
+    // Re-run for each calendar day in range so leave vs punches is settled before monthly summary.
+    if (empNoNorm) {
+      try {
+        const { runLeaveAttendanceReconciliation } = require('../../leaves/services/leaveAttendanceReconciliationService');
+        for (const dateStr of leaveDateRange) {
+          try {
+            const daily = await AttendanceDaily.findOne({ employeeNumber: empNoNorm, date: dateStr });
+            if (daily) {
+              await runLeaveAttendanceReconciliation(employee, dateStr, daily);
+            }
+          } catch (dayErr) {
+            console.error(
+              `[attendanceRequestReconciliation] on leave approval ${empNoNorm} ${dateStr}:`,
+              dayErr
+            );
+          }
+        }
+      } catch (reconErr) {
+        console.error('[attendanceRequestReconciliation] on leave approval batch:', reconErr);
+      }
     }
 
     // Calculate all payroll cycles affected by this leave using payroll-aware periods
@@ -1653,6 +1693,23 @@ async function recalculateOnODApproval(od) {
       }
     }
     // Full-day OD: no daily create/update; contribution is added in monthly summary OD-only logic.
+
+    // Re-run attendance request reconciliation for OD dates, then recalculate monthly summaries.
+    try {
+      const { runLeaveAttendanceReconciliation } = require('../../leaves/services/leaveAttendanceReconciliationService');
+      for (const dateStr of odDateRange) {
+        try {
+          const daily = await AttendanceDaily.findOne({ employeeNumber: empNo, date: dateStr });
+          if (daily) {
+            await runLeaveAttendanceReconciliation(employee, dateStr, daily);
+          }
+        } catch (dayErr) {
+          console.error(`[attendanceRequestReconciliation] on OD approval ${empNo} ${dateStr}:`, dayErr);
+        }
+      }
+    } catch (reconErr) {
+      console.error('[attendanceRequestReconciliation] on OD approval batch:', reconErr);
+    }
 
     // Recalculate monthly summaries for affected payroll cycles (half/full-day OD contribute 0.5/1 via OD-only logic in calculateMonthlySummary)
     const { payrollCycle: startCycle } = await dateCycleService.getPeriodInfo(od.fromDate);

@@ -3,6 +3,7 @@ const router = express.Router();
 const Device = require('../models/Device');
 const DeviceCommand = require('../models/DeviceCommand');
 const logger = require('../utils/logger');
+const { normalizeOperationGroup } = require('../utils/operationModeResolver');
 
 /** Same command the dashboard sends for “Sync All Attendance” — device uploads ATTLOG via ADMS push after next heartbeat(s). */
 const ADMS_ATTLOG_FULL_SYNC_COMMAND = 'DATA QUERY ATTLOG';
@@ -391,13 +392,20 @@ router.post('/test-pull', async (req, res) => {
  */
 router.post('/', async (req, res) => {
     try {
-        const { deviceId, name, ip, port, enabled, location } = req.body;
+        const { deviceId, name, ip, port, enabled, location, operationGroup } = req.body;
+        const normalizedOperationGroup = normalizeOperationGroup(operationGroup);
 
         // Validation
         if (!deviceId || !name || !ip) {
             return res.status(400).json({
                 success: false,
                 error: 'deviceId, name, and ip are required'
+            });
+        }
+        if (operationGroup !== undefined && operationGroup !== null && String(operationGroup).trim() !== '' && !normalizedOperationGroup) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid operationGroup. Allowed: CHECK-IN, CHECK-OUT, BREAK-IN, BREAK-OUT, OVERTIME-IN, OVERTIME-OUT'
             });
         }
 
@@ -417,7 +425,8 @@ router.post('/', async (req, res) => {
             ip,
             port: port || 4370,
             enabled: enabled !== undefined ? enabled : true,
-            location: location || ''
+            location: location || '',
+            operationGroup: normalizedOperationGroup
         });
 
         await device.save();
@@ -445,7 +454,8 @@ router.post('/', async (req, res) => {
  */
 router.put('/:deviceId', async (req, res) => {
     try {
-        const { name, ip, port, enabled, location } = req.body;
+        const { name, ip, port, enabled, location, operationGroup } = req.body;
+        const normalizedOperationGroup = normalizeOperationGroup(operationGroup);
 
         const device = await Device.findOne({ deviceId: req.params.deviceId });
 
@@ -462,6 +472,15 @@ router.put('/:deviceId', async (req, res) => {
         if (port !== undefined) device.port = port;
         if (enabled !== undefined) device.enabled = enabled;
         if (location !== undefined) device.location = location;
+        if (operationGroup !== undefined) {
+            if (operationGroup !== null && String(operationGroup).trim() !== '' && !normalizedOperationGroup) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid operationGroup. Allowed: CHECK-IN, CHECK-OUT, BREAK-IN, BREAK-OUT, OVERTIME-IN, OVERTIME-OUT'
+                });
+            }
+            device.operationGroup = normalizedOperationGroup;
+        }
 
         await device.save();
 

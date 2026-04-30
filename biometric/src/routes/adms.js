@@ -7,6 +7,7 @@ const AdmsRawLog = require('../models/AdmsRawLog');
 const Device = require('../models/Device');
 const DeviceCommand = require('../models/DeviceCommand');
 const DeviceUser = require('../models/DeviceUser');
+const { getEffectiveOperationMode, resolveLogType } = require('../utils/operationModeResolver');
 
 /**
  * Common ADMS Responses
@@ -278,12 +279,13 @@ async function touchDeviceHeartbeat(SN) {
  * HELPER: Ensure device is registered and visible
  */
 async function ensureDeviceRegistered(SN, clientIp) {
-    if (!SN || SN === 'UNKNOWN') return null;
+    const normalizedSN = normalizeSerialNumber(SN);
+    if (!normalizedSN || normalizedSN === 'UNKNOWN') return null;
 
     const cleanedIp = (clientIp || '').replace('::ffff:', '');
 
     try {
-        let device = await Device.findOne({ deviceId: SN });
+        let device = await Device.findOne({ deviceId: normalizedSN });
 
         if (device) {
             // Update IP if it has changed
@@ -298,22 +300,22 @@ async function ensureDeviceRegistered(SN, clientIp) {
             const count = await Device.countDocuments({ name: /^Auto-ADMS-/ });
             const newName = `Auto-ADMS-${count + 1}`;
 
-            logger.info(`ADMS: New device detected! [${SN}] from IP: ${cleanedIp}`);
+            logger.info(`ADMS: New device detected! [${normalizedSN}] from IP: ${cleanedIp}`);
 
             device = await Device.create({
-                deviceId: SN,
+                deviceId: normalizedSN,
                 name: newName,
                 ip: cleanedIp || '0.0.0.0',
                 port: 4370,
                 enabled: true,
                 location: 'Auto-Registered'
             });
-            logger.info(`ADMS: Successfully created new device: ${newName} (${SN})`);
+            logger.info(`ADMS: Successfully created new device: ${newName} (${normalizedSN})`);
         }
         return device;
     } catch (err) {
-        logger.error(`ADMS: Error in ensureDeviceRegistered for ${SN}:`, err);
-        return { name: `Unregistered-${SN}`, deviceId: SN };
+        logger.error(`ADMS: Error in ensureDeviceRegistered for ${normalizedSN}:`, err);
+        return { name: `Unregistered-${normalizedSN}`, deviceId: normalizedSN };
     }
 }
 
@@ -345,12 +347,13 @@ router.post('/cdata.aspx', async (req, res) => {
  * Process the ADMS POST request logic
  */
 async function processAdmsPost(req, res, SN, table, clientIp) {
+    const normalizedSN = normalizeSerialNumber(SN);
     const rawBody = req.body;
 
     try {
         // CRITICAL: Always log and store raw data for visual inspection later
         await AdmsRawLog.create({
-            serialNumber: SN || 'UNKNOWN',
+            serialNumber: normalizedSN || 'UNKNOWN',
             table: table || 'UNKNOWN',
             query: req.query,
             body: rawBody,
@@ -358,9 +361,9 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
             ipAddress: clientIp
         });
 
-        logger.info(`ADMS Data: SN=${SN}, Table=${table}, Size=${rawBody?.length || 0} chars`);
+        logger.info(`ADMS Data: SN=${normalizedSN}, Table=${table}, Size=${rawBody?.length || 0} chars`);
 
-        await touchDeviceHeartbeat(SN);
+        await touchDeviceHeartbeat(normalizedSN);
 
         // ==========================================
         // DEBUG: Show RAW body data
@@ -384,31 +387,28 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
             const records = admsParser.parseTextRecords(rawBody);
 
             // AUTO-REGISTRATION / UPDATE LOGIC
-            const device = await ensureDeviceRegistered(SN, clientIp);
-            const deviceName = device?.name || `Unregistered-${SN}`;
-
-            const LOG_TYPE_MAP = {
-                0: 'CHECK-IN',
-                1: 'CHECK-OUT',
-                2: 'BREAK-OUT',
-                3: 'BREAK-IN',
-                4: 'OVERTIME-IN',
-                5: 'OVERTIME-OUT',
-                255: 'CHECK-IN'
-            };
+            const device = await ensureDeviceRegistered(normalizedSN, clientIp);
+            const deviceName = device?.name || `Unregistered-${normalizedSN}`;
+            const operationMode = await getEffectiveOperationMode();
+            const deviceOperationGroup = device?.operationGroup || null;
+            logger.info(`ATTLOG mode resolution: SN=${normalizedSN}, mode=${operationMode}, deviceOperationGroup=${deviceOperationGroup || 'NONE'}`);
 
             const bulkOps = records.map(rec => {
-                const logType = LOG_TYPE_MAP[rec.inOutMode] || 'CHECK-IN';
+                const { resolvedLogType } = resolveLogType({
+                    rawStatusCode: rec.inOutMode,
+                    deviceOperationGroup,
+                    operationMode
+                });
                 return {
                     updateOne: {
                         filter: { employeeId: rec.userId, timestamp: rec.timestamp }, // Unique by User + Time
                         update: {
                             $set: {
-                                logType,
+                                logType: resolvedLogType,
                                 rawType: rec.inOutMode,
                                 rawData: rec,
                                 deviceName,
-                                deviceId: SN,
+                                deviceId: normalizedSN,
                                 syncedAt: new Date()
                             }
                         },
@@ -429,8 +429,8 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
                     try {
                         const deviceService = req.app.get('deviceService');
                         if (deviceService && typeof deviceService.shouldSuppressHrmsSyncForAdmsAttlog === 'function'
-                            && deviceService.shouldSuppressHrmsSyncForAdmsAttlog(SN)) {
-                            logger.info(`ADMS ATTLOG: skipping HRMS sync for ${SN} (fresh backup capture in progress; local AttendanceLog still updated)`);
+                            && deviceService.shouldSuppressHrmsSyncForAdmsAttlog(normalizedSN)) {
+                            logger.info(`ADMS ATTLOG: skipping HRMS sync for ${normalizedSN} (fresh backup capture in progress; local AttendanceLog still updated)`);
                         } else {
                             const axios = require('axios'); // Lazy load
                             const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
@@ -442,16 +442,33 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
                             }
 
                             const syncPayload = records.map(rec => {
-                                const logType = LOG_TYPE_MAP[rec.inOutMode] || 'CHECK-IN';
+                                const { resolvedLogType } = resolveLogType({
+                                    rawStatusCode: rec.inOutMode,
+                                    deviceOperationGroup,
+                                    operationMode
+                                });
                                 return {
                                     employeeId: rec.userId,
                                     timestamp: rec.timestamp,
-                                    logType: logType,
-                                    deviceId: SN,
+                                    logType: resolvedLogType,
+                                    deviceId: normalizedSN,
                                     deviceName: deviceName,
                                     rawStatus: rec.inOutMode
                                 };
                             });
+
+                            // Audit log: shows exactly which operation is being sent to internal sync.
+                            logger.info(
+                                `ADMS Internal Sync Dispatch: SN=${normalizedSN}, mode=${operationMode}, deviceOperationGroup=${deviceOperationGroup || 'NONE'}, count=${syncPayload.length}`
+                            );
+                            syncPayload.slice(0, 25).forEach((row, idx) => {
+                                logger.info(
+                                    `ADMS Internal Sync Row[${idx + 1}]: emp=${row.employeeId}, ts=${new Date(row.timestamp).toISOString()}, rawStatus=${row.rawStatus}, logType=${row.logType}, deviceId=${row.deviceId}`
+                                );
+                            });
+                            if (syncPayload.length > 25) {
+                                logger.info(`ADMS Internal Sync Row: ... ${syncPayload.length - 25} more rows omitted from preview`);
+                            }
 
                             axios.post(syncEndpoint, syncPayload, {
                                 headers: { 'x-system-key': SYSTEM_KEY },
@@ -528,51 +545,15 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
         // STRUCTURED BIOMETRIC DATA HANDLING
         // ==========================================
 
-        // Handle User Informatiom
-        if (table === 'USERINFO' || table === 'USER') {
-            const lines = rawBody.split('\n');
-            let count = 0;
-            for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed) continue;
-                const data = admsParser.parseUserInfoAdmsLine(trimmed)
-                    || admsParser.parseKeyValueLine(trimmed.replace(/^(USER)\s+/i, '').trim());
-                if (data && data.PIN) {
-                    const userId = String(data.PIN).trim();
-                    const existing = await DeviceUser.findOne({ userId }).lean();
-
-                    const mergedName = mergeDeviceUserField(data.NAME, existing?.name);
-                    const mergedPassword = mergeDeviceUserField(data.PASSWORD, existing?.password);
-                    const mergedCard = mergeDeviceUserField(data.CARD, existing?.card);
-                    const mergedRole = mergeDeviceUserRole(data.ROLE, existing?.role);
-
-                    await DeviceUser.findOneAndUpdate(
-                        { userId },
-                        {
-                            $set: {
-                                userId,
-                                name: mergedName,
-                                password: mergedPassword,
-                                card: mergedCard,
-                                role: mergedRole,
-                                lastSyncedAt: new Date(),
-                                lastDeviceId: SN
-                            }
-                        },
-                        { upsert: true }
-                    );
-                    count++;
-
-                    const stored = await DeviceUser.findOne({ userId });
-                    if (existing && stored && deviceUserinfoDrift(data, stored)) {
-                        await queueUserInfoPushToDevice(SN, stored);
-                    }
-
-                    autoCloneUser(userId, SN);
-                }
+        // Handle User Information
+        // Some devices send USER lines under USERINFO/USER table, others may include them in OPERLOG packets.
+        const containsUserRows = typeof rawBody === 'string' && /(?:^|\n)\s*USER\s+PIN=/i.test(rawBody);
+        if (table === 'USERINFO' || table === 'USER' || containsUserRows) {
+            const count = await parseAndUpsertUserInfoRows(rawBody, normalizedSN);
+            if (count > 0) {
+                logger.info(`ADMS: Parsed and updated ${count} User records from SN: ${normalizedSN} (table=${table || 'UNKNOWN'})`);
+                return res.send(ADMS_OK);
             }
-            logger.info(`ADMS: Parsed and updated ${count} User records from SN: ${SN}`);
-            return res.send(ADMS_OK);
         }
 
         // Handle Fingerprint Templates
@@ -989,4 +970,61 @@ async function autoCloneUser(userId, sourceSN) {
 }
 
 module.exports = router;
+
+function normalizeSerialNumber(sn) {
+    const v = sn == null ? '' : String(sn).trim();
+    return v || 'UNKNOWN';
+}
+
+async function parseAndUpsertUserInfoRows(rawBody, serialNumber) {
+    if (!rawBody || typeof rawBody !== 'string') return 0;
+    const lines = rawBody.split('\n');
+    let count = 0;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (!/^(USER\s+)?PIN=/i.test(trimmed)) continue;
+
+        const data = admsParser.parseUserInfoAdmsLine(trimmed)
+            || admsParser.parseKeyValueLine(trimmed.replace(/^(USER)\s+/i, '').trim());
+        if (!data || !data.PIN) continue;
+
+        const userId = String(data.PIN).trim();
+        if (!userId) continue;
+
+        const existing = await DeviceUser.findOne({ userId }).lean();
+
+        const mergedName = mergeDeviceUserField(data.NAME, existing?.name);
+        const mergedPassword = mergeDeviceUserField(data.PASSWORD, existing?.password);
+        const mergedCard = mergeDeviceUserField(data.CARD, existing?.card);
+        const mergedRole = mergeDeviceUserRole(data.ROLE, existing?.role);
+
+        await DeviceUser.findOneAndUpdate(
+            { userId },
+            {
+                $set: {
+                    userId,
+                    name: mergedName,
+                    password: mergedPassword,
+                    card: mergedCard,
+                    role: mergedRole,
+                    lastSyncedAt: new Date(),
+                    lastDeviceId: serialNumber
+                }
+            },
+            { upsert: true }
+        );
+        count++;
+
+        const stored = await DeviceUser.findOne({ userId });
+        if (existing && stored && deviceUserinfoDrift(data, stored)) {
+            await queueUserInfoPushToDevice(serialNumber, stored);
+        }
+
+        autoCloneUser(userId, serialNumber);
+    }
+
+    return count;
+}
 

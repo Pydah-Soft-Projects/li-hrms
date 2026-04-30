@@ -6599,7 +6599,7 @@ export default function AttendancePage() {
                         <div className="mb-3">
                           <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Date Range</label>
                           <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
-                            {new Date(attendanceDetail.leaveInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.leaveInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                            {new Date(attendanceDetail.leaveInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' })} - {new Date(attendanceDetail.leaveInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' })}
                           </div>
                         </div>
                       )}
@@ -6842,7 +6842,7 @@ export default function AttendancePage() {
                         <div className="mb-3">
                           <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Date Range</label>
                           <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
-                            {new Date(attendanceDetail.odInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.odInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                            {new Date(attendanceDetail.odInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' })} - {new Date(attendanceDetail.odInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' })}
                           </div>
 
                         </div>

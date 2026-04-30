@@ -72,6 +72,16 @@ exports.receiveRealTimeLogs = async (req, res) => {
     }
 
     try {
+        console.log(`[RealTime] Internal sync receive: ${logs.length} log(s)`);
+        logs.slice(0, 25).forEach((log, idx) => {
+            console.log(
+                `[RealTime] Incoming Row[${idx + 1}]: emp=${log.employeeId}, ts=${log.timestamp}, incomingLogType=${log.logType}, rawStatus=${log.rawStatus}, deviceId=${log.deviceId}`
+            );
+        });
+        if (logs.length > 25) {
+            console.log(`[RealTime] Incoming Row: ... ${logs.length - 25} more rows omitted from preview`);
+        }
+
         const processQueue = [];
         const rawLogsToSave = [];
         const uniqueEmployees = new Set();
@@ -99,7 +109,7 @@ exports.receiveRealTimeLogs = async (req, res) => {
             // IMPORTANT: OVERTIME and BREAK punches are stored separately and NOT included in shift attendance
 
             let normalizedType = null;
-            const typeUpper = log.logType ? log.logType.toUpperCase() : null;
+            const typeUpper = log.logType != null ? String(log.logType).trim().toUpperCase() : null;
 
             // ONLY regular CHECK-IN/OUT are normalized to IN/OUT for shift attendance
             // BREAK-IN/OUT, OVERTIME-IN/OUT are kept as null type - they don't affect shift attendance
@@ -129,7 +139,11 @@ exports.receiveRealTimeLogs = async (req, res) => {
                             subType: typeUpper,   // 'CHECK-IN', 'BREAK-OUT'
                             source: 'biometric-realtime',
                             date: formatDate(timestamp),
-                            rawData: log,
+                            rawData: {
+                                ...log,
+                                resolvedSubType: typeUpper,
+                                resolvedType: normalizedType
+                            },
                             deviceId: log.deviceId,
                             deviceName: log.deviceName
                         }
