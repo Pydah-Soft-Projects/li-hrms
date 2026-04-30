@@ -440,7 +440,6 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                 const sDuration = sOut - sIn;
                                 const sWorkingHours = Math.round((sDuration / 3600000) * 100) / 100;
                                 const expectedH = split.assignedShift.duration || 8;
-                                const extraH = Math.max(0, sWorkingHours - expectedH);
 
                                 // Calculate Status & payable per segment: clip to shift boundaries for status determination
                                 // This prevents idle time between shifts from counting towards status thresholds
@@ -482,7 +481,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                     punchHours: sWorkingHours,
                                     workingHours: Math.round((sWorkingHours + (split.extraHours || 0)) * 100) / 100,
                                     odHours: 0,
-                                    extraHours: Math.round((extraH + (split.extraHours || 0)) * 100) / 100,
+                                    // Will be recalculated after OD logic below.
+                                    extraHours: 0,
                                     otHours: 0,
                                     status: segStatus,
                                     inPunchId: currentIn._id || currentIn.id,
@@ -526,7 +526,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                         }
                                     }
                                     pSplitShift.odHours = Math.round((addedOdMinutes / 60) * 100) / 100;
-                                    pSplitShift.workingHours = Math.round((pSplitShift.punchHours + pSplitShift.odHours) * 100) / 100;
+                                    // Keep any previously-calculated split.extraHours and add OD on top.
+                                    pSplitShift.workingHours = Math.round((pSplitShift.punchHours + pSplitShift.odHours + (split.extraHours || 0)) * 100) / 100;
                                     
                                     // Re-check status with OD
                                     const er = pSplitShift.expectedHours > 0 ? pSplitShift.workingHours / pSplitShift.expectedHours : 1;
@@ -542,6 +543,22 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                         pSplitShift.payableShift = 0;
                                     }
                                 }
+
+                                // Extra hours = working hours after the scheduled shift-end.
+                                // We subtract the working overlap inside the scheduled window
+                                // (shiftStart..shiftEnd) from total working (punch + OD + any stored split.extraHours).
+                                const punchHoursUpToShiftEndMs = Math.max(
+                                    0,
+                                    Math.min(sOut.getTime(), shiftEnd.getTime()) - effectiveIn.getTime()
+                                );
+                                const punchHoursUpToShiftEnd = punchHoursUpToShiftEndMs / 3600000;
+                                const odHoursUpToShiftEnd = pSplitShift.odHours || 0;
+                                const totalWorkingHoursForExtra = pSplitShift.workingHours || 0;
+                                const extraComputed = Math.max(
+                                    0,
+                                    totalWorkingHoursForExtra - (punchHoursUpToShiftEnd + odHoursUpToShiftEnd)
+                                );
+                                pSplitShift.extraHours = Math.round(extraComputed * 100) / 100;
 
                                 processedShifts.push(pSplitShift);
                             }

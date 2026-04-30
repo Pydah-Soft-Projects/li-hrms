@@ -27,6 +27,11 @@ const deviceSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    operationGroup: {
+        type: String,
+        enum: ['CHECK-IN', 'CHECK-OUT', 'BREAK-IN', 'BREAK-OUT', 'OVERTIME-IN', 'OVERTIME-OUT', null],
+        default: null
+    },
     lastSyncAt: {
         type: Date,
         default: null

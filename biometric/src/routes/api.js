@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const AttendanceLog = require('../models/AttendanceLog');
+const BiometricSettings = require('../models/BiometricSettings');
 const logger = require('../utils/logger');
+const { normalizeOperationMode } = require('../utils/operationModeResolver');
 
 /**
  * GET /api/logs
@@ -113,6 +115,66 @@ router.get('/logs/latest', async (req, res) => {
             success: false,
             error: error.message
         });
+    }
+});
+
+/**
+ * GET /api/settings/operation-mode
+ * Returns the currently effective operation mode.
+ */
+router.get('/settings/operation-mode', async (req, res) => {
+    try {
+        const settings = await BiometricSettings.findOne({ key: 'global' }).lean();
+        const hasDbMode = Boolean(settings?.operationMode);
+        const mode = normalizeOperationMode(settings?.operationMode || process.env.BIOMETRIC_OPERATION_MODE || 'OPERATION');
+        res.json({
+            success: true,
+            data: {
+                operationMode: mode,
+                source: hasDbMode ? 'database' : 'env-or-default',
+                updatedAt: settings?.updatedAt || null
+            }
+        });
+    } catch (error) {
+        logger.error('Error fetching operation mode:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/settings/operation-mode
+ * Body: { operationMode: "OPERATION" | "DEVICE" }
+ */
+router.put('/settings/operation-mode', async (req, res) => {
+    try {
+        const requested = req.body?.operationMode;
+        const requestedRaw = String(requested || '').trim().toUpperCase();
+        if (!['OPERATION', 'DEVICE'].includes(requestedRaw)) {
+            return res.status(400).json({
+                success: false,
+                error: 'operationMode is required and must be OPERATION or DEVICE'
+            });
+        }
+        const mode = normalizeOperationMode(requestedRaw);
+
+        const updated = await BiometricSettings.findOneAndUpdate(
+            { key: 'global' },
+            { $set: { operationMode: mode } },
+            { new: true, upsert: true }
+        ).lean();
+
+        res.json({
+            success: true,
+            message: `Operation mode updated to ${mode}`,
+            data: {
+                operationMode: updated.operationMode,
+                source: 'database',
+                updatedAt: updated.updatedAt || null
+            }
+        });
+    } catch (error) {
+        logger.error('Error updating operation mode:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 

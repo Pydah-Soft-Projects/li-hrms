@@ -558,15 +558,32 @@ const formatDate = (dateStr: string) => {
   });
 };
 
+const getISTDateParts = (value: Date | string) => {
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+  const year = parts.find((p) => p.type === 'year')?.value;
+  const month = parts.find((p) => p.type === 'month')?.value;
+  const day = parts.find((p) => p.type === 'day')?.value;
+  if (!year || !month || !day) return null;
+  return { year: Number(year), month: Number(month), day: Number(day) };
+};
+
 const parseDateOnly = (value: Date | string) => {
   if (value instanceof Date) {
     return new Date(value.getFullYear(), value.getMonth(), value.getDate());
   }
   const str = String(value);
-  const datePart = str.includes('T') ? str.split('T')[0] : str;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
-    return new Date(`${datePart}T00:00:00`);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return new Date(`${str}T00:00:00`);
   }
+  const ist = getISTDateParts(str);
+  if (ist) return new Date(ist.year, ist.month - 1, ist.day);
   const d = new Date(str);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 };
@@ -924,6 +941,14 @@ function LeavesPageContent() {
     hasOD: boolean;
     leaveInfo: any;
     odInfo: any;
+    attendanceInfo?: {
+      hasAttendance: boolean;
+      status: string | null;
+      firstHalfPresent: boolean;
+      secondHalfPresent: boolean;
+      fullDayPresent: boolean;
+      label: string | null;
+    } | null;
   } | null>(null);
   const [checkingApprovedRecords, setCheckingApprovedRecords] = useState(false);
 
@@ -1495,6 +1520,22 @@ function LeavesPageContent() {
 
         if (approvedHalf === formData.halfDayType) {
           toast.error(`Cannot create request - Employee already has ${approvedHalf === 'first_half' ? 'First Half' : 'Second Half'} approved on this date`);
+          return;
+        }
+      }
+
+      if (applyType === 'leave' && approvedRecordsInfo.attendanceInfo) {
+        const a = approvedRecordsInfo.attendanceInfo;
+        if (a.fullDayPresent) {
+          toast.error('Attendance exists for full day on this date. Attendance is preferred over leave.');
+          return;
+        }
+        if (formData.isHalfDay && formData.halfDayType === 'first_half' && a.firstHalfPresent) {
+          toast.error('First-half attendance already present. Attendance is preferred over leave on same half.');
+          return;
+        }
+        if (formData.isHalfDay && formData.halfDayType === 'second_half' && a.secondHalfPresent) {
+          toast.error('Second-half attendance already present. Attendance is preferred over leave on same half.');
           return;
         }
       }
@@ -4039,11 +4080,16 @@ function LeavesPageContent() {
               })()}
 
               {/* Approved Records Info */}
-              {approvedRecordsInfo && (approvedRecordsInfo.hasLeave || approvedRecordsInfo.hasOD) && (
+              {approvedRecordsInfo && (approvedRecordsInfo.hasLeave || approvedRecordsInfo.hasOD || approvedRecordsInfo.attendanceInfo?.hasAttendance) && (
                 <div className="p-3 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">
                   <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-2">
-                    ⚠️ Approved Record Found on This Date:
+                    ⚠️ Existing Attendance / Approved Record:
                   </p>
+                  {approvedRecordsInfo?.attendanceInfo?.hasAttendance && (
+                    <div className="text-xs text-amber-700 dark:text-amber-400 mb-1">
+                      <strong>Attendance:</strong> {approvedRecordsInfo.attendanceInfo.label || 'Attendance present'}
+                    </div>
+                  )}
                   {approvedRecordsInfo?.hasLeave && approvedRecordsInfo?.leaveInfo && (
                     <div className="text-xs text-amber-700 dark:text-amber-400 mb-1">
                       <strong>Leave:</strong> {approvedRecordsInfo?.leaveInfo?.isHalfDay

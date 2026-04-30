@@ -614,14 +614,13 @@ exports.applyOD = async (req, res) => {
       maxAdvanceDays: 365,
     };
 
-    // Validate Date
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const checkFromDate = new Date(fromDate);
-    checkFromDate.setHours(0, 0, 0, 0);
-
-    const diffTime = checkFromDate - today;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    // Validate Date in IST calendar space (avoid server-local timezone drift)
+    const todayIst = extractISTComponents(new Date()).dateStr;
+    const fromIst = extractISTComponents(new Date(fromDate)).dateStr;
+    const todayMid = createISTDate(todayIst, '00:00');
+    const fromMid = createISTDate(fromIst, '00:00');
+    const diffTime = fromMid - todayMid;
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
     // 1. Backdate validation
     if (diffDays < 0) {

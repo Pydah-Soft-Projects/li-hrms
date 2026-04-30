@@ -5,6 +5,7 @@
 
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+const { extractISTComponents } = require('../../shared/utils/dateUtils');
 const {
   getPunchBasedOdSuggestionForRecord,
   getAutoOdEligibilityFromRecord,
@@ -13,10 +14,24 @@ const {
   FULL_DAY_HOURS_THRESHOLD,
 } = require('../utils/holwoOdPunchResolver');
 
-async function isHolidayOrWeekOff(employeeNumber, dateStr) {
-  const empNo = String(employeeNumber).trim().toUpperCase();
+function normalizeIstDateStr(input) {
+  const raw = String(input || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  return extractISTComponents(new Date(raw)).dateStr;
+}
+
+function employeeNumberVariants(employeeNumber) {
+  const raw = String(employeeNumber || '').trim();
+  if (!raw) return [];
+  return [...new Set([raw, raw.toUpperCase()])];
+}
+
+async function isHolidayOrWeekOff(employeeNumber, dateInput) {
+  const dateStr = normalizeIstDateStr(dateInput);
+  const empNos = employeeNumberVariants(employeeNumber);
+  if (empNos.length === 0) return false;
   const ps = await PreScheduledShift.findOne({
-    employeeNumber: empNo,
+    employeeNumber: { $in: empNos },
     date: dateStr,
     status: { $in: ['WO', 'HOL'] },
   });
@@ -26,9 +41,11 @@ async function isHolidayOrWeekOff(employeeNumber, dateStr) {
 /**
  * Full context for GET /od/check-holiday: roster HOL/WO + optional punch-based suggestion.
  */
-async function getHolidayWeekOffOdApplyContext(empNo, dateStr) {
-  const upper = String(empNo).trim().toUpperCase();
-  const isHolWo = await isHolidayOrWeekOff(upper, dateStr);
+async function getHolidayWeekOffOdApplyContext(empNo, dateInput) {
+  const dateStr = normalizeIstDateStr(dateInput);
+  const empNos = employeeNumberVariants(empNo);
+  const preferredEmp = empNos[0] || String(empNo || '').trim().toUpperCase();
+  const isHolWo = await isHolidayOrWeekOff(preferredEmp, dateStr);
   if (!isHolWo) {
     return {
       isHolidayOrWeekOff: false,
@@ -40,7 +57,7 @@ async function getHolidayWeekOffOdApplyContext(empNo, dateStr) {
   }
 
   const record = await AttendanceDaily.findOne({
-    employeeNumber: upper,
+    employeeNumber: { $in: empNos.length ? empNos : [preferredEmp] },
     date: dateStr,
   }).lean();
 
