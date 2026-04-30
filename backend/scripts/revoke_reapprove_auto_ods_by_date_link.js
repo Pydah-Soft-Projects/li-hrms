@@ -25,6 +25,8 @@ const path = require('path');
 const mongoose = require('mongoose');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
+require('../departments/model/Department');
+require('../designations/model/Designation');
 const OD = require('../leaves/model/OD');
 const AttendanceDaily = require('../attendance/model/AttendanceDaily');
 const Employee = require('../employees/model/Employee');
