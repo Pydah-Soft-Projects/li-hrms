@@ -228,6 +228,63 @@ const checkAttendanceExists = async (employeeNumber, date) => {
 };
 
 /**
+ * Detect physical attendance half coverage from AttendanceDaily (same basis used in reconciliation).
+ * Returns first/second/full coverage hints for apply dialog.
+ */
+const getAttendanceCoverageForDate = async (employeeNumber, date) => {
+  const out = {
+    hasAttendance: false,
+    status: null,
+    firstHalfPresent: false,
+    secondHalfPresent: false,
+    fullDayPresent: false,
+    label: null,
+  };
+  try {
+    const attendance = await AttendanceDaily.findOne({
+      employeeNumber: employeeNumber.toUpperCase(),
+      date: date,
+    }).select('status totalLateInMinutes totalEarlyOutMinutes');
+    if (!attendance) return out;
+
+    out.hasAttendance = true;
+    out.status = attendance.status || null;
+    const st = String(attendance.status || '').toUpperCase();
+    if (st === 'PRESENT') {
+      out.firstHalfPresent = true;
+      out.secondHalfPresent = true;
+      out.fullDayPresent = true;
+      out.label = 'Full-day attendance present';
+      return out;
+    }
+    if (st === 'HALF_DAY') {
+      const eo = Number(attendance.totalEarlyOutMinutes) || 0;
+      const li = Number(attendance.totalLateInMinutes) || 0;
+      if (eo > li) {
+        out.firstHalfPresent = true;
+        out.label = 'First-half attendance present';
+      } else if (li > eo) {
+        out.secondHalfPresent = true;
+        out.label = 'Second-half attendance present';
+      } else {
+        out.firstHalfPresent = true;
+        out.label = 'First-half attendance present';
+      }
+      return out;
+    }
+    if (st === 'PARTIAL') {
+      out.label = 'Partial attendance present';
+      return out;
+    }
+    out.label = st ? `${st} attendance row exists` : 'Attendance row exists';
+    return out;
+  } catch (error) {
+    console.error('Error resolving attendance coverage:', error);
+    return out;
+  }
+};
+
+/**
  * Validate OT request - check conflicts and attendance
  * @param {String} employeeId - Employee ID
  * @param {String} employeeNumber - Employee number
@@ -587,11 +644,13 @@ const getApprovedRecordsForDate = async (employeeId, employeeNumber, date) => {
       }
     }
 
+    const attendanceInfo = await getAttendanceCoverageForDate(employeeNumber, checkDateStr);
     return {
       hasLeave: leaveInfo !== null,
       hasOD: odInfo !== null,
       leaveInfo: leaveInfo,
       odInfo: odInfo,
+      attendanceInfo,
     };
   } catch (error) {
     console.error('Error getting approved records for date:', error);
@@ -600,6 +659,7 @@ const getApprovedRecordsForDate = async (employeeId, employeeNumber, date) => {
       hasOD: false,
       leaveInfo: null,
       odInfo: null,
+      attendanceInfo: null,
       error: error.message,
     };
   }

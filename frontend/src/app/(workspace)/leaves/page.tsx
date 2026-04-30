@@ -875,6 +875,14 @@ export default function LeavesPage() {
     hasOD: boolean;
     leaveInfo: any;
     odInfo: any;
+    attendanceInfo?: {
+      hasAttendance: boolean;
+      status: string | null;
+      firstHalfPresent: boolean;
+      secondHalfPresent: boolean;
+      fullDayPresent: boolean;
+      label: string | null;
+    } | null;
   } | null>(null);
   const [checkingApprovedRecords, setCheckingApprovedRecords] = useState(false);
 
@@ -1582,6 +1590,30 @@ export default function LeavesPage() {
             setLoading(false);
             return;
           }
+        }
+      }
+
+      // Attendance-first safety at apply-time (single-day leave only): block same-half/full-day overlap.
+      if (
+        applyType === 'leave' &&
+        approvedRecordsInfo?.attendanceInfo &&
+        (formData.fromDate === formData.toDate || !formData.toDate)
+      ) {
+        const a = approvedRecordsInfo.attendanceInfo;
+        if (a.fullDayPresent) {
+          toast.error('Attendance exists for full day on this date. Attendance is preferred over leave.');
+          setLoading(false);
+          return;
+        }
+        if (formData.isHalfDay && formData.halfDayType === 'first_half' && a.firstHalfPresent) {
+          toast.error('First-half attendance already present. Attendance is preferred over leave on same half.');
+          setLoading(false);
+          return;
+        }
+        if (formData.isHalfDay && formData.halfDayType === 'second_half' && a.secondHalfPresent) {
+          toast.error('Second-half attendance already present. Attendance is preferred over leave on same half.');
+          setLoading(false);
+          return;
         }
       }
 
@@ -4974,6 +5006,22 @@ export default function LeavesPage() {
                         )}
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* Attendance/approved-records hint for single-day apply */}
+                {approvedRecordsInfo && (formData.fromDate === formData.toDate || !formData.toDate) && (
+                  <div className="p-3 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-900/20">
+                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                      Apply-time check:
+                      {approvedRecordsInfo.attendanceInfo?.label ? ` ${approvedRecordsInfo.attendanceInfo.label}.` : ''}
+                      {approvedRecordsInfo.hasOD
+                        ? ` Approved OD exists (${approvedRecordsInfo.odInfo?.isHalfDay ? (approvedRecordsInfo.odInfo?.halfDayType === 'first_half' ? 'first half' : 'second half') : 'full day'}).`
+                        : ''}
+                      {approvedRecordsInfo.hasLeave
+                        ? ` Approved leave exists (${approvedRecordsInfo.leaveInfo?.isHalfDay ? (approvedRecordsInfo.leaveInfo?.halfDayType === 'first_half' ? 'first half' : 'second half') : 'full day'}).`
+                        : ''}
+                    </p>
                   </div>
                 )}
 
