@@ -47,6 +47,8 @@ import {
 } from 'lucide-react';
 
 import { toast } from 'react-toastify';
+import { format, parseISO } from 'date-fns';
+import * as XLSX from 'xlsx-js-style';
 
 import { useAuth } from '@/contexts/AuthContext';
 import {
@@ -368,6 +370,21 @@ function getPresentExcludingOD(summary?: MonthlyAttendanceData['summary'] | null
   // Backend now provides totalPresentDays with OD already excluded/separated.
   // We just return it directly with 2-decimal precision.
   return Math.max(0, Math.round((Number(summary.totalPresentDays) || 0) * 100) / 100);
+}
+
+/** Absent total from summary (fractional half-days); else totalAbsentDays; else ABSENT-only daily count. */
+function getAbsentCountForRow(item: MonthlyAttendanceData, dailyValues: any[]): number {
+  const absentList = item.summary?.contributingDates?.absent;
+  if (Array.isArray(absentList)) {
+    return absentList.reduce((s, x) => {
+      if (typeof x === 'string') return s + 1;
+      return s + (Number((x as { value?: number }).value) || 1);
+    }, 0);
+  }
+  if (item.summary?.totalAbsentDays != null && typeof item.summary.totalAbsentDays === 'number') {
+    return item.summary.totalAbsentDays;
+  }
+  return dailyValues.filter((r: any) => r?.status === 'ABSENT').length;
 }
 
 function contributingEntryMatchesDate(entry: string | { date?: string }, dStr: string): boolean {
@@ -932,6 +949,7 @@ export default function AttendancePage() {
   const [selectedRecordForInTime, setSelectedRecordForInTime] = useState<any>(null);
   const [inTimeDialogValue, setInTimeDialogValue] = useState('');
   const [updatingInTime, setUpdatingInTime] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPDF, setExportingPDF] = useState(false);
 
   // Leave conflict state
@@ -2977,6 +2995,365 @@ export default function AttendancePage() {
     }
   };
 
+  const handleExportAttendance = async () => {
+    try {
+      setExportingExcel(true);
+      setError('');
+      const response = await api.getMonthlyAttendance(year, month, {
+        page: 1,
+        limit: 50000,
+        search: debouncedSearch,
+        divisionId: selectedDivision,
+        departmentId: selectedDepartment,
+        designationId: selectedDesignation,
+        startDate: cycleDates.startDate,
+        endDate: cycleDates.endDate
+      });
+      if (!response.success || !response.data?.length) {
+        toast.warn('No attendance data to export');
+        return;
+      }
+      const data = normalizeWorkspaceAttendanceData(response.data || []);
+      const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+      const monthLabel = `${monthNames[month - 1]} ${year}`;
+
+      const getDeptName = (emp: Employee) => {
+        const anyEmp = emp as any;
+        if (emp.department && typeof emp.department === 'object') return emp.department.name;
+        if (anyEmp.department_id && typeof anyEmp.department_id === 'object') return anyEmp.department_id.name;
+        return '';
+      };
+      const getDivisionName = (emp: Employee) => {
+        const anyEmp = emp as any;
+        if (anyEmp.division && typeof anyEmp.division === 'object') return anyEmp.division.name;
+        if (anyEmp.division_id && typeof anyEmp.division_id === 'object') return anyEmp.division_id.name;
+        return '';
+      };
+      const getDesignationName = (emp: Employee) => {
+        const anyEmp = emp as any;
+        if (emp.designation && typeof emp.designation === 'object') return emp.designation.name;
+        if (anyEmp.designation_id && typeof anyEmp.designation_id === 'object') return anyEmp.designation_id.name;
+        return 'Staff';
+      };
+
+      const wb = XLSX.utils.book_new();
+      let totalPartials = 0;
+      const summaryRows: Record<string, unknown>[] = data.map((item) => {
+        const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+        const dailyValues = Object.values(dailyAttendance || {});
+        const partialsCount = getPartialColumnTotal(item.summary, dailyAttendance as Record<string, AttendanceRecord | null>);
+        totalPartials += partialsCount;
+        const leaveRecords = dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave);
+        const totalLeaves = item.summary?.totalLeaves ?? leaveRecords.length;
+        const lopCount = leaveRecords.filter((r: any) => {
+          const anyR = r as any;
+          return anyR?.leaveNature === 'lop' || anyR?.leaveInfo?.leaveType?.toLowerCase().includes('lop') || anyR?.leaveInfo?.leaveType?.toLowerCase().includes('loss of pay');
+        }).length;
+        const paidLeaves = totalLeaves - lopCount;
+        const totalODs = item.summary?.totalODs ?? dailyValues.filter((r: any) => r?.status === 'OD' || r?.hasOD).length;
+        const weekOffs = item.summary?.totalWeeklyOffs ?? dailyValues.filter((r: any) => r?.status === 'WEEK_OFF').length;
+        const holidays = item.summary?.totalHolidays ?? dailyValues.filter((r: any) => r?.status === 'HOLIDAY').length;
+        const monthPresent = dailyValues.reduce((sum, r: any) => {
+          if (r?.status === 'PRESENT' || r?.status === 'PARTIAL') return sum + 1;
+          if (r?.status === 'HALF_DAY') return sum + 0.5;
+          return sum;
+        }, 0);
+        const monthAbsent = getAbsentCountForRow(item as MonthlyAttendanceData, dailyValues);
+        const otHours = dailyValues.reduce((sum, r: any) => sum + (r?.otHours || 0), 0);
+        const payableShifts = item.payableShifts ?? item.summary?.totalPayableShifts ?? 0;
+        return {
+          'Emp No': item.employee?.emp_no || '',
+          'Employee Name': item.employee?.employee_name || '',
+          Designation: item.employee ? getDesignationName(item.employee) : '',
+          Department: item.employee ? getDeptName(item.employee) : '',
+          Division: item.employee ? getDivisionName(item.employee) : '',
+          Present: monthPresent,
+          Absent: monthAbsent,
+          Partials: partialsCount,
+          Leaves: totalLeaves,
+          'Paid Leaves': paidLeaves,
+          LOP: lopCount,
+          'Week Offs': weekOffs,
+          Holidays: holidays,
+          OD: totalODs,
+          'OT Hours': otHours.toFixed(1),
+          'Payable Shifts': payableShifts,
+          'Late/Early Count': item.summary?.lateOrEarlyCount ?? 0,
+          'Attendance Deduction Days': item.summary?.totalAttendanceDeductionDays ?? 0
+        };
+      });
+      const summaryHeaders = Object.keys(summaryRows[0] || {});
+      const summaryAoa = [
+        ['Attendance Summary', monthLabel, '', '', '', '', '', '', '', '', '', '', '', '', `Total Partials: ${totalPartials}`],
+        ['● = Late In', '◆ = Early Out', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+        summaryHeaders,
+        ...summaryRows.map(r => Object.values(r))
+      ];
+      const wsSummary = XLSX.utils.aoa_to_sheet(summaryAoa);
+      if (wsSummary['A2']) { wsSummary['A2'].s = wsSummary['A2'].s || {}; wsSummary['A2'].s.fill = { fgColor: { rgb: 'FEF3C7' }, patternType: 'solid' as const }; }
+      if (wsSummary['B2']) { wsSummary['B2'].s = wsSummary['B2'].s || {}; wsSummary['B2'].s.fill = { fgColor: { rgb: 'DBEAFE' }, patternType: 'solid' as const }; }
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Summaries');
+
+      const daysArrayExport: string[] = [];
+      if (cycleDates.startDate && cycleDates.endDate) {
+        let current = new Date(cycleDates.startDate);
+        const end = new Date(cycleDates.endDate);
+        let count = 0;
+        while (current <= end && count <= 35) {
+          daysArrayExport.push(`${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`);
+          current.setDate(current.getDate() + 1);
+          count++;
+        }
+      }
+      if (daysArrayExport.length === 0) {
+        const firstKeys = Object.keys((data[0]?.dailyAttendance as Record<string, unknown>) || {});
+        daysArrayExport.push(...firstKeys.sort());
+      }
+
+      const getStatusWithLateEarly = (r: any): { text: string; isLate: boolean; isEarly: boolean } => {
+        if (!r) return { text: 'A', isLate: false, isEarly: false };
+        const isLate = (r.lateInMinutes != null && r.lateInMinutes > 0) || (r.isLateIn && (r.lateInMinutes ?? 0) > 0) ||
+          (r.shifts && r.shifts.some((s: any) => s.lateInMinutes != null && s.lateInMinutes > 0));
+        const isEarly = (r.earlyOutMinutes != null && r.earlyOutMinutes > 0) || (r.isEarlyOut && (r.earlyOutMinutes ?? 0) > 0) ||
+          (r.shifts && r.shifts.some((s: any) => s.earlyOutMinutes != null && s.earlyOutMinutes > 0));
+        const suffix = (isLate ? '●' : '') + (isEarly ? '◆' : '');
+        let text = '-';
+        if (r.status === 'PRESENT') text = 'P' + suffix;
+        else if (r.status === 'HALF_DAY') text = 'HD' + suffix;
+        else if (r.status === 'PARTIAL') text = 'PT' + suffix;
+        else if (r.status === 'LEAVE' || r.hasLeave) text = 'L';
+        else if (r.status === 'OD' || r.hasOD) text = 'OD';
+        else if (r.status === 'HOLIDAY') text = 'H';
+        else if (r.status === 'WEEK_OFF') text = 'WO';
+        else if (r.status === 'ABSENT') text = 'A';
+        return { text, isLate, isEarly };
+      };
+
+      const applyCellFill = (ws: any, row: number, col: number, color: string) => {
+        const ref = XLSX.utils.encode_cell({ r: row, c: col });
+        if (!ws[ref]) return;
+        ws[ref].s = ws[ref].s || {};
+        ws[ref].s.fill = { fgColor: { rgb: color }, patternType: 'solid' as const };
+      };
+
+      const completeHeaders = ['Emp No', 'Employee Name', 'Designation', 'Department', 'Division', ...daysArrayExport.map(d => format(parseISO(d), 'dd')), 'Pres', 'Leaves', 'Abs', 'WO', 'Hol', 'Partials', 'OD', 'OT', 'Pay Shifts'];
+      const completeLateEarlyFlags: { isLate: boolean; isEarly: boolean }[][] = [];
+      const completeRows: (string | number)[][] = data.map((item) => {
+        const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+        const dailyValues = Object.values(dailyAttendance || {});
+        const dayResults = daysArrayExport.map(d => getStatusWithLateEarly((dailyAttendance as Record<string, any>)[d]));
+        completeLateEarlyFlags.push(dayResults.map(d => ({ isLate: d.isLate, isEarly: d.isEarly })));
+        const dayCells = dayResults.map(d => d.text);
+        const monthPresent = dailyValues.reduce((sum, r: any) => {
+          if (r?.status === 'PRESENT' || r?.status === 'PARTIAL') return sum + 1;
+          if (r?.status === 'HALF_DAY') return sum + 0.5;
+          return sum;
+        }, 0);
+        const totalLeaves = item.summary?.totalLeaves ?? dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave).length;
+        const monthAbsentRow = getAbsentCountForRow(item as MonthlyAttendanceData, dailyValues);
+        const wo = item.summary?.totalWeeklyOffs ?? dailyValues.filter((r: any) => r?.status === 'WEEK_OFF').length;
+        const hol = item.summary?.totalHolidays ?? dailyValues.filter((r: any) => r?.status === 'HOLIDAY').length;
+        const partials = getPartialColumnTotal(
+          item.summary,
+          dailyAttendance as Record<string, AttendanceRecord | null>
+        );
+        const ods = item.summary?.totalODs ?? dailyValues.filter((r: any) => r?.status === 'OD' || r?.hasOD).length;
+        const ot = dailyValues.reduce((sum, r: any) => sum + (r?.otHours || 0), 0);
+        const ps = item.payableShifts ?? item.summary?.totalPayableShifts ?? 0;
+        return [
+          item.employee?.emp_no || '',
+          item.employee?.employee_name || '',
+          item.employee ? getDesignationName(item.employee) : '',
+          item.employee ? getDeptName(item.employee) : '',
+          item.employee ? getDivisionName(item.employee) : '',
+          ...dayCells,
+          monthPresent,
+          totalLeaves,
+          monthAbsentRow,
+          wo,
+          hol,
+          partials,
+          ods,
+          ot.toFixed(1),
+          ps
+        ];
+      });
+      const wsComplete = XLSX.utils.aoa_to_sheet([completeHeaders, ...completeRows]);
+      completeLateEarlyFlags.forEach((rowFlags, rowIdx) => {
+        rowFlags.forEach((flags, colIdx) => {
+          if (flags.isLate && flags.isEarly) applyCellFill(wsComplete, rowIdx + 1, 5 + colIdx, 'EDE9FE');
+          else if (flags.isLate) applyCellFill(wsComplete, rowIdx + 1, 5 + colIdx, 'FEF3C7');
+          else if (flags.isEarly) applyCellFill(wsComplete, rowIdx + 1, 5 + colIdx, 'DBEAFE');
+        });
+      });
+      XLSX.utils.book_append_sheet(wb, wsComplete, 'Complete');
+
+      const paHeaders = ['Emp No', 'Employee Name', 'Designation', 'Department', 'Division', ...daysArrayExport.map(d => format(parseISO(d), 'dd')), 'Present', 'Absent'];
+      const paLateEarlyFlags: { isLate: boolean; isEarly: boolean }[][] = [];
+      const paRows: (string | number)[][] = data.map((item) => {
+        const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+        const dailyValues = Object.values(dailyAttendance || {});
+        const dayResults = daysArrayExport.map(d => getStatusWithLateEarly((dailyAttendance as Record<string, any>)[d]));
+        paLateEarlyFlags.push(dayResults.map(d => ({ isLate: d.isLate, isEarly: d.isEarly })));
+        const dayCells = dayResults.map(d => d.text);
+        const monthPresent = dailyValues.reduce((sum, r: any) => {
+          if (r?.status === 'PRESENT' || r?.status === 'PARTIAL') return sum + 1;
+          if (r?.status === 'HALF_DAY') return sum + 0.5;
+          return sum;
+        }, 0);
+        const monthAbsent = getAbsentCountForRow(item as MonthlyAttendanceData, dailyValues);
+        return [
+          item.employee?.emp_no || '',
+          item.employee?.employee_name || '',
+          item.employee ? getDesignationName(item.employee) : '',
+          item.employee ? getDeptName(item.employee) : '',
+          item.employee ? getDivisionName(item.employee) : '',
+          ...dayCells,
+          monthPresent,
+          monthAbsent
+        ];
+      });
+      const wsPA = XLSX.utils.aoa_to_sheet([paHeaders, ...paRows]);
+      paLateEarlyFlags.forEach((rowFlags, rowIdx) => {
+        rowFlags.forEach((flags, colIdx) => {
+          if (flags.isLate && flags.isEarly) applyCellFill(wsPA, rowIdx + 1, 5 + colIdx, 'EDE9FE');
+          else if (flags.isLate) applyCellFill(wsPA, rowIdx + 1, 5 + colIdx, 'FEF3C7');
+          else if (flags.isEarly) applyCellFill(wsPA, rowIdx + 1, 5 + colIdx, 'DBEAFE');
+        });
+      });
+      XLSX.utils.book_append_sheet(wb, wsPA, 'Pres-Abs');
+
+      const formatTimeShort = (t: string) => {
+        if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(t)) return t.slice(0, 5);
+        try { const d = new Date(t); return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }); } catch { return t; }
+      };
+      const ioHeaders = ['Emp No', 'Employee Name', 'Designation', 'Department', 'Division', ...daysArrayExport.map(d => format(parseISO(d), 'dd')), 'Days Present'];
+      const ioLateEarlyFlags: { isLate: boolean; isEarly: boolean }[][] = [];
+      const ioRows: (string | number)[][] = data.map((item) => {
+        const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+        const dailyValues = Object.values(dailyAttendance || {});
+        const dayCells: string[] = [];
+        const rowFlags: { isLate: boolean; isEarly: boolean }[] = [];
+        daysArrayExport.forEach(d => {
+          const r = (dailyAttendance as Record<string, any>)[d];
+          if (!r) { dayCells.push('-'); rowFlags.push({ isLate: false, isEarly: false }); return; }
+          const inT = r.inTime ? formatTimeShort(r.inTime) : '-';
+          const outT = r.outTime ? formatTimeShort(r.outTime) : '-';
+          const isLate = (r.lateInMinutes != null && r.lateInMinutes > 0) || (r.isLateIn && (r.lateInMinutes ?? 0) > 0) ||
+            (r.shifts && r.shifts.some((s: any) => s.lateInMinutes != null && s.lateInMinutes > 0));
+          const isEarly = (r.earlyOutMinutes != null && r.earlyOutMinutes > 0) || (r.isEarlyOut && (r.earlyOutMinutes ?? 0) > 0) ||
+            (r.shifts && r.shifts.some((s: any) => s.earlyOutMinutes != null && s.earlyOutMinutes > 0));
+          rowFlags.push({ isLate, isEarly });
+          const suffix = (isLate ? ' ●' : '') + (isEarly ? ' ◆' : '');
+          dayCells.push(`${inT}/${outT}${suffix}`);
+        });
+        ioLateEarlyFlags.push(rowFlags);
+        const daysPresent = dailyValues.reduce((sum, r: any) => { if (r?.status === 'PRESENT' || r?.status === 'PARTIAL') return sum + 1; if (r?.status === 'HALF_DAY') return sum + 0.5; return sum; }, 0);
+        return [
+          item.employee?.emp_no || '',
+          item.employee?.employee_name || '',
+          item.employee ? getDesignationName(item.employee) : '',
+          item.employee ? getDeptName(item.employee) : '',
+          item.employee ? getDivisionName(item.employee) : '',
+          ...dayCells,
+          daysPresent
+        ];
+      });
+      const wsIO = XLSX.utils.aoa_to_sheet([ioHeaders, ...ioRows]);
+      ioLateEarlyFlags.forEach((rowFlags, rowIdx) => {
+        rowFlags.forEach((flags, colIdx) => {
+          if (flags.isLate && flags.isEarly) applyCellFill(wsIO, rowIdx + 1, 5 + colIdx, 'EDE9FE');
+          else if (flags.isLate) applyCellFill(wsIO, rowIdx + 1, 5 + colIdx, 'FEF3C7');
+          else if (flags.isEarly) applyCellFill(wsIO, rowIdx + 1, 5 + colIdx, 'DBEAFE');
+        });
+      });
+      XLSX.utils.book_append_sheet(wb, wsIO, 'In-Out');
+
+      const lvHeaders = ['Emp No', 'Employee Name', 'Designation', 'Department', 'Division', ...daysArrayExport.map(d => format(parseISO(d), 'dd')), 'Leaves', 'Paid', 'LOP'];
+      const lvRows: (string | number)[][] = data.map((item) => {
+        const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+        const dailyValues = Object.values(dailyAttendance || {});
+        const leaveRecords = dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave);
+        const totalLeaves = item.summary?.totalLeaves ?? leaveRecords.length;
+        const lopCount = leaveRecords.filter((r: any) => { const anyR = r as any; return anyR?.leaveNature === 'lop' || anyR?.leaveInfo?.leaveType?.toLowerCase().includes('lop'); }).length;
+        const paidLeaves = totalLeaves - lopCount;
+        const dayCells = daysArrayExport.map(d => {
+          const r = (dailyAttendance as Record<string, any>)[d];
+          if (r?.status === 'LEAVE' || r?.hasLeave) return 'L';
+          return '-';
+        });
+        return [
+          item.employee?.emp_no || '',
+          item.employee?.employee_name || '',
+          item.employee ? getDesignationName(item.employee) : '',
+          item.employee ? getDeptName(item.employee) : '',
+          item.employee ? getDivisionName(item.employee) : '',
+          ...dayCells,
+          totalLeaves,
+          paidLeaves,
+          lopCount
+        ];
+      });
+      const wsLeaves = XLSX.utils.aoa_to_sheet([lvHeaders, ...lvRows]);
+      XLSX.utils.book_append_sheet(wb, wsLeaves, 'Leaves');
+
+      const odHeaders = ['Emp No', 'Employee Name', 'Designation', 'Department', 'Division', ...daysArrayExport.map(d => format(parseISO(d), 'dd')), 'OD Count'];
+      const odRows: (string | number)[][] = data.map((item) => {
+        const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+        const dailyValues = Object.values(dailyAttendance || {});
+        const totalODs = item.summary?.totalODs ?? dailyValues.filter((r: any) => r?.status === 'OD' || r?.hasOD).length;
+        const dayCells = daysArrayExport.map(d => {
+          const r = (dailyAttendance as Record<string, any>)[d];
+          if (r?.status === 'OD' || r?.hasOD) return 'OD';
+          return '-';
+        });
+        return [
+          item.employee?.emp_no || '',
+          item.employee?.employee_name || '',
+          item.employee ? getDesignationName(item.employee) : '',
+          item.employee ? getDeptName(item.employee) : '',
+          item.employee ? getDivisionName(item.employee) : '',
+          ...dayCells,
+          totalODs
+        ];
+      });
+      const wsOD = XLSX.utils.aoa_to_sheet([odHeaders, ...odRows]);
+      XLSX.utils.book_append_sheet(wb, wsOD, 'OD');
+
+      const otHeaders = ['Emp No', 'Employee Name', 'Designation', 'Department', 'Division', ...daysArrayExport.map(d => format(parseISO(d), 'dd')), 'OT Hrs', 'Extra Hrs'];
+      const otRows: (string | number)[][] = data.map((item) => {
+        const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+        const dailyValues = Object.values(dailyAttendance || {});
+        const otHrs = dailyValues.reduce((sum, r: any) => sum + (r?.otHours || 0), 0);
+        const extraHrs = dailyValues.reduce((sum, r: any) => sum + (r?.extraHours || 0), 0);
+        const dayCells = daysArrayExport.map(d => {
+          const r = (dailyAttendance as Record<string, any>)[d];
+          return r?.otHours ? String(r.otHours) : (r?.extraHours ? String(r.extraHours) : '-');
+        });
+        return [
+          item.employee?.emp_no || '',
+          item.employee?.employee_name || '',
+          item.employee ? getDesignationName(item.employee) : '',
+          item.employee ? getDeptName(item.employee) : '',
+          item.employee ? getDivisionName(item.employee) : '',
+          ...dayCells,
+          otHrs.toFixed(1),
+          extraHrs.toFixed(1)
+        ];
+      });
+      const wsOT = XLSX.utils.aoa_to_sheet([otHeaders, ...otRows]);
+      XLSX.utils.book_append_sheet(wb, wsOT, 'OT');
+
+      XLSX.writeFile(wb, `attendance_${monthStr}.xlsx`);
+      toast.success(`Exported ${data.length} employees to attendance_${monthStr}.xlsx`);
+    } catch (err: any) {
+      console.error('Export error:', err);
+      toast.error(err?.message || 'Failed to export attendance');
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
 
 
   const handleSyncShifts = async () => {
@@ -3958,6 +4335,22 @@ export default function AttendancePage() {
                   Upload
                 </button>
               )}
+
+              <button
+                onClick={handleExportAttendance}
+                disabled={exportingExcel}
+                title="Export filtered attendance to Excel"
+                className="h-9 flex items-center px-4 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-emerald-600 hover:border-emerald-200 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-emerald-400"
+              >
+                {exportingExcel ? (
+                  <div className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                ) : (
+                  <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M5 20h14a1 1 0 001-1v-3a1 1 0 00-1-1h-1M5 20a1 1 0 01-1-1v-3a1 1 0 011-1h1m0 0V4a1 1 0 011-1h8a1 1 0 011 1v11M7 15h10" />
+                  </svg>
+                )}
+                {exportingExcel ? 'Exporting...' : 'Export'}
+              </button>
 
               <button
                 onClick={handleExportPDF}
