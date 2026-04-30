@@ -136,6 +136,9 @@ async function dayQualifiesForCo(od, empNo, dateStr) {
 }
 
 async function ensureCompOffCredit(od, empNo, day, dryRun) {
+  if (!od?.employeeId) {
+    return { qualifies: false, hasCredit: false, creditedNow: false };
+  }
   const qualifies = await dayQualifiesForCo(od, empNo, day);
   if (!qualifies) return { qualifies: false, hasCredit: false, creditedNow: false };
 
@@ -217,7 +220,7 @@ async function main() {
   };
 
   const ods = await OD.find(odQuery)
-    .select('_id emp_no fromDate toDate status isHalfDay halfDayType odType_extended durationHours odStartTime odEndTime workflow updatedAt')
+    .select('_id employeeId emp_no fromDate toDate status isHalfDay halfDayType odType_extended durationHours odStartTime odEndTime isCOEligible workflow updatedAt')
     .lean();
 
   let checked = 0;

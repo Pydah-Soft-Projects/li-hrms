@@ -18,6 +18,20 @@ const { isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
 
 const REMARK_PREFIX = '[Auto attendance reconciliation]';
 
+function daysInclusive(fromDate, toDate) {
+  const fromStr = extractISTComponents(fromDate).dateStr;
+  const toStr = extractISTComponents(toDate).dateStr;
+  const a = createISTDate(fromStr, '00:00');
+  const b = createISTDate(toStr, '00:00');
+  return Math.round((b.getTime() - a.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+}
+
+function plusDays(dateStr, days) {
+  const d = createISTDate(dateStr, '00:00');
+  d.setDate(d.getDate() + days);
+  return extractISTComponents(d).dateStr;
+}
+
 async function loadSettingEnabled() {
   try {
     const s = await Settings.findOne({ key: 'leave_attendance_reconciliation_enabled' }).lean();
@@ -112,6 +126,208 @@ function appendOdRemark(od, line) {
   od.remarks = prev ? `${prev}\n${add}` : add;
 }
 
+function addWorkflowHistory(doc, action, comments) {
+  if (!doc.workflow) return;
+  doc.workflow.history = doc.workflow.history || [];
+  doc.workflow.history.push({
+    action,
+    comments,
+    timestamp: new Date(),
+  });
+}
+
+async function splitAndAdjustMultiDayLeave({
+  leave,
+  dateStr,
+  mode, // 'reject' | 'narrow_first' | 'narrow_second'
+  detail,
+  syncPayRegisterFromLeave,
+}) {
+  const originalFrom = extractISTComponents(leave.fromDate).dateStr;
+  const originalTo = extractISTComponents(leave.toDate).dateStr;
+  if (dateStr < originalFrom || dateStr > originalTo) {
+    return { ok: false, reason: 'target_out_of_range' };
+  }
+
+  await leaveRegisterService.reverseLeaveDebit(leave, null);
+
+  const beforeFrom = originalFrom;
+  const beforeTo = plusDays(dateStr, -1);
+  const afterFrom = plusDays(dateStr, 1);
+  const afterTo = originalTo;
+  const hasBefore = beforeFrom <= beforeTo;
+  const hasAfter = afterFrom <= afterTo;
+
+  const base = leave.toObject();
+  delete base._id;
+  delete base.__v;
+  delete base.createdAt;
+  delete base.updatedAt;
+
+  const keepHalfType = mode === 'narrow_second' ? 'second_half' : mode === 'narrow_first' ? 'first_half' : null;
+  const keepNumber = mode === 'reject' ? 0 : 0.5;
+
+  const toSync = [];
+  if (mode === 'reject') {
+    leave.status = 'rejected';
+    leave.workflow = leave.workflow || {};
+    leave.workflow.isCompleted = true;
+    leave.workflow.currentStepRole = null;
+    leave.workflow.nextApprover = null;
+    leave.workflow.nextApproverRole = null;
+    addWorkflowHistory(leave, 'rejected', `${REMARK_PREFIX} System rejected — ${detail}`);
+    appendRemark(leave, `${dateStr}: ${detail}`);
+    await leave.save();
+    toSync.push(leave);
+  } else {
+    leave.fromDate = createISTDate(dateStr, '00:00');
+    leave.toDate = createISTDate(dateStr, '23:59');
+    leave.isHalfDay = true;
+    leave.halfDayType = keepHalfType;
+    leave.numberOfDays = keepNumber;
+    addWorkflowHistory(leave, 'status_changed', `${REMARK_PREFIX} System updated — ${detail}`);
+    appendRemark(leave, `${dateStr}: ${detail}`);
+    await leave.save();
+    await leaveRegisterService.addLeaveDebit(leave, null);
+    toSync.push(leave);
+  }
+
+  if (hasBefore) {
+    const b = new Leave({
+      ...base,
+      fromDate: createISTDate(beforeFrom, '00:00'),
+      toDate: createISTDate(beforeTo, '23:59'),
+      isHalfDay: false,
+      halfDayType: null,
+      numberOfDays: daysInclusive(createISTDate(beforeFrom), createISTDate(beforeTo)),
+      splitStatus: null,
+      remarks: `${String(base.remarks || '').trim()}${base.remarks ? '\n' : ''}${REMARK_PREFIX} ${dateStr}: System split preserved prior days (${beforeFrom}..${beforeTo}).`,
+    });
+    await b.save();
+    await leaveRegisterService.addLeaveDebit(b, null);
+    toSync.push(b);
+  }
+
+  if (hasAfter) {
+    const a = new Leave({
+      ...base,
+      fromDate: createISTDate(afterFrom, '00:00'),
+      toDate: createISTDate(afterTo, '23:59'),
+      isHalfDay: false,
+      halfDayType: null,
+      numberOfDays: daysInclusive(createISTDate(afterFrom), createISTDate(afterTo)),
+      splitStatus: null,
+      remarks: `${String(base.remarks || '').trim()}${base.remarks ? '\n' : ''}${REMARK_PREFIX} ${dateStr}: System split preserved later days (${afterFrom}..${afterTo}).`,
+    });
+    await a.save();
+    await leaveRegisterService.addLeaveDebit(a, null);
+    toSync.push(a);
+  }
+
+  for (const row of toSync) {
+    try {
+      await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(row.employeeId, row.fromDate);
+    } catch (e) {
+      console.warn('[leaveAttendanceReconciliation] monthlyApply sync', e?.message);
+    }
+    try {
+      await syncPayRegisterFromLeave(row);
+    } catch (e) {
+      console.warn('[leaveAttendanceReconciliation] pay register sync', e?.message);
+    }
+  }
+  return { ok: true };
+}
+
+async function splitAndAdjustMultiDayOD({
+  od,
+  dateStr,
+  mode, // 'reject' | 'narrow_first' | 'narrow_second'
+  detail,
+  syncPayRegisterFromOD,
+}) {
+  const originalFrom = extractISTComponents(od.fromDate).dateStr;
+  const originalTo = extractISTComponents(od.toDate).dateStr;
+  if (dateStr < originalFrom || dateStr > originalTo) {
+    return { ok: false, reason: 'target_out_of_range' };
+  }
+  const beforeFrom = originalFrom;
+  const beforeTo = plusDays(dateStr, -1);
+  const afterFrom = plusDays(dateStr, 1);
+  const afterTo = originalTo;
+  const hasBefore = beforeFrom <= beforeTo;
+  const hasAfter = afterFrom <= afterTo;
+
+  const base = od.toObject();
+  delete base._id;
+  delete base.__v;
+  delete base.createdAt;
+  delete base.updatedAt;
+
+  const toSync = [];
+  if (mode === 'reject') {
+    od.status = 'rejected';
+    od.workflow = od.workflow || {};
+    od.workflow.isCompleted = true;
+    od.workflow.currentStepRole = null;
+    od.workflow.nextApprover = null;
+    od.workflow.nextApproverRole = null;
+    addWorkflowHistory(od, 'rejected', `${REMARK_PREFIX} System rejected — ${detail}`);
+    appendOdRemark(od, `${dateStr}: ${detail}`);
+    await od.save();
+    toSync.push(od);
+  } else {
+    od.fromDate = createISTDate(dateStr, '00:00');
+    od.toDate = createISTDate(dateStr, '23:59');
+    od.isHalfDay = true;
+    od.halfDayType = mode === 'narrow_second' ? 'second_half' : 'first_half';
+    od.numberOfDays = 0.5;
+    od.odType_extended = 'half_day';
+    addWorkflowHistory(od, 'status_changed', `${REMARK_PREFIX} System updated — ${detail}`);
+    appendOdRemark(od, `${dateStr}: ${detail}`);
+    await od.save();
+    toSync.push(od);
+  }
+
+  if (hasBefore) {
+    const b = new OD({
+      ...base,
+      fromDate: createISTDate(beforeFrom, '00:00'),
+      toDate: createISTDate(beforeTo, '23:59'),
+      isHalfDay: false,
+      halfDayType: null,
+      numberOfDays: daysInclusive(createISTDate(beforeFrom), createISTDate(beforeTo)),
+      odType_extended: 'full_day',
+      remarks: `${String(base.remarks || '').trim()}${base.remarks ? '\n' : ''}${REMARK_PREFIX} ${dateStr}: System split preserved prior days (${beforeFrom}..${beforeTo}).`,
+    });
+    await b.save();
+    toSync.push(b);
+  }
+  if (hasAfter) {
+    const a = new OD({
+      ...base,
+      fromDate: createISTDate(afterFrom, '00:00'),
+      toDate: createISTDate(afterTo, '23:59'),
+      isHalfDay: false,
+      halfDayType: null,
+      numberOfDays: daysInclusive(createISTDate(afterFrom), createISTDate(afterTo)),
+      odType_extended: 'full_day',
+      remarks: `${String(base.remarks || '').trim()}${base.remarks ? '\n' : ''}${REMARK_PREFIX} ${dateStr}: System split preserved later days (${afterFrom}..${afterTo}).`,
+    });
+    await a.save();
+    toSync.push(a);
+  }
+
+  for (const row of toSync) {
+    try {
+      await syncPayRegisterFromOD(row);
+    } catch (e) {
+      console.warn('[leaveAttendanceReconciliation] pay register OD sync', e?.message);
+    }
+  }
+  return { ok: true };
+}
+
 async function findApprovedOdsForDate(employeeId, dateStr) {
   const start = createISTDate(dateStr, '00:00');
   const end = createISTDate(dateStr, '23:59');
@@ -178,10 +394,7 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
       results.push({ leaveId: l._id, action: 'skip', reason: 'esi' });
       continue;
     }
-    if (!isSingleCalendarDayLeave(l)) {
-      results.push({ leaveId: l._id, action: 'skip', reason: 'multi_day' });
-      continue;
-    }
+    const isSingle = isSingleCalendarDayLeave(l);
     const tag = `${REMARK_PREFIX} ${dateStr}:`;
     if (String(l.remarks || '').includes(tag)) {
       results.push({ leaveId: l._id, action: 'skip', reason: 'already_reconciled' });
@@ -201,6 +414,21 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
       if (!leave || leave.status !== 'approved') continue;
 
       const detail = 'Half-day leave auto-rejected: attendance supersedes this half.';
+      if (!isSingle) {
+        const splitRes = await splitAndAdjustMultiDayLeave({
+          leave,
+          dateStr,
+          mode: 'reject',
+          detail,
+          syncPayRegisterFromLeave,
+        });
+        if (!splitRes.ok) {
+          results.push({ leaveId: l._id, action: 'error', error: splitRes.reason });
+        } else {
+          results.push({ leaveId: l._id, action: 'split_rejected_half' });
+        }
+        continue;
+      }
       try {
         await leaveRegisterService.reverseLeaveDebit(leave, null);
       } catch (e) {
@@ -243,6 +471,21 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
         const leave = await Leave.findById(l._id);
         if (!leave || leave.status !== 'approved') continue;
         const detail = 'Full-day leave auto-rejected: same-day full attendance (punches) supersedes leave.';
+        if (!isSingle) {
+          const splitRes = await splitAndAdjustMultiDayLeave({
+            leave,
+            dateStr,
+            mode: 'reject',
+            detail,
+            syncPayRegisterFromLeave,
+          });
+          if (!splitRes.ok) {
+            results.push({ leaveId: l._id, action: 'error', error: splitRes.reason });
+          } else {
+            results.push({ leaveId: l._id, action: 'split_rejected_full' });
+          }
+          continue;
+        }
         try {
           await leaveRegisterService.reverseLeaveDebit(leave, null);
         } catch (e) {
@@ -285,6 +528,21 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
         if (!leave || leave.status !== 'approved') continue;
         const detail =
           'Full-day leave narrowed to second half (0.5d): first half attendance supersedes leave; register debits adjusted.';
+        if (!isSingle) {
+          const splitRes = await splitAndAdjustMultiDayLeave({
+            leave,
+            dateStr,
+            mode: 'narrow_second',
+            detail,
+            syncPayRegisterFromLeave,
+          });
+          if (!splitRes.ok) {
+            results.push({ leaveId: l._id, action: 'error', error: splitRes.reason });
+          } else {
+            results.push({ leaveId: l._id, action: 'split_narrowed_second' });
+          }
+          continue;
+        }
         const prevState = {
           isHalfDay: leave.isHalfDay,
           halfDayType: leave.halfDayType,
@@ -337,6 +595,21 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
         if (!leave || leave.status !== 'approved') continue;
         const detail =
           'Full-day leave narrowed to first half (0.5d): second half attendance supersedes leave; register debits adjusted.';
+        if (!isSingle) {
+          const splitRes = await splitAndAdjustMultiDayLeave({
+            leave,
+            dateStr,
+            mode: 'narrow_first',
+            detail,
+            syncPayRegisterFromLeave,
+          });
+          if (!splitRes.ok) {
+            results.push({ leaveId: l._id, action: 'error', error: splitRes.reason });
+          } else {
+            results.push({ leaveId: l._id, action: 'split_narrowed_first' });
+          }
+          continue;
+        }
         const prevState = {
           isHalfDay: leave.isHalfDay,
           halfDayType: leave.halfDayType,
@@ -409,13 +682,9 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
     }
     const fromStr = extractISTComponents(o.fromDate).dateStr;
     const toStr = extractISTComponents(o.toDate).dateStr;
-    if (fromStr !== toStr) {
-      results.push({ odId: o._id, action: 'skip', reason: 'multi_day_od' });
-      continue;
-    }
-
     const od = await OD.findById(o._id);
     if (!od || od.status !== 'approved') continue;
+    const isSingleOd = fromStr === toStr;
     const isHalfOd = od.isHalfDay || String(od.odType_extended) === 'half_day' || Number(od.numberOfDays) < 1;
 
     if (isHalfOd) {
@@ -426,6 +695,21 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
         continue;
       }
       const detail = 'Half-day OD auto-rejected: attendance supersedes this half.';
+      if (!isSingleOd) {
+        const splitRes = await splitAndAdjustMultiDayOD({
+          od,
+          dateStr,
+          mode: 'reject',
+          detail,
+          syncPayRegisterFromOD,
+        });
+        if (!splitRes.ok) {
+          results.push({ odId: od._id, action: 'error', error: splitRes.reason });
+        } else {
+          results.push({ odId: od._id, action: 'split_rejected_od_half' });
+        }
+        continue;
+      }
       od.status = 'rejected';
       if (od.workflow) {
         od.workflow.isCompleted = true;
@@ -452,6 +736,21 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
 
     if (p1 >= 0.5 && p2 >= 0.5) {
       const detail = 'Full-day OD auto-rejected: same-day full attendance (punches) supersedes OD.';
+      if (!isSingleOd) {
+        const splitRes = await splitAndAdjustMultiDayOD({
+          od,
+          dateStr,
+          mode: 'reject',
+          detail,
+          syncPayRegisterFromOD,
+        });
+        if (!splitRes.ok) {
+          results.push({ odId: od._id, action: 'error', error: splitRes.reason });
+        } else {
+          results.push({ odId: od._id, action: 'split_rejected_od_full' });
+        }
+        continue;
+      }
       od.status = 'rejected';
       if (od.workflow) {
         od.workflow.isCompleted = true;
@@ -479,6 +778,21 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
     if (p1 >= 0.5 && p2 < 0.5) {
       const detail =
         'Full-day OD narrowed to second half (0.5d): first-half attendance supersedes OD.';
+      if (!isSingleOd) {
+        const splitRes = await splitAndAdjustMultiDayOD({
+          od,
+          dateStr,
+          mode: 'narrow_second',
+          detail,
+          syncPayRegisterFromOD,
+        });
+        if (!splitRes.ok) {
+          results.push({ odId: od._id, action: 'error', error: splitRes.reason });
+        } else {
+          results.push({ odId: od._id, action: 'split_narrowed_od_second' });
+        }
+        continue;
+      }
       od.isHalfDay = true;
       od.halfDayType = 'second_half';
       od.numberOfDays = 0.5;
@@ -505,6 +819,21 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
     if (p2 >= 0.5 && p1 < 0.5) {
       const detail =
         'Full-day OD narrowed to first half (0.5d): second-half attendance supersedes OD.';
+      if (!isSingleOd) {
+        const splitRes = await splitAndAdjustMultiDayOD({
+          od,
+          dateStr,
+          mode: 'narrow_first',
+          detail,
+          syncPayRegisterFromOD,
+        });
+        if (!splitRes.ok) {
+          results.push({ odId: od._id, action: 'error', error: splitRes.reason });
+        } else {
+          results.push({ odId: od._id, action: 'split_narrowed_od_first' });
+        }
+        continue;
+      }
       od.isHalfDay = true;
       od.halfDayType = 'first_half';
       od.numberOfDays = 0.5;
