@@ -854,10 +854,17 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       }
 
       // Overlay ODs
+      let hasFullDayOdCoverage = false;
       if (day.ods.length > 0 && !day.isWO && !day.isHOL) {
         for (const od of day.ods) {
-          if (!od.isHalfDay || od.odType_extended === 'full_day') {
+          const odDays = Number(od.numberOfDays) || 0;
+          const isFullDayOd =
+            (!od.isHalfDay && String(od.odType_extended || '') !== 'hours') ||
+            od.odType_extended === 'full_day' ||
+            odDays >= 1 - 1e-6;
+          if (isFullDayOd) {
             odFirst = 0.5; odSecond = 0.5;
+            hasFullDayOdCoverage = true;
             day.lateInWaved = true;
             day.earlyOutWaved = true;
           } else if (od.halfDayType === 'first_half') {
@@ -875,6 +882,17 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           contributingDates.ods.push({ date: dStr, value: odFirst + odSecond, label: 'OD' });
         }
         totalODDays += (odFirst + odSecond);
+      }
+
+      // Guardrail: PARTIAL + approved full-day OD must contribute as OD only.
+      // Keep OD credit, but suppress attendance-present credit on this day.
+      if (
+        hasFullDayOdCoverage &&
+        day.attendance &&
+        String(day.attendance.status || '').toUpperCase() === 'PARTIAL'
+      ) {
+        attFirst = 0;
+        attSecond = 0;
       }
 
       // Half-day ESI with user-declared OT:
