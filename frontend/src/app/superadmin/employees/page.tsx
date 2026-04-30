@@ -28,6 +28,17 @@ import {
   ParsedRow,
 } from '@/lib/bulkUpload';
 import {
+  appendOverallCertificateStatusToSetting,
+  canonicalQualificationStatus,
+  getQualificationStatusSelectOptions,
+  isVerifiedOverallStatusForIcon,
+  mergeOverallQualificationStatusOptions,
+  OVERALL_CERTIFICATE_STATUS_SELECT_ADD_SENTINEL,
+  overallQualificationStatusLabel,
+  sanitizeOverallQualificationStatusStore,
+} from '@/lib/qualificationStatus';
+import ManageOverallCertificateStatusDialog from '@/components/employee/ManageOverallCertificateStatusDialog';
+import {
   UserCheck,
   UserX,
   Clock as LucideClock,
@@ -36,7 +47,6 @@ import {
   MoreVertical,
   ChevronRight,
   ChevronLeft,
-  Plus,
   Search,
   Filter,
   Eye,
@@ -477,7 +487,11 @@ export default function EmployeesPage() {
     qualificationStatus?: string;
     paidLeaves?: number;
     casualLeaves?: number;
-  }>({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'Partial', paidLeaves: 0, casualLeaves: 0 });
+  }>({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'not_submitted', paidLeaves: 0, casualLeaves: 0 });
+  const [qualificationStatusesSetting, setQualificationStatusesSetting] = useState<unknown>(null);
+  const [addOverallCertDialogOpen, setAddOverallCertDialogOpen] = useState(false);
+  const [addOverallCertSubmitting, setAddOverallCertSubmitting] = useState(false);
+
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [notificationChannels, setNotificationChannels] = useState<{ sms: boolean; whatsapp: boolean; email: boolean }>({
@@ -1394,6 +1408,21 @@ export default function EmployeesPage() {
     }
   };
 
+  const loadQualificationStatusesSetting = useCallback(async () => {
+    try {
+      const res = await api.getSetting('qualification_statuses');
+      if (res.success && res.data) {
+        setQualificationStatusesSetting(res.data.value ?? null);
+      }
+    } catch {
+      setQualificationStatusesSetting(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadQualificationStatusesSetting();
+  }, [loadQualificationStatusesSetting]);
+
   const generateDynamicTemplate = (settings: any, opts?: { includeEmployeeGroup?: boolean }) => {
     if (!settings || !settings.groups) return;
 
@@ -1749,6 +1778,7 @@ export default function EmployeesPage() {
 
         setEmployees(employeesData);
         setDataSource(response.dataSource || 'mongodb');
+        void loadQualificationStatusesSetting();
 
         // Update pagination state
         const pagination = (response as any).pagination;
@@ -1865,6 +1895,22 @@ export default function EmployeesPage() {
     return applications.find(a => a.emp_no === viewingEmployee.emp_no && a.status === 'verified');
   }, [viewingEmployee, applications]);
 
+  const overallCertificateStatusOptions = useMemo(
+    () =>
+      mergeOverallQualificationStatusOptions({
+        settingList: qualificationStatusesSetting ?? formSettings?.qualification_statuses,
+        employeeValues: employees.map((e) => e.qualificationStatus),
+        current: pendingAppForViewing ? approvalData.qualificationStatus : viewingEmployee?.qualificationStatus,
+      }),
+    [
+      qualificationStatusesSetting,
+      formSettings?.qualification_statuses,
+      employees,
+      pendingAppForViewing,
+      approvalData.qualificationStatus,
+      viewingEmployee?.qualificationStatus,
+    ]
+  );
 
   // Trigger search and filter
   useEffect(() => {
@@ -2676,6 +2722,56 @@ export default function EmployeesPage() {
     }
   };
 
+  const handleViewingCertificateStatusChange = async (rawInput: string): Promise<boolean> => {
+    if (!viewingEmployee?.emp_no) return false;
+
+    const prev = viewingEmployee;
+    const stored = sanitizeOverallQualificationStatusStore(rawInput);
+    setViewingEmployee({ ...viewingEmployee, qualificationStatus: stored ?? undefined } as Employee);
+
+    try {
+      const response = await api.updateEmployee(viewingEmployee.emp_no, { qualificationStatus: stored });
+      if (response.success) {
+        setEmployees((p) =>
+          p.map((emp) => (emp.emp_no === viewingEmployee.emp_no ? { ...emp, qualificationStatus: stored ?? undefined } : emp))
+        );
+        if (response.data) setViewingEmployee(response.data as Employee);
+        return true;
+      }
+      setViewingEmployee(prev);
+      await alertError('Failed to update', response.message || 'Failed to update certificate status');
+      return false;
+    } catch (err: any) {
+      setViewingEmployee(prev);
+      await alertError('Error', err.message || 'An error occurred');
+      console.error(err);
+      return false;
+    }
+  };
+
+  const submitAddNewOverallCertificateStatus = async (raw: string) => {
+    setAddOverallCertSubmitting(true);
+    try {
+      const { merged } = await appendOverallCertificateStatusToSetting(
+        { getSetting: api.getSetting, upsertSetting: api.upsertSetting },
+        raw
+      );
+      if (merged.length) setQualificationStatusesSetting(merged);
+      if (pendingAppForViewing) {
+        const v = sanitizeOverallQualificationStatusStore(raw);
+        setApprovalData((prev) => ({ ...prev, qualificationStatus: v || '' }));
+        setAddOverallCertDialogOpen(false);
+      } else {
+        const ok = await handleViewingCertificateStatusChange(raw);
+        if (ok) setAddOverallCertDialogOpen(false);
+      }
+    } catch {
+      await alertError('Error', 'Failed to add certificate status');
+    } finally {
+      setAddOverallCertSubmitting(false);
+    }
+  };
+
   const handleViewEmployee = async (employee: Employee) => {
     // Initial set to show dialog immediately with available data
     setViewingEmployee(employee);
@@ -2724,6 +2820,7 @@ export default function EmployeesPage() {
       employee_group_id: (application as any).employee_group_id,
       employee_group: (application as any).employee_group,
       department: application.department,
+      division: (application as any).division,
       designation: application.designation,
       doj: application.doj,
       dob: application.dob,
@@ -3042,7 +3139,7 @@ export default function EmployeesPage() {
           doj: '',
           comments: '',
           qualifications: [],
-          qualificationStatus: 'Partial',
+          qualificationStatus: 'not_submitted',
           paidLeaves: 0,
           casualLeaves: 0
         });
@@ -3075,7 +3172,7 @@ export default function EmployeesPage() {
         setViewingEmployee(null);
         setSelectedApplication(null);
 
-        setApprovalData({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'Partial', paidLeaves: 0, casualLeaves: 0 });
+        setApprovalData({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'not_submitted', paidLeaves: 0, casualLeaves: 0 });
         loadApplications();
       } else {
         setError(response.message || 'Failed to reject application');
@@ -3106,8 +3203,18 @@ export default function EmployeesPage() {
       ...(secondSalaryEnabled ? { second_salary: application.second_salary || undefined } : {}),
       doj: dojValue,
       comments: '',
-      qualifications: application.qualifications ? structuredClone(application.qualifications) : [],
-      qualificationStatus: application.qualificationStatus || 'Partial',
+      qualifications: application.qualifications
+        ? structuredClone(application.qualifications).map((q: any) => {
+            if (!q || typeof q !== 'object') return q;
+            const s = q.status;
+            if (s === undefined || s === null || String(s).trim() === '') return q;
+            return { ...q, status: canonicalQualificationStatus(s) };
+          })
+        : [],
+      qualificationStatus:
+        application.qualificationStatus != null && String(application.qualificationStatus).trim() !== ''
+          ? String(application.qualificationStatus).trim()
+          : 'not_submitted',
       paidLeaves: application.paidLeaves ?? application.dynamicFields?.paid_leaves ?? 0,
       casualLeaves: application.casualLeaves ?? application.dynamicFields?.casual_leaves ?? 0,
     });
@@ -4978,7 +5085,7 @@ export default function EmployeesPage() {
 
                               const handleStatusChange = (newStatus: string) => {
                                 const newQuals = [...quals];
-                                newQuals[idx] = { ...newQuals[idx], status: newStatus };
+                                newQuals[idx] = { ...newQuals[idx], status: canonicalQualificationStatus(newStatus) };
                                 setApprovalData({ ...approvalData, qualifications: newQuals });
                               };
 
@@ -5028,19 +5135,16 @@ export default function EmployeesPage() {
                                   {/* Card Content Area */}
                                   <div className="flex flex-1 flex-col p-5">
                                     <div className="space-y-3">
-                                      {/* Status Dropdown */}
-                                      <div className="flex flex-col border-b border-slate-100 pb-3 last:border-0 last:pb-0 dark:border-slate-800">
-                                        <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-1">
-                                          Verification Status
-                                        </label>
+                                      <div className="border-b border-slate-100 pb-3 dark:border-slate-800">
                                         <select
-                                          value={qual.status || 'Partial'}
+                                          aria-label="Qualification certificate verification"
+                                          value={canonicalQualificationStatus(qual.status)}
                                           onChange={(e) => handleStatusChange(e.target.value)}
                                           className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                                         >
-                                          <option value="Partial">Partial</option>
-                                          <option value="Not Certified">Not Certified</option>
-                                          <option value="Certified">Certified</option>
+                                          {getQualificationStatusSelectOptions(formSettings ?? undefined).map((opt) => (
+                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                          ))}
                                         </select>
                                       </div>
 
@@ -6070,7 +6174,7 @@ export default function EmployeesPage() {
                           Gross: {viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}
                         </span>
                         <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300">
-                          Cert Status: {viewingEmployee.qualificationStatus || '—'}
+                          Cert status: {overallQualificationStatusLabel(viewingEmployee.qualificationStatus, overallCertificateStatusOptions)}
                         </span>
                         <span className={viewingEmployee.is_active !== false
                           ? 'inline-flex rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400'
@@ -6262,6 +6366,15 @@ export default function EmployeesPage() {
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('employee_name', formSettings) || 'Name'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.employee_name || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('division_id', formSettings) || 'Division'}</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).division?.name
+                                || (typeof viewingEmployee.division_id === 'object' && viewingEmployee.division_id && 'name' in (viewingEmployee.division_id as object)
+                                  ? (viewingEmployee.division_id as { name?: string }).name
+                                  : '-')}
+                            </p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('department_id', formSettings) || 'Department'}</label>
@@ -6587,38 +6700,54 @@ export default function EmployeesPage() {
                         <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{getGroupLabel('personal_info', formSettings, 'Professional Information')}</h3>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                           <div className="sm:col-span-2 lg:col-span-3">
-                            <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                               <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Qualifications</label>
-                              {(() => {
-                                const statuses = formSettings?.qualification_statuses || ['Partial', 'Not Certified', 'Certified'];
-                                if (pendingAppForViewing) {
-                                  return (
-                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                                      <span className="text-xs font-medium text-slate-500">Overall Status:</span>
-                                      <select
-                                        value={approvalData.qualificationStatus || 'Partial'}
-                                        onChange={(e) => setApprovalData({ ...approvalData, qualificationStatus: e.target.value })}
-                                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800"
-                                      >
-                                        {statuses.map((st: any) => {
-                                          const val = typeof st === 'object' ? st.value : st;
-                                          const label = typeof st === 'object' ? st.label : st;
-                                          return <option key={val} value={val}>{label}</option>;
-                                        })}
-                                      </select>
-                                    </div>
-                                  );
-                                } else {
-                                  return (
-                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                                      <span className="text-xs font-medium text-slate-500">Overall Status:</span>
-                                      <span className="rounded-full px-2.5 py-1 text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300">
-                                        {viewingEmployee.qualificationStatus || '—'}
-                                      </span>
-                                    </div>
-                                  );
-                                }
-                              })()}
+                              <div className="flex min-w-0 flex-1 flex-col gap-2 sm:max-w-md sm:items-end">
+                                <div className="flex w-full flex-col gap-2 sm:max-w-xs sm:items-end">
+                                  <span className="w-full text-xs font-medium text-slate-500 sm:text-right">Overall status</span>
+                                  <select
+                                    value={
+                                      pendingAppForViewing
+                                        ? (approvalData.qualificationStatus ?? '')
+                                        : (viewingEmployee.qualificationStatus ?? '')
+                                    }
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      if (v === OVERALL_CERTIFICATE_STATUS_SELECT_ADD_SENTINEL) {
+                                        setAddOverallCertDialogOpen(true);
+                                        return;
+                                      }
+                                      if (pendingAppForViewing) {
+                                        setApprovalData((prev) => ({ ...prev, qualificationStatus: v }));
+                                      } else {
+                                        void handleViewingCertificateStatusChange(v);
+                                      }
+                                    }}
+                                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                                  >
+                                    <option value="">Not set</option>
+                                    {overallCertificateStatusOptions.map((opt) => (
+                                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                    ))}
+                                    <option value={OVERALL_CERTIFICATE_STATUS_SELECT_ADD_SENTINEL}>Add +</option>
+                                  </select>
+                                </div>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 sm:text-right">
+                                  {pendingAppForViewing
+                                    ? 'Use Add + at the bottom of the list to manage shared statuses for this application.'
+                                    : 'Use Add + at the bottom of the list to manage shared statuses for this employee.'}
+                                </p>
+                                <ManageOverallCertificateStatusDialog
+                                  isOpen={addOverallCertDialogOpen}
+                                  onClose={() => !addOverallCertSubmitting && setAddOverallCertDialogOpen(false)}
+                                  mergedOptions={overallCertificateStatusOptions}
+                                  rawSetting={qualificationStatusesSetting ?? formSettings?.qualification_statuses}
+                                  settingsApi={{ getSetting: api.getSetting, upsertSetting: api.upsertSetting }}
+                                  onSettingSaved={(next) => setQualificationStatusesSetting(next)}
+                                  onAddNewAndApply={submitAddNewOverallCertificateStatus}
+                                  addSubmitting={addOverallCertSubmitting}
+                                />
+                              </div>
                             </div>
                             {(() => {
                               const quals = viewingEmployee.qualifications;

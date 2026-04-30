@@ -98,7 +98,7 @@ const employeeApplicationSchema = new mongoose.Schema(
     },
     qualificationStatus: {
       type: String,
-      default: 'Partial',
+      default: 'not_submitted',
       trim: true,
     },
     experience: {
