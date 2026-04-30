@@ -23,6 +23,7 @@ const {
   checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
 const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
+const { createISTDate } = require('../../shared/utils/dateUtils');
 
 const getEmployeeSettings = async () => {
   try {
@@ -1005,10 +1006,12 @@ exports.validateCCLDate = async (req, res) => {
 
       if (!hasPunches) {
         // Fallback: Check for APPROVED OD
+        const dayStart = createISTDate(dateStr, '00:00');
+        const dayEnd = createISTDate(dateStr, '23:59');
         const od = await OD.findOne({
           employeeId: employee._id,
-          fromDate: { $lte: new Date(dateStr) },
-          toDate: { $gte: new Date(dateStr) },
+          fromDate: { $lte: dayEnd },
+          toDate: { $gte: dayStart },
           status: 'approved',
           isActive: true
         });

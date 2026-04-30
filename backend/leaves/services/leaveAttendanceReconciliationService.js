@@ -1,9 +1,10 @@
 /**
- * When actual attendance (punches) shows presence for a full or half day, adjust approved
- * single-day leave so register debits match reality: full reject, or narrow full-day to one half.
+ * When actual attendance (punches) shows physical presence for a full or half day,
+ * adjust approved leave/OD so summary contributions come only from valid non-conflicting halves.
  *
- * Scope (v1): one calendar day per leave (fromDate and toDate same); not split_approved; not ESI.
- * Multi-day and split-approval leaves are skipped.
+ * Scope (current):
+ * - Leave: single-day rows are auto-reconciled (reject/narrow). Multi-day is skipped.
+ * - OD: single-day full/half-day rows are auto-reconciled (reject/narrow). Multi-day/hours are skipped.
  */
 
 const Settings = require('../../settings/model/Settings');
@@ -104,6 +105,13 @@ function appendRemark(leave, line) {
   leave.remarks = prev ? `${prev}\n${add}` : add;
 }
 
+function appendOdRemark(od, line) {
+  const add = `${REMARK_PREFIX} ${line}`;
+  const prev = String(od.remarks || '').trim();
+  if (prev.includes(add)) return;
+  od.remarks = prev ? `${prev}\n${add}` : add;
+}
+
 async function findApprovedOdsForDate(employeeId, dateStr) {
   const start = createISTDate(dateStr, '00:00');
   const end = createISTDate(dateStr, '23:59');
@@ -158,7 +166,7 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
     .select('fromDate toDate isHalfDay halfDayType numberOfDays leaveType leaveNature status splitStatus remarks')
     .lean();
 
-  const { syncPayRegisterFromLeave } = require('../../pay-register/services/autoSyncService');
+  const { syncPayRegisterFromLeave, syncPayRegisterFromOD } = require('../../pay-register/services/autoSyncService');
   const results = [];
 
   for (const l of leaves) {
@@ -377,6 +385,150 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
     }
 
     results.push({ leaveId: l._id, action: 'none' });
+  }
+
+  const odsToAdjust = await OD.find({
+    employeeId: employee._id,
+    status: 'approved',
+    isActive: { $ne: false },
+    fromDate: { $lte: dayEnd },
+    toDate: { $gte: dayStart },
+  })
+    .select('fromDate toDate isHalfDay halfDayType numberOfDays odType odType_extended status remarks workflow')
+    .lean();
+
+  for (const o of odsToAdjust) {
+    const tag = `${REMARK_PREFIX} ${dateStr}:`;
+    if (String(o.remarks || '').includes(tag)) {
+      results.push({ odId: o._id, action: 'skip', reason: 'already_reconciled' });
+      continue;
+    }
+    if (String(o.odType_extended || '') === 'hours') {
+      results.push({ odId: o._id, action: 'skip', reason: 'od_hours' });
+      continue;
+    }
+    const fromStr = extractISTComponents(o.fromDate).dateStr;
+    const toStr = extractISTComponents(o.toDate).dateStr;
+    if (fromStr !== toStr) {
+      results.push({ odId: o._id, action: 'skip', reason: 'multi_day_od' });
+      continue;
+    }
+
+    const od = await OD.findById(o._id);
+    if (!od || od.status !== 'approved') continue;
+    const isHalfOd = od.isHalfDay || String(od.odType_extended) === 'half_day' || Number(od.numberOfDays) < 1;
+
+    if (isHalfOd) {
+      const onFirst = String(od.halfDayType || 'first_half') !== 'second_half';
+      const physConflicts = (onFirst && p1 >= 0.5) || (!onFirst && p2 >= 0.5);
+      if (!physConflicts) {
+        results.push({ odId: od._id, action: 'none', reason: 'no_conflict_half_od' });
+        continue;
+      }
+      const detail = 'Half-day OD auto-rejected: attendance supersedes this half.';
+      od.status = 'rejected';
+      if (od.workflow) {
+        od.workflow.isCompleted = true;
+        od.workflow.currentStepRole = null;
+        od.workflow.nextApprover = null;
+        od.workflow.nextApproverRole = null;
+        od.workflow.history = od.workflow.history || [];
+        od.workflow.history.push({
+          action: 'rejected',
+          comments: `${REMARK_PREFIX} System rejected — ${detail}`,
+          timestamp: new Date(),
+        });
+      }
+      appendOdRemark(od, `${dateStr}: ${detail}`);
+      await od.save();
+      try {
+        await syncPayRegisterFromOD(od);
+      } catch (e) {
+        console.warn('[leaveAttendanceReconciliation] pay register OD sync', e?.message);
+      }
+      results.push({ odId: od._id, action: 'rejected_od_half' });
+      continue;
+    }
+
+    if (p1 >= 0.5 && p2 >= 0.5) {
+      const detail = 'Full-day OD auto-rejected: same-day full attendance (punches) supersedes OD.';
+      od.status = 'rejected';
+      if (od.workflow) {
+        od.workflow.isCompleted = true;
+        od.workflow.currentStepRole = null;
+        od.workflow.nextApprover = null;
+        od.workflow.nextApproverRole = null;
+        od.workflow.history = od.workflow.history || [];
+        od.workflow.history.push({
+          action: 'rejected',
+          comments: `${REMARK_PREFIX} System rejected — ${detail}`,
+          timestamp: new Date(),
+        });
+      }
+      appendOdRemark(od, `${dateStr}: ${detail}`);
+      await od.save();
+      try {
+        await syncPayRegisterFromOD(od);
+      } catch (e) {
+        console.warn('[leaveAttendanceReconciliation] pay register OD sync', e?.message);
+      }
+      results.push({ odId: od._id, action: 'rejected_od_full' });
+      continue;
+    }
+
+    if (p1 >= 0.5 && p2 < 0.5) {
+      const detail =
+        'Full-day OD narrowed to second half (0.5d): first-half attendance supersedes OD.';
+      od.isHalfDay = true;
+      od.halfDayType = 'second_half';
+      od.numberOfDays = 0.5;
+      od.odType_extended = 'half_day';
+      appendOdRemark(od, `${dateStr}: ${detail}`);
+      if (od.workflow) {
+        od.workflow.history = od.workflow.history || [];
+        od.workflow.history.push({
+          action: 'status_changed',
+          comments: `${REMARK_PREFIX} System updated — ${detail}`,
+          timestamp: new Date(),
+        });
+      }
+      await od.save();
+      try {
+        await syncPayRegisterFromOD(od);
+      } catch (e) {
+        console.warn('[leaveAttendanceReconciliation] pay register OD sync', e?.message);
+      }
+      results.push({ odId: od._id, action: 'narrowed_od_second' });
+      continue;
+    }
+
+    if (p2 >= 0.5 && p1 < 0.5) {
+      const detail =
+        'Full-day OD narrowed to first half (0.5d): second-half attendance supersedes OD.';
+      od.isHalfDay = true;
+      od.halfDayType = 'first_half';
+      od.numberOfDays = 0.5;
+      od.odType_extended = 'half_day';
+      appendOdRemark(od, `${dateStr}: ${detail}`);
+      if (od.workflow) {
+        od.workflow.history = od.workflow.history || [];
+        od.workflow.history.push({
+          action: 'status_changed',
+          comments: `${REMARK_PREFIX} System updated — ${detail}`,
+          timestamp: new Date(),
+        });
+      }
+      await od.save();
+      try {
+        await syncPayRegisterFromOD(od);
+      } catch (e) {
+        console.warn('[leaveAttendanceReconciliation] pay register OD sync', e?.message);
+      }
+      results.push({ odId: od._id, action: 'narrowed_od_first' });
+      continue;
+    }
+
+    results.push({ odId: od._id, action: 'none' });
   }
 
   return { ran: true, results };

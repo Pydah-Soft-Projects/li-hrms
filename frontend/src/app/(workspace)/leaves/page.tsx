@@ -530,15 +530,32 @@ const formatDateForInput = (dateStr: string) => {
   return `${year}-${month}-${day}`;
 };
 
+const getISTDateParts = (value: Date | string) => {
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+  const year = parts.find((p) => p.type === 'year')?.value;
+  const month = parts.find((p) => p.type === 'month')?.value;
+  const day = parts.find((p) => p.type === 'day')?.value;
+  if (!year || !month || !day) return null;
+  return { year: Number(year), month: Number(month), day: Number(day) };
+};
+
 const parseDateOnly = (value: Date | string) => {
   if (value instanceof Date) {
     return new Date(value.getFullYear(), value.getMonth(), value.getDate());
   }
   const str = String(value);
-  const datePart = str.includes('T') ? str.split('T')[0] : str;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
-    return new Date(`${datePart}T00:00:00`);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return new Date(`${str}T00:00:00`);
   }
+  const ist = getISTDateParts(str);
+  if (ist) return new Date(ist.year, ist.month - 1, ist.day);
   const d = new Date(str);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 };
