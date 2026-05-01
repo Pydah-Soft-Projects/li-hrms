@@ -722,6 +722,67 @@ const findActiveHalfDayConflict = (
   return null;
 };
 
+type AttendancePresenceInfo = {
+  hasAttendance: boolean;
+  status: string | null;
+  firstHalfPresent: boolean;
+  secondHalfPresent: boolean;
+  fullDayPresent: boolean;
+  label: string | null;
+};
+
+const getLeaveAttendanceSuggestion = (
+  attendanceInfo: AttendancePresenceInfo | null | undefined,
+  requested: { isHalfDay: boolean; halfDayType: 'first_half' | 'second_half' | null }
+) => {
+  if (!attendanceInfo?.hasAttendance) {
+    return { blocked: false, suggestion: null as string | null };
+  }
+
+  const firstPresent = Boolean(attendanceInfo.firstHalfPresent);
+  const secondPresent = Boolean(attendanceInfo.secondHalfPresent);
+  const fullDayPresent = Boolean(attendanceInfo.fullDayPresent || (firstPresent && secondPresent));
+  const requestedHalf = requested.isHalfDay ? (requested.halfDayType || 'first_half') : null;
+
+  if (fullDayPresent) {
+    return {
+      blocked: true,
+      suggestion: 'Attendance is already marked for the full day. Please proceed with leave only if attendance is corrected first.',
+    };
+  }
+
+  if (firstPresent && !secondPresent) {
+    if (!requested.isHalfDay || requestedHalf === 'first_half') {
+      return {
+        blocked: true,
+        suggestion: 'Attendance is marked for the first half. Please select Half Day - Second Half for this date.',
+      };
+    }
+    return {
+      blocked: false,
+      suggestion: 'Attendance is marked for the first half. Half Day - Second Half is the recommended option.',
+    };
+  }
+
+  if (secondPresent && !firstPresent) {
+    if (!requested.isHalfDay || requestedHalf === 'second_half') {
+      return {
+        blocked: true,
+        suggestion: 'Attendance is marked for the second half. Please select Half Day - First Half for this date.',
+      };
+    }
+    return {
+      blocked: false,
+      suggestion: 'Attendance is marked for the second half. Half Day - First Half is the recommended option.',
+    };
+  }
+
+  return {
+    blocked: false,
+    suggestion: 'Attendance data is available for this date. Please review your selected leave duration before submitting.',
+  };
+};
+
 function LeavesPageContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending'>('leaves');
@@ -1525,17 +1586,12 @@ function LeavesPageContent() {
       }
 
       if (applyType === 'leave' && approvedRecordsInfo.attendanceInfo) {
-        const a = approvedRecordsInfo.attendanceInfo;
-        if (a.fullDayPresent) {
-          toast.error('Attendance exists for full day on this date. Attendance is preferred over leave.');
-          return;
-        }
-        if (formData.isHalfDay && formData.halfDayType === 'first_half' && a.firstHalfPresent) {
-          toast.error('First-half attendance already present. Attendance is preferred over leave on same half.');
-          return;
-        }
-        if (formData.isHalfDay && formData.halfDayType === 'second_half' && a.secondHalfPresent) {
-          toast.error('Second-half attendance already present. Attendance is preferred over leave on same half.');
+        const attendanceGuidance = getLeaveAttendanceSuggestion(approvedRecordsInfo.attendanceInfo, {
+          isHalfDay: Boolean(formData.isHalfDay),
+          halfDayType: formData.halfDayType || null,
+        });
+        if (attendanceGuidance.blocked) {
+          toast.error(attendanceGuidance.suggestion || 'Attendance already exists for this date. Please update leave duration and try again.');
           return;
         }
       }
@@ -4082,6 +4138,15 @@ function LeavesPageContent() {
               {/* Approved Records Info */}
               {approvedRecordsInfo && (approvedRecordsInfo.hasLeave || approvedRecordsInfo.hasOD || approvedRecordsInfo.attendanceInfo?.hasAttendance) && (
                 <div className="p-3 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">
+                  {(() => {
+                    const attendanceGuidance = applyType === 'leave'
+                      ? getLeaveAttendanceSuggestion(approvedRecordsInfo?.attendanceInfo, {
+                        isHalfDay: Boolean(formData.isHalfDay),
+                        halfDayType: formData.halfDayType || null,
+                      })
+                      : null;
+                    return (
+                      <>
                   <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-2">
                     ⚠️ Existing Attendance / Approved Record:
                   </p>
@@ -4104,6 +4169,11 @@ function LeavesPageContent() {
                         : 'Full Day OD'}
                     </div>
                   )}
+                  {attendanceGuidance?.suggestion && (
+                    <p className="text-xs text-blue-700 dark:text-blue-300 mt-2">
+                      Suggestion: {attendanceGuidance.suggestion}
+                    </p>
+                  )}
                   {(approvedRecordsInfo?.hasLeave && approvedRecordsInfo?.leaveInfo?.isHalfDay) ||
                     (approvedRecordsInfo?.hasOD && approvedRecordsInfo?.odInfo?.isHalfDay) ? (
                     <p className="text-xs text-amber-600 dark:text-amber-500 mt-2">
@@ -4111,9 +4181,12 @@ function LeavesPageContent() {
                     </p>
                   ) : (
                     <p className="text-xs text-red-600 dark:text-red-400 mt-2">
-                      ✗ Cannot create {applyType === 'leave' ? 'Leave' : 'OD'} - Full day already approved
+                      ✗ Cannot create {applyType === 'leave' ? 'Leave' : 'OD'} - 
                     </p>
                   )}
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
