@@ -1133,12 +1133,19 @@ export default function LeavesPage() {
     fetchSettings();
   }, []);
 
-  // Re-fetch when date range changes
+  // Re-fetch when date range or list-level filters change
   useEffect(() => {
     if (currentUser) {
       loadData(currentUser, dateRange);
     }
-  }, [dateRange.from, dateRange.to]);
+  }, [
+    dateRange.from,
+    dateRange.to,
+    leaveFilters.employeeNumber,
+    leaveFilters.division,
+    leaveFilters.department,
+    leaveFilters.designation,
+  ]);
 
   // Load employees and permissions when user or workspace changes
   useEffect(() => {
@@ -1157,6 +1164,14 @@ export default function LeavesPage() {
   const loadData = async (user?: any, range?: { from: string; to: string }) => {
     setLoading(true);
     const activeRange = range || dateRange;
+    const commonFilters = {
+      fromDate: activeRange.from,
+      toDate: activeRange.to,
+      search: leaveFilters.employeeNumber?.trim() || undefined,
+      division: leaveFilters.division.length > 0 ? leaveFilters.division : undefined,
+      department: leaveFilters.department.length > 0 ? leaveFilters.department : undefined,
+      designation: leaveFilters.designation.length > 0 ? leaveFilters.designation : undefined,
+    };
     try {
       const role = user?.role || currentUser?.role;
       const isEmployee = role === 'employee';
@@ -1184,10 +1199,10 @@ export default function LeavesPage() {
       } else {
         // Manager/HOD/Admin Plan:
         const [leavesRes, odsRes, pendingLeavesRes, pendingODsRes] = await Promise.all([
-          api.getLeaves({ limit: 500, fromDate: activeRange.from, toDate: activeRange.to }),
-          api.getODs({ limit: 500, fromDate: activeRange.from, toDate: activeRange.to }),
-          api.getPendingLeaveApprovals({ limit: 1000, fromDate: activeRange.from, toDate: activeRange.to }),
-          api.getPendingODApprovals({ limit: 1000, fromDate: activeRange.from, toDate: activeRange.to }),
+          api.getLeaves({ limit: 500, ...commonFilters }),
+          api.getODs({ limit: 500, ...commonFilters }),
+          api.getPendingLeaveApprovals({ limit: 1000, ...commonFilters }),
+          api.getPendingODApprovals({ limit: 1000, ...commonFilters }),
         ]);
 
         if (leavesRes.success) setLeaves(leavesRes.data || []);
@@ -3814,8 +3829,8 @@ export default function LeavesPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="grid grid-cols-3 sm:inline-flex items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm shadow-inner w-full sm:w-auto gap-1 sm:gap-0">
             {[
-              { id: 'leaves', label: 'Leaves', icon: Calendar, count: leaves.length, activeColor: 'blue' },
-              { id: 'od', label: 'On Duty', icon: Briefcase, count: ods.length, activeColor: 'purple' },
+              { id: 'leaves', label: 'Leaves', icon: Calendar, count: filteredLeaves.length, activeColor: 'blue' },
+              { id: 'od', label: 'On Duty', icon: Briefcase, count: filteredODs.length, activeColor: 'purple' },
               { id: 'pending', label: 'Actions Required', icon: Clock3, count: totalMyActions, activeColor: 'orange' },
               { id: 'in_progress', label: 'In Progress', icon: Clock, count: totalInProgress, activeColor: 'blue' }
             ].map((tab) => (
