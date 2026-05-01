@@ -1,5 +1,53 @@
+const mongoose = require('mongoose');
 const Workspace = require('../model/Workspace');
 const RoleAssignment = require('../model/RoleAssignment');
+const Department = require('../../departments/model/Department');
+
+function divisionIdFromMappingEntry(mapping) {
+  if (!mapping || mapping.division == null) return null;
+  const d = mapping.division;
+  if (typeof d === 'string' || d instanceof mongoose.Types.ObjectId) return String(d);
+  if (d._id) return String(d._id);
+  return null;
+}
+
+/**
+ * Resolve all department ObjectIds a user may access via divisionMapping.
+ * - Explicit mapping.departments → those departments only
+ * - Empty / missing departments for a division → all departments linked to that division (divisions array on Department)
+ */
+async function departmentIdsFromDivisionMapping(divisionMapping) {
+  if (!Array.isArray(divisionMapping) || divisionMapping.length === 0) return [];
+
+  const explicitIds = new Set();
+  const divisionWideMongoIds = [];
+
+  for (const m of divisionMapping) {
+    const divId = divisionIdFromMappingEntry(m);
+    if (!divId || !mongoose.Types.ObjectId.isValid(divId)) continue;
+
+    const rawDepts = m.departments;
+    if (Array.isArray(rawDepts) && rawDepts.length > 0) {
+      for (const d of rawDepts) {
+        const id = d && typeof d === 'object' && d._id != null ? String(d._id) : String(d);
+        if (id && id !== 'undefined' && mongoose.Types.ObjectId.isValid(id)) explicitIds.add(id);
+      }
+    } else {
+      divisionWideMongoIds.push(new mongoose.Types.ObjectId(divId));
+    }
+  }
+
+  if (divisionWideMongoIds.length > 0) {
+    const rows = await Department.find({ divisions: { $in: divisionWideMongoIds } })
+      .select('_id')
+      .lean();
+    for (const r of rows) {
+      if (r._id) explicitIds.add(String(r._id));
+    }
+  }
+
+  return [...explicitIds];
+}
 
 /**
  * Middleware to load and validate workspace context
@@ -154,9 +202,8 @@ exports.applyDataScope = async (req, res, next) => {
         break;
 
       case 'department': {
-        const deptIds = (req.user.divisionMapping || []).flatMap(m =>
-          (m.departments || []).map(d => (d?._id || d).toString())
-        );
+        let deptIds = await departmentIdsFromDivisionMapping(req.user.divisionMapping);
+        deptIds = [...new Set(deptIds)];
         if (deptIds.length > 0) {
           req.scopeFilter = { $or: [{ department: { $in: deptIds } }, { department_id: { $in: deptIds } }] };
         } else if (req.user.employeeRef) {
@@ -176,10 +223,12 @@ exports.applyDataScope = async (req, res, next) => {
         } else if (scopeConfig?.departments?.length > 0) {
           req.scopeFilter = { $or: [{ department: { $in: scopeConfig.departments } }, { department_id: { $in: scopeConfig.departments } }] };
         } else {
-          const deptIds = (req.user.divisionMapping || []).flatMap(m =>
-            (m.departments || []).map(d => (d?._id || d).toString())
-          );
-          req.scopeFilter = deptIds.length > 0 ? { $or: [{ department: { $in: deptIds } }, { department_id: { $in: deptIds } }] } : { _id: null };
+          let deptIds = await departmentIdsFromDivisionMapping(req.user.divisionMapping);
+          deptIds = [...new Set(deptIds)];
+          req.scopeFilter =
+            deptIds.length > 0
+              ? { $or: [{ department: { $in: deptIds } }, { department_id: { $in: deptIds } }] }
+              : { _id: null };
         }
         break;
       }
