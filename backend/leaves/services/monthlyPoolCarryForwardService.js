@@ -5,6 +5,7 @@
  * period when policy disables pool roll for that type.
  */
 
+const mongoose = require('mongoose');
 const LeaveRegisterYear = require('../model/LeaveRegisterYear');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const Employee = require('../../employees/model/Employee');
@@ -109,8 +110,11 @@ async function buildEmployeeTxPayload(employeeId) {
 /**
  * @param {number} closingPayrollMonth 1–12
  * @param {number} closingPayrollYear calendar label for cycle
+ * @param {object} [options]
+ * @param {import('mongoose').Types.ObjectId|string} [options.employeeId] — when set, only this employee’s FY rows are processed (recalculate / repair scripts).
  */
-async function processPayrollCycleCarryForward(closingPayrollMonth, closingPayrollYear) {
+async function processPayrollCycleCarryForward(closingPayrollMonth, closingPayrollYear, options = {}) {
+  const { employeeId: employeeIdOpt } = options || {};
   const results = {
     processed: 0,
     carriedEmployees: 0,
@@ -137,9 +141,14 @@ async function processPayrollCycleCarryForward(closingPayrollMonth, closingPayro
   const elRoll =
     elInPool && policy?.carryForward?.earnedLeave?.carryMonthlyPoolToNextPayrollMonth !== false;
 
-  const cursor = LeaveRegisterYear.find({
+  const q = {
     months: { $elemMatch: { payrollCycleMonth: pm, payrollCycleYear: py } },
-  }).cursor();
+  };
+  if (employeeIdOpt != null && String(employeeIdOpt).trim()) {
+    const sid = String(employeeIdOpt).trim();
+    q.employeeId = mongoose.Types.ObjectId.isValid(sid) ? new mongoose.Types.ObjectId(sid) : employeeIdOpt;
+  }
+  const cursor = LeaveRegisterYear.find(q).cursor();
 
   for await (const doc of cursor) {
     results.processed++;

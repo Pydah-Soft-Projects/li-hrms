@@ -4,7 +4,6 @@ const dateCycleService = require('./dateCycleService');
 const { extractISTComponents, createISTDate, getTodayISTDateString } = require('../../shared/utils/dateUtils');
 const { computeScheduledPoolApplyCeiling } = require('./monthlyApplicationCapService');
 const leaveRegisterYearMonthlyApplyService = require('./leaveRegisterYearMonthlyApplyService');
-const leaveRegisterYearLedgerService = require('./leaveRegisterYearLedgerService');
 
 /** YYYY-MM-DD in Asia/Kolkata (same basis as payroll cycles). */
 function istDateStr(d) {
@@ -920,6 +919,7 @@ async function patchMonthSlotScheduledCredits({
 
   const anchorDate =
     slot.payPeriodStart || slot.payPeriodEnd || new Date(py, pm - 1, 15);
+  const leaveRegisterYearLedgerService = require('./leaveRegisterYearLedgerService');
   await leaveRegisterYearLedgerService.recalculateRegisterBalances(employeeId, 'CL', anchorDate);
   await leaveRegisterYearLedgerService.recalculateRegisterBalances(employeeId, 'CCL', anchorDate);
   await leaveRegisterYearLedgerService.recalculateRegisterBalances(employeeId, 'EL', anchorDate);
@@ -927,6 +927,9 @@ async function patchMonthSlotScheduledCredits({
     employeeId,
     anchorDate
   );
+
+  const { scheduleRegisterDisplaySnapshotSync } = require('./leaveRegisterYearRegisterDisplaySyncService');
+  scheduleRegisterDisplaySnapshotSync(employeeId, fy);
 
   const fresh = await LeaveRegisterYear.findOne({ employeeId, financialYear: fy }).lean();
   const slotOut =
@@ -981,7 +984,7 @@ function resolveMonthlyPoolCarryRollFlags(policy) {
  * Only non-zero for payroll periods ended on/before asOf (IST). Uses global roll toggles (same basis as bulk carry rebuild).
  */
 function computeRegisterMonthPoolTransferOutDisplay(
-  { payPeriodEnd, scheduled, usedCl, usedCcl, usedEl },
+  { payPeriodEnd, scheduled, usedCl, usedCcl, usedEl, clLockedForPool },
   asOf,
   policy
 ) {
@@ -993,7 +996,11 @@ function computeRegisterMonthPoolTransferOutDisplay(
   const clCredits = round2(Number(scheduled.clCredits) || 0);
   const cco = round2(Number(scheduled.compensatoryOffs) || 0);
   const elCr = round2(Number(scheduled.elCredits) || 0);
-  const clLocked = round2(Number(scheduled.lockedCredits) || 0);
+  /** Match register pool "Bal" row: pending app lock when sub-ledger exists, else slot policy lock. */
+  const clLocked =
+    clLockedForPool != null && Number.isFinite(Number(clLockedForPool))
+      ? round2(Number(clLockedForPool))
+      : round2(Number(scheduled.lockedCredits) || 0);
 
   const uCl = round2(Number(usedCl) || 0);
   const uCcl = round2(Number(usedCcl) || 0);
@@ -1450,6 +1457,7 @@ async function patchBulkMonthSlotsScheduledCredits({
   await doc.save();
 
   const anchorStart = doc.financialYearStart || doc.months[0]?.payPeriodStart || new Date();
+  const leaveRegisterYearLedgerService = require('./leaveRegisterYearLedgerService');
   await leaveRegisterYearLedgerService.recalculateRegisterBalances(employeeId, 'CL', anchorStart);
   await leaveRegisterYearLedgerService.recalculateRegisterBalances(employeeId, 'CCL', anchorStart);
   await leaveRegisterYearLedgerService.recalculateRegisterBalances(employeeId, 'EL', anchorStart);
@@ -1465,6 +1473,9 @@ async function patchBulkMonthSlotsScheduledCredits({
       await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(employeeId, d);
     }
   }
+
+  const { scheduleRegisterDisplaySnapshotSync } = require('./leaveRegisterYearRegisterDisplaySyncService');
+  scheduleRegisterDisplaySnapshotSync(employeeId, fy);
 
   const fresh = await LeaveRegisterYear.findOne({ employeeId, financialYear: fy }).lean();
   return {
@@ -1499,6 +1510,8 @@ async function syncMonthApplyOnly({ employeeId, financialYear, payrollCycleMonth
     employeeId,
     anchorDate
   );
+  const { scheduleRegisterDisplaySnapshotSync } = require('./leaveRegisterYearRegisterDisplaySyncService');
+  scheduleRegisterDisplaySnapshotSync(employeeId, fy);
   return { ok: sync.ok, sync, anchorDate };
 }
 
@@ -1535,4 +1548,6 @@ module.exports = {
   computeRegisterMonthPoolTransferOutDisplay,
   /** CCL/CL/EL debits on a slot excluding MONTHLY_POOL_TRANSFER_OUT_* — same basis as register Xfer + applySequential carry. */
   sumUsedDaysForType,
+  /** Strip MONTHLY_POOL_TRANSFER_* rows + poolCarryForward* fields; undo carry-in bumps on slot credits (before service-based carry rebuild). */
+  stripMonthlyPoolTransferArtifactsFromMonths,
 };

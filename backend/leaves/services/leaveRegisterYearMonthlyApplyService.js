@@ -271,9 +271,42 @@ async function getApplyPeriodContextForEmployee(employeeId, fromDate, options = 
 function scheduleSyncMonthApply(employeeId, fromDate) {
   if (!employeeId || !fromDate) return;
   setImmediate(() => {
-    syncStoredMonthApplyFieldsForEmployeeDate(employeeId, fromDate).catch((e) => {
-      console.warn('[monthlyApply sync]', e?.message || e);
-    });
+    syncStoredMonthApplyFieldsForEmployeeDate(employeeId, fromDate)
+      .then(async () => {
+        const dateCycleService = require('./dateCycleService');
+        const pi = await dateCycleService.getPeriodInfo(fromDate);
+        const fy = pi?.financialYear?.name;
+        if (!fy) return;
+        const { scheduleRegisterDisplaySnapshotSync } = require('./leaveRegisterYearRegisterDisplaySyncService');
+        scheduleRegisterDisplaySnapshotSync(employeeId, fy);
+        scheduleReconcileMonthCarryForEmployeeDate(employeeId, fromDate);
+      })
+      .catch((e) => {
+        console.warn('[monthlyApply sync]', e?.message || e);
+      });
+  });
+}
+
+function scheduleReconcileMonthCarryForEmployeeDate(employeeId, fromDate) {
+  if (!employeeId || !fromDate) return;
+  setImmediate(async () => {
+    try {
+      const pi = await dateCycleService.getPeriodInfo(fromDate);
+      const fy = pi?.financialYear?.name;
+      if (!fy) return;
+      const leaveRegisterYearService = require('./leaveRegisterYearService');
+      await leaveRegisterYearService.patchBulkMonthSlotsScheduledCredits({
+        employeeId,
+        financialYear: fy,
+        slots: [],
+        reason: 'Auto reconcile monthly carry after leave transaction change',
+        actorUserId: null,
+        validateWithRecords: false,
+        carryForwardUnused: true,
+      });
+    } catch (e) {
+      console.warn('[monthly carry reconcile]', e?.message || e);
+    }
   });
 }
 
@@ -281,4 +314,5 @@ module.exports = {
   syncStoredMonthApplyFieldsForEmployeeDate,
   getApplyPeriodContextForEmployee,
   scheduleSyncMonthApply,
+  scheduleReconcileMonthCarryForEmployeeDate,
 };

@@ -23,6 +23,8 @@ type MonthLeaveBucket = {
   credited?: number;
   used?: number;
   locked?: number | null;
+  /** Server: policy Cr + carry-in − (used + lock) − transfer out (same as expanded “Bal” pool math). */
+  poolBalance?: number | null;
   /** Credits from prior payroll / FY folded into this month’s pool (register “Transfer” column). */
   transferIn?: number | null;
   /** Unused pool implied to roll to the next month after this period ends (audit / carry-out). */
@@ -165,7 +167,11 @@ function enrichRegisterMonthLiteCredits(m: RegisterMonthLite, raw?: any): Regist
   };
 }
 
-/** Policy Cr for the month: API policyScheduled* or full slot minus transferIn. */
+/**
+ * **Cr** column (scheduled policy pool credits for this payroll month only).
+ * Display policyScheduled* as source-of-truth to match prior UI behavior:
+ * Cr = scheduled policy credits, Carried in = transfer-in from previous payroll month.
+ */
 function policyPoolDays(
   policyField: unknown,
   fullSlot: unknown,
@@ -177,6 +183,25 @@ function policyPoolDays(
   if (fs !== null && ti !== null) return Math.max(0, fs - ti);
   if (fs !== null) return fs;
   return null;
+}
+
+/**
+ * Display credit for register grid.
+ * Prefer policy/scheduled pool credit, but if inconsistent row shows 0 while ledger has a
+ * posted credit, surface that ledger credit so month transaction view and grid stay aligned.
+ */
+function displayPoolCreditDays(
+  policyField: unknown,
+  fullSlot: unknown,
+  transferIn: unknown,
+  ledgerCredited: unknown
+): number | null {
+  const policyCr = policyPoolDays(policyField, fullSlot, transferIn);
+  const cred =
+    ledgerCredited != null && Number.isFinite(Number(ledgerCredited)) ? Number(ledgerCredited) : null;
+  if (policyCr === null) return cred;
+  if (policyCr === 0 && cred != null && cred > 0) return cred;
+  return policyCr;
 }
 
 /** Unused pool carried to the next payroll month (`transferOut`; legacy `transfer` was carry-out only). */
@@ -1959,13 +1984,24 @@ export default function LeaveRegisterPage({
                                     <tbody>
                                       {months.map((m, idx) => {
                                         const empLabel = row.employee?.name || row.employee?.empNo || 'Employee';
-                                        const clCr = policyPoolDays(m.policyScheduledCl, m.scheduledCl, m.cl?.transferIn);
-                                        const cclCr = policyPoolDays(
+                                        const clCr = displayPoolCreditDays(
+                                          m.policyScheduledCl,
+                                          m.scheduledCl,
+                                          m.cl?.transferIn,
+                                          m.cl?.credited
+                                        );
+                                        const cclCr = displayPoolCreditDays(
                                           m.policyScheduledCco,
                                           m.scheduledCco,
-                                          m.ccl?.transferIn
+                                          m.ccl?.transferIn,
+                                          m.ccl?.credited
                                         );
-                                        const elCr = policyPoolDays(m.policyScheduledEl, m.scheduledEl, m.el?.transferIn);
+                                        const elCr = displayPoolCreditDays(
+                                          m.policyScheduledEl,
+                                          m.scheduledEl,
+                                          m.el?.transferIn,
+                                          m.el?.credited
+                                        );
                                         const clTout = monthPoolTransferOut(m, 'cl');
                                         const cclTout = monthPoolTransferOut(m, 'ccl');
                                         const elTout = monthPoolTransferOut(m, 'el');

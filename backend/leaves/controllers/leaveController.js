@@ -1217,6 +1217,20 @@ exports.updateLeave = async (req, res) => {
             originalFromDate
           );
         }
+        const scheduleRegisterSnap = async (d) => {
+          const pi = await dateCycleService.getPeriodInfo(d);
+          const fy = pi?.financialYear?.name;
+          if (!fy) return;
+          const { scheduleRegisterDisplaySnapshotSync } = require('../services/leaveRegisterYearRegisterDisplaySyncService');
+          scheduleRegisterDisplaySnapshotSync(leave.employeeId, fy);
+        };
+        await scheduleRegisterSnap(leave.fromDate);
+        if (
+          originalFromDate &&
+          new Date(leave.fromDate).getTime() !== originalFromDate.getTime()
+        ) {
+          await scheduleRegisterSnap(originalFromDate);
+        }
       } catch (e) {
         console.warn('[monthlyApply sync]', e?.message || e);
       }
@@ -1847,6 +1861,12 @@ exports.processLeaveAction = async (req, res) => {
           leave.employeeId,
           leave.fromDate
         );
+        const pi = await dateCycleService.getPeriodInfo(leave.fromDate);
+        const fy = pi?.financialYear?.name;
+        if (fy) {
+          const { scheduleRegisterDisplaySnapshotSync } = require('../services/leaveRegisterYearRegisterDisplaySyncService');
+          scheduleRegisterDisplaySnapshotSync(leave.employeeId, fy);
+        }
       } catch (e) {
         console.warn('[monthlyApply sync]', e?.message || e);
       }

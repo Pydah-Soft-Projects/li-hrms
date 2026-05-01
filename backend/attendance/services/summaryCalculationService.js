@@ -1466,12 +1466,27 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
  * Calculate monthly summary for all employees for a specific month
  * @param {number} year - Year
  * @param {number} monthNumber - Month number (1-12)
+ * @param {{ divisionIds?: import('mongoose').Types.ObjectId[] | string[] }} [options] - If divisionIds is non-empty, only active employees in those divisions are processed.
  * @returns {Promise<Array>} Array of updated summaries
  */
-async function calculateAllEmployeesSummary(year, monthNumber) {
+async function calculateAllEmployeesSummary(year, monthNumber, options = {}) {
   try {
+    const mongoose = require('mongoose');
+    const { divisionIds: rawDivisionIds } = options;
+    const query = { is_active: { $ne: false } };
+    if (rawDivisionIds && rawDivisionIds.length > 0) {
+      const divisionObjectIds = rawDivisionIds.map((id) => {
+        const s = String(id).trim();
+        if (!mongoose.Types.ObjectId.isValid(s)) {
+          throw new Error(`Invalid division ObjectId: ${id}`);
+        }
+        return new mongoose.Types.ObjectId(s);
+      });
+      query.division_id = { $in: divisionObjectIds };
+    }
+
     const Employee = require('../../employees/model/Employee');
-    const employees = await Employee.find({ is_active: { $ne: false } }).select('_id emp_no');
+    const employees = await Employee.find(query).select('_id emp_no');
 
     const results = [];
     for (const employee of employees) {
@@ -1736,15 +1751,21 @@ async function recalculateOnODApproval(od) {
 /**
  * Delete monthly attendance summaries (for a given month or all).
  * Use before full recalc to ensure clean state.
- * @param {{ year?: number, monthNumber?: number }} [options] - If both provided, delete only that month; otherwise delete all.
+ * @param {{ year?: number, monthNumber?: number, employeeIds?: import('mongoose').Types.ObjectId[] }} [options] - If both year and monthNumber are provided, delete only that month. If employeeIds is set, year and monthNumber are required and only those employees' rows for that month are removed.
  * @returns {Promise<{ deletedCount: number }>}
  */
 async function deleteAllMonthlySummaries(options = {}) {
-  const { year, monthNumber } = options;
+  const { year, monthNumber, employeeIds } = options;
   let query = {};
   if (year != null && monthNumber != null) {
     const monthStr = `${year}-${String(monthNumber).padStart(2, '0')}`;
     query.month = monthStr;
+  }
+  if (employeeIds != null && employeeIds.length > 0) {
+    if (year == null || monthNumber == null) {
+      throw new Error('deleteAllMonthlySummaries: employeeIds requires year and monthNumber');
+    }
+    query.employeeId = { $in: employeeIds };
   }
   const result = await MonthlyAttendanceSummary.deleteMany(query);
   console.log('[summaryCalculationService] deleteAllMonthlySummaries', { query, deletedCount: result.deletedCount });

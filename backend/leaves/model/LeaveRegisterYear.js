@@ -80,6 +80,11 @@ const monthSlotSchema = new mongoose.Schema(
       el: { type: Number, default: 0 },
     },
     poolCarryForwardFromLabel: { type: String, default: '' },
+    /**
+     * Denormalized month-grid numbers (Cr / carry-in / used / lock / transfer / pool balance) aligned with register API.
+     * Refreshed by leaveRegisterYearRegisterDisplaySyncService after ledger / monthly-apply updates.
+     */
+    registerDisplaySnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
     /** All leave movements attributed to this payroll period (CL / EL / CCL / …). */
     transactions: { type: [monthMovementSchema], default: [] },
   },
