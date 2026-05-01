@@ -24,6 +24,7 @@ import {
   paidLopSublabel,
 } from '@/lib/payRegisterAllSummaryRow';
 import { toast } from 'react-toastify';
+import { MultiSelect } from '@/components/MultiSelect';
 import { format, parseISO } from 'date-fns';
 import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
 import {
@@ -241,6 +242,7 @@ interface Department {
   name: string;
   code?: string;
   division?: string | { _id: string; name: string };
+  division_id?: string | { _id: string };
   divisions?: (string | { _id: string; name: string })[];
 }
 
@@ -848,6 +850,51 @@ export default function AttendancePage() {
     }
   }, [selectedDepartment]);
 
+  // Same idea as superadmin Leave/OD: when a division is selected, only departments linked to that division appear.
+  const filteredDepartmentOptions = useMemo(() => {
+    if (!selectedDivision) return departments;
+
+    const selectedDiv = divisions.find((d: any) => String(d._id) === String(selectedDivision));
+    const nested = selectedDiv?.departments;
+    if (Array.isArray(nested) && nested.length > 0) {
+      const normalizedNested = nested
+        .map((x: any) => {
+          if (!x) return null;
+          if (typeof x === 'string') {
+            const fromCatalog = departments.find((d) => String(d._id) === String(x));
+            return fromCatalog || ({ _id: String(x), name: String(x) } as Department);
+          }
+          return { _id: String(x._id), name: x.name || 'Department' } as Department;
+        })
+        .filter(Boolean) as Department[];
+      if (normalizedNested.length > 0) return normalizedNested;
+    }
+
+    return departments.filter((d: Department) => {
+      const deptDivisionId = d.division && typeof d.division === 'object' ? d.division._id : d.division;
+      if (deptDivisionId === selectedDivision) return true;
+      if (d.division_id != null) {
+        const dDivId = typeof d.division_id === 'string' ? d.division_id : d.division_id?._id;
+        if (String(dDivId) === String(selectedDivision)) return true;
+      }
+      if (Array.isArray(d.divisions) && d.divisions.length > 0) {
+        return d.divisions.some((div: any) => {
+          const divId = div && typeof div === 'object' ? div._id : div;
+          return String(divId) === String(selectedDivision);
+        });
+      }
+      return false;
+    });
+  }, [selectedDivision, divisions, departments]);
+
+  useEffect(() => {
+    const ids = new Set(filteredDepartmentOptions.map((d) => String(d._id)));
+    if (selectedDepartment && !ids.has(String(selectedDepartment))) {
+      setSelectedDepartment('');
+      setSelectedDesignation('');
+    }
+  }, [filteredDepartmentOptions, selectedDepartment]);
+
   useEffect(() => {
     if (payrollCycleStartDay != null && payrollCycleStartDay >= 1) {
       if (payrollCycleStartDay > 1) {
@@ -937,30 +984,11 @@ export default function AttendancePage() {
     }
   };
 
-  const loadDepartments = async (divisionId?: string) => {
+  const loadDepartments = async () => {
     try {
-      // If we want to filter departments by division, we might need a different API or filter client-side
       const response = await api.getDepartments(true);
       if (response.success && response.data) {
-        let depts = response.data;
-        if (divisionId) {
-          depts = depts.filter((d: Department) => {
-            // Check direct division assignment (object or string)
-            const deptDivisionId = d.division && typeof d.division === 'object' ? d.division._id : d.division;
-            if (deptDivisionId === divisionId) return true;
-
-            // Check array of divisions
-            if (Array.isArray(d.divisions) && d.divisions.length > 0) {
-              return d.divisions.some((div: any) => {
-                const divId = div && typeof div === 'object' ? div._id : div;
-                return divId === divisionId;
-              });
-            }
-
-            return false;
-          });
-        }
-        setDepartments(depts);
+        setDepartments(response.data);
       }
     } catch (err) {
       console.error('Error loading departments:', err);
@@ -2446,47 +2474,41 @@ export default function AttendancePage() {
 
             {/* Filters Group */}
             <div className="flex flex-nowrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm">
-              <select
-                value={selectedDivision}
-                onChange={(e) => {
-                  setSelectedDivision(e.target.value);
+              <MultiSelect
+                options={divisions.map((div) => ({ id: div._id, name: div.name }))}
+                selectedIds={selectedDivision ? [selectedDivision] : []}
+                onChange={(vals) => {
+                  const divisionId = vals[0] || '';
+                  setSelectedDivision(divisionId);
                   setSelectedDepartment('');
                   setSelectedDesignation('');
-                  loadDepartments(e.target.value);
                 }}
-                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
-              >
-                <option value="">All Divisions</option>
-                {divisions.map((div) => (
-                  <option key={div._id} value={div._id}>{div.name}</option>
-                ))}
-              </select>
+                placeholder="All Divisions"
+                className="min-w-[100px] max-w-[140px]"
+                single={true}
+              />
 
-              <select
-                value={selectedDepartment}
-                onChange={(e) => {
-                  setSelectedDepartment(e.target.value);
+              <MultiSelect
+                options={filteredDepartmentOptions.map((dept) => ({ id: dept._id, name: dept.name }))}
+                selectedIds={selectedDepartment ? [selectedDepartment] : []}
+                onChange={(vals) => {
+                  setSelectedDepartment(vals[0] || '');
                   setSelectedDesignation('');
                 }}
-                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
-              >
-                <option value="">All Departments</option>
-                {departments.map((dept) => (
-                  <option key={dept._id} value={dept._id}>{dept.name}</option>
-                ))}
-              </select>
+                placeholder="All Departments"
+                className="min-w-[100px] max-w-[140px]"
+                single={true}
+              />
 
               {selectedDepartment && (
-                <select
-                  value={selectedDesignation}
-                  onChange={(e) => setSelectedDesignation(e.target.value)}
-                  className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px] animate-in slide-in-from-left-2"
-                >
-                  <option value="">All Designations</option>
-                  {designations.map((desig) => (
-                    <option key={desig._id} value={desig._id}>{desig.name}</option>
-                  ))}
-                </select>
+                <MultiSelect
+                  options={designations.map((desig) => ({ id: desig._id, name: desig.name }))}
+                  selectedIds={selectedDesignation ? [selectedDesignation] : []}
+                  onChange={(vals) => setSelectedDesignation(vals[0] || '')}
+                  placeholder="All Designations"
+                  className="min-w-[100px] max-w-[140px] animate-in slide-in-from-left-2"
+                  single={true}
+                />
               )}
 
               {/* Table Type Dropdown */}

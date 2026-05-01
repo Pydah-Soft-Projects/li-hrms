@@ -109,7 +109,11 @@ exports.getDivisions = async (req, res, next) => {
                     });
                     if (!mapping) return { ...div, departments: [] };
                     const depts = mapping.departments || [];
-                    const normalized = Array.isArray(depts) ? depts.map((d) => (d && typeof d === 'object' ? { _id: d._id, name: d.name, code: d.code } : d)) : [];
+                    // Empty departments array = division-wide access (e.g. manager on division), same as User.divisionMapping convention
+                    if (!Array.isArray(depts) || depts.length === 0) {
+                        return { ...div };
+                    }
+                    const normalized = depts.map((d) => (d && typeof d === 'object' ? { _id: d._id, name: d.name, code: d.code } : d));
                     return { ...div, departments: normalized };
                 });
             }
@@ -219,19 +223,25 @@ exports.updateDivision = async (req, res, next) => {
         const oldDepartments = division.departments.map((d) => d.toString());
         const newDepartments = req.body.departments || [];
 
+        // Must read previous manager BEFORE update — after findByIdAndUpdate, division.manager is already the new value,
+        // so comparing it to req.body.manager always matches and User.divisionMapping never syncs (breaks workspace scope).
+        const previousManagerId = division.manager ? division.manager.toString() : null;
+
         division = await Division.findByIdAndUpdate(req.params.id, req.body, {
             runValidators: true,
         });
 
         // Handle Manager Sync
         if (req.body.manager !== undefined) {
-            const User = require('../../users/model/User');
-            const newManagerId = req.body.manager;
-            const oldManagerId = division.manager ? division.manager.toString() : null;
+            const rawNew = req.body.manager;
+            const newManagerId =
+                rawNew !== null && rawNew !== undefined && String(rawNew).trim() !== ''
+                    ? String(rawNew)
+                    : null;
 
-            if (oldManagerId !== newManagerId) {
-                if (oldManagerId) {
-                    await User.findByIdAndUpdate(oldManagerId, {
+            if (previousManagerId !== newManagerId) {
+                if (previousManagerId) {
+                    await User.findByIdAndUpdate(previousManagerId, {
                         $pull: { divisionMapping: { division: division._id } }
                     });
                 }
