@@ -48,6 +48,12 @@ import {
 
 import { toast } from 'react-toastify';
 
+import {
+  getAttendanceExportDayStrings,
+  normalizeMonthlyAttendanceRows,
+  writeMonthlyAttendanceExcelFile,
+} from '@/lib/attendanceMonthlyExcelExport';
+
 import { useAuth } from '@/contexts/AuthContext';
 import {
   canViewAttendance,
@@ -377,25 +383,7 @@ function contributingEntryMatchesDate(entry: string | { date?: string }, dStr: s
 
 /** Same shape normalization as superadmin attendance (flat vs nested API rows). */
 function normalizeWorkspaceAttendanceData(data: unknown[]): MonthlyAttendanceData[] {
-  return (data || []).map((item: unknown) => {
-    const row = item as Record<string, unknown> & MonthlyAttendanceData;
-    if (row.employee && typeof row.employee === 'object' && row.dailyAttendance) {
-      return row as MonthlyAttendanceData;
-    }
-    return {
-      ...row,
-      employee: (row.employee as MonthlyAttendanceData['employee']) || {
-        _id: row._id as string,
-        emp_no: row.emp_no as string,
-        employee_name: row.employee_name as string,
-        department: { name: row.department_name as string },
-        designation: { name: row.designation_name as string },
-        division_id: row.division_id,
-        leftDate: row.leftDate as string,
-      },
-      dailyAttendance: (row.dailyAttendance || row.attendance || {}) as MonthlyAttendanceData['dailyAttendance'],
-    } as MonthlyAttendanceData;
-  });
+  return normalizeMonthlyAttendanceRows(data) as MonthlyAttendanceData[];
 }
 
 interface Department {
@@ -932,6 +920,7 @@ export default function AttendancePage() {
   const [selectedRecordForInTime, setSelectedRecordForInTime] = useState<any>(null);
   const [inTimeDialogValue, setInTimeDialogValue] = useState('');
   const [updatingInTime, setUpdatingInTime] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPDF, setExportingPDF] = useState(false);
 
   // Leave conflict state
@@ -1444,12 +1433,11 @@ export default function AttendancePage() {
       if (response.success) {
 
         const newData = response.data || [];
-
-
+        const normalized = normalizeWorkspaceAttendanceData(newData);
 
         if (reset) {
 
-          setMonthlyData(newData);
+          setMonthlyData(normalized);
 
         } else {
 
@@ -1459,7 +1447,7 @@ export default function AttendancePage() {
 
             const existingIds = new Set(prev.map(i => i.employee._id));
 
-            const uniqueNewData = newData.filter((i: any) => !existingIds.has(i.employee._id));
+            const uniqueNewData = normalized.filter((i) => !existingIds.has(i.employee._id));
 
             return [...prev, ...uniqueNewData];
 
@@ -2977,6 +2965,44 @@ export default function AttendancePage() {
     }
   };
 
+  const handleExportAttendance = async () => {
+    try {
+      setExportingExcel(true);
+      setError('');
+      const response = await api.getMonthlyAttendance(year, month, {
+        page: 1,
+        limit: 50000,
+        search: debouncedSearch,
+        divisionId: selectedDivision,
+        departmentId: selectedDepartment,
+        designationId: selectedDesignation,
+        startDate: cycleDates.startDate || undefined,
+        endDate: cycleDates.endDate || undefined,
+      });
+      if (!response.success || !response.data?.length) {
+        toast.warn('No attendance data to export');
+        return;
+      }
+      const data = normalizeWorkspaceAttendanceData(response.data || []);
+      const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+      const monthLabel = `${monthNames[month - 1]} ${year}`;
+      writeMonthlyAttendanceExcelFile(data, {
+        cycleDates,
+        year,
+        month,
+        monthLabel,
+        whenNoCycle: 'calendar-month',
+        processingMode: attendanceProcessingMode,
+      });
+      toast.success(`Exported ${data.length} employees to attendance_${monthStr}.xlsx`);
+    } catch (err: any) {
+      console.error('Export error:', err);
+      toast.error(err?.message || 'Failed to export attendance');
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
 
 
   const handleSyncShifts = async () => {
@@ -3488,26 +3514,11 @@ export default function AttendancePage() {
 
 
 
-  // Pay period days (same as superadmin): array of date strings in cycle range
-  const daysArray = useMemo(() => {
-    if (cycleDates.startDate && cycleDates.endDate) {
-      const dates: string[] = [];
-      let current = new Date(cycleDates.startDate);
-      const end = new Date(cycleDates.endDate);
-      let count = 0;
-      while (current <= end && count <= 35) {
-        dates.push(`${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`);
-        current.setDate(current.getDate() + 1);
-        count++;
-      }
-      return dates;
-    }
-    const lastDay = new Date(year, month, 0).getDate();
-    return Array.from({ length: lastDay }, (_, i) => {
-      const d = i + 1;
-      return `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    });
-  }, [cycleDates.startDate, cycleDates.endDate, year, month]);
+  // Pay period days: cycle when set; else calendar month (aligned with Excel export)
+  const daysArray = useMemo(
+    () => getAttendanceExportDayStrings(cycleDates, year, month, 'calendar-month'),
+    [cycleDates.startDate, cycleDates.endDate, year, month]
+  );
 
   const periodDays = daysArray.length;
 
@@ -3960,6 +3971,22 @@ export default function AttendancePage() {
               )}
 
               <button
+                onClick={handleExportAttendance}
+                disabled={exportingExcel}
+                title="Export filtered attendance to Excel"
+                className="h-9 flex items-center px-4 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-emerald-600 hover:border-emerald-200 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-emerald-400"
+              >
+                {exportingExcel ? (
+                  <div className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                ) : (
+                  <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M5 20h14a1 1 0 001-1v-3a1 1 0 00-1-1h-1M5 20a1 1 0 01-1-1v-3a1 1 0 011-1h1m0 0V4a1 1 0 011-1h8a1 1 0 011 1v11M7 15h10" />
+                  </svg>
+                )}
+                {exportingExcel ? 'Exporting...' : 'Export'}
+              </button>
+
+              <button
                 onClick={handleExportPDF}
                 disabled={exportingPDF}
                 title="Download PDF Attendance Report"
@@ -3989,7 +4016,7 @@ export default function AttendancePage() {
             (r) => r?.status === 'LEAVE' || r?.hasLeave
           );
           const totalLeaveDays = s?.totalLeaves ?? leaveRecords.length;
-          const lopLeaveDays = leaveRecords.filter((r) => {
+          const lopCountDaily = leaveRecords.filter((r) => {
             const anyR = r as any;
             return (
               anyR?.leaveNature === 'lop' ||
@@ -3997,11 +4024,20 @@ export default function AttendancePage() {
               anyR?.leaveInfo?.leaveType?.toLowerCase().includes('loss of pay')
             );
           }).length;
-          const paidLeaveDays = totalLeaveDays - lopLeaveDays;
+          const summaryPaidLeaves = Number(s?.totalPaidLeaves);
+          const summaryLopLeaves = Number(s?.totalLopLeaves);
+          const paidLeaveDays = Number.isFinite(summaryPaidLeaves)
+            ? summaryPaidLeaves
+            : Math.max(0, totalLeaveDays - lopCountDaily);
+          const lopLeaveDays = Number.isFinite(summaryLopLeaves) ? summaryLopLeaves : lopCountDaily;
           const dailyVals = Object.values(item.dailyAttendance);
           const otHoursSum = dailyVals.reduce((sum, r) => sum + ((r as any)?.otHours || 0), 0);
           const extraHoursSum = dailyVals.reduce((sum, r) => sum + ((r as any)?.extraHours || 0), 0);
           const permissionsSum = dailyVals.reduce((sum, r) => sum + ((r as any)?.permissionCount || 0), 0);
+          const monthAbsentUnits =
+            s != null && s.totalAbsentDays != null
+              ? Number(s.totalAbsentDays)
+              : dailyVals.filter((r) => r?.status === 'ABSENT').length;
 
           type EmpCard = {
             id: string;
@@ -4021,6 +4057,14 @@ export default function AttendancePage() {
               value: getPresentExcludingOD(s) ?? item.presentDays ?? 0,
               color: 'text-slate-900 dark:text-white',
               bcolor: 'bg-slate-50 dark:bg-slate-700/30',
+            },
+            {
+              id: 'absent',
+              column: null,
+              label: 'Absent',
+              value: Number(monthAbsentUnits).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 }),
+              color: 'text-red-700 dark:text-red-300',
+              bcolor: 'bg-red-50/50 dark:bg-red-900/10',
             },
             {
               id: 'totalLeave',
@@ -4106,7 +4150,10 @@ export default function AttendancePage() {
               id: 'payable',
               column: 'payableShifts',
               label: 'Payable',
-              value: (s?.totalPayableShifts ?? item.payableShifts ?? 0).toFixed(1),
+              value: Number(s?.totalPayableShifts ?? item.payableShifts ?? 0).toLocaleString('en-IN', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 2,
+              }),
               color: 'text-green-600 dark:text-green-400',
               bcolor: 'bg-green-50/50 dark:bg-green-900/10',
             },
