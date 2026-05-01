@@ -6,7 +6,7 @@ const OT = require('../../overtime/model/OT');
 const { getMergedOtConfig } = require('../../overtime/services/otConfigResolver');
 const { applyOtHoursPolicy } = require('../../overtime/services/otHoursPolicyService');
 const { calculateMonthlySummary } = require('./summaryCalculationService');
-const { extractISTComponents } = require('../../shared/utils/dateUtils');
+const { createISTDate, extractISTComponents, getAllDatesInRange } = require('../../shared/utils/dateUtils');
 const dateCycleService = require('../../leaves/services/dateCycleService');
 const { filterMonthlySummaryForEmploymentBounds } = require('./employmentBoundsSummaryFilter');
 
@@ -93,18 +93,15 @@ exports.getCalendarViewData = async (employee, year, month) => {
     .populate('approvals.hod.approvedBy', 'name email')
     .populate('appliedBy', 'name email');
 
-  // Create maps for leaves and ODs by date
+  // Create maps for leaves and ODs by date (IST calendar days — do not use server local getDate/setHours on UTC-stored Dates)
   const leaveMap = {};
   approvedLeaves.forEach(leave => {
-    const leaveStart = new Date(leave.fromDate);
-    const leaveEnd = new Date(leave.toDate);
-    leaveStart.setHours(0, 0, 0, 0);
-    leaveEnd.setHours(23, 59, 59, 999);
+    const leaveRangeStart = extractISTComponents(leave.fromDate).dateStr;
+    const leaveRangeEnd = extractISTComponents(leave.toDate).dateStr;
+    const leaveDays = getAllDatesInRange(leaveRangeStart, leaveRangeEnd);
 
-    let currentDate = new Date(leaveStart);
     let dayCounter = 1;
-    while (currentDate <= leaveEnd) {
-      const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+    for (const dateStr of leaveDays) {
       if (dateStr >= startDateStr && dateStr <= endDateStr) {
         let approvedBy = null;
         let approvedAt = null;
@@ -137,22 +134,18 @@ exports.getCalendarViewData = async (employee, year, month) => {
           approvedAt: approvedAt,
         };
       }
-      currentDate.setDate(currentDate.getDate() + 1);
       dayCounter++;
     }
   });
 
   const odMap = {};
   approvedODs.forEach(od => {
-    const odStart = new Date(od.fromDate);
-    const odEnd = new Date(od.toDate);
-    odStart.setHours(0, 0, 0, 0);
-    odEnd.setHours(23, 59, 59, 999);
+    const odRangeStart = extractISTComponents(od.fromDate).dateStr;
+    const odRangeEnd = extractISTComponents(od.toDate).dateStr;
+    const odDays = getAllDatesInRange(odRangeStart, odRangeEnd);
 
-    let currentDate = new Date(odStart);
     let dayCounter = 1;
-    while (currentDate <= odEnd) {
-      const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+    for (const dateStr of odDays) {
       if (dateStr >= startDateStr && dateStr <= endDateStr) {
         let approvedBy = null;
         let approvedAt = null;
@@ -162,6 +155,8 @@ exports.getCalendarViewData = async (employee, year, month) => {
         } else if (od.approvals?.hr?.status === 'approved' && od.approvals.hr.approvedBy) {
           approvedBy = od.approvals.hr.approvedBy;
           approvedAt = od.approvals.hr.approvedAt;
+        } else if (od.approvals?.hod?.status === 'approved' && od.approvals.hod.approvedBy) {
+          approvedBy = od.approvals.hod.approvedBy;
           approvedAt = od.approvals.hod.approvedAt;
         }
 
@@ -193,7 +188,6 @@ exports.getCalendarViewData = async (employee, year, month) => {
           approvedAt: approvedAt,
         };
       }
-      currentDate.setDate(currentDate.getDate() + 1);
       dayCounter++;
     }
   });
@@ -311,33 +305,25 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
     if (!endDateStr) endDateStr = extractISTComponents(periodInfo.payrollCycle.endDate).dateStr;
   }
 
-  const startDateObj = new Date(startDate);
-  const endDateObj = new Date(endDateStr);
-  endDateObj.setHours(23, 59, 59, 999);
+  const startYmd =
+    typeof startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(String(startDate).trim())
+      ? String(startDate).trim()
+      : extractISTComponents(startDate).dateStr;
+  const endYmd =
+    typeof endDateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(String(endDateStr).trim())
+      ? String(endDateStr).trim()
+      : extractISTComponents(endDateStr).dateStr;
 
-  // Helper function to get dates in range
-  const getDatesInRange = (start, end) => {
-    const dates = [];
-    const current = new Date(start);
-    const last = new Date(end);
+  const startDateObj = createISTDate(startYmd, '00:00');
+  const endDateObj = createISTDate(endYmd, '23:59');
 
-    current.setHours(0, 0, 0, 0);
-    last.setHours(0, 0, 0, 0);
-
-    while (current <= last) {
-      dates.push(`${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`);
-      current.setDate(current.getDate() + 1);
-    }
-    return dates;
-  };
-
-  const datesInRange = getDatesInRange(startDate, endDateStr);
+  const datesInRange = getAllDatesInRange(startYmd, endYmd);
 
   // Get all attendance records for the month (Using .lean() and projections)
   const empNos = employees.map(e => e.emp_no);
   const attendanceRecords = await AttendanceDaily.find({
     employeeNumber: { $in: empNos },
-    date: { $gte: startDate, $lte: endDateStr },
+    date: { $gte: startYmd, $lte: endYmd },
   })
     .select('employeeNumber date status shifts totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount notes earlyOutDeduction isEdited editHistory policyMeta')
     .populate('shifts.shiftId', 'name startTime endTime duration payableShifts')
@@ -347,7 +333,7 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
   const empIds = employees.map(e => e._id);
   const approvedOTs = await OT.find({
     employeeId: { $in: empIds },
-    date: { $gte: startDate, $lte: endDateStr },
+    date: { $gte: startYmd, $lte: endYmd },
     status: 'approved',
     isActive: true,
   })
@@ -387,15 +373,10 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
     if (!empNo) return;
     if (!leaveMapByEmployee[empNo]) leaveMapByEmployee[empNo] = {};
 
-    const leaveStart = new Date(leave.fromDate);
-    const leaveEnd = new Date(leave.toDate);
-    leaveStart.setHours(0, 0, 0, 0);
-    leaveEnd.setHours(23, 59, 59, 999);
-
-    let currentDate = new Date(leaveStart);
-    while (currentDate <= leaveEnd) {
-      const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
-      if (dateStr >= startDate && dateStr <= endDateStr) {
+    const leaveRangeStart = extractISTComponents(leave.fromDate).dateStr;
+    const leaveRangeEnd = extractISTComponents(leave.toDate).dateStr;
+    for (const dateStr of getAllDatesInRange(leaveRangeStart, leaveRangeEnd)) {
+      if (dateStr >= startYmd && dateStr <= endYmd) {
         leaveMapByEmployee[empNo][dateStr] = {
           leaveId: leave._id,
           leaveType: leave.leaveType,
@@ -404,7 +385,6 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
           numberOfDays: leave.numberOfDays,
         };
       }
-      currentDate.setDate(currentDate.getDate() + 1);
     }
   });
 
@@ -415,15 +395,10 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
     if (!empNo) return;
     if (!odMapByEmployee[empNo]) odMapByEmployee[empNo] = {};
 
-    const odStart = new Date(od.fromDate);
-    const odEnd = new Date(od.toDate);
-    odStart.setHours(0, 0, 0, 0);
-    odEnd.setHours(23, 59, 59, 999);
-
-    let currentDate = new Date(odStart);
-    while (currentDate <= odEnd) {
-      const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
-      if (dateStr >= startDate && dateStr <= endDateStr) {
+    const odRangeStart = extractISTComponents(od.fromDate).dateStr;
+    const odRangeEnd = extractISTComponents(od.toDate).dateStr;
+    for (const dateStr of getAllDatesInRange(odRangeStart, odRangeEnd)) {
+      if (dateStr >= startYmd && dateStr <= endYmd) {
         odMapByEmployee[empNo][dateStr] = {
           odId: od._id,
           odType: od.odType,
@@ -440,7 +415,6 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
           geoLocation: od.geoLocation,
         };
       }
-      currentDate.setDate(currentDate.getDate() + 1);
     }
   });
 
