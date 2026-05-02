@@ -535,18 +535,22 @@ exports.approveResignationRequest = async (req, res) => {
       resignation.workflow.currentStepRole = null;
       resignation.workflow.nextApproverRole = null;
 
-      // Calculate final LWD if not manual
-      if (!resignation.isLwdManual) {
+      // Apply notice-period LWD only when the date was never manually chosen or adjusted.
+      // updateLWD used to omit isLwdManual, so also trust lwdHistory to avoid overwriting corrected dates.
+      const hasLwdAdjustments =
+        !!resignation.isLwdManual ||
+        (Array.isArray(resignation.lwdHistory) && resignation.lwdHistory.length > 0);
+
+      if (!hasLwdAdjustments) {
         const ResignationSettings = require('../model/ResignationSettings');
         const settings = await ResignationSettings.getActiveSettings();
         const noticePeriodDays = Math.max(0, Number(settings?.noticePeriodDays) || 0);
-        
+
         const finalLwd = new Date();
         finalLwd.setHours(12, 0, 0, 0);
         finalLwd.setDate(finalLwd.getDate() + noticePeriodDays);
         resignation.leftDate = finalLwd;
-        
-        // Log this final calculation to history
+
         resignation.workflow.history.push({
           step: 'system',
           action: 'approved',
@@ -557,6 +561,8 @@ exports.approveResignationRequest = async (req, res) => {
           timestamp: new Date(),
           timestampIST: formatISTTimestamp(),
         });
+      } else if (!resignation.isLwdManual && Array.isArray(resignation.lwdHistory) && resignation.lwdHistory.length > 0) {
+        resignation.isLwdManual = true;
       }
 
       await resignation.save();
@@ -765,6 +771,8 @@ exports.updateLWD = async (req, res) => {
     }
 
     resignation.leftDate = newDateObj;
+    // Must flag manual LWD so final approval does not overwrite with notice-period calculation
+    resignation.isLwdManual = true;
 
     // Log LWD change to lwdHistory
     if (!resignation.lwdHistory) resignation.lwdHistory = [];
