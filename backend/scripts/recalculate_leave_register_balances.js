@@ -39,6 +39,7 @@ const leaveRegisterYearLedgerService = require('../leaves/services/leaveRegister
 const leaveRegisterService = require('../leaves/services/leaveRegisterService');
 const dateCycleService = require('../leaves/services/dateCycleService');
 const leaveRegisterYearMonthlyApplyService = require('../leaves/services/leaveRegisterYearMonthlyApplyService');
+const leaveRegisterPoolCarryReconcileService = require('../leaves/services/leaveRegisterPoolCarryReconcileService');
 
 function escapeRegex(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -97,93 +98,30 @@ async function syncRegisterDisplaySnapshot(employeeId) {
  * Optional --throughPayrollMonth caps which closings are processed (e.g. 5 = do not run Jun–Dec carry).
  */
 async function rebuildCarryTransactionsForEmployee(employeeId, carryOpts = {}) {
-  const leaveRegisterYearService = require('../leaves/services/leaveRegisterYearService');
-  const monthlyPoolCarryForwardService = require('../leaves/services/monthlyPoolCarryForwardService');
-  const { createISTDate, getTodayISTDateString } = require('../shared/utils/dateUtils');
-
-  const fyDocs = await LeaveRegisterYear.find({ employeeId }).sort({ financialYearStart: 1 });
-  let yearsTouched = 0;
-  for (const doc of fyDocs) {
-    leaveRegisterYearService.stripMonthlyPoolTransferArtifactsFromMonths(doc.months);
-    doc.markModified('months');
-    await doc.save();
-    yearsTouched++;
-  }
-
-  const periodInfo = await dateCycleService.getPeriodInfo(new Date());
-  const currentCycleStart = periodInfo?.payrollCycle?.startDate;
-  const carryCutoff =
-    currentCycleStart != null ? new Date(currentCycleStart) : createISTDate(getTodayISTDateString());
-
-  const closings = [];
-  const refreshed = await LeaveRegisterYear.find({ employeeId }).sort({ financialYearStart: 1 }).lean();
-  for (const d of refreshed) {
-    for (const slot of d.months || []) {
-      if (!slot.payPeriodEnd) continue;
-      if (!leaveRegisterYearService.isPayrollPeriodClosedBeforeAsOf(slot.payPeriodEnd, carryCutoff)) {
-        continue;
-      }
-      closings.push({
-        pm: Number(slot.payrollCycleMonth),
-        py: Number(slot.payrollCycleYear),
-        t: new Date(slot.payPeriodEnd).getTime(),
-      });
-    }
-  }
-  const seen = new Set();
-  let ordered = closings
-    .filter((c) => {
-      if (!Number.isFinite(c.pm) || !Number.isFinite(c.py)) return false;
-      const k = `${c.py}-${c.pm}`;
-      if (seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    })
-    .sort((a, b) => a.t - b.t);
-
   const capM = carryOpts.throughPayrollMonth;
   const capY = carryOpts.throughPayrollYear;
-  if (capM != null && Number.isFinite(Number(capM))) {
-    const before = ordered.length;
-    ordered = ordered.filter((c) => {
-      if (Number(c.pm) > Number(capM)) return false;
-      if (capY != null && Number.isFinite(Number(capY)) && Number(c.py) !== Number(capY)) return false;
-      return true;
-    });
-    if (before !== ordered.length) {
-      console.log(
-        `  [carry] throughPayrollMonth<=${capM}${capY != null && Number.isFinite(Number(capY)) ? ` year=${capY}` : ''}: ${before} → ${ordered.length} closings`
-      );
-    }
-  }
 
-  let carriesPosted = 0;
-  let carryErrors = 0;
+  const r = await leaveRegisterPoolCarryReconcileService.reconcilePoolCarryChainAfterRegisterChange(employeeId, {
+    asOfDate: new Date(),
+    throughPayrollMonth: capM != null && Number.isFinite(Number(capM)) ? Number(capM) : undefined,
+    throughPayrollYear: capY != null && Number.isFinite(Number(capY)) ? Number(capY) : undefined,
+  });
+
   const carryErrorSamples = [];
-  for (const c of ordered) {
-    const r = await monthlyPoolCarryForwardService.processPayrollCycleCarryForward(c.pm, c.py, {
-      employeeId,
-    });
-    carriesPosted += Number(r?.carriesPosted) || 0;
-    if (Array.isArray(r?.errors) && r.errors.length) {
-      carryErrors += r.errors.length;
-      for (const err of r.errors) {
-        if (carryErrorSamples.length < 5) {
-          carryErrorSamples.push({ month: c.pm, year: c.py, ...err });
-        }
-      }
-    }
+  if (r.ok === false && r.error) {
+    carryErrorSamples.push({ error: r.error });
   }
-
   return {
-    yearsTouched,
-    edgesApplied: ordered.length,
-    carriesPosted,
-    carryErrors,
-    carryCutoffIso: carryCutoff?.toISOString?.() || String(carryCutoff),
+    yearsTouched: r.yearsTouched || 0,
+    edgesApplied: r.edgesApplied || 0,
+    carriesPosted: r.carriesPosted || 0,
+    carryErrors: r.carryErrors || 0,
+    carryCutoffIso: r.carryCutoffIso,
     carryErrorSamples,
     throughPayrollMonth: capM != null && Number.isFinite(Number(capM)) ? Number(capM) : null,
     throughPayrollYear: capY != null && Number.isFinite(Number(capY)) ? Number(capY) : null,
+    carryFailed: r.ok === false,
+    carryFailMessage: r.error,
   };
 }
 
@@ -416,7 +354,7 @@ async function main() {
       console.log(
         `OK: ${label}${doSyncApply ? '' : ' (no monthly apply sync)'}${
           carryMeta
-            ? ` [carry: FY rows=${carryMeta.yearsTouched}, closedBefore=${carryMeta.carryCutoffIso || 'n/a'}, months=${carryMeta.edgesApplied}${carryMeta.throughPayrollMonth != null ? ` (cap pm<=${carryMeta.throughPayrollMonth}${carryMeta.throughPayrollYear != null ? ` py=${carryMeta.throughPayrollYear}` : ''})` : ''}, poolTxPairs=${carryMeta.carriesPosted || 0}${carryMeta.carryErrors ? `, carryErr=${carryMeta.carryErrors}` : ''}]`
+            ? ` [carry: FY rows=${carryMeta.yearsTouched}, closedBefore=${carryMeta.carryCutoffIso || 'n/a'}, months=${carryMeta.edgesApplied}${carryMeta.throughPayrollMonth != null ? ` (cap pm<=${carryMeta.throughPayrollMonth}${carryMeta.throughPayrollYear != null ? ` py=${carryMeta.throughPayrollYear}` : ''})` : ''}, poolTxPairs=${carryMeta.carriesPosted || 0}${carryMeta.carryErrors ? `, carryErr=${carryMeta.carryErrors}` : ''}${carryMeta.carryFailed ? `, carryFailed=${carryMeta.carryFailMessage || 'yes'}` : ''}]`
             : ''
         }`
       );

@@ -25,6 +25,7 @@ const { buildLeaveRegisterXlsxBuffer } = require('../services/leaveRegisterXlsxE
 const dateCycleService = require('../services/dateCycleService');
 const leaveRegisterYearMonthlyApplyService = require('../services/leaveRegisterYearMonthlyApplyService');
 const leaveRegisterYearService = require('../services/leaveRegisterYearService');
+const leaveRegisterPoolCarryReconcileService = require('../services/leaveRegisterPoolCarryReconcileService');
 const { extractISTComponents } = require('../../shared/utils/dateUtils');
 const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
 const { assertEmployeeRangeRequestsEditable } = require('../../shared/services/payrollRequestLockService');
@@ -44,6 +45,31 @@ function canEditLeaveRegisterMonthSlot(user) {
 const PDFDocument = require('pdfkit');
 const XLSX = require('xlsx');
 const dayjs = require('dayjs');
+
+/**
+ * After CL/CCL/EL register debits change, queue a full strip+replay of pool carry for closed months.
+ * Runs on the next event-loop tick so the HTTP response is not blocked; failures log only.
+ * Refresh the leave register after a few seconds to see updated transfer IN/OUT rows.
+ */
+function scheduleMonthlyPoolCarryReconcileAfterLeaveRegisterChange(leave) {
+  try {
+    const eid = leave?.employeeId;
+    if (!eid) return;
+    if (!leaveRegisterPoolCarryReconcileService.leaveTypeAffectsMonthlyPoolCarry(leave.leaveType)) return;
+    setImmediate(() => {
+      leaveRegisterPoolCarryReconcileService
+        .reconcilePoolCarryChainAfterRegisterChange(eid, { asOfDate: new Date() })
+        .then((r) => {
+          if (r && !r.ok) console.warn('[leave] pool carry reconcile failed:', r.error);
+        })
+        .catch((e) => {
+          console.warn('[leave] pool carry reconcile:', e?.message || e);
+        });
+    });
+  } catch (e) {
+    console.warn('[leave] schedule pool carry:', e?.message || e);
+  }
+}
 
 /**
  * Get employee settings from database
@@ -1264,6 +1290,7 @@ exports.updateLeave = async (req, res) => {
       } catch (err) {
         console.error('Failed to sync leave register during leave update:', err);
       }
+      scheduleMonthlyPoolCarryReconcileAfterLeaveRegisterChange(leave);
     }
 
     // Keep monthly summary in sync when an approved leave (before/after edit) changes.
@@ -1881,6 +1908,7 @@ exports.processLeaveAction = async (req, res) => {
       } catch (err) {
         console.error('Leave register debit failed (leave already approved):', err);
       }
+      scheduleMonthlyPoolCarryReconcileAfterLeaveRegisterChange(leave);
     }
 
     // Employee history: leave final decision
@@ -2072,6 +2100,7 @@ exports.revokeLeaveApproval = async (req, res) => {
         console.error('Failed to reverse leave register debit during revocation:', err);
         // We continue anyway, but log the error
       }
+      scheduleMonthlyPoolCarryReconcileAfterLeaveRegisterChange(leave);
     }
 
     const stepRole = lastStep.role || lastStep.stepRole;
@@ -2196,6 +2225,7 @@ exports.deleteLeave = async (req, res) => {
       } catch (err) {
         console.error('Failed to reverse leave register debit during delete:', err);
       }
+      scheduleMonthlyPoolCarryReconcileAfterLeaveRegisterChange(leave);
     }
     try {
       const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');

@@ -9,6 +9,7 @@ const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const dateCycleService = require('./dateCycleService');
 const leaveRegisterYearService = require('./leaveRegisterYearService');
 const leaveRegisterYearMonthlyApplyService = require('./leaveRegisterYearMonthlyApplyService');
+const { withOptimisticRetry } = require('../../shared/utils/mongooseOptimisticRetry');
 
 function roundHalf(x) {
   const n = Number(x) || 0;
@@ -72,7 +73,7 @@ async function syncEmployeeModelBalance(employeeId, leaveType, closingBalance) {
   }
 }
 
-async function recalculateRegisterBalances(employeeId, leaveType, fromDate) {
+async function recalculateRegisterBalancesOnce(employeeId, leaveType, fromDate) {
   const years = await loadAllYearDocs(employeeId);
   const refs = collectTxnRefsForLeaveType(years, leaveType);
   const fromMs = fromDate ? new Date(fromDate).getTime() : null;
@@ -114,6 +115,13 @@ async function recalculateRegisterBalances(employeeId, leaveType, fromDate) {
   await syncEmployeeModelBalance(employeeId, leaveType, finalBalance);
 
   return true;
+}
+
+async function recalculateRegisterBalances(employeeId, leaveType, fromDate) {
+  return withOptimisticRetry(
+    () => recalculateRegisterBalancesOnce(employeeId, leaveType, fromDate),
+    { maxAttempts: 12 }
+  );
 }
 
 async function ensureYearDocument(transactionData, periodInfo) {
@@ -187,7 +195,7 @@ function findMonthIndex(doc, payrollMonth, payrollYear) {
   );
 }
 
-async function addTransaction(transactionData) {
+async function addTransactionOnce(transactionData) {
   const periodInfo = await dateCycleService.getPeriodInfo(transactionData.startDate);
   const doc = await ensureYearDocument(transactionData, periodInfo);
   const forcedPm = Number(transactionData.payrollCycleMonth);
@@ -330,6 +338,10 @@ async function addTransaction(transactionData) {
     dateOfJoining: transactionData.dateOfJoining,
     employmentStatus: transactionData.employmentStatus,
   };
+}
+
+async function addTransaction(transactionData) {
+  return withOptimisticRetry(() => addTransactionOnce(transactionData), { maxAttempts: 12 });
 }
 
 function flattenYearDocsToLegacyTransactions(yearDocs, employeeById) {
