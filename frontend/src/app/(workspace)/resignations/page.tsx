@@ -24,6 +24,7 @@ import {
   Save,
   LayoutGrid,
   List,
+  Pencil,
 } from 'lucide-react';
 
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, loading }: { title: string; value: number | string; icon: React.ComponentType<{ className?: string }>; bgClass: string; iconClass: string; dekorClass?: string; loading?: boolean }) => (
@@ -322,6 +323,7 @@ export default function ResignationsPage() {
   const [selectedRequest, setSelectedRequest] = useState<ResignationRequest | null>(null);
   const [actionComment, setActionComment] = useState('');
   const [editableLWD, setEditableLWD] = useState('');
+  const [detailLwdEditMode, setDetailLwdEditMode] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
 
   const [showApplyModal, setShowApplyModal] = useState(false);
@@ -701,18 +703,28 @@ export default function ResignationsPage() {
     return isMatch ? currentStep : null;
   }, [currentUser, resignationSettings]);
 
-  const canEditLWDCurrentStep = useMemo(() => {
-    if (!selectedRequest || !currentUser) return false;
-    const role = (currentUser.role || '').toLowerCase();
-    // Super/Sub admin can always edit
-    if (['super_admin', 'sub_admin'].includes(role)) return true;
+  const canEditLWDForRequest = useCallback(
+    (req: ResignationRequest | null) => {
+      if (!req || !currentUser) return false;
+      const role = (currentUser.role || '').toLowerCase();
+      if (['super_admin', 'sub_admin'].includes(role)) return true;
+      if (req.status === 'approved' && role === 'hr') return true;
+      const currentStep = getCurrentStep(req);
+      return currentStep?.canEditLWD || false;
+    },
+    [currentUser, getCurrentStep]
+  );
 
-    // Once approved, allow HR (and above) to edit LWD as well
-    if (selectedRequest.status === 'approved' && role === 'hr') return true;
+  const canEditLWDCurrentStep = useMemo(
+    () => canEditLWDForRequest(selectedRequest),
+    [canEditLWDForRequest, selectedRequest]
+  );
 
-    const currentStep = getCurrentStep(selectedRequest);
-    return currentStep?.canEditLWD || false;
-  }, [selectedRequest, currentUser, getCurrentStep]);
+  const showApprovalFooter =
+    !!selectedRequest &&
+    selectedRequest.status === 'pending' &&
+    canPerformAction(selectedRequest) &&
+    canApproveResignation(currentUser as any);
 
   const handleSaveLWD = async () => {
     if (!selectedRequest || !editableLWD) return;
@@ -726,9 +738,8 @@ export default function ResignationsPage() {
       
       if (response.success) {
         toast.success('Last working date updated successfully');
-        // Update local state to show change in history/details
         setSelectedRequest(response.data);
-        // Refresh all data
+        setDetailLwdEditMode(false);
         loadData();
       } else {
         toast.error(response.message || 'Failed to update date');
@@ -761,6 +772,7 @@ export default function ResignationsPage() {
         setShowDetailDialog(false);
         setSelectedRequest(null);
         setActionComment('');
+        setDetailLwdEditMode(false);
         loadData();
       } else {
         Swal.fire({
@@ -1190,11 +1202,13 @@ export default function ResignationsPage() {
                             setSelectedRequest(req);
                             setActionComment('');
                             setEditableLWD(req.leftDate ? req.leftDate.split('T')[0] : '');
+                            setDetailLwdEditMode(false);
                             setShowDetailDialog(true);
                           }}
                           className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-black uppercase text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all tracking-tighter"
                         >
-                          <Eye className="w-3.5 h-3.5" /> <span>View</span>
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>View</span>
                         </button>
                         {activeTab === 'pending' && canPerformAction(req) && canApproveResignation(currentUser as any) && (
                           <div className="flex gap-1">
@@ -1280,11 +1294,13 @@ export default function ResignationsPage() {
                         setSelectedRequest(req);
                         setActionComment('');
                         setEditableLWD(req.leftDate ? req.leftDate.split('T')[0] : '');
+                        setDetailLwdEditMode(false);
                         setShowDetailDialog(true);
                       }}
                       className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
                     >
-                      <Eye className="w-3.5 h-3.5" /> View
+                      <Eye className="w-3.5 h-3.5" />
+                      View
                     </button>
                     {activeTab === 'pending' && canPerformAction(req) && canApproveResignation(currentUser as any) && (
                       <>
@@ -1510,20 +1526,44 @@ export default function ResignationsPage() {
 
       {showDetailDialog && selectedRequest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => { setShowDetailDialog(false); setSelectedRequest(null); }} />
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => { setShowDetailDialog(false); setSelectedRequest(null); setDetailLwdEditMode(false); }} />
           <div className="relative z-50 w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white min-w-0">
                 {selectedRequest.requestType === 'termination' ? 'Termination request' : 'Resignation request'}
               </h2>
-              <button
-                type="button"
-                onClick={() => { setShowDetailDialog(false); setSelectedRequest(null); }}
-                className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                aria-label="Close details"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {canEditLWDCurrentStep && !detailLwdEditMode && (
+                  <button
+                    type="button"
+                    onClick={() => setDetailLwdEditMode(true)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-amber-900 shadow-sm transition hover:bg-amber-100 dark:border-amber-800/80 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-900/50"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
+                )}
+                {canEditLWDCurrentStep && detailLwdEditMode && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDetailLwdEditMode(false);
+                      setEditableLWD(selectedRequest.leftDate ? selectedRequest.leftDate.split('T')[0] : '');
+                    }}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  >
+                    Cancel edit
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setShowDetailDialog(false); setSelectedRequest(null); setDetailLwdEditMode(false); }}
+                  className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  aria-label="Close details"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
             <div className="mb-4 border-b border-slate-200 pb-4 dark:border-slate-800">
               <div className="flex items-center justify-between gap-3">
@@ -1544,10 +1584,68 @@ export default function ResignationsPage() {
                 <h4 className="mb-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Details</h4>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><p className="text-[10px] font-bold uppercase text-slate-500">Date of joining</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{formatDateDash(selectedRequest.employeeId?.doj)}</p></div>
-                  <div><p className="text-[10px] font-bold uppercase text-slate-500">{selectedRequest.requestType === 'termination' ? 'Termination date' : 'Last working date'}</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{formatDateDash(selectedRequest.leftDate)}</p></div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-500">{selectedRequest.requestType === 'termination' ? 'Termination date' : 'Last working date'}</p>
+                    {canEditLWDCurrentStep && detailLwdEditMode ? (
+                      <div className="mt-0.5 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="date"
+                            value={editableLWD || (selectedRequest.leftDate ? selectedRequest.leftDate.split('T')[0] : '')}
+                            onChange={(e) => setEditableLWD(e.target.value)}
+                            className="h-9 max-w-full rounded-lg border border-amber-200 bg-white px-2 text-sm font-medium text-slate-900 focus:border-amber-400 focus:ring-2 focus:ring-amber-200 dark:border-amber-800 dark:bg-slate-800 dark:text-white dark:focus:border-amber-500 dark:focus:ring-amber-900/40"
+                          />
+                          {editableLWD && editableLWD !== (selectedRequest.leftDate ? selectedRequest.leftDate.split('T')[0] : '') && (
+                            <button
+                              type="button"
+                              onClick={handleSaveLWD}
+                              disabled={saveLoading}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-green-700 disabled:opacity-50"
+                              title="Save last working date"
+                            >
+                              {saveLoading ? (
+                                <span className="h-3.5 w-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
+                              ) : (
+                                <Save className="w-3.5 h-3.5" />
+                              )}
+                              Save
+                            </button>
+                          )}
+                        </div>
+                        {!showApprovalFooter && (
+                          <textarea
+                            value={actionComment}
+                            onChange={(e) => setActionComment(e.target.value)}
+                            placeholder="Optional note for this date change…"
+                            rows={2}
+                            className="w-full rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-800 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100 resize-none"
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{formatDateDash(selectedRequest.leftDate)}</p>
+                    )}
+                  </div>
                   <div><p className="text-[10px] font-bold uppercase text-slate-500">Agreement start date</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{(() => { const d = getAgreementDatesFromEmployee(selectedRequest.employeeId); return formatDateDash(d.startDate); })()}</p></div>
                   <div><p className="text-[10px] font-bold uppercase text-slate-500">Agreement end date</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{(() => { const d = getAgreementDatesFromEmployee(selectedRequest.employeeId); return formatDateDash(d.endDate); })()}</p></div>
                 </div>
+                {selectedRequest.lwdHistory && selectedRequest.lwdHistory.length > 0 && (
+                  <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-800/40">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">LWD change history</p>
+                    <div className="mt-2 space-y-2">
+                      {selectedRequest.lwdHistory.map((history, idx) => (
+                        <div key={idx} className="text-[11px] text-slate-600 dark:text-slate-400 pb-2 border-b border-slate-100 dark:border-slate-700 last:border-0 last:pb-0">
+                          <div className="flex flex-wrap justify-between gap-1 font-bold text-slate-700 dark:text-slate-300">
+                            <span>{formatDate(history.oldDate, true)} → {formatDate(history.newDate, true)}</span>
+                            <span className="opacity-60 font-medium">{(history as { timestampIST?: string }).timestampIST || formatDateTime(history.timestamp)}</span>
+                          </div>
+                          <p className="mt-0.5">Changed by <span className="font-semibold">{history.updatedByName}</span> ({history.updatedByRole})</p>
+                          {history.comments && <p className="mt-1 italic opacity-80">&quot;{history.comments}&quot;</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {selectedRequest.remarks && (
                   <div className="mt-4">
                     <p className="text-[10px] font-bold uppercase text-slate-400">Reason / Remarks</p>
@@ -1598,187 +1696,16 @@ export default function ResignationsPage() {
               </div>
             </div>
 
-            <div className="hidden space-y-3 text-sm">
-              <div className="flex justify-between items-start">
-                <span className="text-slate-500 dark:text-slate-400">Employee</span>
-                <div className="text-right">
-                  <div className="font-semibold text-slate-900 dark:text-white">
-                    {getEmployeeName(selectedRequest)} ({selectedRequest.emp_no})
-                  </div>
-                </div>
-              </div>
-
-              {/* Enhanced Employee Details Section */}
-              <div className="mt-6 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
-                <h4 className="mb-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Employee Profile Context</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase text-slate-400">Date of Joining</p>
-                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
-                      {selectedRequest.employeeId?.doj ? new Date(selectedRequest.employeeId.doj).toLocaleDateString() : '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase text-slate-400">Employee Group</p>
-                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
-                      {selectedRequest.employeeId?.employee_group_id?.name || '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase text-slate-400">Division</p>
-                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
-                      {selectedRequest.employeeId?.division_id?.name || '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase text-slate-400">Department</p>
-                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
-                      {selectedRequest.employeeId?.department_id?.name || '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase text-slate-400">Agreement start date</p>
-                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
-                      {(() => {
-                        const dates = getAgreementDatesFromEmployee(selectedRequest.employeeId);
-                        return dates.startDate ? new Date(dates.startDate).toLocaleDateString('en-IN') : '—';
-                      })()}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase text-slate-400">Agreement end date</p>
-                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
-                      {(() => {
-                        const dates = getAgreementDatesFromEmployee(selectedRequest.employeeId);
-                        return dates.endDate ? new Date(dates.endDate).toLocaleDateString('en-IN') : '—';
-                      })()}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 dark:text-slate-400">
-                  {selectedRequest.requestType === 'termination' ? 'Termination date' : 'Last working date'}
-                </span>
-                {canEditLWDCurrentStep ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="date"
-                      value={editableLWD}
-                      onChange={(e) => setEditableLWD(e.target.value)}
-                      className="h-9 px-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none"
-                    />
-                    {editableLWD && editableLWD !== (selectedRequest.leftDate ? selectedRequest.leftDate.split('T')[0] : '') && (
-                      <button
-                        onClick={handleSaveLWD}
-                        disabled={saveLoading}
-                        className="p-2 rounded-lg bg-green-500 hover:bg-green-600 text-white shadow-sm transition active:scale-95 disabled:opacity-50 flex items-center justify-center"
-                        title="Save date change"
-                      >
-                        {saveLoading ? (
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        ) : (
-                          <Save className="w-4 h-4" />
-                        )}
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <span className="font-medium text-slate-900 dark:text-white">{formatDate(selectedRequest.leftDate, selectedRequest.isLwdManual, selectedRequest.status)}</span>
-                )}
-              </div>
-              
-              {selectedRequest.lwdHistory && selectedRequest.lwdHistory.length > 0 && (
-                <div className="mt-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
-                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">LWD change history</h4>
-                  <div className="space-y-2">
-                    {selectedRequest.lwdHistory.map((history, idx) => (
-                      <div key={idx} className="text-[11px] text-slate-600 dark:text-slate-400 pb-2 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
-                        <div className="flex justify-between font-bold text-slate-700 dark:text-slate-300">
-                          <span>{formatDate(history.oldDate, true)} → {formatDate(history.newDate, true)}</span>
-                          <span className="opacity-60">{(history as any).timestampIST || formatDateTime(history.timestamp)}</span>
-                        </div>
-                        <p className="mt-0.5">Changed by <span className="font-semibold">{history.updatedByName}</span> ({history.updatedByRole})</p>
-                        {history.comments && <p className="mt-1 italic opacity-80">&quot;{history.comments}&quot;</p>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-slate-500 dark:text-slate-400">Status</span>
-                <span className={`rounded-full px-2.5 py-1 text-sm font-semibold ${getStatusColor(getStatusVisualKey(selectedRequest))}`}>{getDisplayStatusText(selectedRequest)}</span>
-              </div>
-              {selectedRequest.remarks && (
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400 block mb-1">Remarks</span>
-                  <p className="text-slate-700 dark:text-slate-300">{selectedRequest.remarks}</p>
-                </div>
-              )}
-              {selectedRequest.requestedBy && (
-                <div className="flex justify-between">
-                  <span className="text-slate-500 dark:text-slate-400">Requested by</span>
-                  <span className="font-medium text-slate-900 dark:text-white">{selectedRequest.requestedBy.name}</span>
-                </div>
-              )}
-            </div>
-
-            {selectedRequest.workflow?.approvalChain && selectedRequest.workflow.approvalChain.length > 0 && (
-              <div className="hidden mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">Approval workflow</h3>
-                <div className="space-y-3">
-                  {selectedRequest.workflow.approvalChain.map((step, idx) => (
-                    <div key={idx} className="flex flex-col gap-1 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{step.label || step.role}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
-                          step.status === 'approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 
-                          step.status === 'rejected' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 
-                          'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
-                          {step.status || 'pending'}
-                        </span>
-                      </div>
-                      {step.status && step.status !== 'pending' && (
-                        <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                          <p>By: <span className="font-semibold text-slate-700 dark:text-slate-300">{step.actionByName || '—'}</span></p>
-                          <p className="mt-0.5">
-                            Action date: <span className="font-semibold text-slate-700 dark:text-slate-300">{(step as any).updatedAtIST || formatDateTime(step.updatedAt)}</span>
-                          </p>
-                          {step.comments && <p className="mt-1 italic border-l-2 border-slate-200 dark:border-slate-700 pl-2">"{step.comments}"</p>}
-                        </div>
-                      )}
-                      {(!step.status || step.status === 'pending') && (
-                        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                          Action date: <span className="font-semibold text-slate-700 dark:text-slate-300">Awaiting approval</span>
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {selectedRequest.status === 'pending' && canPerformAction(selectedRequest) && canApproveResignation(currentUser as any) && (
+            {showApprovalFooter && (
               <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col gap-3">
-                <div className={`grid gap-2 ${canEditLWDCurrentStep ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
+                <div className="grid gap-2 grid-cols-1">
                   <textarea
                     value={actionComment}
                     onChange={(e) => setActionComment(e.target.value)}
-                    placeholder="Add a comment (optional)..."
+                    placeholder="Add a comment (optional)…"
                     rows={2}
                     className="w-full rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm dark:bg-slate-800 dark:text-white resize-none"
                   />
-                  {canEditLWDCurrentStep && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 dark:border-amber-800 dark:bg-amber-900/10">
-                      <label className="block text-[10px] font-bold uppercase text-amber-700 dark:text-amber-400 mb-1">Update Last Working Date</label>
-                      <input
-                        type="date"
-                        value={editableLWD || (selectedRequest.leftDate ? selectedRequest.leftDate.split('T')[0] : '')}
-                        onChange={(e) => setEditableLWD(e.target.value)}
-                        className="w-full h-9 rounded-lg border border-amber-200 dark:border-amber-700 bg-white dark:bg-slate-900 px-2 text-sm"
-                      />
-                    </div>
-                  )}
                 </div>
                 <div className="flex gap-2">
                   <button
