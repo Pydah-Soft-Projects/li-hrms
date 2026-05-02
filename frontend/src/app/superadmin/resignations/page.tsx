@@ -24,6 +24,7 @@ import {
   Save,
   LayoutGrid,
   List,
+  Pencil,
 } from 'lucide-react';
 
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, loading }: { title: string; value: number | string; icon: React.ComponentType<{ className?: string }>; bgClass: string; iconClass: string; dekorClass?: string; loading?: boolean }) => (
@@ -301,6 +302,7 @@ export default function SuperAdminResignationsPage() {
   const [selectedRequest, setSelectedRequest] = useState<ResignationRequest | null>(null);
   const [actionComment, setActionComment] = useState('');
   const [newLeftDate, setNewLeftDate] = useState('');
+  const [detailLwdEditMode, setDetailLwdEditMode] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
 
   const [showApplyModal, setShowApplyModal] = useState(false);
@@ -591,9 +593,8 @@ export default function SuperAdminResignationsPage() {
       
       if (response.success) {
         toast.success('Last working date updated successfully');
-        // Update local state to show change in history/details
         setSelectedRequest(response.data);
-        // Refresh all data
+        setDetailLwdEditMode(false);
         loadData();
       } else {
         toast.error(response.message || 'Failed to update date');
@@ -625,6 +626,7 @@ export default function SuperAdminResignationsPage() {
         setShowDetailDialog(false);
         setSelectedRequest(null);
         setActionComment('');
+        setDetailLwdEditMode(false);
         loadData();
       } else {
         Swal.fire({
@@ -717,6 +719,9 @@ export default function SuperAdminResignationsPage() {
       return req.status === activeTab;
     });
   }, [baseFiltered, baseFilteredPending, activeTab]);
+
+  const canEditLWDOnRequest = (req: ResignationRequest) =>
+    ['pending', 'approved'].includes(String(req.status || '').toLowerCase());
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 pb-10 pt-1">
@@ -999,11 +1004,13 @@ export default function SuperAdminResignationsPage() {
                               setSelectedRequest(req);
                               setActionComment('');
                               setNewLeftDate(req.leftDate ? req.leftDate.split('T')[0] : '');
+                              setDetailLwdEditMode(false);
                               setShowDetailDialog(true);
                             }}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-black uppercase text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all tracking-tighter"
                           >
-                            <Eye className="w-3.5 h-3.5" /> <span>View</span>
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View</span>
                           </button>
                           {req.status === 'pending' && canPerformAction(req) && (
                             <>
@@ -1094,11 +1101,13 @@ export default function SuperAdminResignationsPage() {
                         setSelectedRequest(req);
                         setActionComment('');
                         setNewLeftDate(req.leftDate ? req.leftDate.split('T')[0] : '');
+                        setDetailLwdEditMode(false);
                         setShowDetailDialog(true);
                       }}
                       className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 py-2 text-[10px] font-black uppercase text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all tracking-tighter"
                     >
-                      <Eye className="w-3.5 h-3.5" /> View
+                      <Eye className="w-3.5 h-3.5" />
+                      View
                     </button>
                     {req.status === 'pending' && canPerformAction(req) && (
                       <>
@@ -1304,22 +1313,44 @@ export default function SuperAdminResignationsPage() {
 
       {showDetailDialog && selectedRequest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => { setShowDetailDialog(false); setSelectedRequest(null); }} />
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => { setShowDetailDialog(false); setSelectedRequest(null); setDetailLwdEditMode(false); }} />
           <div className="relative z-50 w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white min-w-0">
                 {selectedRequest.requestType === 'termination' ? 'Termination request' : 'Resignation request'}
               </h2>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 {selectedRequest.requestType === 'termination' && (
                   <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/30">
                     <X className="w-3 h-3 text-rose-500" />
                     <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 tracking-tighter uppercase">Termination</span>
                   </div>
                 )}
+                {canEditLWDOnRequest(selectedRequest) && !detailLwdEditMode && (
+                  <button
+                    type="button"
+                    onClick={() => setDetailLwdEditMode(true)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-amber-900 shadow-sm transition hover:bg-amber-100 dark:border-amber-800/80 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-900/50"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
+                )}
+                {canEditLWDOnRequest(selectedRequest) && detailLwdEditMode && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDetailLwdEditMode(false);
+                      setNewLeftDate(selectedRequest.leftDate ? String(selectedRequest.leftDate).split('T')[0] : '');
+                    }}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  >
+                    Cancel edit
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => { setShowDetailDialog(false); setSelectedRequest(null); }}
+                  onClick={() => { setShowDetailDialog(false); setSelectedRequest(null); setDetailLwdEditMode(false); }}
                   className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                   aria-label="Close details"
                 >
@@ -1348,7 +1379,48 @@ export default function SuperAdminResignationsPage() {
                 <h4 className="mb-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Details</h4>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><p className="text-[10px] font-bold uppercase text-slate-500">Date of joining</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{formatDateDash(selectedRequest.employeeId?.doj)}</p></div>
-                  <div><p className="text-[10px] font-bold uppercase text-slate-500">{selectedRequest.requestType === 'termination' ? 'Termination date' : 'Last working date'}</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{formatDateDash(selectedRequest.leftDate)}</p></div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-500">{selectedRequest.requestType === 'termination' ? 'Termination date' : 'Last working date'}</p>
+                    {canEditLWDOnRequest(selectedRequest) && detailLwdEditMode ? (
+                      <div className="mt-0.5 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="date"
+                            value={newLeftDate || (selectedRequest.leftDate ? String(selectedRequest.leftDate).split('T')[0] : '')}
+                            onChange={(e) => setNewLeftDate(e.target.value)}
+                            className="h-9 max-w-full rounded-lg border border-amber-200 bg-white px-2 text-sm font-medium text-slate-900 focus:border-amber-400 focus:ring-2 focus:ring-amber-200 dark:border-amber-800 dark:bg-slate-800 dark:text-white dark:focus:border-amber-500 dark:focus:ring-amber-900/40"
+                          />
+                          {newLeftDate && newLeftDate !== (selectedRequest.leftDate ? selectedRequest.leftDate.split('T')[0] : '') && (
+                            <button
+                              type="button"
+                              onClick={handleSaveLWD}
+                              disabled={saveLoading}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-green-700 disabled:opacity-50"
+                              title="Save last working date"
+                            >
+                              {saveLoading ? (
+                                <span className="h-3.5 w-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
+                              ) : (
+                                <Save className="w-3.5 h-3.5" />
+                              )}
+                              Save
+                            </button>
+                          )}
+                        </div>
+                        {!(selectedRequest.status === 'pending' && canPerformAction(selectedRequest)) && (
+                          <textarea
+                            value={actionComment}
+                            onChange={(e) => setActionComment(e.target.value)}
+                            placeholder="Optional note for this date change…"
+                            rows={2}
+                            className="w-full rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-800 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100 resize-none"
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{formatDateDash(selectedRequest.leftDate)}</p>
+                    )}
+                  </div>
                   <div><p className="text-[10px] font-bold uppercase text-slate-500">Agreement start date</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{(() => { const d = getAgreementDatesFromEmployee(selectedRequest.employeeId); return formatDateDash(d.startDate); })()}</p></div>
                   <div><p className="text-[10px] font-bold uppercase text-slate-500">Agreement end date</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{(() => { const d = getAgreementDatesFromEmployee(selectedRequest.employeeId); return formatDateDash(d.endDate); })()}</p></div>
                 </div>
@@ -1402,162 +1474,6 @@ export default function SuperAdminResignationsPage() {
               </div>
             </div>
 
-            <div className="hidden space-y-3 text-sm">
-              <div className="flex justify-between items-start">
-                <span className="text-slate-500 dark:text-slate-400">Employee</span>
-                <div className="text-right">
-                  <div className="font-semibold text-slate-900 dark:text-white">
-                    {getEmployeeName(selectedRequest)} ({selectedRequest.emp_no})
-                  </div>
-                </div>
-              </div>
-
-              {/* Enhanced Employee Details Section */}
-              <div className="mt-6 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
-                <h4 className="mb-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Employee Profile Context</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase text-slate-400">Date of Joining</p>
-                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
-                      {selectedRequest.employeeId?.doj ? new Date(selectedRequest.employeeId.doj).toLocaleDateString() : '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase text-slate-400">Employee Group</p>
-                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
-                      {selectedRequest.employeeId?.employee_group_id?.name || '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase text-slate-400">Division</p>
-                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
-                      {selectedRequest.employeeId?.division_id?.name || '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase text-slate-400">Department</p>
-                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
-                      {selectedRequest.employeeId?.department_id?.name || '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase text-slate-400">Agreement start date</p>
-                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
-                      {(() => {
-                        const dates = getAgreementDatesFromEmployee(selectedRequest.employeeId);
-                        return dates.startDate ? new Date(dates.startDate).toLocaleDateString('en-IN') : '—';
-                      })()}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase text-slate-400">Agreement end date</p>
-                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
-                      {(() => {
-                        const dates = getAgreementDatesFromEmployee(selectedRequest.employeeId);
-                        return dates.endDate ? new Date(dates.endDate).toLocaleDateString('en-IN') : '—';
-                      })()}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-between items-center gap-4">
-                <span className="text-slate-500 dark:text-slate-400">{selectedRequest.requestType === 'termination' ? 'Termination date' : 'Last working date'}</span>
-                {['pending', 'approved'].includes(selectedRequest.status) ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="date"
-                      value={newLeftDate}
-                      onChange={(e) => setNewLeftDate(e.target.value)}
-                      className="h-9 px-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none"
-                    />
-                    {newLeftDate && newLeftDate !== (selectedRequest.leftDate ? selectedRequest.leftDate.split('T')[0] : '') && (
-                      <button
-                        onClick={handleSaveLWD}
-                        disabled={saveLoading}
-                        className="p-2 rounded-lg bg-green-500 hover:bg-green-600 text-white shadow-sm transition active:scale-95 disabled:opacity-50 flex items-center justify-center"
-                        title="Save date change"
-                      >
-                        {saveLoading ? (
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        ) : (
-                          <Save className="w-4 h-4" />
-                        )}
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <span className="font-medium text-slate-900 dark:text-white">{formatDate(selectedRequest.leftDate)}</span>
-                )}
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 dark:text-slate-400">Status</span>
-                <span className={`rounded-full px-2.5 py-1 text-sm font-semibold ${getStatusColor(getStatusVisualKey(selectedRequest))}`}>
-                  <span>{getDisplayStatusText(selectedRequest)}</span>
-                </span>
-              </div>
-              {selectedRequest.remarks && (
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400 block mb-1">Remarks</span>
-                  <p className="text-slate-700 dark:text-slate-300">{selectedRequest.remarks}</p>
-                </div>
-              )}
-              {selectedRequest.requestedBy && (
-                <div className="flex justify-between">
-                  <span className="text-slate-500 dark:text-slate-400">Requested by</span>
-                  <span className="font-medium text-slate-900 dark:text-white">{selectedRequest.requestedBy.name}</span>
-                </div>
-              )}
-            </div>
-
-            {selectedRequest.workflow?.approvalChain && selectedRequest.workflow.approvalChain.length > 0 && (
-              <div className="hidden mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <h3 className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Approval History</h3>
-                <div className="space-y-3">
-                  {selectedRequest.workflow.approvalChain.map((step, idx) => {
-                    const isPending = !step.status || step.status === 'pending';
-                    const isRejected = step.status === 'rejected';
-                    const isApproved = step.status === 'approved';
-                    
-                    return (
-                      <div key={idx} className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-700 ml-1 pb-4 last:pb-0">
-                        <div className={`absolute -left-[9px] top-0.5 w-4 h-4 rounded-full border-2 border-white dark:border-slate-900 shadow-sm ${
-                          isApproved ? 'bg-green-500' : isRejected ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-600'
-                        }`} />
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{step.label || step.role}</span>
-                            <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
-                              isApproved ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 
-                              isRejected ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 
-                              'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
-                            }`}>
-                              {step.status || 'pending'}
-                            </span>
-                          </div>
-                          {!isPending && (
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                              <p>
-                                By: <span className="font-semibold text-slate-700 dark:text-slate-200">{step.actionByName || '—'}</span>
-                              </p>
-                              <p className="mt-0.5">
-                                Action date: <span className="font-semibold text-slate-700 dark:text-slate-200">{step.updatedAtIST || formatDateTime(step.updatedAt)}</span>
-                              </p>
-                              {step.comments && <p className="mt-1 italic border-l-2 border-slate-200 dark:border-slate-700 pl-2">&quot;{step.comments}&quot;</p>}
-                            </div>
-                          )}
-                          {isPending && (
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                              Action date: <span className="font-semibold text-slate-700 dark:text-slate-200">Awaiting approval</span>
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
             {/* LWD History */}
             {((selectedRequest as any).lwdHistory?.length > 0) && (
               <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
@@ -1581,32 +1497,13 @@ export default function SuperAdminResignationsPage() {
 
             {selectedRequest.status === 'pending' && canPerformAction(selectedRequest) && (
               <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col gap-4">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <textarea
-                    value={actionComment}
-                    onChange={(e) => setActionComment(e.target.value)}
-                    placeholder="Add a comment (optional)..."
-                    rows={2}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-600 px-4 py-2 text-sm dark:bg-slate-800 dark:text-white resize-none outline-none focus:ring-2 focus:ring-green-500/20"
-                  />
-                  {(() => {
-                    const currentStep = selectedRequest.workflow?.approvalChain?.find(s => s.status === 'pending' || !s.status);
-                    const userRole = (currentUser?.role || '').toLowerCase();
-                    const isSuperOrSubAdmin = ['super_admin', 'sub_admin'].includes(userRole);
-                    if (!(currentStep?.canEditLWD || isSuperOrSubAdmin)) return null;
-                    return (
-                      <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50">
-                        <label className="block text-[10px] font-black uppercase text-amber-700 dark:text-amber-500 mb-2">Update Last Working Date</label>
-                        <input
-                          type="date"
-                          value={newLeftDate || (selectedRequest.leftDate ? String(selectedRequest.leftDate).split('T')[0] : '')}
-                          onChange={(e) => setNewLeftDate(e.target.value)}
-                          className="w-full h-10 px-3 rounded-lg border border-orange-200 dark:border-orange-800 bg-white dark:bg-slate-900 text-sm outline-none focus:ring-2 focus:ring-orange-500 text-slate-800 dark:text-slate-100"
-                        />
-                      </div>
-                    );
-                  })()}
-                </div>
+                <textarea
+                  value={actionComment}
+                  onChange={(e) => setActionComment(e.target.value)}
+                  placeholder="Add a comment (optional)…"
+                  rows={2}
+                  className="w-full rounded-xl border border-slate-300 dark:border-slate-600 px-4 py-2 text-sm dark:bg-slate-800 dark:text-white resize-none outline-none focus:ring-2 focus:ring-green-500/20"
+                />
                 <div className="flex gap-2">
                   <button
                     type="button"
