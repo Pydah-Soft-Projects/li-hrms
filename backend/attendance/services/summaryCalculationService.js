@@ -352,6 +352,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     const attendanceSettingsDoc = await AttendanceSettings.getSettings();
     const processingModeIsSingleShift =
       attendanceSettingsDoc?.processingMode?.mode === 'single_shift';
+    const processingModeIsMultiShift =
+      attendanceSettingsDoc?.processingMode?.mode === 'multi_shift';
     const partialDaysContributeToPayableShifts =
       processingModeIsSingleShift &&
       attendanceSettingsDoc?.featureFlags?.partialDaysContributeToPayableShifts === true;
@@ -936,7 +938,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       // PARTIAL + approved full-day leave (e.g. CL 1 day) + incomplete punch: treat as leave-only for
       // payroll/pay register — do not add partial payable or policy LOP; leaveContrib is already 1.0.
       // Half-day / OD cases keep using the existing partial + policy path.
+      // Partial-day LOP / pay-register halves / partial totals: single-shift policy only (disabled in multi_shift).
       const usePartialPolicy =
+        !processingModeIsMultiShift &&
         isPartialDay &&
         !day.isWO &&
         !day.isHOL &&
@@ -963,12 +967,15 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
       if (hasFullDayEsiLeave) {
         dayPayable = 0;
-      } else if (isPartialDay && leaveContrib >= 0.999) {
-        // Full-day leave wins over PARTIAL thumb / shift payables
+      } else if (!processingModeIsMultiShift && isPartialDay && leaveContrib >= 0.999) {
+        // Full-day leave wins over PARTIAL thumb / shift payables (single-shift partial policy only)
         dayPayable = 0;
       }
 
-      dayPayable = Math.min(dayPayable, 1.0);
+      // Per-day payable credit: capped at 1 in single-shift world; multi_shift can exceed 1 (multiple shift payables).
+      if (!processingModeIsMultiShift) {
+        dayPayable = Math.min(dayPayable, 1.0);
+      }
       // Partial-day policy LOP: remainder of the day not covered by (work/OD) + payable credit,
       // plus *approved* leave (any nature) for full/half. Without leaveContrib we double-count:
       // e.g. 0.5 partial thumb + 0.5 approved half-day leave must not add 0.5 policy LOP.
