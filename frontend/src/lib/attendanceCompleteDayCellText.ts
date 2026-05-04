@@ -178,12 +178,13 @@ export function formatCompleteDayCellForExcel(record: any | null): string {
 
   const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '';
   const shiftBit = shiftName && shiftName !== '-' ? shiftName.substring(0, 3) : '';
-  const hoursBit = record.totalHours != null ? formatHoursCell(record.totalHours) : '';
+  const pay = record?.payableShifts;
+  const payBit = pay != null ? `(${pay})` : '';
   let odh = '';
   if (record?.odInfo?.odType_extended === 'hours') {
     odh = `ODh${record.odInfo.durationHours != null ? `(${record.odInfo.durationHours}h)` : ''}`;
   }
-  const tail = [shiftBit, hoursBit, odh].filter(Boolean).join(' ');
+  const tail = [shiftBit, payBit, odh].filter(Boolean).join(' ');
   if (tail) text += `\n${tail}`;
   return text;
 }
