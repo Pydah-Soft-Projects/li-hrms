@@ -223,6 +223,7 @@ exports.getCalendarViewData = async (employee, year, month) => {
       // inTime and outTime are now provided within the shifts array for multi-shift support
       totalHours: record.totalWorkingHours, // Use aggregate
       status: isEsiLeaveDay ? 'LEAVE' : record.status,
+      payableShifts: record.payableShifts || 0,
       shiftId: record.shifts && record.shifts.length > 0 ? record.shifts[0].shiftId : null,
       shiftName: record.shifts && record.shifts.length > 0 && record.shifts[0].shiftId ? record.shifts[0].shiftId.name : null,
       isLateIn: record.totalLateInMinutes > 0,
@@ -325,7 +326,7 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
     employeeNumber: { $in: empNos },
     date: { $gte: startYmd, $lte: endYmd },
   })
-    .select('employeeNumber date status shifts totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount notes earlyOutDeduction isEdited editHistory policyMeta')
+    .select('employeeNumber date status shifts totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount notes earlyOutDeduction isEdited editHistory policyMeta payableShifts')
     .populate('shifts.shiftId', 'name startTime endTime duration payableShifts')
     .sort({ employeeNumber: 1, date: 1 })
     .lean();
@@ -535,6 +536,7 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
         otActualHours: approvedOtForDate?.actual ?? 0,
         otSlabHours: approvedOtForDate?.considered ?? (slabPreview?.eligible ? Number(slabPreview.finalHours) || 0 : 0),
         extraHours: record?.extraHours || 0,
+        payableShifts: record?.payableShifts || 0,
         permissionHours: record?.permissionHours || 0,
         permissionCount: record?.permissionCount || 0,
         notes: record?.notes || '',

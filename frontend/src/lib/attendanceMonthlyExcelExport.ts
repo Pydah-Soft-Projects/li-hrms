@@ -256,7 +256,7 @@ export function writeMonthlyAttendanceExcelFile(
     daysArrayExport = [...firstKeys].sort();
   }
 
-  const getStatusWithLateEarly = (r: any): { text: string; isLate: boolean; isEarly: boolean } => {
+  const getStatusWithLateEarly = (r: any, showShifts = false): { text: string; isLate: boolean; isEarly: boolean } => {
     if (!r) return { text: 'A', isLate: false, isEarly: false };
     const isLate =
       (r.lateInMinutes != null && r.lateInMinutes > 0) ||
@@ -267,15 +267,42 @@ export function writeMonthlyAttendanceExcelFile(
       (r.isEarlyOut && (r.earlyOutMinutes ?? 0) > 0) ||
       (r.shifts && r.shifts.some((s: any) => s.earlyOutMinutes != null && s.earlyOutMinutes > 0));
     const suffix = (isLate ? '●' : '') + (isEarly ? '◆' : '');
+    
     let text = '-';
-    if (r.status === 'PRESENT') text = 'P' + suffix;
-    else if (r.status === 'HALF_DAY') text = 'HD' + suffix;
-    else if (r.status === 'PARTIAL') text = 'PT' + suffix;
-    else if (r.status === 'LEAVE' || r.hasLeave) text = 'L';
-    else if (r.status === 'OD' || r.hasOD) text = 'OD';
-    else if (r.status === 'HOLIDAY') text = 'H';
-    else if (r.status === 'WEEK_OFF') text = 'WO';
-    else if (r.status === 'ABSENT') text = 'A';
+    if (showShifts && r.shifts && r.shifts.length > 1) {
+      const shiftLines = r.shifts.map((s: any, idx: number) => {
+        const sLate = (s.lateInMinutes != null && s.lateInMinutes > 0);
+        const sEarly = (s.earlyOutMinutes != null && s.earlyOutMinutes > 0);
+        const sSuffix = (sLate ? '●' : '') + (sEarly ? '◆' : '');
+        let sText = '-';
+        if (s.status === 'PRESENT') sText = 'P';
+        else if (s.status === 'HALF_DAY') sText = 'HD';
+        else if (s.status === 'PARTIAL') sText = 'PT';
+        else if (s.status === 'LEAVE' || s.hasLeave) sText = 'L';
+        else if (s.status === 'OD' || s.hasOD) sText = 'OD';
+        else if (s.status === 'HOLIDAY') sText = 'H';
+        else if (s.status === 'WEEK_OFF') sText = 'WO';
+        else if (s.status === 'ABSENT') sText = 'A';
+        const shiftName = typeof s.shiftId === 'object' && s.shiftId?.name ? s.shiftId.name.substring(0, 3) : `S${idx + 1}`;
+        const pay = s.payableShift != null ? s.payableShift : (s.basePayable ?? 0);
+        return `${shiftName}: ${sText}${sSuffix} (${pay})`;
+      });
+      text = shiftLines.join('\n');
+    } else {
+      if (r.status === 'PRESENT') text = 'P' + suffix;
+      else if (r.status === 'HALF_DAY') text = 'HD' + suffix;
+      else if (r.status === 'PARTIAL') text = 'PT' + suffix;
+      else if (r.status === 'LEAVE' || r.hasLeave) text = 'L';
+      else if (r.status === 'OD' || r.hasOD) text = 'OD';
+      else if (r.status === 'HOLIDAY') text = 'H';
+      else if (r.status === 'WEEK_OFF') text = 'WO';
+      else if (r.status === 'ABSENT') text = 'A';
+      
+      if (showShifts && r.payableShifts != null) {
+        text += ` (${r.payableShifts})`;
+      }
+    }
+    
     return { text, isLate, isEarly };
   };
 
@@ -365,7 +392,7 @@ export function writeMonthlyAttendanceExcelFile(
     const completeRows: (string | number)[][] = data.map((item) => {
       const dailyAttendance = item.dailyAttendance && typeof item.dailyAttendance === 'object' ? item.dailyAttendance : {};
       const dailyValues = Object.values(dailyAttendance || {});
-      const dayResults = daysArrayExport.map((d) => getStatusWithLateEarly((dailyAttendance as Record<string, any>)[d]));
+      const dayResults = daysArrayExport.map((d) => getStatusWithLateEarly((dailyAttendance as Record<string, any>)[d], true));
       completeLateEarlyFlags.push(dayResults.map((d) => ({ isLate: d.isLate, isEarly: d.isEarly })));
       const dayCells = dayResults.map((d) => d.text);
       const monthPresent = dailyValues.reduce((sum: number, r: any) => {
@@ -402,6 +429,11 @@ export function writeMonthlyAttendanceExcelFile(
     const wsComplete = XLSX.utils.aoa_to_sheet([completeHeaders, ...completeRows]);
     completeLateEarlyFlags.forEach((rowFlags, rowIdx) => {
       rowFlags.forEach((flags, colIdx) => {
+        const ref = XLSX.utils.encode_cell({ r: rowIdx + 1, c: 5 + colIdx });
+        if (wsComplete[ref]) {
+          wsComplete[ref].s = wsComplete[ref].s || {};
+          wsComplete[ref].s.alignment = { wrapText: true };
+        }
         if (flags.isLate && flags.isEarly) applyCellFill(wsComplete, rowIdx + 1, 5 + colIdx, 'EDE9FE');
         else if (flags.isLate) applyCellFill(wsComplete, rowIdx + 1, 5 + colIdx, 'FEF3C7');
         else if (flags.isEarly) applyCellFill(wsComplete, rowIdx + 1, 5 + colIdx, 'DBEAFE');
@@ -485,8 +517,28 @@ export function writeMonthlyAttendanceExcelFile(
         rowFlags.push({ isLate: false, isEarly: false });
         return;
       }
-      const inT = r.inTime ? formatTimeShort(r.inTime) : '-';
-      const outT = r.outTime ? formatTimeShort(r.outTime) : '-';
+      let cellText = '-';
+      if (r.shifts && r.shifts.length > 1) {
+        const shiftTexts = r.shifts.map((s: any, idx: number) => {
+          const sIn = s.inTime ? formatTimeShort(s.inTime) : '-';
+          const sOut = s.outTime ? formatTimeShort(s.outTime) : '-';
+          const sLate = s.lateInMinutes != null && s.lateInMinutes > 0;
+          const sEarly = s.earlyOutMinutes != null && s.earlyOutMinutes > 0;
+          const sSuffix = (sLate ? ' ●' : '') + (sEarly ? ' ◆' : '');
+          const shiftName = typeof s.shiftId === 'object' && s.shiftId?.name ? s.shiftId.name.substring(0, 3) : `S${idx + 1}`;
+          return `${shiftName}: ${sIn}/${sOut}${sSuffix}`;
+        });
+        cellText = shiftTexts.join('\n');
+      } else {
+        const singleShift = r.shifts && r.shifts.length === 1 ? r.shifts[0] : r;
+        const inT = singleShift.inTime ? formatTimeShort(singleShift.inTime) : '-';
+        const outT = singleShift.outTime ? formatTimeShort(singleShift.outTime) : '-';
+        const sLate = (singleShift.lateInMinutes != null && singleShift.lateInMinutes > 0) || (r.isLateIn && (r.lateInMinutes ?? 0) > 0);
+        const sEarly = (singleShift.earlyOutMinutes != null && singleShift.earlyOutMinutes > 0) || (r.isEarlyOut && (r.earlyOutMinutes ?? 0) > 0);
+        const suffix = (sLate ? ' ●' : '') + (sEarly ? ' ◆' : '');
+        cellText = `${inT}/${outT}${suffix}`;
+      }
+      
       const isLate =
         (r.lateInMinutes != null && r.lateInMinutes > 0) ||
         (r.isLateIn && (r.lateInMinutes ?? 0) > 0) ||
@@ -495,9 +547,9 @@ export function writeMonthlyAttendanceExcelFile(
         (r.earlyOutMinutes != null && r.earlyOutMinutes > 0) ||
         (r.isEarlyOut && (r.earlyOutMinutes ?? 0) > 0) ||
         (r.shifts && r.shifts.some((s: any) => s.earlyOutMinutes != null && s.earlyOutMinutes > 0));
+      
       rowFlags.push({ isLate, isEarly });
-      const suffix = (isLate ? ' ●' : '') + (isEarly ? ' ◆' : '');
-      dayCells.push(`${inT}/${outT}${suffix}`);
+      dayCells.push(cellText);
     });
     ioLateEarlyFlags.push(rowFlags);
     const daysPresent = dailyValues.reduce((sum: number, r: any) => {
@@ -518,6 +570,11 @@ export function writeMonthlyAttendanceExcelFile(
   const wsIO = XLSX.utils.aoa_to_sheet([ioHeaders, ...ioRows]);
   ioLateEarlyFlags.forEach((rowFlags, rowIdx) => {
     rowFlags.forEach((flags, colIdx) => {
+      const ref = XLSX.utils.encode_cell({ r: rowIdx + 1, c: 5 + colIdx });
+      if (wsIO[ref]) {
+        wsIO[ref].s = wsIO[ref].s || {};
+        wsIO[ref].s.alignment = { wrapText: true };
+      }
       if (flags.isLate && flags.isEarly) applyCellFill(wsIO, rowIdx + 1, 5 + colIdx, 'EDE9FE');
       else if (flags.isLate) applyCellFill(wsIO, rowIdx + 1, 5 + colIdx, 'FEF3C7');
       else if (flags.isEarly) applyCellFill(wsIO, rowIdx + 1, 5 + colIdx, 'DBEAFE');
