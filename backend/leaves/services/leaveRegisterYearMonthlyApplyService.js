@@ -291,19 +291,25 @@ function scheduleReconcileMonthCarryForEmployeeDate(employeeId, fromDate) {
   if (!employeeId || !fromDate) return;
   setImmediate(async () => {
     try {
-      const pi = await dateCycleService.getPeriodInfo(fromDate);
-      const fy = pi?.financialYear?.name;
-      if (!fy) return;
-      const leaveRegisterYearService = require('./leaveRegisterYearService');
-      await leaveRegisterYearService.patchBulkMonthSlotsScheduledCredits({
+      /** Same strip+replay as leaveController pool carry hook; serialized per employee to avoid racing patchBulk carry. */
+      const leaveRegisterPoolCarryReconcileService = require('./leaveRegisterPoolCarryReconcileService');
+      const r = await leaveRegisterPoolCarryReconcileService.reconcilePoolCarryChainAfterRegisterChange(
         employeeId,
-        financialYear: fy,
-        slots: [],
-        reason: 'Auto reconcile monthly carry after leave transaction change',
-        actorUserId: null,
-        validateWithRecords: false,
-        carryForwardUnused: true,
-      });
+        { asOfDate: new Date() }
+      );
+      if (r && !r.ok) {
+        const msg = String(r.error || '');
+        const locked =
+          /lock/i.test(msg) ||
+          /version/i.test(msg) ||
+          /optimistic/i.test(msg) ||
+          /concurrent/i.test(msg);
+        if (locked) {
+          console.warn('[monthly carry reconcile] pool carry rebuild deferred/conflict (will retry on next change):', msg);
+        } else {
+          console.warn('[monthly carry reconcile] pool carry rebuild failed:', msg);
+        }
+      }
     } catch (e) {
       console.warn('[monthly carry reconcile]', e?.message || e);
     }

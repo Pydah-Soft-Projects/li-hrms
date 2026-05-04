@@ -445,10 +445,23 @@ function round2(v) {
 
 function sumUsedDaysForType(slot, leaveType) {
   const txs = Array.isArray(slot?.transactions) ? slot.transactions : [];
+  const wantType = String(leaveType || '').toUpperCase();
   return round2(
     txs
-      .filter((t) => String(t?.leaveType || '').toUpperCase() === leaveType && String(t?.transactionType) === 'DEBIT')
-      .filter((t) => !isMonthlyPoolTransferOutTx(t))
+      .filter((t) => {
+        const tType = String(t?.transactionType || '').trim().toUpperCase();
+        if (tType !== 'DEBIT') return false;
+
+        const lt = String(t?.leaveType || '').trim().toUpperCase();
+        if (lt !== wantType) return false;
+
+        const status = String(t?.status || 'APPROVED').toUpperCase();
+        if (status !== 'APPROVED' && status !== 'PENDING') return false;
+
+        if (isMonthlyPoolTransferOutTx(t)) return false;
+
+        return true;
+      })
       .reduce((s, t) => s + Math.max(0, Number(t?.days) || 0), 0)
   );
 }
@@ -546,7 +559,7 @@ function setManualUsedForType({ slot, leaveType, desiredUsed, manualAutoGenerate
       .filter(
         (t) =>
           String(t?.leaveType || '').toUpperCase() === leaveType &&
-          String(t?.transactionType) === 'DEBIT' &&
+          String(t?.transactionType || '').toUpperCase() === 'DEBIT' &&
           !isMonthlyPoolTransferOutTx(t) &&
           !isManualSlotUsedTx(t)
       )

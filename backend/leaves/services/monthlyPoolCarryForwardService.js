@@ -108,9 +108,11 @@ function sumPoolCarryEdgeTxDays(slot, direction, leaveType, fromLabel, nextLabel
 
 /**
  * After a successful `save()` of carry metadata + next-slot bump, a retry (optimistic lock on
- * `addTransaction`) must not repeat that block or it double-posts OUT/IN. Detect that state.
+ * `addTransaction`) must not repeat that **save** or it double-bumps the next slot. Ledger rows
+ * are filled separately using `sumPoolCarryEdgeTxDays` deltas (`post*`); those can run when
+ * metadata already matches but transfer rows are still missing.
  */
-function shouldSkipCarrySlotMutation(closeSlot, nextSlot, closingLabel, clC, cclC, elC) {
+function poolCarryMetadataMatchesClose(closeSlot, nextSlot, closingLabel, clC, cclC, elC) {
   if ((clC <= 0 && cclC <= 0 && elC <= 0) || !nextSlot) return false;
   if (!closeSlot.poolCarryForwardOutAt) return false;
   if (String(nextSlot.poolCarryForwardFromLabel || '') !== String(closingLabel)) return false;
@@ -276,7 +278,7 @@ async function processPayrollCycleCarryForward(closingPayrollMonth, closingPayro
       const fromLabel = closingLabel;
       const nSlotPreview = next ? fresh.months[next.idx] : null;
 
-      const skipCarrySlotMutation = shouldSkipCarrySlotMutation(
+      const skipMetadataSave = poolCarryMetadataMatchesClose(
         slot,
         nSlotPreview,
         closingLabel,
@@ -355,7 +357,7 @@ async function processPayrollCycleCarryForward(closingPayrollMonth, closingPayro
         postElIn > 0;
       /** Do not bump slot / set carry metadata if carry>0 but ledger already overshoots (posts all zero). */
       const applyCarryMetadataSave =
-        !skipCarrySlotMutation && (!carryPositive || anyCarryPost);
+        !skipMetadataSave && (!carryPositive || anyCarryPost);
 
       // Closing slot: audit + mark closed; bump next slot pools (skip on retry after those rows already saved).
       if (applyCarryMetadataSave) {

@@ -1740,8 +1740,8 @@ class LeaveRegisterService {
                 transactions: ledger,
                 openingBalance: ledger.length > 0 ? ledger[0].openingBalance : 0,
                 closingBalance: ledger.length > 0 ? ledger[ledger.length - 1].closingBalance : 0,
-                totalCredits: ledger.filter((t) => t.transactionType === 'CREDIT').reduce((sum, t) => sum + t.days, 0),
-                totalDebits: ledger.filter((t) => t.transactionType === 'DEBIT').reduce((sum, t) => sum + t.days, 0),
+                totalCredits: ledger.filter((t) => String(t.transactionType || '').toUpperCase() === 'CREDIT').reduce((sum, t) => sum + t.days, 0),
+                totalDebits: ledger.filter((t) => String(t.transactionType || '').toUpperCase() === 'DEBIT').reduce((sum, t) => sum + t.days, 0),
             };
         } catch (error) {
             console.error('Error getting employee ledger:', error);

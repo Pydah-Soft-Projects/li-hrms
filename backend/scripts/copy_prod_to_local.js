@@ -13,7 +13,7 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 async function copyDatabase() {
     const prodUri = process.env.MONGODB_ATLAS_URI || process.env.MONGODB_URI;
-    const localUri = "mongodb://127.0.0.1:27017/hrms-ravi2";
+    const localUri = "mongodb://127.0.0.1:27017/hrms-ravi3";
 
     console.log("--------------------------------------------------");
     console.log(`Source (PROD): ${prodUri.replace(/:[^:@]+@/, ':****@')}`);
