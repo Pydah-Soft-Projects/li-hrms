@@ -27,6 +27,13 @@ const { recalculatePayRegisterAttendanceDeduction } = require('../services/payRe
 const { assertEmployeeMonthEditable } = require('../../shared/services/payrollPeriodLockService');
 const XLSX = require('xlsx');
 const mongoose = require('mongoose');
+const PDFDocument = require('pdfkit');
+const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 /**
  * Mongo filter for Pay Register list / export: pay-period employment scope, optional dept/div, optional text search (server-side).
@@ -1121,6 +1128,274 @@ exports.uploadSummaryBulk = async (req, res) => {
     });
   }
 };
+
+const pdfNum = (value) => {
+  const n = Number(value) || 0;
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+};
+
+function payRegisterHalfLabel(half) {
+  const status = String(half?.status || '').toLowerCase();
+  if (!status || status === 'blank') return '';
+  if (status === 'present') return 'P';
+  if (status === 'absent') return 'A';
+  if (status === 'od' || half?.isOD) return 'OD';
+  if (status === 'holiday') return 'HOL';
+  if (status === 'week_off') return 'WO';
+  if (status === 'leave') {
+    const nature = String(half?.leaveNature || '').toLowerCase();
+    if (nature === 'lop' || nature === 'without_pay') return 'LOP';
+    return 'LP';
+  }
+  return status.toUpperCase();
+}
+
+function payRegisterDayLabel(record) {
+  if (!record) return '';
+  const first = payRegisterHalfLabel(record.firstHalf);
+  const second = payRegisterHalfLabel(record.secondHalf);
+  if (!first && !second) return '';
+  if (first && second && first === second) return first;
+  if ((first === 'P' && second === 'A') || (first === 'A' && second === 'P')) return 'HD';
+  return [first || '-', second || '-'].join('/');
+}
+
+function payRegisterSummaryFromDailyRecords(dailyRecords = []) {
+  let halfDays = 0;
+  for (const record of dailyRecords) {
+    const first = payRegisterHalfLabel(record.firstHalf);
+    const second = payRegisterHalfLabel(record.secondHalf);
+    if (first && second && first !== second) halfDays += 1;
+  }
+  return { halfDays };
+}
+
+function drawPayRegisterPdfHeader(doc, title, subTitle) {
+  const pageWidth = doc.page.width;
+  doc.fillColor('#4f46e5').rect(0, 0, pageWidth, 45).fill();
+  doc.fillColor('#ffffff').fontSize(14).font('Helvetica-Bold').text(title, 25, 12);
+  doc.fontSize(8).font('Helvetica').text(subTitle, 25, 30);
+  return 60;
+}
+
+function drawPayRegisterPdfTable(doc, headers, rows, startX, startY, colWidths, options = {}) {
+  const {
+    fontSize = 7,
+    minRowHeight = 18,
+    headerFill = '#4f46e5',
+    rowFill = '#f8fafc',
+    cellPaddingX = 3,
+    cellPaddingY = 4,
+    lineBreak = true,
+    onPageAdd = null,
+  } = options;
+
+  let y = startY;
+  const tableWidth = colWidths.reduce((sum, w) => sum + w, 0);
+  const threshold = doc.page.height - 60;
+
+  const drawHeaderRow = () => {
+    doc.fillColor(headerFill).rect(startX, y, tableWidth, 24).fill();
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(fontSize);
+    let x = startX;
+    headers.forEach((header, index) => {
+      doc.text(String(header), x + cellPaddingX, y + 7, {
+        width: Math.max(1, colWidths[index] - cellPaddingX * 2),
+        align: 'center',
+        lineBreak: false,
+      });
+      x += colWidths[index];
+    });
+    y += 24;
+    doc.font('Helvetica').fontSize(fontSize).fillColor('#33414d');
+  };
+
+  drawHeaderRow();
+
+  rows.forEach((row, rowIndex) => {
+    let rowHeight = minRowHeight;
+    if (lineBreak) {
+      row.forEach((cell, index) => {
+        const h = doc.heightOfString(String(cell ?? ''), {
+          width: Math.max(1, colWidths[index] - cellPaddingX * 2),
+          align: index < 2 ? 'left' : 'center',
+        });
+        rowHeight = Math.max(rowHeight, h + cellPaddingY * 2);
+      });
+    }
+
+    if (y + rowHeight > threshold) {
+      doc.addPage({ size: 'A4', layout: 'landscape', margin: 25 });
+      if (onPageAdd) onPageAdd();
+      y = 60;
+      drawHeaderRow();
+    }
+
+    if (rowIndex % 2 === 0) {
+      doc.fillColor(rowFill).rect(startX, y, tableWidth, rowHeight).fill();
+    }
+
+    let x = startX;
+    row.forEach((cell, index) => {
+      doc.fillColor('#33414d').font('Helvetica').fontSize(fontSize);
+      doc.text(String(cell ?? ''), x + cellPaddingX, y + cellPaddingY, {
+        width: Math.max(1, colWidths[index] - cellPaddingX * 2),
+        align: index < 2 ? 'left' : 'center',
+        lineBreak,
+        ellipsis: true,
+      });
+      x += colWidths[index];
+    });
+
+    y += rowHeight;
+    doc.strokeColor('#e2e8f0').lineWidth(0.5).moveTo(startX, y).lineTo(startX + tableWidth, y).stroke();
+  });
+
+  return y;
+}
+
+function drawPayRegisterPdfTableWithMultiHeader(doc, headerConfig, rows, startX, startY, colWidths, options = {}) {
+  const {
+    fontSize = 6.5,
+    minRowHeight = 18,
+    mainHeaderFill = '#f0f4f8',
+    mainHeaderTextColor = '#1e293b',
+    subHeaderFill = '#e2e8f0',
+    subHeaderTextColor = '#334155',
+    deductionHeaderFill = '#fce7f3',
+    deductionSubHeaderFill = '#fee2e2',
+    rowFill = '#f8fafc',
+    alternateRowFill = '#ffffff',
+    cellPaddingX = 3,
+    cellPaddingY = 4,
+    lineBreak = true,
+    onPageAdd = null,
+  } = options;
+
+  let y = startY;
+  const tableWidth = colWidths.reduce((sum, w) => sum + w, 0);
+  const threshold = doc.page.height - 60;
+  const borderColor = '#cbd5e1';
+
+  const drawHeaderRows = () => {
+    // First header row with main headers
+    let x = startX;
+    headerConfig.mainHeaders.forEach((headerObj, colIndex) => {
+      const colSpan = headerObj.colSpan || 1;
+      const headerWidth = colWidths.slice(colIndex, colIndex + colSpan).reduce((a, b) => a + b, 0);
+      
+      // Background color
+      if (headerObj.bgColor) {
+        doc.fillColor(headerObj.bgColor).rect(x, y, headerWidth, 20).fill();
+      } else {
+        doc.fillColor(mainHeaderFill).rect(x, y, headerWidth, 20).fill();
+      }
+      
+      // Border
+      doc.strokeColor(borderColor).lineWidth(0.5);
+      doc.rect(x, y, headerWidth, 20);
+      doc.stroke();
+      
+      // Text
+      doc.fillColor(headerObj.textColor || mainHeaderTextColor).font('Helvetica-Bold').fontSize(fontSize);
+      doc.text(String(headerObj.label), x + cellPaddingX, y + 6, {
+        width: Math.max(1, headerWidth - cellPaddingX * 2),
+        align: 'center',
+        lineBreak: false,
+      });
+      
+      x += headerWidth;
+    });
+    y += 20;
+
+    // Second header row with sub-headers (if exists)
+    if (headerConfig.subHeaders && headerConfig.subHeaders.length > 0) {
+      x = startX;
+      headerConfig.subHeaders.forEach((headerObj, colIndex) => {
+        const colSpan = headerObj.colSpan || 1;
+        const headerWidth = colWidths.slice(colIndex, colIndex + colSpan).reduce((a, b) => a + b, 0);
+        
+        // Background color
+        if (headerObj.bgColor) {
+          doc.fillColor(headerObj.bgColor).rect(x, y, headerWidth, 16).fill();
+        } else {
+          doc.fillColor(subHeaderFill).rect(x, y, headerWidth, 16).fill();
+        }
+        
+        // Border
+        doc.strokeColor(borderColor).lineWidth(0.5);
+        doc.rect(x, y, headerWidth, 16);
+        doc.stroke();
+        
+        // Text
+        doc.fillColor(headerObj.textColor || subHeaderTextColor).font('Helvetica-Bold').fontSize(fontSize - 0.5);
+        doc.text(String(headerObj.label), x + cellPaddingX, y + 3, {
+          width: Math.max(1, headerWidth - cellPaddingX * 2),
+          align: 'center',
+          lineBreak: false,
+        });
+        
+        x += headerWidth;
+      });
+      y += 16;
+    }
+
+    doc.font('Helvetica').fontSize(fontSize).fillColor('#33414d');
+  };
+
+  drawHeaderRows();
+
+  rows.forEach((row, rowIndex) => {
+    let rowHeight = minRowHeight;
+    if (lineBreak) {
+      row.forEach((cell, index) => {
+        const h = doc.heightOfString(String(cell ?? ''), {
+          width: Math.max(1, colWidths[index] - cellPaddingX * 2),
+          align: index === 0 ? 'left' : 'center',
+        });
+        rowHeight = Math.max(rowHeight, h + cellPaddingY * 2);
+      });
+    }
+
+    if (y + rowHeight > threshold) {
+      doc.addPage({ size: 'A4', layout: 'landscape', margin: 25 });
+      if (onPageAdd) onPageAdd();
+      y = 60;
+      drawHeaderRows();
+    }
+
+    // Alternate row colors
+    const bgColor = rowIndex % 2 === 0 ? rowFill : alternateRowFill;
+    doc.fillColor(bgColor).rect(startX, y, tableWidth, rowHeight).fill();
+
+    // Draw cell borders and content
+    let x = startX;
+    row.forEach((cell, index) => {
+      const colWidth = colWidths[index];
+      
+      // Border
+      doc.strokeColor(borderColor).lineWidth(0.5);
+      doc.rect(x, y, colWidth, rowHeight);
+      doc.stroke();
+
+      // Text
+      doc.fillColor('#33414d').font('Helvetica').fontSize(fontSize);
+      doc.text(String(cell ?? ''), x + cellPaddingX, y + cellPaddingY, {
+        width: Math.max(1, colWidth - cellPaddingX * 2),
+        align: index === 0 ? 'left' : 'center',
+        lineBreak,
+        ellipsis: true,
+      });
+      
+      x += colWidth;
+    });
+
+    y += rowHeight;
+  });
+
+  return y;
+}
+
 // @desc    Export monthly summary as Excel
 // @route   GET /api/pay-register/export-summary/:month
 // @access  Private (exclude employee)
@@ -1205,6 +1480,260 @@ exports.exportSummaryExcel = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to export summary Excel',
+    });
+  }
+};
+
+// @desc    Export monthly summary and day breakdown as PDF
+// @route   GET /api/pay-register/export-summary-pdf/:month
+// @access  Private (exclude employee)
+exports.exportSummaryPDF = async (req, res) => {
+  try {
+    const { month } = req.params;
+    const { departmentId, divisionId, employeeGroupId, search } = req.query;
+
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Month must be in YYYY-MM format',
+      });
+    }
+
+    const [year, monthNum] = month.split('-').map(Number);
+    const { startDate, endDate } = await getPayrollDateRange(year, monthNum);
+    const rangeStart = new Date(startDate + 'T00:00:00.000Z');
+    const rangeEnd = new Date(endDate + 'T23:59:59.999Z');
+
+    const employeeQuery = await buildPayRegisterEmployeeFilter(rangeStart, rangeEnd, {
+      departmentId,
+      divisionId,
+      employeeGroupId,
+      search,
+      scopeFilter: req.scopeFilter,
+    });
+
+    const employees = await Employee.find(employeeQuery)
+      .select('_id employee_name emp_no department_id designation_id division_id doj leftDate')
+      .populate('department_id', 'name')
+      .populate('division_id', 'name')
+      .populate('designation_id', 'name')
+      .sort({ employee_name: 1 })
+      .lean();
+
+    if (employees.length === 0) {
+      return res.status(404).json({ success: false, error: 'No employees found with the selected filters' });
+    }
+
+    const employeeIds = employees.map((emp) => emp._id);
+    const payRegisters = await PayRegisterSummary.find({
+      employeeId: { $in: employeeIds },
+      month,
+    })
+      .select('employeeId emp_no month totals dailyRecords startDate endDate totalDaysInMonth totalAttendanceDeductionDays')
+      .lean();
+
+    const prMap = new Map(payRegisters.map((pr) => [String(pr.employeeId), pr]));
+
+    const daysArray = [];
+    let cursor = dayjs(startDate);
+    const last = dayjs(endDate);
+    while (cursor.isBefore(last) || cursor.isSame(last, 'day')) {
+      daysArray.push(cursor.format('YYYY-MM-DD'));
+      cursor = cursor.add(1, 'day');
+    }
+
+    const grouped = {};
+    for (const emp of employees) {
+      const divName = emp.division_id?.name || 'Unassigned Division';
+      const deptName = emp.department_id?.name || 'Unassigned Department';
+      if (!grouped[divName]) grouped[divName] = {};
+      if (!grouped[divName][deptName]) grouped[divName][deptName] = [];
+      grouped[divName][deptName].push(emp);
+    }
+
+    const doc = new PDFDocument({ margin: 25, size: 'A4', layout: 'landscape', bufferPages: true });
+    const filename = `PayRegister_Summary_${month}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    doc.pipe(res);
+
+    const pageWidth = 841.89;
+    const margin = 25;
+    
+    // Define multi-level header structure matching the user's request
+    const mainHeaders = [
+      { label: 'Employee', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
+      { label: 'Present Days', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
+      { label: 'Week Offs', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
+      { label: 'Holidays', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
+      { label: 'Total Leaves', colSpan: 3, bgColor: '#fffbeb', textColor: '#92400e' },
+      { label: 'OD Days', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
+      { label: 'Absents', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
+      { label: 'Total Days', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
+      { label: 'Lates (L+E)', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
+      { label: 'Deduction Days', colSpan: 3, bgColor: '#fff1f2', textColor: '#9f1239' },
+      { label: 'Paid Days', colSpan: 1, bgColor: '#f0fdf4', textColor: '#166534' },
+    ];
+
+    const subHeaders = [
+      { label: 'Employee', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
+      { label: 'Count', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
+      { label: 'Count', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
+      { label: 'Count', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
+      { label: 'Total', colSpan: 1, bgColor: '#fef3c7', textColor: '#92400e' },
+      { label: 'Paid', colSpan: 1, bgColor: '#fef3c7', textColor: '#92400e' },
+      { label: 'LOP', colSpan: 1, bgColor: '#fef3c7', textColor: '#92400e' },
+      { label: 'Count', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
+      { label: 'Count', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
+      { label: 'Days', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
+      { label: 'Count', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
+      { label: 'Absent', colSpan: 1, bgColor: '#ffe4e6', textColor: '#9f1239' },
+      { label: 'LOP', colSpan: 1, bgColor: '#ffe4e6', textColor: '#9f1239' },
+      { label: 'Att.Ded', colSpan: 1, bgColor: '#ffe4e6', textColor: '#9f1239' },
+      { label: 'Final', colSpan: 1, bgColor: '#dcfce7', textColor: '#166534' },
+    ];
+
+    const colWidths = [120, 48, 45, 45, 45, 45, 45, 45, 45, 50, 45, 45, 45, 45, 58];
+    const gridHeaders = ['Employee Name', 'E.No', ...daysArray.map((d) => String(dayjs(d).date()))];
+    const nameWidth = 92;
+    const enoWidth = 32;
+    const dayWidth = Number(((pageWidth - margin * 2 - nameWidth - enoWidth) / Math.max(1, daysArray.length)).toFixed(2));
+    const gridWidths = [nameWidth, enoWidth, ...daysArray.map(() => dayWidth)];
+
+    let firstPage = true;
+    const sortedDivisions = Object.keys(grouped).sort();
+
+    for (const divName of sortedDivisions) {
+      const sortedDepartments = Object.keys(grouped[divName]).sort();
+      for (const deptName of sortedDepartments) {
+        if (!firstPage) doc.addPage({ size: 'A4', layout: 'landscape', margin: 25 });
+        firstPage = false;
+
+        let y = drawPayRegisterPdfHeader(
+          doc,
+          `PAY REGISTER REPORT - DIV: ${divName.toUpperCase()}`,
+          `Department: ${deptName.toUpperCase()} | Period: ${startDate} to ${endDate}`
+        );
+
+        const deptEmployees = grouped[divName][deptName].sort((a, b) =>
+          (a.employee_name || '').localeCompare(b.employee_name || '', undefined, { sensitivity: 'base' })
+        );
+
+        const summaryRows = [];
+        const gridRows = [];
+
+        for (const emp of deptEmployees) {
+          const pr = prMap.get(String(emp._id));
+          const totals = pr?.totals || {};
+          const dailyRecords = Array.isArray(pr?.dailyRecords) ? pr.dailyRecords : [];
+          const dailyMap = new Map(dailyRecords.map((record) => [record.date, record]));
+          
+          const totalPresent = Number(totals.totalPresentDays) || 0;
+          const totalAbsent = Number(totals.totalAbsentDays) || 0;
+          const totalLeaves = Number(totals.totalLeaveDays) || 0;
+          const paidLeaves = Number(totals.totalPaidLeaveDays) || 0;
+          const lopLeaves = Math.max(0, totalLeaves - paidLeaves);
+          const totalOD = Number(totals.totalODDays) || 0;
+          const lateCount = (Number(totals.lateCount) || 0) + (Number(totals.earlyOutCount) || 0);
+          
+          const weekOffs = Number(totals.totalWeeklyOffs) || 0;
+          const holidays = Number(totals.totalHolidays) || 0;
+          const monthDays = Number(totals.totalDaysInMonth) || daysArray.length;
+          
+          const lopDed = Number(totals.totalLopDays) || 0;
+          const attDed = Number(pr?.totalAttendanceDeductionDays) || 0;
+          
+          // Paid Days = Total Days - Absent - LOP - Att.Ded
+          const paidDays = monthDays - totalAbsent - lopDed - attDed;
+
+          const designationLabel = emp.designation_id?.name || '-';
+
+          summaryRows.push([
+            { label: `${emp.employee_name || '-'}\n${emp.emp_no || '-'} | ${designationLabel}`, align: 'left' },
+            pdfNum(totalPresent),
+            pdfNum(weekOffs),
+            pdfNum(holidays),
+            pdfNum(totalLeaves),
+            pdfNum(paidLeaves),
+            pdfNum(lopLeaves),
+            pdfNum(totalOD),
+            pdfNum(totalAbsent),
+            pdfNum(monthDays),
+            pdfNum(lateCount),
+            pdfNum(totalAbsent), // Absent Deduction
+            pdfNum(lopDed),      // LOP Deduction
+            pdfNum(attDed),      // Att.Ded
+            pdfNum(paidDays),
+          ]);
+
+          const dojStr = emp.doj ? dayjs(emp.doj).tz('Asia/Kolkata').format('YYYY-MM-DD') : null;
+          const leftDateStr = emp.leftDate ? dayjs(emp.leftDate).tz('Asia/Kolkata').format('YYYY-MM-DD') : null;
+          const gridRow = [emp.employee_name || '-', emp.emp_no || '-'];
+          for (const dStr of daysArray) {
+            if ((dojStr && dStr < dojStr) || (leftDateStr && dStr > leftDateStr)) {
+              gridRow.push('');
+            } else {
+              gridRow.push(payRegisterDayLabel(dailyMap.get(dStr)) || (pr ? 'A' : '-'));
+            }
+          }
+          gridRows.push(gridRow);
+        }
+
+        doc.fillColor('#f8fafc').rect(margin, y, pageWidth - 2 * margin, 16).fill();
+        doc.fillColor('#4f46e5').fontSize(9).font('Helvetica-Bold').text(`SUMMARY: ${deptName.toUpperCase()}`, margin + 10, y + 3);
+        y += 20;
+
+        // Draw multi-header summary table
+        y = drawPayRegisterPdfTableWithMultiHeader(
+          doc,
+          { mainHeaders, subHeaders },
+          summaryRows.map(row => row.map(cell => typeof cell === 'object' ? cell.label : cell)),
+          margin,
+          y,
+          colWidths,
+          {
+            fontSize: 6.2,
+            minRowHeight: 20,
+            onPageAdd: () => drawPayRegisterPdfHeader(doc, `PAY REGISTER SUMMARY (CONT) - ${divName.toUpperCase()}`, `Dept: ${deptName.toUpperCase()}`),
+          }
+        );
+
+        // Always start Day Breakdown on a new page for clarity
+        doc.addPage({ size: 'A4', layout: 'landscape', margin: 25 });
+        y = drawPayRegisterPdfHeader(doc, `PAY REGISTER DAY BREAKDOWN - ${divName.toUpperCase()}`, `Dept: ${deptName.toUpperCase()} | Period: ${startDate} to ${endDate}`);
+        
+        doc.fillColor('#f8fafc').rect(margin, y, pageWidth - 2 * margin, 16).fill();
+        doc.fillColor('#4f46e5').fontSize(9).font('Helvetica-Bold').text(`DAY BREAKDOWN: ${deptName.toUpperCase()}`, margin + 10, y + 3);
+        y += 20;
+
+
+        drawPayRegisterPdfTable(doc, gridHeaders, gridRows, margin, y, gridWidths, {
+          fontSize: 4.8,
+          minRowHeight: 20,
+          cellPaddingX: 1,
+          cellPaddingY: 3,
+          onPageAdd: () => drawPayRegisterPdfHeader(doc, `PAY REGISTER DAY BREAKDOWN (CONT) - ${divName.toUpperCase()}`, `Dept: ${deptName.toUpperCase()}`),
+        });
+      }
+    }
+
+    const pages = doc.bufferedPageRange();
+    for (let i = 0; i < pages.count; i += 1) {
+      doc.switchToPage(i);
+      doc.fontSize(7).fillColor('#94a3b8').text(
+        `Generated by HRMS on ${dayjs().tz('Asia/Kolkata').format('DD MMM YYYY, hh:mm A')} | Page ${i + 1} of ${pages.count}`,
+        0,
+        doc.page.height - 35,
+        { align: 'center', width: doc.page.width }
+      );
+    }
+
+    doc.end();
+  } catch (error) {
+    console.error('Error exporting summary PDF:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to export summary PDF',
     });
   }
 };

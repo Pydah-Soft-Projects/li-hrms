@@ -178,6 +178,7 @@ export default function PayRegisterPage() {
   const [bulkCalculating, setBulkCalculating] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [calculatingJobId, setCalculatingJobId] = useState<string | null>(null);
   const [calculationProgress, setCalculationProgress] = useState<any>(null);
   const payrollStrategy = 'dynamic' as const;
@@ -931,6 +932,51 @@ export default function PayRegisterPage() {
     }
   };
 
+  const handleDownloadSummaryPdf = async () => {
+    try {
+      setExportingPdf(true);
+      const params = {
+        month: monthStr,
+        departmentId: selectedDepartment && selectedDepartment !== '' ? selectedDepartment : undefined,
+        divisionId: selectedDivision && selectedDivision !== '' ? selectedDivision : undefined,
+        search: committedSearch || undefined,
+        employeeGroupId:
+          customGroupingEnabled && selectedEmployeeGroup && selectedEmployeeGroup !== ''
+            ? selectedEmployeeGroup
+            : undefined,
+      };
+      const blob = await api.exportPayRegisterSummaryPDF(params);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Pay_Register_Summary_${monthStr}${params.departmentId ? `_${params.departmentId}` : ''}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Success',
+        text: 'PDF exported successfully',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end',
+      });
+    } catch (err: unknown) {
+      console.error('Error exporting summary PDF:', err);
+      const message = err instanceof Error ? err.message : 'Failed to export summary PDF';
+      Swal.fire({
+        icon: 'error',
+        title: 'Export Failed',
+        text: message,
+      });
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const handleUploadSummaryFile = async (file: File) => {
     try {
       setUploadingSummary(true);
@@ -1147,8 +1193,8 @@ export default function PayRegisterPage() {
       const monthDays = pr.totalDaysInMonth || daysArray.length || daysInMonth;
 
       // User Definition:
-      // Counted Days = Present + Absent + Holidays + Weekoffs + Total Leaves
-      const countedDays = present + absent + holidays + weeklyOffs + leave;
+      // Counted Days = Present + Absent + Holidays + Weekoffs + Total Leaves + OD Days
+      const countedDays = present + absent + holidays + weeklyOffs + leave + od;
       const matchesMonth = Math.abs(countedDays - monthDays) < 0.001;
       const payableShifts = totals.totalPayableShifts ?? 0;
       const attDedDays = Number(
@@ -2604,7 +2650,7 @@ export default function PayRegisterPage() {
                       <td
                         className={`text-center px-2 py-2 font-medium text-green-600 dark:text-green-400 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['present'], 'Present days') ? payRegisterContribAccent(['present']).summaryRing : ''}`}
                         title={
-                          row.pr.isStub ? undefined : 'Includes OD days — click to highlight present contributions'
+                          row.pr.isStub ? undefined : 'Click to highlight present contributions'
                         }
                         onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['present'], 'Present days')}
                       >
@@ -2689,6 +2735,21 @@ export default function PayRegisterPage() {
               </svg>
             )}
             {exportingExcel ? 'Exporting...' : 'Export'}
+          </button>
+          <button
+            onClick={handleDownloadSummaryPdf}
+            disabled={exportingPdf || payRegisters.length === 0}
+            title="Export pay register summary and day breakdown to PDF"
+            className="h-9 flex items-center px-4 rounded-xl border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 hover:text-rose-800 hover:border-rose-300 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-950/30"
+          >
+            {exportingPdf ? (
+              <div className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-rose-400 border-t-transparent" />
+            ) : (
+              <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+            )}
+            {exportingPdf ? 'Exporting...' : 'Export PDF'}
           </button>
         </div>
       )}
@@ -2813,7 +2874,7 @@ export default function PayRegisterPage() {
                         <th
                           rowSpan={2}
                           className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20"
-                          title="From monthly attendance summary (single-shift: present + partial payable − overlap). OD is in the OD column. Cell P-only sum can differ."
+                          title="From monthly attendance summary present days. OD is in the OD column."
                         >
                           Present Days
                         </th>
@@ -2850,7 +2911,7 @@ export default function PayRegisterPage() {
                         <th
                           rowSpan={2}
                           className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/60"
-                          title="Present + week offs + holidays + total leaves + OD days + absents"
+                          title="Present + week offs + holidays + total leaves + absents"
                         >
                           Total Days
                         </th>
@@ -2871,7 +2932,7 @@ export default function PayRegisterPage() {
                         <th
                           rowSpan={2}
                           className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20"
-                          title="Present + week offs + holidays + OD days + paid leaves − attendance deduction days"
+                          title="Present + OD + week offs + holidays + paid leaves − attendance deduction days"
                         >
                           Paid Days
                         </th>
@@ -3204,13 +3265,13 @@ export default function PayRegisterPage() {
                             const paidLeaves = pr.totals?.totalPaidLeaveDays ?? 0;
                             const lopDays = pr.totals?.totalLopDays ?? 0;
                             const attDed = getAttendanceDeductionDaysNumber(pr);
-                            const totalDaysSummed = present + weekOffs + holidays + totalLeaves + od + absent;
-                            const paidDays = Math.max(0, present + weekOffs + holidays + od + paidLeaves - attDed);
+                            const totalDaysSummed = present + weekOffs + holidays + totalLeaves + absent;
+                            const paidDays = Math.max(0, present + od + weekOffs + holidays + paidLeaves - attDed);
                             return (
                               <>
                                 <td
                                   className={`border-r border-slate-200 bg-green-50 dark:bg-green-900/20 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['present'], 'Present days') ? payRegisterContribAccent(['present']).summaryRing : ''}`}
-                                  title="Matches monthly summary present + partial (single-shift). Click to highlight."
+                                  title="Matches monthly summary present days. Click to highlight."
                                   onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['present'], 'Present days')}
                                 >
                                   {present.toFixed(1)}
@@ -3275,7 +3336,7 @@ export default function PayRegisterPage() {
                                 </td>
                                 <td
                                   className="border-r border-slate-200 bg-slate-100 px-2 py-2 text-center text-[11px] font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200"
-                                  title="Present + week offs + holidays + total leaves + OD days + absents (informational)"
+                                  title="Present + week offs + holidays + total leaves + absents (informational)"
                                 >
                                   {totalDaysSummed.toFixed(1)}
                                 </td>
@@ -3327,15 +3388,15 @@ export default function PayRegisterPage() {
                                   className={`border-r-0 border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:text-blue-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(
                                     contribHighlight,
                                     pr._id,
-                                    ['present', 'weeklyOffs', 'holidays', 'ods', 'paidLeaves'],
+                                    ['present', 'ods', 'weeklyOffs', 'holidays', 'paidLeaves'],
                                     'Paid days components'
                                   )
-                                    ? payRegisterContribAccent(['present', 'weeklyOffs', 'holidays', 'ods', 'paidLeaves']).summaryRing
+                                    ? payRegisterContribAccent(['present', 'ods', 'weeklyOffs', 'holidays', 'paidLeaves']).summaryRing
                                     : ''}`}
-                                  title="Present + week offs + holidays + OD + paid leaves − attendance deduction — click to highlight contributing days"
+                                  title="Present + OD + week offs + holidays + paid leaves − attendance deduction — click to highlight contributing days"
                                   onClick={() =>
                                     !pr.isStub &&
-                                    togglePayRegisterContrib(pr, ['present', 'weeklyOffs', 'holidays', 'ods', 'paidLeaves'], 'Paid days components')
+                                    togglePayRegisterContrib(pr, ['present', 'ods', 'weeklyOffs', 'holidays', 'paidLeaves'], 'Paid days components')
                                   }
                                 >
                                   {paidDays.toFixed(1)}
@@ -3345,7 +3406,7 @@ export default function PayRegisterPage() {
                           })()}
                           {activeTable === 'present' && (
                             <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
-                              {(pr.totals.totalPresentDays + pr.totals.totalODDays).toFixed(1)}
+                              {pr.totals.totalPresentDays.toFixed(1)}
                             </td>
                           )}
                           {activeTable === 'absent' && (

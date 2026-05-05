@@ -194,11 +194,11 @@ async function processPayrollCycleCarryForward(closingPayrollMonth, closingPayro
       const usedCcl = roundHalf(sumUsedDaysForType(slot, 'CCL'));
       const usedEl = roundHalf(sumUsedDaysForType(slot, 'EL'));
 
-      const clCarry = clRoll ? roundHalf(Math.max(0, clS - usedCl - clLocked)) : 0;
+      const clCarry = clRoll ? roundHalf(Math.max(0, clS - usedCl)) : 0;
       const cclCarry = cclRoll ? roundHalf(Math.max(0, cclS - usedCcl)) : 0;
       const elCarry = elRoll ? roundHalf(Math.max(0, elS - usedEl)) : 0;
 
-      const clForfeit = clRoll ? 0 : roundHalf(Math.max(0, clS - usedCl - clLocked));
+      const clForfeit = clRoll ? 0 : roundHalf(Math.max(0, clS - usedCl));
       const cclForfeit = cclRoll ? 0 : roundHalf(Math.max(0, cclS - usedCcl));
       const elForfeit = elRoll ? 0 : roundHalf(Math.max(0, elS - usedEl));
 
@@ -233,6 +233,7 @@ async function processPayrollCycleCarryForward(closingPayrollMonth, closingPayro
         el: elCarry,
       };
       slot.poolCarryForwardOutAt = new Date();
+      slot.lockedCredits = 0;
       fresh.markModified(`months.${idx}`);
 
       if (next && (clCarry > 0 || cclCarry > 0 || elCarry > 0)) {
