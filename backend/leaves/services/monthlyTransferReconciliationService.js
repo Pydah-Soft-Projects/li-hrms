@@ -110,14 +110,26 @@ function computeCarry(slot, rollFlags) {
     CCL: netUsedDaysForType(slot, 'CCL'),
     EL: netUsedDaysForType(slot, 'EL'),
   };
-  const clLocked = roundHalf(Number(slot?.lockedCredits) || 0);
+  const monthLocked = roundHalf(
+    Math.max(Number(slot?.lockedCredits) || 0, Number(slot?.monthlyApplyLocked) || 0)
+  );
+  const locked = { CL: 0, CCL: 0, EL: 0 };
+  let remainingLocked = monthLocked;
+  for (const lt of LEAVE_TYPES) {
+    if (lt === 'EL' && !rollFlags.elInPool) continue;
+    const availableAfterUsed = roundHalf(Math.max(0, credits[lt] - used[lt]));
+    locked[lt] = roundHalf(Math.min(remainingLocked, availableAfterUsed));
+    remainingLocked = roundHalf(Math.max(0, remainingLocked - locked[lt]));
+  }
   return {
     credits,
-    used: { ...used, clLocked },
+    used: { ...used, monthLocked },
+    locked,
+    unallocatedLocked: remainingLocked,
     carry: {
-      CL: rollFlags.CL ? roundHalf(Math.max(0, credits.CL - used.CL)) : 0,
-      CCL: rollFlags.CCL ? roundHalf(Math.max(0, credits.CCL - used.CCL)) : 0,
-      EL: rollFlags.EL ? roundHalf(Math.max(0, credits.EL - used.EL)) : 0,
+      CL: rollFlags.CL ? roundHalf(Math.max(0, credits.CL - used.CL - locked.CL)) : 0,
+      CCL: rollFlags.CCL ? roundHalf(Math.max(0, credits.CCL - used.CCL - locked.CCL)) : 0,
+      EL: rollFlags.EL ? roundHalf(Math.max(0, credits.EL - used.EL - locked.EL)) : 0,
     },
   };
 }
@@ -241,6 +253,8 @@ function rebuildTransfersFromSourceThroughTarget(doc, sourceIdx, targetIdx, roll
       source: 'monthlyTransferReconciliationService',
       credits: c.credits,
       actualUsed: c.used,
+      lockedDeducted: c.locked,
+      unallocatedLocked: c.unallocatedLocked,
       lockedCreditsReleasedToTransferOut,
       carryPosted: {
         cl: carry.CL,

@@ -781,7 +781,7 @@ exports.exportPayrollExcel = async (req, res) => {
     const hasOutputColumns = rawColumns.length > 0;
 
     // When strategy=dynamic and we have output columns, use the same data source as the paysheet:
-    // compute payslips via the dynamic engine (no PayrollRecord required). Export will match display.
+    // Priority: 1) Fetch stored PayrollRecords first  2) Calculate only missing ones via dynamic engine
     if (useDynamicExport && hasOutputColumns) {
       if (targetEmployeeIds.length === 0) {
         return res.status(404).json({
@@ -789,39 +789,67 @@ exports.exportPayrollExcel = async (req, res) => {
           message: 'No employees in scope. Apply filters or select employees to export.',
         });
       }
-      const userId = req.user?._id?.toString() || req.user?.id;
-      const payslips = [];
-      for (const empId of targetEmployeeIds) {
-        try {
-          // Fetch pending arrears and manual deductions so export reflects same values as pay register calculation
-          let arrearsSettlements = [];
-          let deductionSettlements = [];
+      
+      // Step 1: Try to fetch existing PayrollRecords first
+      const storedQuery = { month, employeeId: { $in: targetEmployeeIds } };
+      const storedRecords = await PayrollRecord.find(storedQuery)
+        .populate({
+          path: 'employeeId',
+          select:
+            'employee_name emp_no department_id division_id designation_id gross_salary location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number',
+          populate: [
+            { path: 'department_id', select: 'name' },
+            { path: 'division_id', select: 'name' },
+            { path: 'designation_id', select: 'name' },
+          ],
+        })
+        .lean();
+
+      // Extract which employees already have stored payslips
+      const storedEmpIds = new Set(storedRecords.map(r => r.employeeId._id.toString()));
+      const missingEmpIds = targetEmployeeIds.filter(id => !storedEmpIds.has(id.toString()));
+
+      // Convert stored records to payslips
+      const payslips = await buildPayslipsFromStoredPayrollRecords(storedRecords, month);
+
+      // Step 2: For missing employees, try to calculate via dynamic engine
+      if (missingEmpIds.length > 0) {
+        console.log(`Found ${storedRecords.length} stored payslips, calculating ${missingEmpIds.length} missing employees`);
+        const userId = req.user?._id?.toString() || req.user?.id;
+        
+        for (const empId of missingEmpIds) {
           try {
-            const pendingArrears = await ArrearsPayrollIntegrationService.getPendingArrearsForPayroll(empId);
-            if (pendingArrears && pendingArrears.length > 0) {
-              arrearsSettlements = pendingArrears.map((ar) => ({ arrearId: ar.id, amount: ar.remainingAmount || 0 }));
+            let arrearsSettlements = [];
+            let deductionSettlements = [];
+            try {
+              const pendingArrears = await ArrearsPayrollIntegrationService.getPendingArrearsForPayroll(empId);
+              if (pendingArrears && pendingArrears.length > 0) {
+                arrearsSettlements = pendingArrears.map((ar) => ({ arrearId: ar.id, amount: ar.remainingAmount || 0 }));
+              }
+              const pendingDeductions = await DeductionPayrollIntegrationService.getPendingDeductionsForPayroll(empId);
+              if (pendingDeductions && pendingDeductions.length > 0) {
+                deductionSettlements = pendingDeductions.map((d) => ({ deductionId: d.id, amount: d.remainingAmount || 0 }));
+              }
+            } catch (fetchErr) {
+              console.error(`Error fetching arrears/deductions for export (employee ${empId}):`, fetchErr.message);
             }
-            const pendingDeductions = await DeductionPayrollIntegrationService.getPendingDeductionsForPayroll(empId);
-            if (pendingDeductions && pendingDeductions.length > 0) {
-              deductionSettlements = pendingDeductions.map((d) => ({ deductionId: d.id, amount: d.remainingAmount || 0 }));
+            
+            const result = await payrollCalculationFromOutputColumnsService.calculatePayrollFromOutputColumns(
+              empId,
+              month,
+              userId,
+              { source: 'payregister', arrearsSettlements, deductionSettlements }
+            );
+            if (result?.payslip) {
+              const slip = result.payslip;
+              payslips.push(slip && typeof slip.toObject === 'function' ? slip.toObject() : slip);
             }
-          } catch (fetchErr) {
-            console.error(`Error fetching arrears/deductions for export (employee ${empId}):`, fetchErr.message);
+          } catch (err) {
+            console.error(`Error calculating payroll for export (employee ${empId}):`, err.message);
           }
-          const result = await payrollCalculationFromOutputColumnsService.calculatePayrollFromOutputColumns(
-            empId,
-            month,
-            userId,
-            { source: 'payregister', arrearsSettlements, deductionSettlements }
-          );
-          if (result?.payslip) {
-            const slip = result.payslip;
-            payslips.push(slip && typeof slip.toObject === 'function' ? slip.toObject() : slip);
-          }
-        } catch (err) {
-          console.error(`Error calculating payroll for export (employee ${empId}):`, err.message);
         }
       }
+
       if (payslips.length === 0) {
         return res.status(404).json({
           success: false,

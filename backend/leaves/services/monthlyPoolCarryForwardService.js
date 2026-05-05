@@ -83,6 +83,27 @@ function roundHalf(x) {
   return Math.round(n * 2) / 2;
 }
 
+function allocateLockedByPriority(lockedDays, scheduled, used, elInPool) {
+  let remaining = roundHalf(lockedDays);
+  const locked = { cl: 0, ccl: 0, el: 0 };
+
+  const clAvailable = roundHalf(Math.max(0, (Number(scheduled.cl) || 0) - (Number(used.cl) || 0)));
+  locked.cl = roundHalf(Math.min(remaining, clAvailable));
+  remaining = roundHalf(Math.max(0, remaining - locked.cl));
+
+  const cclAvailable = roundHalf(Math.max(0, (Number(scheduled.ccl) || 0) - (Number(used.ccl) || 0)));
+  locked.ccl = roundHalf(Math.min(remaining, cclAvailable));
+  remaining = roundHalf(Math.max(0, remaining - locked.ccl));
+
+  if (elInPool) {
+    const elAvailable = roundHalf(Math.max(0, (Number(scheduled.el) || 0) - (Number(used.el) || 0)));
+    locked.el = roundHalf(Math.min(remaining, elAvailable));
+    remaining = roundHalf(Math.max(0, remaining - locked.el));
+  }
+
+  return { locked, unallocatedLocked: remaining };
+}
+
 async function buildEmployeeTxPayload(employeeId) {
   const employee = await Employee.findById(employeeId)
     .select('_id emp_no employee_name department_id division_id designation_id doj is_active')
@@ -193,14 +214,23 @@ async function processPayrollCycleCarryForward(closingPayrollMonth, closingPayro
       const clLocked = roundHalf(Number(slot.lockedCredits) || 0);
       const usedCcl = roundHalf(sumUsedDaysForType(slot, 'CCL'));
       const usedEl = roundHalf(sumUsedDaysForType(slot, 'EL'));
+      const monthLocked = roundHalf(
+        Math.max(Number(slot.lockedCredits) || 0, Number(slot.monthlyApplyLocked) || 0)
+      );
+      const lockedAllocation = allocateLockedByPriority(
+        monthLocked,
+        { cl: clS, ccl: cclS, el: elS },
+        { cl: usedCl, ccl: usedCcl, el: usedEl },
+        elInPool
+      );
 
-      const clCarry = clRoll ? roundHalf(Math.max(0, clS - usedCl)) : 0;
-      const cclCarry = cclRoll ? roundHalf(Math.max(0, cclS - usedCcl)) : 0;
-      const elCarry = elRoll ? roundHalf(Math.max(0, elS - usedEl)) : 0;
+      const clCarry = clRoll ? roundHalf(Math.max(0, clS - usedCl - lockedAllocation.locked.cl)) : 0;
+      const cclCarry = cclRoll ? roundHalf(Math.max(0, cclS - usedCcl - lockedAllocation.locked.ccl)) : 0;
+      const elCarry = elRoll ? roundHalf(Math.max(0, elS - usedEl - lockedAllocation.locked.el)) : 0;
 
-      const clForfeit = clRoll ? 0 : roundHalf(Math.max(0, clS - usedCl));
-      const cclForfeit = cclRoll ? 0 : roundHalf(Math.max(0, cclS - usedCcl));
-      const elForfeit = elRoll ? 0 : roundHalf(Math.max(0, elS - usedEl));
+      const clForfeit = clRoll ? 0 : roundHalf(Math.max(0, clS - usedCl - lockedAllocation.locked.cl));
+      const cclForfeit = cclRoll ? 0 : roundHalf(Math.max(0, cclS - usedCcl - lockedAllocation.locked.ccl));
+      const elForfeit = elRoll ? 0 : roundHalf(Math.max(0, elS - usedEl - lockedAllocation.locked.el));
 
       const next = findNextPayrollSlot(fresh.months, pm, py);
       if ((clCarry > 0 || cclCarry > 0 || elCarry > 0) && !next) {
@@ -223,6 +253,9 @@ async function processPayrollCycleCarryForward(closingPayrollMonth, closingPayro
         ...alloc,
         scheduled: { cl: clS, ccl: cclS, el: elS },
         ledgerUsed: { cl: usedCl, ccl: usedCcl, el: usedEl, clLocked },
+        monthLocked,
+        lockedDeducted: lockedAllocation.locked,
+        unallocatedLocked: lockedAllocation.unallocatedLocked,
         carryPosted: { cl: clCarry, ccl: cclCarry, el: elCarry },
         elInPool,
         policies: { clRoll, cclRoll, elRoll },
