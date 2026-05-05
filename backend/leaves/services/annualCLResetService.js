@@ -1010,8 +1010,7 @@ function applyCarryForwardAcrossMonths(monthsPayload, effectiveDate, options = {
         if (!Array.isArray(cur.transactions)) cur.transactions = [];
         if (!Array.isArray(next.transactions)) next.transactions = [];
         const clUsed = sumDebitsExcludingCarry(cur, 'CL');
-        const clLocked = round2(Number(cur.lockedCredits) || 0);
-        let clCarry = Math.max(0, round2((Number(cur.clCredits) || 0) - clUsed - clLocked));
+        let clCarry = Math.max(0, round2((Number(cur.clCredits) || 0) - clUsed));
         if (!clRoll) clCarry = 0;
         let cclCarry = Math.max(0, round2((Number(cur.compensatoryOffs) || 0) - sumDebitsExcludingCarry(cur, 'CCL')));
         if (!cclRoll) cclCarry = 0;
@@ -1021,6 +1020,7 @@ function applyCarryForwardAcrossMonths(monthsPayload, effectiveDate, options = {
 
         cur.poolCarryForwardOut = { ...(cur.poolCarryForwardOut || {}), cl: clCarry, ccl: cclCarry, el: elCarry };
         cur.poolCarryForwardOutAt = new Date();
+        cur.lockedCredits = 0;
         next.clCredits = round2((Number(next.clCredits) || 0) + clCarry);
         next.compensatoryOffs = round2((Number(next.compensatoryOffs) || 0) + cclCarry);
         next.elCredits = round2((Number(next.elCredits) || 0) + elCarry);

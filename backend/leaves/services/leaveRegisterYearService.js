@@ -726,6 +726,7 @@ async function patchMonthSlotScheduledCredits({
           el: elCarry,
         };
         slot.poolCarryForwardOutAt = new Date();
+        slot.lockedCredits = 0;
 
         next.slot.clCredits = round2((Number(next.slot.clCredits) || 0) + clCarry);
         next.slot.compensatoryOffs = round2((Number(next.slot.compensatoryOffs) || 0) + cclCarry);
@@ -993,13 +994,12 @@ function computeRegisterMonthPoolTransferOutDisplay(
   const clCredits = round2(Number(scheduled.clCredits) || 0);
   const cco = round2(Number(scheduled.compensatoryOffs) || 0);
   const elCr = round2(Number(scheduled.elCredits) || 0);
-  const clLocked = round2(Number(scheduled.lockedCredits) || 0);
 
   const uCl = round2(Number(usedCl) || 0);
   const uCcl = round2(Number(usedCcl) || 0);
   const uEl = round2(Number(usedEl) || 0);
 
-  let clCarry = Math.max(0, round2(clCredits - uCl - clLocked));
+  let clCarry = Math.max(0, round2(clCredits - uCl));
   if (!clRoll) clCarry = 0;
   let cclCarry = Math.max(0, round2(cco - uCcl));
   if (!cclRoll) cclCarry = 0;
@@ -1033,8 +1033,7 @@ function countQualifyingMonthlyPoolCarryEdges(months, asOf, policy, options = {}
       if (flags.allowCarryUnusedToNextMonth === false) continue;
     }
     const usedCl = sumUsedDaysForType(cur, 'CL');
-    const clLocked = round2(Number(cur.lockedCredits) || 0);
-    let clCarry = Math.max(0, round2(Number(cur.clCredits) - usedCl - clLocked));
+    let clCarry = Math.max(0, round2(Number(cur.clCredits) - usedCl));
     if (!clRoll) clCarry = 0;
     let cclCarry = Math.max(0, round2(Number(cur.compensatoryOffs) - sumUsedDaysForType(cur, 'CCL')));
     if (!cclRoll) cclCarry = 0;
@@ -1073,8 +1072,7 @@ function applySequentialMonthlyPoolCarry(months, asOf, policy, options = {}) {
     if (!Array.isArray(cur.transactions)) cur.transactions = [];
     if (!Array.isArray(next.transactions)) next.transactions = [];
     const usedCl = sumUsedDaysForType(cur, 'CL');
-    const clLocked = round2(Number(cur.lockedCredits) || 0);
-    let clCarry = Math.max(0, round2(Number(cur.clCredits) - usedCl - clLocked));
+    let clCarry = Math.max(0, round2(Number(cur.clCredits) - usedCl));
     if (!clRoll) clCarry = 0;
     let cclCarry = Math.max(0, round2(Number(cur.compensatoryOffs) - sumUsedDaysForType(cur, 'CCL')));
     if (!cclRoll) cclCarry = 0;
@@ -1084,6 +1082,7 @@ function applySequentialMonthlyPoolCarry(months, asOf, policy, options = {}) {
 
     cur.poolCarryForwardOut = { cl: clCarry, ccl: cclCarry, el: elCarry };
     cur.poolCarryForwardOutAt = new Date();
+    cur.lockedCredits = 0;
     next.clCredits = round2((Number(next.clCredits) || 0) + clCarry);
     next.compensatoryOffs = round2((Number(next.compensatoryOffs) || 0) + cclCarry);
     next.elCredits = round2((Number(next.elCredits) || 0) + elCarry);

@@ -2156,15 +2156,13 @@ export default function LeaveRegisterPage({
                                             className={`${typeCellClass} font-bold`}
                                           >
                                             <div>
-                                              {m.cclBalance != null && Number.isFinite(Number(m.cclBalance))
-                                                ? formatNum(Number(m.cclBalance))
-                                                : formatRegisterMonthEquationBal(
-                                                    cclCr,
-                                                    m.ccl?.transferIn,
-                                                    m.ccl?.used,
-                                                    m.ccl?.locked,
-                                                    cclTout
-                                                  )}
+                                              {formatRegisterMonthEquationBal(
+                                                cclCr,
+                                                m.ccl?.transferIn,
+                                                m.ccl?.used,
+                                                m.ccl?.locked,
+                                                cclTout
+                                              )}
                                             </div>
                                             <TypeApplyCapHint bucket={m.ccl} />
                                           </td>

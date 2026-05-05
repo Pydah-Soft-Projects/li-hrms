@@ -4264,6 +4264,39 @@ export const api = {
     return blob;
   },
 
+  exportPayRegisterSummaryPDF: async (params: {
+    month: string;
+    departmentId?: string;
+    divisionId?: string;
+    search?: string;
+    employeeGroupId?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params.departmentId) query.append('departmentId', params.departmentId);
+    if (params.divisionId) query.append('divisionId', params.divisionId);
+    if (params.search) query.append('search', params.search);
+    if (params.employeeGroupId) query.append('employeeGroupId', params.employeeGroupId);
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/pay-register/export-summary-pdf/${params.month}?${query.toString()}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || 'Failed to export pay register summary PDF');
+    }
+
+    return response.blob();
+  },
+
   uploadPayRegisterSummary: async (month: string, data: Record<string, unknown>[]) => {
     return apiRequest<{ successCount: number; failCount: number; errors: string[] }>(`/pay-register/upload-summary/${month}`, {
       method: 'POST',
