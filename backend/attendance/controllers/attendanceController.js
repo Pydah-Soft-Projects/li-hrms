@@ -765,7 +765,6 @@ exports.updateOutTime = async (req, res) => {
     }
 
     attendanceRecord.isEdited = true;
-    attendanceRecord.locked = true;
     attendanceRecord.editHistory.push({
       action: 'OUT_TIME_UPDATE',
       modifiedBy: req.user._id,
@@ -1058,7 +1057,6 @@ exports.assignShift = async (req, res) => {
     }
 
     attendanceRecord.isEdited = true;
-    attendanceRecord.locked = true;
     attendanceRecord.editHistory.push({
       action: 'SHIFT_CHANGE',
       modifiedBy: req.user?._id || req.user?.userId,
@@ -1338,7 +1336,6 @@ exports.updateInTime = async (req, res) => {
     }
 
     attendanceRecord.isEdited = true;
-    attendanceRecord.locked = true;
     attendanceRecord.editHistory.push({
       action: 'IN_TIME_UPDATE',
       modifiedBy: req.user?._id || req.user?.userId,
