@@ -401,7 +401,7 @@ const filterRedundantLogs = (logs, windowMinutes = 30) => {
  * @param {string} date - Date in YYYY-MM-DD
  * @returns {Promise<Object>} Result of processing
  */
-const reprocessAttendanceForEmployeeDate = async (employeeNumber, date) => {
+const reprocessAttendanceForEmployeeDate = async (employeeNumber, date, options = {}) => {
   try {
     const empNo = String(employeeNumber || '').toUpperCase();
     if (!empNo || !date) throw new Error('Employee number and date are required');
@@ -440,7 +440,8 @@ const reprocessAttendanceForEmployeeDate = async (employeeNumber, date) => {
         source: log.source,
         _id: log._id,
       })),
-      generalConfig
+      generalConfig,
+      options
     );
 
     return result;
