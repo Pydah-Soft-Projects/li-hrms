@@ -364,10 +364,19 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                     const { shifts: shiftsList } = await getShiftsForEmployee(employeeNumber, date, shiftOptions);
 
                     const findShiftStartingNear = (time, list) => {
-                        return list.find(s => {
+                        if (!list || list.length === 0) return null;
+                        // Relaxed window: Allow up to 5 hours (300 min) late/early arrival 
+                        // to still identify the correct rostered shift for splitting.
+                        let closest = null;
+                        let minDiff = Infinity;
+                        for (const s of list) {
                             const diff = calculateTimeDifference(time, s.startTime, date);
-                            return diff <= 60;
-                        });
+                            if (diff < minDiff) {
+                                minDiff = diff;
+                                closest = s;
+                            }
+                        }
+                        return minDiff <= 300 ? closest : null;
                     };
 
                     const firstShift = findShiftStartingNear(currentInTime, shiftsList);
