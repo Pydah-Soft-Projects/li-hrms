@@ -319,23 +319,25 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             // 36h window covers: 24hr shifts (9AM Day1→9AM Day2 = 24h), 9AM-9PM/9PM-9AM split
             // spans up to 36h from first IN. This must match the spec requirement.
             const MAX_WINDOW_MS = getMaxPunchWindowMs();
+            const candidates = allOutsFull.filter(p => {
+                const tDiff = new Date(p.timestamp) - currentInTime;
+                if (tDiff <= 0 || tDiff > MAX_WINDOW_MS || pairedOutIds.has(String(p._id || p.id))) return false;
+
+                // Prevent cross-day stealing: if there's an IN punch between currentIn and this OUT
+                // that is >= 12 hours after currentIn, don't pair.
+                const stealingIn = deduplicatedPunches.find(inP => 
+                    inP.type === 'IN' && 
+                    new Date(inP.timestamp) > currentInTime &&
+                    new Date(inP.timestamp) < new Date(p.timestamp) &&
+                    (new Date(inP.timestamp) - currentInTime) >= 12 * 60 * 60 * 1000
+                );
+                
+                return !stealingIn;
+            });
+
             let nextOut = effectiveOutOverride && i === 0
                 ? effectiveOutOverride
-                : allOutsFull.find(p => {
-                    const tDiff = new Date(p.timestamp) - currentInTime;
-                    if (tDiff <= 0 || tDiff > MAX_WINDOW_MS || pairedOutIds.has(String(p._id || p.id))) return false;
-
-                    // Prevent cross-day stealing: if there's an IN punch between currentIn and this OUT
-                    // that is >= 12 hours after currentIn, don't pair.
-                    const stealingIn = deduplicatedPunches.find(inP => 
-                        inP.type === 'IN' && 
-                        new Date(inP.timestamp) > currentInTime &&
-                        new Date(inP.timestamp) < new Date(p.timestamp) &&
-                        (new Date(inP.timestamp) - currentInTime) >= 12 * 60 * 60 * 1000
-                    );
-                    
-                    return !stealingIn;
-                });
+                : candidates.find(c => c.source === 'manual') || candidates[0];
 
             // --- ITERATIVE SPLIT (Design: 14h+3h first, 3h gap + half-day for 2nd/3rd) ---
             const durationMsNormal = nextOut ? (new Date(nextOut.timestamp) - currentInTime) : 0;

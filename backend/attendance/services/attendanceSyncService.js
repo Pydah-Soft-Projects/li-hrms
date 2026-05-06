@@ -437,6 +437,7 @@ const reprocessAttendanceForEmployeeDate = async (employeeNumber, date) => {
       logs.map(log => ({
         timestamp: new Date(log.timestamp),
         type: log.type,
+        source: log.source,
         _id: log._id,
       })),
       generalConfig

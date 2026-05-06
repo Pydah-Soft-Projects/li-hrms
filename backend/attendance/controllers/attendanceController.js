@@ -765,8 +765,7 @@ exports.updateOutTime = async (req, res) => {
       await AttendanceRawLog.deleteOne({
         employeeNumber: attendanceRecord.employeeNumber,
         timestamp: oldOutTime,
-        type: 'OUT',
-        source: 'manual'
+        type: 'OUT'
       });
     }
 
@@ -1166,8 +1165,7 @@ exports.updateInTime = async (req, res) => {
       await AttendanceRawLog.deleteOne({
         employeeNumber: attendanceRecord.employeeNumber,
         timestamp: oldInTime,
-        type: 'IN',
-        source: 'manual'
+        type: 'IN'
       });
     }
 
