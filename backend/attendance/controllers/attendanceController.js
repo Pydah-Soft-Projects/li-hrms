@@ -775,11 +775,8 @@ exports.updateOutTime = async (req, res) => {
       date: punchDateStr
     });
 
-    // 3. Clear immutability flags so the re-processing engine can overwrite the record
-    attendanceRecord.isEdited = false;
-    if (Array.isArray(attendanceRecord.source)) {
-      attendanceRecord.source = attendanceRecord.source.filter(s => s !== 'manual');
-    }
+    // 3. Set isEdited to true as requested (now used for UI tracking only, not locking)
+    attendanceRecord.isEdited = true;
 
     // 4. Update history
     attendanceRecord.editHistory.push({
@@ -919,11 +916,8 @@ exports.assignShift = async (req, res) => {
     }
     // --- NEW APPROACH: Trigger Full Re-Processing ---
     
-    // 1. Clear immutability flags so the re-processing engine can overwrite with new shift rules
-    attendanceRecord.isEdited = false;
-    if (Array.isArray(attendanceRecord.source)) {
-      attendanceRecord.source = attendanceRecord.source.filter(s => s !== 'manual');
-    }
+    // 1. Set isEdited to true (now used for UI tracking only, not locking)
+    attendanceRecord.isEdited = true;
 
     attendanceRecord.editHistory.push({
       action: 'SHIFT_CHANGE',
@@ -1179,11 +1173,8 @@ exports.updateInTime = async (req, res) => {
       date: punchDateStr
     });
 
-    // 3. Clear immutability flags
-    attendanceRecord.isEdited = false;
-    if (Array.isArray(attendanceRecord.source)) {
-      attendanceRecord.source = attendanceRecord.source.filter(s => s !== 'manual');
-    }
+    // 3. Set isEdited to true (now used for UI tracking only, not locking)
+    attendanceRecord.isEdited = true;
 
     // 4. Update history
     attendanceRecord.editHistory.push({

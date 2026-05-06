@@ -900,11 +900,8 @@ function buildEmptyUpdate(employeeNumber, date) {
 
 async function upsertDaily(employeeNumber, date, updateData) {
   let dailyRecord = await AttendanceDaily.findOne({ employeeNumber, date });
-  const isManualImmutable =
-    !!dailyRecord &&
-    (dailyRecord.locked === true ||
-      dailyRecord.isEdited === true ||
-      (Array.isArray(dailyRecord.source) && dailyRecord.source.includes('manual')));
+  // Keep manually corrected attendance immutable ONLY during completed payroll periods.
+  const isManualImmutable = !!dailyRecord && dailyRecord.locked === true;
   if (isManualImmutable) {
     return dailyRecord;
   }
