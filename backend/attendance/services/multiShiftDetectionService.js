@@ -120,10 +120,12 @@ function detectAndPairShifts(rawLogs, date, maxShifts = 3) {
         // Find next OUT after this IN that hasn't been paired yet
         // MAX 36 hour window for a single shift segment (per user request)
         const MAX_WINDOW_MS = getMaxPunchWindowMs();
-        const outPunch = allOuts.find(out => {
+        const candidates = allOuts.filter(out => {
             const timeDiff = new Date(out.timestamp) - new Date(inPunch.timestamp);
             return timeDiff > 0 && timeDiff <= MAX_WINDOW_MS && !pairedOutIds.has(out._id || out.id);
         });
+
+        const outPunch = candidates.find(c => c.source === 'manual') || candidates[0];
 
         const shift = {
             shiftNumber: i + 1,
