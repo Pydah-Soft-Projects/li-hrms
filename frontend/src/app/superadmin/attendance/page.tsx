@@ -606,8 +606,7 @@ export default function AttendancePage() {
   // In Time dialog state
   const [showInTimeDialog, setShowInTimeDialog] = useState(false);
   const isAttendanceDetailLocked = !!(
-    attendanceDetail &&
-    (attendanceDetail.locked || attendanceDetail.isEdited || attendanceDetail.source?.includes('manual'))
+    attendanceDetail && attendanceDetail.locked === true
   );
   const isAttendanceLockedResponse = (response: any) =>
     response &&
@@ -4271,9 +4270,9 @@ export default function AttendancePage() {
                       ({selectedEmployee?.employee_name})
                     </span>
                   )}
-                  {(attendanceDetail.locked || attendanceDetail.isEdited || attendanceDetail.source?.includes('manual')) && (
+                  {attendanceDetail.locked && (
                     <span className="ml-2 inline-flex items-center rounded-md bg-violet-100 px-2 py-1 text-xs font-bold text-violet-700 ring-1 ring-inset ring-violet-600/20 shadow-sm dark:bg-violet-900/30 dark:text-violet-300">
-                      Manually Locked
+                      Payroll Locked
                     </span>
                   )}
                   {attendanceDetail.isEdited && (
