@@ -829,12 +829,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
 
         let dailyRecord = await AttendanceDaily.findOne({ employeeNumber, date });
 
-        // Keep manually corrected attendance immutable during biometric auto-sync.
-        const isManualImmutable =
-            !!dailyRecord &&
-            (dailyRecord.locked === true ||
-                dailyRecord.isEdited === true ||
-                (Array.isArray(dailyRecord.source) && dailyRecord.source.includes('manual')));
+        // Keep manually corrected attendance immutable ONLY during completed payroll periods.
+        const isManualImmutable = !!dailyRecord && dailyRecord.locked === true;
         if (isManualImmutable) {
             return {
                 success: true,
