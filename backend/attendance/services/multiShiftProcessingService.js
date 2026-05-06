@@ -358,119 +358,111 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             const durationHours = durationMsNormal / (60 * 60 * 1000);
             const outTime = nextOut ? new Date(nextOut.timestamp) : null;
 
-            if (nextOut && durationHours >= splitThresholdHours) {
+            // NEW: Dynamic Trigger. We enter this block if it's long-duration OR 
+            // if we want to check for Shift-End-based splitting.
+            if (nextOut && (durationHours >= splitThresholdHours || durationHours > 4)) {
                 try {
                     const shiftOptions = { rosterStrictWhenPresent: processingMode.rosterStrictWhenPresent };
                     const { shifts: shiftsList } = await getShiftsForEmployee(employeeNumber, date, shiftOptions);
 
-                    const findShiftStartingNear = (time, list) => {
-                        if (!list || list.length === 0) return null;
-                        // Relaxed window: Allow up to 5 hours (300 min) late/early arrival 
-                        // to still identify the correct rostered shift for splitting.
-                        let closest = null;
-                        let minDiff = Infinity;
-                        for (const s of list) {
-                            const diff = calculateTimeDifference(time, s.startTime, date);
-                            if (diff < minDiff) {
-                                minDiff = diff;
-                                closest = s;
-                            }
-                        }
-                        return minDiff <= 300 ? closest : null;
-                    };
-
                     const firstShift = findShiftStartingNear(currentInTime, shiftsList);
                     if (!firstShift) {
-                        // No first shift match - fall through to normal assignment
+                        // Fallback: If no rostered shift, only split if duration exceeds 14h threshold
+                        if (durationHours < splitThresholdHours) {
+                            // Proceed to normal assignment (Line 572)
+                        } else {
+                            // Logic for splitting without a shift could go here, but usually we need a shift
+                        }
                     } else {
-                        // Detect 24hr shift: startTime === endTime OR shift duration >= 24h
-                        // In both cases end is on the NEXT day relative to IN time
+                        // Detect shift boundaries for splitting
                         const is24hrShift = (
                             firstShift.startTime === firstShift.endTime ||
                             (firstShift.duration != null && firstShift.duration >= 24)
                         );
                         const firstShiftIsOvernight = is24hrShift
-                            ? true  // 24hr shift always ends next day
+                            ? true
                             : timeToMinutes(firstShift.endTime) < timeToMinutes(firstShift.startTime);
                         const firstEndDate = timeStringToDate(firstShift.endTime, date, firstShiftIsOvernight);
                         const gapHours = (outTime.getTime() - firstEndDate.getTime()) / (60 * 60 * 1000);
 
-                        console.log(`[MultiShift] firstShift=${firstShift.name}, is24hr=${is24hrShift}, firstEndDate=${firstEndDate.toISOString()}, gapHours=${gapHours.toFixed(2)}`);
+                        // NEW DYNAMIC TRIGGER: Split if duration is huge OR if staying past shift end + gap
+                        const splitTriggered = (durationHours >= splitThresholdHours) || (outTime > firstEndDate && gapHours > splitMinGapHours);
 
-                        // First segment: full rule - duration >= threshold, OUT > shift1 end, gap > 3h
-                        const fullSplitHolds = outTime > firstEndDate && gapHours > splitMinGapHours;
-
-                        if (fullSplitHolds) {
-                            const splitSegments = [];
-                            let prevEnd = firstEndDate;
-                            let prevShift = firstShift;
-                            let remainderOut = outTime;
-                            let segmentIdx = 0;
-
-                            splitSegments.push({
-                                assignedShift: firstShift,
-                                inTime: currentIn.timestamp,
-                                outTime: firstEndDate.toISOString(),
-                            });
-
-                            segmentIdx++;
-                            while (segmentIdx < MAX_SHIFTS) {
-                                const segmentStart = prevEnd;
-                                const spanHours = (remainderOut.getTime() - segmentStart.getTime()) / (60 * 60 * 1000);
-                                const nextShift = findNextShiftAfter(segmentStart, shiftsList, date, prevShift);
-                                if (!nextShift) break;
-
-                                const segDateStr = formatDate(segmentStart);
-                                // Detect 24hr shift: startTime === endTime OR shift duration >= 24h
-                                const isNext24hrShift = (
-                                    nextShift.startTime === nextShift.endTime ||
-                                    (nextShift.duration != null && nextShift.duration >= 24)
-                                );
-                                const nextShiftIsOvernight = isNext24hrShift
-                                    ? true
-                                    : timeToMinutes(nextShift.endTime) < timeToMinutes(nextShift.startTime);
-                                const nextEndDate = timeStringToDate(nextShift.endTime, segDateStr, nextShiftIsOvernight);
-                                const nextGapHours = (remainderOut.getTime() - nextEndDate.getTime()) / (60 * 60 * 1000);
-
-                                const halfDayHours = (nextShift.duration || 8) / 2;
-                                const hasHalfDay = spanHours >= halfDayHours;
-
-                                if (!hasHalfDay) {
-                                    // Undergoes as extra hours - add to previous segment
-                                    const prevSeg = splitSegments[splitSegments.length - 1];
-                                    const extraHrs = Math.round(spanHours * 100) / 100;
-                                    prevSeg.extraHours = (prevSeg.extraHours || 0) + extraHrs;
-                                    break;
-                                }
+                        if (splitTriggered) {
+                            // Find the next shift to see if we meet the Half-Day requirement
+                            const nextShiftForCheck = findNextShiftAfter(firstEndDate, shiftsList, date, firstShift);
+                            const halfDayThreshold = nextShiftForCheck ? (nextShiftForCheck.duration || 8) / 2 : 4;
+                            
+                            // Only split if the "Gap" time actually allows for a Half-Day in the next shift
+                            if (gapHours >= halfDayThreshold) {
+                                const splitSegments = [];
+                                let prevEnd = firstEndDate;
+                                let prevShift = firstShift;
+                                let remainderOut = outTime;
+                                let segmentIdx = 0;
 
                                 splitSegments.push({
-                                    assignedShift: nextShift,
-                                    inTime: segmentStart.toISOString(),
-                                    outTime: nextGapHours > splitMinGapHours && remainderOut > nextEndDate ? nextEndDate.toISOString() : remainderOut.toISOString(),
-                                    extraHours: 0,
+                                    assignedShift: firstShift,
+                                    inTime: currentIn.timestamp,
+                                    outTime: firstEndDate.toISOString(),
                                 });
 
-                                if (nextGapHours <= splitMinGapHours || remainderOut <= nextEndDate) break;
-                                prevEnd = nextEndDate;
-                                prevShift = nextShift;
                                 segmentIdx++;
-                            }
+                                while (segmentIdx < MAX_SHIFTS) {
+                                    const segmentStart = prevEnd;
+                                    const spanHours = (remainderOut.getTime() - segmentStart.getTime()) / (60 * 60 * 1000);
+                                    const nextShift = findNextShiftAfter(segmentStart, shiftsList, date, prevShift);
+                                    if (!nextShift) break;
 
-                            const basePayablePerShift = (s) => (s.payableShifts !== undefined && s.payableShifts != null ? Number(s.payableShifts) : 1);
-                            for (const split of splitSegments) {
-                                if (shiftCounter >= MAX_SHIFTS) break;
-                                shiftCounter++;
-                                const sIn = new Date(split.inTime);
-                                const sOut = new Date(split.outTime);
-                                const sDuration = sOut - sIn;
-                                const sWorkingHours = Math.round((sDuration / 3600000) * 100) / 100;
-                                const expectedH = split.assignedShift.duration || 8;
+                                    const segDateStr = formatDate(segmentStart);
+                                    const isNext24hrShift = (
+                                        nextShift.startTime === nextShift.endTime ||
+                                        (nextShift.duration != null && nextShift.duration >= 24)
+                                    );
+                                    const nextShiftIsOvernight = isNext24hrShift
+                                        ? true
+                                        : timeToMinutes(nextShift.endTime) < timeToMinutes(nextShift.startTime);
+                                    const nextEndDate = timeStringToDate(nextShift.endTime, segDateStr, nextShiftIsOvernight);
+                                    const nextGapHours = (remainderOut.getTime() - nextEndDate.getTime()) / (60 * 60 * 1000);
 
-                                // Calculate Status & payable per segment: clip to shift boundaries for status determination
-                                // This prevents idle time between shifts from counting towards status thresholds
-                                const shiftStart = timeStringToDate(split.assignedShift.startTime, formatDate(sIn), false);
-                                const isOvernightSeg = timeToMinutes(split.assignedShift.endTime) < timeToMinutes(split.assignedShift.startTime);
-                                const shiftEnd = timeStringToDate(split.assignedShift.endTime, formatDate(sIn), isOvernightSeg);
+                                    const halfDayHours = (nextShift.duration || 8) / 2;
+                                    const hasHalfDay = spanHours >= halfDayHours;
+
+                                    if (!hasHalfDay) {
+                                        // Not enough for a half-day in this next segment - add as OT to previous
+                                        const prevSeg = splitSegments[splitSegments.length - 1];
+                                        const extraHrs = Math.round(spanHours * 100) / 100;
+                                        prevSeg.extraHours = (prevSeg.extraHours || 0) + extraHrs;
+                                        break;
+                                    }
+
+                                    splitSegments.push({
+                                        assignedShift: nextShift,
+                                        inTime: segmentStart.toISOString(),
+                                        outTime: nextGapHours > splitMinGapHours && remainderOut > nextEndDate ? nextEndDate.toISOString() : remainderOut.toISOString(),
+                                        extraHours: 0,
+                                    });
+
+                                    if (nextGapHours <= splitMinGapHours || remainderOut <= nextEndDate) break;
+                                    prevEnd = nextEndDate;
+                                    prevShift = nextShift;
+                                    segmentIdx++;
+                                }
+
+                                // ... status calculation logic ...
+                                const basePayablePerShift = (s) => (s.payableShifts !== undefined && s.payableShifts != null ? Number(s.payableShifts) : 1);
+                                for (const split of splitSegments) {
+                                    if (shiftCounter >= MAX_SHIFTS) break;
+                                    shiftCounter++;
+                                    const sIn = new Date(split.inTime);
+                                    const sOut = new Date(split.outTime);
+                                    const sDuration = sOut - sIn;
+                                    const sWorkingHours = Math.round((sDuration / 3600000) * 100) / 100;
+                                    const expectedH = split.assignedShift.duration || 8;
+                                    
+                                    const shiftStart = timeStringToDate(split.assignedShift.startTime, formatDate(sIn), false);
+                                    const isOvernightSeg = timeToMinutes(split.assignedShift.endTime) < timeToMinutes(split.assignedShift.startTime);
+                                    const shiftEnd = timeStringToDate(split.assignedShift.endTime, formatDate(sIn), isOvernightSeg);
 
                                 // Effective Duration (Clipped)
                                 const effectiveIn = new Date(Math.max(sIn.getTime(), shiftStart.getTime()));
