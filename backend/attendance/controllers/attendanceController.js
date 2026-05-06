@@ -757,14 +757,18 @@ exports.updateOutTime = async (req, res) => {
     
     // --- NEW APPROACH: Add Manual Log and Trigger Full Re-Processing ---
     const punchDateStr = attendanceRecord.date;
+    const oldOutTime = shiftSegment.outTime;
     
-    // 1. Delete any existing manual OUT logs for this day to avoid duplicates
-    await AttendanceRawLog.deleteMany({
-      employeeNumber: attendanceRecord.employeeNumber,
-      date: punchDateStr,
-      type: 'OUT',
-      source: 'manual'
-    });
+    // 1. Delete the PREVIOUS manual log for this specific segment (if it was manual)
+    // We use the exact timestamp to avoid wiping out manual edits on OTHER segments of the same day
+    if (oldOutTime) {
+      await AttendanceRawLog.deleteOne({
+        employeeNumber: attendanceRecord.employeeNumber,
+        timestamp: oldOutTime,
+        type: 'OUT',
+        source: 'manual'
+      });
+    }
 
     // 2. Create the new manual log
     await AttendanceRawLog.create({
@@ -1155,14 +1159,17 @@ exports.updateInTime = async (req, res) => {
 
     // --- NEW APPROACH: Add Manual Log and Trigger Full Re-Processing ---
     const punchDateStr = attendanceRecord.date;
+    const oldInTime = shiftSegment.inTime;
 
-    // 1. Delete any existing manual IN logs for this day
-    await AttendanceRawLog.deleteMany({
-      employeeNumber: attendanceRecord.employeeNumber,
-      date: punchDateStr,
-      type: 'IN',
-      source: 'manual'
-    });
+    // 1. Delete the PREVIOUS manual log for this specific segment (if it was manual)
+    if (oldInTime) {
+      await AttendanceRawLog.deleteOne({
+        employeeNumber: attendanceRecord.employeeNumber,
+        timestamp: oldInTime,
+        type: 'IN',
+        source: 'manual'
+      });
+    }
 
     // 2. Create the new manual log
     await AttendanceRawLog.create({
