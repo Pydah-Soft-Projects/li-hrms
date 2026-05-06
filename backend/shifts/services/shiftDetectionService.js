@@ -220,12 +220,14 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
     const preScheduled = await PreScheduledShift.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
-    }).populate('shiftId');
+    }).populate('shiftId').populate('actualShiftId');
 
-    if (preScheduled && preScheduled.shiftId) {
-      rosteredShift = preScheduled.shiftId;
+    const effectiveRosteredShift = preScheduled?.actualShiftId || preScheduled?.shiftId;
+
+    if (preScheduled && effectiveRosteredShift) {
+      rosteredShift = effectiveRosteredShift;
       rosterRecordId = preScheduled._id;
-      const s = preScheduled.shiftId.toObject ? preScheduled.shiftId.toObject() : { ...preScheduled.shiftId };
+      const s = effectiveRosteredShift.toObject ? effectiveRosteredShift.toObject() : { ...effectiveRosteredShift };
       s.sourcePriority = 1; // Highest Priority
       allCandidateShifts.set(s._id.toString(), s);
       // Roster strict: when roster exists, use ONLY roster; do not add organizational shifts
