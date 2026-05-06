@@ -826,8 +826,7 @@ export default function AttendancePage() {
 
   const [editingOutTime, setEditingOutTime] = useState(false);
   const isAttendanceDetailLocked = !!(
-    attendanceDetail &&
-    (attendanceDetail.locked || attendanceDetail.isEdited || attendanceDetail.source?.includes('manual'))
+    attendanceDetail && attendanceDetail.locked === true
   );
 
   const isAttendanceLockedResponse = (response: any) =>
@@ -5928,9 +5927,9 @@ export default function AttendancePage() {
                           {selectedEmployee.employee_name} ({selectedEmployee.emp_no})
                         </span>
                       )}
-                      {(attendanceDetail.locked || attendanceDetail.isEdited || attendanceDetail.source?.includes('manual')) && (
+                      {attendanceDetail.locked && (
                         <span className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300 px-2 py-0.5 rounded-md font-bold shadow-sm border border-violet-200/60 dark:border-violet-800/50">
-                          Manually Locked
+                          Payroll Locked
                         </span>
                       )}
                       {attendanceDetail.leftDate && (
