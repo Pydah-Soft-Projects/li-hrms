@@ -794,9 +794,14 @@ exports.updateOutTime = async (req, res) => {
     await attendanceRecord.save();
 
     // 6. Trigger full system re-processing (handles multi-shift splitting, status, etc.)
+    const manualOverrides = {
+      [shiftSegment.inTime.toISOString()]: outTimeDate
+    };
+
     const reprocessResult = await reprocessAttendanceForEmployeeDate(
       attendanceRecord.employeeNumber,
-      punchDateStr
+      punchDateStr,
+      { manualOverrides }
     );
 
     if (!reprocessResult.success) {
@@ -1194,9 +1199,14 @@ exports.updateInTime = async (req, res) => {
     await attendanceRecord.save();
 
     // 6. Trigger full system re-processing
+    const manualOverrides = {
+      [newInTime.toISOString()]: shiftSegment.outTime
+    };
+
     const reprocessResult = await reprocessAttendanceForEmployeeDate(
       attendanceRecord.employeeNumber,
-      punchDateStr
+      punchDateStr,
+      { manualOverrides }
     );
 
     if (!reprocessResult.success) {

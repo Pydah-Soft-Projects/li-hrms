@@ -186,7 +186,8 @@ function dedupePunchesForMultiShift(punches) {
  * @param {Object} generalConfig - General settings
  * @returns {Promise<Object>} Processing result
  */
-async function processMultiShiftAttendance(employeeNumber, date, rawLogs, generalConfig, pairedOutIds = new Set()) {
+async function processMultiShiftAttendance(employeeNumber, date, rawLogs, generalConfig, options = {}) {
+    const { pairedOutIds = new Set(), manualOverrides = {} } = options;
 
     try {
         // Resolve processing mode and apply punch filtering (strictCheckInOutOnly)
@@ -315,29 +316,42 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                 continue;
             }
 
-            // 2. Initial Pair Detection (Closest next punch)
             // 36h window covers: 24hr shifts (9AM Day1→9AM Day2 = 24h), 9AM-9PM/9PM-9AM split
             // spans up to 36h from first IN. This must match the spec requirement.
             const MAX_WINDOW_MS = getMaxPunchWindowMs();
-            const candidates = allOutsFull.filter(p => {
-                const tDiff = new Date(p.timestamp) - currentInTime;
-                if (tDiff <= 0 || tDiff > MAX_WINDOW_MS || pairedOutIds.has(String(p._id || p.id))) return false;
+            
+            // NEW: Direct Manual Override Check
+            // If the controller passed a specific override for this In-Time, use it immediately
+            const overrideOutTime = manualOverrides[currentInTime.toISOString()];
+            let nextOut = null;
 
-                // Prevent cross-day stealing: if there's an IN punch between currentIn and this OUT
-                // that is >= 12 hours after currentIn, don't pair.
-                const stealingIn = deduplicatedPunches.find(inP => 
-                    inP.type === 'IN' && 
-                    new Date(inP.timestamp) > currentInTime &&
-                    new Date(inP.timestamp) < new Date(p.timestamp) &&
-                    (new Date(inP.timestamp) - currentInTime) >= 12 * 60 * 60 * 1000
-                );
-                
-                return !stealingIn;
-            });
+            if (overrideOutTime) {
+                console.log(`[MultiShift] Using DIRECT OVERRIDE for IN at ${currentInTime.toISOString()} -> OUT at ${overrideOutTime}`);
+                nextOut = { 
+                    timestamp: new Date(overrideOutTime), 
+                    source: 'manual', 
+                    type: 'OUT',
+                    _id: 'override-' + Date.now() 
+                };
+            } else if (effectiveOutOverride && i === 0) {
+                nextOut = effectiveOutOverride;
+            } else {
+                const candidates = allOutsFull.filter(p => {
+                    const tDiff = new Date(p.timestamp) - currentInTime;
+                    if (tDiff <= 0 || tDiff > MAX_WINDOW_MS || pairedOutIds.has(String(p._id || p.id))) return false;
 
-            let nextOut = effectiveOutOverride && i === 0
-                ? effectiveOutOverride
-                : candidates.find(c => c.source === 'manual') || candidates[0];
+                    const stealingIn = deduplicatedPunches.find(inP => 
+                        inP.type === 'IN' && 
+                        new Date(inP.timestamp) > currentInTime &&
+                        new Date(inP.timestamp) < new Date(p.timestamp) &&
+                        (new Date(inP.timestamp) - currentInTime) >= 12 * 60 * 60 * 1000
+                    );
+                    
+                    return !stealingIn;
+                });
+
+                nextOut = candidates.find(c => c.source === 'manual') || candidates[0];
+            }
 
             // --- ITERATIVE SPLIT (Design: 14h+3h first, 3h gap + half-day for 2nd/3rd) ---
             const durationMsNormal = nextOut ? (new Date(nextOut.timestamp) - currentInTime) : 0;
