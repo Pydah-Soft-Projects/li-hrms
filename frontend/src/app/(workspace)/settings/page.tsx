@@ -212,7 +212,7 @@ const SettingsPage = () => {
 
 
 
-    { id: 'permissions', label: 'Out-Pass Config', icon: ArrowRight, color: 'text-slate-500', group: 'Other' },
+    { id: 'permissions', label: 'Permission Config', icon: ArrowRight, color: 'text-slate-500', group: 'Other' },
 
   ];
 

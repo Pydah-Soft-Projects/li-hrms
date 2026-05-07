@@ -343,6 +343,12 @@ interface MonthlyAttendanceData {
     /** Policy-based (payroll-aligned) late/early + absent-extra deduction days */
     totalAttendanceDeductionDays?: number;
 
+    /** Permission deduction days from payroll-aligned permission deduction rules */
+    totalPermissionDeductionDays?: number;
+
+    /** Total number of permission records / counts for the month */
+    totalPermissionCount?: number;
+
     attendanceDeductionBreakdown?: {
       lateInsCount?: number;
       earlyOutsCount?: number;
@@ -356,6 +362,12 @@ interface MonthlyAttendanceData {
       lopDaysPerAbsent?: number | null;
       deductionType?: string | null;
       calculationMode?: string | null;
+    };
+
+    permissionDeductionBreakdown?: {
+      full_day?: number;
+      partial_day?: number;
+      total?: number;
     };
 
     lastCalculatedAt: string;
@@ -4137,6 +4149,14 @@ export default function AttendancePage() {
               bcolor: 'bg-purple-50/50 dark:bg-purple-900/10',
             },
             {
+              id: 'permissionDeductionDays',
+              column: null,
+              label: 'Permission deduction days',
+              value: Number(s?.totalPermissionDeductionDays ?? 0).toFixed(2).replace(/\.?0+$/, '') || '0',
+              color: 'text-rose-700 dark:text-rose-300',
+              bcolor: 'bg-rose-50/50 dark:bg-rose-900/10',
+            },
+            {
               id: 'payable',
               column: 'payableShifts',
               label: 'Payable',
@@ -4576,6 +4596,16 @@ export default function AttendancePage() {
                                   Permissions
                                 </th>
                               );
+                            case 'permissionDeductionDays':
+                              return (
+                                <th
+                                  key={colKey}
+                                  className={`w-[100px] ${edge} border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-teal-900/20 bg-teal-50`}
+                                  title="Permission deduction days"
+                                >
+                                  Perm Ded
+                                </th>
+                              );
                             case 'lateEarly':
                               return (
                                 <th
@@ -4693,11 +4723,13 @@ export default function AttendancePage() {
                                                   ? 'bg-purple-50 dark:bg-purple-900/20'
                                                   : colKey === 'permissions'
                                                     ? 'bg-cyan-50 dark:bg-cyan-900/20'
-                                                    : colKey === 'lateEarly'
-                                                      ? 'bg-rose-50 dark:bg-rose-900/20'
-                                                      : colKey === 'attDed'
-                                                        ? 'bg-violet-50 dark:bg-violet-900/25'
-                                                        : 'bg-green-50 dark:bg-green-900/20';
+                                                    : colKey === 'permissionDeductionDays'
+                                                      ? 'bg-teal-50 dark:bg-teal-900/20'
+                                                      : colKey === 'lateEarly'
+                                                        ? 'bg-rose-50 dark:bg-rose-900/20'
+                                                        : colKey === 'attDed'
+                                                          ? 'bg-violet-50 dark:bg-violet-900/25'
+                                                          : 'bg-green-50 dark:bg-green-900/20';
                                 return (
                                   <td
                                     key={colKey}
@@ -5205,7 +5237,16 @@ export default function AttendancePage() {
                                             onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'permissions', 'permission', item)}
                                             className={`${edge} border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 cursor-pointer hover:bg-cyan-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'permissions' ? 'ring-2 ring-cyan-500 ring-inset shadow-inner' : ''}`}
                                           >
-                                            {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.permissionCount || 0), 0)}
+                                            {item.summary?.totalPermissionCount ?? Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.permissionCount || 0), 0)}
+                                          </td>
+                                        );
+                                      case 'permissionDeductionDays':
+                                        return (
+                                          <td
+                                            key={colKey}
+                                            className={`${edge} border-slate-200 bg-teal-50 px-2 py-2 text-center text-[11px] font-bold text-teal-700 dark:border-slate-700 dark:bg-teal-900/20 dark:text-teal-300`}
+                                          >
+                                            {Number(item.summary?.totalPermissionDeductionDays ?? item.summary?.permissionDeductionBreakdown?.full_day ?? 0).toFixed(2).replace(/\.?0+$/, '') || '0'}
                                           </td>
                                         );
                                       case 'lateEarly':
@@ -7122,6 +7163,7 @@ export default function AttendancePage() {
                             <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Days</th>
                             <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Payable Shifts</th>
                             <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white" title="Late/early policy + absent extra (same as payroll)">Att. deduction days</th>
+                            <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white" title="Permission deduction days from payroll permission rules">Permission deduction days</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -7135,6 +7177,7 @@ export default function AttendancePage() {
                             <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalDaysInMonth || 0}</td>
                             <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPayableShifts?.toFixed(2) || '0.00'}</td>
                             <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-purple-800 dark:text-purple-200">{Number(monthlySummary.totalAttendanceDeductionDays ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</td>
+                            <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-rose-800 dark:text-rose-200">{Number(monthlySummary.totalPermissionDeductionDays ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</td>
                           </tr>
                         </tbody>
                       </table>

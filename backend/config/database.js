@@ -20,7 +20,7 @@ let sqlPool = null;
 // MongoDB Connection
 const connectMongoDB = async () => {
   try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb+srv://team:SriPyRa2456@cluster0.cobwab6.mongodb.net/hrms';
+    const mongoURI = process.env.MONGODB_URI || '/hrms';
     await mongoose.connect(mongoURI, {
       maxPoolSize: 50, // Handle high concurrency
       minPoolSize: 10,

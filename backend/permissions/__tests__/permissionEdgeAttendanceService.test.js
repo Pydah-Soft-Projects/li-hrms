@@ -4,6 +4,7 @@
 
 const {
   applyStatusFromDuration,
+  resolveDailyStatusFromShifts,
   timeOnDate,
   shiftOvernight,
   resolvePermittedInstant,
@@ -52,5 +53,16 @@ describe('permissionEdgeAttendanceService helpers', () => {
     const p2 = { punchHours: 2, odHours: 0, edgePermissionHours: 2, basePayable: 1 };
     applyStatusFromDuration(p2, 8);
     expect(p2.status).toBe('HALF_DAY');
+  });
+
+  test('resolveDailyStatusFromShifts handles multi-shift payable totals', () => {
+    expect(resolveDailyStatusFromShifts([
+      { status: 'HALF_DAY', payableShift: 0.5, outTime: new Date() },
+      { status: 'HALF_DAY', payableShift: 0.5, outTime: new Date() },
+    ])).toBe('PRESENT');
+
+    expect(resolveDailyStatusFromShifts([
+      { status: 'ABSENT', payableShift: 0, outTime: null },
+    ])).toBe('PARTIAL');
   });
 });

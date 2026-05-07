@@ -13,6 +13,9 @@ const { getPunchesForPairing } = require('./punchFilteringHelper');
 const { processSingleShiftAttendance } = require('./singleShiftProcessingService');
 const Employee = require('../../employees/model/Employee');
 const OD = require('../../leaves/model/OD');
+const {
+    autoCreateEdgePermissionsForAttendance,
+} = require('../../permissions/services/autoEdgePermissionCreationService');
 
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
@@ -889,6 +892,11 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
 
         // Trigger hooks via .save() — monthly summary is recalculated in background by post-save hook
         await dailyRecord.save();
+        try {
+            await autoCreateEdgePermissionsForAttendance(dailyRecord);
+        } catch (autoPermissionError) {
+            console.error('[Multi-Shift Processing] Auto edge permission creation failed:', autoPermissionError.message);
+        }
 
         console.log(`[Multi-Shift Processing] ✓ Daily record updated and hooks triggered successfully`);
         return {
