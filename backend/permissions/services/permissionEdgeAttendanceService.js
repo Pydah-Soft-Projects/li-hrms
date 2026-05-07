@@ -118,6 +118,9 @@ async function applyEdgePermissionAdjustmentsToShiftSegment({
 
   for (const perm of perms) {
     if (!perm.permittedEdgeTime || !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(perm.permittedEdgeTime)) continue;
+    const permissionShiftNumber = Number(perm.autoCreationMeta?.shiftNumber) || null;
+    const currentShiftNumber = Number(pShift.shiftNumber) || null;
+    if (permissionShiftNumber && currentShiftNumber && permissionShiftNumber !== currentShiftNumber) continue;
 
     if (perm.permissionType === 'late_in' && perm.status === 'checked_in' && perm.gateInTime) {
       const permittedArrival = resolvePermittedInstant(perm.permittedEdgeTime, date, shiftStart, overnight);
@@ -191,8 +194,19 @@ function applyStatusFromDuration(pShift, expectedHours) {
   return pShift;
 }
 
+function resolveDailyStatusFromShifts(shifts) {
+  const totalPayable = shifts.reduce((acc, s) => acc + (Number(s.payableShift) || 0), 0);
+  const hasPresentShift = shifts.some((s) => s.status === 'PRESENT' || s.status === 'complete' || (Number(s.payableShift) || 0) >= 1);
+  const hasHalfDayShift = shifts.some((s) => s.status === 'HALF_DAY');
+  const hasIncomplete = shifts.some((s) => !s.outTime);
+
+  if (hasPresentShift || totalPayable >= 0.95) return 'PRESENT';
+  if (hasHalfDayShift || totalPayable >= 0.45) return 'HALF_DAY';
+  return hasIncomplete ? 'PARTIAL' : 'ABSENT';
+}
+
 /**
- * Load daily, apply edge adjustments to first shift, update aggregates, save.
+ * Load daily, apply edge adjustments to all shift segments, update aggregates, save.
  */
 async function refreshAttendanceEdgePermissions(employeeNumber, dateStr) {
   const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
@@ -205,34 +219,33 @@ async function refreshAttendanceEdgePermissions(employeeNumber, dateStr) {
     return { success: false, message: 'No attendance daily or shifts' };
   }
 
-  const s0 = daily.shifts[0];
-  if (!s0.shiftStartTime || !s0.shiftEndTime) {
-    return { success: false, message: 'Shift times missing' };
+  const refreshedShifts = [];
+  for (const shift of daily.shifts) {
+    const pShift = typeof shift.toObject === 'function' ? shift.toObject() : { ...shift };
+    if (!pShift.shiftStartTime || !pShift.shiftEndTime) {
+      refreshedShifts.push(pShift);
+      continue;
+    }
+
+    await applyEdgePermissionAdjustmentsToShiftSegment({
+      employeeNumber: empUpper,
+      date: dateStr,
+      pShift,
+      globalGrace: DEFAULT_GRACE,
+    });
+
+    const expected = pShift.expectedHours || 8;
+    applyStatusFromDuration(pShift, expected);
+    refreshedShifts.push(pShift);
   }
 
-  const pShift = typeof s0.toObject === 'function' ? s0.toObject() : { ...s0 };
-  await applyEdgePermissionAdjustmentsToShiftSegment({
-    employeeNumber: empUpper,
-    date: dateStr,
-    pShift,
-    globalGrace: DEFAULT_GRACE,
-  });
-
-  const expected = pShift.expectedHours || 8;
-  applyStatusFromDuration(pShift, expected);
-
-  daily.shifts[0] = pShift;
+  daily.shifts = refreshedShifts;
   daily.markModified('shifts');
-  daily.totalWorkingHours = pShift.workingHours;
-  daily.totalLateInMinutes = pShift.lateInMinutes || 0;
-  daily.totalEarlyOutMinutes = pShift.earlyOutMinutes ?? 0;
-  daily.payableShifts = pShift.payableShift || 0;
-  daily.status =
-    pShift.status === 'PRESENT' || (pShift.payableShift || 0) >= 1
-      ? 'PRESENT'
-      : pShift.status === 'HALF_DAY'
-        ? 'HALF_DAY'
-        : 'ABSENT';
+  daily.totalWorkingHours = Math.round(refreshedShifts.reduce((acc, s) => acc + (Number(s.workingHours) || 0), 0) * 100) / 100;
+  daily.totalLateInMinutes = refreshedShifts.reduce((acc, s) => acc + (Number(s.lateInMinutes) || 0), 0);
+  daily.totalEarlyOutMinutes = refreshedShifts.reduce((acc, s) => acc + (Number(s.earlyOutMinutes) || 0), 0);
+  daily.payableShifts = Math.round(refreshedShifts.reduce((acc, s) => acc + (Number(s.payableShift) || 0), 0) * 100) / 100;
+  daily.status = resolveDailyStatusFromShifts(refreshedShifts);
 
   await daily.save();
 
@@ -242,13 +255,17 @@ async function refreshAttendanceEdgePermissions(employeeNumber, dateStr) {
     await calculateMonthlySummary(employee._id, empUpper, y, m);
   }
 
-  return { success: true, edgePermissionHours: pShift.edgePermissionHours };
+  return {
+    success: true,
+    edgePermissionHours: refreshedShifts.reduce((acc, s) => acc + (Number(s.edgePermissionHours) || 0), 0),
+  };
 }
 
 module.exports = {
   applyEdgePermissionAdjustmentsToShiftSegment,
   refreshAttendanceEdgePermissions,
   applyStatusFromDuration,
+  resolveDailyStatusFromShifts,
   DEFAULT_GRACE,
   timeOnDate,
   shiftOvernight,

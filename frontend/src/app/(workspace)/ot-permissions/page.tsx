@@ -25,6 +25,7 @@ import {
   AlertCircle,
   Clock,
   ChevronRight,
+  Bot,
   RotateCw,
   QrCode,
   FileText,
@@ -242,6 +243,22 @@ interface PermissionRequest {
   qrCode?: string;
   outpassUrl?: string;
   comments?: string;
+  creationSource?: 'manual' | 'auto_edge';
+  autoCreationMeta?: {
+    ruleType?: 'late_in' | 'early_out';
+    shiftNumber?: number | null;
+    shiftName?: string | null;
+    shiftDurationHours?: number | null;
+    detectedMinutes?: number | null;
+    allowedMinutes?: number | null;
+    minimumMinutes?: number | null;
+    grantedMinutes?: number | null;
+    matchedRange?: {
+      minShiftHours?: number | null;
+      maxShiftHours?: number | null;
+      description?: string | null;
+    };
+  };
   gateOutTime?: string;
   gateInTime?: string;
   workflow?: {
@@ -384,18 +401,20 @@ export default function OTAndPermissionsPage() {
 
   const getPermissionDisplay = (perm: PermissionRequest) => {
     const type = perm.permissionType || 'mid_shift';
+    const grantedMinutes = perm.autoCreationMeta?.grantedMinutes ?? Math.round((Number(perm.permissionHours) || 0) * 60 * 100) / 100;
+    const durationLabel = grantedMinutes > 0 ? `${grantedMinutes} min granted` : `${Number(perm.permissionHours || 0).toFixed(2)} hrs`;
     if (type === 'late_in') {
       return {
         typeLabel: 'Late In',
-        timeLabel: `Latest arrival ${perm.permittedEdgeTime || '--:--'}`,
-        ruleLabel: 'Latest arrival limit',
+        timeLabel: `${formatTime(perm.permissionStartTime)} - ${formatTime(perm.permissionEndTime)}`,
+        ruleLabel: `Arrival at ${perm.permittedEdgeTime || '--:--'} | ${durationLabel}`,
       };
     }
     if (type === 'early_out') {
       return {
         typeLabel: 'Early Out',
-        timeLabel: `Earliest exit ${perm.permittedEdgeTime || '--:--'}`,
-        ruleLabel: 'Earliest exit limit',
+        timeLabel: `${formatTime(perm.permissionStartTime)} - ${formatTime(perm.permissionEndTime)}`,
+        ruleLabel: `Exit at ${perm.permittedEdgeTime || '--:--'} | ${durationLabel}`,
       };
     }
     return {
@@ -518,6 +537,8 @@ export default function OTAndPermissionsPage() {
 
   const canPerformAction = (item: any) => {
     if (!item || !currentUser) return false;
+    if (['approved', 'rejected', 'checked_in', 'checked_out', 'manager_rejected'].includes(String(item.status || '').toLowerCase())) return false;
+    if (item.creationSource === 'auto_edge') return false;
 
     const hasWorkflow = !!(item.workflow && Array.isArray(item.workflow.approvalChain) && item.workflow.approvalChain.length > 0);
     if (hasWorkflow) {
@@ -1918,6 +1939,12 @@ export default function OTAndPermissionsPage() {
                                         <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-0.5">
                                           {perm.employeeNumber}
                                         </div>
+                                        {perm.creationSource === 'auto_edge' && (
+                                          <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-sky-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-sky-700 dark:text-sky-300">
+                                            <Bot className="h-3 w-3" />
+                                            Auto
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
                                   </td>
@@ -1936,7 +1963,14 @@ export default function OTAndPermissionsPage() {
                                     {getPermissionDisplay(perm).ruleLabel}
                                   </span>
                                 </td>
-                                <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 max-w-[150px] truncate" title={perm.purpose}>{perm.purpose}</td>
+                                <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 max-w-[190px]">
+                                  <div className="truncate" title={perm.purpose}>{perm.purpose}</div>
+                                  {perm.creationSource === 'auto_edge' && perm.autoCreationMeta && (
+                                    <div className="mt-1 text-[10px] font-black uppercase tracking-wider text-sky-600 dark:text-sky-300">
+                                      Detected {perm.autoCreationMeta.detectedMinutes ?? '-'} min | min {perm.autoCreationMeta.minimumMinutes ?? 1} | cap {perm.autoCreationMeta.allowedMinutes ?? '-'}
+                                    </div>
+                                  )}
+                                </td>
                                 <td className="px-6 py-4 text-center">
                                   <span className={`inline-flex items-center px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${getQrVerificationStatus(perm).done ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50'}`}>
                                     {getQrVerificationStatus(perm).label}
@@ -2025,6 +2059,12 @@ export default function OTAndPermissionsPage() {
                                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                                     {perm.employeeNumber}
                                   </p>
+                                  {perm.creationSource === 'auto_edge' && (
+                                    <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-sky-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-sky-700 dark:text-sky-300">
+                                      <Bot className="h-3 w-3" />
+                                      Auto
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                               <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest ${perm.status === 'approved' ? 'bg-emerald-500/10 text-emerald-600' :
@@ -2054,6 +2094,11 @@ export default function OTAndPermissionsPage() {
                                 <div className="col-span-2 border-t border-slate-200 dark:border-slate-700 pt-2">
                                   <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Purpose</span>
                                   <p className="text-xs italic text-slate-600 dark:text-slate-400 truncate">{perm.purpose}</p>
+                                  {perm.creationSource === 'auto_edge' && perm.autoCreationMeta && (
+                                    <p className="mt-1 text-[10px] font-black uppercase tracking-wider text-sky-600 dark:text-sky-300">
+                                      Detected {perm.autoCreationMeta.detectedMinutes ?? '-'} min | granted {perm.autoCreationMeta.grantedMinutes ?? Math.round((Number(perm.permissionHours) || 0) * 60 * 100) / 100} min
+                                    </p>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -3127,6 +3172,3 @@ export default function OTAndPermissionsPage() {
     </div >
   );
 }
-
-
-

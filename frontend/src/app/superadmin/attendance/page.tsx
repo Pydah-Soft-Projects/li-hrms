@@ -2968,6 +2968,16 @@ export default function AttendancePage() {
                             Perms
                           </th>
                         );
+                      case 'permissionDeductionDays':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`${edge} ${base} bg-teal-50 text-teal-700 dark:bg-teal-900/20 w-[100px] min-w-[100px]`}
+                            title="Permission deduction days"
+                          >
+                            Perm Ded
+                          </th>
+                        );
                       case 'lateEarly':
                         return (
                           <th
@@ -3085,21 +3095,25 @@ export default function AttendancePage() {
                                               ? 'bg-purple-50 dark:bg-purple-900/20'
                                               : colKey === 'permissions'
                                                 ? 'bg-cyan-50 dark:bg-cyan-900/20'
-                                                : colKey === 'lateEarly'
-                                                  ? 'bg-rose-50 dark:bg-rose-900/20'
-                                                  : colKey === 'attDed'
-                                                    ? 'bg-violet-50 dark:bg-violet-900/25'
-                                                    : 'bg-green-50 dark:bg-green-900/20';
+                                                : colKey === 'permissionDeductionDays'
+                                                  ? 'bg-teal-50 dark:bg-teal-900/20'
+                                                  : colKey === 'lateEarly'
+                                                    ? 'bg-rose-50 dark:bg-rose-900/20'
+                                                    : colKey === 'attDed'
+                                                      ? 'bg-violet-50 dark:bg-violet-900/25'
+                                                      : 'bg-green-50 dark:bg-green-900/20';
                           const w =
                             colKey === 'permissions'
                               ? 'w-[80px] min-w-[80px]'
-                              : colKey === 'lateEarly'
-                                ? 'w-[70px] min-w-[70px]'
-                                : colKey === 'attDed'
-                                  ? 'w-[64px] min-w-[64px]'
-                                  : colKey === 'payableShifts'
-                                    ? 'w-[70px] min-w-[70px]'
-                                    : 'w-[60px] min-w-[60px]';
+                              : colKey === 'permissionDeductionDays'
+                                ? 'w-[100px] min-w-[100px]'
+                                : colKey === 'lateEarly'
+                                  ? 'w-[70px] min-w-[70px]'
+                                  : colKey === 'attDed'
+                                    ? 'w-[64px] min-w-[64px]'
+                                    : colKey === 'payableShifts'
+                                      ? 'w-[70px] min-w-[70px]'
+                                      : 'w-[60px] min-w-[60px]';
                           return (
                             <td key={colKey} className={`${edge} border-slate-200 px-2 py-2 text-center dark:border-slate-700 ${bg} ${w}`}>
                               <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
@@ -3630,7 +3644,16 @@ export default function AttendancePage() {
                                   onClick={() => item.employee && handleSummaryClick(item.employee._id, 'permissions')}
                                   className={`${edge} border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 w-[80px] min-w-[80px] cursor-pointer hover:bg-cyan-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'permissions' ? 'ring-2 ring-cyan-400 ring-inset bg-white dark:bg-cyan-900/40 shadow-inner scale-[0.98]' : ''}`}
                                 >
-                                  {dailyValues.reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
+                                  {item.summary?.totalPermissionCount ?? dailyValues.reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
+                                </td>
+                              );
+                            case 'permissionDeductionDays':
+                              return (
+                                <td
+                                  key={colKey}
+                                  className={`${edge} border-slate-200 bg-teal-50 px-2 py-2 text-center text-[11px] font-bold text-teal-700 dark:border-slate-700 dark:bg-teal-900/20 dark:text-teal-300 w-[100px] min-w-[100px]`}
+                                >
+                                  {Number(item.summary?.totalPermissionDeductionDays ?? item.summary?.permissionDeductionBreakdown?.full_day ?? 0).toFixed(2).replace(/\.?0+$/, '') || '0'}
                                 </td>
                               );
                             case 'lateEarly':

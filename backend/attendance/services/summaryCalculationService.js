@@ -1235,10 +1235,10 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     const Permission = require('../../permissions/model/Permission');
     const approvedPermissions = await Permission.find({
       employeeId,
-      status: 'approved',
+      status: { $in: ['approved', 'checked_out', 'checked_in'] },
       date: { $gte: startDateStr, $lte: endDateStr },
       isActive: true,
-    }).select('permissionHours').lean();
+    }).select('permissionHours date').lean();
 
     let totalPermissionHours = 0;
     for (const permission of approvedPermissions) {
@@ -1250,7 +1250,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       }
     }
     summary.totalPermissionHours = Math.round(totalPermissionHours * 100) / 100;
-    summary.totalPermissionCount = contributingDates.permissions.length;
+    summary.totalPermissionCount = approvedPermissions.length;
 
     // Early Out Deductions Summary
     let totalEarlyOutDeductionDays = 0;
@@ -1282,6 +1282,56 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
     summary.totalLateOrEarlyMinutes = Math.round((summary.totalLateInMinutes + summary.totalEarlyOutMinutes) * 100) / 100;
     summary.lateOrEarlyCount = summary.lateInCount + summary.earlyOutCount;
+
+    // Permission Deductions Summary (using deductionService for consistency)
+    let totalPermissionDeductionDays = 0;
+    const permissionDeductionBreakdown = { quarter_day: 0, half_day: 0, full_day: 0, custom_amount: 0 };
+
+    try {
+      const employee = await Employee.findById(employeeId)
+        .select('department_id division_id deductPermission')
+        .lean();
+      if (employee && employee.department_id && summary.totalPermissionCount > 0) {
+        const monthStr = `${year}-${String(monthNumber).padStart(2, '0')}`;
+        const gross = Number(employee.gross_salary) || 0;
+        const perDayBasicPay =
+          summary.totalDaysInMonth > 0
+            ? Math.round((gross / summary.totalDaysInMonth) * 100) / 100
+            : 0;
+
+        const permDed = await deductionService.calculatePermissionDeduction(
+          employeeId,
+          monthStr,
+          String(employee.department_id),
+          perDayBasicPay,
+          employee.division_id ? String(employee.division_id) : null,
+          { employee }
+        );
+        const bd = permDed.breakdown || {};
+        totalPermissionDeductionDays = Number(bd.daysDeducted) || 0;
+        
+        // Map breakdown to days by type (similar to early-out)
+        if (bd.deductionType === 'half_day') {
+          permissionDeductionBreakdown.half_day = Math.round((totalPermissionDeductionDays / 0.5)) || 0;
+        } else if (bd.deductionType === 'full_day') {
+          permissionDeductionBreakdown.full_day = totalPermissionDeductionDays;
+        } else if (bd.deductionType === 'custom_days') {
+          permissionDeductionBreakdown.full_day = Math.round(totalPermissionDeductionDays);
+        } else if (bd.deductionType === 'custom_amount') {
+          permissionDeductionBreakdown.custom_amount = Number(permDed.permissionDeduction) || 0;
+        }
+      }
+    } catch (e) {
+      console.error('[Summary] Permission deduction calculation failed:', e.message);
+    }
+
+    summary.totalPermissionDeductionDays = Math.round(totalPermissionDeductionDays * 100) / 100;
+    summary.permissionDeductionBreakdown = {
+      quarter_day: Math.round(permissionDeductionBreakdown.quarter_day * 100) / 100,
+      half_day: Math.round(permissionDeductionBreakdown.half_day * 100) / 100,
+      full_day: Math.round(permissionDeductionBreakdown.full_day * 100) / 100,
+      custom_amount: Math.round(permissionDeductionBreakdown.custom_amount * 100) / 100,
+    };
 
     // Policy attendance deduction (aligned with payroll deductionService — late/early counts + absent extra)
     let policyDedDays = 0;

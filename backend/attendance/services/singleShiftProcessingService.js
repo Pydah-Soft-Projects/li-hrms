@@ -33,6 +33,9 @@ const {
   applyEdgePermissionAdjustmentsToShiftSegment,
   applyStatusFromDuration,
 } = require('../../permissions/services/permissionEdgeAttendanceService');
+const {
+  autoCreateEdgePermissionsForAttendance,
+} = require('../../permissions/services/autoEdgePermissionCreationService');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 const formatDate = (date) => extractISTComponents(date).dateStr;
@@ -915,6 +918,11 @@ async function upsertDaily(employeeNumber, date, updateData) {
     dailyRecord.source.push('biometric-realtime');
   }
   await dailyRecord.save();
+  try {
+    await autoCreateEdgePermissionsForAttendance(dailyRecord);
+  } catch (error) {
+    console.error('[SingleShift] Auto edge permission creation failed:', error.message);
+  }
   return dailyRecord;
 }
 

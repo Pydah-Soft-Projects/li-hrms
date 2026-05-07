@@ -749,7 +749,7 @@ const calculateLateIn = (inTime, shiftStartTime, shiftGracePeriod = 15, date = n
   if (!inTime) return 0;
 
   // Priority: Global Settings (dynamic) > Shift Setting > Default 15
-  const effectiveGrace = globalGracePeriod !== null ? globalGracePeriod : (shiftGracePeriod || 15);
+  const effectiveGrace = globalGracePeriod !== null ? globalGracePeriod : (shiftGracePeriod ?? 15);
 
   const inTimeDate = new Date(inTime);
   const [shiftStartHour, shiftStartMin] = shiftStartTime.split(':').map(Number);
@@ -770,7 +770,7 @@ const calculateLateIn = (inTime, shiftStartTime, shiftGracePeriod = 15, date = n
 
   // Calculate difference
   let diffMs = inTimeDate.getTime() - shiftStartDate.getTime();
-  let diffMinutes = diffMs / (1000 * 60);
+  let diffMinutes = Math.floor(diffMs / (1000 * 60)); // Standardize to full minutes
 
   // Handle overnight shifts - in-time might be on next day or previous day match
   if (isOvernightShift) {
@@ -781,7 +781,7 @@ const calculateLateIn = (inTime, shiftStartTime, shiftGracePeriod = 15, date = n
     const prevShiftStart = createDateWithOffset(prevDateStr, shiftStartTime);
 
     const prevDiffMs = inTimeDate.getTime() - prevShiftStart.getTime();
-    const prevDiffMinutes = prevDiffMs / (1000 * 60);
+    const prevDiffMinutes = Math.floor(prevDiffMs / (1000 * 60));
 
     // If previous day match is positive and reasonable (< 16 hours), use it
     if (prevDiffMinutes >= 0 && prevDiffMinutes < 16 * 60) {
@@ -807,10 +807,11 @@ const calculateLateIn = (inTime, shiftStartTime, shiftGracePeriod = 15, date = n
  * @param {Number} globalGracePeriod - Global grace period from settings
  * @returns {Number} - Minutes early (0 if on time or late), null if outTime not provided
  */
-const calculateEarlyOut = (outTime, shiftEndTime, shiftStartTime = null, date = null, globalGracePeriod = 15) => {
+const calculateEarlyOut = (outTime, shiftEndTime, shiftStartTime = null, date = null, globalGracePeriod = null, shiftGracePeriod = null) => {
   if (!outTime) return null;
 
-  const effectiveGrace = globalGracePeriod !== null ? globalGracePeriod : 15;
+  // Priority: Global Settings > Shift Setting > Default 15
+  const effectiveGrace = globalGracePeriod !== null ? globalGracePeriod : (shiftGracePeriod ?? 15);
   const outTimeDate = new Date(outTime);
   const [shiftEndHour, shiftEndMin] = shiftEndTime.split(':').map(Number);
   const shiftStartHour = shiftStartTime ? parseInt(shiftStartTime.split(':')[0]) : null;
@@ -840,7 +841,7 @@ const calculateEarlyOut = (outTime, shiftEndTime, shiftStartTime = null, date = 
 
   // Calculate difference: ShiftEnd - OutTime
   const diffMs = shiftEndDate.getTime() - outTimeDate.getTime();
-  const diffMinutes = diffMs / (1000 * 60);
+  const diffMinutes = Math.floor(diffMs / (1000 * 60)); // Standardize to full minutes
 
   // Apply grace period
   if (diffMinutes <= effectiveGrace) {
@@ -992,8 +993,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
           }
         }
 
-        const lateInMinutes = calculateLateIn(inTime, nearestShift.startTime, nearestShift.gracePeriod || 15, date, globalLateInGrace);
-        const earlyOutMinutes = actualOutTime ? calculateEarlyOut(actualOutTime, nearestShift.endTime, nearestShift.startTime, date, globalEarlyOutGrace) : null;
+        const lateInMinutes = calculateLateIn(inTime, nearestShift.startTime, nearestShift.gracePeriod, date, globalLateInGrace);
+        const earlyOutMinutes = actualOutTime ? calculateEarlyOut(actualOutTime, nearestShift.endTime, nearestShift.startTime, date, globalEarlyOutGrace, nearestShift.gracePeriod) : null;
 
         await updateRosterTracking(nearestShift._id);
 
@@ -1038,8 +1039,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
         }
       }
 
-      const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
-      const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace) : null;
+      const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod, date, globalLateInGrace);
+      const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace, shift.gracePeriod) : null;
 
       await updateRosterTracking(shift._id);
 
@@ -1074,7 +1075,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
           if (rosteredCandidate) {
             const shift = shifts.find(s => s._id.toString() === rosteredCandidate.shiftId.toString());
             if (shift) {
-              const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
+              const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod, date, globalLateInGrace);
               await updateRosterTracking(shift._id);
               return {
                 success: true,
@@ -1143,8 +1144,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
             if (outTimeDiffMins < 90) {
               const shift = shifts.find(s => s._id.toString() === rosteredCandidate.shiftId.toString());
               if (shift) {
-                const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
-                const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace);
+                const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod, date, globalLateInGrace);
+                const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace, shift.gracePeriod);
                 await updateRosterTracking(shift._id);
                 return {
                   success: true,
@@ -1170,8 +1171,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
           if (bestMatch) {
             const shift = shifts.find(s => s._id.toString() === bestMatch.shiftId.toString());
             if (shift) {
-              const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
-              const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace);
+              const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod, date, globalLateInGrace);
+              const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace, shift.gracePeriod);
 
               await updateRosterTracking(shift._id);
 
@@ -1236,8 +1237,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
             if (bestMatch) {
               const shift = shifts.find(s => s._id.toString() === bestMatch.shiftId.toString());
               if (shift) {
-                const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
-                const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace);
+                const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod, date, globalLateInGrace);
+                const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace, shift.gracePeriod);
 
                 await updateRosterTracking(shift._id);
 
@@ -1298,8 +1299,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
           const shift = shifts.find(s => s._id.toString() === bestMatch.shiftId.toString());
 
           if (shift) {
-            const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
-            const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace) : null;
+            const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod, date, globalLateInGrace);
+            const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace, shift.gracePeriod) : null;
 
             await updateRosterTracking(shift._id);
 
@@ -1392,9 +1393,9 @@ const resolveConfusedShift = async (confusedShiftId, shiftId, userId, comments =
       const globalLateInGrace = generalConfig.late_in_grace_time ?? null;
       const globalEarlyOutGrace = generalConfig.early_out_grace_time ?? null;
 
-      const lateInMinutes = calculateLateIn(confusedShift.inTime, shift.startTime, shift.gracePeriod || 15, confusedShift.date, globalLateInGrace);
+      const lateInMinutes = calculateLateIn(confusedShift.inTime, shift.startTime, shift.gracePeriod, confusedShift.date, globalLateInGrace);
       const earlyOutMinutes = confusedShift.outTime
-        ? calculateEarlyOut(confusedShift.outTime, shift.endTime, shift.startTime, confusedShift.date, globalEarlyOutGrace)
+        ? calculateEarlyOut(confusedShift.outTime, shift.endTime, shift.startTime, confusedShift.date, globalEarlyOutGrace, shift.gracePeriod)
         : null;
 
       // Update attendance record - USE SHIFTS ARRAY
@@ -1626,8 +1627,8 @@ const autoAssignNearestShift = async (employeeNumber, date, inTime, outTime = nu
     const globalEarlyOutGrace = generalConfig.early_out_grace_time ?? null;
 
     // Calculate late-in and early-out
-    const lateInMinutes = calculateLateIn(inTime, nearestShift.startTime, nearestShift.gracePeriod || 15, date, globalLateInGrace);
-    const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, nearestShift.endTime, nearestShift.startTime, date, globalEarlyOutGrace) : null;
+    const lateInMinutes = calculateLateIn(inTime, nearestShift.startTime, nearestShift.gracePeriod, date, globalLateInGrace);
+    const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, nearestShift.endTime, nearestShift.startTime, date, globalEarlyOutGrace, nearestShift.gracePeriod) : null;
 
     return {
       success: true,

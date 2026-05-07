@@ -131,7 +131,7 @@ const SettingsPage = () => {
     { id: 'loan', label: 'Loan Policies', icon: Banknote, color: 'text-green-500', group: 'Finance' },
     { id: 'salary_advance', label: 'Salary Advance', icon: ShieldCheck, color: 'text-lime-500', group: 'Finance' },
 
-    { id: 'permissions', label: 'Out-Pass Config', icon: ArrowRight, color: 'text-slate-500', group: 'Other' },
+    { id: 'permissions', label: 'Permission Config', icon: ArrowRight, color: 'text-slate-500', group: 'Other' },
   ];
 
   const filteredMenu = searchQuery

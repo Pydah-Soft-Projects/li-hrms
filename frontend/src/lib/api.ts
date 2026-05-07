@@ -639,6 +639,34 @@ export interface Setting {
   category: string;
 }
 
+export type AutoEdgePermissionApplyFor = 'late_in' | 'early_out' | 'both';
+
+export interface AutoEdgePermissionRange {
+  _id?: string;
+  minShiftHours: number;
+  maxShiftHours: number;
+  minimumMinutes?: number;
+  allowedMinutes: number;
+  description?: string;
+}
+
+export interface AutoEdgePermissionRuleSet {
+  shiftDurationRanges: AutoEdgePermissionRange[];
+}
+
+export interface AutoEdgePermissionSettings {
+  _id?: string;
+  isEnabled: boolean;
+  applyFor: AutoEdgePermissionApplyFor;
+  useSameRulesForBoth: boolean;
+  lateInRules: AutoEdgePermissionRuleSet;
+  earlyOutRules: AutoEdgePermissionRuleSet;
+  isDefault?: boolean;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Designation {
   _id: string;
   name: string;
@@ -1699,6 +1727,17 @@ export const api = {
 
   savePermissionDeductionSettings: async (data: any) => {
     return apiRequest<any>('/permissions/settings/deduction', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  getAutoEdgePermissionSettings: async () => {
+    return apiRequest<AutoEdgePermissionSettings>('/permissions/settings/auto-edge', { method: 'GET' });
+  },
+
+  saveAutoEdgePermissionSettings: async (data: AutoEdgePermissionSettings) => {
+    return apiRequest<AutoEdgePermissionSettings>('/permissions/settings/auto-edge', {
       method: 'POST',
       body: JSON.stringify(data),
     });

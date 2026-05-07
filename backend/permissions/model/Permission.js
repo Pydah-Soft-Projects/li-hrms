@@ -187,6 +187,58 @@ const permissionSchema = new mongoose.Schema(
       default: null,
     },
 
+    creationSource: {
+      type: String,
+      enum: ['manual', 'auto_edge'],
+      default: 'manual',
+      index: true,
+    },
+
+    autoCreationMeta: {
+      ruleType: {
+        type: String,
+        enum: ['late_in', 'early_out', null],
+        default: null,
+      },
+      shiftNumber: {
+        type: Number,
+        default: null,
+      },
+      shiftName: {
+        type: String,
+        default: null,
+      },
+      shiftDurationHours: {
+        type: Number,
+        default: null,
+      },
+      detectedMinutes: {
+        type: Number,
+        default: null,
+      },
+      allowedMinutes: {
+        type: Number,
+        default: null,
+      },
+      minimumMinutes: {
+        type: Number,
+        default: null,
+      },
+      grantedMinutes: {
+        type: Number,
+        default: null,
+      },
+      matchedRange: {
+        minShiftHours: { type: Number, default: null },
+        maxShiftHours: { type: Number, default: null },
+        description: { type: String, default: null },
+      },
+      createdByService: {
+        type: String,
+        default: null,
+      },
+    },
+
     // Deduction amount (if permission deduction is enabled)
     deductionAmount: {
       type: Number,
@@ -383,4 +435,3 @@ if (mongoose.connection.readyState === 1) {
 }
 
 module.exports = PermissionModel;
-
