@@ -157,6 +157,7 @@ function getRequiredServices(outputColumns) {
     needsOT: false,
     needsAllowances: false,
     needsAttendanceDeduction: false,
+    needsPermissionDeduction: false,
     needsStatutory: false,
     needsOtherDeductions: false,
     needsLoanAdvance: false,
@@ -171,6 +172,7 @@ function getRequiredServices(outputColumns) {
   const formulaVarsNeedingAllowances = new Set(['totalAllowances', 'allowancesCumulative', 'grossSalary', 'gross_salary', 'total_allowances']);
   const formulaVarsNeedingOT = new Set(['otPay', 'extra_hours_pay']);
   const formulaVarsNeedingOtherDeductions = new Set(['otherDeductions', 'deductionsCumulative', 'totalDeductions']);
+  const formulaVarsNeedingPermissionDeduction = new Set(['permissionDeduction', 'permissionCount', 'permissionDeductionDays', 'permission_deduction', 'permission_count', 'permission_deduction_days']);
   const formulaVarsNeedingLoan = new Set(['advanceDeduction', 'loanEMI', 'salary_advance', 'loan_recovery', 'remaining_balance']);
   const formulaVarsNeedingArrears = new Set(['arrearsAmount', 'arrears']);
   const formulaVarsNeedingManualDeductions = new Set(['manualDeductionsAmount', 'manual_deductions_amount', 'manual_deductions']);
@@ -185,6 +187,7 @@ function getRequiredServices(outputColumns) {
       for (const v of vars) {
         if (formulaVarsNeedingBasicPay.has(v)) required.needsBasicPay = true;
         if (formulaVarsNeedingAttendanceDeduction.has(v)) required.needsAttendanceDeduction = true;
+        if (formulaVarsNeedingPermissionDeduction.has(v)) required.needsPermissionDeduction = true;
         if (formulaVarsNeedingStatutory.has(v)) required.needsStatutory = true;
         if (formulaVarsNeedingAllowances.has(v)) required.needsAllowances = true;
         if (formulaVarsNeedingOT.has(v)) required.needsOT = true;
@@ -198,10 +201,12 @@ function getRequiredServices(outputColumns) {
       if (field.startsWith('earnings.ot')) required.needsOT = true;
       if (field.startsWith('earnings.allowances') || field === 'earnings.totalAllowances' || field === 'earnings.allowancesCumulative' || field === 'earnings.grossSalary') required.needsAllowances = true;
       if (field.startsWith('deductions.attendanceDeduction') || field === 'attendance.attendanceDeductionDays' || field === 'attendanceDeductionDays') required.needsAttendanceDeduction = true;
+      if (field === 'deductions.permissionDeduction' || field.startsWith('deductions.permissionDeductionBreakdown') || field === 'attendance.permissionDeductionDays' || field === 'permissionDeductionDays') required.needsPermissionDeduction = true;
       if (field.startsWith('deductions.statutory')) required.needsStatutory = true;
       if (field.startsWith('deductions.other') || field === 'deductions.totalOtherDeductions') required.needsOtherDeductions = true;
       if (field === 'deductions.deductionsCumulative' || field === 'deductions.totalDeductions') {
         required.needsAttendanceDeduction = true;
+        required.needsPermissionDeduction = true;
         required.needsStatutory = true;
         required.needsOtherDeductions = true;
         required.needsLoanAdvance = true;
@@ -211,7 +216,7 @@ function getRequiredServices(outputColumns) {
       if (field.startsWith('manualDeductions.') || field === 'manualDeductionsAmount') required.needsManualDeductions = true;
     }
   }
-  if (required.needsAllowances || required.needsStatutory || required.needsOtherDeductions) required.needsBasicPay = true;
+  if (required.needsAllowances || required.needsStatutory || required.needsOtherDeductions || required.needsPermissionDeduction) required.needsBasicPay = true;
   if (required.needsAttendanceDeduction) required.needsBasicPay = true;
   if (required.needsOtherDeductions) {
     required.needsAttendanceDeduction = true;
@@ -345,6 +350,23 @@ async function runRequiredServices(required, record, employee, employeeId, month
     record.deductions.attendanceDeductionBreakdown = attendanceDeductionResult.breakdown ?? {};
     if (!record.attendance) record.attendance = {};
     record.attendance.attendanceDeductionDays = attendanceDeductionResult.breakdown?.daysDeducted ?? 0;
+  }
+
+  if (required.needsPermissionDeduction) {
+    const perDaySalary = num(record.earnings?.perDayBasicPay);
+    const permissionDeductionResult = await deductionService.calculatePermissionDeduction(
+      employeeId,
+      month,
+      departmentId,
+      perDaySalary,
+      employee?.division_id ?? divisionId,
+      { employee: employee ?? undefined }
+    );
+    if (!record.deductions) record.deductions = {};
+    record.deductions.permissionDeduction = permissionDeductionResult.permissionDeduction ?? 0;
+    record.deductions.permissionDeductionBreakdown = permissionDeductionResult.breakdown || {};
+    if (!record.attendance) record.attendance = {};
+    record.attendance.permissionDeductionDays = permissionDeductionResult.breakdown?.daysDeducted ?? 0;
   }
 
   // Statutory is run in the column loop so we can use output column values (config header or auto-detect by name like "Paid Days", "Present Days").
@@ -726,6 +748,66 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
     return Number(record.attendance?.attendanceDeductionDays ?? record.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0);
   }
 
+  if (path === 'deductions.permissionDeduction') {
+    if (record.deductions?.permissionDeduction == null || record.deductions?.permissionDeductionBreakdown == null) {
+      const perDaySalary = Number(record.earnings?.perDayBasicPay) || 0;
+      const permissionDeductionResult = await deductionService.calculatePermissionDeduction(
+        employeeId,
+        month,
+        departmentId,
+        perDaySalary,
+        employee?.division_id ?? divisionId,
+        { employee: employee ?? undefined }
+      );
+      if (!record.deductions) record.deductions = {};
+      record.deductions.permissionDeduction = permissionDeductionResult.permissionDeduction || 0;
+      record.deductions.permissionDeductionBreakdown = permissionDeductionResult.breakdown || {};
+      if (!record.attendance) record.attendance = {};
+      record.attendance.permissionDeductionDays = permissionDeductionResult.breakdown?.daysDeducted ?? 0;
+    }
+    return Number(record.deductions?.permissionDeduction || 0);
+  }
+
+  if (path === 'deductions.permissionDeductionBreakdown.permissionCount') {
+    if (record.deductions?.permissionDeductionBreakdown == null) {
+      const perDaySalary = Number(record.earnings?.perDayBasicPay) || 0;
+      const permissionDeductionResult = await deductionService.calculatePermissionDeduction(
+        employeeId,
+        month,
+        departmentId,
+        perDaySalary,
+        employee?.division_id ?? divisionId,
+        { employee: employee ?? undefined }
+      );
+      if (!record.deductions) record.deductions = {};
+      record.deductions.permissionDeduction = permissionDeductionResult.permissionDeduction || 0;
+      record.deductions.permissionDeductionBreakdown = permissionDeductionResult.breakdown || {};
+      if (!record.attendance) record.attendance = {};
+      record.attendance.permissionDeductionDays = permissionDeductionResult.breakdown?.daysDeducted ?? 0;
+    }
+    return Number(record.deductions?.permissionDeductionBreakdown?.permissionCount || 0);
+  }
+
+  if (path === 'attendance.permissionDeductionDays' || path === 'permissionDeductionDays' || path === 'deductions.permissionDeductionBreakdown.daysDeducted') {
+    if (record.deductions?.permissionDeductionBreakdown == null) {
+      const perDaySalary = Number(record.earnings?.perDayBasicPay) || 0;
+      const permissionDeductionResult = await deductionService.calculatePermissionDeduction(
+        employeeId,
+        month,
+        departmentId,
+        perDaySalary,
+        employee?.division_id ?? divisionId,
+        { employee: employee ?? undefined }
+      );
+      if (!record.deductions) record.deductions = {};
+      record.deductions.permissionDeduction = permissionDeductionResult.permissionDeduction || 0;
+      record.deductions.permissionDeductionBreakdown = permissionDeductionResult.breakdown || {};
+      if (!record.attendance) record.attendance = {};
+      record.attendance.permissionDeductionDays = permissionDeductionResult.breakdown?.daysDeducted ?? 0;
+    }
+    return Number(record.attendance?.permissionDeductionDays ?? record.deductions?.permissionDeductionBreakdown?.daysDeducted || 0);
+  }
+
   // employee.* display fields (name, designation, emp_no, etc.) — return as-is, never coerce to number
   if (path.startsWith('employee.')) {
     const key = path.slice('employee.'.length);
@@ -1055,13 +1137,14 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
   // deductions.totalDeductions (full total for net salary: att + otherOnly + statutory + loanEMI + advance + manualDed)
   if (path === 'deductions.deductionsCumulative' || path === 'deductions.totalDeductions') {
     const att = Number(record.deductions?.attendanceDeduction) || 0;
+    const perm = Number(record.deductions?.permissionDeduction) || 0;
     const statutory = Number(record.deductions?.statutoryCumulative) || 0;
     const loanEMI = Number(record.loanAdvance?.totalEMI) || 0;
     const advance = Number(record.loanAdvance?.advanceDeduction) || 0;
     const manualDed = Number(record.manualDeductionsAmount) || 0;
     console.log('[DynamicPayroll][resolveFieldValue] Raw :', record.deductions);
     // Other deductions from allowances-deductions config only:
-    // exclude components that are tracked separately (attendance, absent LOP, statutory, loan/advance, manual)
+    // exclude components that are tracked separately (attendance, permission, absent LOP, statutory, loan/advance, manual)
     const rawOther = Array.isArray(record.deductions?.otherDeductions)
       ? record.deductions.otherDeductions
       : [];
@@ -1082,10 +1165,11 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
       })
       .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
 
-    const fullTotal = att + otherDeductionsOnly + statutory + loanEMI + advance + manualDed;
+    const fullTotal = att + perm + otherDeductionsOnly + statutory + loanEMI + advance + manualDed;
 
     console.log('[DynamicPayroll][resolveFieldValue] Aggregated components:', {
       attendanceDeduction: att,
+      permissionDeduction: perm,
       otherFiltered: otherDeductionsOnly,
       statutoryCumulative: statutory,
       loanEMI,
@@ -1108,6 +1192,7 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
     let totalDed = Number(record.deductions?.totalDeductions) || 0;
     if (totalDed === 0) {
       const att = Number(record.deductions?.attendanceDeduction) || 0;
+      const perm = Number(record.deductions?.permissionDeduction) || 0;
       const statutory = Number(record.deductions?.statutoryCumulative) || 0;
       const loanEMI = Number(record.loanAdvance?.totalEMI) || 0;
       const advance = Number(record.loanAdvance?.advanceDeduction) || 0;
@@ -1123,7 +1208,7 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
           return true;
         })
         .reduce((s, d) => s + (Number(d.amount) || 0), 0);
-      totalDed = att + otherOnly + statutory + loanEMI + advance + manualDed;
+      totalDed = att + perm + otherOnly + statutory + loanEMI + advance + manualDed;
       if (!record.deductions) record.deductions = {};
       record.deductions.deductionsCumulative = otherOnly;
       record.deductions.totalDeductions = totalDed;

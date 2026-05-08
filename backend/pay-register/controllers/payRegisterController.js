@@ -979,7 +979,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       month
     })
       .populate('employeeId', 'employee_name emp_no department_id designation_id leftDate leftReason')
-      .select('employeeId emp_no month status totals lastEditedAt dailyRecords startDate endDate totalDaysInMonth summaryLocked summaryLockedAt totalAttendanceDeductionDays attendanceDeductionBreakdown attendanceDeductionCalculatedAt');
+      .select('employeeId emp_no month status totals lastEditedAt dailyRecords startDate endDate totalDaysInMonth summaryLocked summaryLockedAt totalAttendanceDeductionDays attendanceDeductionBreakdown attendanceDeductionCalculatedAt totalPermissionHours totalPermissionCount totalPermissionDeductionDays totalPermissionDeductionAmount permissionDeductionBreakdown');
 
     // Map for O(1) Access
     const prMap = new Map();
@@ -1022,6 +1022,11 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
           totalAttendanceDeductionDays: existingPR.totalAttendanceDeductionDays ?? 0,
           attendanceDeductionBreakdown: existingPR.attendanceDeductionBreakdown ?? null,
           attendanceDeductionCalculatedAt: existingPR.attendanceDeductionCalculatedAt ?? null,
+          totalPermissionHours: existingPR.totalPermissionHours ?? 0,
+          totalPermissionCount: existingPR.totalPermissionCount ?? 0,
+          totalPermissionDeductionDays: existingPR.totalPermissionDeductionDays ?? 0,
+          totalPermissionDeductionAmount: existingPR.totalPermissionDeductionAmount ?? 0,
+          permissionDeductionBreakdown: existingPR.permissionDeductionBreakdown ?? null,
         };
       } else {
         // Return In-Memory Stub (Fast!)
@@ -1066,6 +1071,11 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
           totalAttendanceDeductionDays: 0,
           attendanceDeductionBreakdown: null,
           attendanceDeductionCalculatedAt: null,
+          totalPermissionHours: 0,
+          totalPermissionCount: 0,
+          totalPermissionDeductionDays: 0,
+          totalPermissionDeductionAmount: 0,
+          permissionDeductionBreakdown: null,
         };
       }
     });
@@ -1529,7 +1539,7 @@ exports.exportSummaryPDF = async (req, res) => {
       employeeId: { $in: employeeIds },
       month,
     })
-      .select('employeeId emp_no month totals dailyRecords startDate endDate totalDaysInMonth totalAttendanceDeductionDays')
+      .select('employeeId emp_no month totals dailyRecords startDate endDate totalDaysInMonth totalAttendanceDeductionDays totalPermissionHours totalPermissionCount totalPermissionDeductionDays totalPermissionDeductionAmount permissionDeductionBreakdown')
       .lean();
 
     const prMap = new Map(payRegisters.map((pr) => [String(pr.employeeId), pr]));

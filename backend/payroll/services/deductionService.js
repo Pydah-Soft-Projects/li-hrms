@@ -503,26 +503,31 @@ async function calculatePermissionDeduction(employeeId, month, departmentId, per
       };
     }
 
-    // Fetch permissions for the month
-    // Parse month string (YYYY-MM) to get start and end dates
+    // Fetch permissions for the payroll cycle month (not calendar month).
     const [year, monthNum] = month.split('-').map(Number);
-    const startDate = new Date(year, monthNum - 1, 1);
-    const endDate = new Date(year, monthNum, 0, 23, 59, 59, 999);
+    const cycle = await dateCycleService.getPayrollCycleForMonth(year, monthNum);
+    const startDateStr = extractISTComponents(cycle.startDate).dateStr;
+    const endDateStr = extractISTComponents(cycle.endDate).dateStr;
 
     const permissions = await Permission.find({
       employeeId,
       date: {
-        $gte: startDate,
-        $lte: endDate,
+        $gte: startDateStr,
+        $lte: endDateStr,
       },
-      status: 'approved',
-    }).select('duration');
+      status: { $in: ['approved', 'checked_out', 'checked_in'] },
+      isActive: true,
+    }).select('permissionHours');
 
     const minimumDuration = rules.minimumDuration || 0;
 
-    // Filter permissions by minimum duration
+    // minimumDuration is configured in minutes; permissionHours is stored in hours.
     const eligiblePermissions = permissions.filter(
-      (perm) => perm.duration !== null && perm.duration !== undefined && perm.duration >= minimumDuration
+      (perm) => {
+        if (perm.permissionHours === null || perm.permissionHours === undefined) return false;
+        const durationMinutes = (Number(perm.permissionHours) || 0) * 60;
+        return durationMinutes >= minimumDuration;
+      }
     );
 
     const eligiblePermissionCount = eligiblePermissions.length;

@@ -117,6 +117,8 @@ interface PayRegisterSummary {
   summaryLockedAt?: string | null;
   /** Policy attendance deduction days (late/early + absent extra), same engine as payroll */
   totalAttendanceDeductionDays?: number;
+  totalPermissionCount?: number;
+  totalPermissionDeductionDays?: number;
   attendanceDeductionBreakdown?: {
     daysDeducted?: number;
     lateEarlyDaysDeducted?: number;
@@ -222,6 +224,23 @@ export default function PayRegisterPage() {
   const [committedSearch, setCommittedSearch] = useState('');
   /** Collapse the wide monthly totals table so the day grids below stay in focus. */
   const [monthlySummaryExpanded, setMonthlySummaryExpanded] = useState(false);
+  const [attendanceProcessingMode, setAttendanceProcessingMode] = useState<'single_shift' | 'multi_shift' | null>(null);
+  const isMultiShiftMode = attendanceProcessingMode === 'multi_shift';
+
+  useEffect(() => {
+    const loadAttendanceMode = async () => {
+      try {
+        const attendanceRes = await api.getAttendanceSettings();
+        const mode = attendanceRes?.data?.processingMode?.mode;
+        if (mode === 'single_shift' || mode === 'multi_shift') {
+          setAttendanceProcessingMode(mode);
+        }
+      } catch {
+        // Keep default null; permission columns remain hidden.
+      }
+    };
+    loadAttendanceMode();
+  }, []);
 
   useEffect(() => {
     let pollInterval: any;
@@ -2352,6 +2371,20 @@ export default function PayRegisterPage() {
                         {label}
                       </th>
                     ))}
+                    <>
+                      <th
+                        rowSpan={2}
+                        className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                      >
+                        Perm Count
+                      </th>
+                      <th
+                        rowSpan={2}
+                        className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                      >
+                        Perm ded.
+                      </th>
+                    </>
                     <th
                       colSpan={3}
                       className="border-b border-r border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-800 dark:border-slate-700 dark:bg-rose-950/30 dark:text-rose-100 bg-rose-100/80 dark:bg-rose-950/40"
@@ -2387,7 +2420,7 @@ export default function PayRegisterPage() {
                         <div className="h-4 w-32 rounded bg-slate-200 dark:bg-slate-700" />
                         <div className="mt-1 h-3 w-24 rounded bg-slate-200 dark:bg-slate-700" />
                       </td>
-                      {Array.from({ length: 17 }).map((_, j) => (
+                      {Array.from({ length: 19 }).map((_, j) => (
                         <td key={j} className="px-2 py-2 text-center">
                           <div className="h-4 w-8 mx-auto rounded bg-slate-200 dark:bg-slate-700" />
                         </td>
@@ -2459,6 +2492,20 @@ export default function PayRegisterPage() {
                       {label}
                     </th>
                   ))}
+                  <>
+                    <th
+                      rowSpan={2}
+                      className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                    >
+                      Perm Count
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                    >
+                      Perm ded.
+                    </th>
+                  </>
                   <th
                     colSpan={3}
                     className="border-b border-r border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-800 dark:border-slate-700 dark:bg-rose-950/30 dark:text-rose-100 bg-rose-100/80 dark:bg-rose-950/40"
@@ -2605,6 +2652,14 @@ export default function PayRegisterPage() {
                       >
                         {row.lateCount}
                       </td>
+                        <>
+                          <td className="text-center px-2 py-2 font-semibold text-slate-700 dark:text-slate-200">
+                            {Number(row.pr.totalPermissionCount ?? 0).toFixed(0)}
+                          </td>
+                          <td className="text-center px-2 py-2 font-semibold text-rose-700 dark:text-rose-300">
+                            {(Number(row.pr.totalPermissionDeductionDays ?? 0)).toFixed(2).replace(/\.?0+$/, '') || '0'}
+                          </td>
+                        </>
                       <td
                         className={`text-center px-2 py-2 font-medium text-red-600 dark:text-red-400 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['absent'], 'Absent') ? payRegisterContribAccent(['absent']).summaryRing : ''}`}
                         title={row.pr.isStub ? undefined : 'Same as Total Absent — shown under deduction days'}
@@ -2922,6 +2977,22 @@ export default function PayRegisterPage() {
                         >
                           Lates (L+E)
                         </th>
+                          <>
+                            <th
+                              rowSpan={2}
+                              className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-cyan-50 dark:bg-cyan-900/20"
+                              title="Total permission count from monthly summary"
+                            >
+                              Perm count
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-rose-50 dark:bg-rose-900/20"
+                              title="Permission deduction days from monthly summary"
+                            >
+                              Perm ded.
+                            </th>
+                          </>
                         <th
                           colSpan={3}
                           className="border-b border-r border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-800 dark:border-slate-700 dark:bg-rose-950/30 dark:text-rose-100 bg-rose-100/80 dark:bg-rose-950/40"
@@ -3029,7 +3100,7 @@ export default function PayRegisterPage() {
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {getFilteredPayRegisters().length === 0 ? (
                     <tr>
-                      <td colSpan={1 + daysArray.length + (activeTable === 'leaves' ? 4 : activeTable === 'all' ? 12 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                      <td colSpan={1 + daysArray.length + (activeTable === 'leaves' ? 4 : activeTable === 'all' ? 14 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                         No records found{activeTable !== 'all' ? ` for ${activeTable === 'shifts' ? 'shifts' : activeTable} table` : ''}
                       </td>
                     </tr>
@@ -3351,6 +3422,20 @@ export default function PayRegisterPage() {
                                 >
                                   {getLateAndEarlyCount(pr.totals)}
                                 </td>
+                                  <>
+                                    <td
+                                      className="border-r border-slate-200 bg-cyan-50 dark:bg-cyan-900/20 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:text-cyan-300"
+                                      title="Total permission count from monthly summary"
+                                    >
+                                      {Number(pr.totalPermissionCount ?? 0).toFixed(0)}
+                                    </td>
+                                    <td
+                                      className="border-r border-slate-200 bg-rose-50 dark:bg-rose-900/20 px-2 py-2 text-center text-[11px] font-bold text-rose-700 dark:text-rose-300"
+                                      title="Permission deduction days from monthly summary"
+                                    >
+                                      {(Number(pr.totalPermissionDeductionDays ?? 0)).toFixed(2).replace(/\.?0+$/, '') || '0'}
+                                    </td>
+                                  </>
                                 <td
                                   className={`border-r border-slate-200 bg-red-50/80 dark:bg-red-950/25 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:text-red-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['absent'], 'Absent') ? payRegisterContribAccent(['absent']).summaryRing : ''}`}
                                   title="Same total as Absents column — click to highlight absent days"

@@ -400,15 +400,20 @@ async function calculatePermissionDeduction(employeeId, month, departmentId, per
         const permissions = await Permission.find({
             employeeId,
             date: {
-                $gte: startDate,
-                $lte: endDate,
+                $gte: startStr,
+                $lte: endStr,
             },
-            status: 'approved',
-        }).select('duration');
+            status: { $in: ['approved', 'checked_out', 'checked_in'] },
+            isActive: true,
+        }).select('permissionHours');
 
         const minimumDuration = rules.minimumDuration || 0;
         const eligiblePermissions = permissions.filter(
-            (perm) => perm.duration !== null && perm.duration !== undefined && perm.duration >= minimumDuration
+            (perm) => {
+                if (perm.permissionHours === null || perm.permissionHours === undefined) return false;
+                const durationMinutes = (Number(perm.permissionHours) || 0) * 60;
+                return durationMinutes >= minimumDuration;
+            }
         );
 
         const eligiblePermissionCount = eligiblePermissions.length;

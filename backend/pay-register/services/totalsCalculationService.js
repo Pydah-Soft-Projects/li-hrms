@@ -665,6 +665,17 @@ async function syncTotalsFromMonthlySummary(payRegister, summary) {
   totals.totalLateInMinutes = summary.totalLateInMinutes || 0;
   totals.totalEarlyOutMinutes = summary.totalEarlyOutMinutes || 0;
 
+  payRegister.totalPermissionHours = summary.totalPermissionHours || 0;
+  payRegister.totalPermissionCount = summary.totalPermissionCount || 0;
+  payRegister.totalPermissionDeductionDays = summary.totalPermissionDeductionDays || 0;
+  payRegister.totalPermissionDeductionAmount = summary.totalPermissionDeductionAmount || 0;
+  payRegister.permissionDeductionBreakdown = summary.permissionDeductionBreakdown || {
+    quarter_day: 0,
+    half_day: 0,
+    full_day: 0,
+    custom_amount: 0,
+  };
+
   // Since we are overriding the totals, we should probably also 
   // clear the full/half sub-counters as they are now derived from the attendance summary
   totals.presentDays = Math.floor(totals.totalPresentDays);
