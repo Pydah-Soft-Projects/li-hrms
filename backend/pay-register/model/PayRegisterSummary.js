@@ -564,6 +564,48 @@ const payRegisterSummarySchema = new mongoose.Schema(
       deductionType: { type: String, default: null },
       calculationMode: { type: String, default: null },
     },
+    totalPermissionHours: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    totalPermissionCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    totalPermissionDeductionDays: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    totalPermissionDeductionAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    permissionDeductionBreakdown: {
+      quarter_day: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      half_day: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      full_day: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      custom_amount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+    },
     attendanceDeductionCalculatedAt: {
       type: Date,
       default: null,

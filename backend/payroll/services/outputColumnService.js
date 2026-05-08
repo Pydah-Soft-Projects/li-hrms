@@ -18,6 +18,7 @@ const ALLOWED_FORMULA_VARS = new Set([
   'arrearsAmount', 'arrears', 'manualDeductionsAmount', 'manual_deductions_amount', 'manual_deductions',
   'extraDays', 'paidLeaveDays', 'odDays', 'absentDays', 'weeklyOffs', 'holidays',
   'perDayBasicPay', 'basic_pay', 'lopDays', 'elUsedInPayroll', 'attendanceDeductionDays',
+  'permissionCount', 'permissionDeductionDays',
 ]);
 
 function getContextFromPayslip(payslip) {
@@ -58,6 +59,8 @@ function getContextFromPayslip(payslip) {
     perDayBasicPay: num(earn.perDayBasicPay),
     attendanceDeduction: num(ded.attendanceDeduction),
     permissionDeduction: num(ded.permissionDeduction),
+    permissionCount: num(ded.permissionDeductionBreakdown?.permissionCount),
+    permissionDeductionDays: num(att.permissionDeductionDays ?? payslip.permissionDeductionDays ?? ded.permissionDeductionBreakdown?.daysDeducted),
     leaveDeduction: num(ded.leaveDeduction),
     arrearsAmount: num(arrears.arrearsAmount ?? payslip.arrearsAmount),
     arrears: num(arrears.arrearsAmount ?? payslip.arrearsAmount),
@@ -199,6 +202,11 @@ function getValueByPath(obj, path) {
     const dd = obj?.deductions?.attendanceDeductionBreakdown?.daysDeducted;
     const n2 = Number(dd);
     return Number.isFinite(n2) ? n2 : 0;
+  }
+  if (trimmed === 'permissionDeductionDays' || trimmed === 'deductions.permissionDeductionBreakdown.daysDeducted') {
+    const root = obj?.permissionDeductionDays ?? obj?.deductions?.permissionDeductionBreakdown?.daysDeducted;
+    const n = Number(root);
+    return Number.isFinite(n) ? n : 0;
   }
   // Missing loanAdvance subdoc makes generic path walk return '' before leaf; always return numeric 0
   if (trimmed === 'loanAdvance.advanceDeduction') {
