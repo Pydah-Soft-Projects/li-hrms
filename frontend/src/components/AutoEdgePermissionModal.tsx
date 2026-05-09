@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { alertError, alertLoading, alertSuccess } from '@/lib/customSwal';
+import { alertError, alertLoading, alertSuccess, closeAlert } from '@/lib/customSwal';
 import { format } from 'date-fns';
 import { XCircle, CalendarDays } from 'lucide-react';
 
@@ -50,7 +50,7 @@ export function AutoEdgePermissionModal({
     }
 
     setSubmitting(true);
-    const loader = alertLoading('Generating auto edge permissions', 'This may take a few moments.');
+    alertLoading('Generating auto edge permissions', 'This may take a few moments.');
 
     try {
       const response = await api.generateAutoEdgePermissions({
@@ -62,7 +62,7 @@ export function AutoEdgePermissionModal({
         search: searchQuery,
       });
 
-      loader.close();
+      closeAlert();
       setSubmitting(false);
 
       if (!response || !response.success) {
@@ -77,7 +77,7 @@ export function AutoEdgePermissionModal({
       onSuccess?.();
       onClose();
     } catch (error: any) {
-      loader.close();
+      closeAlert();
       setSubmitting(false);
       console.error('Auto edge permission generation failed:', error);
       alertError('Failed to generate permissions', error?.message || 'Please try again later.');
