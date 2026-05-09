@@ -805,7 +805,7 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
       if (!record.attendance) record.attendance = {};
       record.attendance.permissionDeductionDays = permissionDeductionResult.breakdown?.daysDeducted ?? 0;
     }
-    return Number(record.attendance?.permissionDeductionDays ?? record.deductions?.permissionDeductionBreakdown?.daysDeducted || 0);
+    return Number(record.attendance?.permissionDeductionDays ?? record.deductions?.permissionDeductionBreakdown?.daysDeducted ?? 0);
   }
 
   // employee.* display fields (name, designation, emp_no, etc.) — return as-is, never coerce to number
