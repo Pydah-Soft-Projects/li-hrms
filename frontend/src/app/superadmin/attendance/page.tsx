@@ -215,6 +215,17 @@ interface MonthlyAttendanceData {
       deductionType?: string | null;
       calculationMode?: string | null;
     };
+    lateInCount?: number;
+    earlyOutCount?: number;
+    /** Permission deduction days from payroll-aligned permission deduction rules */
+    totalPermissionDeductionDays?: number;
+    /** Total number of permission records / counts for the month */
+    totalPermissionCount?: number;
+    permissionDeductionBreakdown?: {
+      full_day?: number;
+      partial_day?: number;
+      total?: number;
+    };
     contributingDates?: {
       present?: string[];
       leaves?: string[];

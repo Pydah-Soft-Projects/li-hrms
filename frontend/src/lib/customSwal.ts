@@ -61,3 +61,7 @@ export const alertLoading = (title: string, text?: string) => {
         }
     });
 };
+
+export const closeAlert = () => {
+    customSwal.close();
+};
