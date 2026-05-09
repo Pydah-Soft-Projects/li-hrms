@@ -1743,6 +1743,20 @@ export const api = {
     });
   },
 
+  generateAutoEdgePermissions: async (payload: {
+    startDate: string;
+    endDate: string;
+    divisionId?: string;
+    departmentId?: string;
+    designationId?: string;
+    search?: string;
+  }) => {
+    return apiRequest<any>('/permissions/generate-auto-edge-permissions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   // Attendance Deduction Settings
   getAttendanceDeductionSettings: async () => {
     return apiRequest<any>('/attendance/settings/deduction', { method: 'GET' });
