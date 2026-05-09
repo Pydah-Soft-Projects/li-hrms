@@ -25,6 +25,7 @@ import {
 } from '@/lib/payRegisterAllSummaryRow';
 import { toast } from 'react-toastify';
 import { MultiSelect } from '@/components/MultiSelect';
+import { AutoEdgePermissionModal } from '@/components/AutoEdgePermissionModal';
 import { format, parseISO } from 'date-fns';
 import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
 import {
@@ -488,6 +489,7 @@ export default function AttendancePage() {
   const [uploading, setUploading] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [showAutoEdgePermissionModal, setShowAutoEdgePermissionModal] = useState(false);
   const [syncingShifts, setSyncingShifts] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -2638,6 +2640,17 @@ export default function AttendancePage() {
                 )}
                 {exportingPDF ? 'Generating...' : 'Download PDF'}
               </button>
+
+              <button
+                onClick={() => setShowAutoEdgePermissionModal(true)}
+                title="Generate auto edge permissions for current attendance filters"
+                className="h-9 flex items-center px-4 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-emerald-600 hover:border-emerald-200 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-emerald-400"
+              >
+                <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Generate Auto Edge
+              </button>
             </div>
           </div>
         </div>
@@ -4150,6 +4163,17 @@ export default function AttendancePage() {
             </div>
           </div>
         )}
+
+        <AutoEdgePermissionModal
+          open={showAutoEdgePermissionModal}
+          currentStartDate={cycleDates.startDate}
+          currentEndDate={cycleDates.endDate}
+          divisionId={selectedDivision}
+          departmentId={selectedDepartment}
+          designationId={selectedDesignation}
+          searchQuery={searchQuery}
+          onClose={() => setShowAutoEdgePermissionModal(false)}
+        />
 
         {showOutTimeDialog && selectedRecordForOutTime && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">

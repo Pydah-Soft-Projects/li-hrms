@@ -16,6 +16,7 @@ const {
   getOutpass,
   getQRCode,
 } = require('./controllers/permissionController');
+const { generateAutoEdgePermissions } = require('./controllers/autoEdgePermissionController');
 const permissionDeductionSettingsController = require('./controllers/permissionDeductionSettingsController');
 const autoEdgePermissionSettingsController = require('./controllers/autoEdgePermissionSettingsController');
 
@@ -39,6 +40,8 @@ router.put('/settings/deduction', authorize('super_admin', 'sub_admin'), permiss
 router.get('/settings/auto-edge', autoEdgePermissionSettingsController.getSettings);
 router.post('/settings/auto-edge', authorize('super_admin', 'sub_admin'), autoEdgePermissionSettingsController.saveSettings);
 router.put('/settings/auto-edge', authorize('super_admin', 'sub_admin'), autoEdgePermissionSettingsController.saveSettings);
+
+router.post('/generate-auto-edge-permissions', authorize('super_admin', 'sub_admin'), applyScopeFilter, generateAutoEdgePermissions);
 
 // Get permission requests - employee allowed; applyScopeFilter restricts to own/scope
 router.get('/', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, getPermissions);
