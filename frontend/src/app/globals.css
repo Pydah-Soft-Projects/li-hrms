@@ -71,6 +71,20 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  caret-color: #22c55e; /* Branded green cursor */
+}
+
+/* Custom Text Selection Highlight */
+::selection {
+  background: rgba(34, 197, 94, 0.3); /* Slightly more opaque for better contrast */
+  color: #052e16;
+  text-shadow: 0 0 10px rgba(34, 197, 94, 0.4); /* Premium glow effect */
+}
+
+::-moz-selection {
+  background: rgba(34, 197, 94, 0.3);
+  color: #052e16;
+  text-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
 }
 
 h1, h2, h3, h4, .font-display {

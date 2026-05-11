@@ -15,6 +15,7 @@ const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Settings = require('../../settings/model/Settings');
 const { isCustomEmployeeGroupingEnabled } = require('../../shared/utils/customEmployeeGrouping');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
+const { getShiftSegmentAssignment } = require('./shiftHalfSegmentService');
 const { flattenShiftConfigsWithGroups } = require('../../shared/utils/shiftAssignmentConfig');
 
 /**
@@ -915,6 +916,20 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
   const globalEarlyOutGrace = globalConfig.early_out_grace_time ?? null;
   const processingMode = globalConfig.processingMode || {};
   const shiftOptions = { rosterStrictWhenPresent: processingMode.rosterStrictWhenPresent === true };
+
+  const enrichResultWithSegmentData = (baseResult, shift) => {
+    const segmentData = getShiftSegmentAssignment(shift, date, inTime, outTime, {
+      globalLateInGrace,
+      globalEarlyOutGrace,
+    });
+
+    return {
+      ...baseResult,
+      ...segmentData,
+      basePayable: segmentData.totalPayableShifts ?? (shift.payableShifts || 1),
+    };
+  };
+
   try {
     if (!inTime) {
       return {
@@ -998,7 +1013,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
 
         await updateRosterTracking(nearestShift._id);
 
-        return {
+        return enrichResultWithSegmentData({
           success: true,
           assignedShift: nearestShift._id,
           shiftName: nearestShift.name,
@@ -1012,7 +1027,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
           expectedHours: nearestShift.duration,
           matchMethod: 'nearest_fallback',
           rosterRecordId: rosterRecordId,
-        };
+        }, nearestShift);
       }
     }
 
@@ -1044,7 +1059,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
 
       await updateRosterTracking(shift._id);
 
-      return {
+      return enrichResultWithSegmentData({
         success: true,
         assignedShift: shift._id,
         shiftName: shift.name,
@@ -1059,7 +1074,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
         matchMethod: 'proximity_single',
         outTimeFoundOnNextDay: outTime && outTime !== inTime, // Flag if we found out-time on next day
         rosterRecordId: rosterRecordId,
-      };
+      }, shift);
     }
 
     // Step 4: Multiple candidates - check for ambiguity
@@ -1077,7 +1092,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
             if (shift) {
               const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod, date, globalLateInGrace);
               await updateRosterTracking(shift._id);
-              return {
+              return enrichResultWithSegmentData({
                 success: true,
                 assignedShift: shift._id,
                 shiftName: shift.name,
@@ -1091,7 +1106,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
                 expectedHours: shift.duration,
                 matchMethod: 'roster_blind',
                 rosterRecordId: rosterRecordId,
-              };
+              }, shift);
             }
           }
 
@@ -1147,7 +1162,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
                 const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod, date, globalLateInGrace);
                 const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace, shift.gracePeriod);
                 await updateRosterTracking(shift._id);
-                return {
+                return enrichResultWithSegmentData({
                   success: true,
                   assignedShift: shift._id,
                   shiftName: shift.name,
@@ -1161,7 +1176,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
                   expectedHours: shift.duration,
                   matchMethod: 'roster_priority',
                   rosterRecordId: rosterRecordId,
-                };
+                }, shift);
               }
             }
           }
@@ -1176,7 +1191,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
 
               await updateRosterTracking(shift._id);
 
-              return {
+              return enrichResultWithSegmentData({
                 success: true,
                 assignedShift: shift._id,
                 shiftName: shift.name,
@@ -1190,7 +1205,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
                 expectedHours: shift.duration,
                 matchMethod: 'outtime_disambiguated',
                 rosterRecordId: rosterRecordId,
-              };
+              }, shift);
             }
           }
 
@@ -1242,7 +1257,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
 
                 await updateRosterTracking(shift._id);
 
-                return {
+                return enrichResultWithSegmentData({
                   success: true,
                   assignedShift: shift._id,
                   shiftName: shift.name,
@@ -1256,7 +1271,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
                   expectedHours: shift.duration,
                   matchMethod: 'outtime_disambiguated_ambiguous',
                   rosterRecordId: rosterRecordId,
-                };
+                }, shift);
               }
             }
           }
@@ -1304,7 +1319,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
 
             await updateRosterTracking(shift._id);
 
-            return {
+            return enrichResultWithSegmentData({
               success: true,
               assignedShift: shift._id,
               shiftName: shift.name,
@@ -1318,7 +1333,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
               expectedHours: shift.duration,
               matchMethod: 'proximity_closest',
               rosterRecordId: rosterRecordId,
-            };
+            }, shift);
           }
         }
       }
@@ -1630,7 +1645,7 @@ const autoAssignNearestShift = async (employeeNumber, date, inTime, outTime = nu
     const lateInMinutes = calculateLateIn(inTime, nearestShift.startTime, nearestShift.gracePeriod, date, globalLateInGrace);
     const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, nearestShift.endTime, nearestShift.startTime, date, globalEarlyOutGrace, nearestShift.gracePeriod) : null;
 
-    return {
+    return enrichResultWithSegmentData({
       success: true,
       assignedShift: nearestShift._id,
       shiftName: nearestShift.name,
@@ -1645,7 +1660,7 @@ const autoAssignNearestShift = async (employeeNumber, date, inTime, outTime = nu
       expectedHours: nearestShift.duration,
       differenceMinutes: bestCandidate.differenceMinutes,
       isPreferred: bestCandidate.isPreferred,
-    };
+    }, nearestShift);
 
   } catch (error) {
     console.error('Error in auto-assign nearest shift:', error);
