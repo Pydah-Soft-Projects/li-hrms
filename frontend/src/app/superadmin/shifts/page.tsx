@@ -33,10 +33,26 @@ export default function ShiftsPage() {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [duration, setDuration] = useState<number | ''>('');
+  const [gracePeriod, setGracePeriod] = useState<number>(15);
   const [payableShifts, setPayableShifts] = useState<number>(1);
+  const [firstHalfStartTime, setFirstHalfStartTime] = useState('');
+  const [firstHalfEndTime, setFirstHalfEndTime] = useState('');
+  const [firstHalfDuration, setFirstHalfDuration] = useState<number | ''>('');
+  const [firstHalfMinDuration, setFirstHalfMinDuration] = useState<number | ''>('');
+  const [firstHalfGracePeriod, setFirstHalfGracePeriod] = useState<number>(15);
+  const [firstHalfPayableShifts, setFirstHalfPayableShifts] = useState<number>(0);
+  const [breakStartTime, setBreakStartTime] = useState('');
+  const [breakEndTime, setBreakEndTime] = useState('');
+  const [secondHalfStartTime, setSecondHalfStartTime] = useState('');
+  const [secondHalfEndTime, setSecondHalfEndTime] = useState('');
+  const [secondHalfDuration, setSecondHalfDuration] = useState<number | ''>('');
+  const [secondHalfMinDuration, setSecondHalfMinDuration] = useState<number | ''>('');
+  const [secondHalfGracePeriod, setSecondHalfGracePeriod] = useState<number>(15);
+  const [secondHalfPayableShifts, setSecondHalfPayableShifts] = useState<number>(0);
   const [suggestedPayableShifts, setSuggestedPayableShifts] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [illegalTimingWarning, setIllegalTimingWarning] = useState('');
+  const [continuityError, setContinuityError] = useState('');
 
   const [lastChanged, setLastChanged] = useState<'start' | 'end' | 'duration' | null>(null);
   const [color, setColor] = useState('#3b82f6');
@@ -154,6 +170,7 @@ export default function ShiftsPage() {
       const calculatedEnd = calculateEndTime(value, Number(duration));
       if (calculatedEnd) {
         setEndTime(calculatedEnd);
+        setSecondHalfEndTime(calculatedEnd); // Sync with Second Half End
       }
     }
     // If end time is set, recalculate duration
@@ -170,6 +187,14 @@ export default function ShiftsPage() {
         } else {
           setIllegalTimingWarning('');
         }
+      }
+    }
+
+    // Always sync First Half Start with Shift Start
+    if (value) {
+      setFirstHalfStartTime(value);
+      if (firstHalfEndTime) {
+        setSegmentDuration(value, firstHalfEndTime, setFirstHalfDuration);
       }
     }
   };
@@ -192,6 +217,14 @@ export default function ShiftsPage() {
         }
       }
     }
+
+    // Always sync Second Half End with Shift End
+    if (value) {
+      setSecondHalfEndTime(value);
+      if (secondHalfStartTime) {
+        setSegmentDuration(secondHalfStartTime, value, setSecondHalfDuration);
+      }
+    }
   };
 
   // Handle duration change
@@ -205,6 +238,7 @@ export default function ShiftsPage() {
       const calculatedEnd = calculateEndTime(startTime, Number(value));
       if (calculatedEnd) {
         setEndTime(calculatedEnd);
+        setSecondHalfEndTime(calculatedEnd); // Sync with Second Half End
       }
     }
 
@@ -216,6 +250,105 @@ export default function ShiftsPage() {
       setSuggestedPayableShifts(null);
     }
   };
+
+  const setSegmentDuration = (
+    start: string,
+    end: string,
+    setDurationFn: React.Dispatch<React.SetStateAction<number | ''>>
+  ) => {
+    if (start && end) {
+      const calculated = calculateDuration(start, end);
+      if (calculated !== null) {
+        setDurationFn(calculated);
+      }
+    }
+  };
+
+  const handleFirstHalfStartChange = (value: string) => {
+    setFirstHalfStartTime(value);
+    setSegmentDuration(value, firstHalfEndTime, setFirstHalfDuration);
+  };
+
+  const handleFirstHalfEndChange = (value: string) => {
+    setFirstHalfEndTime(value);
+    setBreakStartTime(value); // Continuity: Break starts at First Half End
+    setSegmentDuration(firstHalfStartTime, value, setFirstHalfDuration);
+  };
+
+  const handleBreakStartTimeChange = (value: string) => {
+    setBreakStartTime(value);
+    setFirstHalfEndTime(value); // Continuity: First Half ends at Break Start
+    setSegmentDuration(firstHalfStartTime, value, setFirstHalfDuration);
+  };
+
+  const handleBreakEndTimeChange = (value: string) => {
+    setBreakEndTime(value);
+    setSecondHalfStartTime(value); // Continuity: Second Half starts at Break End
+    setSegmentDuration(value, secondHalfEndTime, setSecondHalfDuration);
+  };
+
+  const handleSecondHalfStartChange = (value: string) => {
+    setSecondHalfStartTime(value);
+    setBreakEndTime(value); // Continuity: Break ends at Second Half Start
+    setSegmentDuration(value, secondHalfEndTime, setSecondHalfDuration);
+  };
+
+  const handleSecondHalfEndChange = (value: string) => {
+    setSecondHalfEndTime(value);
+    setSegmentDuration(secondHalfStartTime, value, setSecondHalfDuration);
+  };
+
+  // Continuity validation effect
+  useEffect(() => {
+    if (!showForm) {
+      setContinuityError('');
+      return;
+    }
+
+    const errors: string[] = [];
+    if (startTime && firstHalfStartTime && startTime !== firstHalfStartTime) {
+      errors.push('First Half must start at Shift Start time.');
+    }
+    if (firstHalfEndTime && breakStartTime && firstHalfEndTime !== breakStartTime) {
+      errors.push('Break must start exactly when First Half ends.');
+    }
+    if (breakEndTime && secondHalfStartTime && breakEndTime !== secondHalfStartTime) {
+      errors.push('Second Half must start exactly when Break ends.');
+    }
+    if (secondHalfEndTime && endTime && secondHalfEndTime !== endTime) {
+      errors.push('Second Half must end at Shift End time.');
+    }
+
+    // Payable shifts validation
+    const totalPayable = Number(payableShifts) || 0;
+    const segmentsSum = (Number(firstHalfPayableShifts) || 0) + (Number(secondHalfPayableShifts) || 0);
+    if (Math.abs(totalPayable - segmentsSum) > 0.001) {
+      errors.push(`Total payable (${totalPayable}) does not match sum of halves (${segmentsSum}).`);
+    }
+
+    setContinuityError(errors.join(' '));
+  }, [
+    showForm,
+    startTime, endTime, payableShifts,
+    firstHalfStartTime, firstHalfEndTime, firstHalfPayableShifts,
+    breakStartTime, breakEndTime,
+    secondHalfStartTime, secondHalfEndTime, secondHalfPayableShifts
+  ]);
+
+  // Auto-calculate payable shifts for halves
+  useEffect(() => {
+    if (!showForm || !payableShifts) return;
+    
+    const total = Number(payableShifts);
+    const first = Number(firstHalfPayableShifts);
+    const second = Number(secondHalfPayableShifts);
+
+    // If total or first changes, we suggest/set second
+    const targetSecond = Math.max(0, total - first);
+    if (Math.abs(second - targetSecond) > 0.001) {
+      setSecondHalfPayableShifts(Math.round(targetSecond * 100) / 100);
+    }
+  }, [payableShifts, firstHalfPayableShifts]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -235,14 +368,46 @@ export default function ShiftsPage() {
     }
 
     try {
+      const firstHalfData = firstHalfStartTime || firstHalfEndTime || firstHalfDuration !== '' || firstHalfMinDuration !== '' || firstHalfPayableShifts !== 0 || firstHalfGracePeriod !== 15
+        ? {
+            startTime: firstHalfStartTime || null,
+            endTime: firstHalfEndTime || null,
+            duration: firstHalfDuration !== '' ? Number(firstHalfDuration) : undefined,
+            minDuration: firstHalfMinDuration !== '' ? Number(firstHalfMinDuration) : undefined,
+            gracePeriod: Number(firstHalfGracePeriod),
+            payableShifts: Number(firstHalfPayableShifts),
+          }
+        : undefined;
+
+      const breakData = breakStartTime || breakEndTime
+        ? {
+            startTime: breakStartTime || null,
+            endTime: breakEndTime || null,
+          }
+        : undefined;
+
+      const secondHalfData = secondHalfStartTime || secondHalfEndTime || secondHalfDuration !== '' || secondHalfMinDuration !== '' || secondHalfPayableShifts !== 0 || secondHalfGracePeriod !== 15
+        ? {
+            startTime: secondHalfStartTime || null,
+            endTime: secondHalfEndTime || null,
+            duration: secondHalfDuration !== '' ? Number(secondHalfDuration) : undefined,
+            minDuration: secondHalfMinDuration !== '' ? Number(secondHalfMinDuration) : undefined,
+            gracePeriod: Number(secondHalfGracePeriod),
+            payableShifts: Number(secondHalfPayableShifts),
+          }
+        : undefined;
+
       const data: any = {
         name,
         startTime,
         endTime,
         duration: Number(duration),
-
+        gracePeriod: Number(gracePeriod),
         payableShifts: payableShifts || 1,
         color,
+        firstHalf: firstHalfData,
+        break: breakData,
+        secondHalf: secondHalfData,
       };
 
       let response;
@@ -272,7 +437,22 @@ export default function ShiftsPage() {
     setStartTime(shift.startTime);
     setEndTime(shift.endTime);
     setDuration(shift.duration);
+    setGracePeriod(shift.gracePeriod ?? 15);
     setPayableShifts(shift.payableShifts || 1);
+    setFirstHalfStartTime(shift.firstHalf?.startTime || '');
+    setFirstHalfEndTime(shift.firstHalf?.endTime || '');
+    setFirstHalfDuration(shift.firstHalf?.duration ?? '');
+    setFirstHalfMinDuration(shift.firstHalf?.minDuration ?? '');
+    setFirstHalfGracePeriod(shift.firstHalf?.gracePeriod ?? 15);
+    setFirstHalfPayableShifts(shift.firstHalf?.payableShifts ?? 0);
+    setBreakStartTime(shift.break?.startTime || '');
+    setBreakEndTime(shift.break?.endTime || '');
+    setSecondHalfStartTime(shift.secondHalf?.startTime || '');
+    setSecondHalfEndTime(shift.secondHalf?.endTime || '');
+    setSecondHalfDuration(shift.secondHalf?.duration ?? '');
+    setSecondHalfMinDuration(shift.secondHalf?.minDuration ?? '');
+    setSecondHalfGracePeriod(shift.secondHalf?.gracePeriod ?? 15);
+    setSecondHalfPayableShifts(shift.secondHalf?.payableShifts ?? 0);
     // Calculate suggested payable shifts for editing
     if (shift.duration) {
       const suggested = shift.duration / 8;
@@ -307,10 +487,26 @@ export default function ShiftsPage() {
     setStartTime('');
     setEndTime('');
     setDuration('');
+    setGracePeriod(15);
     setPayableShifts(1);
+    setFirstHalfStartTime('');
+    setFirstHalfEndTime('');
+    setFirstHalfDuration('');
+    setFirstHalfMinDuration('');
+    setFirstHalfGracePeriod(15);
+    setFirstHalfPayableShifts(0);
+    setBreakStartTime('');
+    setBreakEndTime('');
+    setSecondHalfStartTime('');
+    setSecondHalfEndTime('');
+    setSecondHalfDuration('');
+    setSecondHalfMinDuration('');
+    setSecondHalfGracePeriod(15);
+    setSecondHalfPayableShifts(0);
     setSuggestedPayableShifts(null);
     setError('');
     setIllegalTimingWarning('');
+    setContinuityError('');
 
     setColor('#3b82f6'); // Reset to default blue
     setLastChanged(null);
@@ -378,6 +574,30 @@ export default function ShiftsPage() {
           {shift.isActive ? 'Active' : 'Inactive'}
         </span>
       </div>
+      
+      {/* Shift Segments */}
+      <div className="mt-4 grid grid-cols-1 gap-2.5 border-t border-slate-100 pt-4 dark:border-slate-800">
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-lg bg-orange-50/50 p-2 dark:bg-orange-900/10">
+            <p className="text-[9px] font-bold uppercase tracking-wider text-orange-600 dark:text-orange-400">1st Half</p>
+            <p className="mt-0.5 text-[10px] font-medium text-slate-700 dark:text-slate-300">
+              {shift.firstHalf?.startTime || '--'} - {shift.firstHalf?.endTime || '--'}
+            </p>
+          </div>
+          <div className="rounded-lg bg-slate-50/50 p-2 dark:bg-slate-800/50">
+            <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Break</p>
+            <p className="mt-0.5 text-[10px] font-medium text-slate-700 dark:text-slate-300">
+              {shift.break?.startTime || '--'} - {shift.break?.endTime || '--'}
+            </p>
+          </div>
+          <div className="rounded-lg bg-purple-50/50 p-2 dark:bg-purple-900/10">
+            <p className="text-[9px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">2nd Half</p>
+            <p className="mt-0.5 text-[10px] font-medium text-slate-700 dark:text-slate-300">
+              {shift.secondHalf?.startTime || '--'} - {shift.secondHalf?.endTime || '--'}
+            </p>
+          </div>
+        </div>
+      </div>
 
       <div className="flex gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
         <button
@@ -404,12 +624,15 @@ export default function ShiftsPage() {
     if (viewMode === 'table') {
       return (
         <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white/90 shadow-xl backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/90">
-          <table className="min-w-[720px] w-full border-collapse text-left text-sm">
+          <table className="min-w-[1000px] w-full border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/90 dark:border-slate-700 dark:bg-slate-800/80">
                 <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">Color</th>
                 <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">Name</th>
                 <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">Time</th>
+                <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">1st Half</th>
+                <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">Break</th>
+                <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">2nd Half</th>
                 <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">Duration</th>
                 <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">Payable</th>
                 <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">Status</th>
@@ -435,10 +658,25 @@ export default function ShiftsPage() {
                   <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-600 dark:text-slate-400">
                     {shift.startTime} – {shift.endTime}
                   </td>
-                  <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-600 dark:text-slate-400">
+                  <td className="px-4 py-3 align-middle whitespace-nowrap">
+                    <span className="inline-flex rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                      {shift.firstHalf?.startTime || '--'} - {shift.firstHalf?.endTime || '--'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 align-middle whitespace-nowrap">
+                    <span className="inline-flex rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-700 dark:bg-slate-800/60 dark:text-slate-400">
+                      {shift.break?.startTime || '--'} - {shift.break?.endTime || '--'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 align-middle whitespace-nowrap">
+                    <span className="inline-flex rounded-md bg-purple-50 px-2 py-1 text-[10px] font-bold text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                      {shift.secondHalf?.startTime || '--'} - {shift.secondHalf?.endTime || '--'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-600 dark:text-slate-400 font-medium">
                     {shift.duration} h
                   </td>
-                  <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-600 dark:text-slate-400">
+                  <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-600 dark:text-slate-400 font-medium">
                     {shift.payableShifts ?? 1}
                   </td>
                   <td className="px-4 py-3 align-middle">
@@ -611,9 +849,9 @@ export default function ShiftsPage() {
 
         {/* Create/Edit Shift Dialog */}
         {showForm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-              <div className="mb-5 flex items-center justify-between">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
+            <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white my-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+              <div className="sticky top-0 mb-5 flex items-center justify-between border-b border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900 rounded-t-2xl">
                 <div>
                   <h2 className="text-base font-bold text-slate-900 dark:text-white">
                     {editingShift ? 'Edit Shift' : 'Create New Shift'}
@@ -631,149 +869,398 @@ export default function ShiftsPage() {
                   </svg>
                 </button>
               </div>
+              <form onSubmit={handleSubmit} className="overflow-y-auto px-6 pb-6" style={{ maxHeight: 'calc(100vh - 10rem)' }}>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-4">
+                  {/* COLUMN 1: Shift Configuration */}
+                  <div className="space-y-6">
+                    {/* Shift Identity */}
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                        <div className="h-4 w-1 rounded-full bg-blue-500" />
+                        Shift Identity
+                      </h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                            Shift Name *
+                          </label>
+                          <input
+                            type="text"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            required
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            placeholder="e.g., Morning Shift"
+                          />
+                        </div>
 
-              <form onSubmit={handleSubmit} className="space-y-3">
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Shift Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    placeholder="e.g., Morning Shift"
-                  />
-                </div>
+                        <div>
+                          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                            Shift Color
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {SHIFT_COLORS.map((c) => (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={() => setColor(c)}
+                                className={`h-8 w-8 rounded-full border-2 transition-all ${color === c
+                                  ? 'border-slate-600 dark:border-white scale-110 shadow-md ring-2 ring-offset-2 ring-blue-500/50 dark:ring-offset-slate-900'
+                                  : 'border-transparent hover:scale-105 hover:shadow-sm'
+                                  }`}
+                                style={{ backgroundColor: c }}
+                                title={c}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
 
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Shift Color
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {SHIFT_COLORS.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={() => setColor(c)}
-                        className={`h-8 w-8 rounded-full border-2 transition-all ${color === c
-                          ? 'border-slate-600 dark:border-white scale-110 shadow-md ring-2 ring-offset-2 ring-blue-500/50 dark:ring-offset-slate-900'
-                          : 'border-transparent hover:scale-105 hover:shadow-sm'
-                          }`}
-                        style={{ backgroundColor: c }}
-                        title={c}
-                      />
-                    ))}
+                    {/* Work Schedule */}
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                        <div className="h-4 w-1 rounded-full bg-indigo-500" />
+                        Work Schedule
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                            Start Time *
+                          </label>
+                          <input
+                            type="time"
+                            value={startTime}
+                            onChange={(e) => handleStartTimeChange(e.target.value)}
+                            required
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                            End Time *
+                          </label>
+                          <input
+                            type="time"
+                            value={endTime}
+                            onChange={(e) => handleEndTimeChange(e.target.value)}
+                            required
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-4">
+                        <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                          Duration (hours) *
+                        </label>
+                        <select
+                          value={duration}
+                          onChange={(e) => handleDurationChange(e.target.value ? Number(e.target.value) : '')}
+                          required
+                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        >
+                          <option value="">Select duration</option>
+                          {allowedDurations.map((dur) => (
+                            <option key={dur} value={dur}>
+                              {dur} hours
+                            </option>
+                          ))}
+                          {duration && !allowedDurations.some(d => Math.abs(d - Number(duration)) < 0.01) && (
+                            <option key="custom" value={duration}>
+                              {duration} hours (Custom)
+                            </option>
+                          )}
+                        </select>
+                        {allowedDurations.length === 0 && (
+                          <p className="mt-1.5 text-xs text-orange-600 dark:text-orange-400">
+                            No durations configured. Please configure in Settings.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Payroll & Grace Rules */}
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                        <div className="h-4 w-1 rounded-full bg-emerald-500" />
+                        Payroll & Grace Rules
+                      </h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                            Payable Shifts *
+                          </label>
+                          {suggestedPayableShifts !== null && suggestedPayableShifts !== payableShifts && (
+                            <p className="mb-1 text-[10px] text-blue-600 dark:text-blue-400">
+                              Suggested: {suggestedPayableShifts}
+                            </p>
+                          )}
+                          <input
+                            type="number"
+                            value={payableShifts}
+                            onChange={(e) => setPayableShifts(Number(e.target.value) || 1)}
+                            min="0"
+                            step="0.01"
+                            required
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            placeholder="1"
+                          />
+                          <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                            Number of standard shifts (8 hours) this shift counts as
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                            Shift Grace Period (minutes)
+                          </label>
+                          <input
+                            type="number"
+                            value={gracePeriod}
+                            onChange={(e) => setGracePeriod(Number(e.target.value) || 0)}
+                            min="0"
+                            step="1"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            placeholder="15"
+                          />
+                          <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                            Grace period applied to the whole shift.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* COLUMN 2: Shift Segments */}
+                  <div className="space-y-6">
+                    {/* First Half */}
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                        <div className="h-4 w-1 rounded-full bg-orange-500" />
+                        First Half
+                      </h3>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Start Time</label>
+                          <input
+                            type="time"
+                            value={firstHalfStartTime}
+                            onChange={(e) => handleFirstHalfStartChange(e.target.value)}
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">End Time</label>
+                          <input
+                            type="time"
+                            value={firstHalfEndTime}
+                            onChange={(e) => handleFirstHalfEndChange(e.target.value)}
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Half Duration</label>
+                          <input
+                            type="number"
+                            value={firstHalfDuration}
+                            onChange={(e) => setFirstHalfDuration(e.target.value ? Number(e.target.value) : '')}
+                            min="0"
+                            step="0.25"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            placeholder="Auto or enter"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Min Complete Duration</label>
+                          <input
+                            type="number"
+                            value={firstHalfMinDuration}
+                            onChange={(e) => setFirstHalfMinDuration(e.target.value ? Number(e.target.value) : '')}
+                            min="0"
+                            step="0.25"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            placeholder="e.g. 4"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Grace (minutes)</label>
+                          <input
+                            type="number"
+                            value={firstHalfGracePeriod}
+                            onChange={(e) => setFirstHalfGracePeriod(Number(e.target.value) || 0)}
+                            min="0"
+                            step="1"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            placeholder="15"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Payable Shifts</label>
+                          <input
+                            type="number"
+                            value={firstHalfPayableShifts}
+                            onChange={(e) => setFirstHalfPayableShifts(Number(e.target.value) || 0)}
+                            min="0"
+                            step="0.01"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            placeholder="0"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Break */}
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                        <div className="h-4 w-1 rounded-full bg-slate-500" />
+                        Meal Break
+                      </h3>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Break Start</label>
+                          <input
+                            type="time"
+                            value={breakStartTime}
+                            onChange={(e) => handleBreakStartTimeChange(e.target.value)}
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Break End</label>
+                          <input
+                            type="time"
+                            value={breakEndTime}
+                            onChange={(e) => handleBreakEndTimeChange(e.target.value)}
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Second Half */}
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                        <div className="h-4 w-1 rounded-full bg-purple-500" />
+                        Second Half
+                      </h3>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Start Time</label>
+                          <input
+                            type="time"
+                            value={secondHalfStartTime}
+                            onChange={(e) => handleSecondHalfStartChange(e.target.value)}
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">End Time</label>
+                          <input
+                            type="time"
+                            value={secondHalfEndTime}
+                            onChange={(e) => handleSecondHalfEndChange(e.target.value)}
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Half Duration</label>
+                          <input
+                            type="number"
+                            value={secondHalfDuration}
+                            onChange={(e) => setSecondHalfDuration(e.target.value ? Number(e.target.value) : '')}
+                            min="0"
+                            step="0.25"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            placeholder="Auto or enter"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Min Complete Duration</label>
+                          <input
+                            type="number"
+                            value={secondHalfMinDuration}
+                            onChange={(e) => setSecondHalfMinDuration(e.target.value ? Number(e.target.value) : '')}
+                            min="0"
+                            step="0.25"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            placeholder="e.g. 4"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Grace (minutes)</label>
+                          <input
+                            type="number"
+                            value={secondHalfGracePeriod}
+                            onChange={(e) => setSecondHalfGracePeriod(Number(e.target.value) || 0)}
+                            min="0"
+                            step="1"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            placeholder="15"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Payable Shifts</label>
+                          <input
+                            type="number"
+                            value={secondHalfPayableShifts}
+                            onChange={(e) => setSecondHalfPayableShifts(Number(e.target.value) || 0)}
+                            min="0"
+                            step="0.01"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            placeholder="0"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Start Time *
-                  </label>
-                  <input
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => handleStartTimeChange(e.target.value)}
-                    required
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                    End Time *
-                  </label>
-                  <input
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => handleEndTimeChange(e.target.value)}
-                    required
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Duration (hours) *
-                  </label>
-                  <select
-                    value={duration}
-                    onChange={(e) => handleDurationChange(e.target.value ? Number(e.target.value) : '')}
-                    required
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  >
-                    <option value="">Select duration</option>
-                    {allowedDurations.map((dur) => (
-                      <option key={dur} value={dur}>
-                        {dur} hours
-                      </option>
-                    ))}
-                    {/* Add current duration as an option if it's not in the allowed list */}
-                    {duration && !allowedDurations.some(d => Math.abs(d - Number(duration)) < 0.01) && (
-                      <option key="custom" value={duration}>
-                        {duration} hours (Custom)
-                      </option>
-                    )}
-                  </select>
-                  {allowedDurations.length === 0 && (
-                    <p className="mt-1.5 text-xs text-orange-600 dark:text-orange-400">
-                      No durations configured. Please configure durations in Settings → Shifts tab.
-                    </p>
+                <div className="mt-8 space-y-4">
+                  {continuityError && (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400 flex items-start gap-2">
+                      <svg className="h-4 w-4 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <div>
+                        <p className="font-semibold mb-1">Continuity Validation:</p>
+                        <p>{continuityError}</p>
+                      </div>
+                    </div>
                   )}
-                </div>
 
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Payable Shifts *
-                  </label>
-                  {suggestedPayableShifts !== null && suggestedPayableShifts !== payableShifts && (
-                    <p className="mb-1 text-[10px] text-blue-600 dark:text-blue-400">
-                      Suggested: {suggestedPayableShifts} (based on duration ÷ 8)
-                    </p>
+                  {illegalTimingWarning && (
+                    <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-xs text-orange-800 dark:border-orange-800 dark:bg-orange-900/20 dark:text-orange-400 flex items-center gap-2">
+                      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      {illegalTimingWarning}
+                    </div>
                   )}
-                  <input
-                    type="number"
-                    value={payableShifts}
-                    onChange={(e) => setPayableShifts(Number(e.target.value) || 1)}
-                    min="0"
-                    step="0.01"
-                    required
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    placeholder="1"
-                  />
-                  <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-                    Number of standard shifts (8 hours) this shift counts as
-                  </p>
-                </div>
 
-                {illegalTimingWarning && (
-                  <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800 dark:border-orange-800 dark:bg-orange-900/20 dark:text-orange-400">
-                    {illegalTimingWarning}
+                  {error && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400 flex items-center gap-2">
+                      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {error}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="submit"
+                      className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 active:scale-[0.98]"
+                    >
+                      {editingShift ? 'Update' : 'Create'} Shift
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancel}
+                      className="rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                    >
+                      Cancel
+                    </button>
                   </div>
-                )}
-
-                {error && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                    {error}
-                  </div>
-                )}
-
-                <div className="flex gap-2 pt-1">
-                  <button
-                    type="submit"
-                    className="flex-1 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
-                  >
-                    {editingShift ? 'Update' : 'Create'} Shift
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCancel}
-                    className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                  >
-                    Cancel
-                  </button>
                 </div>
               </form>
             </div>

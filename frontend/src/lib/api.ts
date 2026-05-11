@@ -617,6 +617,20 @@ async function apiRequestWithTimeout<T>(
 }
 
 
+export interface ShiftHalf {
+  startTime?: string;
+  endTime?: string;
+  duration?: number;
+  minDuration?: number;
+  gracePeriod?: number;
+  payableShifts?: number;
+}
+
+export interface ShiftBreak {
+  startTime?: string;
+  endTime?: string;
+}
+
 export interface Shift {
   _id: string;
   name: string;
@@ -625,6 +639,10 @@ export interface Shift {
   duration: number;
   code?: string;
   payableShifts?: number;
+  gracePeriod?: number;
+  firstHalf?: ShiftHalf | null;
+  break?: ShiftBreak | null;
+  secondHalf?: ShiftHalf | null;
   isActive?: boolean;
   color?: string;
   createdAt?: string;
@@ -1207,7 +1225,18 @@ export const api = {
     return apiRequest<Shift>(`/shifts/${id}`, { method: 'GET' });
   },
 
-  createShift: async (data: { name: string; startTime?: string; endTime?: string; duration?: number }) => {
+  createShift: async (data: {
+    name: string;
+    startTime?: string;
+    endTime?: string;
+    duration?: number;
+    gracePeriod?: number;
+    payableShifts?: number;
+    color?: string;
+    firstHalf?: ShiftHalf;
+    break?: ShiftBreak;
+    secondHalf?: ShiftHalf;
+  }) => {
     return apiRequest<Shift>('/shifts', {
       method: 'POST',
       body: JSON.stringify(data),
