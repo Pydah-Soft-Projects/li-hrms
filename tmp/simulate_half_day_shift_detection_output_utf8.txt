@@ -1,0 +1,631 @@
+﻿[dotenv@17.2.3] injecting env (41) from .env -- tip: ≡ƒöÉ encrypt with Dotenvx: https://dotenvx.com
+node : (node:18680) [MONGOOSE] Warning: Duplicate schema index on {"date":1} 
+found. This is often due to declaring an index using both "index: true" and 
+"schema.index()". Please remove the duplicate index definition.
+At line:1 char:36
++ ... s\backend'; node .\scripts\simulate_half_day_shift_detection.js > ..\ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:18680) [M...dex definition. 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-warnings ...` to show where the warning was created)
+Connected to MongoDB: mongodb://localhost:27017/hrms-leave
+
+=== Test Data Created ===
+Division: SIMULATION DIVISION (SIM_DIV)
+Department: SIMULATION DEPARTMENT (SIM_DEPT)
+Employee Group: SIMULATION EMPLOYEE GROUP (SIM_GROUP)
+Employee: Simulated Half-Day Test User (SIM001)
+Shift: SIM HALF-DAY SEGMENT SHIFT 09:00-18:00
+
+=== Running Attendance Processing Scenarios ===
+[MultiShift] Processing segment 1 for SIM001: statusDuration=9.00, Expected=8
+[MultiShift] Segment 1 Status: PRESENT, Payable: 1
+[Multi-Shift Processing] Updating daily record with 1 shift(s)
+[OD-FLOW] AttendanceDaily post-save: triggering recalculateOnAttendanceUpdate { employeeNumber: 'SIM001', date: '2026-05-06' }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ΓÜÖ∩╕Å  enable debug logging with { debug: true }
+[OD-FLOW] recalculateOnAttendanceUpdate called { emp_no: 'SIM001', date: '2026-05-06' }
+(node:18680) [MONGOOSE] Warning: Duplicate schema index on {"date":1} found. 
+This is often due to declaring an index using both "index: true" and 
+"schema.index()". Please remove the duplicate index definition.
+(node:18680) [MONGOOSE] Warning: Duplicate schema index on {"name":1} found. 
+This is often due to declaring an index using both "index: true" and 
+"schema.index()". Please remove the duplicate index definition.
+[Multi-Shift Processing] Γ£ô Daily record updated and hooks triggered successfully
+
+---
+Full day on-time | Date: 2026-05-06
+IN  : 09:00
+OUT : 18:00
+{
+  "success": true,
+  "message": null,
+  "assignedShift": null,
+  "source": null,
+  "matchMethod": null,
+  "lateInMinutes": null,
+  "earlyOutMinutes": null,
+  "totalPayableShifts": null,
+  "shiftSegments": [],
+  "attendanceDaily": null
+}
+Successfully connected to Redis
+[OD-FLOW] recalculateOnAttendanceUpdate period {
+  year: 2026,
+  monthNumber: 5,
+  startDateStr: '2026-04-26',
+  endDateStr: '2026-05-25'
+}
+(node:18680) [MONGOOSE] Warning: mongoose: the method name "validate" is used 
+by mongoose internally, overwriting it may cause bugs. If you're sure you know 
+what you're doing, you can suppress this error by using 
+`schema.method('validate', fn, { suppressWarning: true })`.
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ≡ƒöÉ encrypt with Dotenvx: https://dotenvx.com
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '6a01da11bb91b07c854d713e',
+  emp_no: 'SIM001',
+  year: 2026,
+  monthNumber: 5,
+  periodOverride: true
+}
+[MultiShift] Processing segment 1 for SIM001: statusDuration=3.75, Expected=8
+[MultiShift] Segment 1 Status: HALF_DAY, Payable: 0.5
+[Multi-Shift Processing] Updating daily record with 1 shift(s)
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: 'SIM001', period: '2026-04-26..2026-05-25', count: 6 }
+[OD-FLOW] AttendanceDaily post-save: triggering recalculateOnAttendanceUpdate { employeeNumber: 'SIM001', date: '2026-05-07' }
+[OD-FLOW] recalculateOnAttendanceUpdate called { emp_no: 'SIM001', date: '2026-05-07' }
+[Multi-Shift Processing] Γ£ô Daily record updated and hooks triggered successfully
+
+---
+First half only | Date: 2026-05-07
+IN  : 09:00
+OUT : 12:45
+{
+  "success": true,
+  "message": null,
+  "assignedShift": null,
+  "source": null,
+  "matchMethod": null,
+  "lateInMinutes": null,
+  "earlyOutMinutes": null,
+  "totalPayableShifts": null,
+  "shiftSegments": [],
+  "attendanceDaily": null
+}
+[OD-FLOW] recalculateOnAttendanceUpdate period {
+  year: 2026,
+  monthNumber: 5,
+  startDateStr: '2026-04-26',
+  endDateStr: '2026-05-25'
+}
+resolved {
+  freeAllowedPerMonth: 0,
+  countThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: 0,
+  calculationMode: 'proportional'
+}
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '6a01da11bb91b07c854d713e',
+  emp_no: 'SIM001',
+  year: 2026,
+  monthNumber: 5,
+  periodOverride: true
+}
+[MultiShift] Processing segment 1 for SIM001: statusDuration=3.92, Expected=8
+[MultiShift] Segment 1 Status: HALF_DAY, Payable: 0.5
+[Multi-Shift Processing] Updating daily record with 1 shift(s)
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: 'SIM001', period: '2026-04-26..2026-05-25', count: 6 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 6a01da11bb91b07c854d713e - Lates: 0, Early: 0 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+[Deduction] Absent extra: 12 absent ├ù (2 - 1) = 12 days
+[OD-FLOW] AttendanceDaily post-save: triggering recalculateOnAttendanceUpdate { employeeNumber: 'SIM001', date: '2026-05-08' }
+[OD-FLOW] recalculateOnAttendanceUpdate called { emp_no: 'SIM001', date: '2026-05-08' }
+[Multi-Shift Processing] Γ£ô Daily record updated and hooks triggered successfully
+
+---
+Second half only | Date: 2026-05-08
+IN  : 14:05
+OUT : 18:00
+{
+  "success": true,
+  "message": null,
+  "assignedShift": null,
+  "source": null,
+  "matchMethod": null,
+  "lateInMinutes": null,
+  "earlyOutMinutes": null,
+  "totalPayableShifts": null,
+  "shiftSegments": [],
+  "attendanceDaily": null
+}
+[OD-FLOW] recalculateOnAttendanceUpdate period {
+  year: 2026,
+  monthNumber: 5,
+  startDateStr: '2026-04-26',
+  endDateStr: '2026-05-25'
+}
+[OD-FLOW] calculateMonthlySummary saved { emp_no: 'SIM001', month: '2026-05' }
+[OD-FLOW] recalculateOnAttendanceUpdate done for SIM001 2026-05-06
+resolved {
+  freeAllowedPerMonth: 0,
+  countThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: 0,
+  calculationMode: 'proportional'
+}
+[ExtraHours] Skipping legacy detection for SIM001 on 2026-05-06 (Multi-shift/Smart-Pairing engine handled it)
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '6a01da11bb91b07c854d713e',
+  emp_no: 'SIM001',
+  year: 2026,
+  monthNumber: 5,
+  periodOverride: true
+}
+[MultiShift] Processing segment 1 for SIM001: statusDuration=8.58, Expected=8
+[MultiShift] Segment 1 Status: PRESENT, Payable: 1
+[Multi-Shift Processing] Updating daily record with 1 shift(s)
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: 'SIM001', period: '2026-04-26..2026-05-25', count: 6 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 6a01da11bb91b07c854d713e - Lates: 0, Early: 0 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+[Deduction] Absent extra: 12 absent ├ù (2 - 1) = 12 days
+[OD-FLOW] AttendanceDaily post-save: triggering recalculateOnAttendanceUpdate { employeeNumber: 'SIM001', date: '2026-05-09' }
+[OD-FLOW] recalculateOnAttendanceUpdate called { emp_no: 'SIM001', date: '2026-05-09' }
+[OD-FLOW] recalculateOnAttendanceUpdate period {
+  year: 2026,
+  monthNumber: 5,
+  startDateStr: '2026-04-26',
+  endDateStr: '2026-05-25'
+}
+[OD-FLOW] calculateMonthlySummary saved { emp_no: 'SIM001', month: '2026-05' }
+[OD-FLOW] recalculateOnAttendanceUpdate done for SIM001 2026-05-07
+[ExtraHours] Skipping legacy detection for SIM001 on 2026-05-07 (Multi-shift/Smart-Pairing engine handled it)
+resolved {
+  freeAllowedPerMonth: 0,
+  countThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: 0,
+  calculationMode: 'proportional'
+}
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '6a01da11bb91b07c854d713e',
+  emp_no: 'SIM001',
+  year: 2026,
+  monthNumber: 5,
+  periodOverride: true
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: 'SIM001', period: '2026-04-26..2026-05-25', count: 6 }
+[OD-FLOW] AttendanceDaily post-save: triggering recalculateOnAttendanceUpdate { employeeNumber: 'SIM001', date: '2026-05-09' }
+[OD-FLOW] recalculateOnAttendanceUpdate called { emp_no: 'SIM001', date: '2026-05-09' }
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '6a01da11bb91b07c854d713e',
+  emp_no: 'SIM001',
+  year: 2026,
+  monthNumber: 5,
+  periodOverride: false
+}
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 6a01da11bb91b07c854d713e - Lates: 0, Early: 0 (Source: attendance_logs)
+[OD-FLOW] recalculateOnAttendanceUpdate period {
+  year: 2026,
+  monthNumber: 5,
+  startDateStr: '2026-04-26',
+  endDateStr: '2026-05-25'
+}
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+[Deduction] Absent extra: 12 absent ├ù (2 - 1) = 12 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: 'SIM001', month: '2026-05' }
+[OD-FLOW] recalculateOnAttendanceUpdate done for SIM001 2026-05-08
+[ExtraHours] Skipping legacy detection for SIM001 on 2026-05-08 (Multi-shift/Smart-Pairing engine handled it)
+resolved {
+  freeAllowedPerMonth: 0,
+  countThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: 0,
+  calculationMode: 'proportional'
+}
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '6a01da11bb91b07c854d713e',
+  emp_no: 'SIM001',
+  year: 2026,
+  monthNumber: 5,
+  periodOverride: true
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: 'SIM001', period: '2026-04-26..2026-05-25', count: 6 }
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: 'SIM001', period: '2026-04-26..2026-05-25', count: 6 }
+resolved {
+  freeAllowedPerMonth: 0,
+  countThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: 0,
+  calculationMode: 'proportional'
+}
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 6a01da11bb91b07c854d713e - Lates: 0, Early: 0 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+[Deduction] Absent extra: 12 absent ├ù (2 - 1) = 12 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: 'SIM001', month: '2026-05' }
+[OD-FLOW] recalculateOnAttendanceUpdate done for SIM001 2026-05-09
+resolved {
+  freeAllowedPerMonth: 0,
+  countThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: 0,
+  calculationMode: 'proportional'
+}
+[ExtraHours] Skipping legacy detection for SIM001 on 2026-05-09 (Multi-shift/Smart-Pairing engine handled it)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 6a01da11bb91b07c854d713e - Lates: 0, Early: 0 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+[Deduction] Absent extra: 12 absent ├ù (2 - 1) = 12 days
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 6a01da11bb91b07c854d713e - Lates: 0, Early: 0 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+[Deduction] Absent extra: 12 absent ├ù (2 - 1) = 12 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: 'SIM001', month: '2026-05' }
+[Multi-Shift Processing] Γ£ô Daily record updated and hooks triggered successfully
+
+---
+Late first-half beyond grace | Date: 2026-05-09
+IN  : 09:25
+OUT : 18:00
+{
+  "success": true,
+  "message": null,
+  "assignedShift": null,
+  "source": null,
+  "matchMethod": null,
+  "lateInMinutes": null,
+  "earlyOutMinutes": null,
+  "totalPayableShifts": null,
+  "shiftSegments": [],
+  "attendanceDaily": null
+}
+[OD-FLOW] calculateMonthlySummary saved { emp_no: 'SIM001', month: '2026-05' }
+[OD-FLOW] recalculateOnAttendanceUpdate done for SIM001 2026-05-09
+[ExtraHours] Skipping legacy detection for SIM001 on 2026-05-09 (Multi-shift/Smart-Pairing engine handled it)
+[MultiShift] Processing segment 1 for SIM001: statusDuration=8.67, Expected=8
+[MultiShift] Segment 1 Status: PRESENT, Payable: 1
+[Multi-Shift Processing] Updating daily record with 1 shift(s)
+[OD-FLOW] AttendanceDaily post-save: triggering recalculateOnAttendanceUpdate { employeeNumber: 'SIM001', date: '2026-05-10' }
+[OD-FLOW] recalculateOnAttendanceUpdate called { emp_no: 'SIM001', date: '2026-05-10' }
+[OD-FLOW] recalculateOnAttendanceUpdate period {
+  year: 2026,
+  monthNumber: 5,
+  startDateStr: '2026-04-26',
+  endDateStr: '2026-05-25'
+}
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '6a01da11bb91b07c854d713e',
+  emp_no: 'SIM001',
+  year: 2026,
+  monthNumber: 5,
+  periodOverride: true
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: 'SIM001', period: '2026-04-26..2026-05-25', count: 6 }
+[OD-FLOW] AttendanceDaily post-save: triggering recalculateOnAttendanceUpdate { employeeNumber: 'SIM001', date: '2026-05-10' }
+[OD-FLOW] recalculateOnAttendanceUpdate called { emp_no: 'SIM001', date: '2026-05-10' }
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '6a01da11bb91b07c854d713e',
+  emp_no: 'SIM001',
+  year: 2026,
+  monthNumber: 5,
+  periodOverride: false
+}
+[OD-FLOW] recalculateOnAttendanceUpdate period {
+  year: 2026,
+  monthNumber: 5,
+  startDateStr: '2026-04-26',
+  endDateStr: '2026-05-25'
+}
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '6a01da11bb91b07c854d713e',
+  emp_no: 'SIM001',
+  year: 2026,
+  monthNumber: 5,
+  periodOverride: true
+}
+resolved {
+  freeAllowedPerMonth: 0,
+  countThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: 0,
+  calculationMode: 'proportional'
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: 'SIM001', period: '2026-04-26..2026-05-25', count: 6 }
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: 'SIM001', period: '2026-04-26..2026-05-25', count: 6 }
+resolved {
+  freeAllowedPerMonth: 0,
+  countThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: 0,
+  calculationMode: 'proportional'
+}
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 6a01da11bb91b07c854d713e - Lates: 0, Early: 0 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+[Deduction] Absent extra: 12 absent ├ù (2 - 1) = 12 days
+resolved {
+  freeAllowedPerMonth: 0,
+  countThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: 0,
+  calculationMode: 'proportional'
+}
+[OD-FLOW] calculateMonthlySummary saved { emp_no: 'SIM001', month: '2026-05' }
+[OD-FLOW] recalculateOnAttendanceUpdate done for SIM001 2026-05-10
+[ExtraHours] Skipping legacy detection for SIM001 on 2026-05-10 (Multi-shift/Smart-Pairing engine handled it)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 6a01da11bb91b07c854d713e - Lates: 0, Early: 0 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+[Deduction] Absent extra: 12 absent ├ù (2 - 1) = 12 days
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 6a01da11bb91b07c854d713e - Lates: 0, Early: 0 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+[Deduction] Absent extra: 12 absent ├ù (2 - 1) = 12 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: 'SIM001', month: '2026-05' }
+[Multi-Shift Processing] Γ£ô Daily record updated and hooks triggered successfully
+
+---
+Early out second-half beyond grace | Date: 2026-05-10
+IN  : 09:00
+OUT : 17:40
+{
+  "success": true,
+  "message": null,
+  "assignedShift": null,
+  "source": null,
+  "matchMethod": null,
+  "lateInMinutes": null,
+  "earlyOutMinutes": null,
+  "totalPayableShifts": null,
+  "shiftSegments": [],
+  "attendanceDaily": null
+}
+[OD-FLOW] calculateMonthlySummary saved { emp_no: 'SIM001', month: '2026-05' }
+[OD-FLOW] recalculateOnAttendanceUpdate done for SIM001 2026-05-10
+[ExtraHours] Skipping legacy detection for SIM001 on 2026-05-10 (Multi-shift/Smart-Pairing engine handled it)
+[MultiShift] Processing segment 1 for SIM001: statusDuration=2.50, Expected=8
+[MultiShift] Segment 1 Status: ABSENT, Payable: 0
+[Multi-Shift Processing] Updating daily record with 1 shift(s)
+[OD-FLOW] AttendanceDaily post-save: triggering recalculateOnAttendanceUpdate { employeeNumber: 'SIM001', date: '2026-05-11' }
+[OD-FLOW] recalculateOnAttendanceUpdate called { emp_no: 'SIM001', date: '2026-05-11' }
+[Multi-Shift Processing] Γ£ô Daily record updated and hooks triggered successfully
+
+---
+Partial overlap across both halves | Date: 2026-05-11
+IN  : 12:30
+OUT : 15:00
+{
+  "success": true,
+  "message": null,
+  "assignedShift": null,
+  "source": null,
+  "matchMethod": null,
+  "lateInMinutes": null,
+  "earlyOutMinutes": null,
+  "totalPayableShifts": null,
+  "shiftSegments": [],
+  "attendanceDaily": null
+}
+Error recalculating summary on attendance update for SIM001, 2026-05-11: 
+MongoClientClosedError: Operation interrupted because client was closed
+    at ConnectionPool.closeCheckedOutConnections 
+(D:\li-hrms\backend\node_modules\mongodb\lib\cmap\connection_pool.js:315:26)
+    at Server.closeCheckedOutConnections 
+(D:\li-hrms\backend\node_modules\mongodb\lib\sdam\server.js:125:26)
+    at Topology.closeCheckedOutConnections 
+(D:\li-hrms\backend\node_modules\mongodb\lib\sdam\topology.js:241:27)
+    at MongoClient._close 
+(D:\li-hrms\backend\node_modules\mongodb\lib\mongo_client.js:342:24)
+    at MongoClient.close 
+(D:\li-hrms\backend\node_modules\mongodb\lib\mongo_client.js:325:35)
+    at NativeConnection.doClose (D:\li-hrms\backend\node_modules\mongoose\lib\d
+rivers\node-mongodb-native\connection.js:201:21)
+    at NativeConnection._close 
+(D:\li-hrms\backend\node_modules\mongoose\lib\connection.js:1267:18)
+    at NativeConnection.close 
+(D:\li-hrms\backend\node_modules\mongoose\lib\connection.js:1229:15)
+    at D:\li-hrms\backend\node_modules\mongoose\lib\mongoose.js:472:60
+    at Array.map (<anonymous>) {
+  errorLabelSet: Set(0) {}
+}
+Error detecting extra hours: MongoNotConnectedError: Client must be connected 
+before running operations
+    at autoConnect (D:\li-hrms\backend\node_modules\mongodb\lib\operations\exec
+ute_operation.js:100:19)
+    at executeOperation (D:\li-hrms\backend\node_modules\mongodb\lib\operations
+\execute_operation.js:41:40)
+    at FindCursor._initialize 
+(D:\li-hrms\backend\node_modules\mongodb\lib\cursor\find_cursor.js:62:73)
+    at FindCursor.cursorInit 
+(D:\li-hrms\backend\node_modules\mongodb\lib\cursor\abstract_cursor.js:620:38)
+    at FindCursor.fetchBatch 
+(D:\li-hrms\backend\node_modules\mongodb\lib\cursor\abstract_cursor.js:654:24)
+    at FindCursor.next 
+(D:\li-hrms\backend\node_modules\mongodb\lib\cursor\abstract_cursor.js:326:28)
+    at [Symbol.asyncIterator] 
+(D:\li-hrms\backend\node_modules\mongodb\lib\cursor\abstract_cursor.js:254:45)
+    at AsyncGenerator.next (<anonymous>)
+    at FindCursor.toArray 
+(D:\li-hrms\backend\node_modules\mongodb\lib\cursor\abstract_cursor.js:406:26)
+    at model.Query._find 
+(D:\li-hrms\backend\node_modules\mongoose\lib\query.js:2432:27) {
+  errorLabelSet: Set(0) {}
+}
+
+Simulation completed.

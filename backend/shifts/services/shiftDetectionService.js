@@ -506,7 +506,7 @@ const getOrganizationalShiftsForContext = async ({
 };
 
 /**
- * Find candidate shifts based on proximity to in-time (not grace period)
+ * Find candidate shifts based on proximity to shift start-time (not grace period)
  * @param {Date} inTime - Employee's in-time
  * @param {Array} shifts - Array of shift objects
  * @param {String} date - Date string (YYYY-MM-DD) - the attendance date
@@ -548,14 +548,12 @@ const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3) => {
         isStartBeforeLog: isStartBeforeLog,
         isPreferred: isPreferred,
         sourcePriority: shift.sourcePriority || 99,
-        matchReason: `In-time ${istInTime.toLocaleTimeString()} is ${difference.toFixed(1)} minutes from shift ${shift.name} start (${shift.startTime})`,
       });
     }
   }
 
   return candidates.sort((a, b) => {
     // 1. HARD PRIORITY: Rostered Shift (Priority 1) always wins if it's a candidate
-    // This satisfies "assign rostered shift only" while allowing fallbacks if roster is far away
     if (a.sourcePriority === 1 && b.sourcePriority !== 1) return -1;
     if (a.sourcePriority !== 1 && b.sourcePriority === 1) return 1;
 
@@ -764,7 +762,7 @@ const calculateLateIn = (inTime, shiftStartTime, shiftGracePeriod = 15, date = n
     dateStr = `${istDate.getFullYear()}-${String(istDate.getMonth() + 1).padStart(2, '0')}-${String(istDate.getDate()).padStart(2, '0')}`;
   }
 
-  let shiftStartDate = createDateWithOffset(dateStr, shiftStartTime);
+  let shiftStartDate = createISTDate(dateStr, shiftStartTime);
 
   // Check if this is an overnight shift (starts at 20:00 or later)
   const isOvernightShift = shiftStartHour >= 20;
@@ -828,7 +826,7 @@ const calculateEarlyOut = (outTime, shiftEndTime, shiftStartTime = null, date = 
     dateStr = `${istDate.getFullYear()}-${String(istDate.getMonth() + 1).padStart(2, '0')}-${String(istDate.getDate()).padStart(2, '0')}`;
   }
 
-  let shiftEndDate = createDateWithOffset(dateStr, shiftEndTime);
+  let shiftEndDate = createISTDate(dateStr, shiftEndTime);
 
   if (isOvernight) {
     // For overnight shifts, end time is typically on the next day relative to shift start

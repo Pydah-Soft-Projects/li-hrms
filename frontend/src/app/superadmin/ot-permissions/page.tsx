@@ -2482,6 +2482,7 @@ export default function OTAndPermissionsPage() {
                         </label>
                         <input
                           type="datetime-local"
+                          lang="en-GB"
                           value={otFormData.otOutTime}
                           onChange={(e) => setOTFormData(prev => ({ ...prev, otOutTime: e.target.value }))}
                           className="w-full h-10 sm:h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white cursor-pointer"
@@ -2654,6 +2655,7 @@ export default function OTAndPermissionsPage() {
                             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Start Time <span className="text-rose-500">*</span></label>
                             <input
                               type="datetime-local"
+                              lang="en-GB"
                               value={permissionFormData.permissionStartTime}
                               onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionStartTime: e.target.value }))}
                               className="w-full h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all dark:text-white cursor-pointer"
@@ -2663,6 +2665,7 @@ export default function OTAndPermissionsPage() {
                             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">End Time <span className="text-rose-500">*</span></label>
                             <input
                               type="datetime-local"
+                              lang="en-GB"
                               value={permissionFormData.permissionEndTime}
                               onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionEndTime: e.target.value }))}
                               className="w-full h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all dark:text-white cursor-pointer"
@@ -2676,6 +2679,7 @@ export default function OTAndPermissionsPage() {
                           </label>
                           <input
                             type="time"
+                            lang="en-GB"
                             value={permissionFormData.permittedEdgeTime}
                             onChange={(e) => setPermissionFormData(prev => ({ ...prev, permittedEdgeTime: e.target.value }))}
                             className="w-full h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all dark:text-white"

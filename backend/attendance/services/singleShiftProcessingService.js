@@ -727,6 +727,13 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
       const basePayable = (assignedShiftDef?.payableShifts ?? 1);
       pShift.basePayable = basePayable;
       applyStatusFromDuration(pShift, expectedHours);
+
+      try {
+        const { enrichShiftRecordWithSegments, resolveGraceFromSettings } = require('./shiftSegmentAttendanceService');
+        await enrichShiftRecordWithSegments(pShift, date, await resolveGraceFromSettings());
+      } catch (segErr) {
+        console.warn('[SingleShift] enrichShiftRecordWithSegments:', segErr.message);
+      }
     } else {
       pShift.status = 'PRESENT';
       pShift.payableShift = 1;

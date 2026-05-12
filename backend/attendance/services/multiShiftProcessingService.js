@@ -803,6 +803,18 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             processedShifts.push(pShift);
         }
 
+        try {
+            const { enrichShiftRecordWithSegments, resolveGraceFromSettings } = require('./shiftSegmentAttendanceService');
+            const graceSeg = await resolveGraceFromSettings();
+            for (let si = 0; si < processedShifts.length; si++) {
+                const row = processedShifts[si];
+                const plain = typeof row.toObject === 'function' ? row.toObject() : { ...row };
+                processedShifts[si] = await enrichShiftRecordWithSegments(plain, date, graceSeg);
+            }
+        } catch (segErr) {
+            console.warn('[MultiShift] enrichShiftRecordWithSegments:', segErr.message);
+        }
+
         // Step 5: Calculate daily totals
         const totals = calculateDailyTotals(processedShifts);
 

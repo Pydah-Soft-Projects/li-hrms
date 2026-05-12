@@ -26,6 +26,7 @@ import {
 import { toast } from 'react-toastify';
 import { MultiSelect } from '@/components/MultiSelect';
 import { AutoEdgePermissionModal } from '@/components/AutoEdgePermissionModal';
+import { ShiftSegmentRefreshModal } from '@/components/ShiftSegmentRefreshModal';
 import { format, parseISO } from 'date-fns';
 import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
 import {
@@ -501,6 +502,7 @@ export default function AttendancePage() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showAutoEdgePermissionModal, setShowAutoEdgePermissionModal] = useState(false);
+  const [showShiftSegmentRefreshModal, setShowShiftSegmentRefreshModal] = useState(false);
   const [syncingShifts, setSyncingShifts] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -2662,6 +2664,16 @@ export default function AttendancePage() {
                 </svg>
                 Generate Auto Edge
               </button>
+              <button
+                onClick={() => setShowShiftSegmentRefreshModal(true)}
+                title="Refresh first/second half segment data from current shift definitions"
+                className="h-9 flex items-center px-4 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-teal-600 hover:border-teal-200 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-teal-400"
+              >
+                <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h10" />
+                </svg>
+                Refresh Half-Segments
+              </button>
             </div>
           </div>
         </div>
@@ -4184,6 +4196,17 @@ export default function AttendancePage() {
           designationId={selectedDesignation}
           searchQuery={searchQuery}
           onClose={() => setShowAutoEdgePermissionModal(false)}
+        />
+
+        <ShiftSegmentRefreshModal
+          open={showShiftSegmentRefreshModal}
+          currentStartDate={cycleDates.startDate}
+          currentEndDate={cycleDates.endDate}
+          divisionId={selectedDivision}
+          departmentId={selectedDepartment}
+          designationId={selectedDesignation}
+          searchQuery={searchQuery}
+          onClose={() => setShowShiftSegmentRefreshModal(false)}
         />
 
         {showOutTimeDialog && selectedRecordForOutTime && (
