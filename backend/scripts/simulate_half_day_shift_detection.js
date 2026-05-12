@@ -7,7 +7,8 @@ const EmployeeGroup = require('../employees/model/EmployeeGroup');
 const Employee = require('../employees/model/Employee');
 const Shift = require('../shifts/model/Shift');
 const Settings = require('../settings/model/Settings');
-const { detectAndAssignShift } = require('../shifts/services/shiftDetectionService');
+const AttendanceRawLog = require('../attendance/model/AttendanceRawLog');
+const { processMultiShiftAttendance } = require('../attendance/services/multiShiftProcessingService');
 const { createISTDate } = require('../shared/utils/dateUtils');
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/hrms';
@@ -129,17 +130,49 @@ function buildISTDate(dateStr, timeStr) {
 
 function formatResult(result) {
   return {
-    success: result.success,
-    message: result.message || null,
-    assignedShift: result.shiftName || null,
-    source: result.source || null,
-    matchMethod: result.matchMethod || null,
-    lateInMinutes: result.lateInMinutes,
-    earlyOutMinutes: result.earlyOutMinutes,
-    totalPayableShifts: result.totalPayableShifts,
-    shiftSegments: result.shiftSegments || [],
-    continuityWarnings: result.continuityWarnings || [],
+    success: result?.success ?? null,
+    message: result?.message || null,
+    assignedShift: result?.assignedShift || result?.shiftName || null,
+    source: result?.source || null,
+    matchMethod: result?.matchMethod || null,
+    lateInMinutes: result?.lateInMinutes ?? null,
+    earlyOutMinutes: result?.earlyOutMinutes ?? null,
+    totalPayableShifts: result?.totalPayableShifts ?? null,
+    shiftSegments: result?.shiftSegments || result?.shiftAssignments || [],
+    attendanceDaily: result?.attendanceDaily || null,
   };
+}
+
+async function createRawLogsForScenario(employeeNumber, date, inTime, outTime) {
+  const source = 'biometric-realtime';
+  await AttendanceRawLog.deleteMany({ employeeNumber, date, source });
+
+  const logs = [
+    {
+      employeeNumber,
+      timestamp: inTime,
+      type: 'IN',
+      subType: 'CHECK-IN',
+      source,
+      date,
+      rawData: { simulated: true, event: 'IN' },
+    },
+  ];
+
+  if (outTime) {
+    logs.push({
+      employeeNumber,
+      timestamp: outTime,
+      type: 'OUT',
+      subType: 'CHECK-OUT',
+      source,
+      date,
+      rawData: { simulated: true, event: 'OUT' },
+    });
+  }
+
+  await AttendanceRawLog.insertMany(logs);
+  return await AttendanceRawLog.find({ employeeNumber, date, source }).sort({ timestamp: 1 }).lean();
 }
 
 async function main() {
@@ -200,12 +233,19 @@ async function main() {
     },
   ];
 
-  console.log('\n=== Running Shift Detection Scenarios ===');
+  console.log('\n=== Running Attendance Processing Scenarios ===');
 
   for (const scenario of scenarios) {
     const inTime = buildISTDate(scenario.date, scenario.in);
     const outTime = buildISTDate(scenario.date, scenario.out);
-    const result = await detectAndAssignShift(employee.emp_no, scenario.date, inTime, outTime, globalConfig);
+
+    await createRawLogsForScenario(employee.emp_no, scenario.date, inTime, outTime);
+
+    const rawLogs = await AttendanceRawLog.find({ employeeNumber: employee.emp_no, date: scenario.date, source: 'biometric-realtime' })
+      .sort({ timestamp: 1 })
+      .lean();
+
+    const result = await processMultiShiftAttendance(employee.emp_no, scenario.date, rawLogs, globalConfig);
 
     console.log('\n---');
     console.log(`${scenario.description} | Date: ${scenario.date}`);

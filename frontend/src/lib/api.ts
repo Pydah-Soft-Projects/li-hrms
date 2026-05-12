@@ -1786,6 +1786,21 @@ export const api = {
     });
   },
 
+  /** Backfill / refresh first-half second-half segment metadata from current Shift definitions */
+  refreshAttendanceShiftSegments: async (payload: {
+    startDate: string;
+    endDate: string;
+    divisionId?: string;
+    departmentId?: string;
+    designationId?: string;
+    search?: string;
+  }) => {
+    return apiRequest<any>('/attendance/refresh-shift-segments', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   // Attendance Deduction Settings
   getAttendanceDeductionSettings: async () => {
     return apiRequest<any>('/attendance/settings/deduction', { method: 'GET' });

@@ -232,6 +232,7 @@ const OTSettings = () => {
                                         <span className="text-[10px] text-gray-500">Threshold (HH:MM)</span>
                                         <input
                                             type="time"
+                                            lang="en-GB"
                                             step={60}
                                             value={hoursToHHMM(otSettings.thresholdHours)}
                                             onChange={(e) =>
@@ -354,6 +355,7 @@ const OTSettings = () => {
                                             <div key={idx} className="grid grid-cols-9 gap-2 items-center rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-slate-900/30 p-2">
                                                 <input
                                                     type="time"
+                                                    lang="en-GB"
                                                     step={60}
                                                     value={minutesToHHMM(r.minMinutes)}
                                                     onChange={(e) => {
@@ -366,6 +368,7 @@ const OTSettings = () => {
                                                 <span className="text-[10px] text-gray-500 text-center">to</span>
                                                 <input
                                                     type="time"
+                                                    lang="en-GB"
                                                     step={60}
                                                     value={minutesToHHMM(r.maxMinutes)}
                                                     onChange={(e) => {
@@ -378,6 +381,7 @@ const OTSettings = () => {
                                                 <span className="text-[10px] text-gray-500 text-center">consider</span>
                                                 <input
                                                     type="time"
+                                                    lang="en-GB"
                                                     step={60}
                                                     value={minutesToHHMM(r.creditedMinutes)}
                                                     onChange={(e) => {
@@ -475,6 +479,7 @@ const OTSettings = () => {
                         <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Raw OT (HH:MM)</label>
                         <input
                             type="time"
+                            lang="en-GB"
                             step={60}
                             value={simRawHours}
                             onChange={(e) => setSimRawHours(e.target.value)}

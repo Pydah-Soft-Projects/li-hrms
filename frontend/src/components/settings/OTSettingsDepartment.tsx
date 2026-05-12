@@ -351,6 +351,7 @@ export default function OTSettingsDepartment({
                   <span className="text-[10px] text-gray-500">Threshold (HH:MM)</span>
                   <input
                     type="time"
+                    lang="en-GB"
                     step={60}
                     value={hoursToHHMM(draft.thresholdHours)}
                     onChange={(e) =>
@@ -492,6 +493,7 @@ export default function OTSettingsDepartment({
                     >
                       <input
                         type="time"
+                        lang="en-GB"
                         step={60}
                         value={minutesToHHMM(r.minMinutes)}
                         onChange={(e) => {
@@ -504,6 +506,7 @@ export default function OTSettingsDepartment({
                       <span className="text-center text-[10px] text-gray-500">to</span>
                       <input
                         type="time"
+                        lang="en-GB"
                         step={60}
                         value={minutesToHHMM(r.maxMinutes)}
                         onChange={(e) => {
@@ -516,6 +519,7 @@ export default function OTSettingsDepartment({
                       <span className="text-center text-[10px] text-gray-500">consider</span>
                       <input
                         type="time"
+                        lang="en-GB"
                         step={60}
                         value={minutesToHHMM(r.creditedMinutes)}
                         onChange={(e) => {
@@ -574,6 +578,7 @@ export default function OTSettingsDepartment({
             <label className="mb-1 block text-[10px] font-bold uppercase text-gray-500">Raw OT (HH:MM)</label>
             <input
               type="time"
+              lang="en-GB"
               step={60}
               value={simRawHours}
               onChange={(e) => setSimRawHours(e.target.value)}

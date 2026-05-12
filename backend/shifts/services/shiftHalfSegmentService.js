@@ -17,6 +17,7 @@ const timeRangeForSegment = (dateStr, startTime, endTime) => {
     return null;
   }
 
+  // Handle overnight segments: if end time is earlier than start time, it spans midnight
   if (endMinutes <= startMinutes) {
     endDate.setDate(endDate.getDate() + 1);
   }
@@ -25,17 +26,85 @@ const timeRangeForSegment = (dateStr, startTime, endTime) => {
 };
 
 const getOverlapMinutes = (rangeA, rangeB) => {
-  if (!rangeA || !rangeB) return 0;
+  if (!rangeA || !rangeB || !rangeA.startDate || !rangeA.endDate || !rangeB.startDate || !rangeB.endDate) return 0;
   const start = Math.max(rangeA.startDate.getTime(), rangeB.startDate.getTime());
   const end = Math.min(rangeA.endDate.getTime(), rangeB.endDate.getTime());
   if (end <= start) return 0;
   return Math.round((end - start) / 60000);
 };
 
-const normalizeSegment = (segment, name, dateStr) => {
+/**
+ * Align segment range with parent shift range for overnight shifts.
+ * Example: shift 21:00-09:00 and segment 03:00-09:00 should be anchored on next day.
+ */
+const alignSegmentRangeToShift = (segmentRange, shiftRange) => {
+  if (!segmentRange || !shiftRange || !segmentRange.startDate || !segmentRange.endDate || !shiftRange.startDate) {
+    return segmentRange;
+  }
+
+  // If the whole segment is before shift start, move it to next day.
+  if (segmentRange.endDate.getTime() <= shiftRange.startDate.getTime()) {
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    return {
+      startDate: new Date(segmentRange.startDate.getTime() + oneDayMs),
+      endDate: new Date(segmentRange.endDate.getTime() + oneDayMs),
+    };
+  }
+
+  return segmentRange;
+};
+
+/**
+ * Check if a punch time falls within any segment of an overnight shift
+ * Used for enhanced shift matching when employees work only part of overnight shifts
+ * @param {Date} punchTime - Employee's punch time
+ * @param {Object} shift - Shift object with firstHalf/secondHalf
+ * @param {String} dateStr - Attendance date (YYYY-MM-DD)
+ * @returns {Object|null} - Segment info if punch matches a segment, null otherwise
+ */
+const findMatchingSegmentForPunch = (punchTime, shift, dateStr) => {
+  if (!shift || (!shift.firstHalf && !shift.secondHalf)) return null;
+
+  const shiftRange = timeRangeForSegment(dateStr, shift.startTime, shift.endTime);
+  const punchRange = {
+    startDate: new Date(punchTime.getTime() - 1000), // 1 second before
+    endDate: new Date(punchTime.getTime() + 1000),   // 1 second after
+  };
+
+  // Check first half
+  if (shift.firstHalf && shift.firstHalf.startTime && shift.firstHalf.endTime) {
+    const rawFirstHalfRange = timeRangeForSegment(dateStr, shift.firstHalf.startTime, shift.firstHalf.endTime);
+    const firstHalfRange = alignSegmentRangeToShift(rawFirstHalfRange, shiftRange);
+    if (firstHalfRange && getOverlapMinutes(punchRange, firstHalfRange) > 0) {
+      return {
+        segmentName: 'firstHalf',
+        segment: shift.firstHalf,
+        range: firstHalfRange,
+      };
+    }
+  }
+
+  // Check second half (may span midnight)
+  if (shift.secondHalf && shift.secondHalf.startTime && shift.secondHalf.endTime) {
+    const rawSecondHalfRange = timeRangeForSegment(dateStr, shift.secondHalf.startTime, shift.secondHalf.endTime);
+    const secondHalfRange = alignSegmentRangeToShift(rawSecondHalfRange, shiftRange);
+    if (secondHalfRange && getOverlapMinutes(punchRange, secondHalfRange) > 0) {
+      return {
+        segmentName: 'secondHalf',
+        segment: shift.secondHalf,
+        range: secondHalfRange,
+      };
+    }
+  }
+
+  return null;
+};
+
+const normalizeSegment = (segment, name, dateStr, shiftRange = null) => {
   if (!segment || !segment.startTime || !segment.endTime) return null;
 
-  const range = timeRangeForSegment(dateStr, segment.startTime, segment.endTime);
+  const rawRange = timeRangeForSegment(dateStr, segment.startTime, segment.endTime);
+  const range = alignSegmentRangeToShift(rawRange, shiftRange);
   if (!range) return null;
 
   return {
@@ -87,9 +156,9 @@ const buildShiftSegmentTimeline = (shift, dateStr) => {
   const segments = [];
   const continuityWarnings = [];
 
-  const firstHalf = normalizeSegment(shift.firstHalf, 'firstHalf', dateStr);
-  const breakSegment = normalizeSegment(shift.break, 'break', dateStr);
-  const secondHalf = normalizeSegment(shift.secondHalf, 'secondHalf', dateStr);
+  const firstHalf = normalizeSegment(shift.firstHalf, 'firstHalf', dateStr, shiftRange);
+  const breakSegment = normalizeSegment(shift.break, 'break', dateStr, shiftRange);
+  const secondHalf = normalizeSegment(shift.secondHalf, 'secondHalf', dateStr, shiftRange);
 
   if (firstHalf) segments.push(firstHalf);
   if (secondHalf) segments.push(secondHalf);
@@ -141,7 +210,7 @@ const getShiftSegmentAssignment = (shift, dateStr, inTime, outTime, options = {}
   const segmentDetails = timeline.segments.map((segment) => {
     const present = inTime && outTime
       ? hasOverlap(segment, inTime, outTime)
-      : (inTime ? getOverlapMinutes(segment.range, { startDate: new Date(inTime), endDate: new Date(inTime) }) > 0 : false);
+      : (inTime && segment.range ? getOverlapMinutes(segment.range, { startDate: new Date(inTime), endDate: new Date(inTime) }) > 0 : false);
 
     const lateInMinutes = present ? calculateSegmentLateIn(segment, inTime, globalLateInGrace, shift.gracePeriod) : null;
     const earlyOutMinutes = present ? calculateSegmentEarlyOut(segment, outTime, globalEarlyOutGrace, shift.gracePeriod) : null;
@@ -160,7 +229,7 @@ const getShiftSegmentAssignment = (shift, dateStr, inTime, outTime, options = {}
       earlyOutMinutes: earlyOutMinutes !== null ? Math.max(0, earlyOutMinutes) : null,
       isLateIn: lateInMinutes > 0,
       isEarlyOut: earlyOutMinutes > 0,
-      overlapMinutes: inTime && outTime ? getOverlapMinutes(segment.range, { startDate: new Date(inTime), endDate: new Date(outTime) }) : 0,
+      overlapMinutes: inTime && outTime && segment.range ? getOverlapMinutes(segment.range, { startDate: new Date(inTime), endDate: new Date(outTime) }) : 0,
     };
   });
 
@@ -181,4 +250,5 @@ module.exports = {
   calculateSegmentLateIn,
   calculateSegmentEarlyOut,
   getEffectiveGrace,
+  findMatchingSegmentForPunch,
 };

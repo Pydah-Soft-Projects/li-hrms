@@ -18,6 +18,7 @@ const attendanceUploadController = require('./controllers/attendanceUploadContro
 const monthlySummaryController = require('./controllers/monthlySummaryController');
 const liveAttendanceReportController = require('./controllers/liveAttendanceReportController');
 const reportsController = require('./controllers/reportsController');
+const attendanceShiftSegmentRefreshController = require('./controllers/attendanceShiftSegmentRefreshController');
 
 // Configure multer for file uploads (memory storage)
 const upload = multer({
@@ -82,6 +83,14 @@ router.put('/settings/early-out', authorize('super_admin', 'sub_admin'), earlyOu
 router.post('/settings/early-out/ranges', authorize('super_admin', 'sub_admin'), earlyOutSettingsController.addRange);
 router.put('/settings/early-out/ranges/:rangeId', authorize('super_admin', 'sub_admin'), earlyOutSettingsController.updateRange);
 router.delete('/settings/early-out/ranges/:rangeId', authorize('super_admin', 'sub_admin'), earlyOutSettingsController.deleteRange);
+
+// Shift half-segment refresh (historical backfill; same scope filters as list)
+router.post(
+  '/refresh-shift-segments',
+  authorize('super_admin', 'sub_admin'),
+  applyScopeFilter,
+  attendanceShiftSegmentRefreshController.refreshShiftSegmentsBatch
+);
 
 // Sync Routes (Super Admin, Sub Admin only)
 router.post('/sync', authorize('super_admin', 'sub_admin'), attendanceSyncController.manualSync);
