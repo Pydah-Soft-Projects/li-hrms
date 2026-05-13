@@ -2964,6 +2964,7 @@ exports.listLeaveRegister = async (req, res) => {
       search,
       page = '1',
       limit = '25',
+      debug,
     } = req.query;
 
     const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
@@ -2988,6 +2989,30 @@ exports.listLeaveRegister = async (req, res) => {
       empNo: empNo && String(empNo).trim() ? String(empNo).trim() : undefined,
       searchTerm: search && String(search).trim() ? String(search).trim() : undefined,
     };
+
+    // Opt-in debug: help diagnose “DB has docs but API returns empty”.
+    // Call with `&debug=1` (only logs; response unchanged).
+    const debugOn =
+      String(debug) === '1' || String(debug).toLowerCase() === 'true';
+    if (debugOn && filters.financialYear) {
+      try {
+        const LeaveRegisterYear = require('../model/LeaveRegisterYear');
+        const conn = mongoose.connection;
+        const count = await LeaveRegisterYear.countDocuments({ financialYear: filters.financialYear });
+        console.log('[LeaveRegister:list] debug', {
+          financialYear: filters.financialYear,
+          mongoDb: conn?.name,
+          mongoHost: conn?.host,
+          mongoPort: conn?.port,
+          modelCollection: LeaveRegisterYear?.collection?.name,
+          countDocuments: count,
+          role: user?.role,
+          dataScope: user?.dataScope,
+        });
+      } catch (e) {
+        console.warn('[LeaveRegister:list] debug failed:', e?.message || String(e));
+      }
+    }
 
     const fullAccess =
       user.role === 'super_admin' ||
