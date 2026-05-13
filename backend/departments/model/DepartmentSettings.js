@@ -537,11 +537,10 @@ const departmentSettingsSchema = new mongoose.Schema(
   }
 );
 
-departmentSettingsSchema.pre('validate', function validateDivisionWide(next) {
+// Mongoose 9: document pre('validate') receives (options), not next — use throw instead of next(err).
+departmentSettingsSchema.pre('validate', function validateDivisionWide() {
   if (!this.department && !this.division) {
-    next(new Error('DepartmentSettings: either department or division must be set'));
-  } else {
-    next();
+    throw new Error('DepartmentSettings: either department or division must be set');
   }
 });
 
