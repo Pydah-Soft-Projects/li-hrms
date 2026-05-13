@@ -1909,12 +1909,15 @@ async function processPayroll(payrollRecordId, userId) {
       throw new Error('Payroll must be calculated or approved before processing');
     }
 
+    const settlementId = payrollRecord._id ? String(payrollRecord._id) : null;
+
     // Update loan records
     if (payrollRecord.loanAdvance.emiBreakdown && payrollRecord.loanAdvance.emiBreakdown.length > 0) {
       await loanAdvanceService.updateLoanRecordsAfterEMI(
         payrollRecord.loanAdvance.emiBreakdown,
         payrollRecord.month,
-        userId
+        userId,
+        settlementId
       );
     }
 
@@ -1923,7 +1926,8 @@ async function processPayroll(payrollRecordId, userId) {
       await loanAdvanceService.updateAdvanceRecordsAfterDeduction(
         payrollRecord.loanAdvance.advanceBreakdown,
         payrollRecord.month,
-        userId
+        userId,
+        settlementId
       );
     }
 

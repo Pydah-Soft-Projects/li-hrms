@@ -8,7 +8,8 @@
  *
  * Usage (from backend/):
  *   node scripts/report_el_inputs_vs_service_division.js
- *   node scripts/report_el_inputs_vs_service_division.js --division=PYDAHSOFT --month=4 --year=2026 --limit=100
+ *   node scripts/report_el_inputs_vs_service_division.js --division=PYDAHSOFT --department=Development --month=4 --year=2026 --limit=100
+ *   node scripts/report_el_inputs_vs_service_division.js --department=all   # all departments in division (default dept filter off)
  */
 
 const mongoose = require('mongoose');
@@ -22,6 +23,7 @@ require('../employees/model/Employee');
 const LeavePolicySettings = require('../settings/model/LeavePolicySettings');
 const DepartmentSettings = require('../departments/model/DepartmentSettings');
 const Division = require('../departments/model/Division');
+const Department = require('../departments/model/Department');
 const Employee = require('../employees/model/Employee');
 const dateCycleService = require('../leaves/services/dateCycleService');
 const { resolveEffectiveEarnedLeave } = require('../leaves/services/earnedLeavePolicyResolver');
@@ -35,13 +37,22 @@ const {
 function parseArgs() {
   const out = {
     divisionKey: 'PYDAHSOFT',
+    departmentKey: 'Development',
+    departmentAll: false,
     month: 4,
     year: 2026,
     limit: 200,
   };
   for (const a of process.argv.slice(2)) {
     if (a.startsWith('--division=')) out.divisionKey = a.split('=')[1].trim();
-    else if (a.startsWith('--month=')) out.month = Math.max(1, Math.min(12, Number(a.split('=')[1]) || 4));
+    else if (a.startsWith('--department=')) {
+      const v = a.split('=').slice(1).join('=').trim();
+      if (!v || /^all$/i.test(v) || v === '*') {
+        out.departmentAll = true;
+      } else {
+        out.departmentKey = v;
+      }
+    } else if (a.startsWith('--month=')) out.month = Math.max(1, Math.min(12, Number(a.split('=')[1]) || 4));
     else if (a.startsWith('--year=')) out.year = Number(a.split('=')[1]) || 2026;
     else if (a.startsWith('--limit=')) out.limit = Math.max(1, Math.min(2000, Number(a.split('=')[1]) || 200));
   }
@@ -51,6 +62,15 @@ function parseArgs() {
 async function findDivision(q) {
   const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return Division.findOne({
+    $or: [{ code: new RegExp(`^${esc}$`, 'i') }, { name: new RegExp(esc, 'i') }],
+  })
+    .select('_id name code')
+    .lean();
+}
+
+async function findDepartment(q) {
+  const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return Department.findOne({
     $or: [{ code: new RegExp(`^${esc}$`, 'i') }, { name: new RegExp(esc, 'i') }],
   })
     .select('_id name code')
@@ -85,10 +105,22 @@ async function main() {
     process.exit(1);
   }
 
+  let dept = null;
+  if (!opts.departmentAll) {
+    dept = await findDepartment(opts.departmentKey);
+    if (!dept) {
+      console.error(`No department matching "${opts.departmentKey}". Use --department=all for whole division.`);
+      process.exit(1);
+    }
+  }
+
   const globalPolicy = await LeavePolicySettings.getSettings();
   const fy = await dateCycleService.getFinancialYearForDate(new Date(opts.year, opts.month - 1, 15));
 
-  const emps = await Employee.find({ division_id: div._id, is_active: true })
+  const empQuery = { division_id: div._id, is_active: true };
+  if (dept) empQuery.department_id = dept._id;
+
+  const emps = await Employee.find(empQuery)
     .select('_id emp_no employee_name department_id division_id doj')
     .sort({ emp_no: 1 })
     .limit(opts.limit)
@@ -98,6 +130,11 @@ async function main() {
   const cycleInfo = await dateCycleService.getPayrollCycleForDate(mid);
 
   console.log(`Division: ${div.name} (${div.code})   Payroll cycle label: ${cycleInfo.month}/${cycleInfo.year}`);
+  console.log(
+    dept
+      ? `Department: ${dept.name} (${dept.code || 'n/a'})`
+      : 'Department: (all departments in division)'
+  );
   console.log(
     `Period (approx): ${cycleInfo.startDate?.toISOString?.().slice(0, 10)} → ${cycleInfo.endDate?.toISOString?.().slice(0, 10)}`
   );

@@ -13,6 +13,14 @@ const Department = require('../../departments/model/Department');
 const XLSX = require('xlsx');
 const PDFDocument = require('pdfkit');
 const dayjs = require('dayjs');
+const {
+  calculateEMI,
+  syncLoanMoneyAndPayrollSchedule,
+  setNextPaymentDateFromInstallmentsPaid,
+  computeLoanPayrollAnchors,
+  firstPayrollMonthKeyForRepaymentSchedule,
+} = require('../services/loanHistoryRepairService');
+const { getPresentPayPeriod } = require('../../shared/utils/dateUtils');
 
 // ============================================
 // NO HARDCODED BYPASS - Uses database setting: workflow.allowHigherAuthorityToApproveLowerLevels
@@ -132,31 +140,6 @@ const findEmployeeByIdOrEmpNo = async (identifier) => {
  * Handles CRUD operations and approval workflow
  */
 
-// Helper to calculate EMI for loans with simple interest
-const calculateEMI = (principal, interestRate, duration) => {
-  if (interestRate === 0 || !interestRate) {
-    // No interest - simple division
-    const emi = principal / duration;
-    return {
-      emiAmount: Math.round(emi),
-      totalInterest: 0,
-      totalAmount: principal,
-    };
-  }
-
-  // Simple Interest Method: SI = (P × R × T) / 100
-  // T is in months, so convert to years: T/12
-  const totalInterest = (principal * interestRate * (duration / 12)) / 100;
-  const totalAmount = principal + totalInterest;
-  const emi = totalAmount / duration;
-
-  return {
-    emiAmount: Math.round(emi),
-    totalInterest: Math.round(totalInterest),
-    totalAmount: Math.round(totalAmount),
-  };
-};
-
 // Helper to calculate early settlement amount
 const calculateEarlySettlement = (loan, settlementDate = new Date()) => {
   if (loan.requestType !== 'loan' || !loan.loanConfig) {
@@ -242,7 +225,7 @@ exports.getLoans = async (req, res) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const [loans, total] = await Promise.all([
+    const [loans, total, presentPayPeriod] = await Promise.all([
       Loan.find(filter)
         .populate('employeeId', 'employee_name emp_no gross_salary')
         .populate('department', 'name')
@@ -252,6 +235,7 @@ exports.getLoans = async (req, res) => {
         .skip(skip)
         .limit(parseInt(limit)),
       Loan.countDocuments(filter),
+      getPresentPayPeriod(),
     ]);
 
     res.status(200).json({
@@ -261,6 +245,7 @@ exports.getLoans = async (req, res) => {
       page: parseInt(page),
       totalPages: Math.ceil(total / parseInt(limit)),
       data: loans,
+      presentPayPeriod,
     });
   } catch (error) {
     console.error('Error fetching loans:', error);
@@ -285,16 +270,20 @@ exports.getMyLoans = async (req, res) => {
     if (status) filter.status = status;
     if (requestType) filter.requestType = requestType;
 
-    const loans = await Loan.find(filter)
-      .populate('employeeId', 'employee_name emp_no gross_salary')
-      .populate('department', 'name')
-      .populate('designation', 'name')
-      .sort({ createdAt: -1 });
+    const [loans, presentPayPeriod] = await Promise.all([
+      Loan.find(filter)
+        .populate('employeeId', 'employee_name emp_no gross_salary')
+        .populate('department', 'name')
+        .populate('designation', 'name')
+        .sort({ createdAt: -1 }),
+      getPresentPayPeriod(),
+    ]);
 
     res.status(200).json({
       success: true,
       count: loans.length,
       data: loans,
+      presentPayPeriod,
     });
   } catch (error) {
     console.error('Error fetching my loans:', error);
@@ -548,9 +537,19 @@ exports.getLoan = async (req, res) => {
       });
     }
 
+    if (loan.requestType === 'loan') {
+      const updated = await syncLoanMoneyAndPayrollSchedule(loan);
+      if (updated) {
+        await loan.save();
+      }
+    }
+
+    const presentPayPeriod = await getPresentPayPeriod();
+
     res.status(200).json({
       success: true,
       data: loan,
+      presentPayPeriod,
     });
   } catch (error) {
     console.error('Error fetching loan:', error);
@@ -798,6 +797,7 @@ exports.applyLoan = async (req, res) => {
     let advanceConfig = {};
     let totalAmount = amount;
     let totalInterest = 0; // Declare in outer scope
+    let firstEmiDueDate = null;
 
     if (requestType === 'loan') {
       const interestRate = settings.interestRate || 0;
@@ -806,20 +806,15 @@ exports.applyLoan = async (req, res) => {
       totalAmount = calculatedTotal;
       totalInterest = calculatedInterest; // Assign to outer scope variable
 
-      // Calculate start and end dates (start from next month)
-      const startDate = new Date();
-      startDate.setMonth(startDate.getMonth() + 1);
-      startDate.setDate(1); // First day of next month
-
-      const endDate = new Date(startDate);
-      endDate.setMonth(endDate.getMonth() + duration);
+      const anchors = await computeLoanPayrollAnchors(new Date(), duration);
+      firstEmiDueDate = anchors.firstDueDate;
 
       loanConfig = {
         emiAmount,
         interestRate,
         totalInterest,
-        startDate,
-        endDate,
+        startDate: anchors.startDate,
+        endDate: anchors.endDate,
         totalAmount,
       };
     } else {
@@ -832,7 +827,7 @@ exports.applyLoan = async (req, res) => {
     }
 
     // Create loan application
-    const loan = new Loan({
+    const loanPayload = {
       employeeId: employee._id,
       emp_no: employee.emp_no,
       requestType,
@@ -855,9 +850,13 @@ exports.applyLoan = async (req, res) => {
         remainingBalance: requestType === 'loan' ? totalAmount : amount,
         installmentsPaid: 0,
         totalInstallments: duration,
-        nextPaymentDate: requestType === 'loan' ? loanConfig.startDate : null,
+        nextPaymentDate: requestType === 'loan' ? firstEmiDueDate : null,
       },
-    });
+    };
+    if (requestType === 'loan') {
+      loanPayload.loanConfig = loanConfig;
+    }
+    const loan = new Loan(loanPayload);
 
     // Determine initial workflow step
     // Fixed requirement: Always start with HOD as the default first step
@@ -1409,6 +1408,7 @@ exports.processLoanAction = async (req, res) => {
       // 1. Handle Interest Rate Update (only for loans)
       if (loan.requestType === 'loan' && approvalInterestRate !== undefined && !isNaN(parseFloat(approvalInterestRate))) {
         const newRate = parseFloat(approvalInterestRate);
+        if (!loan.loanConfig) loan.loanConfig = {};
         if (newRate !== loan.loanConfig.interestRate) {
           const oldRate = loan.loanConfig.interestRate || 0;
           loan.loanConfig.interestRate = newRate;
@@ -1449,6 +1449,7 @@ exports.processLoanAction = async (req, res) => {
       // 3. Recalculate configurations if anything changed
       if (configChanged) {
         if (loan.requestType === 'loan') {
+          if (!loan.loanConfig) loan.loanConfig = {};
           const currentAmount = loan.amount;
           const currentRate = loan.loanConfig.interestRate || 0;
           const duration = loan.duration;
@@ -1835,6 +1836,18 @@ exports.disburseLoan = async (req, res) => {
       timestamp: new Date(),
     });
 
+    await syncLoanMoneyAndPayrollSchedule(loan, { fromDisburse: true });
+
+    if (loan.requestType === 'salary_advance') {
+      if (!loan.advanceConfig) loan.advanceConfig = {};
+      if (!loan.advanceConfig.deductionStartCycle) {
+        loan.advanceConfig.deductionStartCycle = await firstPayrollMonthKeyForRepaymentSchedule(loan);
+      }
+      await setNextPaymentDateFromInstallmentsPaid(loan);
+      loan.markModified('advanceConfig');
+      loan.markModified('repayment');
+    }
+
     await loan.save();
 
     await loan.populate([
@@ -1958,13 +1971,9 @@ exports.payEMI = async (req, res) => {
 
     loan.repayment.lastPaymentDate = transaction.transactionDate;
 
-    // Calculate next payment date (if not fully paid)
-    if (loan.repayment.remainingBalance > 0 && loan.loanConfig.startDate && !isEarlySettlement) {
-      const monthsPaid = loan.repayment.installmentsPaid;
-      const nextDate = new Date(loan.loanConfig.startDate);
-      nextDate.setMonth(nextDate.getMonth() + monthsPaid);
-      loan.repayment.nextPaymentDate = nextDate;
-    } else {
+    if (loan.requestType === 'loan' && !isEarlySettlement) {
+      await setNextPaymentDateFromInstallmentsPaid(loan);
+    } else if (loan.repayment.remainingBalance <= 0 || isEarlySettlement) {
       loan.repayment.nextPaymentDate = null;
     }
 
@@ -2067,9 +2076,22 @@ exports.payAdvance = async (req, res) => {
     if (loan.repayment.remainingBalance <= 0) {
       loan.status = 'completed';
       loan.repayment.remainingBalance = 0;
+      loan.repayment.nextPaymentDate = null;
     } else if (loan.status === 'disbursed') {
       loan.status = 'active';
     }
+
+    if (!loan.advanceConfig) loan.advanceConfig = {};
+    const pc = payrollCycle != null ? String(payrollCycle).trim() : '';
+    if (pc && /^\d{4}-\d{2}$/.test(pc) && !loan.advanceConfig.deductionStartCycle) {
+      loan.advanceConfig.deductionStartCycle = pc;
+    }
+    if (loan.repayment.remainingBalance > 0) {
+      await setNextPaymentDateFromInstallmentsPaid(loan);
+    }
+
+    loan.markModified('advanceConfig');
+    loan.markModified('repayment');
 
     await loan.save();
 

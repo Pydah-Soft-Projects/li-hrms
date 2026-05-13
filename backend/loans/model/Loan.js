@@ -274,6 +274,11 @@ const LoanSchema = new mongoose.Schema(
           ref: 'User',
         },
         remarks: String,
+        /** Idempotency: e.g. payroll_settle:<PayrollRecordId>:emi — same payroll must not apply twice */
+        payrollSettlementKey: {
+          type: String,
+          trim: true,
+        },
         createdAt: {
           type: Date,
           default: Date.now,
