@@ -38,11 +38,11 @@ const departmentEarnedLeaveOverrideSchema = new mongoose.Schema(
  */
 const departmentSettingsSchema = new mongoose.Schema(
   {
-    // Department reference
+    // Department reference (omit for division-wide defaults: { department: null, division: <id> })
     department: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Department',
-      required: [true, 'Department is required'],
+      default: null,
     },
 
     // Division reference (Optional override for a specific division within a department)
@@ -537,6 +537,14 @@ const departmentSettingsSchema = new mongoose.Schema(
   }
 );
 
+departmentSettingsSchema.pre('validate', function validateDivisionWide(next) {
+  if (!this.department && !this.division) {
+    next(new Error('DepartmentSettings: either department or division must be set'));
+  } else {
+    next();
+  }
+});
+
 // Indexes
 departmentSettingsSchema.index({ department: 1, division: 1 }, { unique: true });
 departmentSettingsSchema.index({ division: 1 });
@@ -600,31 +608,106 @@ function toPlainEarnedLeave(el) {
   return typeof el.toObject === 'function' ? el.toObject() : el;
 }
 
-// Static method to get settings for a department and division
-departmentSettingsSchema.statics.getByDeptAndDiv = async function (departmentId, divisionId = null) {
-  const baseRow = await this.findOne({ department: departmentId, division: null });
+function toPlainDoc(doc) {
+  if (!doc) return null;
+  return typeof doc.toObject === 'function' ? doc.toObject() : { ...doc };
+}
 
-  if (!divisionId) {
-    return baseRow || null;
+function mergeObjectPreferSecond(base, incoming) {
+  if (!incoming) return base ? { ...base } : null;
+  if (!base) return { ...incoming };
+  const out = { ...base };
+  for (const k of Object.keys(incoming)) {
+    const iv = incoming[k];
+    if (iv === undefined) continue;
+    const bv = out[k];
+    if (iv !== null && typeof iv === 'object' && !Array.isArray(iv) && !(iv instanceof Date)) {
+      out[k] = mergeObjectPreferSecond(bv && typeof bv === 'object' && !Array.isArray(bv) ? bv : {}, iv);
+    } else {
+      out[k] = iv;
+    }
   }
-
-  const divisionRow = await this.findOne({ department: departmentId, division: divisionId });
-  if (!divisionRow) {
-    return baseRow || null;
-  }
-
-  if (!baseRow) {
-    return divisionRow;
-  }
-
-  const mergedEl = mergeEarnedLeaveForRead(
-    toPlainEarnedLeave(baseRow.leaves?.earnedLeave),
-    toPlainEarnedLeave(divisionRow.leaves?.earnedLeave)
-  );
-
-  const out = typeof divisionRow.toObject === 'function' ? divisionRow.toObject() : { ...divisionRow };
-  out.leaves = { ...(out.leaves || {}), earnedLeave: mergedEl };
   return out;
+}
+
+/**
+ * Merge leaves.* with precedence: department+division row > division-wide > department default.
+ * earnedLeave: merge EL(deptBase, divWide) then merge EL(result, deptDiv) — each step second wins.
+ */
+function mergeLeavesThreeLayers(deptBaseLeaves, divWideLeaves, deptDivLeaves) {
+  if (!deptBaseLeaves && !divWideLeaves && !deptDivLeaves) return undefined;
+  const b = { ...(deptBaseLeaves || {}) };
+  const w = { ...(divWideLeaves || {}) };
+  const d = { ...(deptDivLeaves || {}) };
+  const bEl = b.earnedLeave;
+  const wEl = w.earnedLeave;
+  const dEl = d.earnedLeave;
+  delete b.earnedLeave;
+  delete w.earnedLeave;
+  delete d.earnedLeave;
+  const merged = mergeObjectPreferSecond(mergeObjectPreferSecond(b, w), d);
+  if (bEl || wEl || dEl) {
+    const step1 = mergeEarnedLeaveForRead(toPlainEarnedLeave(bEl), toPlainEarnedLeave(wEl));
+    merged.earnedLeave = mergeEarnedLeaveForRead(step1, toPlainEarnedLeave(dEl));
+  }
+  return merged;
+}
+
+/**
+ * Effective departmental settings for (department, division):
+ * 1) Department default row (department, division null)
+ * 2) Division-wide row (department null, division) — used where no division-specific dept override
+ * 3) Department+division row (department, division) — wins over both when set
+ */
+function mergeSettingsThreeLayers(deptBasePlain, divWidePlain, deptDivPlain) {
+  const keys = ['leaves', 'loans', 'salaryAdvance', 'permissions', 'ot', 'attendance', 'payroll'];
+  const out = {};
+  for (const k of keys) {
+    if (k === 'leaves') {
+      const ml = mergeLeavesThreeLayers(deptBasePlain?.leaves, divWidePlain?.leaves, deptDivPlain?.leaves);
+      if (ml && Object.keys(ml).length) out.leaves = ml;
+    } else {
+      const merged = mergeObjectPreferSecond(
+        mergeObjectPreferSecond(deptBasePlain?.[k] || {}, divWidePlain?.[k] || {}),
+        deptDivPlain?.[k] || {}
+      );
+      if (merged && Object.keys(merged).length) out[k] = merged;
+    }
+  }
+  if (deptDivPlain?.department != null) out.department = deptDivPlain.department;
+  else if (deptBasePlain?.department != null) out.department = deptBasePlain.department;
+  if (deptDivPlain?.division != null) out.division = deptDivPlain.division;
+  else if (divWidePlain?.division != null) out.division = divWidePlain.division;
+  return Object.keys(out).length ? out : null;
+}
+
+// Static method to get effective settings for a department and division (three-layer merge when division is set)
+departmentSettingsSchema.statics.getByDeptAndDiv = async function (departmentId, divisionId = null) {
+  const divId = divisionId || null;
+
+  let divisionWidePlain = null;
+  if (divId) {
+    const dw = await this.findOne({ department: null, division: divId });
+    if (dw) divisionWidePlain = toPlainDoc(dw);
+  }
+
+  if (!departmentId) {
+    return divisionWidePlain || null;
+  }
+
+  const deptBaseRow = await this.findOne({ department: departmentId, division: null });
+  const deptBasePlain = deptBaseRow ? toPlainDoc(deptBaseRow) : null;
+
+  if (!divId) {
+    return deptBasePlain;
+  }
+
+  const deptDivRow = await this.findOne({ department: departmentId, division: divId });
+  const deptDivPlain = deptDivRow ? toPlainDoc(deptDivRow) : null;
+
+  if (!deptBasePlain && !divisionWidePlain && !deptDivPlain) return null;
+
+  return mergeSettingsThreeLayers(deptBasePlain, divisionWidePlain, deptDivPlain);
 };
 
 // Static method to get or create settings for a department/division combination
@@ -632,6 +715,17 @@ departmentSettingsSchema.statics.getOrCreateCombination = async function (depart
   let settings = await this.findOne({ department: departmentId, division: divisionId || null });
   if (!settings) {
     settings = new this({ department: departmentId, division: divisionId || null });
+    await settings.save();
+  }
+  return settings;
+};
+
+/** Division-wide row: applies to every department in that division until a department row overrides. */
+departmentSettingsSchema.statics.getOrCreateDivisionWide = async function (divisionId) {
+  if (!divisionId) return null;
+  let settings = await this.findOne({ department: null, division: divisionId });
+  if (!settings) {
+    settings = new this({ department: null, division: divisionId });
     await settings.save();
   }
   return settings;
