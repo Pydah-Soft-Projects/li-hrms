@@ -31,6 +31,27 @@ const defaultRange = (): ShiftRange => ({
     description: '',
 });
 
+type ApiShiftRange = {
+    _id?: string;
+    minShiftHours: number;
+    maxShiftHours: number;
+    minimumMinutes?: number;
+    allowedMinutes: number;
+    description?: string;
+};
+type ApiRuleSet = { shiftDurationRanges?: ApiShiftRange[] };
+
+const toLocalRuleSet = (rs?: ApiRuleSet): AutoRuleSet => ({
+    shiftDurationRanges: (rs?.shiftDurationRanges || []).map((r) => ({
+        _id: r._id,
+        minShiftHours: r.minShiftHours,
+        maxShiftHours: r.maxShiftHours,
+        minimumMinutes: r.minimumMinutes ?? 1,
+        allowedMinutes: r.allowedMinutes,
+        description: r.description,
+    })),
+});
+
 const PermissionsSettings = () => {
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -90,8 +111,8 @@ const PermissionsSettings = () => {
                     isEnabled: Boolean(autoRes.data.isEnabled),
                     applyFor: (autoRes.data.applyFor || 'both') as AutoApplyFor,
                     useSameRulesForBoth: autoRes.data.useSameRulesForBoth !== false,
-                    lateInRules: autoRes.data.lateInRules || emptyRuleSet(),
-                    earlyOutRules: autoRes.data.earlyOutRules || emptyRuleSet(),
+                    lateInRules: toLocalRuleSet(autoRes.data.lateInRules),
+                    earlyOutRules: toLocalRuleSet(autoRes.data.earlyOutRules),
                 });
             }
         } catch (err) {
@@ -266,8 +287,8 @@ const PermissionsSettings = () => {
                     isEnabled: Boolean(res.data.isEnabled),
                     applyFor: (res.data.applyFor || 'both') as AutoApplyFor,
                     useSameRulesForBoth: res.data.useSameRulesForBoth !== false,
-                    lateInRules: res.data.lateInRules || emptyRuleSet(),
-                    earlyOutRules: res.data.earlyOutRules || emptyRuleSet(),
+                    lateInRules: toLocalRuleSet(res.data.lateInRules),
+                    earlyOutRules: toLocalRuleSet(res.data.earlyOutRules),
                 });
                 toast.success('Auto permission settings saved');
             } else {
