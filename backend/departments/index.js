@@ -87,6 +87,20 @@ router.post('/:departmentId/designations/link', authorize('manager', 'super_admi
 router.post('/:departmentId/designations', authorize('manager', 'super_admin', 'sub_admin', 'hr'), designationController.createDesignation);
 
 // Department Settings routes
+// Division-wide defaults (no department): must be registered before /:deptId/settings is not affected (different path shape)
+router.get(
+  '/settings/division/:divisionId',
+  departmentSettingsController.getDivisionWideDepartmentSettings
+);
+router.put(
+  '/settings/division/:divisionId',
+  departmentSettingsController.updateDivisionWideDepartmentSettings
+);
+router.get(
+  '/settings/division/:divisionId/resolved',
+  departmentSettingsController.getResolvedDivisionWideDepartmentSettings
+);
+
 // Get department settings
 router.get('/:deptId/settings', departmentSettingsController.getDepartmentSettings);
 

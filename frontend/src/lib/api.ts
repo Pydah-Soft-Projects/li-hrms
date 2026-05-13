@@ -406,6 +406,14 @@ export interface ApiResponse<T> {
     settingsStartDay: number;
     settingsEndDay: number;
   };
+  /** GET /loans and GET /loans/:id may include current pay period (IST) alongside `data`. */
+  presentPayPeriod?: {
+    payrollMonthKey: string;
+    startDate: string;
+    endDate: string;
+    lastDate: string;
+    totalDays?: number;
+  };
 }
 
 export interface InAppNotification {
@@ -1544,6 +1552,26 @@ export const api = {
     let url = `/departments/${deptId}/settings`;
     if (divisionId) url += `?divisionId=${divisionId}`;
     return apiRequest<any>(url, { method: 'GET' });
+  },
+
+  /** Division-wide defaults (no department): applies to all departments in the division until a department row overrides. */
+  getDivisionWideDepartmentSettings: async (divisionId: string) => {
+    return apiRequest<any>(`/departments/settings/division/${divisionId}`, { method: 'GET' });
+  },
+
+  updateDivisionWideDepartmentSettings: async (divisionId: string, data: Record<string, unknown>) => {
+    return apiRequest<any>(`/departments/settings/division/${divisionId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  getResolvedDivisionWideDepartmentSettings: async (
+    divisionId: string,
+    type?: 'leaves' | 'loans' | 'salary_advance' | 'permissions' | 'ot' | 'overtime' | 'all' | 'attendance'
+  ) => {
+    const query = type ? `?type=${type}` : '';
+    return apiRequest<any>(`/departments/settings/division/${divisionId}/resolved${query}`, { method: 'GET' });
   },
 
   // Bulk Allowance & Deduction

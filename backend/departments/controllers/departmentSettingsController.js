@@ -1,5 +1,6 @@
 const DepartmentSettings = require('../model/DepartmentSettings');
 const Department = require('../model/Department');
+const Division = require('../model/Division');
 const LoanSettings = require('../../loans/model/LoanSettings');
 
 /**
@@ -81,7 +82,7 @@ async function getResolvedPermissionSettings(departmentId, divisionId = null) {
     const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
 
     // Get department model for permission policy
-    const department = await Department.findById(departmentId);
+    const department = departmentId ? await Department.findById(departmentId) : null;
 
     // Get global permission deduction settings
     const PermissionDeductionSettings = require('../../permissions/model/PermissionDeductionSettings');
@@ -155,7 +156,9 @@ async function getResolvedAttendanceSettings(departmentId, divisionId = null) {
         isEnabled: deptSettings?.attendance?.earlyOut?.isEnabled ?? globalEarlyOut?.isEnabled ?? false,
         allowedDurationMinutes: deptSettings?.attendance?.earlyOut?.allowedDurationMinutes ?? globalEarlyOut?.allowedDurationMinutes ?? 0,
         minimumDuration: deptSettings?.attendance?.earlyOut?.minimumDuration ?? globalEarlyOut?.minimumDuration ?? 0,
-        deductionRanges: deptSettings?.attendance?.earlyOut?.deductionRanges?.length ? deptSettings.attendance.earlyOut.deductionRanges : (globalEarlyOut?.deductionRanges || []),
+        deductionRanges: deptSettings?.attendance?.earlyOut?.deductionRanges?.length
+          ? deptSettings.attendance.earlyOut.deductionRanges
+          : globalEarlyOut?.deductionRanges || [],
       },
     };
 
@@ -165,6 +168,329 @@ async function getResolvedAttendanceSettings(departmentId, divisionId = null) {
     return null;
   }
 }
+
+/**
+ * Apply PUT body fields onto a DepartmentSettings mongoose document (mutates in place).
+ */
+function applyDepartmentSettingsPayloadToDoc(settings, body) {
+  const { leaves, loans, salaryAdvance, permissions, ot, attendance, payroll } = body;
+
+  if (leaves) {
+    if (leaves.leavesPerDay !== undefined) settings.leaves.leavesPerDay = leaves.leavesPerDay;
+    if (leaves.paidLeavesCount !== undefined) settings.leaves.paidLeavesCount = leaves.paidLeavesCount;
+    if (leaves.dailyLimit !== undefined) settings.leaves.dailyLimit = leaves.dailyLimit;
+    if (leaves.monthlyLimit !== undefined) settings.leaves.monthlyLimit = leaves.monthlyLimit;
+    if (leaves.elEarningType !== undefined) settings.leaves.elEarningType = leaves.elEarningType;
+    if (leaves.elMaxCarryForward !== undefined) settings.leaves.elMaxCarryForward = leaves.elMaxCarryForward;
+    if (leaves.cclExpiryMonths !== undefined) settings.leaves.cclExpiryMonths = leaves.cclExpiryMonths;
+
+    if (leaves.earnedLeave === null) {
+      settings.leaves.earnedLeave = undefined;
+    } else if (leaves.earnedLeave !== undefined && typeof leaves.earnedLeave === 'object') {
+      if (!settings.leaves.earnedLeave) settings.leaves.earnedLeave = {};
+      const el = leaves.earnedLeave;
+      if (el.enabled !== undefined) settings.leaves.earnedLeave.enabled = el.enabled;
+      if (el.earningType !== undefined) settings.leaves.earnedLeave.earningType = el.earningType;
+      if (el.useAsPaidInPayroll !== undefined) {
+        settings.leaves.earnedLeave.useAsPaidInPayroll = el.useAsPaidInPayroll;
+      }
+      if (el.attendanceRules && typeof el.attendanceRules === 'object') {
+        if (!settings.leaves.earnedLeave.attendanceRules) settings.leaves.earnedLeave.attendanceRules = {};
+        const ar = el.attendanceRules;
+        ['minDaysForFirstEL', 'daysPerEL', 'maxELPerMonth', 'maxELPerYear'].forEach((k) => {
+          if (ar[k] !== undefined) settings.leaves.earnedLeave.attendanceRules[k] = ar[k];
+        });
+        if (ar.attendanceRanges !== undefined) {
+          settings.leaves.earnedLeave.attendanceRules.attendanceRanges = ar.attendanceRanges;
+        }
+      }
+      if (el.fixedRules && typeof el.fixedRules === 'object') {
+        if (!settings.leaves.earnedLeave.fixedRules) settings.leaves.earnedLeave.fixedRules = {};
+        if (el.fixedRules.elPerMonth !== undefined) {
+          settings.leaves.earnedLeave.fixedRules.elPerMonth = el.fixedRules.elPerMonth;
+        }
+        if (el.fixedRules.maxELPerYear !== undefined) {
+          settings.leaves.earnedLeave.fixedRules.maxELPerYear = el.fixedRules.maxELPerYear;
+        }
+      }
+    }
+    settings.markModified('leaves');
+  }
+
+  if (loans) {
+    Object.keys(loans).forEach((key) => {
+      if (loans[key] !== undefined) {
+        settings.loans[key] = loans[key];
+      }
+    });
+    settings.markModified('loans');
+  }
+
+  if (salaryAdvance) {
+    Object.keys(salaryAdvance).forEach((key) => {
+      if (salaryAdvance[key] !== undefined) {
+        settings.salaryAdvance[key] = salaryAdvance[key];
+      }
+    });
+    settings.markModified('salaryAdvance');
+  }
+
+  if (permissions) {
+    if (permissions.perDayLimit !== undefined) settings.permissions.perDayLimit = permissions.perDayLimit;
+    if (permissions.monthlyLimit !== undefined) settings.permissions.monthlyLimit = permissions.monthlyLimit;
+    if (permissions.deductFromSalary !== undefined) settings.permissions.deductFromSalary = permissions.deductFromSalary;
+    if (permissions.deductionAmount !== undefined) settings.permissions.deductionAmount = permissions.deductionAmount;
+
+    if (permissions.deductionRules) {
+      if (permissions.deductionRules.freeAllowedPerMonth !== undefined) {
+        settings.permissions.deductionRules.freeAllowedPerMonth = permissions.deductionRules.freeAllowedPerMonth;
+      }
+      if (permissions.deductionRules.countThreshold !== undefined) {
+        settings.permissions.deductionRules.countThreshold = permissions.deductionRules.countThreshold;
+      }
+      if (permissions.deductionRules.deductionType !== undefined) {
+        settings.permissions.deductionRules.deductionType = permissions.deductionRules.deductionType;
+      }
+      if (permissions.deductionRules.deductionDays !== undefined) {
+        settings.permissions.deductionRules.deductionDays = permissions.deductionRules.deductionDays;
+      }
+      if (permissions.deductionRules.deductionAmount !== undefined) {
+        settings.permissions.deductionRules.deductionAmount = permissions.deductionRules.deductionAmount;
+      }
+      if (permissions.deductionRules.minimumDuration !== undefined) {
+        settings.permissions.deductionRules.minimumDuration = permissions.deductionRules.minimumDuration;
+      }
+      if (permissions.deductionRules.calculationMode !== undefined) {
+        settings.permissions.deductionRules.calculationMode = permissions.deductionRules.calculationMode;
+      }
+    }
+    settings.markModified('permissions');
+  }
+
+  if (ot) {
+    Object.keys(ot).forEach((key) => {
+      if (ot[key] !== undefined) {
+        settings.ot[key] = ot[key];
+      }
+    });
+    settings.markModified('ot');
+  }
+
+  if (attendance) {
+    if (attendance.deductionRules) {
+      if (attendance.deductionRules.freeAllowedPerMonth !== undefined) {
+        settings.attendance.deductionRules.freeAllowedPerMonth = attendance.deductionRules.freeAllowedPerMonth;
+      }
+      if (attendance.deductionRules.combinedCountThreshold !== undefined) {
+        settings.attendance.deductionRules.combinedCountThreshold = attendance.deductionRules.combinedCountThreshold;
+      }
+      if (attendance.deductionRules.deductionType !== undefined) {
+        settings.attendance.deductionRules.deductionType = attendance.deductionRules.deductionType;
+      }
+      if (attendance.deductionRules.deductionDays !== undefined) {
+        settings.attendance.deductionRules.deductionDays = attendance.deductionRules.deductionDays;
+      }
+      if (attendance.deductionRules.deductionAmount !== undefined) {
+        settings.attendance.deductionRules.deductionAmount = attendance.deductionRules.deductionAmount;
+      }
+      if (attendance.deductionRules.minimumDuration !== undefined) {
+        settings.attendance.deductionRules.minimumDuration = attendance.deductionRules.minimumDuration;
+      }
+      if (attendance.deductionRules.calculationMode !== undefined) {
+        settings.attendance.deductionRules.calculationMode = attendance.deductionRules.calculationMode;
+      }
+    }
+
+    if (attendance.earlyOut) {
+      if (attendance.earlyOut.isEnabled !== undefined) settings.attendance.earlyOut.isEnabled = attendance.earlyOut.isEnabled;
+      if (attendance.earlyOut.allowedDurationMinutes !== undefined) {
+        settings.attendance.earlyOut.allowedDurationMinutes = attendance.earlyOut.allowedDurationMinutes;
+      }
+      if (attendance.earlyOut.minimumDuration !== undefined) settings.attendance.earlyOut.minimumDuration = attendance.earlyOut.minimumDuration;
+      if (attendance.earlyOut.deductionRanges !== undefined) {
+        settings.attendance.earlyOut.deductionRanges = attendance.earlyOut.deductionRanges;
+      }
+    }
+
+    settings.markModified('attendance');
+  }
+
+  if (payroll) {
+    if (payroll.includeMissingEmployeeComponents !== undefined) {
+      settings.payroll.includeMissingEmployeeComponents = payroll.includeMissingEmployeeComponents;
+    }
+    settings.markModified('payroll');
+  }
+}
+
+/**
+ * @desc    Division-wide departmental defaults (all departments in division until overridden)
+ * @route   GET /api/departments/settings/division/:divisionId
+ * @access  Private
+ */
+exports.getDivisionWideDepartmentSettings = async (req, res) => {
+  try {
+    const { divisionId } = req.params;
+    const div = await Division.findById(divisionId);
+    if (!div) {
+      return res.status(404).json({
+        success: false,
+        message: 'Division not found',
+      });
+    }
+
+    let settings = await DepartmentSettings.findOne({ department: null, division: divisionId });
+    if (!settings) {
+      settings = new DepartmentSettings({
+        department: null,
+        division: divisionId,
+        createdBy: req.user?._id,
+      });
+      await settings.save();
+    }
+
+    if (settings.division) {
+      await settings.populate('division', 'name');
+    }
+    await settings.populate('createdBy', 'name email');
+    await settings.populate('updatedBy', 'name email');
+
+    res.status(200).json({
+      success: true,
+      data: settings,
+    });
+  } catch (error) {
+    console.error('Error fetching division-wide department settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching division-wide department settings',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Update division-wide departmental defaults
+ * @route   PUT /api/departments/settings/division/:divisionId
+ * @access  Private
+ */
+exports.updateDivisionWideDepartmentSettings = async (req, res) => {
+  try {
+    const { divisionId } = req.params;
+    const div = await Division.findById(divisionId);
+    if (!div) {
+      return res.status(404).json({
+        success: false,
+        message: 'Division not found',
+      });
+    }
+
+    let settings = await DepartmentSettings.getOrCreateDivisionWide(divisionId);
+    applyDepartmentSettingsPayloadToDoc(settings, req.body);
+
+    settings.updatedBy = req.user._id;
+    await settings.save();
+
+    if (req.body.ot) {
+      const cacheService = require('../../shared/services/cacheService');
+      const divKey = String(divisionId);
+      await cacheService.delByPattern(`settings:ot:v3:*:div:${divKey}`);
+      await cacheService.delByPattern(`settings:ot:second-salary:*:div:${divKey}`);
+    }
+
+    if (settings.division) {
+      await settings.populate('division', 'name');
+    }
+    await settings.populate('updatedBy', 'name email');
+
+    res.status(200).json({
+      success: true,
+      message: 'Division-wide department settings updated successfully',
+      data: settings,
+    });
+  } catch (error) {
+    console.error('Error updating division-wide department settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating division-wide department settings',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Resolved settings for division-wide row (no department document)
+ * @route   GET /api/departments/settings/division/:divisionId/resolved
+ * @access  Private
+ */
+exports.getResolvedDivisionWideDepartmentSettings = async (req, res) => {
+  try {
+    const { divisionId } = req.params;
+    const { type } = req.query;
+    const div = await Division.findById(divisionId);
+    if (!div) {
+      return res.status(404).json({
+        success: false,
+        message: 'Division not found',
+      });
+    }
+
+    const resolved = {};
+
+    if (!type || type === 'all' || type === 'leaves') {
+      resolved.leaves = await getResolvedLeaveSettings(null, divisionId);
+    }
+
+    if (!type || type === 'all' || type === 'loans') {
+      resolved.loans = await getResolvedLoanSettings(null, 'loan', divisionId);
+    }
+
+    if (!type || type === 'all' || type === 'salary_advance') {
+      resolved.salaryAdvance = await getResolvedLoanSettings(null, 'salary_advance', divisionId);
+    }
+
+    if (!type || type === 'all' || type === 'permissions') {
+      resolved.permissions = await getResolvedPermissionSettings(null, divisionId);
+    }
+
+    if (!type || type === 'all' || type === 'attendance') {
+      resolved.attendance = await getResolvedAttendanceSettings(null, divisionId);
+    }
+
+    if (!type || type === 'all' || type === 'ot' || type === 'overtime') {
+      resolved.ot = await getResolvedOTSettings(null, divisionId);
+    }
+
+    if (!type || type === 'all' || type === 'payroll') {
+      const deptSettings = await DepartmentSettings.getByDeptAndDiv(null, divisionId);
+      const Settings = require('../../settings/model/Settings');
+      const globalIncludeMissingSetting = await Settings.findOne({ key: 'include_missing_employee_components' });
+      const includeMissingGlobal =
+        globalIncludeMissingSetting && globalIncludeMissingSetting.value !== undefined && globalIncludeMissingSetting.value !== null
+          ? !!globalIncludeMissingSetting.value
+          : true;
+      resolved.payroll = {
+        includeMissingEmployeeComponents:
+          deptSettings?.payroll?.includeMissingEmployeeComponents !== undefined &&
+          deptSettings?.payroll?.includeMissingEmployeeComponents !== null
+            ? deptSettings.payroll.includeMissingEmployeeComponents
+            : includeMissingGlobal,
+      };
+    }
+
+    res.status(200).json({
+      success: true,
+      data: resolved,
+    });
+  } catch (error) {
+    console.error('Error getting resolved division-wide department settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error getting resolved division-wide department settings',
+      error: error.message,
+    });
+  }
+};
 
 /**
  * @desc    Get department settings
@@ -231,7 +557,6 @@ exports.updateDepartmentSettings = async (req, res) => {
   try {
     const { deptId } = req.params;
     const { divisionId } = req.query; // Read from query params, not body
-    const { leaves, loans, salaryAdvance, permissions, ot, attendance, payroll } = req.body;
 
     // Verify department exists
     const department = await Department.findById(deptId);
@@ -245,158 +570,12 @@ exports.updateDepartmentSettings = async (req, res) => {
     // Get or create settings
     let settings = await DepartmentSettings.getOrCreateCombination(deptId, divisionId);
 
-    // Update settings
-    if (leaves) {
-      if (leaves.leavesPerDay !== undefined) settings.leaves.leavesPerDay = leaves.leavesPerDay;
-      if (leaves.paidLeavesCount !== undefined) settings.leaves.paidLeavesCount = leaves.paidLeavesCount;
-      if (leaves.dailyLimit !== undefined) settings.leaves.dailyLimit = leaves.dailyLimit;
-      if (leaves.monthlyLimit !== undefined) settings.leaves.monthlyLimit = leaves.monthlyLimit;
-      if (leaves.elEarningType !== undefined) settings.leaves.elEarningType = leaves.elEarningType;
-      if (leaves.elMaxCarryForward !== undefined) settings.leaves.elMaxCarryForward = leaves.elMaxCarryForward;
-      if (leaves.cclExpiryMonths !== undefined) settings.leaves.cclExpiryMonths = leaves.cclExpiryMonths;
-
-      if (leaves.earnedLeave === null) {
-        settings.leaves.earnedLeave = undefined;
-      } else if (leaves.earnedLeave !== undefined && typeof leaves.earnedLeave === 'object') {
-        if (!settings.leaves.earnedLeave) settings.leaves.earnedLeave = {};
-        const el = leaves.earnedLeave;
-        if (el.enabled !== undefined) settings.leaves.earnedLeave.enabled = el.enabled;
-        if (el.earningType !== undefined) settings.leaves.earnedLeave.earningType = el.earningType;
-        if (el.useAsPaidInPayroll !== undefined) {
-          settings.leaves.earnedLeave.useAsPaidInPayroll = el.useAsPaidInPayroll;
-        }
-        if (el.attendanceRules && typeof el.attendanceRules === 'object') {
-          if (!settings.leaves.earnedLeave.attendanceRules) settings.leaves.earnedLeave.attendanceRules = {};
-          const ar = el.attendanceRules;
-          ['minDaysForFirstEL', 'daysPerEL', 'maxELPerMonth', 'maxELPerYear'].forEach((k) => {
-            if (ar[k] !== undefined) settings.leaves.earnedLeave.attendanceRules[k] = ar[k];
-          });
-          if (ar.attendanceRanges !== undefined) {
-            settings.leaves.earnedLeave.attendanceRules.attendanceRanges = ar.attendanceRanges;
-          }
-        }
-        if (el.fixedRules && typeof el.fixedRules === 'object') {
-          if (!settings.leaves.earnedLeave.fixedRules) settings.leaves.earnedLeave.fixedRules = {};
-          if (el.fixedRules.elPerMonth !== undefined) {
-            settings.leaves.earnedLeave.fixedRules.elPerMonth = el.fixedRules.elPerMonth;
-          }
-          if (el.fixedRules.maxELPerYear !== undefined) {
-            settings.leaves.earnedLeave.fixedRules.maxELPerYear = el.fixedRules.maxELPerYear;
-          }
-        }
-      }
-      settings.markModified('leaves');
-    }
-
-    if (loans) {
-      Object.keys(loans).forEach(key => {
-        if (loans[key] !== undefined) {
-          settings.loans[key] = loans[key];
-        }
-      });
-      settings.markModified('loans');
-    }
-
-    if (salaryAdvance) {
-      Object.keys(salaryAdvance).forEach(key => {
-        if (salaryAdvance[key] !== undefined) {
-          settings.salaryAdvance[key] = salaryAdvance[key];
-        }
-      });
-      settings.markModified('salaryAdvance');
-    }
-
-    if (permissions) {
-      // Update basic permission settings
-      if (permissions.perDayLimit !== undefined) settings.permissions.perDayLimit = permissions.perDayLimit;
-      if (permissions.monthlyLimit !== undefined) settings.permissions.monthlyLimit = permissions.monthlyLimit;
-      if (permissions.deductFromSalary !== undefined) settings.permissions.deductFromSalary = permissions.deductFromSalary;
-      if (permissions.deductionAmount !== undefined) settings.permissions.deductionAmount = permissions.deductionAmount;
-
-      // Update permission deduction rules
-      if (permissions.deductionRules) {
-        if (permissions.deductionRules.freeAllowedPerMonth !== undefined) {
-          settings.permissions.deductionRules.freeAllowedPerMonth = permissions.deductionRules.freeAllowedPerMonth;
-        }
-        if (permissions.deductionRules.countThreshold !== undefined) {
-          settings.permissions.deductionRules.countThreshold = permissions.deductionRules.countThreshold;
-        }
-        if (permissions.deductionRules.deductionType !== undefined) {
-          settings.permissions.deductionRules.deductionType = permissions.deductionRules.deductionType;
-        }
-        if (permissions.deductionRules.deductionDays !== undefined) {
-          settings.permissions.deductionRules.deductionDays = permissions.deductionRules.deductionDays;
-        }
-        if (permissions.deductionRules.deductionAmount !== undefined) {
-          settings.permissions.deductionRules.deductionAmount = permissions.deductionRules.deductionAmount;
-        }
-        if (permissions.deductionRules.minimumDuration !== undefined) {
-          settings.permissions.deductionRules.minimumDuration = permissions.deductionRules.minimumDuration;
-        }
-        if (permissions.deductionRules.calculationMode !== undefined) {
-          settings.permissions.deductionRules.calculationMode = permissions.deductionRules.calculationMode;
-        }
-      }
-      settings.markModified('permissions');
-    }
-
-    if (ot) {
-      Object.keys(ot).forEach(key => {
-        if (ot[key] !== undefined) {
-          settings.ot[key] = ot[key];
-        }
-      });
-      settings.markModified('ot');
-    }
-
-    if (attendance) {
-      // Update attendance deduction rules
-      if (attendance.deductionRules) {
-        if (attendance.deductionRules.freeAllowedPerMonth !== undefined) {
-          settings.attendance.deductionRules.freeAllowedPerMonth = attendance.deductionRules.freeAllowedPerMonth;
-        }
-        if (attendance.deductionRules.combinedCountThreshold !== undefined) {
-          settings.attendance.deductionRules.combinedCountThreshold = attendance.deductionRules.combinedCountThreshold;
-        }
-        if (attendance.deductionRules.deductionType !== undefined) {
-          settings.attendance.deductionRules.deductionType = attendance.deductionRules.deductionType;
-        }
-        if (attendance.deductionRules.deductionDays !== undefined) {
-          settings.attendance.deductionRules.deductionDays = attendance.deductionRules.deductionDays;
-        }
-        if (attendance.deductionRules.deductionAmount !== undefined) {
-          settings.attendance.deductionRules.deductionAmount = attendance.deductionRules.deductionAmount;
-        }
-        if (attendance.deductionRules.minimumDuration !== undefined) {
-          settings.attendance.deductionRules.minimumDuration = attendance.deductionRules.minimumDuration;
-        }
-        if (attendance.deductionRules.calculationMode !== undefined) {
-          settings.attendance.deductionRules.calculationMode = attendance.deductionRules.calculationMode;
-        }
-      }
-
-      // Update early-out settings
-      if (attendance.earlyOut) {
-        if (attendance.earlyOut.isEnabled !== undefined) settings.attendance.earlyOut.isEnabled = attendance.earlyOut.isEnabled;
-        if (attendance.earlyOut.allowedDurationMinutes !== undefined) settings.attendance.earlyOut.allowedDurationMinutes = attendance.earlyOut.allowedDurationMinutes;
-        if (attendance.earlyOut.minimumDuration !== undefined) settings.attendance.earlyOut.minimumDuration = attendance.earlyOut.minimumDuration;
-        if (attendance.earlyOut.deductionRanges !== undefined) settings.attendance.earlyOut.deductionRanges = attendance.earlyOut.deductionRanges;
-      }
-
-      settings.markModified('attendance');
-    }
-
-    if (payroll) {
-      if (payroll.includeMissingEmployeeComponents !== undefined) {
-        settings.payroll.includeMissingEmployeeComponents = payroll.includeMissingEmployeeComponents;
-      }
-      settings.markModified('payroll');
-    }
+    applyDepartmentSettingsPayloadToDoc(settings, req.body);
 
     settings.updatedBy = req.user._id;
     await settings.save();
 
-    if (ot) {
+    if (req.body.ot) {
       const cacheService = require('../../shared/services/cacheService');
       const divKey = divisionId || (settings.division ? String(settings.division) : 'none');
       await cacheService.del(`settings:ot:v3:dept:${deptId}:div:${divKey}`);

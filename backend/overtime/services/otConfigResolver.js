@@ -20,9 +20,11 @@ function num(v, fallback = 0) {
  */
 async function getMergedOtConfig(departmentId, divisionId = null) {
   const global = await OvertimeSettings.getActiveSettings();
+  const hasDept = departmentId && mongooseId(departmentId);
+  const hasDiv = divisionId && mongooseId(divisionId);
   const deptDoc =
-    departmentId && mongooseId(departmentId)
-      ? await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId)
+    hasDept || hasDiv
+      ? await DepartmentSettings.getByDeptAndDiv(hasDept ? departmentId : null, hasDiv ? divisionId : null)
       : null;
   const d = deptDoc?.ot || {};
   const g = global || {};
