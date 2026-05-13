@@ -1,4 +1,5 @@
 import React, { memo } from 'react';
+import { format, parseISO } from 'date-fns';
 import { ChevronLeft, ChevronRight, Plus, Users, Hash } from 'lucide-react';
 import { Employee, Shift } from '@/lib/api';
 import { RosterCell, RosterGridProps } from '../types';
@@ -50,7 +51,6 @@ const RosterCellComponent = memo(({
     doj?: string;
     onUpdate: (empNo: string, date: string, value: RosterCell) => void;
 }) => {
-    const { format, parseISO } = require('date-fns');
     const isBeforeJoining = doj && date < format(parseISO(doj), 'yyyy-MM-dd');
     const current = cell?.status === 'WO' ? 'WO' : (cell?.status === 'HOL' ? 'HOL' : cell?.shiftId || '');
     const shift = shifts.find(s => s._id === current);

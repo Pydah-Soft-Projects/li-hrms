@@ -321,11 +321,22 @@ export default function DepartmentalSettingsPage() {
     );
   }, [filteredDeptMenu]);
 
-  const filteredDepartments = useMemo(() => {
-    if (!selectedDivisionId) return departments;
-    return departments.filter((dept) =>
-      dept.divisions?.some((div) => (typeof div === 'string' ? div : div._id) === selectedDivisionId)
+  const { sidebarDepartments, showAllDeptsFallbackForDivision } = useMemo(() => {
+    if (!selectedDivisionId) {
+      return { sidebarDepartments: departments, showAllDeptsFallbackForDivision: false };
+    }
+    const sid = String(selectedDivisionId);
+    const linked = departments.filter((dept) =>
+      (dept.divisions || []).some((div) => {
+        const id = typeof div === 'string' ? div : (div as { _id: string })._id;
+        return String(id) === sid;
+      })
     );
+    // Master data may not list dept↔division links; still allow configuring any department for this division scope
+    if (linked.length === 0) {
+      return { sidebarDepartments: departments, showAllDeptsFallbackForDivision: true };
+    }
+    return { sidebarDepartments: linked, showAllDeptsFallbackForDivision: false };
   }, [departments, selectedDivisionId]);
 
   const resetForm = useCallback(() => {
@@ -808,12 +819,19 @@ export default function DepartmentalSettingsPage() {
               disabled={loading}
             >
               <option value="">Select department…</option>
-              {filteredDepartments.map((dept) => (
+              {sidebarDepartments.map((dept) => (
                 <option key={dept._id} value={dept._id}>
                   {dept.name} {dept.code ? `(${dept.code})` : ''}
                 </option>
               ))}
             </select>
+            {showAllDeptsFallbackForDivision && (
+              <p className="mt-1.5 text-[11px] leading-snug text-amber-800/90 dark:text-amber-200/90">
+                No departments are linked to this division in organization data — showing{' '}
+                <strong>all departments</strong>. Link departments to the division under Organizations if you want this list
+                filtered.
+              </p>
+            )}
           </div>
 
           <div className="relative mt-4">

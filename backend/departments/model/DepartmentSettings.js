@@ -541,15 +541,90 @@ const departmentSettingsSchema = new mongoose.Schema(
 departmentSettingsSchema.index({ department: 1, division: 1 }, { unique: true });
 departmentSettingsSchema.index({ division: 1 });
 
+/**
+ * Merge EL overrides from department default row (division null) with a division-specific row.
+ * Division wins on scalars when set. attendanceRanges: non-empty division list wins; empty array
+ * means "no dept ranges — use global" in resolveEffectiveEarnedLeave; missing/undefined ranges on
+ * the division row inherit the default row's ranges (Superadmin "All divisions" applies to each division).
+ */
+function mergeEarnedLeaveForRead(baseEarnedLeave, divisionEarnedLeave) {
+  if (!baseEarnedLeave && !divisionEarnedLeave) return undefined;
+  if (!divisionEarnedLeave) return baseEarnedLeave;
+  if (!baseEarnedLeave) return divisionEarnedLeave;
+
+  const b = baseEarnedLeave;
+  const d = divisionEarnedLeave;
+  const bAr = b.attendanceRules || {};
+  const dAr = d.attendanceRules || {};
+
+  const pickOverride = (divVal, baseVal) => {
+    if (divVal !== undefined && divVal !== null) return divVal;
+    if (baseVal !== undefined && baseVal !== null) return baseVal;
+    return undefined;
+  };
+
+  const divRangesRaw = dAr.attendanceRanges;
+  const baseRangesRaw = bAr.attendanceRanges;
+  const divHasRanges = Array.isArray(divRangesRaw) && divRangesRaw.length > 0;
+  const divExplicitEmpty = Array.isArray(divRangesRaw) && divRangesRaw.length === 0;
+  const baseHasRanges = Array.isArray(baseRangesRaw) && baseRangesRaw.length > 0;
+
+  let attendanceRanges;
+  if (divHasRanges) attendanceRanges = [...divRangesRaw];
+  else if (divExplicitEmpty) attendanceRanges = [];
+  else if (baseHasRanges) attendanceRanges = [...baseRangesRaw];
+  else attendanceRanges = [];
+
+  return {
+    enabled: pickOverride(d.enabled, b.enabled),
+    earningType: pickOverride(d.earningType, b.earningType),
+    useAsPaidInPayroll: pickOverride(d.useAsPaidInPayroll, b.useAsPaidInPayroll),
+    attendanceRules: {
+      minDaysForFirstEL: pickOverride(dAr.minDaysForFirstEL, bAr.minDaysForFirstEL),
+      daysPerEL: pickOverride(dAr.daysPerEL, bAr.daysPerEL),
+      maxELPerMonth: pickOverride(dAr.maxELPerMonth, bAr.maxELPerMonth),
+      maxELPerYear: pickOverride(dAr.maxELPerYear, bAr.maxELPerYear),
+      considerPresentDays: pickOverride(dAr.considerPresentDays, bAr.considerPresentDays),
+      considerHolidays: pickOverride(dAr.considerHolidays, bAr.considerHolidays),
+      attendanceRanges,
+    },
+    fixedRules: {
+      ...(b.fixedRules || {}),
+      ...(d.fixedRules || {}),
+    },
+  };
+}
+
+function toPlainEarnedLeave(el) {
+  if (el == null) return undefined;
+  return typeof el.toObject === 'function' ? el.toObject() : el;
+}
+
 // Static method to get settings for a department and division
 departmentSettingsSchema.statics.getByDeptAndDiv = async function (departmentId, divisionId = null) {
-  // First try specific division override
-  if (divisionId) {
-    const divisionSettings = await this.findOne({ department: departmentId, division: divisionId });
-    if (divisionSettings) return divisionSettings;
+  const baseRow = await this.findOne({ department: departmentId, division: null });
+
+  if (!divisionId) {
+    return baseRow || null;
   }
-  // Fallback to department-wide default (division: null)
-  return this.findOne({ department: departmentId, division: null });
+
+  const divisionRow = await this.findOne({ department: departmentId, division: divisionId });
+  if (!divisionRow) {
+    return baseRow || null;
+  }
+
+  if (!baseRow) {
+    return divisionRow;
+  }
+
+  const mergedEl = mergeEarnedLeaveForRead(
+    toPlainEarnedLeave(baseRow.leaves?.earnedLeave),
+    toPlainEarnedLeave(divisionRow.leaves?.earnedLeave)
+  );
+
+  const out = typeof divisionRow.toObject === 'function' ? divisionRow.toObject() : { ...divisionRow };
+  out.leaves = { ...(out.leaves || {}), earnedLeave: mergedEl };
+  return out;
 };
 
 // Static method to get or create settings for a department/division combination
