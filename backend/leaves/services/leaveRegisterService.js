@@ -828,6 +828,65 @@ class LeaveRegisterService {
 
             const populatedData = rawData;
 
+            /**
+             * IMPORTANT:
+             * `flattenYearDocsToLegacyTransactions()` emits *only* month-slot transactions.
+             * If a FY has zero transactions (e.g. INITIAL_POLICY_SYNC produced 0 CL schedule and no EL/CCL movements),
+             * `rawData` will be empty even though `leave_register_years` has rows.
+             *
+             * The register list must still show those employees (all zeros), so in that case we seed the grouped list
+             * directly from LeaveRegisterYear docs (no ledger sub-ledgers).
+             */
+            if (rawData.length === 0 && Array.isArray(yearDocs) && yearDocs.length > 0) {
+                const groupedSeed = [];
+                for (const yd of yearDocs) {
+                    const emp = empMap.get(yd.employeeId.toString()) || null;
+                    groupedSeed.push({
+                        employee: {
+                            id: yd.employeeId,
+                            empNo: yd.empNo || emp?.emp_no || '',
+                            name: yd.employeeName || emp?.employee_name || '',
+                            designation: emp?.designation_id?.name || emp?.designation || 'N/A',
+                            department: emp?.department_id?.name || emp?.department || 'N/A',
+                            division: emp?.division_id?.name || 'N/A',
+                            doj: emp?.doj,
+                            status: emp?.is_active ? 'active' : 'inactive',
+                        },
+                        monthlySubLedgers: [],
+                    });
+                }
+
+                // Apply list pagination in the same way (sorted by employee name).
+                let entriesForHeavyWork = groupedSeed;
+                let listPaginationMeta = null;
+                const canPaginate =
+                    listPaginationOpt &&
+                    !filters.employeeId &&
+                    !filters.empNo &&
+                    !filters.balanceAsOf;
+                if (canPaginate) {
+                    const page = Math.max(1, parseInt(String(listPaginationOpt.page), 10) || 1);
+                    const limit = Math.min(100, Math.max(1, parseInt(String(listPaginationOpt.limit), 10) || 25));
+                    const sorted = [...groupedSeed].sort((a, b) => {
+                        const na = String(a.employee?.name || '').toLowerCase();
+                        const nb = String(b.employee?.name || '').toLowerCase();
+                        return na.localeCompare(nb);
+                    });
+                    const start = (page - 1) * limit;
+                    entriesForHeavyWork = sorted.slice(start, start + limit);
+                    listPaginationMeta = { total: sorted.length, page, limit };
+                }
+
+                await this.hydrateRegisterYearView(entriesForHeavyWork, filters.financialYear, {
+                    lite: registerLite,
+                });
+
+                if (listPaginationMeta) {
+                    return { entries: entriesForHeavyWork, listPaginationMeta };
+                }
+                return entriesForHeavyWork;
+            }
+
             // Group by employee and provide yearly ledger with monthly sub-ledgers
             // For UI month labels we must follow payroll-cycle month/year, not just calendar month.
             let monthsInOrderOverride = null;
