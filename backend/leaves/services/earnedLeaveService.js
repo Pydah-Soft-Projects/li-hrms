@@ -96,8 +96,16 @@ async function calculateEarnedLeave(employeeId, month, year, cycleStart = null, 
         const earningType = effectiveEL.earningType;
         const elPolicyWrapper = { earnedLeave: effectiveEL, compliance: settings.compliance };
 
-        // Get attendance data for the specific payroll cycle
-        const attendanceData = await getAttendanceData(employeeId, month, year, employee, cycleStart, cycleEnd);
+        // Get attendance data for the specific payroll cycle (policy drives WO/HOL + present merge; payable shifts are always the core)
+        const attendanceData = await getAttendanceData(
+            employeeId,
+            month,
+            year,
+            employee,
+            cycleStart,
+            cycleEnd,
+            effectiveEL.attendanceRules || {}
+        );
 
         // Calculate EL based on earning type (rules = global policy + department overrides)
         let elCalculation;
@@ -138,9 +146,15 @@ async function calculateEarnedLeave(employeeId, month, year, cycleStart = null, 
 
 /**
  * EL attendance input: **monthly attendance summary only** (same engine as payroll / pay register).
- * Credit-day basis = totalPayableShifts + totalWeeklyOffs + totalHolidays (capped at pay-period days).
+ *
+ * **Credit-day basis** (fed into attendance ranges & ratio EL):
+ * - Always anchored on **totalPayableShifts** from the summary.
+ * - Adds weekly-offs + holidays only when `attendanceRules.considerHolidays !== false` (default true).
+ * - When `attendanceRules.considerPresentDays !== false` (default true), uses `max(basis, totalPresentDays)`
+ *   so EL is not under-counted vs payable shift totals when present exceeds that sum.
+ * - Final `effectiveDays = min(periodDays, basis)` so bands never exceed the payroll window.
  */
-async function getAttendanceData(employeeId, month, year, employee, cycleStart, cycleEnd) {
+async function getAttendanceData(employeeId, month, year, employee, cycleStart, cycleEnd, attendanceRules = {}) {
     const empNoRaw = employee.emp_no && String(employee.emp_no).trim();
     const empNo = empNoRaw ? empNoRaw.toUpperCase() : employee.emp_no;
     const monthStr = `${year}-${String(month).padStart(2, '0')}`;
@@ -166,9 +180,25 @@ async function getAttendanceData(employeeId, month, year, employee, cycleStart, 
     const holidays = Number(summary.totalHolidays) || 0;
     const presentDays = Number(summary.totalPresentDays) || 0;
 
-    const creditDaysRaw = payableShifts + weeklyOffs + holidays;
-    const creditDays = Math.round(creditDaysRaw * 1000) / 1000;
+    const considerHolidays = attendanceRules.considerHolidays !== false;
+    const considerPresentDays = attendanceRules.considerPresentDays !== false;
+
+    let basis = payableShifts;
+    if (considerHolidays) {
+        basis += weeklyOffs + holidays;
+    }
+    if (considerPresentDays) {
+        basis = Math.max(basis, presentDays);
+    }
+
+    const creditDays = Math.round(basis * 1000) / 1000;
     const effectiveDays = Math.min(totalDays, creditDays);
+
+    const basisDescription = [
+        `payableShifts=${payableShifts}`,
+        considerHolidays ? `+WO+HOL=${weeklyOffs + holidays}` : '(WO/HOL excluded)',
+        considerPresentDays ? `max(presentDays=${presentDays})` : '(present days not merged)',
+    ].join('; ');
 
     // Single "days" figure exposed on EL API = same basis used for range + ratio EL
     const attendanceDays = effectiveDays;
@@ -189,6 +219,8 @@ async function getAttendanceData(employeeId, month, year, employee, cycleStart, 
         summaryStartDate: summary.startDate,
         summaryEndDate: summary.endDate,
         creditDays,
+        /** Human-readable basis line for EL breakdown / audits */
+        elCreditBasisDescription: `${basisDescription} → min(periodDays=${totalDays}, basis)=${effectiveDays}`,
         attendanceRecords: [],
         monthlySummaryId: summary._id,
     };
@@ -203,7 +235,7 @@ function calculateAttendanceBasedEL(attendanceData, settings) {
     const breakdown = [];
 
     // Use attendance ranges if configured (cumulative logic)
-    // effectiveDays = min(periodDays, payableShifts + weeklyOffs + holidays) from monthly summary
+    // effectiveDays = policy-based basis from monthly summary (payable shifts core; see getAttendanceData)
     if (rules.attendanceRanges && rules.attendanceRanges.length > 0) {
         const effectiveDays = attendanceData.effectiveDays !== undefined
             ? attendanceData.effectiveDays
@@ -225,12 +257,13 @@ function calculateAttendanceBasedEL(attendanceData, settings) {
             holidays: attendanceData.holidays,
             presentDays: attendanceData.presentDays,
             creditDays: attendanceData.creditDays,
+            creditBasisNotes: attendanceData.elCreditBasisDescription,
             summaryMonth: attendanceData.monthlySummaryMonth,
             totalEL: elEarned,
             maxELForMonth: rules.maxELPerMonth,
             ranges: rangeBreakdown,
             calculation:
-                'creditDays = totalPayableShifts+totalWeeklyOffs+totalHolidays (monthly summary); effectiveDays=min(periodDays,creditDays); EL=sum(range.elEarned for each range with effectiveDays>=minDays), then cap maxELPerMonth',
+                'Bands compare against effectiveDays from MonthlyAttendanceSummary: payableShifts core; +WO/HOL if considerHolidays; max(presentDays) if considerPresentDays; then min(periodDays). EL=sum(range.elEarned for each range with effectiveDays>=minDays), cap maxELPerMonth',
         });
 
     } else {
