@@ -14,9 +14,12 @@ const dateCycleService = require('./dateCycleService');
  */
 class AccrualEngine {
     /**
-     * Post monthly accruals for all active employees
+     * Post monthly accruals for all active employees (or a single department when `options.departmentId` is set).
+     * @param {number} monthNum
+     * @param {number} year
+     * @param {{ departmentId?: import('mongoose').Types.ObjectId|string }} [options]
      */
-    async postMonthlyAccruals(monthNum, year) {
+    async postMonthlyAccruals(monthNum, year, options = {}) {
         try {
             const globalSettings = await LeavePolicySettings.getSettings();
 
@@ -25,7 +28,8 @@ class AccrualEngine {
                 clCredits: 0,
                 elCredits: 0,
                 expiredCCLs: 0,
-                errors: []
+                errors: [],
+                departmentId: options.departmentId ? String(options.departmentId) : null,
             };
 
             // Idempotency: skip EL credit if this payroll cycle already has an auto EL row on LeaveRegisterYear.
@@ -36,8 +40,13 @@ class AccrualEngine {
             const cycleEnd = cycleInfo.endDate;
             const daysInCycle = Math.round((cycleEnd.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
+            const empQuery = { is_active: true };
+            if (options.departmentId) {
+                empQuery.department_id = options.departmentId;
+            }
+
             // Stream employees in batches to avoid loading all into memory
-            const cursor = Employee.find({ is_active: true }).cursor();
+            const cursor = Employee.find(empQuery).cursor();
             for await (const emp of cursor) {
                 try {
                     // 1. Fetch relevant settings (Dept overrides Global)

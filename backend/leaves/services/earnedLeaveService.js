@@ -334,6 +334,45 @@ function calculateFixedEL(settings, deptSettings = null) {
 }
 
 /**
+ * Same EL day math as calculateEarnedLeave uses after policy resolution (no probation / DOJ gates).
+ * For audits: compare with calculateEarnedLeave(); if they differ while the service is eligible, investigate gates.
+ */
+function previewElEarnedAfterPolicy(effectiveEL, earningType, attendanceData, deptSettings = null) {
+    if (!effectiveEL || !effectiveEL.enabled) {
+        return {
+            elEarned: 0,
+            path: 'disabled',
+            note: 'Resolved EL policy has enabled=false',
+        };
+    }
+    const elPolicyWrapper = { earnedLeave: effectiveEL, compliance: {} };
+    const et = earningType || effectiveEL.earningType || 'attendance_based';
+    if (et === 'fixed') {
+        const r = calculateFixedEL(elPolicyWrapper, deptSettings);
+        return {
+            elEarned: r.elEarned,
+            maxELForMonth: r.maxELForMonth,
+            path: 'fixed',
+            breakdown: r.breakdown,
+        };
+    }
+    if (!attendanceData) {
+        return {
+            elEarned: 0,
+            path: 'attendance_based',
+            note: 'No attendanceData (pass getAttendanceData result)',
+        };
+    }
+    const r = calculateAttendanceBasedEL(attendanceData, elPolicyWrapper);
+    return {
+        elEarned: r.elEarned,
+        maxELForMonth: r.maxELForMonth,
+        path: 'attendance_based',
+        breakdown: r.breakdown,
+    };
+}
+
+/**
  * Update earned leave for all employees (cron job)
  */
 async function updateEarnedLeaveForAllEmployees(month = null, year = null) {
@@ -509,4 +548,6 @@ module.exports = {
     getELBalance,
     /** Used by scripts/tests to show the same credit-day basis as EL accrual (must pass merged `attendanceRules`). */
     getAttendanceData,
+    /** Policy + attendance math only (same branches as calculateEarnedLeave); ignores probation. */
+    previewElEarnedAfterPolicy,
 };
