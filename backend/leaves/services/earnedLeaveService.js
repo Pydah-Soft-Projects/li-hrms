@@ -17,6 +17,12 @@ const { extractISTComponents, createISTDate } = require('../../shared/utils/date
 const dateCycleService = require('./dateCycleService');
 
 /**
+ * Temporary: when true, EL calculation skips compliance.probationPeriod (no "probation not completed").
+ * Set to false to restore probation gating from Leave Policy settings.
+ */
+const SKIP_PROBATION_CHECK_FOR_EL = true;
+
+/**
  * Calculate earned leave for an employee for a specific month
  * @param {String} employeeId - Employee ID
  * @param {Number} month - Month (1-12)
@@ -59,37 +65,39 @@ async function calculateEarnedLeave(employeeId, month, year, cycleStart = null, 
         }
 
         // Check probation period (guarding against missing settings/DOJ)
-        const probation = settings?.compliance?.probationPeriod;
-        if (probation?.elApplicableAfter) {
-            if (!employee.doj) {
-                return {
-                    eligible: false,
-                    reason: 'Probation period cannot be evaluated due to missing DOJ',
-                    elEarned: 0,
-                    attendanceDays: 0,
-                };
-            }
-            const doj = new Date(employee.doj);
-            if (Number.isNaN(doj.getTime())) {
-                return {
-                    eligible: false,
-                    reason: 'Probation period cannot be evaluated due to invalid DOJ',
-                    elEarned: 0,
-                    attendanceDays: 0,
-                };
-            }
-            const currentDate = cycleEnd;
-            const monthsInService = (currentDate.getFullYear() - doj.getFullYear()) * 12 +
-                (currentDate.getMonth() - doj.getMonth());
+        if (!SKIP_PROBATION_CHECK_FOR_EL) {
+            const probation = settings?.compliance?.probationPeriod;
+            if (probation?.elApplicableAfter) {
+                if (!employee.doj) {
+                    return {
+                        eligible: false,
+                        reason: 'Probation period cannot be evaluated due to missing DOJ',
+                        elEarned: 0,
+                        attendanceDays: 0,
+                    };
+                }
+                const doj = new Date(employee.doj);
+                if (Number.isNaN(doj.getTime())) {
+                    return {
+                        eligible: false,
+                        reason: 'Probation period cannot be evaluated due to invalid DOJ',
+                        elEarned: 0,
+                        attendanceDays: 0,
+                    };
+                }
+                const currentDate = cycleEnd;
+                const monthsInService = (currentDate.getFullYear() - doj.getFullYear()) * 12 +
+                    (currentDate.getMonth() - doj.getMonth());
 
-            if (monthsInService < probation.months) {
-                return {
-                    eligible: false,
-                    reason: 'Probation period not completed',
-                    elEarned: 0,
-                    attendanceDays: 0,
-                    requiredDays: effectiveEL.attendanceRules?.minDaysForFirstEL
-                };
+                if (monthsInService < probation.months) {
+                    return {
+                        eligible: false,
+                        reason: 'Probation period not completed',
+                        elEarned: 0,
+                        attendanceDays: 0,
+                        requiredDays: effectiveEL.attendanceRules?.minDaysForFirstEL
+                    };
+                }
             }
         }
 
