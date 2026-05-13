@@ -13,8 +13,10 @@
  *   # Custom division / period / sample size
  *   node scripts/apply_el_policy_and_test_april_division.js --apply-settings --division PYDAHSOFT --month 4 --year 2026 --limit 30
  *
- * After preview looks correct, run full accrual for that payroll month (all employees):
+ * After preview looks correct, run accrual for that payroll month:
  *   node scripts/runMonthlyAccrualForPayrollMonth.js 4 2026
+ *   node scripts/runMonthlyAccrualForPayrollMonth.js 4 2026 Civil
+ * Reconcile posted EL auto-credits vs current policy (optional dept / dry-run): see scripts/reconcileEarnedLeaveAccrualCredits.js
  */
 
 const mongoose = require('mongoose');
