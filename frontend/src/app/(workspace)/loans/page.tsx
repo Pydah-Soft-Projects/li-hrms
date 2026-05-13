@@ -86,6 +86,15 @@ interface LoanApplication {
   }>;
 }
 
+/** Pay period containing today (IST); matches PayrollRecord.month when that period is processed. */
+interface PresentPayPeriod {
+  payrollMonthKey: string;
+  startDate: string;
+  endDate: string;
+  lastDate: string;
+  totalDays?: number;
+}
+
 interface Employee {
   _id: string;
   employee_name: string;
@@ -244,6 +253,7 @@ export default function LoansPage() {
   const [approvalInterestRate, setApprovalInterestRate] = useState<string>('');
   const [approvalValidation, setApprovalValidation] = useState<{ level: 'warning' | 'error'; message: string } | null>(null);
 
+  const [presentPayPeriod, setPresentPayPeriod] = useState<PresentPayPeriod | null>(null);
 
   // User detection on mount
   useEffect(() => {
@@ -451,6 +461,7 @@ export default function LoansPage() {
         const allLoans = Array.isArray(loansRes.data) ? loansRes.data : [];
         console.log('[Superadmin Loans] All loans:', allLoans);
         setLoans(allLoans);
+        if (loansRes.presentPayPeriod) setPresentPayPeriod(loansRes.presentPayPeriod);
       } else {
         setLoans([]);
       }
@@ -584,6 +595,7 @@ export default function LoansPage() {
         const loanRes = await api.getLoan(selectedLoan._id);
         if (loanRes.success) {
           setSelectedLoan(loanRes.data);
+          if (loanRes.presentPayPeriod) setPresentPayPeriod(loanRes.presentPayPeriod);
         }
         loadTransactions(selectedLoan._id);
         loadData();
@@ -757,6 +769,7 @@ export default function LoansPage() {
         const loanRes = await api.getLoan(selectedLoan._id);
         if (loanRes.success) {
           setSelectedLoan(loanRes.data);
+          if (loanRes.presentPayPeriod) setPresentPayPeriod(loanRes.presentPayPeriod);
         }
         loadTransactions(selectedLoan._id);
         if (selectedLoan.requestType === 'loan') {
@@ -1899,6 +1912,31 @@ export default function LoansPage() {
                     })}</span>
                   </div>
                 </div>
+
+                {presentPayPeriod && (
+                  <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40 text-xs text-slate-600 dark:text-slate-300 space-y-1.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current pay period (today)</p>
+                    <p>
+                      <span className="font-medium text-slate-800 dark:text-slate-200">Last day of period:</span>{' '}
+                      {new Date(`${presentPayPeriod.lastDate}T12:00:00`).toLocaleDateString('en-IN', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                      })}{' '}
+                      <span className="text-slate-400">(</span>
+                      {presentPayPeriod.startDate} → {presentPayPeriod.endDate}
+                      <span className="text-slate-400">)</span>
+                    </p>
+                    <p>
+                      <span className="font-medium text-slate-800 dark:text-slate-200">Payroll month key:</span>{' '}
+                      <code className="rounded bg-slate-200 px-1.5 py-0.5 text-[11px] dark:bg-slate-700">{presentPayPeriod.payrollMonthKey}</code>
+                    </p>
+                    <p className="text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200 dark:border-slate-600">
+                      Salary advance deductions (and loan EMI) are included when payroll is calculated or completed for that month key; each deduction line stores the same value as{' '}
+                      <code className="rounded bg-slate-200 px-1 text-[10px] dark:bg-slate-700">payrollCycle</code> on the advance or loan transaction.
+                    </p>
+                  </div>
+                )}
 
                 {/* Employee Info */}
                 <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50">

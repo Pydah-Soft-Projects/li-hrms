@@ -379,14 +379,6 @@ async function runRequiredServices(required, record, employee, employeeId, month
     // skip here; will run when deduction column is resolved, with context for paid/total days
   }
 
-  if (required.needsLoanAdvance) {
-    const loanAdvanceResult = await loanAdvanceService.calculateLoanAdvance(employeeId, month);
-    if (!record.loanAdvance) record.loanAdvance = {};
-    record.loanAdvance.totalEMI = loanAdvanceResult.totalEMI ?? 0;
-    record.loanAdvance.advanceDeduction = loanAdvanceResult.advanceDeduction ?? 0;
-    record.loanAdvance.remainingBalance = loanAdvanceResult.remainingBalance ?? 0;
-  }
-
   if (required.needsArrears) {
     try {
       const pendingArrears = await ArrearsPayrollIntegrationService.getPendingArrearsForPayroll(employeeId);
@@ -461,6 +453,10 @@ async function runRequiredServices(required, record, employee, employeeId, month
         record.deductions.totalOtherDeductions = totalOther;
         console.log('[DynamicPayroll][runRequiredServices] Populated otherDeductions from service:', otherBreakdown);
       }
+    }
+
+    if (required.needsLoanAdvance) {
+      await loanAdvanceService.applyDynamicPayrollLoanAdvance(record, employeeId, month, employee);
     }
 
     // Recompute "other" from breakdown, excluding components that belong to attendance / statutory / loan / advance / manual
@@ -1122,11 +1118,7 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
 
   // loanAdvance.totalEMI, advanceDeduction, remainingBalance (cumulative loans remaining after EMI)
   if (path.startsWith('loanAdvance.')) {
-    const loanAdvanceResult = await loanAdvanceService.calculateLoanAdvance(employeeId, month);
-    if (!record.loanAdvance) record.loanAdvance = {};
-    record.loanAdvance.totalEMI = loanAdvanceResult.totalEMI || 0;
-    record.loanAdvance.advanceDeduction = loanAdvanceResult.advanceDeduction || 0;
-    record.loanAdvance.remainingBalance = loanAdvanceResult.remainingBalance ?? 0;
+    await loanAdvanceService.applyDynamicPayrollLoanAdvance(record, employeeId, month, employee);
     if (path === 'loanAdvance.totalEMI') return record.loanAdvance.totalEMI;
     if (path === 'loanAdvance.advanceDeduction') return record.loanAdvance.advanceDeduction;
     if (path === 'loanAdvance.remainingBalance') return record.loanAdvance.remainingBalance;

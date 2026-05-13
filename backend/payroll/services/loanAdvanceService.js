@@ -1,5 +1,5 @@
 const Loan = require('../../loans/model/Loan');
-const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
+const { setNextPaymentDateFromInstallmentsPaid } = require('../../loans/services/loanHistoryRepairService');
 
 /**
  * Loan & Advance Processing Service
@@ -167,18 +167,108 @@ async function processSalaryAdvance(employeeId, payableAmount) {
 }
 
 /**
+ * Canonical idempotency: one EMI per loan per payroll month, regardless of regular vs 2nd-salary batch
+ * (avoids duplicate keys payroll_settle:<PayrollRecordId>:emi vs payroll_settle:ss:<SecondSalaryRecordId>:emi).
+ */
+function buildCanonicalEmiSettlementKey(month, loanId) {
+  const m = month != null ? String(month).trim() : '';
+  const id = loanId != null ? String(loanId) : '';
+  if (!m || !id) return null;
+  return `payroll_month:${m}:emi:${id}`;
+}
+
+/** Legacy key (per payroll/second-salary document id). */
+function buildLegacyEmiSettlementKey(payrollSettlementId) {
+  if (payrollSettlementId == null || payrollSettlementId === '') return null;
+  return `payroll_settle:${String(payrollSettlementId)}:emi`;
+}
+
+function isEmiAlreadySettledForMonth(loan, month, loanId, payrollSettlementId) {
+  const txs = loan.transactions || [];
+  const monthStr = month != null ? String(month).trim() : '';
+  const canon = buildCanonicalEmiSettlementKey(month, loanId);
+  const legacy = buildLegacyEmiSettlementKey(payrollSettlementId);
+  for (const t of txs) {
+    if (canon && t.payrollSettlementKey === canon) return true;
+    if (legacy && t.payrollSettlementKey === legacy) return true;
+  }
+  if (monthStr) {
+    for (const t of txs) {
+      if (
+        t.transactionType === 'emi_payment'
+        && String(t.payrollCycle || '').trim() === monthStr
+        && t.payrollSettlementKey
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function emiSettlementKeyToStore(month, loanId, payrollSettlementId) {
+  return buildCanonicalEmiSettlementKey(month, loanId) || buildLegacyEmiSettlementKey(payrollSettlementId);
+}
+
+function buildCanonicalAdvanceSettlementKey(month, advanceId) {
+  const m = month != null ? String(month).trim() : '';
+  const id = advanceId != null ? String(advanceId) : '';
+  if (!m || !id) return null;
+  return `payroll_month:${m}:adv:${id}`;
+}
+
+function buildLegacyAdvanceSettlementKey(payrollSettlementId, advanceId) {
+  if (payrollSettlementId == null || payrollSettlementId === '' || !advanceId) return null;
+  return `payroll_settle:${String(payrollSettlementId)}:adv:${String(advanceId)}`;
+}
+
+function isAdvanceAlreadySettledForMonth(advanceRecord, month, advanceId, payrollSettlementId) {
+  const txs = advanceRecord.transactions || [];
+  const monthStr = month != null ? String(month).trim() : '';
+  const canon = buildCanonicalAdvanceSettlementKey(month, advanceId);
+  const legacy = buildLegacyAdvanceSettlementKey(payrollSettlementId, advanceId);
+  for (const t of txs) {
+    if (canon && t.payrollSettlementKey === canon) return true;
+    if (legacy && t.payrollSettlementKey === legacy) return true;
+  }
+  if (monthStr) {
+    for (const t of txs) {
+      if (
+        t.transactionType === 'advance_deduction'
+        && String(t.payrollCycle || '').trim() === monthStr
+        && t.payrollSettlementKey
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function advanceSettlementKeyToStore(month, advanceId, payrollSettlementId) {
+  return buildCanonicalAdvanceSettlementKey(month, advanceId)
+    || buildLegacyAdvanceSettlementKey(payrollSettlementId, advanceId);
+}
+
+/**
  * Update loan records after EMI deduction
  * @param {Array} emiBreakdown - EMI breakdown array
  * @param {String} month - Month in YYYY-MM format
  * @param {String} userId - User ID who processed
+ * @param {string|null|undefined} payrollSettlementId - PayrollRecord or SecondSalaryRecord id for idempotency
  * @returns {Promise} Update result
  */
-async function updateLoanRecordsAfterEMI(emiBreakdown, month, userId) {
+async function updateLoanRecordsAfterEMI(emiBreakdown, month, userId, payrollSettlementId = null) {
   try {
     for (const emi of emiBreakdown) {
       const loan = await Loan.findById(emi.loanId);
 
       if (!loan) {
+        continue;
+      }
+
+      const loanIdStr = emi.loanId != null ? String(emi.loanId) : '';
+      if (isEmiAlreadySettledForMonth(loan, month, loanIdStr, payrollSettlementId)) {
         continue;
       }
 
@@ -197,20 +287,24 @@ async function updateLoanRecordsAfterEMI(emiBreakdown, month, userId) {
         loan.status = 'active';
       }
 
-      // Calculate next payment date (next month) - robust in IST
-      const { year: y, month: m } = extractISTComponents(new Date());
-      const nextMonthFirstDay = createISTDate(`${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01`);
-      loan.repayment.nextPaymentDate = loan.repayment.remainingBalance > 0 ? nextMonthFirstDay : null;
+      if (loan.repayment.remainingBalance > 0) {
+        await setNextPaymentDateFromInstallmentsPaid(loan);
+      } else {
+        loan.repayment.nextPaymentDate = null;
+      }
 
       // Add transaction log
-      loan.transactions.push({
+      const tx = {
         transactionType: 'emi_payment',
         amount: emi.emiAmount,
         transactionDate: new Date(),
         payrollCycle: month,
         processedBy: userId,
         remarks: `EMI deducted from payroll for ${month}`,
-      });
+      };
+      const txKey = emiSettlementKeyToStore(month, loanIdStr, payrollSettlementId);
+      if (txKey) tx.payrollSettlementKey = txKey;
+      loan.transactions.push(tx);
 
       await loan.save();
     }
@@ -227,9 +321,10 @@ async function updateLoanRecordsAfterEMI(emiBreakdown, month, userId) {
  * @param {Array} advanceBreakdown - Advance breakdown array
  * @param {String} month - Month in YYYY-MM format
  * @param {String} userId - User ID who processed
+ * @param {string|null|undefined} payrollSettlementId - PayrollRecord or SecondSalaryRecord id for idempotency
  * @returns {Promise} Update result
  */
-async function updateAdvanceRecordsAfterDeduction(advanceBreakdown, month, userId) {
+async function updateAdvanceRecordsAfterDeduction(advanceBreakdown, month, userId, payrollSettlementId = null) {
   try {
     for (const advance of advanceBreakdown) {
       const advanceRecord = await Loan.findById(advance.advanceId);
@@ -238,27 +333,57 @@ async function updateAdvanceRecordsAfterDeduction(advanceBreakdown, month, userI
         continue;
       }
 
+      const advanceIdStr = advance.advanceId != null ? String(advance.advanceId) : '';
+      if (isAdvanceAlreadySettledForMonth(advanceRecord, month, advanceIdStr, payrollSettlementId)) {
+        continue;
+      }
+
+      if (!advanceRecord.repayment) {
+        advanceRecord.repayment = {
+          totalPaid: 0,
+          remainingBalance: advanceRecord.amount,
+          installmentsPaid: 0,
+          totalInstallments: advanceRecord.duration,
+        };
+      }
+
       // Update repayment
       advanceRecord.repayment.totalPaid = (advanceRecord.repayment.totalPaid || 0) + advance.advanceAmount;
       advanceRecord.repayment.remainingBalance = advance.carriedForward;
+
+      if (advance.carriedForward > 0) {
+        advanceRecord.repayment.installmentsPaid = (advanceRecord.repayment.installmentsPaid || 0) + 1;
+      } else {
+        advanceRecord.repayment.installmentsPaid = advanceRecord.duration;
+      }
 
       // If fully paid, mark as completed
       if (advance.carriedForward === 0) {
         advanceRecord.status = 'completed';
         advanceRecord.repayment.remainingBalance = 0;
-      } else if (advanceRecord.status === 'disbursed') {
-        advanceRecord.status = 'active';
+        advanceRecord.repayment.nextPaymentDate = null;
+      } else {
+        if (advanceRecord.status === 'disbursed') {
+          advanceRecord.status = 'active';
+        }
+        if (!advanceRecord.advanceConfig) advanceRecord.advanceConfig = {};
+        if (!advanceRecord.advanceConfig.deductionStartCycle) {
+          advanceRecord.advanceConfig.deductionStartCycle = month;
+        }
+        await setNextPaymentDateFromInstallmentsPaid(advanceRecord);
       }
 
-      // Add transaction log
-      advanceRecord.transactions.push({
+      const tx = {
         transactionType: 'advance_deduction',
         amount: advance.advanceAmount,
         transactionDate: new Date(),
         payrollCycle: month,
         processedBy: userId,
         remarks: `Advance deducted from payroll for ${month}`,
-      });
+      };
+      const advKey = advanceSettlementKeyToStore(month, advanceIdStr, payrollSettlementId);
+      if (advKey) tx.payrollSettlementKey = advKey;
+      advanceRecord.transactions.push(tx);
 
       await advanceRecord.save();
     }
@@ -290,6 +415,71 @@ async function calculateLoanAdvance(employeeId, month, payableAmount = 0) {
   };
 }
 
+function numPayroll(v) {
+  const n = typeof v === 'number' && !Number.isNaN(v) ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Other deduction lines that count toward "payable before advance" (exclude statutory / loan / manual duplicates). */
+function sumOtherDeductionsForAdvancePayable(record) {
+  const raw = Array.isArray(record?.deductions?.otherDeductions) ? record.deductions.otherDeductions : [];
+  return raw
+    .filter((d) => {
+      if (!d) return false;
+      const name = String(d.name || '').trim().toUpperCase();
+      if (name === 'MANUAL DEDUCTION') return false;
+      if (name === 'ATTENDANCE DEDUCTION (LATE/EARLY)') return false;
+      if (name === 'ABSENT LOP DEDUCTION') return false;
+      if (name === 'EPF' || name === 'ESI' || name === 'PROFESSION TAX' || name === 'SALARY ADVANCE') return false;
+      return true;
+    })
+    .reduce((sum, d) => sum + numPayroll(d.amount), 0);
+}
+
+/**
+ * Payable before salary advance from an in-progress payroll record (dynamic output-column engine).
+ * gross − attendance − permission − statutory − filtered other − EMI. Falls back to employee gross when needed.
+ */
+async function computePayableBeforeAdvanceFromPayrollRecord(record, employeeId, employee) {
+  let gross = numPayroll(record?.earnings?.grossSalary);
+  if (gross <= 0) {
+    const earned = numPayroll(record?.earnings?.payableAmount ?? record?.earnings?.earnedSalary);
+    const ot = numPayroll(record?.earnings?.otPay);
+    const allowances = numPayroll(record?.earnings?.totalAllowances);
+    gross = earned + ot + allowances;
+  }
+  if (gross <= 0) {
+    gross = numPayroll(employee?.gross_salary);
+  }
+  const emiRes = await calculateTotalEMI(employeeId);
+  const emi = numPayroll(emiRes.totalEMI);
+  const att = numPayroll(record?.deductions?.attendanceDeduction);
+  const perm = numPayroll(record?.deductions?.permissionDeduction);
+  const stat = numPayroll(record?.deductions?.statutoryCumulative);
+  const other = sumOtherDeductionsForAdvancePayable(record);
+  return Math.max(0, gross - att - perm - stat - other - emi);
+}
+
+function mergeLoanAdvanceIntoPayrollRecord(record, loanAdvanceResult) {
+  if (!record || !loanAdvanceResult) return;
+  if (!record.loanAdvance) record.loanAdvance = {};
+  record.loanAdvance.totalEMI = loanAdvanceResult.totalEMI ?? 0;
+  record.loanAdvance.advanceDeduction = loanAdvanceResult.advanceDeduction ?? 0;
+  record.loanAdvance.remainingBalance = loanAdvanceResult.remainingBalance ?? 0;
+  record.loanAdvance.emiBreakdown = Array.isArray(loanAdvanceResult.emiBreakdown) ? loanAdvanceResult.emiBreakdown : [];
+  record.loanAdvance.advanceBreakdown = Array.isArray(loanAdvanceResult.advanceBreakdown) ? loanAdvanceResult.advanceBreakdown : [];
+}
+
+/**
+ * Dynamic payroll: compute loan EMI, advance, balances and breakdowns from DB and write onto payroll record.
+ * Callers pass the current payslip-shaped record and employee; payable-before-advance is derived here.
+ */
+async function applyDynamicPayrollLoanAdvance(record, employeeId, month, employee) {
+  const payable = await computePayableBeforeAdvanceFromPayrollRecord(record, employeeId, employee);
+  const result = await calculateLoanAdvance(employeeId, month, payable);
+  mergeLoanAdvanceIntoPayrollRecord(record, result);
+}
+
 module.exports = {
   getActiveLoans,
   getActiveAdvances,
@@ -298,5 +488,6 @@ module.exports = {
   processSalaryAdvance,
   updateLoanRecordsAfterEMI,
   updateAdvanceRecordsAfterDeduction,
+  applyDynamicPayrollLoanAdvance,
 };
 

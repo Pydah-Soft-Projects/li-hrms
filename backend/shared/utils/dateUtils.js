@@ -257,6 +257,55 @@ async function getPayrollMonthKeyContainingToday() {
 }
 
 /**
+ * Payroll month key (YYYY-MM) whose configured pay period contains the given calendar day (IST YYYY-MM-DD).
+ * @param {string} dateStr - YYYY-MM-DD (IST calendar)
+ * @returns {Promise<string>} YYYY-MM
+ */
+async function getPayrollMonthKeyContainingDateString(dateStr) {
+    const [ty, tm] = dateStr.split('-').map(Number);
+    const baseYm = `${ty}-${String(tm).padStart(2, '0')}`;
+    const deltaOrder = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6];
+    for (const d of deltaOrder) {
+        const key = addCalendarMonthsToYm(baseYm, d);
+        const [y, m] = key.split('-').map(Number);
+        // eslint-disable-next-line no-await-in-loop
+        const range = await getPayrollDateRange(y, m);
+        if (isYmdInInclusiveRange(dateStr, range.startDate, range.endDate)) {
+            return key;
+        }
+    }
+    let y = ty;
+    let m = tm;
+    for (let step = 0; step < 24; step++) {
+        // eslint-disable-next-line no-await-in-loop
+        const range = await getPayrollDateRange(y, m);
+        if (isYmdInInclusiveRange(dateStr, range.startDate, range.endDate)) {
+            return `${y}-${String(m).padStart(2, '0')}`;
+        }
+        m -= 1;
+        if (m < 1) {
+            m = 12;
+            y -= 1;
+        }
+    }
+    y = ty;
+    m = tm;
+    for (let step = 0; step < 24; step++) {
+        // eslint-disable-next-line no-await-in-loop
+        const range = await getPayrollDateRange(y, m);
+        if (isYmdInInclusiveRange(dateStr, range.startDate, range.endDate)) {
+            return `${y}-${String(m).padStart(2, '0')}`;
+        }
+        m += 1;
+        if (m > 12) {
+            m = 1;
+            y += 1;
+        }
+    }
+    return `${ty}-${String(tm).padStart(2, '0')}`;
+}
+
+/**
  * Default month for paysheet UI: previous payroll period relative to the one containing today.
  * @returns {Promise<{ month: string, containingMonth: string }>}
  */
@@ -264,6 +313,23 @@ async function getDefaultPaysheetMonthKey() {
     const containing = await getPayrollMonthKeyContainingToday();
     const month = addCalendarMonthsToYm(containing, -1);
     return { month, containingMonth: containing };
+}
+
+/**
+ * Pay period that contains today (IST): same month key as PayrollRecord.month when that period is processed.
+ * @returns {Promise<{ payrollMonthKey: string, startDate: string, endDate: string, lastDate: string, totalDays: number }>}
+ */
+async function getPresentPayPeriod() {
+    const payrollMonthKey = await getPayrollMonthKeyContainingToday();
+    const [y, m] = payrollMonthKey.split('-').map(Number);
+    const range = await getPayrollDateRange(y, m);
+    return {
+        payrollMonthKey,
+        startDate: range.startDate,
+        endDate: range.endDate,
+        lastDate: range.endDate,
+        totalDays: range.totalDays,
+    };
 }
 
 module.exports = {
@@ -274,7 +340,9 @@ module.exports = {
     getAllDatesInRange,
     addCalendarMonthsToYm,
     getPayrollMonthKeyContainingToday,
+    getPayrollMonthKeyContainingDateString,
     getDefaultPaysheetMonthKey,
+    getPresentPayPeriod,
     formatPayrollPeriodRangeEnIn,
     isYmdInInclusiveRange,
 };
