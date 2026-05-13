@@ -498,5 +498,7 @@ function calculateCarryForwardExpiry(employee, settings, asOfDate) {
 module.exports = {
     calculateEarnedLeave,
     updateEarnedLeaveForAllEmployees,
-    getELBalance
+    getELBalance,
+    /** Used by scripts/tests to show the same credit-day basis as EL accrual (must pass merged `attendanceRules`). */
+    getAttendanceData,
 };
