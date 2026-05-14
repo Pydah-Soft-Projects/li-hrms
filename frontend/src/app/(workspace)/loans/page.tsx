@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import { canManageLoans } from '@/lib/permissions';
@@ -19,8 +19,18 @@ import {
   Search,
   Plus,
   LayoutList,
-  LayoutGrid
+  LayoutGrid,
+  Filter,
+  Printer,
 } from 'lucide-react';
+import { MultiSelect } from '@/components/MultiSelect';
+import {
+  loanMatchesListOrgAndStatus,
+  loanMatchesSearch,
+  LOAN_LIST_STATUS_OPTIONS,
+} from '@/lib/loanListUi';
+import { LoanListEmployeeCell } from '@/components/LoanListEmployeeCell';
+import { downloadLoanAdvanceRequestPdf, type LoanAdvancePdfLoan } from '@/lib/loanAdvanceRequestPdf';
 
 interface LoanApplication {
   _id: string;
@@ -40,6 +50,7 @@ interface LoanApplication {
   appliedAt: string;
   department?: { _id: string; name: string };
   designation?: { _id: string; name: string };
+  division_id?: { _id: string; name?: string; code?: string } | string;
   loanConfig?: {
     emiAmount: number;
     interestRate: number;
@@ -163,6 +174,13 @@ export default function LoansPage() {
   const [guarantorRequests, setGuarantorRequests] = useState<LoanApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [listFilterDivisions, setListFilterDivisions] = useState<string[]>([]);
+  const [listFilterDepartments, setListFilterDepartments] = useState<string[]>([]);
+  const [listFilterDesignations, setListFilterDesignations] = useState<string[]>([]);
+  const [listFilterStatuses, setListFilterStatuses] = useState<string[]>([]);
+  const [loanOrgDivisions, setLoanOrgDivisions] = useState<any[]>([]);
+  const [loanOrgDepartments, setLoanOrgDepartments] = useState<any[]>([]);
+  const [loanOrgDesignations, setLoanOrgDesignations] = useState<any[]>([]);
   const [selectedLoan, setSelectedLoan] = useState<LoanApplication | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [actionComment, setActionComment] = useState('');
@@ -199,6 +217,7 @@ export default function LoansPage() {
   });
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   // Settlement preview state
   const [settlementPreview, setSettlementPreview] = useState<any>(null);
@@ -620,6 +639,34 @@ export default function LoansPage() {
       console.error('Error loading transactions:', err);
     } finally {
       setLoadingTransactions(false);
+    }
+  };
+
+  const handleDownloadRequestPdf = async () => {
+    if (!selectedLoan) return;
+    setExportingPdf(true);
+    try {
+      const [loanRes, txnRes] = await Promise.all([
+        api.getLoan(selectedLoan._id),
+        api.getLoanTransactions(selectedLoan._id),
+      ]);
+      if (!txnRes.success || !txnRes.data) {
+        setMessage({ type: 'error', text: txnRes.error || 'Could not load transactions for PDF' });
+        return;
+      }
+      if (!loanRes.success || !loanRes.data) {
+        setMessage({ type: 'error', text: loanRes.error || 'Could not load full loan record for PDF' });
+        return;
+      }
+      const txns = txnRes.data.transactions || [];
+      const summary = txnRes.data.summary;
+      downloadLoanAdvanceRequestPdf(loanRes.data as LoanAdvancePdfLoan, txns, {
+        summary,
+      });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err?.message || 'Failed to generate PDF' });
+    } finally {
+      setExportingPdf(false);
     }
   };
 
@@ -1073,6 +1120,94 @@ export default function LoansPage() {
     return colors[status] || 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400';
   };
 
+  useEffect(() => {
+    api.getDivisions?.().then((r: any) => {
+      if (r?.success && r?.data) setLoanOrgDivisions(r.data);
+      else if (Array.isArray(r)) setLoanOrgDivisions(r);
+    }).catch(() => {});
+    api.getDepartments?.().then((r: any) => {
+      if (r?.success && r?.data) setLoanOrgDepartments(r.data);
+      else if (Array.isArray(r)) setLoanOrgDepartments(r);
+    }).catch(() => {});
+    api.getDesignations?.().then((r: any) => {
+      if (r?.success && r?.data) setLoanOrgDesignations(r.data);
+      else if (Array.isArray(r)) setLoanOrgDesignations(r);
+    }).catch(() => {});
+  }, []);
+
+  const loanListDepartmentOptions = useMemo(() => {
+    if (listFilterDivisions.length === 0) return loanOrgDepartments;
+    const allowed = new Set<string>();
+    for (const divId of listFilterDivisions) {
+      const div = loanOrgDivisions.find((d: any) => String(d._id) === String(divId));
+      const deptIds = ((div?.departments ?? []) as any[]).map((d: any) => (typeof d === 'string' ? d : d?._id));
+      if (deptIds.length) {
+        deptIds.forEach((id) => {
+          if (id) allowed.add(String(id));
+        });
+      } else {
+        loanOrgDepartments
+          .filter((d: any) => String(d.division_id || d.division) === String(divId))
+          .forEach((d: any) => allowed.add(String(d._id)));
+      }
+    }
+    if (allowed.size === 0) {
+      return loanOrgDepartments.filter((d: any) => listFilterDivisions.includes(String(d.division_id || d.division)));
+    }
+    return loanOrgDepartments.filter((d: any) => allowed.has(String(d._id)));
+  }, [listFilterDivisions, loanOrgDivisions, loanOrgDepartments]);
+
+  useEffect(() => {
+    if (listFilterDepartments.length === 0) return;
+    const allowed = new Set(loanListDepartmentOptions.map((d: any) => String(d._id)));
+    setListFilterDepartments((prev) => prev.filter((id) => allowed.has(id)));
+  }, [loanListDepartmentOptions, listFilterDivisions]);
+
+  const filteredLoansForList = useMemo(
+    () =>
+      loans.filter(
+        (loan) =>
+          loanMatchesSearch(loan, searchTerm)
+          && loanMatchesListOrgAndStatus(
+            loan,
+            listFilterDivisions,
+            listFilterDepartments,
+            listFilterDesignations,
+            listFilterStatuses,
+          ),
+      ),
+    [loans, searchTerm, listFilterDivisions, listFilterDepartments, listFilterDesignations, listFilterStatuses],
+  );
+
+  const filteredAdvancesForList = useMemo(
+    () =>
+      advances.filter(
+        (loan) =>
+          loanMatchesSearch(loan, searchTerm)
+          && loanMatchesListOrgAndStatus(
+            loan,
+            listFilterDivisions,
+            listFilterDepartments,
+            listFilterDesignations,
+            listFilterStatuses,
+          ),
+      ),
+    [advances, searchTerm, listFilterDivisions, listFilterDepartments, listFilterDesignations, listFilterStatuses],
+  );
+
+  const anyListFilterActive =
+    listFilterDivisions.length > 0
+    || listFilterDepartments.length > 0
+    || listFilterDesignations.length > 0
+    || listFilterStatuses.length > 0;
+
+  const clearLoanListFilters = () => {
+    setListFilterDivisions([]);
+    setListFilterDepartments([]);
+    setListFilterDesignations([]);
+    setListFilterStatuses([]);
+  };
+
 
 
   return (
@@ -1245,6 +1380,70 @@ export default function LoansPage() {
           </div>
         </div>
 
+        {(activeTab === 'loans' || activeTab === 'advances') && (
+          <div className="mb-6 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/80">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <Filter className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Refine list</span>
+              {anyListFilterActive && (
+                <button
+                  type="button"
+                  onClick={clearLoanListFilters}
+                  className="ml-auto text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+              <MultiSelect
+                label="Division"
+                options={loanOrgDivisions.map((d: any) => ({
+                  id: String(d._id),
+                  name: d.name ?? d.code ?? 'Division',
+                }))}
+                selectedIds={listFilterDivisions}
+                onChange={(vals) => {
+                  setListFilterDivisions(vals);
+                  setListFilterDepartments([]);
+                }}
+                placeholder="All divisions"
+                className="w-full sm:w-40 md:w-44"
+              />
+              <MultiSelect
+                label="Department"
+                options={loanListDepartmentOptions.map((d: any) => ({
+                  id: String(d._id),
+                  name: d.name ?? d.department_name ?? 'Department',
+                }))}
+                selectedIds={listFilterDepartments}
+                onChange={setListFilterDepartments}
+                placeholder="All departments"
+                className="w-full sm:w-40 md:w-44"
+              />
+              <MultiSelect
+                label="Designation"
+                options={loanOrgDesignations.map((d: any) => ({
+                  id: String(d._id),
+                  name: d.name ?? d.designation_name ?? d.title ?? 'Designation',
+                }))}
+                selectedIds={listFilterDesignations}
+                onChange={setListFilterDesignations}
+                placeholder="All designations"
+                className="w-full sm:w-40 md:w-44"
+              />
+              <MultiSelect
+                label="Status"
+                options={LOAN_LIST_STATUS_OPTIONS}
+                selectedIds={listFilterStatuses}
+                onChange={setListFilterStatuses}
+                placeholder="All statuses"
+                className="w-full sm:w-48 md:w-56"
+              />
+            </div>
+          </div>
+        )}
+
         {/* Messages */}
         {message && (
           <div className={`mb-6 rounded-xl border px-4 py-3 flex items-center justify-between ${message.type === 'success'
@@ -1277,17 +1476,7 @@ export default function LoansPage() {
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {loading ? (
                         [...Array(5)].map((_, i) => <LoanSkeleton key={i} />)
-                      ) : loans.filter((item) => {
-                        if (searchTerm) {
-                          const searchLower = searchTerm.toLowerCase();
-                          return (
-                            (item.employeeId?.employee_name || '').toLowerCase().includes(searchLower) ||
-                            (item.emp_no || item.employeeId?.emp_no || '').toLowerCase().includes(searchLower) ||
-                            item.reason.toLowerCase().includes(searchLower)
-                          );
-                        }
-                        return true;
-                      }).length === 0 ? (
+                      ) : filteredLoansForList.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
                             <div className="flex flex-col items-center justify-center">
@@ -1298,33 +1487,23 @@ export default function LoansPage() {
                           </td>
                         </tr>
                       ) : (
-                        loans.filter((item) => {
-                          if (searchTerm) {
-                            const searchLower = searchTerm.toLowerCase();
-                            return (
-                              (item.employeeId?.employee_name || '').toLowerCase().includes(searchLower) ||
-                              (item.emp_no || item.employeeId?.emp_no || '').toLowerCase().includes(searchLower) ||
-                              item.reason.toLowerCase().includes(searchLower)
-                            );
-                          }
-                          return true;
-                        }).map((loan) => (
+                        filteredLoansForList.map((loan, idx) => (
                           <tr
                             key={loan._id}
-                            className="group hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors"
+                            className={`border-b border-slate-200 dark:border-slate-700 transition-colors duration-200 ${
+                              idx % 2 === 0
+                                ? 'bg-white dark:bg-slate-800'
+                                : 'bg-slate-50 dark:bg-slate-900/50'
+                            } hover:bg-blue-50 dark:hover:bg-blue-900/20`}
                           >
                             <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400 font-bold text-sm">
-                                  {(loan.employeeId?.employee_name || loan.emp_no || 'E')[0]}
-                                </div>
-                                <div>
-                                  <div className="font-semibold text-slate-900 dark:text-white">
-                                    {loan.employeeId?.employee_name || loan.emp_no || 'Unknown'}
-                                  </div>
-                                  <div className="text-xs text-slate-500 font-medium">{loan.emp_no || loan.employeeId?.emp_no || 'N/A'}</div>
-                                </div>
-                              </div>
+                              <LoanListEmployeeCell
+                                loan={loan}
+                                divisions={loanOrgDivisions}
+                                departments={loanOrgDepartments}
+                                designations={loanOrgDesignations}
+                                tone="emerald"
+                              />
                             </td>
                             <td className="px-6 py-4">
                               <div className="text-sm font-bold text-slate-900 dark:text-white">
@@ -1375,33 +1554,13 @@ export default function LoansPage() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                      {loans.filter((item) => {
-                        if (searchTerm) {
-                          const searchLower = searchTerm.toLowerCase();
-                          return (
-                            (item.employeeId?.employee_name || '').toLowerCase().includes(searchLower) ||
-                            (item.emp_no || item.employeeId?.emp_no || '').toLowerCase().includes(searchLower) ||
-                            item.reason.toLowerCase().includes(searchLower)
-                          );
-                        }
-                        return true;
-                      }).length === 0 ? (
+                      {filteredLoansForList.length === 0 ? (
                         <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
                           <Banknote className="w-16 h-16 text-slate-200 mb-4" />
                           <p className="text-xl font-bold text-slate-900 dark:text-white">No loans found</p>
                         </div>
                       ) : (
-                        loans.filter((item) => {
-                          if (searchTerm) {
-                            const searchLower = searchTerm.toLowerCase();
-                            return (
-                              (item.employeeId?.employee_name || '').toLowerCase().includes(searchLower) ||
-                              (item.emp_no || item.employeeId?.emp_no || '').toLowerCase().includes(searchLower) ||
-                              item.reason.toLowerCase().includes(searchLower)
-                            );
-                          }
-                          return true;
-                        }).map((loan) => (
+                        filteredLoansForList.map((loan, idx) => (
                           <div
                             key={loan._id}
                             onClick={() => {
@@ -1411,17 +1570,13 @@ export default function LoansPage() {
                             className="group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900"
                           >
                             <div className="flex items-start justify-between mb-4">
-                              <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400 font-bold text-sm">
-                                  {(loan.employeeId?.employee_name || loan.emp_no || 'E')[0]}
-                                </div>
-                                <div>
-                                  <h3 className="font-bold text-slate-900 dark:text-white line-clamp-1">
-                                    {loan.employeeId?.employee_name || loan.emp_no || 'Unknown'}
-                                  </h3>
-                                  <p className="text-xs text-slate-500 font-medium">{loan.emp_no || loan.employeeId?.emp_no}</p>
-                                </div>
-                              </div>
+                              <LoanListEmployeeCell
+                                loan={loan}
+                                divisions={loanOrgDivisions}
+                                departments={loanOrgDepartments}
+                                designations={loanOrgDesignations}
+                                tone="emerald"
+                              />
                               <div className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg ${getStatusColor(loan.status)}`}>
                                 {loan.status?.replace('_', ' ')}
                               </div>
@@ -1474,17 +1629,7 @@ export default function LoansPage() {
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {loading ? (
                         [...Array(5)].map((_, i) => <LoanSkeleton key={i} />)
-                      ) : advances.filter((item) => {
-                        if (searchTerm) {
-                          const searchLower = searchTerm.toLowerCase();
-                          return (
-                            (item.employeeId?.employee_name || '').toLowerCase().includes(searchLower) ||
-                            (item.emp_no || item.employeeId?.emp_no || '').toLowerCase().includes(searchLower) ||
-                            item.reason.toLowerCase().includes(searchLower)
-                          );
-                        }
-                        return true;
-                      }).length === 0 ? (
+                      ) : filteredAdvancesForList.length === 0 ? (
                         <tr>
                           <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
                             <div className="flex flex-col items-center justify-center">
@@ -1494,33 +1639,23 @@ export default function LoansPage() {
                           </td>
                         </tr>
                       ) : (
-                        advances.filter((item) => {
-                          if (searchTerm) {
-                            const searchLower = searchTerm.toLowerCase();
-                            return (
-                              (item.employeeId?.employee_name || '').toLowerCase().includes(searchLower) ||
-                              (item.emp_no || item.employeeId?.emp_no || '').toLowerCase().includes(searchLower) ||
-                              item.reason.toLowerCase().includes(searchLower)
-                            );
-                          }
-                          return true;
-                        }).map((advance) => (
+                        filteredAdvancesForList.map((advance, idx) => (
                           <tr
                             key={advance._id}
-                            className="group hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors"
+                            className={`border-b border-slate-200 dark:border-slate-700 transition-colors duration-200 ${
+                              idx % 2 === 0
+                                ? 'bg-white dark:bg-slate-800'
+                                : 'bg-slate-50 dark:bg-slate-900/50'
+                            } hover:bg-blue-50 dark:hover:bg-blue-900/20`}
                           >
                             <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 rounded-full bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center text-teal-700 dark:text-teal-400 font-bold text-sm">
-                                  {(advance.employeeId?.employee_name || advance.emp_no || 'E')[0]}
-                                </div>
-                                <div>
-                                  <div className="font-semibold text-slate-900 dark:text-white">
-                                    {advance.employeeId?.employee_name || advance.emp_no || 'Unknown'}
-                                  </div>
-                                  <div className="text-xs text-slate-500 font-medium">{advance.emp_no || advance.employeeId?.emp_no || 'N/A'}</div>
-                                </div>
-                              </div>
+                              <LoanListEmployeeCell
+                                loan={advance}
+                                divisions={loanOrgDivisions}
+                                departments={loanOrgDepartments}
+                                designations={loanOrgDesignations}
+                                tone="teal"
+                              />
                             </td>
                             <td className="px-6 py-4">
                               <div className="text-sm font-bold text-slate-900 dark:text-white">
@@ -1565,33 +1700,13 @@ export default function LoansPage() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                      {advances.filter((item) => {
-                        if (searchTerm) {
-                          const searchLower = searchTerm.toLowerCase();
-                          return (
-                            (item.employeeId?.employee_name || '').toLowerCase().includes(searchLower) ||
-                            (item.emp_no || item.employeeId?.emp_no || '').toLowerCase().includes(searchLower) ||
-                            item.reason.toLowerCase().includes(searchLower)
-                          );
-                        }
-                        return true;
-                      }).length === 0 ? (
+                      {filteredAdvancesForList.length === 0 ? (
                         <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
                           <Wallet className="w-16 h-16 text-slate-200 mb-4" />
                           <p className="text-xl font-bold text-slate-900 dark:text-white">No advances found</p>
                         </div>
                       ) : (
-                        advances.filter((item) => {
-                          if (searchTerm) {
-                            const searchLower = searchTerm.toLowerCase();
-                            return (
-                              (item.employeeId?.employee_name || '').toLowerCase().includes(searchLower) ||
-                              (item.emp_no || item.employeeId?.emp_no || '').toLowerCase().includes(searchLower) ||
-                              item.reason.toLowerCase().includes(searchLower)
-                            );
-                          }
-                          return true;
-                        }).map((advance) => (
+                        filteredAdvancesForList.map((advance, idx) => (
                           <div
                             key={advance._id}
                             onClick={() => {
@@ -1601,17 +1716,13 @@ export default function LoansPage() {
                             className="group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900"
                           >
                             <div className="flex items-start justify-between mb-4">
-                              <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 rounded-full bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center text-teal-700 dark:text-teal-400 font-bold text-sm">
-                                  {(advance.employeeId?.employee_name || advance.emp_no || 'E')[0]}
-                                </div>
-                                <div>
-                                  <h3 className="font-bold text-slate-900 dark:text-white line-clamp-1">
-                                    {advance.employeeId?.employee_name || advance.emp_no || 'Unknown'}
-                                  </h3>
-                                  <p className="text-xs text-slate-500 font-medium">{advance.emp_no || advance.employeeId?.emp_no}</p>
-                                </div>
-                              </div>
+                              <LoanListEmployeeCell
+                                loan={advance}
+                                divisions={loanOrgDivisions}
+                                departments={loanOrgDepartments}
+                                designations={loanOrgDesignations}
+                                tone="teal"
+                              />
                               <div className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg ${getStatusColor(advance.status)}`}>
                                 {advance.status?.replace('_', ' ')}
                               </div>
@@ -1883,6 +1994,17 @@ export default function LoansPage() {
                   <h2 className="text-xl font-bold">
                     {selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'} Details
                   </h2>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadRequestPdf()}
+                    disabled={exportingPdf}
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/40 bg-white/15 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/25 disabled:opacity-50"
+                    title="Download PDF (request summary, ledger, and one slip per transaction)"
+                  >
+                    <Printer className="h-4 w-4 shrink-0" />
+                    {exportingPdf ? '…' : 'Print PDF'}
+                  </button>
                   <button
                     onClick={() => {
                       setShowDetailDialog(false);
@@ -1895,6 +2017,7 @@ export default function LoansPage() {
                   >
                     <XCircle className="w-4 h-4" />
                   </button>
+                </div>
                 </div>
               </div>
 
@@ -2507,8 +2630,15 @@ export default function LoansPage() {
                           Release Funds
                         </h3>
                         <p className="text-xs text-green-700 dark:text-green-300 mt-1">
-                          Disburse ₹{selectedLoan.requestType === 'loan' ? (selectedLoan.loanConfig?.totalAmount || selectedLoan.amount) : selectedLoan.amount} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}
+                          Transfer ₹{(selectedLoan.amount ?? 0).toLocaleString()} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no} (approved principal).
                         </p>
+                        {selectedLoan.requestType === 'loan' &&
+                          selectedLoan.loanConfig?.totalAmount != null &&
+                          Number(selectedLoan.loanConfig.totalAmount) !== Number(selectedLoan.amount) && (
+                          <p className="text-xs text-green-600/90 dark:text-green-400/80 mt-0.5">
+                            Total to be recovered (principal + interest): ₹{Number(selectedLoan.loanConfig.totalAmount).toLocaleString()}
+                          </p>
+                        )}
                       </div>
                       {hasManagePermission && (
                         <button
@@ -2684,8 +2814,15 @@ export default function LoansPage() {
                     Release Funds
                   </h2>
                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                    Disburse ₹{selectedLoan.amount.toLocaleString()} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}
+                    Transfer ₹{(selectedLoan.amount ?? 0).toLocaleString()} (approved principal) to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}.
                   </p>
+                  {selectedLoan.requestType === 'loan' &&
+                    selectedLoan.loanConfig?.totalAmount != null &&
+                    Number(selectedLoan.loanConfig.totalAmount) !== Number(selectedLoan.amount) && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Total to be recovered (principal + interest): ₹{Number(selectedLoan.loanConfig.totalAmount).toLocaleString()}
+                    </p>
+                  )}
                 </div>
                 <button
                   onClick={() => setShowDisbursementDialog(false)}

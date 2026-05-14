@@ -7,6 +7,14 @@ import { toast, ToastContainer } from 'react-toastify';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
 import EmployeeSelect from '@/components/EmployeeSelect';
+import { MultiSelect } from '@/components/MultiSelect';
+import {
+  loanMatchesListOrgAndStatus,
+  loanMatchesSearch,
+  LOAN_LIST_STATUS_OPTIONS,
+} from '@/lib/loanListUi';
+import { LoanListEmployeeCell } from '@/components/LoanListEmployeeCell';
+import { downloadLoanAdvanceRequestPdf, type LoanAdvancePdfLoan } from '@/lib/loanAdvanceRequestPdf';
 import { Department, Division, Designation } from '@/lib/api';
 
 // Icons
@@ -25,6 +33,12 @@ const CheckIcon = () => (
 const XIcon = () => (
   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
+const PrintIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z" />
   </svg>
 );
 
@@ -52,6 +66,7 @@ interface LoanApplication {
   appliedAt: string;
   department?: { _id: string; name: string };
   designation?: { _id: string; name: string };
+  division_id?: { _id: string; name?: string; code?: string } | string;
   loanConfig?: {
     emiAmount: number;
     interestRate: number;
@@ -155,9 +170,10 @@ export default function LoansPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
 
-  const [selectedDivisionFilter, setSelectedDivisionFilter] = useState('');
-  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
-  const [selectedDesignationFilter, setSelectedDesignationFilter] = useState('');
+  const [listFilterDivisions, setListFilterDivisions] = useState<string[]>([]);
+  const [listFilterDepartments, setListFilterDepartments] = useState<string[]>([]);
+  const [listFilterDesignations, setListFilterDesignations] = useState<string[]>([]);
+  const [listFilterStatuses, setListFilterStatuses] = useState<string[]>([]);
 
   // Edit dialog state
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -189,6 +205,7 @@ export default function LoansPage() {
   });
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   // Settlement preview state
   const [settlementPreview, setSettlementPreview] = useState<any>(null);
@@ -564,17 +581,110 @@ export default function LoansPage() {
     loadFilterData();
   }, []);
 
-  // Filtered departments based on selected division
-  const filteredDepartments = useMemo(() => {
-    if (!selectedDivisionFilter) return departments;
-    const div = divisions.find(d => String(d._id) === selectedDivisionFilter);
-    if (!div || !div.departments) return departments;
-    return departments.filter(dept =>
-      (div.departments || []).some((d: any) =>
-        (typeof d === 'string' ? d : String((d as any)._id)) === String(dept._id)
-      )
-    );
-  }, [selectedDivisionFilter, divisions, departments]);
+  const loanListDepartmentOptions = useMemo(() => {
+    if (listFilterDivisions.length === 0) return departments;
+    const allowed = new Set<string>();
+    for (const divId of listFilterDivisions) {
+      const div = divisions.find((d: any) => String(d._id) === String(divId));
+      const deptIds = ((div?.departments ?? []) as any[]).map((d: any) => (typeof d === 'string' ? d : d?._id));
+      if (deptIds.length) {
+        deptIds.forEach((id) => {
+          if (id) allowed.add(String(id));
+        });
+      } else {
+        departments
+          .filter((d: any) => String(d.division_id || d.division) === String(divId))
+          .forEach((d: any) => allowed.add(String(d._id)));
+      }
+    }
+    if (allowed.size === 0) {
+      return departments.filter((d: any) => listFilterDivisions.includes(String(d.division_id || d.division)));
+    }
+    return departments.filter((d: any) => allowed.has(String(d._id)));
+  }, [listFilterDivisions, divisions, departments]);
+
+  useEffect(() => {
+    if (listFilterDepartments.length === 0) return;
+    const allowed = new Set(loanListDepartmentOptions.map((d: any) => String(d._id)));
+    setListFilterDepartments((prev) => prev.filter((id) => allowed.has(id)));
+  }, [loanListDepartmentOptions, listFilterDivisions]);
+
+  const filteredLoansForList = useMemo(
+    () =>
+      loans.filter(
+        (l) =>
+          loanMatchesSearch(l, searchTerm)
+          && loanMatchesListOrgAndStatus(
+            l,
+            listFilterDivisions,
+            listFilterDepartments,
+            listFilterDesignations,
+            listFilterStatuses,
+          ),
+      ),
+    [loans, searchTerm, listFilterDivisions, listFilterDepartments, listFilterDesignations, listFilterStatuses],
+  );
+
+  const filteredAdvancesForList = useMemo(
+    () =>
+      advances.filter(
+        (l) =>
+          loanMatchesSearch(l, searchTerm)
+          && loanMatchesListOrgAndStatus(
+            l,
+            listFilterDivisions,
+            listFilterDepartments,
+            listFilterDesignations,
+            listFilterStatuses,
+          ),
+      ),
+    [advances, searchTerm, listFilterDivisions, listFilterDepartments, listFilterDesignations, listFilterStatuses],
+  );
+
+  const filteredPendingLoansForList = useMemo(
+    () =>
+      pendingLoans.filter(
+        (l) =>
+          loanMatchesSearch(l, searchTerm)
+          && loanMatchesListOrgAndStatus(
+            l,
+            listFilterDivisions,
+            listFilterDepartments,
+            listFilterDesignations,
+            listFilterStatuses,
+          ),
+      ),
+    [pendingLoans, searchTerm, listFilterDivisions, listFilterDepartments, listFilterDesignations, listFilterStatuses],
+  );
+
+  const filteredPendingAdvancesForList = useMemo(
+    () =>
+      pendingAdvances.filter(
+        (l) =>
+          loanMatchesSearch(l, searchTerm)
+          && loanMatchesListOrgAndStatus(
+            l,
+            listFilterDivisions,
+            listFilterDepartments,
+            listFilterDesignations,
+            listFilterStatuses,
+          ),
+      ),
+    [pendingAdvances, searchTerm, listFilterDivisions, listFilterDepartments, listFilterDesignations, listFilterStatuses],
+  );
+
+  const anyListFilterActive =
+    listFilterDivisions.length > 0
+    || listFilterDepartments.length > 0
+    || listFilterDesignations.length > 0
+    || listFilterStatuses.length > 0;
+
+  const clearLoanListFilters = () => {
+    setListFilterDivisions([]);
+    setListFilterDepartments([]);
+    setListFilterDesignations([]);
+    setListFilterStatuses([]);
+  };
 
   const handleAction = async (loanId: string, action: 'approve' | 'reject' | 'forward') => {
     if (action === 'approve' && approvalValidation?.level === 'error') {
@@ -694,6 +804,33 @@ export default function LoansPage() {
       console.error('Error loading transactions:', err);
     } finally {
       setLoadingTransactions(false);
+    }
+  };
+
+  const handleDownloadRequestPdf = async () => {
+    if (!selectedLoan) return;
+    setExportingPdf(true);
+    try {
+      const [loanRes, txnRes] = await Promise.all([
+        api.getLoan(selectedLoan._id),
+        api.getLoanTransactions(selectedLoan._id),
+      ]);
+      if (!txnRes.success || !txnRes.data) {
+        toast.error(txnRes.error || 'Could not load transactions for PDF');
+        return;
+      }
+      if (!loanRes.success || !loanRes.data) {
+        toast.error(loanRes.error || 'Could not load full loan record for PDF');
+        return;
+      }
+      const txns = txnRes.data.transactions || [];
+      const summary = txnRes.data.summary;
+      downloadLoanAdvanceRequestPdf(loanRes.data as LoanAdvancePdfLoan, txns, { summary });
+      toast.success('PDF downloaded');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to generate PDF');
+    } finally {
+      setExportingPdf(false);
     }
   };
 
@@ -1314,44 +1451,60 @@ export default function LoansPage() {
 
         {/* Filters and Search Input */}
         {(activeTab === 'loans' || activeTab === 'advances' || activeTab === 'pending') && (
-          <div className="flex flex-wrap items-center gap-3 flex-1">
-            <select
-              value={selectedDivisionFilter}
-              onChange={(e) => {
-                setSelectedDivisionFilter(e.target.value);
-                setSelectedDepartmentFilter(''); // Reset department when division changes
-              }}
-              className="rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/10 dark:border-slate-800/60 dark:bg-slate-950/80 dark:text-white"
-            >
-              <option value="">All Divisions</option>
-              {divisions.map((div) => (
-                <option key={div._id} value={div._id}>{div.name}</option>
-              ))}
-            </select>
-
-            <select
-              value={selectedDepartmentFilter}
-              onChange={(e) => setSelectedDepartmentFilter(e.target.value)}
-              className="rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/10 dark:border-slate-800/60 dark:bg-slate-950/80 dark:text-white"
-            >
-              <option value="">All Departments</option>
-              {filteredDepartments.map((dept) => (
-                <option key={dept._id} value={dept._id}>{dept.name}</option>
-              ))}
-            </select>
-
-            <select
-              value={selectedDesignationFilter}
-              onChange={(e) => setSelectedDesignationFilter(e.target.value)}
-              className="rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/10 dark:border-slate-800/60 dark:bg-slate-950/80 dark:text-white"
-            >
-              <option value="">All Designations</option>
-              {designations.map((desig) => (
-                <option key={desig._id} value={desig._id}>{desig.name}</option>
-              ))}
-            </select>
-
-            <div className="relative flex-1 min-w-[200px]">
+          <div className="flex flex-col gap-3 flex-1 min-w-0">
+            <div className="flex flex-wrap items-end gap-3">
+              <MultiSelect
+                label="Division"
+                options={divisions.map((d: any) => ({ id: String(d._id), name: d.name ?? d.code ?? 'Division' }))}
+                selectedIds={listFilterDivisions}
+                onChange={(vals) => {
+                  setListFilterDivisions(vals);
+                  setListFilterDepartments([]);
+                }}
+                placeholder="All divisions"
+                className="w-full sm:w-40 md:w-44"
+              />
+              <MultiSelect
+                label="Department"
+                options={loanListDepartmentOptions.map((d: any) => ({
+                  id: String(d._id),
+                  name: d.name ?? (d as any).department_name ?? 'Department',
+                }))}
+                selectedIds={listFilterDepartments}
+                onChange={setListFilterDepartments}
+                placeholder="All departments"
+                className="w-full sm:w-40 md:w-44"
+              />
+              <MultiSelect
+                label="Designation"
+                options={designations.map((d: any) => ({
+                  id: String(d._id),
+                  name: d.name ?? (d as any).designation_name ?? (d as any).title ?? 'Designation',
+                }))}
+                selectedIds={listFilterDesignations}
+                onChange={setListFilterDesignations}
+                placeholder="All designations"
+                className="w-full sm:w-40 md:w-44"
+              />
+              <MultiSelect
+                label="Status"
+                options={LOAN_LIST_STATUS_OPTIONS}
+                selectedIds={listFilterStatuses}
+                onChange={setListFilterStatuses}
+                placeholder="All statuses"
+                className="w-full sm:w-48 md:w-56"
+              />
+              {anyListFilterActive && (
+                <button
+                  type="button"
+                  onClick={clearLoanListFilters}
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-emerald-600 hover:bg-emerald-50 dark:border-slate-600 dark:bg-slate-800 dark:text-emerald-400 dark:hover:bg-slate-700"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+            <div className="relative w-full min-w-[200px] max-w-xl">
               <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
                 <SearchIcon />
               </div>
@@ -1400,85 +1553,34 @@ export default function LoansPage() {
                       Loading...
                     </td>
                   </tr>
-                ) : loans.filter((loan) => {
-                  if (searchTerm) {
-                    const searchLower = searchTerm.toLowerCase();
-                    const empName = loan.employeeId?.employee_name || '';
-                    const empNo = loan.emp_no || loan.employeeId?.emp_no || '';
-                    if (!(
-                      empName.toLowerCase().includes(searchLower) ||
-                      empNo.toLowerCase().includes(searchLower) ||
-                      (loan.reason && loan.reason.toLowerCase().includes(searchLower))
-                    )) {
-                      return false;
-                    }
-                  }
-
-                  const emp = loan.employeeId as any;
-                  if (selectedDivisionFilter) {
-                    const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
-                    if (String(divId) !== String(selectedDivisionFilter)) return false;
-                  }
-                  if (selectedDepartmentFilter) {
-                    const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
-                    if (String(deptId) !== String(selectedDepartmentFilter)) return false;
-                  }
-                  if (selectedDesignationFilter) {
-                    const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
-                    if (String(desigId) !== String(selectedDesignationFilter)) return false;
-                  }
-
-                  return true;
-                }).length === 0 ? (
+                ) : filteredLoansForList.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                       No loan applications found
                     </td>
                   </tr>
                 ) : (
-                  loans.filter((loan) => {
-                    if (searchTerm) {
-                      const searchLower = searchTerm.toLowerCase();
-                      const empName = loan.employeeId?.employee_name || '';
-                      const empNo = loan.emp_no || loan.employeeId?.emp_no || '';
-                      if (!(
-                        empName.toLowerCase().includes(searchLower) ||
-                        empNo.toLowerCase().includes(searchLower) ||
-                        (loan.reason && loan.reason.toLowerCase().includes(searchLower))
-                      )) {
-                        return false;
-                      }
-                    }
-
-                    const emp = loan.employeeId as any;
-                    if (selectedDivisionFilter) {
-                      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
-                      if (String(divId) !== String(selectedDivisionFilter)) return false;
-                    }
-                    if (selectedDepartmentFilter) {
-                      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
-                      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
-                    }
-                    if (selectedDesignationFilter) {
-                      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
-                      if (String(desigId) !== String(selectedDesignationFilter)) return false;
-                    }
-
-                    return true;
-                  }).map((loan) => (
+                  filteredLoansForList.map((loan, idx) => (
                     <tr
                       key={loan._id}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
+                      className={`cursor-pointer border-b border-slate-200 transition-colors duration-200 dark:border-slate-700 ${
+                        idx % 2 === 0
+                          ? 'bg-white dark:bg-slate-800'
+                          : 'bg-slate-50 dark:bg-slate-900/50'
+                      } hover:bg-blue-50 dark:hover:bg-blue-900/20`}
                       onClick={() => {
                         setSelectedLoan(loan);
                         setShowDetailDialog(true);
                       }}
                     >
                       <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900 dark:text-white">
-                          {loan.employeeId?.employee_name || loan.emp_no || 'Unknown'}
-                        </div>
-                        <div className="text-xs text-slate-500">{loan.emp_no || loan.employeeId?.emp_no || 'N/A'}</div>
+                        <LoanListEmployeeCell
+                          loan={loan}
+                          divisions={divisions}
+                          departments={departments}
+                          designations={designations}
+                          tone="emerald"
+                        />
                       </td>
                       <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">
                         ₹{loan.amount.toLocaleString()}
@@ -1524,68 +1626,34 @@ export default function LoansPage() {
                       Loading...
                     </td>
                   </tr>
-                ) : advances.filter((advance) => {
-                  if (searchTerm) {
-                    const searchLower = searchTerm.toLowerCase();
-                    const empName = advance.employeeId?.employee_name || '';
-                    const empNo = advance.emp_no || advance.employeeId?.emp_no || '';
-                    return (
-                      empName.toLowerCase().includes(searchLower) ||
-                      empNo.toLowerCase().includes(searchLower) ||
-                      (advance.reason && advance.reason.toLowerCase().includes(searchLower))
-                    );
-                  }
-                  return true;
-                }).length === 0 ? (
+                ) : filteredAdvancesForList.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
                       No salary advance applications found
                     </td>
                   </tr>
                 ) : (
-                  advances.filter((advance) => {
-                    if (searchTerm) {
-                      const searchLower = searchTerm.toLowerCase();
-                      const empName = advance.employeeId?.employee_name || '';
-                      const empNo = advance.emp_no || advance.employeeId?.emp_no || '';
-                      if (!(
-                        empName.toLowerCase().includes(searchLower) ||
-                        empNo.toLowerCase().includes(searchLower) ||
-                        (advance.reason && advance.reason.toLowerCase().includes(searchLower))
-                      )) {
-                        return false;
-                      }
-                    }
-
-                    const emp = advance.employeeId as any;
-                    if (selectedDivisionFilter) {
-                      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
-                      if (String(divId) !== String(selectedDivisionFilter)) return false;
-                    }
-                    if (selectedDepartmentFilter) {
-                      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
-                      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
-                    }
-                    if (selectedDesignationFilter) {
-                      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
-                      if (String(desigId) !== String(selectedDesignationFilter)) return false;
-                    }
-
-                    return true;
-                  }).map((advance) => (
+                  filteredAdvancesForList.map((advance, idx) => (
                     <tr
                       key={advance._id}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
+                      className={`cursor-pointer border-b border-slate-200 transition-colors duration-200 dark:border-slate-700 ${
+                        idx % 2 === 0
+                          ? 'bg-white dark:bg-slate-800'
+                          : 'bg-slate-50 dark:bg-slate-900/50'
+                      } hover:bg-blue-50 dark:hover:bg-blue-900/20`}
                       onClick={() => {
                         setSelectedLoan(advance);
                         setShowDetailDialog(true);
                       }}
                     >
                       <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900 dark:text-white">
-                          {advance.employeeId?.employee_name || advance.emp_no || 'Unknown'}
-                        </div>
-                        <div className="text-xs text-slate-500">{advance.emp_no || advance.employeeId?.emp_no || 'N/A'}</div>
+                        <LoanListEmployeeCell
+                          loan={advance}
+                          divisions={divisions}
+                          departments={departments}
+                          designations={designations}
+                          tone="teal"
+                        />
                       </td>
                       <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">
                         ₹{advance.amount.toLocaleString()}
@@ -1619,48 +1687,25 @@ export default function LoansPage() {
                   <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white">
                     <LoanIcon />
                   </div>
-                  Pending Loans ({pendingLoans.length})
+                  Pending Loans ({filteredPendingLoansForList.length}
+                  {filteredPendingLoansForList.length !== pendingLoans.length ? ` of ${pendingLoans.length}` : ''})
                 </h3>
                 <div className="space-y-4">
-                  {pendingLoans.filter((loan) => {
-                    if (searchTerm) {
-                      const searchLower = searchTerm.toLowerCase();
-                      const empName = loan.employeeId?.employee_name || '';
-                      const empNo = loan.emp_no || loan.employeeId?.emp_no || '';
-                      if (!(
-                        empName.toLowerCase().includes(searchLower) ||
-                        empNo.toLowerCase().includes(searchLower) ||
-                        (loan.reason && loan.reason.toLowerCase().includes(searchLower))
-                      )) {
-                        return false;
-                      }
-                    }
-
-                    const emp = loan.employeeId as any;
-                    if (selectedDivisionFilter) {
-                      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
-                      if (String(divId) !== String(selectedDivisionFilter)) return false;
-                    }
-                    if (selectedDepartmentFilter) {
-                      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
-                      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
-                    }
-                    if (selectedDesignationFilter) {
-                      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
-                      if (String(desigId) !== String(selectedDesignationFilter)) return false;
-                    }
-
-                    return true;
-                  }).map((loan) => (
+                  {filteredPendingLoansForList.map((loan) => (
                     <div key={loan._id} className="rounded-2xl border-2 border-amber-200/50 bg-gradient-to-br from-amber-50/80 to-yellow-50/50 p-5 dark:border-amber-800/30 dark:from-amber-900/20 dark:to-yellow-900/10 shadow-sm hover:shadow-md transition-all duration-300">
                       <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="font-medium text-slate-900 dark:text-white">
-                              {loan.employeeId?.employee_name || loan.emp_no || 'Unknown'}
-                            </span>
-                            <span className="text-xs text-slate-500">({loan.emp_no || loan.employeeId?.emp_no || 'N/A'})</span>
-                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(loan.status)}`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <LoanListEmployeeCell
+                                loan={loan}
+                                divisions={divisions}
+                                departments={departments}
+                                designations={designations}
+                                tone="blue"
+                              />
+                            </div>
+                            <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${getStatusColor(loan.status)}`}>
                               {loan.status.replace('_', ' ')}
                             </span>
                           </div>
@@ -1703,48 +1748,25 @@ export default function LoansPage() {
                   <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white">
                     <AdvanceIcon />
                   </div>
-                  Pending Advances ({pendingAdvances.length})
+                  Pending Advances ({filteredPendingAdvancesForList.length}
+                  {filteredPendingAdvancesForList.length !== pendingAdvances.length ? ` of ${pendingAdvances.length}` : ''})
                 </h3>
                 <div className="space-y-4">
-                  {pendingAdvances.filter((advance) => {
-                    if (searchTerm) {
-                      const searchLower = searchTerm.toLowerCase();
-                      const empName = advance.employeeId?.employee_name || '';
-                      const empNo = advance.emp_no || advance.employeeId?.emp_no || '';
-                      if (!(
-                        empName.toLowerCase().includes(searchLower) ||
-                        empNo.toLowerCase().includes(searchLower) ||
-                        (advance.reason && advance.reason.toLowerCase().includes(searchLower))
-                      )) {
-                        return false;
-                      }
-                    }
-
-                    const emp = advance.employeeId as any;
-                    if (selectedDivisionFilter) {
-                      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
-                      if (String(divId) !== String(selectedDivisionFilter)) return false;
-                    }
-                    if (selectedDepartmentFilter) {
-                      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
-                      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
-                    }
-                    if (selectedDesignationFilter) {
-                      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
-                      if (String(desigId) !== String(selectedDesignationFilter)) return false;
-                    }
-
-                    return true;
-                  }).map((advance) => (
+                  {filteredPendingAdvancesForList.map((advance) => (
                     <div key={advance._id} className="rounded-2xl border-2 border-amber-200/50 bg-gradient-to-br from-amber-50/80 to-yellow-50/50 p-5 dark:border-amber-800/30 dark:from-amber-900/20 dark:to-yellow-900/10 shadow-sm hover:shadow-md transition-all duration-300">
                       <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="font-medium text-slate-900 dark:text-white">
-                              {advance.employeeId?.employee_name || advance.emp_no || 'Unknown'}
-                            </span>
-                            <span className="text-xs text-slate-500">({advance.emp_no || advance.employeeId?.emp_no || 'N/A'})</span>
-                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(advance.status)}`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <LoanListEmployeeCell
+                                loan={advance}
+                                divisions={divisions}
+                                departments={departments}
+                                designations={designations}
+                                tone="teal"
+                              />
+                            </div>
+                            <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${getStatusColor(advance.status)}`}>
                               {advance.status.replace('_', ' ')}
                             </span>
                           </div>
@@ -1802,26 +1824,38 @@ export default function LoansPage() {
           }} />
           <div className="relative z-50 w-full max-w-2xl rounded-2xl bg-white shadow-2xl dark:bg-slate-900 max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header */}
-            <div className={`p-6 bg-gradient-to-r ${selectedLoan.requestType === 'loan'
+              <div className={`p-6 bg-gradient-to-r ${selectedLoan.requestType === 'loan'
               ? 'from-blue-500 to-indigo-600'
               : 'from-purple-500 to-red-600'
               } text-white`}>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <h2 className="text-xl font-bold">
                   {selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'} Details
                 </h2>
-                <button
-                  onClick={() => {
-                    setShowDetailDialog(false);
-                    setSelectedLoan(null);
-                    setTransactions([]);
-                    setShowPaymentForm(false);
-                    setShowDisbursementDialog(false);
-                  }}
-                  className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors"
-                >
-                  <XIcon />
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadRequestPdf()}
+                    disabled={exportingPdf}
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/40 bg-white/15 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/25 disabled:opacity-50"
+                    title="Download PDF: summary, ledger, and one slip per transaction"
+                  >
+                    <PrintIcon />
+                    {exportingPdf ? '…' : 'Print PDF'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowDetailDialog(false);
+                      setSelectedLoan(null);
+                      setTransactions([]);
+                      setShowPaymentForm(false);
+                      setShowDisbursementDialog(false);
+                    }}
+                    className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors"
+                  >
+                    <XIcon />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -2525,8 +2559,15 @@ export default function LoansPage() {
                           Release Funds
                         </h3>
                         <p className="text-xs text-green-700 dark:text-green-300 mt-1">
-                          Disburse ₹{selectedLoan.requestType === 'loan' ? (selectedLoan.loanConfig?.totalAmount || selectedLoan.amount) : selectedLoan.amount} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}
+                          Transfer ₹{(selectedLoan.amount ?? 0).toLocaleString()} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no} (approved principal).
                         </p>
+                        {selectedLoan.requestType === 'loan' &&
+                          selectedLoan.loanConfig?.totalAmount != null &&
+                          Number(selectedLoan.loanConfig.totalAmount) !== Number(selectedLoan.amount) && (
+                          <p className="text-xs text-green-600/90 dark:text-green-400/80 mt-0.5">
+                            Total to be recovered (principal + interest): ₹{Number(selectedLoan.loanConfig.totalAmount).toLocaleString()}
+                          </p>
+                        )}
                       </div>
                       <button
                         onClick={() => setShowDisbursementDialog(true)}
@@ -2714,8 +2755,15 @@ export default function LoansPage() {
                     Release Funds
                   </h2>
                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                    Disburse ₹{selectedLoan.amount.toLocaleString()} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}
+                    Transfer ₹{(selectedLoan.amount ?? 0).toLocaleString()} (approved principal) to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}.
                   </p>
+                  {selectedLoan.requestType === 'loan' &&
+                    selectedLoan.loanConfig?.totalAmount != null &&
+                    Number(selectedLoan.loanConfig.totalAmount) !== Number(selectedLoan.amount) && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Total to be recovered (principal + interest): ₹{Number(selectedLoan.loanConfig.totalAmount).toLocaleString()}
+                    </p>
+                  )}
                 </div>
                 <button
                   onClick={() => setShowDisbursementDialog(false)}
