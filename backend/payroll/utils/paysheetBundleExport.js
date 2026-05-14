@@ -64,6 +64,8 @@ function payrollRecordToPayslipShape(record) {
   const attendanceDeductionDays = Number.isFinite(daysFromBreakdown)
     ? daysFromBreakdown
     : (Number(rawAtt.attendanceDeductionDays) || 0);
+  // Root elUsedInPayroll is canonical on PayrollRecord; nested attendance.elUsedInPayroll may be absent (strict schema).
+  const elUsedInPayroll = Number(rawAtt.elUsedInPayroll ?? record.elUsedInPayroll) || 0;
   const arNorm = normalizeArrearsFromPayrollRecord(record);
   const mdNorm = normalizeManualDeductionsFromPayrollRecord(record);
   return {
@@ -90,8 +92,10 @@ function payrollRecordToPayslipShape(record) {
     },
     attendance: {
       ...rawAtt,
+      elUsedInPayroll,
       attendanceDeductionDays,
     },
+    elUsedInPayroll,
     attendanceDeductionDays,
     earnings: record.earnings && typeof record.earnings.toObject === 'function' ? record.earnings.toObject() : (record.earnings || {}),
     deductions: ded,
@@ -116,6 +120,7 @@ function secondSalaryRecordToPayslipShape(record) {
   const attendanceDeductionDays = Number.isFinite(daysFromBreakdown)
     ? daysFromBreakdown
     : (Number(rawAtt.attendanceDeductionDays) || 0);
+  const elUsedInPayroll = Number(rawAtt.elUsedInPayroll) || 0;
   return {
     employee: {
       emp_no: record.emp_no || empObj?.emp_no || '',
@@ -139,8 +144,10 @@ function secondSalaryRecordToPayslipShape(record) {
     },
     attendance: {
       ...rawAtt,
+      elUsedInPayroll,
       attendanceDeductionDays,
     },
+    elUsedInPayroll,
     attendanceDeductionDays,
     earnings: record.earnings && typeof record.earnings.toObject === 'function' ? record.earnings.toObject() : (record.earnings || {}),
     deductions: ded,

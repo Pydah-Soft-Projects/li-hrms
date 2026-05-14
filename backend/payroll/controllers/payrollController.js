@@ -1537,7 +1537,7 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
       .populate({
         path: 'employeeId',
         select:
-          'employee_name emp_no first_name last_name department_id division_id designation_id gross_salary location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate',
+          'employee_name emp_no first_name last_name department_id division_id designation_id gross_salary salaries location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate',
         populate: [
           { path: 'department_id', select: 'name' },
           { path: 'division_id', select: 'name' },
@@ -1573,7 +1573,7 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
     const secondRecords = await SecondSalaryRecord.find({ month, employeeId: { $in: prEmpIds } })
       .populate({
         path: 'employeeId',
-        select: 'employee_name emp_no department_id division_id designation_id leftDate',
+        select: 'employee_name emp_no department_id division_id designation_id salaries leftDate',
         populate: [
           { path: 'department_id', select: 'name' },
           { path: 'division_id', select: 'name' },

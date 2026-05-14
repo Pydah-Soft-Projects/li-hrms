@@ -188,6 +188,10 @@ function getValueByPath(obj, path) {
     const n = Number(obj?.deductions?.attendanceDeductionBreakdown?.daysDeducted);
     return Number.isFinite(n) ? n : 0;
   }
+  if (trimmed === 'attendance.elUsedInPayroll') {
+    const n = Number(obj?.attendance?.elUsedInPayroll ?? obj?.elUsedInPayroll);
+    return Number.isFinite(n) ? n : 0;
+  }
   if (trimmed === 'attendance.attendanceDeductionDays' || trimmed === 'attendanceDeductionDays') {
     const a = obj?.attendance?.attendanceDeductionDays;
     if (a !== undefined && a !== null && a !== '') {
