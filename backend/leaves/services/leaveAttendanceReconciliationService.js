@@ -5,6 +5,7 @@
  * Scope (current):
  * - Leave: single-day rows are auto-reconciled (reject/narrow). Multi-day is skipped.
  * - OD: single-day full/half-day rows are auto-reconciled (reject/narrow). Multi-day/hours are skipped.
+ * - Single-shift PARTIAL: IN-only / OUT-only each credit one calendar half (same as monthly summary); reconciliation may run.
  */
 
 const Settings = require('../../settings/model/Settings');
@@ -46,8 +47,9 @@ async function loadSettingEnabled() {
  * Raw attendance half credits (aligned with summaryCalculationService before OD "dayPresent" net).
  * @param {import('mongoose').Document} daily - AttendanceDaily
  * @param {Array} ods - approved OD lean docs for that calendar day
+ * @param {{ singleShiftMode?: boolean }} [opts]
  */
-function computeRawAttendanceHalfCredits(daily, ods) {
+function computeRawAttendanceHalfCredits(daily, ods, opts = {}) {
   let attFirst = 0;
   let attSecond = 0;
   if (!daily) return { attFirst, attSecond };
@@ -67,6 +69,11 @@ function computeRawAttendanceHalfCredits(daily, ods) {
     if (eo > li) attFirst = 0.5;
     else if (li > eo) attSecond = 0.5;
     else attFirst = 0.5;
+  } else if (st === 'PARTIAL' && opts.singleShiftMode) {
+    const { getSingleShiftPartialPunchHalves } = require('../../shared/utils/singleShiftPartialHalves');
+    const ph = getSingleShiftPartialPunchHalves(daily);
+    attFirst = ph.attFirst;
+    attSecond = ph.attSecond;
   } else if (st === 'OD' && dayOds.length > 0) {
     const halfOd = dayOds.find(
       (o) =>
@@ -83,7 +90,7 @@ function computeRawAttendanceHalfCredits(daily, ods) {
       else if (halfOd.halfDayType === 'first_half' && hasOut) attSecond = 0.5;
     }
   }
-  // PARTIAL / ABSENT / incomplete: no raw half credits (do not auto-adjust leave in v1)
+  // ABSENT / incomplete PARTIAL (no clear IN-only or OUT-only): no raw half credits
 
   return { attFirst, attSecond };
 }
@@ -362,8 +369,17 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
 
   if (!daily || !dateStr) return { ran: false, reason: 'no_daily' };
 
+  const AttendanceSettings = require('../../attendance/model/AttendanceSettings');
+  let singleShiftMode = false;
+  try {
+    const asDoc = await AttendanceSettings.getSettings();
+    singleShiftMode = AttendanceSettings.getProcessingMode(asDoc).mode === 'single_shift';
+  } catch {
+    singleShiftMode = false;
+  }
+
   const ods = await findApprovedOdsForDate(employee._id, dateStr);
-  const { attFirst, attSecond } = computeRawAttendanceHalfCredits(daily, ods);
+  const { attFirst, attSecond } = computeRawAttendanceHalfCredits(daily, ods, { singleShiftMode });
   const { p1, p2 } = physicalMask(attFirst, attSecond);
   const physTotal = p1 + p2;
   if (physTotal < 0.5 - 1e-6) {

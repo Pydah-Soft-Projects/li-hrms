@@ -7,6 +7,7 @@ const AttendanceSettings = require('../model/AttendanceSettings');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const Shift = require('../../shifts/model/Shift');
 const { createISTDate, extractISTComponents, getAllDatesInRange } = require('../../shared/utils/dateUtils');
+const { getSingleShiftPartialPunchHalves } = require('../../shared/utils/singleShiftPartialHalves');
 const dateCycleService = require('../../leaves/services/dateCycleService');
 const Employee = require('../../employees/model/Employee');
 const OT = require('../../overtime/model/OT');
@@ -241,8 +242,9 @@ function getHalfPortion(status, targetStatus, leaveNature) {
  * Single-shift partial + payable credit: ensure pay-register halves show policy LOP (not default "paid").
  * Applies when worked/payable + policy LOP split the day (~0.5 + ~0.5) and there is no approved leave
  * using that capacity (see partialLopPortion, which subtracts leaveContrib before calling this).
+ * @param {boolean} [partialPresentIsFirstHalf=true] IN-only partial → present on first half; OUT-only → false (present second).
  */
-function enforceSingleShiftPartialLopSnapshot(snapshot, usePartialPayable, dayPayable, partialLopPortion) {
+function enforceSingleShiftPartialLopSnapshot(snapshot, usePartialPayable, dayPayable, partialLopPortion, partialPresentIsFirstHalf = true) {
   if (!snapshot || !usePartialPayable) return snapshot;
   const lop = Math.min(1, Math.max(0, Number(partialLopPortion) || 0));
   if (lop <= 0.001) return snapshot;
@@ -262,10 +264,12 @@ function enforceSingleShiftPartialLopSnapshot(snapshot, usePartialPayable, dayPa
     isOD: false,
     otHours: 0,
   };
+  const firstHalf = partialPresentIsFirstHalf ? { ...presentHalf } : { ...lopHalf };
+  const secondHalf = partialPresentIsFirstHalf ? { ...lopHalf } : { ...presentHalf };
   return {
     ...snapshot,
-    firstHalf: { ...presentHalf },
-    secondHalf: { ...lopHalf },
+    firstHalf,
+    secondHalf,
     isSplit: true,
     status: null,
     leaveType: null,
@@ -851,8 +855,13 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
             if (halfOd.halfDayType === 'second_half' && hasIn) attFirst = 0.5;
             else if (halfOd.halfDayType === 'first_half' && hasOut) attSecond = 0.5;
           }
+        } else if (status === 'PARTIAL' && processingModeIsSingleShift) {
+          // IN-only → first half 0.5; OUT-only → second half 0.5 (other half → partialLopPortion with leave/OD in formula).
+          const ph = getSingleShiftPartialPunchHalves(day.attendance);
+          attFirst = ph.attFirst;
+          attSecond = ph.attSecond;
         }
-        // PARTIAL/ABSENT: base is 0.0 per user request
+        // ABSENT (and multi-shift PARTIAL): base attendance halves stay 0.0
       }
 
       // Overlay ODs
@@ -1093,11 +1102,18 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         isPartialDay: usePartialPolicy,
         dayPayable,
       });
+      const partialWorkedHalf =
+        usePartialPolicy && day.attendance
+          ? getSingleShiftPartialPunchHalves(day.attendance).workedHalf
+          : null;
+      const partialPresentIsFirstHalf = partialWorkedHalf !== 'second';
+
       daySnapshot = enforceSingleShiftPartialLopSnapshot(
         daySnapshot,
         partialDaysContributeToPayableShifts,
         dayPayable,
-        partialLopPortion
+        partialLopPortion,
+        partialPresentIsFirstHalf
       );
       payRegisterDaySnapshots.push(daySnapshot);
       const latestSnapshot = payRegisterDaySnapshots[payRegisterDaySnapshots.length - 1];

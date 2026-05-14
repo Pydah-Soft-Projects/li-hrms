@@ -15,6 +15,8 @@
     "test:post-verify-backfill": "jest attendance/services/__tests__/postVerifyBiometricBackfillService.test.js --no-coverage",
     "test:post-verify-backfill:live": "node scripts/liveTestPostVerifyBiometricBackfill.js",
     "test:single-shift-partial": "node scripts/test_single_shift_out_only_partial.js",
+    "test:single-shift-partial-halves": "jest shared/utils/__tests__/singleShiftPartialHalves.test.js leaves/services/__tests__/leaveAttendanceReconciliation.partialHalves.test.js attendance/services/__tests__/singleShiftPartialPolicyMath.test.js --no-coverage",
+    "script:verify-admission-cell-partial-summary": "node scripts/verify_admission_cell_attendance_partial_and_summary.js",
     "sync:atlas-biometric": "node scripts/sync_atlas_biometric_to_attendance.js",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",

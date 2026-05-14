@@ -85,7 +85,7 @@ function expectedReconAction(leaveLean, daily, ods) {
   if (!isSingleCalendarDayLeave(leaveLean)) return { action: 'skip', reason: 'multi_day' };
   if (leaveLean.status !== 'approved') return { action: 'skip', reason: 'not_approved' };
 
-  const { attFirst, attSecond } = computeRawAttendanceHalfCredits(daily, ods);
+  const { attFirst, attSecond } = computeRawAttendanceHalfCredits(daily, ods, { singleShiftMode: true });
   const { p1, p2 } = physicalMask(attFirst, attSecond);
   const physTotal = p1 + p2;
   if (physTotal < 0.5 - 1e-6) {
@@ -332,7 +332,7 @@ async function main() {
     }
     console.log(
       '\nInterpretation: If `expected_reconciliation` shows reject/narrow but leave_status is still approved,',
-      'reconciliation did not run for that day (e.g. no recalculateOnAttendanceUpdate after punches, PARTIAL daily,',
+      'reconciliation did not run for that day (e.g. no recalculateOnAttendanceUpdate after punches, PARTIAL daily without clear IN-only/OUT-only in single-shift,',
       'payroll lock, recon disabled, or SKIP_LEAVE_ATTENDANCE_RECONCILIATION=1 on workers).'
     );
   }
@@ -343,7 +343,7 @@ async function main() {
   );
   for (const d of interesting.slice(0, 40)) {
     const ods = await findApprovedOdsForDate(employee._id, d.date);
-    const { attFirst, attSecond } = computeRawAttendanceHalfCredits(d, ods);
+    const { attFirst, attSecond } = computeRawAttendanceHalfCredits(d, ods, { singleShiftMode: true });
     console.log({
       date: d.date,
       status: d.status,

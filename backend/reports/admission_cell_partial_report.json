@@ -1,0 +1,6318 @@
+{
+  "totals": {
+    "dailiesInRange": 160,
+    "partialStatusDays": 17,
+    "rowsWithFlags": 0,
+    "reconErrors": 0,
+    "summaryErrors": 0,
+    "groupName": "Admission Cell",
+    "from": "2026-05-01",
+    "to": "2026-05-14",
+    "apply": false,
+    "limit": 50,
+    "singleShiftMode": true
+  },
+  "rows": [
+    {
+      "employeeId": "69cde730b3763b4431e2b4e6",
+      "emp_no": "2307",
+      "name": "GADA CHITTESWARI DEVI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f1e9c5f2fefd4795504"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "emp_no": "1941",
+      "name": "VALLU POORNIMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-01",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f4c9c5f2fefd479ff90"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f4c9c5f2fefd479ff9b"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "emp_no": "1941",
+      "name": "VALLU POORNIMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-02",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f4c9c5f2fefd479ff91"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f4c9c5f2fefd479ff9c"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "emp_no": "1941",
+      "name": "VALLU POORNIMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-03",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "emp_no": "1941",
+      "name": "VALLU POORNIMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-04",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f4c9c5f2fefd479ff92"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f4c9c5f2fefd479ff9d"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "emp_no": "1941",
+      "name": "VALLU POORNIMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f4c9c5f2fefd479ffa7"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "emp_no": "1941",
+      "name": "VALLU POORNIMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-06",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-06",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f4c9c5f2fefd479ffa8"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "emp_no": "1941",
+      "name": "VALLU POORNIMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-07",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-07",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f4c9c5f2fefd479ffa9"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "emp_no": "1941",
+      "name": "VALLU POORNIMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-08",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "emp_no": "1941",
+      "name": "VALLU POORNIMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-09",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "emp_no": "1941",
+      "name": "VALLU POORNIMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-10",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "emp_no": "1941",
+      "name": "VALLU POORNIMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-11",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "emp_no": "1941",
+      "name": "VALLU POORNIMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-12",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "emp_no": "1941",
+      "name": "VALLU POORNIMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-13",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "emp_no": "1941",
+      "name": "VALLU POORNIMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-14",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "emp_no": "2300",
+      "name": "YANNALA VARA LAKSHMI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-01",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f4d9c5f2fefd47a0627"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f4d9c5f2fefd47a0631"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "emp_no": "2300",
+      "name": "YANNALA VARA LAKSHMI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-02",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f4d9c5f2fefd47a063b"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "emp_no": "2300",
+      "name": "YANNALA VARA LAKSHMI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-03",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "emp_no": "2300",
+      "name": "YANNALA VARA LAKSHMI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-04",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f4d9c5f2fefd47a0628"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f4d9c5f2fefd47a0632"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "emp_no": "2300",
+      "name": "YANNALA VARA LAKSHMI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f4d9c5f2fefd47a063c"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "emp_no": "2300",
+      "name": "YANNALA VARA LAKSHMI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-06",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-06",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f4d9c5f2fefd47a063d"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "emp_no": "2300",
+      "name": "YANNALA VARA LAKSHMI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-07",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-07",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f4d9c5f2fefd47a063e"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "emp_no": "2300",
+      "name": "YANNALA VARA LAKSHMI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-08",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "emp_no": "2300",
+      "name": "YANNALA VARA LAKSHMI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-09",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "emp_no": "2300",
+      "name": "YANNALA VARA LAKSHMI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-10",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "emp_no": "2300",
+      "name": "YANNALA VARA LAKSHMI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-11",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "emp_no": "2300",
+      "name": "YANNALA VARA LAKSHMI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-12",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "emp_no": "2300",
+      "name": "YANNALA VARA LAKSHMI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-13",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "emp_no": "2300",
+      "name": "YANNALA VARA LAKSHMI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-14",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "emp_no": "2111",
+      "name": "SINGULURI SAI RAJ",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-01",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f469c5f2fefd479e7a4"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "emp_no": "2111",
+      "name": "SINGULURI SAI RAJ",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-02",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f469c5f2fefd479e793"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f469c5f2fefd479e79c"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "emp_no": "2111",
+      "name": "SINGULURI SAI RAJ",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-03",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "emp_no": "2111",
+      "name": "SINGULURI SAI RAJ",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-04",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f469c5f2fefd479e794"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f469c5f2fefd479e79d"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "emp_no": "2111",
+      "name": "SINGULURI SAI RAJ",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f469c5f2fefd479e7a5"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "emp_no": "2111",
+      "name": "SINGULURI SAI RAJ",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-06",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-06",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f469c5f2fefd479e7a6"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "emp_no": "2111",
+      "name": "SINGULURI SAI RAJ",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-07",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-07",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f469c5f2fefd479e7a7"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "emp_no": "2111",
+      "name": "SINGULURI SAI RAJ",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-08",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "emp_no": "2111",
+      "name": "SINGULURI SAI RAJ",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-09",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "emp_no": "2111",
+      "name": "SINGULURI SAI RAJ",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-10",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "emp_no": "2111",
+      "name": "SINGULURI SAI RAJ",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-11",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "emp_no": "2111",
+      "name": "SINGULURI SAI RAJ",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-12",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "emp_no": "2111",
+      "name": "SINGULURI SAI RAJ",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-13",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "emp_no": "2111",
+      "name": "SINGULURI SAI RAJ",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-14",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "emp_no": "2295",
+      "name": "KAKARAPARTHI DEVI NIKITHA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-01",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f249c5f2fefd4796a06"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f249c5f2fefd4796a11"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "emp_no": "2295",
+      "name": "KAKARAPARTHI DEVI NIKITHA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-02",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f249c5f2fefd4796a1c"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "emp_no": "2295",
+      "name": "KAKARAPARTHI DEVI NIKITHA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-03",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "emp_no": "2295",
+      "name": "KAKARAPARTHI DEVI NIKITHA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-04",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f249c5f2fefd4796a07"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f249c5f2fefd4796a12"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "emp_no": "2295",
+      "name": "KAKARAPARTHI DEVI NIKITHA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f249c5f2fefd4796a1d"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "emp_no": "2295",
+      "name": "KAKARAPARTHI DEVI NIKITHA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-06",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-06",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f249c5f2fefd4796a1e"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "emp_no": "2295",
+      "name": "KAKARAPARTHI DEVI NIKITHA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-07",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-07",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f249c5f2fefd4796a1f"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "emp_no": "2295",
+      "name": "KAKARAPARTHI DEVI NIKITHA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-08",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "emp_no": "2295",
+      "name": "KAKARAPARTHI DEVI NIKITHA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-09",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "emp_no": "2295",
+      "name": "KAKARAPARTHI DEVI NIKITHA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-10",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "emp_no": "2295",
+      "name": "KAKARAPARTHI DEVI NIKITHA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-11",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "emp_no": "2295",
+      "name": "KAKARAPARTHI DEVI NIKITHA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-12",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "emp_no": "2295",
+      "name": "KAKARAPARTHI DEVI NIKITHA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-13",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "emp_no": "2295",
+      "name": "KAKARAPARTHI DEVI NIKITHA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-14",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "emp_no": "2297",
+      "name": "NAMMI NAVA DURGA KUSUMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-01",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f349c5f2fefd479a639"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "emp_no": "2297",
+      "name": "NAMMI NAVA DURGA KUSUMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-02",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f349c5f2fefd479a63a"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "emp_no": "2297",
+      "name": "NAMMI NAVA DURGA KUSUMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-03",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "emp_no": "2297",
+      "name": "NAMMI NAVA DURGA KUSUMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-04",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f349c5f2fefd479a63b"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "emp_no": "2297",
+      "name": "NAMMI NAVA DURGA KUSUMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f349c5f2fefd479a63c"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "emp_no": "2297",
+      "name": "NAMMI NAVA DURGA KUSUMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-06",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-06",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f349c5f2fefd479a63d"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "emp_no": "2297",
+      "name": "NAMMI NAVA DURGA KUSUMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-07",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-07",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f349c5f2fefd479a63e"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "emp_no": "2297",
+      "name": "NAMMI NAVA DURGA KUSUMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-08",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "emp_no": "2297",
+      "name": "NAMMI NAVA DURGA KUSUMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-09",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "emp_no": "2297",
+      "name": "NAMMI NAVA DURGA KUSUMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-10",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "emp_no": "2297",
+      "name": "NAMMI NAVA DURGA KUSUMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-11",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "emp_no": "2297",
+      "name": "NAMMI NAVA DURGA KUSUMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-12",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "emp_no": "2297",
+      "name": "NAMMI NAVA DURGA KUSUMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-13",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "emp_no": "2297",
+      "name": "NAMMI NAVA DURGA KUSUMA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-14",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "emp_no": "2105",
+      "name": "PADMAVATI CHIKKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-01",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f399c5f2fefd479b5e3"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f399c5f2fefd479b5ee"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "emp_no": "2105",
+      "name": "PADMAVATI CHIKKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-02",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f399c5f2fefd479b5e4"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f399c5f2fefd479b5ef"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "emp_no": "2105",
+      "name": "PADMAVATI CHIKKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-03",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "emp_no": "2105",
+      "name": "PADMAVATI CHIKKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-04",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f399c5f2fefd479b5e5"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f399c5f2fefd479b5f0"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "emp_no": "2105",
+      "name": "PADMAVATI CHIKKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f399c5f2fefd479b5f8"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "emp_no": "2105",
+      "name": "PADMAVATI CHIKKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-06",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-06",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f399c5f2fefd479b5f9"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "emp_no": "2105",
+      "name": "PADMAVATI CHIKKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-07",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-07",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f399c5f2fefd479b5fa"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "emp_no": "2105",
+      "name": "PADMAVATI CHIKKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-08",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "emp_no": "2105",
+      "name": "PADMAVATI CHIKKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-09",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "emp_no": "2105",
+      "name": "PADMAVATI CHIKKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-10",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "emp_no": "2105",
+      "name": "PADMAVATI CHIKKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-11",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "emp_no": "2105",
+      "name": "PADMAVATI CHIKKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-12",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "emp_no": "2105",
+      "name": "PADMAVATI CHIKKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-13",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "emp_no": "2105",
+      "name": "PADMAVATI CHIKKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-14",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b79f54b04c8adb35082772",
+      "emp_no": "2298",
+      "name": "MATTA RAMA TULASI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-01",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f2e9c5f2fefd47991d7"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f2e9c5f2fefd47991e2"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b79f54b04c8adb35082772",
+      "emp_no": "2298",
+      "name": "MATTA RAMA TULASI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-02",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f2e9c5f2fefd47991d8"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f2e9c5f2fefd47991e3"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b79f54b04c8adb35082772",
+      "emp_no": "2298",
+      "name": "MATTA RAMA TULASI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-03",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b79f54b04c8adb35082772",
+      "emp_no": "2298",
+      "name": "MATTA RAMA TULASI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-04",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f2e9c5f2fefd47991d9"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f2e9c5f2fefd47991e4"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b79f54b04c8adb35082772",
+      "emp_no": "2298",
+      "name": "MATTA RAMA TULASI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f2e9c5f2fefd47991ee"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69b79f54b04c8adb35082772",
+      "emp_no": "2298",
+      "name": "MATTA RAMA TULASI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-06",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-06",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f2e9c5f2fefd47991ef"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69b79f54b04c8adb35082772",
+      "emp_no": "2298",
+      "name": "MATTA RAMA TULASI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-07",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-07",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f2e9c5f2fefd47991f0"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69b79f54b04c8adb35082772",
+      "emp_no": "2298",
+      "name": "MATTA RAMA TULASI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-08",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b79f54b04c8adb35082772",
+      "emp_no": "2298",
+      "name": "MATTA RAMA TULASI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-09",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b79f54b04c8adb35082772",
+      "emp_no": "2298",
+      "name": "MATTA RAMA TULASI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-10",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b79f54b04c8adb35082772",
+      "emp_no": "2298",
+      "name": "MATTA RAMA TULASI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-11",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b79f54b04c8adb35082772",
+      "emp_no": "2298",
+      "name": "MATTA RAMA TULASI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-12",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b79f54b04c8adb35082772",
+      "emp_no": "2298",
+      "name": "MATTA RAMA TULASI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-13",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69b79f54b04c8adb35082772",
+      "emp_no": "2298",
+      "name": "MATTA RAMA TULASI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-14",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "emp_no": "2017",
+      "name": "VASIREDDY SURYAKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-01",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f4c9c5f2fefd479ffcd"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f4c9c5f2fefd479ffd7"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "emp_no": "2017",
+      "name": "VASIREDDY SURYAKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-02",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f4c9c5f2fefd479ffce"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f4c9c5f2fefd479ffd8"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "emp_no": "2017",
+      "name": "VASIREDDY SURYAKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-03",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "emp_no": "2017",
+      "name": "VASIREDDY SURYAKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-04",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f4c9c5f2fefd479ffe1"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "emp_no": "2017",
+      "name": "VASIREDDY SURYAKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f4c9c5f2fefd479ffe2"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "emp_no": "2017",
+      "name": "VASIREDDY SURYAKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-06",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-06",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f4c9c5f2fefd479ffe3"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "emp_no": "2017",
+      "name": "VASIREDDY SURYAKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-07",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-07",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f4c9c5f2fefd479ffe4"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "emp_no": "2017",
+      "name": "VASIREDDY SURYAKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-08",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "emp_no": "2017",
+      "name": "VASIREDDY SURYAKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-09",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "emp_no": "2017",
+      "name": "VASIREDDY SURYAKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-10",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "emp_no": "2017",
+      "name": "VASIREDDY SURYAKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-11",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "emp_no": "2017",
+      "name": "VASIREDDY SURYAKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-12",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "emp_no": "2017",
+      "name": "VASIREDDY SURYAKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-13",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "emp_no": "2017",
+      "name": "VASIREDDY SURYAKALA",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-14",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "emp_no": "2131",
+      "name": "NEMMATHI SANTAKUMARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-01",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f379c5f2fefd479ad10"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "emp_no": "2131",
+      "name": "NEMMATHI SANTAKUMARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-02",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f379c5f2fefd479acfc"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f379c5f2fefd479ad07"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "emp_no": "2131",
+      "name": "NEMMATHI SANTAKUMARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-03",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "emp_no": "2131",
+      "name": "NEMMATHI SANTAKUMARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-04",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f379c5f2fefd479acfd"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f379c5f2fefd479ad08"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "emp_no": "2131",
+      "name": "NEMMATHI SANTAKUMARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f379c5f2fefd479ad11"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "emp_no": "2131",
+      "name": "NEMMATHI SANTAKUMARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-06",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-06",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f379c5f2fefd479ad12"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "emp_no": "2131",
+      "name": "NEMMATHI SANTAKUMARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-07",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-07",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f379c5f2fefd479ad13"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "emp_no": "2131",
+      "name": "NEMMATHI SANTAKUMARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-08",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "emp_no": "2131",
+      "name": "NEMMATHI SANTAKUMARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-09",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "emp_no": "2131",
+      "name": "NEMMATHI SANTAKUMARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-10",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "emp_no": "2131",
+      "name": "NEMMATHI SANTAKUMARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-11",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "emp_no": "2131",
+      "name": "NEMMATHI SANTAKUMARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-12",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "emp_no": "2131",
+      "name": "NEMMATHI SANTAKUMARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-13",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "emp_no": "2131",
+      "name": "NEMMATHI SANTAKUMARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-14",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "emp_no": "6",
+      "name": "B.J.U.N.SUNEETHA",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-01",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "P",
+            "_id": "6a0586f369854778137d718a"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "Pay",
+            "_id": "6a0586f369854778137d7197"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "emp_no": "6",
+      "name": "B.J.U.N.SUNEETHA",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-02",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "P",
+            "_id": "6a0586f369854778137d718b"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "Pay",
+            "_id": "6a0586f369854778137d7198"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "emp_no": "6",
+      "name": "B.J.U.N.SUNEETHA",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-03",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "WEEK_OFF",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "emp_no": "6",
+      "name": "B.J.U.N.SUNEETHA",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-04",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "",
+            "_id": "6a0586f369854778137d71a0"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "emp_no": "6",
+      "name": "B.J.U.N.SUNEETHA",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [
+          {
+            "date": "2026-05-05",
+            "value": 0,
+            "label": "PARTIAL",
+            "_id": "6a0586f369854778137d718e"
+          }
+        ],
+        "payableShifts": [],
+        "leaves": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "Leave (lop) (1)",
+            "_id": "6a0586f369854778137d718c"
+          }
+        ],
+        "paidLeaves": [],
+        "lopLeaves": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a0586f369854778137d718d"
+          }
+        ],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "emp_no": "6",
+      "name": "B.J.U.N.SUNEETHA",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-06",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-06",
+            "value": 1,
+            "label": "",
+            "_id": "6a0586f369854778137d71a1"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "emp_no": "6",
+      "name": "B.J.U.N.SUNEETHA",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-07",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-07",
+            "value": 1,
+            "label": "",
+            "_id": "6a0586f369854778137d71a2"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "emp_no": "6",
+      "name": "B.J.U.N.SUNEETHA",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-08",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-08",
+            "value": 1,
+            "label": "",
+            "_id": "6a0586f369854778137d71a3"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "emp_no": "6",
+      "name": "B.J.U.N.SUNEETHA",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-09",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-09",
+            "value": 1,
+            "label": "",
+            "_id": "6a0586f369854778137d71a4"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "emp_no": "6",
+      "name": "B.J.U.N.SUNEETHA",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-10",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-10",
+            "value": 1,
+            "label": "",
+            "_id": "6a0586f369854778137d71a5"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "emp_no": "6",
+      "name": "B.J.U.N.SUNEETHA",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-11",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-11",
+            "value": 1,
+            "label": "",
+            "_id": "6a0586f369854778137d71a6"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "emp_no": "6",
+      "name": "B.J.U.N.SUNEETHA",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-12",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-12",
+            "value": 1,
+            "label": "",
+            "_id": "6a0586f369854778137d71a7"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "emp_no": "6",
+      "name": "B.J.U.N.SUNEETHA",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-13",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-13",
+            "value": 1,
+            "label": "",
+            "_id": "6a0586f369854778137d71a8"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "emp_no": "6",
+      "name": "B.J.U.N.SUNEETHA",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-14",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "ABSENT",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-14",
+            "value": 1,
+            "label": "",
+            "_id": "6a0586f369854778137d71a9"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69e71a9bfa5170909779cf40",
+      "emp_no": "21522",
+      "name": "CHINTALAPUDI  ASWINI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f139c5f2fefd4793c37"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69eca8bd402ddade5806242d",
+      "emp_no": "21520",
+      "name": "KEETHA RAMALAKSHMI",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-01",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f279c5f2fefd479758f"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f279c5f2fefd4797597"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69eca8bd402ddade5806242d",
+      "emp_no": "21520",
+      "name": "KEETHA RAMALAKSHMI",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-02",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f279c5f2fefd4797590"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f279c5f2fefd4797598"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69eca8bd402ddade5806242d",
+      "emp_no": "21520",
+      "name": "KEETHA RAMALAKSHMI",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-03",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-03",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f279c5f2fefd4797591"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-03",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f279c5f2fefd4797599"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69eca8bd402ddade5806242d",
+      "emp_no": "21520",
+      "name": "KEETHA RAMALAKSHMI",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-04",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f279c5f2fefd4797592"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f279c5f2fefd479759a"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69eca8bd402ddade5806242d",
+      "emp_no": "21520",
+      "name": "KEETHA RAMALAKSHMI",
+      "division": "PVRT Degree College (Kakinada Campus)",
+      "department": "OFFICE",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f279c5f2fefd47975a5"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69f079192614f39377bcdd14",
+      "emp_no": "21537",
+      "name": "PUGAKU KALYANESWARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-01",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f409c5f2fefd479ce5e"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-01",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f409c5f2fefd479ce66"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69f079192614f39377bcdd14",
+      "emp_no": "21537",
+      "name": "PUGAKU KALYANESWARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-02",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f409c5f2fefd479ce5f"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f409c5f2fefd479ce67"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69f079192614f39377bcdd14",
+      "emp_no": "21537",
+      "name": "PUGAKU KALYANESWARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-03",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-03",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f409c5f2fefd479ce60"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-03",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f409c5f2fefd479ce68"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69f079192614f39377bcdd14",
+      "emp_no": "21537",
+      "name": "PUGAKU KALYANESWARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-04",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f409c5f2fefd479ce61"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f409c5f2fefd479ce69"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69f079192614f39377bcdd14",
+      "emp_no": "21537",
+      "name": "PUGAKU KALYANESWARI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f409c5f2fefd479ce73"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69f19e6665e2d44b13415d7a",
+      "emp_no": "21539",
+      "name": "YARLAGADDA NARAYANAMURTHY",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f4d9c5f2fefd47a0621"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69f315c665e2d44b13bd049e",
+      "emp_no": "111112",
+      "name": "ELIPE POORNASUNDAR",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-02",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f1b9c5f2fefd4795109"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69f315c665e2d44b13bd049e",
+      "emp_no": "111112",
+      "name": "ELIPE POORNASUNDAR",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f1b9c5f2fefd479510c"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69f441995b39c25118d9d2d8",
+      "emp_no": "111114",
+      "name": "YESURI DEVI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-01",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "HALF_DAY",
+      "payableShifts": 0.5,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-01",
+            "value": 0.5,
+            "label": "P",
+            "_id": "69fc8f4e9c5f2fefd47a0a34"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-01",
+            "value": 0.5,
+            "label": "Pay",
+            "_id": "69fc8f4e9c5f2fefd47a0a38"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-01",
+            "value": 0.5,
+            "label": "",
+            "_id": "69fc8f4e9c5f2fefd47a0a3f"
+          }
+        ]
+      }
+    },
+    {
+      "employeeId": "69f441995b39c25118d9d2d8",
+      "emp_no": "111114",
+      "name": "YESURI DEVI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-02",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f4e9c5f2fefd47a0a35"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-02",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f4e9c5f2fefd47a0a39"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69f441995b39c25118d9d2d8",
+      "emp_no": "111114",
+      "name": "YESURI DEVI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-03",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-03",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f4e9c5f2fefd47a0a36"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-03",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f4e9c5f2fefd47a0a3a"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69f441995b39c25118d9d2d8",
+      "emp_no": "111114",
+      "name": "YESURI DEVI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-04",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PRESENT",
+      "payableShifts": 1,
+      "partialHalves": {
+        "attFirst": 0,
+        "attSecond": 0,
+        "workedHalf": null
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0.5
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "P",
+            "_id": "69fc8f4e9c5f2fefd47a0a37"
+          }
+        ],
+        "partial": [],
+        "payableShifts": [
+          {
+            "date": "2026-05-04",
+            "value": 1,
+            "label": "Pay",
+            "_id": "69fc8f4e9c5f2fefd47a0a3b"
+          }
+        ],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": []
+      }
+    },
+    {
+      "employeeId": "69f441995b39c25118d9d2d8",
+      "emp_no": "111114",
+      "name": "YESURI DEVI",
+      "division": "PYDAH COLLEGE OF ENGINEERING",
+      "department": "ADMISSIONS CELL",
+      "group": "ADMISSION CELL",
+      "date": "2026-05-05",
+      "payrollMonth": "2026-05",
+      "payrollYear": 2026,
+      "payrollMonthNumber": 5,
+      "dailyStatus": "PARTIAL",
+      "payableShifts": 0,
+      "partialHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0,
+        "workedHalf": "first"
+      },
+      "reconHalves": {
+        "attFirst": 0.5,
+        "attSecond": 0
+      },
+      "helperReconOk": true,
+      "contributingDates": {
+        "present": [],
+        "partial": [],
+        "payableShifts": [],
+        "leaves": [],
+        "paidLeaves": [],
+        "lopLeaves": [],
+        "ods": [],
+        "absent": [
+          {
+            "date": "2026-05-05",
+            "value": 1,
+            "label": "",
+            "_id": "69fc8f4e9c5f2fefd47a0a40"
+          }
+        ]
+      }
+    }
+  ]
+}
