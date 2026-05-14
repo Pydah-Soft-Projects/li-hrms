@@ -228,6 +228,7 @@ exports.getLoans = async (req, res) => {
     const [loans, total, presentPayPeriod] = await Promise.all([
       Loan.find(filter)
         .populate('employeeId', 'employee_name emp_no gross_salary')
+        .populate('division_id', 'name code')
         .populate('department', 'name')
         .populate('designation', 'name')
         .populate('appliedBy', 'name email')
@@ -273,6 +274,7 @@ exports.getMyLoans = async (req, res) => {
     const [loans, presentPayPeriod] = await Promise.all([
       Loan.find(filter)
         .populate('employeeId', 'employee_name emp_no gross_salary')
+        .populate('division_id', 'name code')
         .populate('department', 'name')
         .populate('designation', 'name')
         .sort({ createdAt: -1 }),
@@ -526,9 +528,13 @@ exports.getLoan = async (req, res) => {
       .populate('appliedBy', 'name email')
       .populate('workflow.history.actionBy', 'name email')
       .populate('approvals.hod.approvedBy', 'name email')
+      .populate('approvals.manager.approvedBy', 'name email')
       .populate('approvals.hr.approvedBy', 'name email')
       .populate('approvals.final.approvedBy', 'name email')
-      .populate('disbursement.disbursedBy', 'name email');
+      .populate('disbursement.disbursedBy', 'name email')
+      .populate('cancellation.cancelledBy', 'name email')
+      .populate('changeHistory.modifiedBy', 'name email')
+      .populate('guarantors.employeeId', 'employee_name emp_no');
 
     if (!loan) {
       return res.status(404).json({
