@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { api, Division, Department, Designation, Shift, EmployeeGroup } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 import { collapseShiftRowsForEditor, expandShiftRowsForApi, type DivisionShiftSelectionRow } from '@/lib/shiftAssignmentGroups';
+import {
+    downloadDivisionsHierarchyExcel,
+    downloadDivisionsHierarchyPdf,
+} from '@/lib/divisionsHierarchyExport';
 
 interface Manager {
     _id: string;
@@ -92,6 +96,12 @@ const ArrowPathIcon = ({ className = "w-6 h-6" }) => (
 const CheckBadgeIcon = ({ className = "w-6 h-6" }) => (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+    </svg>
+);
+
+const DownloadPdfIcon = ({ className = 'h-4 w-4' }: { className?: string }) => (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
     </svg>
 );
 
@@ -429,15 +439,34 @@ export default function DivisionsPage() {
 
 
             <div className="relative z-10 px-6 py-2 sm:p-8 lg:p-10">
-                <div className="mb-8 flex items-center justify-between gap-4">
+                <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white">Divisions</h1>
-                    <button
-                        onClick={() => { resetForm(); setShowCreateDialog(true); }}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95"
-                    >
-                        <span className="text-lg leading-none">+</span>
-                        <span>Create Division</span>
-                    </button>
+                    <div className="flex flex-wrap items-center justify-end gap-2 sm:shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => downloadDivisionsHierarchyPdf(divisions, departments)}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition-all hover:bg-slate-50 active:scale-95 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                        >
+                            <DownloadPdfIcon />
+                            <span>Download PDF</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => downloadDivisionsHierarchyExcel(divisions, departments)}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800 shadow-sm transition-all hover:bg-emerald-100 active:scale-95 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100 dark:hover:bg-emerald-900"
+                        >
+                            <DownloadPdfIcon />
+                            <span>Download Excel</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { resetForm(); setShowCreateDialog(true); }}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95"
+                        >
+                            <span className="text-lg leading-none">+</span>
+                            <span>Create Division</span>
+                        </button>
+                    </div>
                 </div>
 
                 {/* Stats Grid */}
