@@ -3268,7 +3268,12 @@ export const api = {
   },
 
   // Disburse loan
-  disburseLoan: async (id: string, data: { disbursementMethod?: string; transactionReference?: string; remarks?: string }) => {
+  disburseLoan: async (id: string, data: {
+    disbursementMethod?: string;
+    transactionReference?: string;
+    remarks?: string;
+    firstDeductionPayrollMonth?: string;
+  }) => {
     return apiRequest<any>(`/loans/${id}/disburse`, {
       method: 'PUT',
       body: JSON.stringify(data),

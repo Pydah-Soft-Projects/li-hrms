@@ -545,7 +545,7 @@ async function calculatePayroll(employeeId, month, userId) {
 
     // Step 8: Calculate Loan EMI
     console.log('\n--- Step 8: Loan EMI Calculation ---');
-    const emiResult = await loanAdvanceService.calculateTotalEMI(employeeId);
+    const emiResult = await loanAdvanceService.calculateTotalEMI(employeeId, month);
     console.log('EMI Result:', JSON.stringify(emiResult, null, 2));
     console.log(`Total EMI: ${emiResult.totalEMI}`);
     if (emiResult.emiBreakdown && emiResult.emiBreakdown.length > 0) {
@@ -567,7 +567,8 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log('\n--- Step 10: Salary Advance Processing ---');
     const advanceResult = await loanAdvanceService.processSalaryAdvance(
       employeeId,
-      Math.max(0, payableAmountBeforeAdvance)
+      Math.max(0, payableAmountBeforeAdvance),
+      month
     );
     console.log('Advance Result:', JSON.stringify(advanceResult, null, 2));
     console.log(`Advance Deduction: ${advanceResult.advanceDeduction}`);

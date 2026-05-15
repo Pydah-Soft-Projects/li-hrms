@@ -94,7 +94,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/arrears', label: 'Arrears', icon: Banknote, category: 'Finance & Payroll', moduleCode: 'ARREARS' },
   { href: '/superadmin/manual-deductions', label: 'Manual Deductions', icon: Banknote, category: 'Finance & Payroll', moduleCode: 'MANUAL_DEDUCTIONS' },
   { href: '/superadmin/allowances-deductions', label: 'Allowances & Deductions', icon: Wallet, category: 'Finance & Payroll', moduleCode: 'ALLOWANCES_DEDUCTIONS' },
-  { href: '/superadmin/loans', label: 'Loans & Salary Advance', icon: PiggyBank, category: 'Finance & Payroll', moduleCode: 'LOANS_SALARY_ADVANCE' },
+  { href: '/superadmin/loans', label: 'Loans & Salary Advance', icon: PiggyBank, category: 'Finance & Payroll', moduleCode: 'LOANS' },
   { href: '/superadmin/settings', label: 'General Settings', icon: Settings, category: 'Settings', moduleCode: 'GENERAL_SETTINGS' },
 ];
 

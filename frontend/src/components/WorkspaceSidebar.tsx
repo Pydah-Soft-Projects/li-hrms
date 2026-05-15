@@ -228,7 +228,8 @@ export default function WorkspaceSidebar() {
                                                 (module.code === 'PROMOTIONS_TRANSFERS' && pathname === '/promotions-transfers') ||
                                                 (module.code === 'ASSETS_MANAGEMENT' && pathname === '/assets-management') ||
                                                 (module.code === 'EMPLOYEE_BIRTHDAYS' && pathname === '/employee-birthdays') ||
-                                                (module.code === 'EMPLOYEE_GROUPS' && pathname === '/employee-groups');
+                                                (module.code === 'EMPLOYEE_GROUPS' && pathname === '/employee-groups') ||
+                                                (module.code === 'LOANS' && pathname === '/loans');
 
                                             const Icon = moduleIcons[module.code] || LayoutDashboard;
 

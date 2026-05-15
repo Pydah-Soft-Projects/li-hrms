@@ -18,9 +18,17 @@ const {
   syncLoanMoneyAndPayrollSchedule,
   setNextPaymentDateFromInstallmentsPaid,
   computeLoanPayrollAnchors,
+  applyRepaymentScheduleFromPayrollMonth,
   firstPayrollMonthKeyForRepaymentSchedule,
+  needsFirstDeductionPayPeriodSelection,
 } = require('../services/loanHistoryRepairService');
 const { getPresentPayPeriod } = require('../../shared/utils/dateUtils');
+const {
+  buildLoanApprovalChain,
+  ensureLoanApprovalChain,
+  isLoanFinalApprovalStep,
+  syncChainAfterWorkflowAction,
+} = require('../services/loanWorkflowService');
 
 // ============================================
 // NO HARDCODED BYPASS - Uses database setting: workflow.allowHigherAuthorityToApproveLowerLevels
@@ -550,6 +558,10 @@ exports.getLoan = async (req, res) => {
       }
     }
 
+    const wfSettings = await resolveLoanWorkflowSettings(loan.requestType, loan.division_id?._id || loan.division_id);
+    ensureLoanApprovalChain(loan, wfSettings);
+    loan.markModified('workflow');
+
     const presentPayPeriod = await getPresentPayPeriod();
 
     res.status(200).json({
@@ -864,14 +876,19 @@ exports.applyLoan = async (req, res) => {
     }
     const loan = new Loan(loanPayload);
 
-    // Determine initial workflow step
-    // Fixed requirement: Always start with HOD as the default first step
-    const initialStep = 'hod';
-    const initialApprover = 'hod';
+    const wfSettings = await resolveLoanWorkflowSettings(requestType, employee.division_id?._id || employee.division_id);
+    const approvalChain = buildLoanApprovalChain(wfSettings);
+    const initialApprover = approvalChain[0]?.role || 'hod';
+    const initialStep =
+      initialApprover === 'final_authority' ? 'final' : ['hod', 'manager', 'hr'].includes(initialApprover) ? initialApprover : 'hod';
 
     loan.workflow = {
       currentStep: initialStep,
       nextApprover: initialApprover,
+      nextApproverRole: initialApprover,
+      finalAuthority: wfSettings?.workflow?.finalAuthority?.role || 'hr',
+      approvalChain,
+      isCompleted: false,
       history: [
         {
           step: 'employee',
@@ -1321,7 +1338,7 @@ exports.getPendingApprovals = async (req, res) => {
 // @access  Private (HOD, Manager, HR, Admin)
 exports.processLoanAction = async (req, res) => {
   try {
-    const { action, comments, approvalAmount, approvalInterestRate } = req.body;
+    const { action, comments, approvalAmount, approvalInterestRate, firstDeductionPayrollMonth } = req.body;
     const loan = await Loan.findById(req.params.id)
       .populate('division_id')
       .populate('employeeId', 'employee_name emp_no gross_salary');
@@ -1353,6 +1370,7 @@ exports.processLoanAction = async (req, res) => {
 
     // Active workflow for this loan (division override → global)
     const settings = await resolveLoanWorkflowSettings(loan.requestType, loan.division_id?._id || loan.division_id);
+    ensureLoanApprovalChain(loan, settings);
     const allowBypass = settings?.workflow?.allowHigherAuthorityToApproveLowerLevels || false;
 
     // Validate user can perform this action
@@ -1580,7 +1598,22 @@ exports.processLoanAction = async (req, res) => {
             };
           }
         } else {
-          // Final Approval
+          // Final Approval — first deduction pay period required
+          if (!firstDeductionPayrollMonth) {
+            return res.status(400).json({
+              success: false,
+              error: 'First deduction pay period is required for final approval (YYYY-MM).',
+            });
+          }
+          let lockedPayrollMonth;
+          try {
+            lockedPayrollMonth = await applyRepaymentScheduleFromPayrollMonth(loan, firstDeductionPayrollMonth);
+          } catch (scheduleErr) {
+            return res.status(400).json({
+              success: false,
+              error: scheduleErr.message || 'Invalid first deduction pay period',
+            });
+          }
           loan.status = 'approved';
           loan.workflow.currentStep = 'completed';
           loan.workflow.nextApprover = null;
@@ -1589,6 +1622,7 @@ exports.processLoanAction = async (req, res) => {
             approvedBy: req.user._id,
             approvedAt: new Date(),
             comments,
+            firstDeductionPayrollMonth: lockedPayrollMonth,
           };
         }
         break;
@@ -1651,7 +1685,18 @@ exports.processLoanAction = async (req, res) => {
         return res.status(400).json({ success: false, error: 'Invalid action' });
     }
 
+    syncChainAfterWorkflowAction(loan, {
+      currentApprover,
+      action: historyEntry.action,
+      isFinalStep: action === 'approve' && loan.workflow.currentStep === 'completed',
+      nextRole: loan.workflow.nextApprover,
+    });
+    ensureLoanApprovalChain(loan, settings);
+    loan.workflow.nextApproverRole = loan.workflow.nextApprover;
+    loan.workflow.isCompleted = loan.workflow.currentStep === 'completed';
+
     loan.workflow.history.push(historyEntry);
+    loan.markModified('workflow');
     await loan.save();
 
     res.status(200).json({
@@ -1769,7 +1814,7 @@ exports.cancelLoan = async (req, res) => {
 // @access  Private (HR, Admin)
 exports.disburseLoan = async (req, res) => {
   try {
-    const { disbursementMethod, transactionReference, remarks } = req.body;
+    const { disbursementMethod, transactionReference, remarks, firstDeductionPayrollMonth } = req.body;
     const loan = await Loan.findById(req.params.id);
 
     if (!loan) {
@@ -1802,6 +1847,35 @@ exports.disburseLoan = async (req, res) => {
         success: false,
         error: 'Not authorized to disburse loans',
       });
+    }
+
+    if (needsFirstDeductionPayPeriodSelection(loan)) {
+      if (!firstDeductionPayrollMonth) {
+        return res.status(400).json({
+          success: false,
+          error: 'First deduction pay period is required before disbursement (YYYY-MM).',
+          requiresFirstDeductionPayrollMonth: true,
+        });
+      }
+      let lockedPayrollMonth;
+      try {
+        lockedPayrollMonth = await applyRepaymentScheduleFromPayrollMonth(loan, firstDeductionPayrollMonth);
+      } catch (scheduleErr) {
+        return res.status(400).json({
+          success: false,
+          error: scheduleErr.message || 'Invalid first deduction pay period',
+        });
+      }
+      if (!loan.approvals) loan.approvals = {};
+      if (!loan.approvals.final) {
+        loan.approvals.final = {
+          status: 'approved',
+          approvedAt: new Date(),
+          comments: 'First deduction pay period set at disbursement (legacy record)',
+        };
+      }
+      loan.approvals.final.firstDeductionPayrollMonth = lockedPayrollMonth;
+      loan.markModified('approvals');
     }
 
     loan.status = 'disbursed';
@@ -1846,7 +1920,7 @@ exports.disburseLoan = async (req, res) => {
 
     if (loan.requestType === 'salary_advance') {
       if (!loan.advanceConfig) loan.advanceConfig = {};
-      if (!loan.advanceConfig.deductionStartCycle) {
+      if (!loan.advanceConfig.deductionStartCycle && !loan.approvals?.final?.firstDeductionPayrollMonth) {
         loan.advanceConfig.deductionStartCycle = await firstPayrollMonthKeyForRepaymentSchedule(loan);
       }
       await setNextPaymentDateFromInstallmentsPaid(loan);

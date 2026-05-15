@@ -16,6 +16,19 @@ import {
 import { LoanListEmployeeCell } from '@/components/LoanListEmployeeCell';
 import { downloadLoanAdvanceRequestPdf, type LoanAdvancePdfLoan } from '@/lib/loanAdvanceRequestPdf';
 import { Department, Division, Designation } from '@/lib/api';
+import {
+  buildLeaveODPayPeriodOptions,
+  formatPayrollMonthKeyLabel,
+  getPayPeriodRangeForCalendarMonth,
+  loanNeedsDisbursementPayPeriod,
+  payPeriodSelectValueToMonthKey,
+  payrollMonthKeyToPayPeriodSelectValue,
+} from '@/lib/payPeriodRange';
+import {
+  buildLoanTimelineSteps,
+  canUserActOnLoan,
+  isLoanFinalApprovalStep,
+} from '@/lib/loanWorkflowUi';
 
 // Icons
 const PlusIcon = () => (
@@ -75,6 +88,7 @@ interface LoanApplication {
   advanceConfig?: {
     deductionCycles: number;
     deductionPerCycle: number;
+    deductionStartCycle?: string;
   };
   repayment?: {
     totalPaid: number;
@@ -103,9 +117,27 @@ interface LoanApplication {
     modifiedAt: string;
     reason?: string;
   }>;
+  approvals?: {
+    final?: {
+      firstDeductionPayrollMonth?: string;
+      approvedAt?: string;
+    };
+  };
   workflow?: {
     currentStep: string;
     nextApprover: string | null;
+    nextApproverRole?: string | null;
+    isCompleted?: boolean;
+    approvalChain?: Array<{
+      role: string;
+      label?: string;
+      status: string;
+      isCurrent?: boolean;
+      actionByName?: string;
+      actionByRole?: string;
+      comments?: string;
+      updatedAt?: string;
+    }>;
     history: Array<{
       step: string;
       action: string;
@@ -164,6 +196,9 @@ export default function LoansPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [presentPayPeriod, setPresentPayPeriod] = useState<PresentPayPeriod | null>(null);
+  const [payCycleStartDay, setPayCycleStartDay] = useState(1);
+  const [payCycleEndDay, setPayCycleEndDay] = useState<number | null>(null);
+  const [finalApprovalPayPeriod, setFinalApprovalPayPeriod] = useState('');
 
   // Filter Select states
   const [divisions, setDivisions] = useState<Division[]>([]);
@@ -203,6 +238,7 @@ export default function LoansPage() {
     transactionReference: '',
     remarks: '',
   });
+  const [disbursementPayPeriod, setDisbursementPayPeriod] = useState('');
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -274,6 +310,28 @@ export default function LoansPage() {
   }, [activeTab, currentUser]);
 
   useEffect(() => {
+    const fetchPayrollCycleSettings = async () => {
+      try {
+        const [startRes, endRes] = await Promise.all([
+          api.getSetting('payroll_cycle_start_day'),
+          api.getSetting('payroll_cycle_end_day'),
+        ]);
+        if (startRes?.data?.value) {
+          const startDay = parseInt(startRes.data.value, 10);
+          if (!isNaN(startDay) && startDay >= 1 && startDay <= 31) setPayCycleStartDay(startDay);
+        }
+        if (endRes?.data?.value) {
+          const endDay = parseInt(endRes.data.value, 10);
+          if (!isNaN(endDay) && endDay >= 1 && endDay <= 31) setPayCycleEndDay(endDay);
+        }
+      } catch (err) {
+        console.error('Failed to fetch payroll cycle settings:', err);
+      }
+    };
+    fetchPayrollCycleSettings();
+  }, []);
+
+  useEffect(() => {
     if (showDetailDialog && selectedLoan) {
       loadTransactions(selectedLoan._id);
       // Load settlement preview for loans
@@ -294,80 +352,102 @@ export default function LoansPage() {
 
       // Fetch settings for the specific request type to generate the timeline
       loadLoanSettings(selectedLoan.requestType);
+
+      const pk = presentPayPeriod?.payrollMonthKey;
+      setFinalApprovalPayPeriod(pk ? payrollMonthKeyToPayPeriodSelectValue(pk) : '__default__');
     }
-  }, [showDetailDialog, selectedLoan?._id]);
+  }, [showDetailDialog, selectedLoan?._id, presentPayPeriod?.payrollMonthKey]);
 
-  const timelineSteps = useMemo(() => {
-    if (!selectedLoan || !loanSettings || loanSettings.type !== selectedLoan.requestType) return [];
+  const isFinalApprovalStep = useMemo(
+    () => isLoanFinalApprovalStep(selectedLoan as any, loanSettings),
+    [selectedLoan, loanSettings]
+  );
 
-    const history = (selectedLoan as any).workflow?.history || [];
-    const workflowSteps = (loanSettings as any).workflow?.steps || [];
-    const finalAuth = (loanSettings as any).workflow?.finalAuthority;
-    const currentApprover = (selectedLoan as any).workflow?.nextApprover;
-    const isCompleted = (selectedLoan as any).workflow?.currentStep === 'completed';
+  const canActOnSelectedLoan = useMemo(
+    () => canUserActOnLoan(selectedLoan as any, currentUser, loanSettings),
+    [selectedLoan, currentUser, loanSettings]
+  );
 
-    const steps: any[] = [];
+  const timelineSteps = useMemo(
+    () =>
+      selectedLoan && loanSettings
+        ? buildLoanTimelineSteps(selectedLoan as any, loanSettings)
+        : [],
+    [selectedLoan, loanSettings]
+  );
 
-    // 1. Employee Submission
-    const submission = history.find((h: any) => h.action === 'submitted');
-    steps.push({
-      label: 'Employee Application',
-      status: 'approved',
-      actionByName: submission?.actionByName,
-      actionByRole: 'Employee',
-      timestamp: submission?.timestamp,
-      comments: submission?.comments
-    });
+  const finalApprovalPayPeriodOptions = useMemo(
+    () =>
+      buildLeaveODPayPeriodOptions({
+        payrollCycleStartDay: payCycleStartDay,
+        payrollCycleEndDay: payCycleEndDay,
+        monthsBack: 3,
+        monthsForward: 12,
+        getDefaultRange: () => {
+          const pk = presentPayPeriod?.payrollMonthKey;
+          if (pk) {
+            const [y, m] = pk.split('-').map(Number);
+            return getPayPeriodRangeForCalendarMonth(y, m, payCycleStartDay, payCycleEndDay);
+          }
+          const now = new Date();
+          return getPayPeriodRangeForCalendarMonth(
+            now.getFullYear(),
+            now.getMonth() + 1,
+            payCycleStartDay,
+            payCycleEndDay
+          );
+        },
+        defaultLabel: 'Current pay period',
+      }),
+    [payCycleStartDay, payCycleEndDay, presentPayPeriod?.payrollMonthKey]
+  );
 
-    // 2. HOD Step (Hardcoded fallback or Dynamic)
-    const dynamicHod = workflowSteps.find((s: any) => s.approverRole === 'hod' && s.isActive);
-    
-    if (!dynamicHod) {
-      const hodEntry = history.find((h: any) => h.step === 'hod' && h.action !== 'submitted');
-      const isHodCurrent = !isCompleted && currentApprover === 'hod';
-      steps.push({
-        label: 'HOD Approval',
-        status: hodEntry ? (hodEntry.action === 'approved' ? 'approved' : 'rejected') : (isHodCurrent ? 'current' : 'pending'),
-        actionByName: hodEntry?.actionByName,
-        actionByRole: hodEntry?.actionByRole || 'HOD',
-        timestamp: hodEntry?.timestamp,
-        comments: hodEntry?.comments
-      });
-    }
+  const selectedFinalPayPeriodPreview = useMemo(() => {
+    const opt = finalApprovalPayPeriodOptions.find((o) => o.value === finalApprovalPayPeriod);
+    return opt?.range?.to ?? null;
+  }, [finalApprovalPayPeriod, finalApprovalPayPeriodOptions]);
 
-    // 3. Dynamic Steps
-    workflowSteps.filter((s: any) => s.isActive).forEach((step: any) => {
-      const historyEntry = history.find((h: any) => h.step === step.approverRole);
-      const isCurrent = !isCompleted && currentApprover === step.approverRole;
+  const needsDisbursementPayPeriod = useMemo(
+    () => (selectedLoan ? loanNeedsDisbursementPayPeriod(selectedLoan) : false),
+    [selectedLoan]
+  );
 
-      steps.push({
-        label: step.stepName || `${step.approverRole.replace(/_/g, ' ')} Approval`,
-        role: step.approverRole,
-        status: historyEntry ? (historyEntry.action === 'approved' ? 'approved' : 'rejected') : (isCurrent ? 'current' : 'pending'),
-        actionByName: historyEntry?.actionByName,
-        actionByRole: historyEntry?.actionByRole || step.approverRole,
-        timestamp: historyEntry?.timestamp,
-        comments: historyEntry?.comments
-      });
-    });
+  const disbursementPayPeriodOptions = useMemo(
+    () =>
+      buildLeaveODPayPeriodOptions({
+        payrollCycleStartDay: payCycleStartDay,
+        payrollCycleEndDay: payCycleEndDay,
+        monthsBack: 3,
+        monthsForward: 12,
+        getDefaultRange: () => {
+          const pk = presentPayPeriod?.payrollMonthKey;
+          if (pk) {
+            const [y, m] = pk.split('-').map(Number);
+            return getPayPeriodRangeForCalendarMonth(y, m, payCycleStartDay, payCycleEndDay);
+          }
+          const now = new Date();
+          return getPayPeriodRangeForCalendarMonth(
+            now.getFullYear(),
+            now.getMonth() + 1,
+            payCycleStartDay,
+            payCycleEndDay
+          );
+        },
+        defaultLabel: 'Current pay period',
+      }),
+    [payCycleStartDay, payCycleEndDay, presentPayPeriod?.payrollMonthKey]
+  );
 
-    // 4. Final Authority
-    if (finalAuth && finalAuth.role) {
-      const finalEntry = history.find((h: any) => h.step === 'final_authority');
-      const isCurrent = !isCompleted && currentApprover === 'final_authority';
+  const selectedDisbursementPayPeriodPreview = useMemo(() => {
+    const opt = disbursementPayPeriodOptions.find((o) => o.value === disbursementPayPeriod);
+    return opt?.range?.to ?? null;
+  }, [disbursementPayPeriod, disbursementPayPeriodOptions]);
 
-      steps.push({
-        label: 'Final Approval',
-        status: finalEntry ? (finalEntry.action === 'approved' ? 'approved' : 'rejected') : (isCurrent ? 'current' : 'pending'),
-        actionByName: finalEntry?.actionByName,
-        actionByRole: finalEntry?.actionByRole || 'Admin',
-        timestamp: finalEntry?.timestamp,
-        comments: finalEntry?.comments
-      });
-    }
-
-    return steps;
-  }, [selectedLoan, loanSettings]);
+  useEffect(() => {
+    if (!showDisbursementDialog) return;
+    const pk = presentPayPeriod?.payrollMonthKey;
+    setDisbursementPayPeriod(pk ? payrollMonthKeyToPayPeriodSelectValue(pk) : '__default__');
+  }, [showDisbursementDialog, presentPayPeriod?.payrollMonthKey]);
 
   // Fetch eligibility when viewing/editing a salary advance
   useEffect(() => {
@@ -696,6 +776,21 @@ export default function LoansPage() {
       return;
     }
 
+    if (action === 'approve' && isFinalApprovalStep) {
+      const monthKey = payPeriodSelectValueToMonthKey(
+        finalApprovalPayPeriod,
+        presentPayPeriod?.payrollMonthKey
+      );
+      if (!monthKey) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Pay period required',
+          text: 'Select the first deduction pay period before final approval.',
+        });
+        return;
+      }
+    }
+
     try {
       setSaving(true);
       const payload: any = {
@@ -706,6 +801,12 @@ export default function LoansPage() {
       if (action === 'approve') {
         if (approvalAmount) payload.approvalAmount = parseFloat(approvalAmount);
         if (approvalInterestRate) payload.approvalInterestRate = parseFloat(approvalInterestRate);
+        if (isFinalApprovalStep) {
+          payload.firstDeductionPayrollMonth = payPeriodSelectValueToMonthKey(
+            finalApprovalPayPeriod,
+            presentPayPeriod?.payrollMonthKey
+          );
+        }
       }
 
       const response = await api.processLoanAction(loanId, payload);
@@ -760,15 +861,43 @@ export default function LoansPage() {
     e.preventDefault();
     if (!selectedLoan) return;
 
+    if (needsDisbursementPayPeriod) {
+      const monthKey = payPeriodSelectValueToMonthKey(
+        disbursementPayPeriod,
+        presentPayPeriod?.payrollMonthKey
+      );
+      if (!monthKey) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Pay period required',
+          text: 'Select the first deduction pay period before disbursing this record.',
+        });
+        return;
+      }
+    }
+
     try {
       setSaving(true);
       setMessage(null);
 
-      const response = await api.disburseLoan(selectedLoan._id, {
+      const payload: {
+        disbursementMethod: string;
+        transactionReference: string;
+        remarks: string;
+        firstDeductionPayrollMonth?: string;
+      } = {
         disbursementMethod: disbursementData.disbursementMethod,
         transactionReference: disbursementData.transactionReference,
         remarks: disbursementData.remarks,
-      });
+      };
+      if (needsDisbursementPayPeriod) {
+        payload.firstDeductionPayrollMonth = payPeriodSelectValueToMonthKey(
+          disbursementPayPeriod,
+          presentPayPeriod?.payrollMonthKey
+        )!;
+      }
+
+      const response = await api.disburseLoan(selectedLoan._id, payload);
 
       if (response.success) {
         setMessage({ type: 'success', text: 'Funds released successfully. Transaction recorded.' });
@@ -2137,7 +2266,7 @@ export default function LoansPage() {
                               {isApproved && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 shadow-sm border border-green-200/50">✓ Processed</span>}
                               {isRejected && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 shadow-sm border border-red-200/50">✗ Rejected</span>}
                               {isCurrent && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shadow-sm border border-blue-200/50">⏳ Your Turn</span>}
-                              {isPending && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 shadow-sm border border-slate-200/50">○ Pending</span>}
+                              {isPending && !isCurrent && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 shadow-sm border border-slate-200/50">○ Pending</span>}
                             </div>
 
                             {(isApproved || isRejected) && (
@@ -2328,9 +2457,24 @@ export default function LoansPage() {
                             {selectedLoan.repayment.installmentsPaid || 0} / {selectedLoan.repayment.totalInstallments || selectedLoan.duration}
                           </p>
                         </div>
+                        {(selectedLoan.approvals?.final?.firstDeductionPayrollMonth ||
+                          selectedLoan.advanceConfig?.deductionStartCycle) && (
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">First deduction pay period</p>
+                            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                              {formatPayrollMonthKeyLabel(
+                                selectedLoan.approvals?.final?.firstDeductionPayrollMonth ||
+                                  selectedLoan.advanceConfig?.deductionStartCycle ||
+                                  '',
+                                payCycleStartDay,
+                                payCycleEndDay
+                              )}
+                            </p>
+                          </div>
+                        )}
                         {selectedLoan.repayment.nextPaymentDate && (
                           <div>
-                            <p className="text-xs text-slate-500 mb-1">Next Payment Due</p>
+                            <p className="text-xs text-slate-500 mb-1">Next payment due (period end)</p>
                             <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                               {new Date(selectedLoan.repayment.nextPaymentDate).toLocaleDateString('en-IN', {
                                 day: '2-digit',
@@ -2343,12 +2487,29 @@ export default function LoansPage() {
                       </>
                     )}
                     {selectedLoan.requestType === 'salary_advance' && (
-                      <div>
-                        <p className="text-xs text-slate-500 mb-1">Cycles Paid</p>
-                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                          {selectedLoan.repayment.installmentsPaid || 0} / {selectedLoan.repayment.totalInstallments || selectedLoan.duration}
-                        </p>
-                      </div>
+                      <>
+                        <div>
+                          <p className="text-xs text-slate-500 mb-1">Cycles Paid</p>
+                          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            {selectedLoan.repayment.installmentsPaid || 0} / {selectedLoan.repayment.totalInstallments || selectedLoan.duration}
+                          </p>
+                        </div>
+                        {(selectedLoan.approvals?.final?.firstDeductionPayrollMonth ||
+                          selectedLoan.advanceConfig?.deductionStartCycle) && (
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">First deduction pay period</p>
+                            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                              {formatPayrollMonthKeyLabel(
+                                selectedLoan.approvals?.final?.firstDeductionPayrollMonth ||
+                                  selectedLoan.advanceConfig?.deductionStartCycle ||
+                                  '',
+                                payCycleStartDay,
+                                payCycleEndDay
+                              )}
+                            </p>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 ) : (
@@ -2585,7 +2746,24 @@ export default function LoansPage() {
 
               {/* Action Section */}
               {
-                !['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) && (
+                !['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) &&
+                !canActOnSelectedLoan &&
+                (selectedLoan as any).workflow?.nextApprover && (
+                  <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/80 dark:border-amber-800/50 dark:bg-amber-900/10">
+                    <p className="text-sm text-amber-900 dark:text-amber-100">
+                      Waiting for{' '}
+                      <span className="font-semibold capitalize">
+                        {(selectedLoan as any).workflow?.nextApprover === 'final_authority'
+                          ? 'Final Approval'
+                          : String((selectedLoan as any).workflow?.nextApprover || '').replace(/_/g, ' ')}
+                      </span>
+                      . You cannot act on this step yet.
+                    </p>
+                  </div>
+                )}
+              {
+                !['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) &&
+                canActOnSelectedLoan && (
                   <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
                     {/* Approval Amount Modification */}
                     {(selectedLoan.requestType === 'salary_advance' || (selectedLoan.requestType === 'loan' && ['super_admin', 'hr', 'sub_admin'].includes(currentUser?.role))) && (
@@ -2704,6 +2882,33 @@ export default function LoansPage() {
                         </div>
                       )}
 
+                    {isFinalApprovalStep && (
+                      <div className="mb-4 p-3 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-800/50 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
+                          Final approval
+                        </p>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          First deduction pay period *
+                        </label>
+                        <select
+                          value={finalApprovalPayPeriod}
+                          onChange={(e) => setFinalApprovalPayPeriod(e.target.value)}
+                          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm dark:bg-slate-900 dark:text-white"
+                        >
+                          {finalApprovalPayPeriodOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label} ({opt.range.from} → {opt.range.to})
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Next payment due date will be the end of the selected pay period
+                          {selectedFinalPayPeriodPreview ? ` (${selectedFinalPayPeriodPreview})` : ''}.
+                          Payroll will deduct from this period onward.
+                        </p>
+                      </div>
+                    )}
+
                     <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
 
                     {/* Comment */}
@@ -2774,6 +2979,32 @@ export default function LoansPage() {
               </div>
 
               <form onSubmit={handleDisburse} className="space-y-4">
+                {needsDisbursementPayPeriod && (
+                  <div className="p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-800/50 space-y-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      First deduction pay period *
+                    </label>
+                    <p className="text-xs text-amber-800 dark:text-amber-200/90">
+                      This record was approved before EMI scheduling was added. Choose when payroll should start deducting.
+                    </p>
+                    <select
+                      required
+                      value={disbursementPayPeriod}
+                      onChange={(e) => setDisbursementPayPeriod(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm dark:bg-slate-800 dark:text-white"
+                    >
+                      {disbursementPayPeriodOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label} ({opt.range.from} → {opt.range.to})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Next payment due = end of selected period
+                      {selectedDisbursementPayPeriodPreview ? ` (${selectedDisbursementPayPeriodPreview})` : ''}.
+                    </p>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                     Disbursement Method *

@@ -60,19 +60,124 @@ function shouldSelfHealLoan(loan) {
   return ti > 0 && !(emi > 0);
 }
 
-async function computeLoanPayrollAnchors(referenceDate, durationMonths) {
-  const { year: y0, month: m0 } = extractISTComponents(referenceDate);
-  const firstYm = addCalendarMonthsToYm(`${y0}-${String(m0).padStart(2, '0')}`, 1);
-  const [fy, fm] = firstYm.split('-').map(Number);
+function normalizePayrollMonthKey(ym) {
+  const raw = String(ym || '').trim();
+  if (/^\d{4}-\d{2}$/.test(raw)) return raw;
+  const full = /^full:(\d{4}-\d{2})$/.exec(raw);
+  if (full) return full[1];
+  return null;
+}
+
+function comparePayrollMonthKeys(a, b) {
+  return String(a).localeCompare(String(b));
+}
+
+/** True when approver never locked first EMI / advance deduction month (legacy approved loans). */
+function needsFirstDeductionPayPeriodSelection(loan) {
+  const locked = String(loan.approvals?.final?.firstDeductionPayrollMonth || '').trim();
+  if (/^\d{4}-\d{2}$/.test(locked)) return false;
+  if (loan.requestType === 'salary_advance') {
+    const cycle = String(loan.advanceConfig?.deductionStartCycle || '').trim();
+    if (/^\d{4}-\d{2}$/.test(cycle)) return false;
+  }
+  return true;
+}
+
+async function computeLoanPayrollAnchorsFromMonthKey(payrollMonthKey, durationMonths) {
+  const ym = normalizePayrollMonthKey(payrollMonthKey);
+  if (!ym) throw new Error('Invalid payroll month (expected YYYY-MM)');
+  const dur = Math.max(1, Number(durationMonths) || 1);
+  const [fy, fm] = ym.split('-').map(Number);
   const firstRange = await getPayrollDateRange(fy, fm);
-  const lastYm = addCalendarMonthsToYm(firstYm, durationMonths - 1);
+  const lastYm = addCalendarMonthsToYm(ym, dur - 1);
   const [ly, lm] = lastYm.split('-').map(Number);
   const lastRange = await getPayrollDateRange(ly, lm);
   return {
+    payrollMonthKey: ym,
     startDate: createISTDate(firstRange.startDate),
     endDate: createISTDate(lastRange.endDate),
     firstDueDate: createISTDate(firstRange.endDate),
   };
+}
+
+async function computeLoanPayrollAnchors(referenceDate, durationMonths) {
+  const { year: y0, month: m0 } = extractISTComponents(referenceDate);
+  const firstYm = addCalendarMonthsToYm(`${y0}-${String(m0).padStart(2, '0')}`, 1);
+  return computeLoanPayrollAnchorsFromMonthKey(firstYm, durationMonths);
+}
+
+/**
+ * Set repayment schedule from approver-selected first deduction payroll month.
+ * nextPaymentDate = end of that pay period (via setNextPaymentDateFromInstallmentsPaid).
+ */
+function syncRemainingBalanceFromTotals(loan) {
+  if (!loan.repayment) loan.repayment = {};
+  const paid = Number(loan.repayment.totalPaid) || 0;
+  if (paid > 0) return;
+  const total =
+    loan.requestType === 'loan'
+      ? Number(loan.loanConfig?.totalAmount) || Number(loan.amount) || 0
+      : Number(loan.amount) || 0;
+  loan.repayment.remainingBalance = total;
+  loan.markModified('repayment');
+}
+
+async function applyRepaymentScheduleFromPayrollMonth(loan, payrollMonthKey) {
+  const ym = normalizePayrollMonthKey(payrollMonthKey);
+  if (!ym) throw new Error('Invalid first deduction payroll month (expected YYYY-MM)');
+
+  if (loan.requestType === 'loan') {
+    const duration = Math.max(1, Number(loan.duration) || 1);
+    const anchors = await computeLoanPayrollAnchorsFromMonthKey(ym, duration);
+    if (!loan.loanConfig) loan.loanConfig = {};
+    loan.loanConfig.startDate = anchors.startDate;
+    loan.loanConfig.endDate = anchors.endDate;
+    if (!loan.repayment) loan.repayment = {};
+    if (!(Number(loan.repayment.totalInstallments) > 0)) {
+      loan.repayment.totalInstallments = duration;
+    }
+    await setNextPaymentDateFromInstallmentsPaid(loan);
+    syncRemainingBalanceFromTotals(loan);
+    loan.markModified('loanConfig');
+    loan.markModified('repayment');
+  } else if (loan.requestType === 'salary_advance') {
+    const duration = Math.max(1, Number(loan.duration) || 1);
+    if (!loan.advanceConfig) loan.advanceConfig = {};
+    loan.advanceConfig.deductionStartCycle = ym;
+    loan.advanceConfig.deductionCycles = duration;
+    const amount = Number(loan.amount) || 0;
+    if (!(Number(loan.advanceConfig.deductionPerCycle) > 0) && amount > 0) {
+      loan.advanceConfig.deductionPerCycle = Math.round(amount / duration);
+    }
+    if (!loan.repayment) loan.repayment = {};
+    if (!(Number(loan.repayment.totalInstallments) > 0)) {
+      loan.repayment.totalInstallments = duration;
+    }
+    await setNextPaymentDateFromInstallmentsPaid(loan);
+    syncRemainingBalanceFromTotals(loan);
+    loan.markModified('advanceConfig');
+    loan.markModified('repayment');
+  }
+
+  return ym;
+}
+
+/** Whether this loan/advance should deduct EMI/advance in the given payroll month (YYYY-MM). */
+async function isRepaymentDueForPayrollMonth(loan, payrollMonth) {
+  const ym = normalizePayrollMonthKey(payrollMonth);
+  if (!ym) return true;
+  const remaining = Number(loan.repayment?.remainingBalance);
+  if (!(remaining > 0)) return false;
+
+  const paid = Number(loan.repayment?.installmentsPaid) || 0;
+  const totalInstallments = Number(loan.repayment?.totalInstallments) || Number(loan.duration) || 0;
+  if (totalInstallments > 0 && paid >= totalInstallments) return false;
+
+  const firstYm = await firstPayrollMonthKeyForRepaymentSchedule(loan);
+  if (!firstYm) return false;
+
+  const dueYm = addCalendarMonthsToYm(firstYm, paid);
+  return comparePayrollMonthKeys(ym, dueYm) === 0;
 }
 
 /**
@@ -80,6 +185,9 @@ async function computeLoanPayrollAnchors(referenceDate, durationMonths) {
  * stored schedule anchor when present; otherwise disburse/applied + 1 calendar month (same as anchors).
  */
 async function firstPayrollMonthKeyForRepaymentSchedule(loan) {
+  const locked = String(loan.approvals?.final?.firstDeductionPayrollMonth || '').trim();
+  if (/^\d{4}-\d{2}$/.test(locked)) return locked;
+
   if (loan.requestType === 'salary_advance' && loan.advanceConfig?.deductionStartCycle) {
     const m = String(loan.advanceConfig.deductionStartCycle).trim();
     if (/^\d{4}-\d{2}$/.test(m)) return m;
@@ -144,12 +252,16 @@ async function syncLoanMoneyAndPayrollSchedule(loan, opts = {}) {
     loan.markModified('loanConfig');
     loan.markModified('repayment');
   }
+  const scheduleLockedAtFinal = Boolean(loan.approvals?.final?.firstDeductionPayrollMonth);
   const ref = loan.disbursement?.disbursedAt || loan.appliedAt || loan.createdAt || new Date();
-  if (heal || fromDisburse) {
+  if ((heal || fromDisburse) && !scheduleLockedAtFinal) {
     const anchors = await computeLoanPayrollAnchors(ref, duration);
     loan.loanConfig.startDate = anchors.startDate;
     loan.loanConfig.endDate = anchors.endDate;
     loan.markModified('loanConfig');
+    await setNextPaymentDateFromInstallmentsPaid(loan);
+    loan.markModified('repayment');
+  } else if (scheduleLockedAtFinal && loan.repayment) {
     await setNextPaymentDateFromInstallmentsPaid(loan);
     loan.markModified('repayment');
   }
@@ -353,7 +465,13 @@ module.exports = {
   inferInterestRateFromRecorded,
   loanConfigNeedsRepair,
   shouldSelfHealLoan,
+  normalizePayrollMonthKey,
+  comparePayrollMonthKeys,
   computeLoanPayrollAnchors,
+  computeLoanPayrollAnchorsFromMonthKey,
+  applyRepaymentScheduleFromPayrollMonth,
+  needsFirstDeductionPayPeriodSelection,
+  isRepaymentDueForPayrollMonth,
   firstPayrollMonthKeyForRepaymentSchedule,
   setNextPaymentDateFromInstallmentsPaid,
   syncLoanMoneyAndPayrollSchedule,
