@@ -1,14 +1,21 @@
 /**
- * 1) Set DOJ to 2025-12-30 (IST) for employees with no date of joining.
- * 2) For the financial year that contains calendar year 2026 (anchor date), ensure LeaveRegisterYear
- *    exists for each affected *active* employee — if missing, run the same policy sync as initial CL apply.
+ * Leave register backfill for the FY that contains calendar year 2026 (from anchor date / settings).
+ *
+ * Step 1 — CHECK (default): list active employees with NO LeaveRegisterYear for that FY.
+ * Step 2 — APPLY: after you review the list, create registers (same logic as initial CL sync apply).
+ *
+ * Optional DOJ fix (only employees with null/missing doj → 2025-12-30 IST):
+ *   --fix-doj          with --check (report only) or --apply (update then sync)
  *
  * Usage (from backend/):
- *   node scripts/backfill_missing_doj_and_leave_register_2026.js --dry-run
+ *   node scripts/backfill_missing_doj_and_leave_register_2026.js --check
  *   node scripts/backfill_missing_doj_and_leave_register_2026.js --apply
+ *   node scripts/backfill_missing_doj_and_leave_register_2026.js --apply --fix-doj
  *
  * Optional:
- *   --anchor=2026-06-15   IST calendar day used to resolve FY + sync effectiveDate (default 2026-06-15)
+ *   --anchor=2026-06-15   resolve FY + sync effectiveDate (default 2026-06-15)
+ *   --fy=2026             force financialYear name (default: from anchor + policy)
+ *   --inactive            include inactive employees in check/apply
  */
 
 const mongoose = require('mongoose');
@@ -28,30 +35,79 @@ const { createISTDate } = require('../shared/utils/dateUtils');
 
 const DEFAULT_DOJ_IST = '2025-12-30';
 
-function parseArgs(argv) {
-  let dryRun = true;
-  let anchorYmd = '2026-06-15';
-  for (const a of argv) {
-    if (a === '--apply') dryRun = false;
-    if (a === '--dry-run') dryRun = true;
-    if (a.startsWith('--anchor=')) anchorYmd = a.slice('--anchor='.length).trim() || anchorYmd;
-  }
-  return { dryRun, anchorYmd };
-}
-
 const missingDojQuery = {
   $or: [{ doj: null }, { doj: { $exists: false } }],
 };
 
+function parseArgs(argv) {
+  let mode = 'check';
+  let anchorYmd = '2026-06-15';
+  let fyOverride = null;
+  let fixDoj = false;
+  let includeInactive = false;
+  for (const a of argv) {
+    if (a === '--check' || a === '--dry-run') mode = 'check';
+    if (a === '--apply') mode = 'apply';
+    if (a === '--fix-doj') fixDoj = true;
+    if (a === '--inactive') includeInactive = true;
+    if (a.startsWith('--anchor=')) anchorYmd = a.slice('--anchor='.length).trim() || anchorYmd;
+    if (a.startsWith('--fy=')) fyOverride = a.slice('--fy='.length).trim() || null;
+  }
+  return { mode, anchorYmd, fyOverride, fixDoj, includeInactive };
+}
+
+async function findEmployeesMissingRegister(fyName, includeInactive) {
+  const empQuery = includeInactive ? {} : { is_active: true };
+  const employees = await Employee.find(empQuery)
+    .select('_id emp_no employee_name is_active doj department_id division_id')
+    .populate('department_id', 'name')
+    .populate('division_id', 'name')
+    .sort({ emp_no: 1 })
+    .lean();
+
+  const withRegister = await LeaveRegisterYear.distinct('employeeId', { financialYear: fyName });
+  const hasRegister = new Set(withRegister.map((id) => String(id)));
+
+  const missing = [];
+  const noEmpNo = [];
+  for (const emp of employees) {
+    if (!emp.emp_no || String(emp.emp_no).trim() === '') {
+      noEmpNo.push(emp);
+      continue;
+    }
+    if (!hasRegister.has(String(emp._id))) {
+      missing.push(emp);
+    }
+  }
+  return { employees, missing, noEmpNo, withRegisterCount: withRegister.length };
+}
+
+function printMissingList(missing, fyName) {
+  console.log(`\n--- Missing LeaveRegisterYear for FY "${fyName}" (${missing.length}) ---\n`);
+  if (missing.length === 0) {
+    console.log('(none — every in-scope employee already has a register for this FY)\n');
+    return;
+  }
+  const pad = (s, n) => String(s ?? '').slice(0, n).padEnd(n);
+  console.log(`${pad('emp_no', 12)} ${pad('name', 28)} ${pad('active', 6)} ${pad('doj', 12)} dept`);
+  console.log('-'.repeat(80));
+  for (const e of missing) {
+    const dojStr = e.doj ? new Date(e.doj).toISOString().slice(0, 10) : '(none)';
+    console.log(
+      `${pad(e.emp_no, 12)} ${pad(e.employee_name, 28)} ${pad(e.is_active ? 'yes' : 'no', 6)} ${pad(dojStr, 12)} ${e.department_id?.name || ''}`
+    );
+  }
+  console.log('');
+}
+
 async function main() {
-  const { dryRun, anchorYmd } = parseArgs(process.argv.slice(2));
+  const { mode, anchorYmd, fyOverride, fixDoj, includeInactive } = parseArgs(process.argv.slice(2));
   const uri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/hrms';
   await mongoose.connect(uri);
 
-  const dojPlaceholder = createISTDate(DEFAULT_DOJ_IST);
   const effectiveDate = createISTDate(anchorYmd);
   const fyWrap = await dateCycleService.getFinancialYearForDate(effectiveDate);
-  const fyName = fyWrap?.name || '(unknown)';
+  const fyName = fyOverride || fyWrap?.name || '(unknown)';
   const settings = await LeavePolicySettings.getSettings();
   const orgFirstLeavePeriodIndex = await getOrgFirstLeavePeriodIndexForFY(effectiveDate);
 
@@ -64,92 +120,105 @@ async function main() {
     orgFirstLeavePeriodIndex,
   };
 
-  console.log(
-    `[backfill-doj-lr] dryRun=${dryRun} defaultDOJ=${DEFAULT_DOJ_IST} anchor=${anchorYmd} FY=${fyName} orgFirstLeavePeriodIndex=${orgFirstLeavePeriodIndex}`
-  );
-
-  const candidates = await Employee.find(missingDojQuery)
-    .select('_id emp_no employee_name is_active doj')
-    .lean();
-
-  console.log(`[backfill-doj-lr] Employees with missing DOJ: ${candidates.length}`);
-
-  const summary = {
-    dojWouldUpdate: candidates.length,
-    dojUpdated: 0,
-    registerSkippedInactive: 0,
-    registerAlreadyExists: 0,
-    registerWouldSync: 0,
-    registerCreated: 0,
-    registerErrors: [],
-    skippedNoEmpNo: 0,
-  };
-
-  if (!dryRun && candidates.length > 0) {
-    const upd = await Employee.updateMany(missingDojQuery, { $set: { doj: dojPlaceholder } });
-    summary.dojUpdated = upd.modifiedCount ?? 0;
-    console.log(`[backfill-doj-lr] DOJ updateMany matched=${upd.matchedCount} modified=${upd.modifiedCount}`);
+  const scopeLabel = includeInactive ? 'all employees' : 'active employees only';
+  console.log(`[leave-register] mode=${mode} FY="${fyName}" anchor=${anchorYmd} scope=${scopeLabel}`);
+  if (fyWrap?.startDate && fyWrap?.endDate) {
+    console.log(
+      `[leave-register] FY window: ${new Date(fyWrap.startDate).toISOString().slice(0, 10)} → ${new Date(fyWrap.endDate).toISOString().slice(0, 10)}`
+    );
   }
 
-  const ids = candidates.map((c) => c._id);
+  const { employees, missing, noEmpNo, withRegisterCount } = await findEmployeesMissingRegister(
+    fyName,
+    includeInactive
+  );
 
-  for (const id of ids) {
-    const lean = candidates.find((c) => String(c._id) === String(id));
-    if (!lean?.emp_no || String(lean.emp_no).trim() === '') {
-      summary.skippedNoEmpNo += 1;
-      console.warn(`[backfill-doj-lr] skip register: missing emp_no employeeId=${id}`);
-      continue;
-    }
-    if (!lean.is_active) {
-      summary.registerSkippedInactive += 1;
-      continue;
-    }
+  console.log(`[leave-register] Employees in scope: ${employees.length}`);
+  console.log(`[leave-register] Already have register for FY "${fyName}": ${withRegisterCount}`);
+  console.log(`[leave-register] Missing register: ${missing.length}`);
+  if (noEmpNo.length) {
+    console.log(`[leave-register] Skipped (no emp_no): ${noEmpNo.length}`);
+  }
 
-    const existing = await LeaveRegisterYear.findOne({
-      employeeId: id,
-      financialYear: fyName,
-    })
-      .select('_id')
-      .lean();
-    if (existing) {
-      summary.registerAlreadyExists += 1;
-      continue;
-    }
+  printMissingList(missing, fyName);
 
-    if (dryRun) {
-      console.log(
-        `[backfill-doj-lr] DRY would sync register emp=${lean.emp_no} ${lean.employee_name || ''} FY=${fyName}`
-      );
-      summary.registerWouldSync += 1;
-      continue;
-    }
+  const summary = {
+    mode,
+    financialYear: fyName,
+    employeesInScope: employees.length,
+    alreadyHaveRegister: withRegisterCount,
+    missingRegister: missing.length,
+    skippedNoEmpNo: noEmpNo.length,
+    dojFixed: 0,
+    registersCreated: 0,
+    registerErrors: [],
+  };
 
+  if (mode === 'check') {
+    if (missing.length > 0) {
+      console.log('Next step: review the list above, then run:');
+      console.log('  node scripts/backfill_missing_doj_and_leave_register_2026.js --apply');
+      if (fixDoj) {
+        console.log('  (with --fix-doj to set missing DOJ to 2025-12-30 before creating registers)');
+      }
+    }
+    console.log('[leave-register] Summary:', JSON.stringify(summary, null, 2));
+    await mongoose.disconnect();
+    return;
+  }
+
+  // --- APPLY ---
+  if (fixDoj) {
+    const missingDojCount = await Employee.countDocuments(missingDojQuery);
+    summary.missingDojBeforeFix = missingDojCount;
+    if (missingDojCount > 0) {
+      const upd = await Employee.updateMany(missingDojQuery, {
+        $set: { doj: createISTDate(DEFAULT_DOJ_IST) },
+      });
+      summary.dojFixed = upd.modifiedCount ?? 0;
+      console.log(`[leave-register] DOJ set to ${DEFAULT_DOJ_IST} for ${summary.dojFixed} employee(s)`);
+    }
+  }
+
+  if (missing.length === 0) {
+    console.log('[leave-register] Nothing to create.');
+    console.log('[leave-register] Summary:', JSON.stringify(summary, null, 2));
+    await mongoose.disconnect();
+    return;
+  }
+
+  console.log(`[leave-register] Creating ${missing.length} leave register(s)…\n`);
+
+  for (const lean of missing) {
     try {
-      const employee = await Employee.findById(id)
+      const employee = await Employee.findById(lean._id)
         .populate('department_id', 'name')
         .populate('division_id', 'name');
-      if (!employee) continue;
+      if (!employee) {
+        summary.registerErrors.push({ empNo: lean.emp_no, error: 'Employee not found' });
+        continue;
+      }
 
       const syncResult = await syncEmployeeCLFromPolicy(employee, settings, effectiveDate, clSyncOptions);
       if (!syncResult.success) {
-        summary.registerErrors.push({ employeeId: String(id), empNo: lean.emp_no, error: syncResult.error });
-        console.error(`[backfill-doj-lr] sync failed emp=${lean.emp_no}: ${syncResult.error}`);
+        summary.registerErrors.push({ empNo: lean.emp_no, error: syncResult.error || 'sync failed' });
+        console.error(`  FAIL ${lean.emp_no}: ${syncResult.error}`);
       } else {
-        summary.registerCreated += 1;
-        console.log(`[backfill-doj-lr] register OK emp=${lean.emp_no} FY=${fyName} newBalance=${syncResult.newBalance}`);
+        summary.registersCreated += 1;
+        console.log(`  OK   ${lean.emp_no} ${lean.employee_name || ''} balance=${syncResult.newBalance}`);
       }
     } catch (e) {
-      summary.registerErrors.push({ employeeId: String(id), empNo: lean.emp_no, error: e.message });
-      console.error(`[backfill-doj-lr] sync threw emp=${lean.emp_no}:`, e.message);
+      summary.registerErrors.push({ empNo: lean.emp_no, error: e.message });
+      console.error(`  FAIL ${lean.emp_no}: ${e.message}`);
     }
   }
 
-  console.log('[backfill-doj-lr] Summary:', JSON.stringify(summary, null, 2));
+  console.log('\n[leave-register] Summary:', JSON.stringify(summary, null, 2));
   await mongoose.disconnect();
 }
 
 main().catch(async (e) => {
-  console.error('[backfill-doj-lr] Failed:', e?.message || e);
+  console.error('[leave-register] Failed:', e?.message || e);
   try {
     await mongoose.disconnect();
   } catch {}
