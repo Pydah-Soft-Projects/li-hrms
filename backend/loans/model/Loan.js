@@ -91,9 +91,49 @@ const LoanSchema = new mongoose.Schema(
       // Next approver role
       nextApprover: {
         type: String,
-        enum: ['hod', 'manager', 'hr', 'final_authority', null],
+        enum: ['hod', 'manager', 'hr', 'final_authority', 'reporting_manager', null],
         default: null,
       },
+
+      nextApproverRole: {
+        type: String,
+        default: null,
+      },
+
+      finalAuthority: {
+        type: String,
+        default: 'hr',
+      },
+
+      isCompleted: {
+        type: Boolean,
+        default: false,
+      },
+
+      approvalChain: [
+        {
+          stepOrder: Number,
+          role: String,
+          label: String,
+          status: {
+            type: String,
+            enum: ['pending', 'approved', 'rejected', 'skipped'],
+            default: 'pending',
+          },
+          isCurrent: {
+            type: Boolean,
+            default: false,
+          },
+          actionBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+          },
+          actionByName: String,
+          actionByRole: String,
+          comments: String,
+          updatedAt: Date,
+        },
+      ],
 
       // Workflow history
       history: [
@@ -171,6 +211,11 @@ const LoanSchema = new mongoose.Schema(
         },
         approvedAt: Date,
         comments: String,
+        /** Payroll month (YYYY-MM) chosen at final approval for first EMI / advance deduction */
+        firstDeductionPayrollMonth: {
+          type: String,
+          trim: true,
+        },
       },
     },
 

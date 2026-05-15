@@ -1,5 +1,8 @@
 const Loan = require('../../loans/model/Loan');
-const { setNextPaymentDateFromInstallmentsPaid } = require('../../loans/services/loanHistoryRepairService');
+const {
+  setNextPaymentDateFromInstallmentsPaid,
+  isRepaymentDueForPayrollMonth,
+} = require('../../loans/services/loanHistoryRepairService');
 
 /**
  * Loan & Advance Processing Service
@@ -11,7 +14,16 @@ const { setNextPaymentDateFromInstallmentsPaid } = require('../../loans/services
  * @param {String} employeeId - Employee ID
  * @returns {Array} Array of active loan documents
  */
-async function getActiveLoans(employeeId) {
+async function filterLoansForPayrollMonth(loans, payrollMonth) {
+  if (!payrollMonth) return loans;
+  const out = [];
+  for (const loan of loans) {
+    if (await isRepaymentDueForPayrollMonth(loan, payrollMonth)) out.push(loan);
+  }
+  return out;
+}
+
+async function getActiveLoans(employeeId, payrollMonth = null) {
   try {
     const loans = await Loan.find({
       employeeId,
@@ -19,9 +31,11 @@ async function getActiveLoans(employeeId) {
       status: { $in: ['active', 'disbursed'] },
       'repayment.remainingBalance': { $gt: 0 },
       'loanConfig.emiAmount': { $gt: 0 },
-    }).select('_id loanConfig repayment');
+    }).select(
+      '_id loanConfig repayment advanceConfig requestType duration approvals.final.firstDeductionPayrollMonth'
+    );
 
-    return loans;
+    return filterLoansForPayrollMonth(loans, payrollMonth);
   } catch (error) {
     console.error('Error fetching active loans:', error);
     return [];
@@ -33,16 +47,18 @@ async function getActiveLoans(employeeId) {
  * @param {String} employeeId - Employee ID
  * @returns {Array} Array of active advance documents
  */
-async function getActiveAdvances(employeeId) {
+async function getActiveAdvances(employeeId, payrollMonth = null) {
   try {
     const advances = await Loan.find({
       employeeId,
       requestType: 'salary_advance',
       status: { $in: ['active', 'disbursed'] },
       'repayment.remainingBalance': { $gt: 0 },
-    }).select('_id repayment amount');
+    }).select(
+      '_id repayment amount advanceConfig requestType duration approvals.final.firstDeductionPayrollMonth'
+    );
 
-    return advances;
+    return filterLoansForPayrollMonth(advances, payrollMonth);
   } catch (error) {
     console.error('Error fetching active advances:', error);
     return [];
@@ -54,9 +70,9 @@ async function getActiveAdvances(employeeId) {
  * @param {String} employeeId - Employee ID
  * @returns {Object} EMI calculation result
  */
-async function calculateTotalEMI(employeeId) {
+async function calculateTotalEMI(employeeId, payrollMonth = null) {
   try {
-    const loans = await getActiveLoans(employeeId);
+    const loans = await getActiveLoans(employeeId, payrollMonth);
 
     let totalEMI = 0;
     const emiBreakdown = [];
@@ -97,9 +113,9 @@ async function calculateTotalEMI(employeeId) {
  * @param {Number} payableAmount - Payable amount before advance
  * @returns {Object} Advance processing result
  */
-async function processSalaryAdvance(employeeId, payableAmount) {
+async function processSalaryAdvance(employeeId, payableAmount, payrollMonth = null) {
   try {
-    const advances = await getActiveAdvances(employeeId);
+    const advances = await getActiveAdvances(employeeId, payrollMonth);
 
     if (advances.length === 0) {
       return {
@@ -401,8 +417,8 @@ async function updateAdvanceRecordsAfterDeduction(advanceBreakdown, month, userI
  * - advanceDeduction / advanceBreakdown from active advances relative to payableAmount
  */
 async function calculateLoanAdvance(employeeId, month, payableAmount = 0) {
-  const loanResult = await calculateTotalEMI(employeeId);
-  const advanceResult = await processSalaryAdvance(employeeId, payableAmount);
+  const loanResult = await calculateTotalEMI(employeeId, month);
+  const advanceResult = await processSalaryAdvance(employeeId, payableAmount, month);
 
   return {
     totalEMI: loanResult.totalEMI || 0,
@@ -451,7 +467,8 @@ async function computePayableBeforeAdvanceFromPayrollRecord(record, employeeId, 
   if (gross <= 0) {
     gross = numPayroll(employee?.gross_salary);
   }
-  const emiRes = await calculateTotalEMI(employeeId);
+  const payrollMonth = record?.month != null ? String(record.month).trim() : null;
+  const emiRes = await calculateTotalEMI(employeeId, payrollMonth);
   const emi = numPayroll(emiRes.totalEMI);
   const att = numPayroll(record?.deductions?.attendanceDeduction);
   const perm = numPayroll(record?.deductions?.permissionDeduction);
