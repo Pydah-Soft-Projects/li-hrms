@@ -3,18 +3,45 @@
  *
  * Explicit overrides:
  *   1. options.elUsedInPayroll (including 0 = force no EL for this run)
- *   2. payRegisterSummary.totals.elUsedInPayroll when the field exists (including 0 = force no EL)
- *   3. prior PayrollRecord / SecondSalaryRecord: only values **> 0** lock the amount. Stored **0** is treated
- *      as “no EL applied yet” so recalculation after EL is credited still uses the current balance fallback.
+ *   2. Prior PayrollRecord when status is **processed** — EL days are locked for audit (including 0).
+ *   3. payRegisterSummary.totals.elUsedInPayroll when set, **except** when it only mirrors the last
+ *      non-processed payroll run (same positive value as PayrollRecord) so dynamic recalc picks up
+ *      fresh leave balance after EL / leave register changes.
+ *   4. SecondSalaryRecord when status is **processed** — same lock semantics for second salary.
  *
- * If nothing above applies, fall back to the legacy rule (same as before paid-leave auto-add):
+ * If nothing above applies, fall back to the legacy rule:
  *   EL enabled + useAsPaidInPayroll → min(employee EL balance, month days).
- *   Balance is employee.paidLeaves (same field the leave register / profile uses for EL).
+ *   Balance is employee.paidLeaves (leave register / profile).
  */
 
 const PayrollRecord = require('../model/PayrollRecord');
 const SecondSalaryRecord = require('../model/SecondSalaryRecord');
 const { resolveEffectiveEarnedLeaveForDepartment } = require('../../leaves/services/earnedLeavePolicyResolver');
+
+function isProcessedStatus(status) {
+  return String(status || '').toLowerCase() === 'processed';
+}
+
+/**
+ * Prior payroll EL figure when the field is explicitly stored (including 0).
+ * @returns {number|null}
+ */
+function getPriorPayrollElUsedIfExplicit(priorPayrollRecord) {
+  if (!priorPayrollRecord) return null;
+  const has =
+    priorPayrollRecord.elUsedInPayroll !== undefined &&
+    priorPayrollRecord.elUsedInPayroll !== null &&
+    priorPayrollRecord.elUsedInPayroll !== '';
+  const hasAtt =
+    priorPayrollRecord.attendance &&
+    priorPayrollRecord.attendance.elUsedInPayroll !== undefined &&
+    priorPayrollRecord.attendance.elUsedInPayroll !== null &&
+    priorPayrollRecord.attendance.elUsedInPayroll !== '';
+  if (!has && !hasAtt) return null;
+  const p = Number(priorPayrollRecord.elUsedInPayroll ?? priorPayrollRecord.attendance?.elUsedInPayroll);
+  if (!Number.isFinite(p) || p < 0) return null;
+  return p;
+}
 
 /**
  * Explicit EL-used only (no policy fallback). Returns null when nothing is configured
@@ -26,34 +53,36 @@ function getExplicitElUsedRawFromSources({ payRegisterSummary, priorPayrollRecor
     const n = Number(options.elUsedInPayroll);
     if (Number.isFinite(n) && n >= 0) return n;
   }
+
+  const priorProcessed = priorPayrollRecord && isProcessedStatus(priorPayrollRecord.status);
+  if (priorProcessed) {
+    const locked = getPriorPayrollElUsedIfExplicit(priorPayrollRecord);
+    if (locked !== null) return locked;
+  }
+
   const totals = payRegisterSummary?.totals;
   if (totals && Object.prototype.hasOwnProperty.call(totals, 'elUsedInPayroll') && totals.elUsedInPayroll !== null && totals.elUsedInPayroll !== '') {
     const fromPr = Number(totals.elUsedInPayroll);
-    if (Number.isFinite(fromPr) && fromPr >= 0) return fromPr;
-  }
-  if (priorPayrollRecord) {
-    const has =
-      priorPayrollRecord.elUsedInPayroll !== undefined &&
-      priorPayrollRecord.elUsedInPayroll !== null &&
-      priorPayrollRecord.elUsedInPayroll !== '';
-    const hasAtt =
-      priorPayrollRecord.attendance &&
-      priorPayrollRecord.attendance.elUsedInPayroll !== undefined &&
-      priorPayrollRecord.attendance.elUsedInPayroll !== null &&
-      priorPayrollRecord.attendance.elUsedInPayroll !== '';
-    if (has || hasAtt) {
-      const p = Number(priorPayrollRecord.elUsedInPayroll ?? priorPayrollRecord.attendance?.elUsedInPayroll);
-      // Do not lock on 0: first payroll run often saves 0 before EL is credited; recalc must use fresh balance.
-      if (Number.isFinite(p) && p > 0) return p;
+    if (Number.isFinite(fromPr) && fromPr >= 0) {
+      const priorEl = getPriorPayrollElUsedIfExplicit(priorPayrollRecord);
+      const staleMirror =
+        priorPayrollRecord &&
+        !priorProcessed &&
+        fromPr > 0 &&
+        priorEl !== null &&
+        Number(priorEl) === fromPr;
+      if (!staleMirror) return fromPr;
     }
   }
-  if (priorSecondSalaryRecord?.attendance) {
+
+  if (priorSecondSalaryRecord && isProcessedStatus(priorSecondSalaryRecord.status) && priorSecondSalaryRecord.attendance) {
     const sRaw = priorSecondSalaryRecord.attendance.elUsedInPayroll;
     if (sRaw !== undefined && sRaw !== null && sRaw !== '') {
       const s = Number(sRaw);
-      if (Number.isFinite(s) && s > 0) return s;
+      if (Number.isFinite(s) && s >= 0) return s;
     }
   }
+
   return null;
 }
 
@@ -99,14 +128,14 @@ async function resolveElUsedRawForPayroll({
 async function loadPriorPayrollRecordLean(employeeId, month) {
   if (!employeeId || !month) return null;
   return PayrollRecord.findOne({ employeeId, month })
-    .select('elUsedInPayroll attendance.elUsedInPayroll')
+    .select('status elUsedInPayroll attendance.elUsedInPayroll')
     .lean();
 }
 
 async function loadPriorSecondSalaryRecordLean(employeeId, month) {
   if (!employeeId || !month) return null;
   return SecondSalaryRecord.findOne({ employeeId, month })
-    .select('elUsedInPayroll attendance.elUsedInPayroll')
+    .select('status elUsedInPayroll attendance.elUsedInPayroll')
     .lean();
 }
 
