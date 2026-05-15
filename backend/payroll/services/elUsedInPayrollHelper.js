@@ -10,12 +10,15 @@
  *   4. SecondSalaryRecord when status is **processed** — same lock semantics for second salary.
  *
  * If nothing above applies, fall back to the legacy rule:
- *   EL enabled + useAsPaidInPayroll → min(employee EL balance, month days).
- *   Balance is employee.paidLeaves (leave register / profile).
+ *   EL enabled + useAsPaidInPayroll → min(EL balance, month days).
+ *   Balance: LeaveRegisterYear ledger when a year doc exists (not stale Employee.paidLeaves);
+ *   otherwise Employee.paidLeaves for employees without a register yet.
  */
 
 const PayrollRecord = require('../model/PayrollRecord');
 const SecondSalaryRecord = require('../model/SecondSalaryRecord');
+const LeaveRegisterYear = require('../../leaves/model/LeaveRegisterYear');
+const leaveRegisterYearLedgerService = require('../../leaves/services/leaveRegisterYearLedgerService');
 const { resolveEffectiveEarnedLeaveForDepartment } = require('../../leaves/services/earnedLeavePolicyResolver');
 
 function isProcessedStatus(status) {
@@ -87,13 +90,32 @@ function getExplicitElUsedRawFromSources({ payRegisterSummary, priorPayrollRecor
 }
 
 /**
- * When no explicit EL-used is stored, use policy + employee EL balance (legacy payroll behaviour).
+ * EL balance for payroll caps: ledger is authoritative when LeaveRegisterYear exists.
+ * @returns {Promise<number>}
+ */
+async function getElBalanceForPayroll(employeeId, employee) {
+  if (!employeeId) return 0;
+  const hasYearDoc = await LeaveRegisterYear.exists({ employeeId });
+  if (hasYearDoc) {
+    const ledgerEl = await leaveRegisterYearLedgerService.getCurrentBalanceLedgerOnly(
+      employeeId,
+      'EL',
+      new Date()
+    );
+    return Math.max(0, Number(ledgerEl) || 0);
+  }
+  return Math.max(0, Number(employee?.paidLeaves) || 0);
+}
+
+/**
+ * When no explicit EL-used is stored, use policy + EL balance (ledger-first when register exists).
  */
 async function getPolicyFallbackElUsedRaw(employee, departmentId, divisionId, monthDays) {
   try {
     const effectiveEL = await resolveEffectiveEarnedLeaveForDepartment(departmentId, divisionId);
     if (!effectiveEL.enabled || effectiveEL.useAsPaidInPayroll === false) return 0;
-    const elBalance = Math.max(0, Number(employee.paidLeaves) || 0);
+    const employeeId = employee?._id || employee?.id;
+    const elBalance = await getElBalanceForPayroll(employeeId, employee);
     if (elBalance <= 0) return 0;
     const capDays = Math.max(1, Number(monthDays) || 30);
     return Math.min(elBalance, capDays);
@@ -145,7 +167,8 @@ async function capElUsedForPolicy(departmentId, divisionId, employee, rawDays, m
   try {
     const effectiveEL = await resolveEffectiveEarnedLeaveForDepartment(departmentId, divisionId);
     if (!effectiveEL.enabled || effectiveEL.useAsPaidInPayroll === false) return 0;
-    const elBalance = Math.max(0, Number(employee.paidLeaves) || 0);
+    const employeeId = employee?._id || employee?.id;
+    const elBalance = await getElBalanceForPayroll(employeeId, employee);
     const capDays = Math.max(1, Number(monthDays) || 30);
     return Math.min(n, elBalance, capDays);
   } catch {
@@ -180,6 +203,7 @@ async function applyExplicitElToPaidLeaveAndPayable({
 
 module.exports = {
   getExplicitElUsedRawFromSources,
+  getElBalanceForPayroll,
   resolveElUsedRawForPayroll,
   getPolicyFallbackElUsedRaw,
   loadPriorPayrollRecordLean,
