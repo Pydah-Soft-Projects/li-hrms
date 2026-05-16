@@ -8,7 +8,6 @@ import Spinner from '@/components/Spinner';
 import { PlusIcon, Check, X } from 'lucide-react';
 import WorkflowTimeline from '@/components/WorkflowTimeline';
 import EmployeeSelect from '@/components/EmployeeSelect';
-
 const StatusBadge = ({ status }: { status: string }) => {
   const isApproved = status === 'approved';
   const isRejected = status === 'rejected';
@@ -490,10 +489,19 @@ export default function SuperadminCCLPage() {
                           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-medium text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400">
                             {(ccl.employeeId?.employee_name || ccl.emp_no).charAt(0).toUpperCase()}
                           </div>
-                          <div>
-                            <div className="font-medium text-gray-900 dark:text-white">{ccl.employeeId?.employee_name || ccl.emp_no}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">{ccl.emp_no}</div>
-                          </div>
+                          <div className="min-w-0" title={[String(ccl.employeeId?.employee_name || ccl.emp_no || '—'), ((typeof ccl.employeeId?.designation_id === 'object' && ccl.employeeId?.designation_id?.name) ? String(ccl.employeeId.designation_id.name) : (typeof ccl.employeeId?.designation === 'object' && ccl.employeeId?.designation?.name) ? String(ccl.employeeId.designation.name) : ''), String(ccl.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {ccl.employeeId?.employee_name || ccl.emp_no || '—'}
+  </div>
+  {((typeof ccl.employeeId?.designation_id === 'object' && ccl.employeeId?.designation_id?.name) ? String(ccl.employeeId.designation_id.name) : (typeof ccl.employeeId?.designation === 'object' && ccl.employeeId?.designation?.name) ? String(ccl.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof ccl.employeeId?.designation_id === 'object' && ccl.employeeId?.designation_id?.name) ? String(ccl.employeeId.designation_id.name) : (typeof ccl.employeeId?.designation === 'object' && ccl.employeeId?.designation?.name) ? String(ccl.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {ccl.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{ccl.emp_no}</div>
+  ) : null}
+</div>
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-600 dark:text-gray-300">{formatDate(ccl.date)}</td>
@@ -612,7 +620,19 @@ export default function SuperadminCCLPage() {
                 </div>
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white">CCL Detail</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{selectedCCL.employeeId?.employee_name} ({selectedCCL.emp_no})</p>
+                  <div className="min-w-0 mt-0.5" title={[String(selectedCCL.employeeId?.employee_name || selectedCCL.emp_no || '—'), ((typeof selectedCCL.employeeId?.designation_id === 'object' && selectedCCL.employeeId?.designation_id?.name) ? String(selectedCCL.employeeId.designation_id.name) : (typeof selectedCCL.employeeId?.designation === 'object' && selectedCCL.employeeId?.designation?.name) ? String(selectedCCL.employeeId.designation.name) : ''), String(selectedCCL.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {selectedCCL.employeeId?.employee_name || selectedCCL.emp_no || '—'}
+  </div>
+  {((typeof selectedCCL.employeeId?.designation_id === 'object' && selectedCCL.employeeId?.designation_id?.name) ? String(selectedCCL.employeeId.designation_id.name) : (typeof selectedCCL.employeeId?.designation === 'object' && selectedCCL.employeeId?.designation?.name) ? String(selectedCCL.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof selectedCCL.employeeId?.designation_id === 'object' && selectedCCL.employeeId?.designation_id?.name) ? String(selectedCCL.employeeId.designation_id.name) : (typeof selectedCCL.employeeId?.designation === 'object' && selectedCCL.employeeId?.designation?.name) ? String(selectedCCL.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {selectedCCL.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{selectedCCL.emp_no}</div>
+  ) : null}
+</div>
                 </div>
               </div>
             </div>

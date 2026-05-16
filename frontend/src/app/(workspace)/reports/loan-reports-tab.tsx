@@ -1,5 +1,4 @@
 'use client';
-
 import { useState, useEffect, useCallback } from 'react';
 import { api, Department, Division, Employee } from '@/lib/api';
 import { MultiSelect } from '@/components/MultiSelect';
@@ -432,7 +431,25 @@ export default function LoanReportsTab({
                                         className="hover:bg-indigo-50/50 transition-all dark:hover:bg-indigo-900/20 cursor-pointer group"
                                     >
                                         <td className="px-6 py-4">
-                                            <p className="text-xs font-black text-slate-900 dark:text-white">{loan.employeeId?.employee_name || 'N/A'}</p>
+                                            <div className="min-w-0" title={[String(loan.employeeId?.employee_name || 'N/A' || '—'), ((typeof loan.employeeId?.designation_id === 'object' && loan.employeeId?.designation_id?.name) ? String(loan.employeeId.designation_id.name) : (typeof loan.employeeId?.designation === 'object' && loan.employeeId?.designation?.name) ? String(loan.employeeId.designation.name) : ''), String(loan.employeeId?.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {loan.employeeId?.employee_name || 'N/A' || '—'}
+  </div>
+  {((typeof loan.employeeId?.designation_id === 'object' && loan.employeeId?.designation_id?.name) ? String(loan.employeeId.designation_id.name) : (typeof loan.employeeId?.designation === 'object' && loan.employeeId?.designation?.name) ? String(loan.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof loan.employeeId?.designation_id === 'object' && loan.employeeId?.designation_id?.name) ? String(loan.employeeId.designation_id.name) : (typeof loan.employeeId?.designation === 'object' && loan.employeeId?.designation?.name) ? String(loan.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {loan.employeeId?.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{loan.employeeId?.emp_no}</div>
+  ) : null}
+  {loan.employeeId?.leftDate ? (
+    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+      Left{' '}
+      {new Date(loan.employeeId.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+    </div>
+  ) : null}
+</div>
                                             <p className="text-[10px] text-slate-400 font-bold mt-0.5">{loan.employeeId?.emp_no || loan.emp_no}</p>
                                         </td>
                                         <td className="px-4 py-4">

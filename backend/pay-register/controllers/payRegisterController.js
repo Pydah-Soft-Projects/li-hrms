@@ -1,5 +1,5 @@
 const PayRegisterSummary = require('../model/PayRegisterSummary');
-const { compareEmpNo, EMP_NO_SORT } = require('../../shared/utils/employeeSort');
+const { compareEmpNo, EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 const Employee = require('../../employees/model/Employee');
 const PayrollBatch = require('../../payroll/model/PayrollBatch');
 const {
@@ -949,7 +949,8 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       .select('_id employee_name emp_no department_id designation_id leftDate leftReason')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
-      .sort(EMP_NO_SORT);
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION);
 
     // Bypass pagination if limit is -1
     if (limitNum !== -1) {
@@ -979,7 +980,14 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       employeeId: { $in: employeeIds },
       month
     })
-      .populate('employeeId', 'employee_name emp_no department_id designation_id leftDate leftReason')
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no department_id designation_id leftDate leftReason',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'designation_id', select: 'name' },
+        ],
+      })
       .select('employeeId emp_no month status totals lastEditedAt dailyRecords startDate endDate totalDaysInMonth summaryLocked summaryLockedAt totalAttendanceDeductionDays attendanceDeductionBreakdown attendanceDeductionCalculatedAt totalPermissionHours totalPermissionCount totalPermissionDeductionDays totalPermissionDeductionAmount permissionDeductionBreakdown');
 
     // Map for O(1) Access
@@ -1007,7 +1015,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       if (existingPR) {
         return {
           _id: existingPR._id,
-          employeeId: existingPR.employeeId,
+          employeeId: employee,
           emp_no: existingPR.emp_no,
           month: existingPR.month,
           status: existingPR.status,
@@ -1443,7 +1451,8 @@ exports.exportSummaryExcel = async (req, res) => {
       .populate('department_id', 'name')
       .populate('division_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ emp_no: 1 });
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION);
 
     const employeeIds = employees.map(e => e._id);
 
@@ -1529,6 +1538,7 @@ exports.exportSummaryPDF = async (req, res) => {
       .populate('division_id', 'name')
       .populate('designation_id', 'name')
       .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION)
       .lean();
 
     if (employees.length === 0) {

@@ -42,7 +42,6 @@ import Swal from 'sweetalert2';
 
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import EmployeeSelect from '@/components/EmployeeSelect';
-
 const DualLocationMap = dynamic(() => import('@/components/DualLocationMap'), { ssr: false });
 const ODRequestsMap = dynamic(() => import('@/components/ODRequestsMap'), { ssr: false });
 import {
@@ -858,6 +857,11 @@ export default function LeavesPage() {
   const user = auth.getUser();
   const hasViewPermission = user ? canViewLeaves(user as any) : false;
   const hasManagePermission = user ? canApproveLeaves(user as any) : false; // Write permission for ALL actions
+  /** Backend allows PDF export for these roles only (scoped via workspace middleware). */
+  const canExportLeaveODPdf =
+    !!user &&
+    hasViewPermission &&
+    ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(user.role);
 
   // Permission states (Workspace based)
   const [canApplyLeaveForSelf, setCanApplyLeaveForSelf] = useState(false);
@@ -3064,6 +3068,16 @@ export default function LeavesPage() {
   const filteredInProgressLeaves = useMemo(() => filterData(inProgressLeaves, 'leave'), [inProgressLeaves, leaveFilters, activeTab]);
   const filteredInProgressODs = useMemo(() => filterData(inProgressODs, 'od'), [inProgressODs, leaveFilters, activeTab]);
 
+  /** Shared filters for list load and PDF export (pay period + workspace filters). */
+  const getLeavesODFilters = () => ({
+    search: leaveFilters.employeeNumber?.trim() || undefined,
+    department: leaveFilters.department.length > 0 ? leaveFilters.department : undefined,
+    division: leaveFilters.division.length > 0 ? leaveFilters.division : undefined,
+    designation: leaveFilters.designation.length > 0 ? leaveFilters.designation : undefined,
+    fromDate: dateRange.from || undefined,
+    toDate: dateRange.to || undefined,
+  });
+
   const fetchAllODMapRequests = async () => {
     if (activeTab !== 'od') return;
     setODMapLoading(true);
@@ -3247,18 +3261,28 @@ export default function LeavesPage() {
     const toastId = toast.loading('Generating PDF report...');
     
     try {
-      const blob = await api.downloadLeaveODReportPDF({
-        status:
-          activeTab === 'pending'
-            ? 'pending'
+      const baseFilters = getLeavesODFilters();
+      const status =
+        activeTab === 'pending'
+          ? 'pending'
+          : activeTab === 'od'
+            ? (leaveFilters.odStatus || undefined)
+            : activeTab === 'leaves'
+              ? (leaveFilters.leaveStatus || undefined)
+              : undefined;
+      const leaveType =
+        options.includeLeaves && !options.includeODs
+          ? (leaveFilters.leaveType || undefined)
+          : options.includeODs && !options.includeLeaves
+            ? (leaveFilters.odType || undefined)
             : activeTab === 'od'
-              ? (leaveFilters.odStatus || undefined)
-              : (leaveFilters.leaveStatus || undefined),
-        leaveType: activeTab === 'od' ? (leaveFilters.odType || undefined) : (leaveFilters.leaveType || undefined),
-        fromDate: leaveFilters.startDate || undefined,
-        toDate: leaveFilters.endDate || undefined,
-        division: leaveFilters.division || undefined,
-        department: leaveFilters.department || undefined,
+              ? (leaveFilters.odType || undefined)
+              : (leaveFilters.leaveType || undefined);
+
+      const blob = await api.downloadLeaveODReportPDF({
+        ...baseFilters,
+        status,
+        leaveType,
         includeLeaves: options.includeLeaves,
         includeODs: options.includeODs,
         includeSummary: options.includeSummary
@@ -3454,21 +3478,24 @@ export default function LeavesPage() {
               </div>
             </div>
 
-            {hasManagePermission && (canApplyForSelf || canApplyForOthers || currentUser?.role === 'employee' || ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role)) && (
-              <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
+              {canExportLeaveODPdf && (
                 <button
                   onClick={() => {
                     setExportPDFOptions({
-                      includeLeaves: true,
-                      includeODs: true
+                      includeLeaves: activeTab !== 'od',
+                      includeODs: activeTab !== 'leaves',
                     });
                     setShowExportPDFDialog(true);
                   }}
                   className="flex items-center gap-2 h-9 sm:h-11 px-3 sm:px-4 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-[0.98]"
+                  title="Download PDF for current pay period and filters (scoped to your workspace)"
                 >
                   <FileText className="w-4 h-4" />
                   <span className="hidden lg:inline">Download PDF</span>
                 </button>
+              )}
+              {hasManagePermission && (canApplyForSelf || canApplyForOthers || currentUser?.role === 'employee' || ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role)) && (
                 <button
                   onClick={() => openApplyDialog('leave')}
                   className="group h-9 sm:h-11 px-4 sm:px-6 rounded-xl sm:rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10 shrink-0"
@@ -3476,8 +3503,8 @@ export default function LeavesPage() {
                   <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                   <span className="hidden sm:inline">Apply Request</span>
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -3918,14 +3945,19 @@ export default function LeavesPage() {
                                 <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
                                   {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
                                 </div>
-                                <div className="min-w-0">
-                                  <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
-                                    {leave.employeeId?.employee_name || `${leave.employeeId?.first_name || ''} ${leave.employeeId?.last_name || ''}`.trim() || leave.emp_no}
-                                  </div>
-                                  <div className="text-xs text-slate-500">
-                                    {formatEmpNoWithDesignation(leave)}
-                                  </div>
-                                </div>
+                                <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'), getItemDesignationName(leave), String(leave.employeeId?.emp_no ?? leave.emp_no ?? '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'}
+  </div>
+  {getItemDesignationName(leave) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getItemDesignationName(leave)}
+    </div>
+  ) : null}
+  {leave.employeeId?.emp_no ?? leave.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
+  ) : null}
+</div>
                               </div>
                             </td>
                           )}
@@ -4039,15 +4071,19 @@ export default function LeavesPage() {
                           )}
                           <div className="min-w-0">
                             {currentUser?.role !== 'employee' && (
-                              <>
-                                <h4 className="font-bold text-slate-900 dark:text-white text-sm">
-                                  {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee)}
-                                </h4>
-                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                  {formatEmpNoWithDesignation(leave)}
-                                  {(leave.employeeId as any)?.department?.name && ` • ${(leave.employeeId as any).department.name}`}
-                                </p>
-                              </>
+                              <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'), getItemDesignationName(leave), String(leave.employeeId?.emp_no ?? leave.emp_no ?? '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'}
+  </div>
+  {getItemDesignationName(leave) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getItemDesignationName(leave)}
+    </div>
+  ) : null}
+  {leave.employeeId?.emp_no ?? leave.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
+  ) : null}
+</div>
                             )}
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                               {leave.leaveType?.replace('_', ' ')}
@@ -4188,14 +4224,19 @@ export default function LeavesPage() {
                                 <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-700 dark:text-purple-400 font-bold text-xs shrink-0">
                                   {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
                                 </div>
-                                <div className="min-w-0">
-                                  <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
-                                    {od.employeeId?.employee_name || `${od.employeeId?.first_name || ''} ${od.employeeId?.last_name || ''}`.trim() || od.emp_no}
-                                  </div>
-                                  <div className="text-xs text-slate-500">
-                                    {formatEmpNoWithDesignation(od)}
-                                  </div>
-                                </div>
+                                <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'), getItemDesignationName(od), String(od.employeeId?.emp_no ?? od.emp_no ?? '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'}
+  </div>
+  {getItemDesignationName(od) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getItemDesignationName(od)}
+    </div>
+  ) : null}
+  {od.employeeId?.emp_no ?? od.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{od.employeeId?.emp_no ?? od.emp_no}</div>
+  ) : null}
+</div>
                               </div>
                             </td>
                           )}
@@ -4312,15 +4353,19 @@ export default function LeavesPage() {
                           )}
                           <div className="min-w-0">
                             {currentUser?.role !== 'employee' && (
-                              <>
-                                <h4 className="font-bold text-slate-900 dark:text-white text-sm">
-                                  {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}
-                                </h4>
-                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                  {formatEmpNoWithDesignation(od)}
-                                  {(od.employeeId as any)?.department?.name && ` • ${(od.employeeId as any).department.name}`}
-                                </p>
-                              </>
+                              <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'), getItemDesignationName(od), String(od.employeeId?.emp_no ?? od.emp_no ?? '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'}
+  </div>
+  {getItemDesignationName(od) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getItemDesignationName(od)}
+    </div>
+  ) : null}
+  {od.employeeId?.emp_no ?? od.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{od.employeeId?.emp_no ?? od.emp_no}</div>
+  ) : null}
+</div>
                             )}
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                               {od.odType?.replace('_', ' ')}
@@ -4462,12 +4507,19 @@ export default function LeavesPage() {
                                   <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
                                     {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
                                   </div>
-                                  <div className="min-w-0">
-                                    <div className="font-medium text-slate-900 dark:text-white text-xs truncate max-w-[150px]">
-                                      {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee)}
-                                    </div>
-                                    <div className="text-[10px] text-slate-500">{formatEmpNoWithDesignation(leave)}</div>
-                                  </div>
+                                  <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'), getItemDesignationName(leave), String(leave.employeeId?.emp_no ?? leave.emp_no ?? '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'}
+  </div>
+  {getItemDesignationName(leave) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getItemDesignationName(leave)}
+    </div>
+  ) : null}
+  {leave.employeeId?.emp_no ?? leave.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
+  ) : null}
+</div>
                                 </div>
                               </td>
                               <td className="px-6 py-3.5">
@@ -4537,19 +4589,24 @@ export default function LeavesPage() {
                                 {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                                  <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1" title={getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee)}>
-                                    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee)}
-                                  </h4>
-                                  {([getItemDivisionName(leave), getItemDepartmentName(leave)].filter(v => v && v !== 'N/A').length > 0) && (
-                                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                                      {[getItemDivisionName(leave), getItemDepartmentName(leave)].filter(v => v && v !== 'N/A').join(' · ')}
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                  {formatEmpNoWithDesignation(leave)}
-                                </p>
+                                {([getItemDivisionName(leave), getItemDepartmentName(leave)].filter(v => v && v !== 'N/A').length > 0) && (
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">
+                                    {[getItemDivisionName(leave), getItemDepartmentName(leave)].filter(v => v && v !== 'N/A').join(' · ')}
+                                  </p>
+                                )}
+                                <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'), getItemDesignationName(leave), String(leave.employeeId?.emp_no ?? leave.emp_no ?? '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'}
+  </div>
+  {getItemDesignationName(leave) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getItemDesignationName(leave)}
+    </div>
+  ) : null}
+  {leave.employeeId?.emp_no ?? leave.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
+  ) : null}
+</div>
                               </div>
                             </div>
                             <div className="flex flex-col gap-1 items-end">
@@ -4666,12 +4723,19 @@ export default function LeavesPage() {
                                   <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-700 dark:text-purple-400 font-bold text-xs shrink-0">
                                     {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
                                   </div>
-                                  <div className="min-w-0">
-                                    <div className="font-medium text-slate-900 dark:text-white text-xs truncate max-w-[150px]">
-                                      {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}
-                                    </div>
-                                    <div className="text-[10px] text-slate-500">{formatEmpNoWithDesignation(od)}</div>
-                                  </div>
+                                  <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'), getItemDesignationName(od), String(od.employeeId?.emp_no ?? od.emp_no ?? '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'}
+  </div>
+  {getItemDesignationName(od) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getItemDesignationName(od)}
+    </div>
+  ) : null}
+  {od.employeeId?.emp_no ?? od.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{od.employeeId?.emp_no ?? od.emp_no}</div>
+  ) : null}
+</div>
                                 </div>
                               </td>
                               <td className="px-6 py-3.5">
@@ -4739,19 +4803,24 @@ export default function LeavesPage() {
                                 {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                                  <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1" title={getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}>
-                                    {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}
-                                  </h4>
-                                  {([getItemDivisionName(od), getItemDepartmentName(od)].filter(v => v && v !== 'N/A').length > 0) && (
-                                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                                      {[getItemDivisionName(od), getItemDepartmentName(od)].filter(v => v && v !== 'N/A').join(' · ')}
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                  {formatEmpNoWithDesignation(od)}
-                                </p>
+                                {([getItemDivisionName(od), getItemDepartmentName(od)].filter(v => v && v !== 'N/A').length > 0) && (
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">
+                                    {[getItemDivisionName(od), getItemDepartmentName(od)].filter(v => v && v !== 'N/A').join(' · ')}
+                                  </p>
+                                )}
+                                <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'), getItemDesignationName(od), String(od.employeeId?.emp_no ?? od.emp_no ?? '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'}
+  </div>
+  {getItemDesignationName(od) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getItemDesignationName(od)}
+    </div>
+  ) : null}
+  {od.employeeId?.emp_no ?? od.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{od.employeeId?.emp_no ?? od.emp_no}</div>
+  ) : null}
+</div>
                               </div>
                             </div>
                             <div className="flex flex-col gap-1 items-end">
@@ -4895,14 +4964,19 @@ export default function LeavesPage() {
                                 {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                                  <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
-                                    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee)}
-                                  </h4>
-                                </div>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                  {formatEmpNoWithDesignation(leave)}
-                                </p>
+                                <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'), getItemDesignationName(leave), String(leave.employeeId?.emp_no ?? leave.emp_no ?? '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'}
+  </div>
+  {getItemDesignationName(leave) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getItemDesignationName(leave)}
+    </div>
+  ) : null}
+  {leave.employeeId?.emp_no ?? leave.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
+  ) : null}
+</div>
                               </div>
                             </div>
                             <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
@@ -4951,12 +5025,19 @@ export default function LeavesPage() {
                                 {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
-                                  {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}
-                                </h4>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                  {formatEmpNoWithDesignation(od)}
-                                </p>
+                                <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'), getItemDesignationName(od), String(od.employeeId?.emp_no ?? od.emp_no ?? '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'}
+  </div>
+  {getItemDesignationName(od) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getItemDesignationName(od)}
+    </div>
+  ) : null}
+  {od.employeeId?.emp_no ?? od.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{od.employeeId?.emp_no ?? od.emp_no}</div>
+  ) : null}
+</div>
                               </div>
                             </div>
                             <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
@@ -5704,12 +5785,19 @@ export default function LeavesPage() {
                             <Briefcase className="h-5 w-5 text-white sm:h-[22px] sm:w-[22px]" aria-hidden />
                           </div>
                           <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-                            <p className="break-words text-lg font-black leading-snug text-white sm:text-xl [overflow-wrap:anywhere]">
-                              {selectedItem!.employeeId?.employee_name || selectedItem!.emp_no}
-                            </p>
-                            <p className="mt-1 text-[11px] font-bold uppercase tracking-tight text-white/85 sm:text-xs">
-                              {formatEmpNoWithDesignation(selectedItem)}
-                            </p>
+                            <div className="min-w-0 [&_*]:text-white/90 [&_span]:text-white/85" title={[String(selectedItem!.employeeId?.employee_name || selectedItem!.emp_no || '—'), getItemDesignationName(selectedItem), String(selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no ?? '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm !text-white break-words text-lg font-black leading-snug sm:text-xl [overflow-wrap:anywhere]`}>
+    {selectedItem!.employeeId?.employee_name || selectedItem!.emp_no || '—'}
+  </div>
+  {getItemDesignationName(selectedItem) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getItemDesignationName(selectedItem)}
+    </div>
+  ) : null}
+  {selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no}</div>
+  ) : null}
+</div>
                             {selectedItem!.contactNumber && (
                               <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-t border-white/15 pt-2 text-[12px] sm:text-[13px]">
                                 <span className="font-black uppercase tracking-wider text-[10px] text-white/65">Contact</span>
@@ -5781,12 +5869,19 @@ export default function LeavesPage() {
                   {detailType === 'leave' && (
                   <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-6">
                     <div className="min-w-0 flex-1">
-                        <h3 className="font-black text-slate-900 dark:text-white text-xl">
-                          {selectedItem!.employeeId?.employee_name || selectedItem!.emp_no}
-                        </h3>
-                        <p className="text-sm text-slate-500 font-bold uppercase tracking-tight">
-                          {formatEmpNoWithDesignation(selectedItem)}
-                        </p>
+                        <div className="min-w-0" title={[String(selectedItem!.employeeId?.employee_name || selectedItem!.emp_no || '—'), getItemDesignationName(selectedItem), String(selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no ?? '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {selectedItem!.employeeId?.employee_name || selectedItem!.emp_no || '—'}
+  </div>
+  {getItemDesignationName(selectedItem) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getItemDesignationName(selectedItem)}
+    </div>
+  ) : null}
+  {selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no}</div>
+  ) : null}
+</div>
                         <div className="flex gap-2 mt-2">
                           {selectedItem!.department?.name && (
                             <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">

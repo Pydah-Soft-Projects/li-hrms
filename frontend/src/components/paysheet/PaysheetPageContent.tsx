@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api, Department, Division, Designation } from '@/lib/api';
+import { sortByEmpNo } from '@/lib/employeeSort';
 import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
@@ -16,6 +17,13 @@ import {
   Loader2,
   X,
 } from 'lucide-react';
+
+function orderPaysheetRowsByEmpNo(rows: Record<string, unknown>[]) {
+  return sortByEmpNo(rows, (r) => {
+    const code = r['Employee Code'] ?? r['Emp No'] ?? r['Employee No'] ?? r['emp_no'];
+    return code != null ? String(code) : '';
+  });
+}
 
 const ROWS_PER_PAGE_ALL = -1;
 const ROWS_PER_PAGE_OPTIONS = [10, 25, 50, 100, 250, 500, ROWS_PER_PAGE_ALL] as const;
@@ -225,7 +233,7 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
       });
       if (res?.success && res?.data) {
         setHeaders(res.data.headers || []);
-        setRows(res.data.rows || []);
+        setRows(orderPaysheetRowsByEmpNo(res.data.rows || []));
         setDataSource(res.source === 'existing' ? 'existing' : null);
         if ((res.data.rows?.length ?? 0) === 0 && res.message) {
           toast.info(res.message);

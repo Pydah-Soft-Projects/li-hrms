@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import toast from 'react-hot-toast';
-
 interface PayrollTransaction {
   _id: string;
   employeeName: string;
@@ -391,8 +390,19 @@ export default function PayrollTransactionsTab() {
                 {filteredTransactions.map((transaction) => (
                   <tr key={transaction._id} className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/50">
                     <td className="whitespace-nowrap px-6 py-4">
-                      <div className="text-sm font-medium text-slate-900 dark:text-white">{transaction.employeeName}</div>
-                      <div className="text-sm text-slate-500 dark:text-slate-400">{transaction.emp_no}</div>
+                      <div className="min-w-0" title={[String(transaction.employeeName || '—'), ((typeof null?.designation_id === 'object' && null?.designation_id?.name) ? String(null.designation_id.name) : (typeof null?.designation === 'object' && null?.designation?.name) ? String(null.designation.name) : ''), String(transaction.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {transaction.employeeName || '—'}
+  </div>
+  {((typeof null?.designation_id === 'object' && null?.designation_id?.name) ? String(null.designation_id.name) : (typeof null?.designation === 'object' && null?.designation?.name) ? String(null.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof null?.designation_id === 'object' && null?.designation_id?.name) ? String(null.designation_id.name) : (typeof null?.designation === 'object' && null?.designation?.name) ? String(null.designation.name) : '')}
+    </div>
+  ) : null}
+  {transaction.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{transaction.emp_no}</div>
+  ) : null}
+</div>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4">
                       <span className={`text-sm font-medium ${getCategoryColor(transaction.category)}`}>

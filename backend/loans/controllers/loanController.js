@@ -23,6 +23,7 @@ const {
   needsFirstDeductionPayPeriodSelection,
 } = require('../services/loanHistoryRepairService');
 const { getPresentPayPeriod } = require('../../shared/utils/dateUtils');
+const { EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 const {
   buildLoanApprovalChain,
   ensureLoanApprovalChain,
@@ -351,7 +352,8 @@ exports.getGuarantorCandidates = async (req, res) => {
       .select('emp_no employee_name department_id designation_id division_id')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ emp_no: 1 })
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION)
       .limit(max);
 
     res.status(200).json({

@@ -1,6 +1,7 @@
 const Department = require('../model/Department');
 const User = require('../../users/model/User');
 const Employee = require('../../employees/model/Employee');
+const { EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 const Shift = require('../../shifts/model/Shift');
 const Designation = require('../model/Designation');
 const {
@@ -192,7 +193,8 @@ exports.getDepartmentEmployees = async (req, res) => {
       .populate('department_id', 'name')
       .populate('division_id', 'name code')
       .populate('designation_id', 'name code')
-      .sort({ emp_no: 1 });
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION);
 
     res.status(200).json({
       success: true,

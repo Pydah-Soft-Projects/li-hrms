@@ -3394,8 +3394,25 @@ function LeavesPageContent() {
                         onClick={() => openDetailDialog(leave, 'leave')}
                       >
                         <td className="px-4 py-3">
-                          <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: leave.employeeId?.employee_name ?? '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no ?? leave.emp_no ?? '' } as Employee)}</div>
-                          <div className="text-xs text-slate-500">{formatEmpNoWithDesignation(leave)}</div>
+                          <div className="min-w-0" title={[String(getEmployeeName({ employee_name: leave.employeeId?.employee_name ?? '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no ?? leave.emp_no ?? '' } as Employee) || '—'), getItemDesignationName(leave), String(leave.employeeId?.emp_no ?? leave.emp_no ?? '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName({ employee_name: leave.employeeId?.employee_name ?? '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no ?? leave.emp_no ?? '' } as Employee) || '—'}
+  </div>
+  {getItemDesignationName(leave) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getItemDesignationName(leave)}
+    </div>
+  ) : null}
+  {leave.employeeId?.emp_no ?? leave.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
+  ) : null}
+  {leave.employeeId?.leftDate ? (
+    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+      Left{' '}
+      {new Date(leave.employeeId.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+    </div>
+  ) : null}
+</div>
                         </td>
                         <td className="px-4 py-3">{getItemDivisionName(leave)}</td>
                         <td className="px-4 py-3">{getItemDepartmentName(leave)}</td>
@@ -3546,8 +3563,25 @@ function LeavesPageContent() {
                         onClick={() => openDetailDialog(od, 'od')}
                       >
                         <td className="px-4 py-3">
-                          <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: od.employeeId?.employee_name ?? '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no ?? od.emp_no ?? '' } as Employee)}</div>
-                          <div className="text-xs text-slate-500">{formatEmpNoWithDesignation(od)}</div>
+                          <div className="min-w-0" title={[String(getEmployeeName({ employee_name: od.employeeId?.employee_name ?? '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no ?? od.emp_no ?? '' } as Employee) || '—'), getItemDesignationName(od), String(od.employeeId?.emp_no ?? od.emp_no ?? '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName({ employee_name: od.employeeId?.employee_name ?? '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no ?? od.emp_no ?? '' } as Employee) || '—'}
+  </div>
+  {getItemDesignationName(od) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getItemDesignationName(od)}
+    </div>
+  ) : null}
+  {od.employeeId?.emp_no ?? od.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{od.employeeId?.emp_no ?? od.emp_no}</div>
+  ) : null}
+  {od.employeeId?.leftDate ? (
+    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+      Left{' '}
+      {new Date(od.employeeId.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+    </div>
+  ) : null}
+</div>
                         </td>
                         <td className="px-4 py-3">{getItemDivisionName(od)}</td>
                         <td className="px-4 py-3">{getItemDepartmentName(od)}</td>

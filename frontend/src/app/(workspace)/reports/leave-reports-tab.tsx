@@ -1,5 +1,4 @@
 'use client';
-
 import { useState, useEffect } from 'react';
 import { api, Division, Department, Employee, Designation } from '@/lib/api';
 import { MultiSelect } from '@/components/MultiSelect';
@@ -581,7 +580,25 @@ export default function LeaveReportsTab() {
                                     <td className="px-5 py-3">
                                         <div className="flex flex-col">
                                             <span className="text-xs font-black text-slate-900 dark:text-white capitalize leading-tight">
-                                                {leave.employeeId?.employee_name || 'Unknown'}
+                                                <div className="min-w-0" title={[String(leave.employeeId?.employee_name || 'Unknown' || '—'), ((typeof leave.employeeId?.designation_id === 'object' && leave.employeeId?.designation_id?.name) ? String(leave.employeeId.designation_id.name) : (typeof leave.employeeId?.designation === 'object' && leave.employeeId?.designation?.name) ? String(leave.employeeId.designation.name) : ''), String(leave.employeeId?.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {leave.employeeId?.employee_name || 'Unknown' || '—'}
+  </div>
+  {((typeof leave.employeeId?.designation_id === 'object' && leave.employeeId?.designation_id?.name) ? String(leave.employeeId.designation_id.name) : (typeof leave.employeeId?.designation === 'object' && leave.employeeId?.designation?.name) ? String(leave.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof leave.employeeId?.designation_id === 'object' && leave.employeeId?.designation_id?.name) ? String(leave.employeeId.designation_id.name) : (typeof leave.employeeId?.designation === 'object' && leave.employeeId?.designation?.name) ? String(leave.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {leave.employeeId?.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{leave.employeeId?.emp_no}</div>
+  ) : null}
+  {leave.employeeId?.leftDate ? (
+    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+      Left{' '}
+      {new Date(leave.employeeId.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+    </div>
+  ) : null}
+</div>
                                             </span>
                                             <span className="text-[10px] font-black text-indigo-500/80 mt-0.5 tracking-wider uppercase">
                                                 {leave.employeeId?.emp_no || 'N/A'}

@@ -16,6 +16,7 @@ const {
 const { createISTDate, getTodayISTDateString, extractISTComponents } = require('../../shared/utils/dateUtils');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const Employee = require('../../employees/model/Employee');
+const { EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 const leaveRegisterService = require('../services/leaveRegisterService');
 const leaveRegisterYearService = require('../services/leaveRegisterYearService');
 
@@ -114,7 +115,8 @@ exports.previewInitialCLSync = async (req, res) => {
             .select('_id emp_no employee_name designation department_id division_id doj is_active')
             .populate('department_id', 'name')
             .populate('division_id', 'name')
-            .sort({ emp_no: 1 })
+            .sort(EMP_NO_SORT)
+            .collation(EMP_NO_COLLATION)
             .lean();
 
         const term = String(search || '').trim().toLowerCase();

@@ -605,6 +605,7 @@ exports.assignShifts = async (req, res) => {
 exports.getDesignationEmployees = async (req, res) => {
   try {
     const Employee = require('../../employees/model/Employee');
+    const { EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 
     const designation = await Designation.findById(req.params.id).select('name');
     if (!designation) {
@@ -618,7 +619,8 @@ exports.getDesignationEmployees = async (req, res) => {
       .select('emp_no employee_name department_id division_id is_active left_date')
       .populate('department_id', 'name code')
       .populate('division_id', 'name code')
-      .sort({ emp_no: 1 })
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION)
       .lean();
 
     return res.status(200).json({

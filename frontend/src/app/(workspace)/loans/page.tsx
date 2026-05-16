@@ -1980,11 +1980,15 @@ export default function LoansPage() {
                       <div key={loan._id} className="rounded-2xl border-2 border-amber-200/50 bg-gradient-to-br from-amber-50/80 to-yellow-50/50 p-5 dark:border-amber-800/30 dark:from-amber-900/20 dark:to-yellow-900/10 shadow-sm hover:shadow-md transition-all duration-300">
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <span className="font-medium text-slate-900 dark:text-white">
-                                {loan.employeeId?.employee_name || loan.emp_no || 'Unknown'}
-                              </span>
-                              <span className="text-xs text-slate-500">({loan.emp_no || loan.employeeId?.emp_no || 'N/A'})</span>
+                            <div className="flex items-center gap-3 mb-2 flex-wrap">
+                              <LoanListEmployeeCell
+                                loan={loan}
+                                divisions={divisions}
+                                departments={departments}
+                                designations={designations}
+                                tone="blue"
+                                showAvatar={false}
+                              />
                               <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(loan.status)}`}>
                                 {loan.status.replace('_', ' ')}
                               </span>
@@ -2039,11 +2043,15 @@ export default function LoansPage() {
                       <div key={advance._id} className="rounded-2xl border-2 border-amber-200/50 bg-gradient-to-br from-amber-50/80 to-yellow-50/50 p-5 dark:border-amber-800/30 dark:from-amber-900/20 dark:to-yellow-900/10 shadow-sm hover:shadow-md transition-all duration-300">
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <span className="font-medium text-slate-900 dark:text-white">
-                                {advance.employeeId?.employee_name || advance.emp_no || 'Unknown'}
-                              </span>
-                              <span className="text-xs text-slate-500">({advance.emp_no || advance.employeeId?.emp_no || 'N/A'})</span>
+                            <div className="flex items-center gap-3 mb-2 flex-wrap">
+                              <LoanListEmployeeCell
+                                loan={advance}
+                                divisions={divisions}
+                                departments={departments}
+                                designations={designations}
+                                tone="teal"
+                                showAvatar={false}
+                              />
                               <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(advance.status)}`}>
                                 {advance.status.replace('_', ' ')}
                               </span>

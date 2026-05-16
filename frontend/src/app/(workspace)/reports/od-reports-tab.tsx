@@ -1,5 +1,4 @@
 'use client';
-
 import { useState, useEffect } from 'react';
 import { api, Division, Department, Employee, Designation } from '@/lib/api';
 import { MultiSelect } from '@/components/MultiSelect';
@@ -580,7 +579,25 @@ export default function ODReportsTab() {
                                     <td className="px-5 py-3">
                                         <div className="flex flex-col">
                                             <span className="text-xs font-black text-slate-900 dark:text-white capitalize leading-tight">
-                                                {od.employeeId?.employee_name || 'Unknown'}
+                                                <div className="min-w-0" title={[String(od.employeeId?.employee_name || 'Unknown' || '—'), ((typeof od.employeeId?.designation_id === 'object' && od.employeeId?.designation_id?.name) ? String(od.employeeId.designation_id.name) : (typeof od.employeeId?.designation === 'object' && od.employeeId?.designation?.name) ? String(od.employeeId.designation.name) : ''), String(od.employeeId?.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {od.employeeId?.employee_name || 'Unknown' || '—'}
+  </div>
+  {((typeof od.employeeId?.designation_id === 'object' && od.employeeId?.designation_id?.name) ? String(od.employeeId.designation_id.name) : (typeof od.employeeId?.designation === 'object' && od.employeeId?.designation?.name) ? String(od.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof od.employeeId?.designation_id === 'object' && od.employeeId?.designation_id?.name) ? String(od.employeeId.designation_id.name) : (typeof od.employeeId?.designation === 'object' && od.employeeId?.designation?.name) ? String(od.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {od.employeeId?.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{od.employeeId?.emp_no}</div>
+  ) : null}
+  {od.employeeId?.leftDate ? (
+    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+      Left{' '}
+      {new Date(od.employeeId.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+    </div>
+  ) : null}
+</div>
                                             </span>
                                             <span className="text-[10px] font-black text-emerald-500/80 mt-0.5 tracking-wider uppercase">
                                                 {od.employeeId?.emp_no || 'N/A'}

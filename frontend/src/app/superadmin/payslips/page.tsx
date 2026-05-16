@@ -7,7 +7,8 @@ import { api, Division, Department, Designation } from '@/lib/api';
 import { toast } from 'react-toastify';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
+import { fetchCompanyProfile, type CompanyProfile } from '@/lib/companyProfile';
+import { drawPayslipCompanyHeader, drawPayslipFooter } from '@/lib/payslipPdf';
 interface Employee {
   _id: string;
   emp_no: string;
@@ -102,6 +103,7 @@ export default function PayslipsPage() {
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const [generatingBulkPDF, setGeneratingBulkPDF] = useState(false);
   const [selectedRecords, setSelectedRecords] = useState<Set<string>>(new Set());
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -126,6 +128,7 @@ export default function PayslipsPage() {
     fetchDivisions();
     fetchDepartments();
     fetchEmployees();
+    fetchCompanyProfile().then(setCompanyProfile);
   }, []);
 
   useEffect(() => {
@@ -264,7 +267,7 @@ export default function PayslipsPage() {
     return designations.find(d => d._id === id)?.name || (typeof id === 'string' ? id : 'N/A');
   };
 
-  const drawPayslipOnDoc = (doc: jsPDF, record: PayrollRecord) => {
+  const drawPayslipOnDoc = async (doc: jsPDF, record: PayrollRecord) => {
     const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
     if (!employee) return false;
 
@@ -273,41 +276,22 @@ export default function PayslipsPage() {
     const primaryColor: [number, number, number] = [30, 41, 59];
     const lightBg: [number, number, number] = [248, 250, 252];
     const borderColor: [number, number, number] = [226, 232, 240];
+    const profile = companyProfile ?? (await fetchCompanyProfile());
 
     const formatCurr = (amount: number) => `Rs. ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const formatValue = (val: number) => `Rs. ${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
-    // Page border
-    doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
-    doc.setLineWidth(0.2);
-    doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
-
-    // Header: PAYSLIP + period
-    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.rect(10, 15, 2, 15, 'F');
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.setFontSize(22);
-    doc.setFont('helvetica', 'bold');
-    doc.text('PAYSLIP', 16, 24);
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 116, 139);
     let periodLabel = `${record.monthName} ${record.year}`;
     if (record.startDate && record.endDate) {
       const startStr = new Date(record.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
       const endStr = new Date(record.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
       periodLabel += ` | ${startStr} - ${endStr}`;
     }
-    doc.text(periodLabel, 16, 30);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(5, 150, 105);
-    doc.text('PRIVATE & CONFIDENTIAL', pageWidth - 15, 22, { align: 'right' });
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(148, 163, 184);
-    doc.text(`Ref: ${record._id.toString().slice(-8).toUpperCase()}`, pageWidth - 15, 27, { align: 'right' });
 
-    // Summary cards row
-    let yPos = 40;
+    let yPos = await drawPayslipCompanyHeader(doc, profile, {
+      periodLabel,
+      refId: record._id.toString().slice(-8).toUpperCase(),
+    });
     const cardWidth = (pageWidth - 30) / 3;
     const cardHeight = 20;
     doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
@@ -498,11 +482,10 @@ export default function PayslipsPage() {
     doc.text('Authorized Signatory', pageWidth - 45, yPos + 5, { align: 'center' });
 
     // Footer
+    drawPayslipFooter(doc, profile, yPos);
     doc.setFontSize(7);
-    doc.setFont('helvetica', 'italic');
     doc.setTextColor(148, 163, 184);
-    doc.text('This is a computer-generated document and does not require a physical signature.', pageWidth / 2, pageHeight - 12, { align: 'center' });
-    doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+    doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, pageWidth / 2, pageHeight - 6, { align: 'center' });
 
     return true;
   };
@@ -512,7 +495,7 @@ export default function PayslipsPage() {
     toast.info('Generating payslip PDF...', { autoClose: 1000 });
     try {
       const doc = new jsPDF();
-      const success = drawPayslipOnDoc(doc, record);
+      const success = await drawPayslipOnDoc(doc, record);
       if (success) {
         doc.save(`Payslip_${record.emp_no}_${record.month}.pdf`);
         toast.success('Payslip PDF generated successfully!');
@@ -544,7 +527,7 @@ export default function PayslipsPage() {
         const record = recordsToExport[i];
         if (addedPages > 0) doc.addPage();
 
-        const success = drawPayslipOnDoc(doc, record);
+        const success = await drawPayslipOnDoc(doc, record);
         if (success) {
           addedPages++;
         }
@@ -883,14 +866,19 @@ export default function PayslipsPage() {
                           />
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex flex-col">
-                            <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                              {employee?.employee_name || 'N/A'}
-                            </span>
-                            <span className="text-xs text-slate-500 font-mono tracking-tighter">
-                              {record.emp_no}
-                            </span>
-                          </div>
+                          <div className="min-w-0" title={[String(employee?.employee_name || 'N/A' || '—'), getDesigName(employee?.designation_id) || undefined, String(record.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors`}>
+    {employee?.employee_name || 'N/A' || '—'}
+  </div>
+  {getDesigName(employee?.designation_id) || undefined ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getDesigName(employee?.designation_id) || undefined}
+    </div>
+  ) : null}
+  {record.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{record.emp_no}</div>
+  ) : null}
+</div>
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex flex-col">

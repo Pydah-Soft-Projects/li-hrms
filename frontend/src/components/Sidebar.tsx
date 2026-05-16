@@ -8,6 +8,8 @@ import { api } from '@/lib/api';
 import { useState, useEffect } from 'react';
 import { isModuleEnabled } from '@/config/moduleCategories';
 import { User } from '@/lib/auth';
+import { CompanyBrandMark } from '@/components/CompanyBrandMark';
+import { useCompanyProfile } from '@/hooks/useCompanyProfile';
 import {
   LayoutDashboard,
   ShieldCheck,
@@ -103,6 +105,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
+  const { profile: companyProfile } = useCompanyProfile();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [secondSalaryNavEnabled, setSecondSalaryNavEnabled] = useState(true);
 
@@ -207,14 +210,10 @@ export default function Sidebar() {
         <div className="flex flex-col h-full overflow-hidden">
           {/* Logo/Header */}
           <div className={`px-4 py-4 flex items-center border-b border-slate-200/60 dark:border-slate-800 ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
-            <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center w-full' : ''}`}>
-              <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 flex-shrink-0">
-                <span className="text-sm font-bold text-white">H</span>
-              </div>
-              {(!isCollapsed || isMobileOpen) && (
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">HRMS</h2>
-              )}
-            </div>
+            <CompanyBrandMark
+              profile={companyProfile}
+              collapsed={isCollapsed && !isMobileOpen}
+            />
 
             {/* Mobile Close */}
             {isMobileOpen && (

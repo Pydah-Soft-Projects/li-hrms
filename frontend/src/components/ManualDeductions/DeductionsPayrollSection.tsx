@@ -164,7 +164,25 @@ export default function DeductionsPayrollSection({
                   />
                 </td>
                 <td className="px-4 py-2 whitespace-nowrap text-sm text-slate-900 dark:text-white">
-                  {emp?.employee_name || emp?.emp_no || d._id}
+                  <div className="min-w-0" title={[String(emp?.employee_name || emp?.emp_no || d._id || '—'), ((typeof emp?.designation_id === 'object' && emp?.designation_id?.name) ? String(emp.designation_id.name) : (typeof emp?.designation === 'object' && emp?.designation?.name) ? String(emp.designation.name) : ''), String(emp?.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {emp?.employee_name || emp?.emp_no || d._id || '—'}
+  </div>
+  {((typeof emp?.designation_id === 'object' && emp?.designation_id?.name) ? String(emp.designation_id.name) : (typeof emp?.designation === 'object' && emp?.designation?.name) ? String(emp.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof emp?.designation_id === 'object' && emp?.designation_id?.name) ? String(emp.designation_id.name) : (typeof emp?.designation === 'object' && emp?.designation?.name) ? String(emp.designation.name) : '')}
+    </div>
+  ) : null}
+  {emp?.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{emp?.emp_no}</div>
+  ) : null}
+  {emp?.leftDate ? (
+    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+      Left{' '}
+      {new Date(emp.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+    </div>
+  ) : null}
+</div>
                 </td>
                 <td className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 max-w-[200px] truncate" title={d.reason}>
                   {d.reason || '—'}

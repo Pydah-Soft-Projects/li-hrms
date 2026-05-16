@@ -45,7 +45,8 @@ import {
 
   X,
   LogOut,
-  Award
+  Award,
+  Building2,
 
 } from 'lucide-react';
 
@@ -74,6 +75,7 @@ import CommunicationSettings from '@/components/settings/CommunicationSettings';
 import FeatureControlSettings from '@/components/settings/FeatureControlSettings';
 
 import GeneralSettings from '@/components/settings/GeneralSettings';
+import CompanySettings from '@/components/settings/CompanySettings';
 
 import AttendanceDeductionsSettings from '@/components/settings/AttendanceDeductionsSettings';
 import ResignationSettings from '@/components/settings/ResignationSettings';
@@ -84,6 +86,8 @@ import PromotionTransferSettings from '@/components/settings/PromotionTransferSe
 type TabType =
 
   | 'general'
+
+  | 'company'
 
   | 'employee'
 
@@ -119,6 +123,7 @@ type TabType =
 
 const VALID_TABS: TabType[] = [
   'general',
+  'company',
   'employee',
   'leave',
   'leave_policy',
@@ -173,6 +178,8 @@ const SettingsPage = () => {
   const menuItems = [
 
     { id: 'general', label: 'General Settings', icon: Globe, color: 'text-blue-500', group: 'Application' },
+
+    { id: 'company', label: 'Company & Brand', icon: Building2, color: 'text-teal-500', group: 'Application' },
 
     { id: 'communications', label: 'Communication', icon: MessageSquare, color: 'text-purple-500', group: 'Application' },
 
@@ -243,6 +250,8 @@ const SettingsPage = () => {
     switch (activeTab) {
 
       case 'general': return <GeneralSettings />;
+
+      case 'company': return <CompanySettings />;
 
       case 'employee': return <EmployeeSettings />;
 

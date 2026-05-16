@@ -7,6 +7,8 @@ import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { fetchCompanyProfile } from '@/lib/companyProfile';
+import { drawPayslipCompanyHeader, drawPayslipFooter } from '@/lib/payslipPdf';
 
 interface PayrollRecord {
   _id: string;
@@ -127,7 +129,7 @@ export default function PayslipDetailPage() {
     }
   };
 
-  const generateDetailedPDF = () => {
+  const generateDetailedPDF = async () => {
     if (!payroll) return;
 
     setGeneratingPDF(true);
@@ -137,50 +139,24 @@ export default function PayslipDetailPage() {
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       const employee = payroll.employeeId;
+      const profile = await fetchCompanyProfile();
 
       // COLORS
       const primaryColor: [number, number, number] = [30, 41, 59]; // slate-800 (Navy)
-      const accentColor: [number, number, number] = [5, 150, 105]; // emerald-600
       const lightBg: [number, number, number] = [248, 250, 252]; // slate-50
       const borderColor: [number, number, number] = [226, 232, 240]; // slate-200
 
-      // ===== PAGE BORDER =====
-      doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
-      doc.setLineWidth(0.2);
-      doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
-
-      // ===== HEADER SECTION =====
-      // Left Accent Bar
-      doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.rect(10, 15, 2, 15, 'F');
-
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.setFontSize(22);
-      doc.setFont('helvetica', 'bold');
-      doc.text('PAYSLIP', 16, 24);
-
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(100, 116, 139); // slate-500
       let periodLabel = `${payroll.monthName} ${payroll.year}`;
       if (payroll.startDate && payroll.endDate) {
         const startStr = new Date(payroll.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
         const endStr = new Date(payroll.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
         periodLabel += ` | ${startStr} - ${endStr}`;
       }
-      doc.text(periodLabel, 16, 30);
 
-      // Company Placeholder / ID
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
-      doc.text('PRIVATE & CONFIDENTIAL', pageWidth - 15, 22, { align: 'right' });
-      doc.setTextColor(148, 163, 184); // slate-400
-      doc.setFont('helvetica', 'normal');
-      doc.text(`Ref: ${payroll._id.toString().slice(-8).toUpperCase()}`, pageWidth - 15, 27, { align: 'right' });
-
-      // ===== SUMMARY CARDS ROW (Dashboard Style) =====
-      let yPos = 40;
+      let yPos = await drawPayslipCompanyHeader(doc, profile, {
+        periodLabel,
+        refId: payroll._id.toString().slice(-8).toUpperCase(),
+      });
       const cardWidth = (pageWidth - 30) / 3;
       const cardHeight = 20;
 
@@ -371,12 +347,10 @@ export default function PayslipDetailPage() {
       doc.text('Employee Signature', 45, yPos + 5, { align: 'center' });
       doc.text('Authorized Signatory', pageWidth - 45, yPos + 5, { align: 'center' });
 
-      // ===== FOOTER =====
+      drawPayslipFooter(doc, profile, yPos);
       doc.setFontSize(7);
-      doc.setFont('helvetica', 'italic');
       doc.setTextColor(148, 163, 184);
-      doc.text('This is a computer-generated document and does not require a physical signature.', pageWidth / 2, pageHeight - 12, { align: 'center' });
-      doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+      doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, pageWidth / 2, pageHeight - 6, { align: 'center' });
 
       doc.save(`Payslip_${employee.emp_no}_${payroll.month}.pdf`);
       toast.success('Executive PDF generated successfully!');
