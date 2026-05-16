@@ -375,14 +375,30 @@ export default function ConfusedShiftsPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="mb-4 flex items-center gap-4">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                          {record.employee?.employee_name || record.employeeNumber}
-                        </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          {record.employeeNumber} • {record.employee?.department?.name || '-'} • {record.employee?.designation?.name || '-'}
-                        </p>
-                      </div>
+                      <div className="min-w-0" title={[String(record.employee?.employee_name || record.employeeNumber || '—'), ((typeof record.employee?.designation_id === 'object' && record.employee?.designation_id?.name) ? String(record.employee.designation_id.name) : (typeof record.employee?.designation === 'object' && record.employee?.designation?.name) ? String(record.employee.designation.name) : ''), String(record.employeeNumber || record.employee?.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {record.employee?.employee_name || record.employeeNumber || '—'}
+  </div>
+  {((typeof record.employee?.designation_id === 'object' && record.employee?.designation_id?.name) ? String(record.employee.designation_id.name) : (typeof record.employee?.designation === 'object' && record.employee?.designation?.name) ? String(record.employee.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof record.employee?.designation_id === 'object' && record.employee?.designation_id?.name) ? String(record.employee.designation_id.name) : (typeof record.employee?.designation === 'object' && record.employee?.designation?.name) ? String(record.employee.designation.name) : '')}
+    </div>
+  ) : null}
+  {record.employeeNumber || record.employee?.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{record.employeeNumber || record.employee?.emp_no}</div>
+  ) : null}
+  {((typeof record.employee?.department_id === 'object' && record.employee?.department_id?.name) ? String(record.employee.department_id.name) : (typeof record.employee?.department === 'object' && record.employee?.department?.name) ? String(record.employee.department.name) : '') ? (
+    <div className="mt-0.5 truncate text-[8px] font-bold uppercase tracking-wider text-blue-500/80 dark:text-blue-400/80">
+      {((typeof record.employee?.department_id === 'object' && record.employee?.department_id?.name) ? String(record.employee.department_id.name) : (typeof record.employee?.department === 'object' && record.employee?.department?.name) ? String(record.employee.department.name) : '')}
+    </div>
+  ) : null}
+  {record.employee?.leftDate ? (
+    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+      Left{' '}
+      {new Date(record.employee.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+    </div>
+  ) : null}
+</div>
                       <div className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-medium text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
                         {record.status.toUpperCase()}
                       </div>

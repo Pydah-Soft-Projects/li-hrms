@@ -204,14 +204,19 @@ export default function SecondSalaryPayslipsPage() {
                                                 <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-100 to-emerald-200 dark:from-emerald-900 dark:to-emerald-800 flex items-center justify-center text-emerald-700 dark:text-emerald-300 font-bold text-xs uppercase">
                                                     {record.employeeId?.employee_name?.[0] || 'E'}
                                                 </div>
-                                                <div>
-                                                    <div className="text-sm font-semibold text-slate-900 dark:text-white truncate max-w-[200px]">
-                                                        {record.employeeId?.employee_name || 'Unknown'}
-                                                    </div>
-                                                    <div className="text-[10px] text-slate-400">
-                                                        {record.employeeId?.designation_id?.name || 'Employee'}
-                                                    </div>
-                                                </div>
+                                                <div className="min-w-0" title={[String(record.employeeId?.employee_name || 'Unknown' || '—'), record.employeeId?.designation_id?.name || undefined, String(record.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {record.employeeId?.employee_name || 'Unknown' || '—'}
+  </div>
+  {record.employeeId?.designation_id?.name || undefined ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {record.employeeId?.designation_id?.name || undefined}
+    </div>
+  ) : null}
+  {record.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{record.emp_no}</div>
+  ) : null}
+</div>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400 font-medium">

@@ -719,10 +719,19 @@ export default function CCLPage() {
                           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 font-black text-xs">
                             {(ccl.employeeId?.employee_name || ccl.emp_no).charAt(0).toUpperCase()}
                           </div>
-                          <div>
-                            <div className="text-sm font-bold text-slate-900 dark:text-white transition-colors group-hover:text-indigo-600 dark:group-hover:text-indigo-400">{ccl.employeeId?.employee_name || ccl.emp_no}</div>
-                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{ccl.emp_no}</div>
-                          </div>
+                          <div className="min-w-0" title={[String(ccl.employeeId?.employee_name || ccl.emp_no || '—'), ((typeof ccl.employeeId?.designation_id === 'object' && ccl.employeeId?.designation_id?.name) ? String(ccl.employeeId.designation_id.name) : (typeof ccl.employeeId?.designation === 'object' && ccl.employeeId?.designation?.name) ? String(ccl.employeeId.designation.name) : ''), String(ccl.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm transition-colors group-hover:text-indigo-600 dark:group-hover:text-indigo-400`}>
+    {ccl.employeeId?.employee_name || ccl.emp_no || '—'}
+  </div>
+  {((typeof ccl.employeeId?.designation_id === 'object' && ccl.employeeId?.designation_id?.name) ? String(ccl.employeeId.designation_id.name) : (typeof ccl.employeeId?.designation === 'object' && ccl.employeeId?.designation?.name) ? String(ccl.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof ccl.employeeId?.designation_id === 'object' && ccl.employeeId?.designation_id?.name) ? String(ccl.employeeId.designation_id.name) : (typeof ccl.employeeId?.designation === 'object' && ccl.employeeId?.designation?.name) ? String(ccl.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {ccl.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{ccl.emp_no}</div>
+  ) : null}
+</div>
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-3 py-4">
@@ -816,14 +825,19 @@ export default function CCLPage() {
                       <div className="h-10 w-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-700 dark:text-indigo-400 font-bold text-xs shrink-0">
                         {(ccl.employeeId?.employee_name || ccl.emp_no).charAt(0).toUpperCase()}
                       </div>
-                      <div>
-                        <h4 className="font-bold text-slate-900 dark:text-white text-sm">
-                          {ccl.employeeId?.employee_name || ccl.emp_no}
-                        </h4>
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                          {ccl.emp_no}
-                        </p>
-                      </div>
+                          <div className="min-w-0" title={[String(ccl.employeeId?.employee_name || ccl.emp_no || '—'), ((typeof ccl.employeeId?.designation_id === 'object' && ccl.employeeId?.designation_id?.name) ? String(ccl.employeeId.designation_id.name) : (typeof ccl.employeeId?.designation === 'object' && ccl.employeeId?.designation?.name) ? String(ccl.employeeId.designation.name) : ''), String(ccl.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {ccl.employeeId?.employee_name || ccl.emp_no || '—'}
+  </div>
+  {((typeof ccl.employeeId?.designation_id === 'object' && ccl.employeeId?.designation_id?.name) ? String(ccl.employeeId.designation_id.name) : (typeof ccl.employeeId?.designation === 'object' && ccl.employeeId?.designation?.name) ? String(ccl.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof ccl.employeeId?.designation_id === 'object' && ccl.employeeId?.designation_id?.name) ? String(ccl.employeeId.designation_id.name) : (typeof ccl.employeeId?.designation === 'object' && ccl.employeeId?.designation?.name) ? String(ccl.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {ccl.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{ccl.emp_no}</div>
+  ) : null}
+</div>
                     </div>
                     <StatusBadge status={ccl.status} />
                   </div>
@@ -1065,10 +1079,19 @@ export default function CCLPage() {
                     <div className="h-12 w-12 rounded-xl bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 flex items-center justify-center font-black text-lg">
                       {(selectedCCL.employeeId?.employee_name || selectedCCL.emp_no).charAt(0).toUpperCase()}
                     </div>
-                    <div>
-                      <h3 className="font-bold text-slate-900 dark:text-white">{selectedCCL.employeeId?.employee_name || selectedCCL.emp_no}</h3>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{selectedCCL.emp_no}</p>
-                    </div>
+                    <div className="min-w-0" title={[String(selectedCCL.employeeId?.employee_name || selectedCCL.emp_no || '—'), ((typeof selectedCCL.employeeId?.designation_id === 'object' && selectedCCL.employeeId?.designation_id?.name) ? String(selectedCCL.employeeId.designation_id.name) : (typeof selectedCCL.employeeId?.designation === 'object' && selectedCCL.employeeId?.designation?.name) ? String(selectedCCL.employeeId.designation.name) : ''), String(selectedCCL.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {selectedCCL.employeeId?.employee_name || selectedCCL.emp_no || '—'}
+  </div>
+  {((typeof selectedCCL.employeeId?.designation_id === 'object' && selectedCCL.employeeId?.designation_id?.name) ? String(selectedCCL.employeeId.designation_id.name) : (typeof selectedCCL.employeeId?.designation === 'object' && selectedCCL.employeeId?.designation?.name) ? String(selectedCCL.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof selectedCCL.employeeId?.designation_id === 'object' && selectedCCL.employeeId?.designation_id?.name) ? String(selectedCCL.employeeId.designation_id.name) : (typeof selectedCCL.employeeId?.designation === 'object' && selectedCCL.employeeId?.designation?.name) ? String(selectedCCL.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {selectedCCL.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{selectedCCL.emp_no}</div>
+  ) : null}
+</div>
                   </div>
                   <div className="flex flex-col items-end gap-1.5">
                     <StatusBadge status={selectedCCL.status} />

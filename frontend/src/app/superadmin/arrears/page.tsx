@@ -737,17 +737,25 @@ export default function ArrearsPage() {
                           {getEmployeeName(ar.employee).charAt(0).toUpperCase()}
                           <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-white bg-emerald-500 dark:border-slate-900" />
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-bold text-slate-950 dark:text-white whitespace-normal break-words leading-5">{getEmployeeName(ar.employee)}</p>
-                          <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 whitespace-normal break-words leading-5">
-                            {(() => {
-                              const empNo = sanitizeDisplayValue(ar.employee.emp_no);
-                              const designation = getDesignationName(ar.employee);
-                              if (empNo && designation) return `${empNo} · ${designation}`;
-                              return empNo || designation || '—';
-                            })()}
-                          </p>
-                        </div>
+                        <div className="min-w-0 min-w-0" title={[String(getEmployeeName(ar.employee) || '—'), getDesignationName(ar.employee), String(ar.employee?.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName(ar.employee) || '—'}
+  </div>
+  {getDesignationName(ar.employee) ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getDesignationName(ar.employee)}
+    </div>
+  ) : null}
+  {ar.employee?.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{ar.employee?.emp_no}</div>
+  ) : null}
+  {ar.employee?.leftDate ? (
+    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+      Left{' '}
+      {new Date(ar.employee.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+    </div>
+  ) : null}
+</div>
                       </div>
                     </td>
                     <td className="px-8 py-6 text-sm font-semibold text-slate-800 dark:text-slate-200">

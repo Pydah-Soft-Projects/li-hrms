@@ -639,8 +639,25 @@ export default function AttendanceReportsTab() {
                                 records.map((record) => (
                                     <tr key={record._id} className="hover:bg-slate-50/80 transition-all dark:hover:bg-slate-800/50">
                                         <td className="px-4 py-3">
-                                            <p className="text-xs font-bold text-slate-900 dark:text-slate-100">{record.employee?.employee_name}</p>
-                                            <p className="text-[10px] text-slate-400 font-bold mt-0.5">{record.employeeNumber}</p>
+                                            <div className="min-w-0" title={[String(record.employee?.employee_name || '—'), ((typeof record.employee?.designation_id === 'object' && record.employee?.designation_id?.name) ? String(record.employee.designation_id.name) : (typeof record.employee?.designation === 'object' && record.employee?.designation?.name) ? String(record.employee.designation.name) : ''), String(record.employeeNumber || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {record.employee?.employee_name || '—'}
+  </div>
+  {((typeof record.employee?.designation_id === 'object' && record.employee?.designation_id?.name) ? String(record.employee.designation_id.name) : (typeof record.employee?.designation === 'object' && record.employee?.designation?.name) ? String(record.employee.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof record.employee?.designation_id === 'object' && record.employee?.designation_id?.name) ? String(record.employee.designation_id.name) : (typeof record.employee?.designation === 'object' && record.employee?.designation?.name) ? String(record.employee.designation.name) : '')}
+    </div>
+  ) : null}
+  {record.employeeNumber ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{record.employeeNumber}</div>
+  ) : null}
+  {record.employee?.leftDate ? (
+    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+      Left{' '}
+      {new Date(record.employee.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+    </div>
+  ) : null}
+</div>
                                         </td>
                                         <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-bold whitespace-nowrap">
                                             {dayjs(record.date).format('DD MMM, YYYY')}

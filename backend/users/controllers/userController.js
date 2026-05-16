@@ -1,5 +1,6 @@
 const User = require('../model/User');
 const Employee = require('../../employees/model/Employee');
+const { EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 const Department = require('../../departments/model/Department');
 const Division = require('../../departments/model/Division');
@@ -1019,7 +1020,8 @@ exports.getEmployeesWithoutAccount = async (req, res) => {
       .populate('department_id', 'name code')
       .populate('designation_id', 'name')
       .select('emp_no employee_name email phone_number department_id designation_id')
-      .sort({ emp_no: 1 });
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION);
 
     res.status(200).json({
       success: true,

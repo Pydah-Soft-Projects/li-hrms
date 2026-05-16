@@ -167,6 +167,46 @@ const profileUpload = multer({
         }
     }
 });
+/**
+ * @desc    Upload company logo / branding image
+ * @route   POST /api/upload/company-logo
+ * @access  Private
+ */
+router.post('/company-logo', protect, profileUpload.single('file'), async (req, res) => {
+    try {
+        if (!isS3Configured()) {
+            return res.status(500).json({
+                success: false,
+                message: 'S3 storage is not configured.',
+            });
+        }
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'No file uploaded',
+            });
+        }
+        const fileUrl = await uploadToS3(
+            req.file.buffer,
+            req.file.originalname,
+            req.file.mimetype,
+            'company-branding'
+        );
+        res.json({
+            success: true,
+            url: fileUrl,
+            filename: req.file.originalname,
+        });
+    } catch (error) {
+        console.error('Company logo upload error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to upload company logo',
+            error: error.message,
+        });
+    }
+});
+
 router.post('/profile', protect, profileUpload.single('file'), async (req, res) => {
     try {
         if (!isS3Configured()) {

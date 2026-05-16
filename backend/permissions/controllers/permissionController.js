@@ -12,6 +12,28 @@ const {
 } = require('../../shared/middleware/dataScopeMiddleware');
 const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
 
+const POPULATE_EMPLOYEE_OT_PERMISSION = {
+  path: 'employeeId',
+  select: 'emp_no employee_name department_id designation_id division_id leftDate',
+  populate: [
+    { path: 'designation_id', select: 'name' },
+    { path: 'designation', select: 'name' },
+    { path: 'department_id', select: 'name' },
+    { path: 'division_id', select: 'name code' },
+  ],
+};
+
+const POPULATE_EMPLOYEE_OT_PERMISSION_WITH_PHOTO = {
+  path: 'employeeId',
+  select: 'emp_no employee_name department_id designation_id division_id leftDate photo',
+  populate: [
+    { path: 'designation_id', select: 'name' },
+    { path: 'designation', select: 'name' },
+    { path: 'department_id', select: 'name' },
+    { path: 'division_id', select: 'name code' },
+  ],
+};
+
 const formatPermissionDate = (value) => {
   if (!value) return '';
   const date = new Date(value);
@@ -206,7 +228,7 @@ exports.createPermission = async (req, res) => {
     }
 
     const permissionRequest = await Permission.findById(result.data._id)
-      .populate('employeeId', 'emp_no employee_name department designation')
+      .populate(POPULATE_EMPLOYEE_OT_PERMISSION)
       .populate('requestedBy', 'name email');
 
     res.status(201).json({
@@ -282,7 +304,7 @@ exports.getPermissions = async (req, res) => {
     const total = await Permission.countDocuments(combinedQuery);
 
     const permissions = await Permission.find(combinedQuery)
-      .populate('employeeId', 'emp_no employee_name department designation')
+      .populate(POPULATE_EMPLOYEE_OT_PERMISSION)
       .populate('requestedBy', 'name email')
       .populate('approvedBy', 'name email')
       .populate('rejectedBy', 'name email')
@@ -349,7 +371,7 @@ exports.getPendingPermissionApprovals = async (req, res) => {
     const total = await Permission.countDocuments(baseFilter);
 
     const permissions = await Permission.find(baseFilter)
-      .populate('employeeId', 'emp_no employee_name department designation')
+      .populate(POPULATE_EMPLOYEE_OT_PERMISSION)
       .populate('requestedBy', 'name email')
       .sort({ requestedAt: -1 })
       .skip(skip)
@@ -382,7 +404,7 @@ exports.getPendingPermissionApprovals = async (req, res) => {
 exports.getPermission = async (req, res) => {
   try {
     const permission = await Permission.findById(req.params.id)
-      .populate('employeeId', 'emp_no employee_name department designation photo')
+      .populate(POPULATE_EMPLOYEE_OT_PERMISSION_WITH_PHOTO)
       .populate('requestedBy', 'name email')
       .populate('approvedBy', 'name email')
       .populate('rejectedBy', 'name email');
@@ -433,7 +455,7 @@ exports.approvePermission = async (req, res) => {
     }
 
     const permission = await Permission.findById(req.params.id)
-      .populate('employeeId', 'emp_no employee_name department designation photo')
+      .populate(POPULATE_EMPLOYEE_OT_PERMISSION_WITH_PHOTO)
       .populate('approvedBy', 'name email');
 
     // Include warnings in response if any
@@ -491,7 +513,7 @@ exports.rejectPermission = async (req, res) => {
     }
 
     const permission = await Permission.findById(req.params.id)
-      .populate('employeeId', 'emp_no employee_name department designation')
+      .populate(POPULATE_EMPLOYEE_OT_PERMISSION)
       .populate('rejectedBy', 'name email');
 
     res.status(200).json({
@@ -558,7 +580,7 @@ exports.getOutpass = async (req, res) => {
 exports.getQRCode = async (req, res) => {
   try {
     const permission = await Permission.findById(req.params.id)
-      .populate('employeeId', 'emp_no employee_name department designation');
+      .populate(POPULATE_EMPLOYEE_OT_PERMISSION);
 
     if (!permission) {
       return res.status(404).json({

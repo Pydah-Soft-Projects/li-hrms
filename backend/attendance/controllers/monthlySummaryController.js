@@ -1,4 +1,5 @@
 const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
+const { EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 const { calculateMonthlySummary, calculateAllEmployeesSummary, deleteAllMonthlySummaries } = require('../services/summaryCalculationService');
 const Employee = require('../../employees/model/Employee');
 const { filterMonthlySummaryForEmploymentBounds } = require('../services/employmentBoundsSummaryFilter');
@@ -102,7 +103,8 @@ exports.getAllMonthlySummaries = async (req, res) => {
 
     const summaries = await MonthlyAttendanceSummary.find(query)
       .populate('employeeId', 'employee_name emp_no department_id designation_id')
-      .sort({ emp_no: 1 });
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION);
 
     res.status(200).json({
       success: true,

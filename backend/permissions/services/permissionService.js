@@ -670,7 +670,16 @@ const rejectPermissionRequest = async (permissionId, userId, reason, userRole) =
 const getOutpassByQR = async (qrCode) => {
   try {
     const permission = await Permission.findOne({ qrCode: qrCode })
-      .populate('employeeId', 'emp_no employee_name department designation photo')
+      .populate({
+        path: 'employeeId',
+        select: 'emp_no employee_name department_id designation_id division_id leftDate photo',
+        populate: [
+          { path: 'designation_id', select: 'name' },
+          { path: 'designation', select: 'name' },
+          { path: 'department_id', select: 'name' },
+          { path: 'division_id', select: 'name code' },
+        ],
+      })
       .populate('approvedBy', 'name email');
 
     if (!permission) {

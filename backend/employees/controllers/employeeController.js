@@ -22,7 +22,7 @@ const {
 } = require('../../employee-applications/services/fieldMappingService');
 const { resolveForEmployee } = require('../../payroll/services/allowanceDeductionResolverService');
 const mongoose = require('mongoose');
-const { compareEmpNo, EMP_NO_SORT } = require('../../shared/utils/employeeSort');
+const { compareEmpNo, EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 const {
   isHRMSConnected,
   createEmployeeMSSQL,
@@ -544,6 +544,7 @@ exports.getAllEmployees = async (req, res) => {
         .populate('designation_id', 'name code')
         .populate('employee_group_id', 'name code isActive')
         .sort(EMP_NO_SORT)
+        .collation(EMP_NO_COLLATION)
         .skip(skip)
         .limit(parseInt(limit));
 
@@ -659,6 +660,7 @@ exports.getBirthdaysSummary = async (req, res) => {
         .populate('department_id', 'name code')
         .populate('designation_id', 'name code')
         .sort(EMP_NO_SORT)
+        .collation(EMP_NO_COLLATION)
         .lean();
       data = mongoEmployees.map(mapMongoBirthdayRow);
     }

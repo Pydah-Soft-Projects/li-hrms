@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useMemo, type MouseEvent } from 'react';
 
 import { api } from '@/lib/api';
 import { sortByEmpNo } from '@/lib/employeeSort';
+import { designationAccentClass } from '@/lib/designationDisplay';
 import Swal from 'sweetalert2';
 
 import {
@@ -3550,7 +3551,7 @@ export default function AttendancePage() {
   const attendanceTableColSpan = useMemo(() => {
     const summaryCols =
       tableType === 'complete' && usePayRegisterAllComplete
-        ? 12
+        ? 14
         : tableType === 'complete'
         ? Math.max(1, visibleWorkspaceCompleteKeys.length)
         : tableType === 'present_absent'
@@ -3564,7 +3565,7 @@ export default function AttendancePage() {
                 : tableType === 'ot'
                   ? 2
                   : 0;
-    return 1 + daysArray.length + summaryCols;
+    return 2 + daysArray.length + summaryCols;
   }, [tableType, daysArray.length, visibleWorkspaceCompleteKeys.length, usePayRegisterAllComplete]);
 
   const activeHighlightDates = useMemo(() => {
@@ -3642,7 +3643,7 @@ export default function AttendancePage() {
 
   return (
 
-    <div className="relative min-h-screen">
+    <div className="relative min-h-screen pb-10 pt-1">
 
       {/* Background */}
 
@@ -3652,17 +3653,20 @@ export default function AttendancePage() {
 
 
 
-      <div className="relative z-10 mx-auto max-w-[1920px]">
+      <div className="relative z-10 mx-auto max-w-[1920px] px-2 sm:px-4 md:px-6">
 
+        {/* Sticky toolbar — horizontal scroll (superadmin-style) */}
+        <div className="sticky top-4 z-40 px-2 md:px-4 mb-2 md:mb-6">
+          <div className="max-w-[1920px] mx-auto md:bg-white/70 md:dark:bg-slate-900/70 md:backdrop-blur-2xl md:rounded-[2.5rem] md:border md:border-white/20 md:dark:border-slate-800 md:shadow-2xl md:shadow-slate-200/50 md:dark:shadow-none">
         {/* Header */}
 
-        <div className="mb-6 flex flex-col sm:flex-row items-center sm:justify-between gap-4 pb-2">
+        <div className="mb-0 flex flex-nowrap items-center justify-between gap-4 overflow-x-auto pb-2 scrollbar-hide px-3 sm:px-6 py-2 md:py-3 min-w-0 min-h-[4.5rem]">
 
-          <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+          <div className="flex flex-nowrap items-center gap-4 shrink-0">
 
             {/* Title Section */}
 
-            <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
+            <div className="flex flex-nowrap items-center gap-3 shrink-0">
 
               <div className="flex flex-col">
                 <h1 className="text-xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">Attendance</h1>
@@ -3811,7 +3815,7 @@ export default function AttendancePage() {
 
             {/* Employee: table type + view mode (Table / Cards) */}
             {isEmployee && (
-              <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+              <div className="flex flex-nowrap items-center gap-2 p-2 bg-slate-100/50 shrink-0 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
                 <select
                   value={tableType}
                   onChange={(e) => setTableType(e.target.value as any)}
@@ -3846,7 +3850,7 @@ export default function AttendancePage() {
 
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+          <div className="flex flex-nowrap items-center gap-3 shrink-0">
 
             {/* Month/Year Navigation */}
 
@@ -3944,7 +3948,7 @@ export default function AttendancePage() {
 
 
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-nowrap items-center gap-2 shrink-0">
               {hasManagePermission && (
                 <button
                   onClick={handleSyncShifts}
@@ -4012,7 +4016,8 @@ export default function AttendancePage() {
           </div>
 
         </div>
-
+          </div>
+        </div>
 
         {/* Employee: Monthly summary block above content */}
         {isEmployee && filteredMonthlyData.length > 0 && (() => {
@@ -4402,13 +4407,19 @@ export default function AttendancePage() {
             <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
               <div ref={tableScrollRef} className="max-h-[70vh] overflow-auto scrollbar-hide">
                 <table className="w-full border-separate border-spacing-0 text-xs">
-                  <thead className="sticky top-0 z-20 shadow-sm">
+                  <thead className="sticky top-0 z-30 bg-slate-50 shadow-sm dark:bg-slate-800">
                     {tableType === 'complete' && usePayRegisterAllComplete ? (
                       <>
                         <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800">
                           <th
                             rowSpan={2}
-                            className="sticky left-0 top-0 z-30 w-[160px] min-w-[160px] border-r border-b border-slate-200 bg-slate-100 px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]"
+                            className="sticky left-0 top-0 z-[36] w-10 min-w-[2.5rem] border-r border-b border-slate-200 bg-slate-200/90 px-1 py-2.5 text-center text-[9px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]"
+                          >
+                            #
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="sticky left-10 top-0 z-[35] w-[148px] min-w-[148px] border-r border-b border-slate-200 bg-slate-100 px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]"
                           >
                             Employee
                           </th>
@@ -4438,7 +4449,13 @@ export default function AttendancePage() {
                             W.off
                           </th>
                           <th rowSpan={2} className="w-[64px] min-w-[64px] border-r border-slate-200 bg-purple-50 dark:bg-purple-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-purple-800">Hol</th>
-                          <th rowSpan={2} className="w-[78px] min-w-[78px] border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-yellow-900">T.leave</th>
+                          <th
+                            colSpan={2}
+                            className="border-b border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/25 px-1 py-1.5 text-center text-[9px] font-bold uppercase text-yellow-900 dark:text-yellow-100"
+                            title="Total leave broken down into paid vs LOP (loss of pay) leave units"
+                          >
+                            Total leave
+                          </th>
                           <th rowSpan={2} className="w-[64px] min-w-[64px] border-r border-slate-200 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-indigo-800">OD</th>
                           <th rowSpan={2} className="w-[64px] min-w-[64px] border-r border-slate-200 bg-red-50 dark:bg-red-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-red-800">Abs</th>
                           <th
@@ -4472,6 +4489,18 @@ export default function AttendancePage() {
                         </tr>
                         <tr className="border-b border-slate-200 bg-slate-50/90 dark:border-slate-800">
                           <th
+                            className="w-[52px] min-w-[52px] border-r border-slate-200 bg-amber-50/95 dark:bg-amber-900/30 px-1 py-1.5 text-center text-[8px] font-bold text-amber-900 dark:text-amber-100"
+                            title="Paid leave day-units"
+                          >
+                            Paid
+                          </th>
+                          <th
+                            className="w-[52px] min-w-[52px] border-r border-slate-200 bg-orange-50/95 dark:bg-orange-900/25 px-1 py-1.5 text-center text-[8px] font-bold text-orange-900 dark:text-orange-100"
+                            title="LOP (loss of pay) leave day-units"
+                          >
+                            LOP
+                          </th>
+                          <th
                             className="w-[60px] min-w-[60px] border-r border-slate-200 bg-red-50/90 dark:bg-red-950/30 px-1 py-1.5 text-center text-[8px] font-bold text-red-800 dark:text-red-200"
                             title="Absent days (deduction / calendar absent total)"
                           >
@@ -4479,7 +4508,7 @@ export default function AttendancePage() {
                           </th>
                           <th
                             className="w-[60px] min-w-[60px] border-r border-slate-200 bg-red-50/90 dark:bg-red-950/30 px-1 py-1.5 text-center text-[8px] font-bold text-red-800 dark:text-red-200"
-                            title="Loss of pay (LOP) leave"
+                            title="Loss of pay (LOP) leave — deduction block"
                           >
                             LOP
                           </th>
@@ -4496,7 +4525,10 @@ export default function AttendancePage() {
                       </>
                     ) : (
                     <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800">
-                      <th className="sticky left-0 top-0 z-30 w-[160px] min-w-[160px] border-r border-b border-slate-200 bg-slate-100 px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                      <th className="sticky left-0 top-0 z-[36] w-10 min-w-[2.5rem] border-r border-b border-slate-200 bg-slate-200/90 px-1 py-2.5 text-center text-[9px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                        #
+                      </th>
+                      <th className="sticky left-10 top-0 z-[35] w-[148px] min-w-[148px] border-r border-b border-slate-200 bg-slate-100 px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
                         Employee
                       </th>
                       {daysArray.map((dateStr) => {
@@ -4682,7 +4714,10 @@ export default function AttendancePage() {
                         {/* Skeleton Loading - only tbody cells */}
                         {[1, 2, 3, 4, 5].map((i) => (
                           <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                            <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                            <td className="sticky left-0 z-[11] w-10 min-w-[2.5rem] border-r border-slate-200 bg-white px-1 py-2 dark:border-slate-700 dark:bg-slate-950">
+                              <div className="mx-auto h-4 w-4 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
+                            </td>
+                            <td className="sticky left-10 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
                               <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                               <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                             </td>
@@ -4695,7 +4730,7 @@ export default function AttendancePage() {
                               </td>
                             ))}
                             {tableType === 'complete' && usePayRegisterAllComplete
-                              ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
+                              ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((i) => (
                                   <td
                                     key={i}
                                     className="border-r border-slate-200 px-2 py-2 text-center dark:border-slate-700 bg-slate-50/80"
@@ -4781,7 +4816,7 @@ export default function AttendancePage() {
                             </td>
                           </tr>
                         ) : (
-                          filteredMonthlyData.map((item) => {
+                          filteredMonthlyData.map((item, rowIdx) => {
                             const presentFromSummary = getPresentExcludingOD(item.summary);
                             const daysPresent = presentFromSummary != null
                               ? presentFromSummary
@@ -4846,9 +4881,20 @@ export default function AttendancePage() {
 
                             const isHighAbsenteeism = monthAbsent > 2;
 
+                            const workspaceDesignationName =
+                              (item.employee as any).designation?.name ||
+                              ((item.employee as any).designation_id &&
+                              typeof (item.employee as any).designation_id === 'object'
+                                ? (item.employee as any).designation_id.name
+                                : '') ||
+                              '';
+
                             return (
                               <tr key={item.employee._id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 ${isHighAbsenteeism ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}>
-                                <td className={`sticky left-0 z-10 border-r border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:text-white shadow-[2px_0_5px_rgba(0,0,0,0.05)] ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-900'}`}>
+                                <td className={`sticky left-0 z-[11] w-10 min-w-[2.5rem] border-r border-slate-200 px-1 py-2 text-center text-[11px] font-semibold tabular-nums text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)] ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-950'}`}>
+                                  {rowIdx + 1}
+                                </td>
+                                <td className={`sticky left-10 z-10 border-r border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:text-white shadow-[2px_0_5px_rgba(0,0,0,0.05)] ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-900'}`}>
                                   <div>
                                     <div className="flex items-center gap-2">
                                       {tableType === 'ot' && !otAutoCreateEnabled && (
@@ -4872,6 +4918,13 @@ export default function AttendancePage() {
                                       </div>
 
                                     </div>
+                                    {workspaceDesignationName ? (
+                                      <div
+                                        className={`text-[9px] font-semibold italic mt-1 truncate ${designationAccentClass(workspaceDesignationName)}`}
+                                      >
+                                        {workspaceDesignationName}
+                                      </div>
+                                    ) : null}
                                     <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
                                       {item.employee.emp_no}
                                       {item.employee.department && ` • ${(item.employee.department as any)?.name || ''}`}
@@ -5075,18 +5128,18 @@ export default function AttendancePage() {
                                         {prAllRow.holidays.toFixed(1)}
                                       </td>
                                       <td
-                                        onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'leaves', 'leaves', item)}
-                                        className="border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-yellow-900 dark:text-yellow-100 cursor-pointer"
+                                        onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'paidLeaves', 'leaves', item)}
+                                        className="border-r border-slate-200 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-2 text-center text-[11px] font-bold text-amber-900 dark:text-amber-100 cursor-pointer"
+                                        title="Paid leave day-units"
                                       >
-                                        <div className="flex flex-col items-center gap-0.5 leading-tight">
-                                          <span>{prAllRow.totalLeaves.toFixed(1)}</span>
-                                          <span
-                                            className="text-[8px] font-semibold text-yellow-900/90"
-                                            title={`Leave by nature: ${paidLopSublabel(prAllRow.paidLeaves, prAllRow.dedLop)}`}
-                                          >
-                                            {paidLopSublabel(prAllRow.paidLeaves, prAllRow.dedLop)}
-                                          </span>
-                                        </div>
+                                        {prAllRow.paidLeaves.toFixed(1)}
+                                      </td>
+                                      <td
+                                        onClick={() => handleSummaryClick(item.employee._id, 'lopLeaves')}
+                                        className="border-r border-slate-200 bg-orange-50 dark:bg-orange-900/25 px-1.5 py-2 text-center text-[11px] font-bold text-orange-900 dark:text-orange-100 cursor-pointer"
+                                        title="LOP (loss of pay) leave day-units"
+                                      >
+                                        {prAllRow.dedLop.toFixed(1)}
                                       </td>
                                       <td
                                         onClick={() => handleSummaryClick(item.employee._id, 'ods')}

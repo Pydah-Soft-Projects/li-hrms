@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { compareEmpNo, EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 const PayrollRecord = require('../model/PayrollRecord');
 const PayrollTransaction = require('../model/PayrollTransaction');
 const SecondSalaryRecord = require('../model/SecondSalaryRecord');
@@ -1086,7 +1087,8 @@ exports.getPaysheetData = async (req, res) => {
           designationId: desFilt,
           employeeGroupId: groupFilt,
         });
-        const emps = await Employee.find(employeeQuery).select('_id');
+        const emps = await Employee.find(employeeQuery).select('_id emp_no').lean();
+        emps.sort((a, b) => compareEmpNo(a.emp_no, b.emp_no));
         targetEmployeeIds = emps.map((e) => e._id.toString());
       }
 
@@ -1125,7 +1127,8 @@ exports.getPaysheetData = async (req, res) => {
           ],
         })
         .populate('division_id', 'name')
-        .sort({ emp_no: 1 })
+        .sort(EMP_NO_SORT)
+        .collation(EMP_NO_COLLATION)
         .lean();
 
       const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
@@ -1264,7 +1267,8 @@ exports.getPaysheetData = async (req, res) => {
             { path: 'designation_id', select: 'name' },
           ],
         })
-        .sort({ emp_no: 1 })
+        .sort(EMP_NO_SORT)
+        .collation(EMP_NO_COLLATION)
         .lean();
 
       let filtered = records;
@@ -1370,7 +1374,8 @@ exports.getPaysheetData = async (req, res) => {
         designationId: desFilt,
         employeeGroupId: groupFilt,
       });
-      const emps = await Employee.find(employeeQuery).select('_id');
+      const emps = await Employee.find(employeeQuery).select('_id emp_no').lean();
+      emps.sort((a, b) => compareEmpNo(a.emp_no, b.emp_no));
       targetEmployeeIds = emps.map((e) => e._id.toString());
     }
 
@@ -1522,7 +1527,8 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
         designationId: desFilt,
         employeeGroupId: groupFilt,
       });
-      const emps = await Employee.find(employeeQuery).select('_id');
+      const emps = await Employee.find(employeeQuery).select('_id emp_no').lean();
+      emps.sort((a, b) => compareEmpNo(a.emp_no, b.emp_no));
       targetEmployeeIds = emps.map((e) => e._id.toString());
     }
 
@@ -1544,7 +1550,8 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
           { path: 'designation_id', select: 'name' },
         ],
       })
-      .sort({ emp_no: 1 })
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION)
       .lean();
 
     const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
@@ -1891,6 +1898,7 @@ exports.getPayrollRecords = async (req, res) => {
         ]
       })
       .sort({ month: -1, emp_no: 1 })
+      .collation(EMP_NO_COLLATION)
       .limit(1000); // Limit to prevent large queries
 
     console.log(`[getPayrollRecords] Final Query executed:`, JSON.stringify(query));

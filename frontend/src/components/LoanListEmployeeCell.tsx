@@ -13,7 +13,7 @@ const avatarGradients: Record<Tone, string> = {
 };
 
 /**
- * Attendance-style employee block: bold name, #emp badge, division (when present), then department • designation.
+ * Employee block: bold name, designation under name, #emp badge, optional division / department.
  */
 export function LoanListEmployeeCell({
   loan,
@@ -54,16 +54,21 @@ export function LoanListEmployeeCell({
             </span>
           ) : null}
         </div>
+        {p.designation ? (
+          <div className="mt-1 truncate text-[9px] font-medium italic leading-snug text-slate-600 dark:text-slate-400">
+            {p.designation}
+          </div>
+        ) : null}
         {p.division ? (
           <div className="mt-1 truncate text-[9px] font-medium leading-snug text-slate-600 dark:text-slate-400">
             {p.division}
           </div>
         ) : null}
-        {p.deptDesig ? (
+        {p.department ? (
           <div
-            className={`truncate text-[9px] leading-snug text-slate-500 dark:text-slate-400 ${p.division ? 'mt-0.5' : 'mt-1'}`}
+            className={`truncate text-[9px] leading-snug text-slate-500 dark:text-slate-400 ${p.division || p.designation ? 'mt-0.5' : 'mt-1'}`}
           >
-            {p.deptDesig}
+            {p.department}
           </div>
         ) : null}
       </div>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from 'next/link';
 import { parseFile } from '@/lib/bulkUpload';
 import { api, apiRequest, Employee, Division, EmployeeGroup } from '@/lib/api';
+import { sortByEmpNo } from '@/lib/employeeSort';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 import DeductionsPayrollSection from '@/components/ManualDeductions/DeductionsPayrollSection';
 import * as XLSX from 'xlsx';
@@ -136,6 +137,16 @@ interface Shift {
 }
 
 type TableType = 'all' | 'present' | 'absent' | 'leaves' | 'od' | 'ot' | 'extraHours' | 'shifts';
+
+function sortPayRegistersByEmpNo(list: PayRegisterSummary[]) {
+  return sortByEmpNo(list, (pr) => {
+    const emp = pr.employeeId;
+    if (typeof emp === 'object' && emp && 'emp_no' in emp) {
+      return (emp as Employee).emp_no;
+    }
+    return pr.emp_no;
+  });
+}
 
 export default function PayRegisterPage() {
   const router = useRouter();
@@ -572,9 +583,9 @@ export default function PayRegisterPage() {
         if (response.endDate) setPayrollEndDate(response.endDate);
 
         if (append) {
-          setPayRegisters(prev => [...prev, ...payRegisterList]);
+          setPayRegisters((prev) => sortPayRegistersByEmpNo([...prev, ...payRegisterList]));
         } else {
-          setPayRegisters(payRegisterList);
+          setPayRegisters(sortPayRegistersByEmpNo(payRegisterList));
         }
 
         if (response.pagination) {
@@ -749,7 +760,7 @@ export default function PayRegisterPage() {
         return;
       }
 
-      const syncTargets: PayRegisterSummary[] = fullRes.data;
+      const syncTargets: PayRegisterSummary[] = sortPayRegistersByEmpNo(fullRes.data);
       const SYNC_CHUNK = 15;
 
       let synced = 0;
@@ -2356,7 +2367,7 @@ export default function PayRegisterPage() {
               <div className="overflow-auto flex-1 min-h-0 px-2 py-2">
                 <div className="rounded-lg border border-slate-200 dark:border-slate-600 overflow-x-auto">
                   <table className="w-full border-collapse text-xs min-w-[640px]">
-                    <thead>
+                    <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800">
                       <tr className="border-b border-slate-200 bg-slate-50 dark:bg-slate-800 dark:border-slate-700">
                         <th className="w-10 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                           Override
@@ -2398,6 +2409,11 @@ export default function PayRegisterPage() {
                             </td>
                             <td className="px-2 py-2 align-middle">
                               <div className="font-medium text-slate-900 dark:text-white">{row.employee_name}</div>
+                              {row.designation ? (
+                                <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+                                  {row.designation}
+                                </div>
+                              ) : null}
                               <div className="text-[10px] text-slate-500 dark:text-slate-400">{row.emp_no}</div>
                             </td>
                             <td className="px-2 py-2 align-middle text-slate-700 dark:text-slate-300 max-w-[140px] truncate" title={row.division || undefined}>
@@ -2461,11 +2477,11 @@ export default function PayRegisterPage() {
             </button>
           </div>
           {monthlySummaryExpanded && (
-            <div id="pay-register-monthly-summary-panel-loading" className="overflow-x-auto p-4 pt-2 pb-4">
+            <div id="pay-register-monthly-summary-panel-loading" className="max-h-[min(70vh,800px)] overflow-auto p-4 pt-2 pb-4">
               <table className="w-full border-collapse text-xs">
-                <thead>
+                <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800">
                   <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                    <th rowSpan={2} className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    <th rowSpan={2} className="sticky left-0 top-0 z-[25] w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                       Employee
                     </th>
                     {[
@@ -2582,11 +2598,11 @@ export default function PayRegisterPage() {
           </div>
           {monthlySummaryExpanded && (
             <>
-              <div id="pay-register-monthly-summary-panel" className="overflow-x-auto p-4 pt-2">
+              <div id="pay-register-monthly-summary-panel" className="max-h-[min(70vh,800px)] overflow-auto p-4 pt-2">
                 <table className="w-full border-collapse text-xs">
-              <thead>
+              <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800">
                 <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                  <th rowSpan={2} className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  <th rowSpan={2} className="sticky left-0 top-0 z-[25] w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     Employee
                   </th>
                   {[
@@ -2656,6 +2672,10 @@ export default function PayRegisterPage() {
                   const empNo =
                     typeof row.pr.employeeId === 'object' ? row.pr.employeeId.emp_no : row.pr.emp_no;
                   const empName = typeof row.pr.employeeId === 'object' ? row.pr.employeeId.employee_name : '';
+                  const designation =
+                    employee && typeof employee.designation_id === 'object' && employee.designation_id?.name
+                      ? String(employee.designation_id.name)
+                      : '';
                   const department =
                     typeof row.pr.employeeId === 'object' && row.pr.employeeId.department_id
                       ? typeof row.pr.employeeId.department_id === 'object'
@@ -2669,6 +2689,11 @@ export default function PayRegisterPage() {
                       <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
                         <div>
                           <div className="font-semibold truncate">{empName}</div>
+                          {designation ? (
+                            <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+                              {designation}
+                            </div>
+                          ) : null}
                           <div className="text-[9px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1.5 truncate">
                             <span className="truncate">{empNo}</span>
                             {row.pr.summaryLocked && (
@@ -3002,12 +3027,12 @@ export default function PayRegisterPage() {
 
         {/* Grid Table View - skeleton when loading */}
         <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-          <div ref={payRegisterTableScrollRef} className="overflow-x-auto">
+          <div ref={payRegisterTableScrollRef} className="max-h-[min(85vh,900px)] overflow-auto">
             {loading ? (
               <table className="w-full border-collapse text-xs">
-                <thead>
+                <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800">
                   <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                    <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Employee</th>
+                    <th className="sticky left-0 top-0 z-[25] w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Employee</th>
                     {daysArray.map((day) => (
                       <th key={day} className="border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">{parseInt(day.split('-')[2])}</th>
                     ))}
@@ -3035,13 +3060,13 @@ export default function PayRegisterPage() {
               </table>
             ) : (
               <table className="w-full border-collapse text-xs">
-                <thead>
+                <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800">
                   {activeTable === 'all' ? (
                     <>
                       <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
                         <th
                           rowSpan={2}
-                          className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                          className="sticky left-0 top-0 z-[25] w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                         >
                           Employee
                         </th>
@@ -3163,7 +3188,7 @@ export default function PayRegisterPage() {
                     </>
                   ) : (
                     <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                      <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      <th className="sticky left-0 top-0 z-[25] w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                         Employee
                       </th>
                       {daysArray.map((day) => (
@@ -3243,6 +3268,10 @@ export default function PayRegisterPage() {
                       const employeeId = typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId;
                       const emp_no = typeof pr.employeeId === 'object' ? pr.employeeId.emp_no : pr.emp_no;
                       const employee_name = typeof pr.employeeId === 'object' ? pr.employeeId.employee_name : '';
+                      const designationDaily =
+                        employee && typeof employee.designation_id === 'object' && employee.designation_id?.name
+                          ? String(employee.designation_id.name)
+                          : '';
                       const department = typeof pr.employeeId === 'object' && pr.employeeId.department_id
                         ? (typeof pr.employeeId.department_id === 'object' ? pr.employeeId.department_id.name : '')
                         : '';
@@ -3341,6 +3370,11 @@ export default function PayRegisterPage() {
                                   )}
                                 </div>
                               </div>
+                              {designationDaily ? (
+                                <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+                                  {designationDaily}
+                                </div>
+                              ) : null}
                               <div className="text-[9px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1.5 truncate mt-1">
                                 <span className="truncate">{emp_no}</span>
                                 {pr.summaryLocked && (
@@ -4352,7 +4386,7 @@ export default function PayRegisterPage() {
                   ) : (
                     <div className="max-h-[50vh] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700">
                       <table className="w-full border-collapse text-xs">
-                        <thead>
+                        <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800">
                           <tr className="border-b border-slate-200 bg-slate-50 text-left dark:border-slate-700 dark:bg-slate-800">
                             <th className="px-2 py-2 font-semibold text-slate-700 dark:text-slate-300">Leave type</th>
                             <th className="px-2 py-2 font-semibold text-slate-700 dark:text-slate-300">Bucket</th>

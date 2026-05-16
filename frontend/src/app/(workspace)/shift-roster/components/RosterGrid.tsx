@@ -3,7 +3,6 @@ import { ChevronLeft, ChevronRight, Plus, Users, Hash } from 'lucide-react';
 import { Employee, Shift } from '@/lib/api';
 import { RosterCell, RosterGridProps } from '../types';
 import { format, parseISO } from 'date-fns';
-
 // Skeleton Loading Row - Reduced Height
 const RosterSkeletonRow = ({ daysCount }: { daysCount: number }) => (
     <tr className="animate-pulse border-b border-slate-200/40 dark:border-slate-800/40">
@@ -124,16 +123,30 @@ const RosterRow = memo(({
         <tr className="group border-b border-slate-200/40 dark:border-slate-800/40 hover:bg-slate-50/50 dark:hover:bg-slate-900/20 transition-colors">
             <td className="px-5 py-1 sticky left-0 z-10 bg-white dark:bg-slate-950 group-hover:bg-slate-50 dark:group-hover:bg-slate-900 shadow-[10px_0_15px_-10px_rgba(0,0,0,0.05)] border-r border-slate-200/60 dark:border-slate-800/60 transition-colors min-w-[200px]">
                 <div className="flex flex-col gap-0.5">
-                    <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-bold text-slate-800 dark:text-slate-100 uppercase tracking-tight truncate max-w-[140px]">{emp.employee_name}</span>
-                        <span className="text-[8px] font-bold text-slate-400 dark:text-slate-600 bg-slate-50 dark:bg-slate-900 px-1 rounded">#{emp.emp_no}</span>
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                        <span className="text-[8px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate max-w-[160px]">{emp.designation?.name || 'Staff'}</span>
-                        {emp.department && (
-                            <span className="text-[8px] font-bold text-blue-500/80 dark:text-blue-400/80 uppercase tracking-widest truncate max-w-[160px]">{emp.department.name}</span>
-                        )}
-                    </div>
+                    <div className="min-w-0 max-w-[180px]" title={[String(emp?.employee_name || '—'), ((typeof emp?.designation_id === 'object' && emp?.designation_id?.name) ? String(emp.designation_id.name) : (typeof emp?.designation === 'object' && emp?.designation?.name) ? String(emp.designation.name) : ''), String(emp?.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {emp?.employee_name || '—'}
+  </div>
+  {((typeof emp?.designation_id === 'object' && emp?.designation_id?.name) ? String(emp.designation_id.name) : (typeof emp?.designation === 'object' && emp?.designation?.name) ? String(emp.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof emp?.designation_id === 'object' && emp?.designation_id?.name) ? String(emp.designation_id.name) : (typeof emp?.designation === 'object' && emp?.designation?.name) ? String(emp.designation.name) : '')}
+    </div>
+  ) : null}
+  {emp?.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{emp?.emp_no}</div>
+  ) : null}
+  {((typeof emp?.department_id === 'object' && emp?.department_id?.name) ? String(emp.department_id.name) : (typeof emp?.department === 'object' && emp?.department?.name) ? String(emp.department.name) : '') ? (
+    <div className="mt-0.5 truncate text-[8px] font-bold uppercase tracking-wider text-blue-500/80 dark:text-blue-400/80">
+      {((typeof emp?.department_id === 'object' && emp?.department_id?.name) ? String(emp.department_id.name) : (typeof emp?.department === 'object' && emp?.department?.name) ? String(emp.department.name) : '')}
+    </div>
+  ) : null}
+  {emp?.leftDate ? (
+    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+      Left{' '}
+      {new Date(emp.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+    </div>
+  ) : null}
+</div>
                     <div className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <select
                             onChange={(e) => {

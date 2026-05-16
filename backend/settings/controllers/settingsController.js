@@ -1,5 +1,10 @@
 const Settings = require('../model/Settings');
 const { invalidateSecondSalaryFeatureCache } = require('../secondSalaryFeatureGate');
+const {
+  DEFAULT_COMPANY_PROFILE,
+  mergeCompanyProfile,
+  validateCompanyProfile,
+} = require('../../shared/utils/companyProfile');
 
 // @desc    Get all settings
 // @route   GET /api/settings
@@ -57,11 +62,14 @@ exports.getSetting = async (req, res) => {
         'default_apply_statutory_deductions': true,
         'default_apply_attendance_deductions': true,
         'enable_second_salary': true,
+        company_profile: DEFAULT_COMPANY_PROFILE,
       };
 
       if (defaults[req.params.key] !== undefined) {
         const defaultCategory =
-          ['allow_employee_bulk_process', 'custom_employee_grouping_enabled'].includes(req.params.key)
+          req.params.key === 'company_profile'
+            ? 'company'
+            : ['allow_employee_bulk_process', 'custom_employee_grouping_enabled'].includes(req.params.key)
             ? 'employee'
             : 'payroll';
         return res.status(200).json({
@@ -198,15 +206,29 @@ exports.upsertSetting = async (req, res) => {
       }
     }
 
+    let valueToSave = value;
+    if (key === 'company_profile') {
+      const validation = validateCompanyProfile(value);
+      if (!validation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: validation.errors.join('; '),
+        });
+      }
+      valueToSave = validation.normalized;
+    }
+
     const setting = await Settings.findOneAndUpdate(
       { key },
       {
         key,
-        value,
+        value: valueToSave,
         description: description || `Setting for ${key}`,
         category:
           category ||
-          (['include_missing_employee_components', 'enable_absent_deduction', 'lop_days_per_absent', 'auto_reject_pending_requests_on_batch_complete', 'enable_second_salary'].includes(key)
+          (key === 'company_profile'
+            ? 'company'
+            : ['include_missing_employee_components', 'enable_absent_deduction', 'lop_days_per_absent', 'auto_reject_pending_requests_on_batch_complete', 'enable_second_salary'].includes(key)
             ? 'payroll'
             : ['allow_employee_bulk_process', 'custom_employee_grouping_enabled'].includes(key)
               ? 'employee'

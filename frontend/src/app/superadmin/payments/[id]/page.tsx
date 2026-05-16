@@ -442,12 +442,19 @@ export default function BatchDetailsPage() {
                                         batch.employeePayrolls.map((empPayroll: any) => (
                                             <tr key={empPayroll._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                                                 <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="text-sm font-medium text-slate-900 dark:text-white">
-                                                        {empPayroll.employeeId?.name || empPayroll.emp_no}
-                                                    </div>
-                                                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                                                        {empPayroll.emp_no}
-                                                    </div>
+                                                    <div className="min-w-0" title={[String(empPayroll.employeeId?.name || empPayroll.emp_no || '—'), ((typeof empPayroll.employeeId?.designation_id === 'object' && empPayroll.employeeId?.designation_id?.name) ? String(empPayroll.employeeId.designation_id.name) : (typeof empPayroll.employeeId?.designation === 'object' && empPayroll.employeeId?.designation?.name) ? String(empPayroll.employeeId.designation.name) : ''), String(empPayroll.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {empPayroll.employeeId?.name || empPayroll.emp_no || '—'}
+  </div>
+  {((typeof empPayroll.employeeId?.designation_id === 'object' && empPayroll.employeeId?.designation_id?.name) ? String(empPayroll.employeeId.designation_id.name) : (typeof empPayroll.employeeId?.designation === 'object' && empPayroll.employeeId?.designation?.name) ? String(empPayroll.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof empPayroll.employeeId?.designation_id === 'object' && empPayroll.employeeId?.designation_id?.name) ? String(empPayroll.employeeId.designation_id.name) : (typeof empPayroll.employeeId?.designation === 'object' && empPayroll.employeeId?.designation?.name) ? String(empPayroll.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {empPayroll.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{empPayroll.emp_no}</div>
+  ) : null}
+</div>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-slate-900 dark:text-slate-200">
                                                     {formatCurrency(empPayroll.earnings?.basicPay || 0)}

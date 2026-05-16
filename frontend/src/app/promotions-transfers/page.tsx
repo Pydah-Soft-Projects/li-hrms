@@ -1357,11 +1357,19 @@ export default function PromotionsTransfersPage() {
                         {bulkRows.map((row, idx) => (
                           <tr key={row.employee._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors align-top">
                             <td className="px-3 py-4">
-                              <div className="font-bold text-slate-900 dark:text-white mb-0.5">{row.employee.employee_name}</div>
-                              <div className="text-[10px] text-slate-500 flex items-center gap-1.5 font-medium">
-                                <span className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded uppercase">{row.employee.emp_no}</span>
-                                <span className="line-clamp-1 truncate">{row.employee.designation_id?.name || 'No Desig'}</span>
-                              </div>
+                              <div className="min-w-0" title={[String(row.employee.employee_name || '—'), row.employee.designation_id?.name || undefined, String(row.employee.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {row.employee.employee_name || '—'}
+  </div>
+  {row.employee.designation_id?.name || undefined ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {row.employee.designation_id?.name || undefined}
+    </div>
+  ) : null}
+  {row.employee.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{row.employee.emp_no}</div>
+  ) : null}
+</div>
                               <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 mt-2 flex items-center gap-1">
                                 <TrendingUp className="w-3 h-3" />
                                 Current Gross: ₹{formatSalary(row.employee.gross_salary)}
@@ -1574,10 +1582,19 @@ export default function PromotionsTransfersPage() {
                 {filtered.map((r) => (
                   <tr key={r._id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
                     <td className="px-4 py-3">
-                      <div className="font-medium text-slate-900 dark:text-white">
-                        {r.employeeId?.employee_name || r.emp_no}
-                      </div>
-                      <div className="text-xs text-slate-500">{r.emp_no}</div>
+                      <div className="min-w-0" title={[String(r.employeeId?.employee_name || r.emp_no || '—'), ((typeof r.employeeId?.designation_id === 'object' && r.employeeId?.designation_id?.name) ? String(r.employeeId.designation_id.name) : (typeof r.employeeId?.designation === 'object' && r.employeeId?.designation?.name) ? String(r.employeeId.designation.name) : ''), String(r.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {r.employeeId?.employee_name || r.emp_no || '—'}
+  </div>
+  {((typeof r.employeeId?.designation_id === 'object' && r.employeeId?.designation_id?.name) ? String(r.employeeId.designation_id.name) : (typeof r.employeeId?.designation === 'object' && r.employeeId?.designation?.name) ? String(r.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof r.employeeId?.designation_id === 'object' && r.employeeId?.designation_id?.name) ? String(r.employeeId.designation_id.name) : (typeof r.employeeId?.designation === 'object' && r.employeeId?.designation?.name) ? String(r.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {r.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{r.emp_no}</div>
+  ) : null}
+</div>
                     </td>
                     <td className="px-4 py-3 capitalize">{r.requestType}</td>
                     <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
@@ -2165,10 +2182,19 @@ export default function PromotionsTransfersPage() {
                 <div className="min-h-0 overflow-y-auto p-4 space-y-3">
                   <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Employee</p>
-                    <p className="font-semibold text-slate-900 dark:text-white">
-                      {detail.employeeId?.employee_name || detail.emp_no}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-0.5">{detail.emp_no}</p>
+                    <div className="min-w-0" title={[String(detail.employeeId?.employee_name || detail.emp_no || '—'), ((typeof detail.employeeId?.designation_id === 'object' && detail.employeeId?.designation_id?.name) ? String(detail.employeeId.designation_id.name) : (typeof detail.employeeId?.designation === 'object' && detail.employeeId?.designation?.name) ? String(detail.employeeId.designation.name) : ''), String(detail.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {detail.employeeId?.employee_name || detail.emp_no || '—'}
+  </div>
+  {((typeof detail.employeeId?.designation_id === 'object' && detail.employeeId?.designation_id?.name) ? String(detail.employeeId.designation_id.name) : (typeof detail.employeeId?.designation === 'object' && detail.employeeId?.designation?.name) ? String(detail.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof detail.employeeId?.designation_id === 'object' && detail.employeeId?.designation_id?.name) ? String(detail.employeeId.designation_id.name) : (typeof detail.employeeId?.designation === 'object' && detail.employeeId?.designation?.name) ? String(detail.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {detail.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{detail.emp_no}</div>
+  ) : null}
+</div>
                   </div>
                   <div className="flex justify-between gap-2">
                     <span className="text-slate-500">Type</span>

@@ -4534,6 +4534,17 @@ export const api = {
     });
   },
 
+  uploadCompanyLogo: async (
+    file: File
+  ): Promise<ApiResponse<{ url: string; filename: string }> & { url?: string; filename?: string }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiRequest<{ url: string; filename: string }>('/upload/company-logo', {
+      method: 'POST',
+      body: formData,
+    }) as Promise<ApiResponse<{ url: string; filename: string }> & { url?: string; filename?: string }>;
+  },
+
   // Asset management
   getAssetMetadata: async () => {
     return apiRequest<any>('/assets/metadata', { method: 'GET' });
