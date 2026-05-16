@@ -114,7 +114,7 @@ exports.previewInitialCLSync = async (req, res) => {
             .select('_id emp_no employee_name designation department_id division_id doj is_active')
             .populate('department_id', 'name')
             .populate('division_id', 'name')
-            .sort({ employee_name: 1 })
+            .sort({ emp_no: 1 })
             .lean();
 
         const term = String(search || '').trim().toLowerCase();

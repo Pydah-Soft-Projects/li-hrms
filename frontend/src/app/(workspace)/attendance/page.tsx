@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef, useMemo, type MouseEvent } from 'react';
 
 import { api } from '@/lib/api';
+import { sortByEmpNo } from '@/lib/employeeSort';
 import Swal from 'sweetalert2';
 
 import {
@@ -1294,14 +1295,17 @@ export default function AttendancePage() {
     if (isEmployee && searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       setFilteredMonthlyData(
-        monthlyData.filter(
-          (item) =>
-            item.employee.employee_name?.toLowerCase().includes(query) ||
-            String(item.employee.emp_no || '').toLowerCase().includes(query),
-        ),
+        sortByEmpNo(
+          monthlyData.filter(
+            (item) =>
+              item.employee.employee_name?.toLowerCase().includes(query) ||
+              String(item.employee.emp_no || '').toLowerCase().includes(query),
+          ),
+          (item) => item.employee.emp_no
+        )
       );
     } else {
-      setFilteredMonthlyData([...monthlyData]);
+      setFilteredMonthlyData(sortByEmpNo(monthlyData, (item) => item.employee.emp_no));
     }
   }, [monthlyData, searchQuery, isEmployee]);
 

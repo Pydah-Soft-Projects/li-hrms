@@ -618,7 +618,7 @@ exports.getDesignationEmployees = async (req, res) => {
       .select('emp_no employee_name department_id division_id is_active left_date')
       .populate('department_id', 'name code')
       .populate('division_id', 'name code')
-      .sort({ employee_name: 1 })
+      .sort({ emp_no: 1 })
       .lean();
 
     return res.status(200).json({

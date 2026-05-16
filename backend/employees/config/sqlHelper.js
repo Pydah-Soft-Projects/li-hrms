@@ -207,7 +207,7 @@ const getAllEmployeesSQL = async (filters = {}) => {
             query += ' AND designation_id = ?';
             params.push(filters.designation_id);
         }
-        query += ' ORDER BY employee_name ASC';
+        query += ' ORDER BY emp_no ASC';
 
         const [rows] = await pool.execute(query, params);
         return rows;
@@ -228,7 +228,7 @@ const getAllEmployeesSQL = async (filters = {}) => {
             request.input('designation_id', sql.VarChar(24), filters.designation_id);
             query += ' AND designation_id = @designation_id';
         }
-        query += ' ORDER BY employee_name ASC';
+        query += ' ORDER BY emp_no ASC';
 
         const result = await request.query(query);
         return result.recordset;

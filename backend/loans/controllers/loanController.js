@@ -351,7 +351,7 @@ exports.getGuarantorCandidates = async (req, res) => {
       .select('emp_no employee_name department_id designation_id division_id')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ employee_name: 1 })
+      .sort({ emp_no: 1 })
       .limit(max);
 
     res.status(200).json({

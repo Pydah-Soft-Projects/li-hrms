@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, type MouseEvent } from 'react';
 import { api } from '@/lib/api';
+import { sortByEmpNo } from '@/lib/employeeSort';
 import Swal from 'sweetalert2';
 import {
   formatHighlightContribution,
@@ -961,7 +962,7 @@ export default function AttendancePage() {
     // In server-side pagination mode, we don't apply local filters
     // unless we have all data loaded (which we won't at 5k scale).
     // So we just pass through monthlyData.
-    setFilteredMonthlyData(monthlyData);
+    setFilteredMonthlyData(sortByEmpNo(monthlyData, (item) => item.employee.emp_no));
   }, [monthlyData]);
 
   // Intersection Observer for infinite scroll
