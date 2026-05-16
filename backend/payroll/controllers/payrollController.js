@@ -41,10 +41,27 @@ const DeductionPayrollIntegrationService = require('../../manual-deductions/serv
  * @route   POST /api/payroll/calculate
  * @access  Private (Super Admin, Sub Admin, HR)
  */
+/** Accept MongoDB _id or HRMS emp_no (e.g. 2144). */
+async function resolvePayrollEmployeeId(employeeIdOrEmpNo) {
+  const raw = String(employeeIdOrEmpNo || '').trim();
+  if (!raw) {
+    throw new Error('Employee is required');
+  }
+  if (mongoose.Types.ObjectId.isValid(raw) && raw.length === 24) {
+    return raw;
+  }
+  const emp = await Employee.findOne({ emp_no: raw.toUpperCase() }).select('_id emp_no').lean();
+  if (!emp) {
+    throw new Error(`Employee not found for number ${raw}`);
+  }
+  return emp._id;
+}
+
 // Shared payslip assembler (used by calculate & getPayslip)
 async function buildPayslipData(employeeId, month) {
+  const resolvedEmployeeId = await resolvePayrollEmployeeId(employeeId);
   const payrollRecord = await PayrollRecord.findOne({
-    employeeId,
+    employeeId: resolvedEmployeeId,
     month,
   }).populate({
     path: 'employeeId',
@@ -62,8 +79,8 @@ async function buildPayslipData(employeeId, month) {
   }
 
   // Try pay register summary for rich totals; fallback to attendance summary
-  const payRegisterSummary = await PayRegisterSummary.findOne({ employeeId, month });
-  const attendanceSummary = await MonthlyAttendanceSummary.findOne({ employeeId, month });
+  const payRegisterSummary = await PayRegisterSummary.findOne({ employeeId: resolvedEmployeeId, month });
+  const attendanceSummary = await MonthlyAttendanceSummary.findOne({ employeeId: resolvedEmployeeId, month });
 
   // Extract employee data with properly populated references
   const employee = payrollRecord.employeeId;
@@ -2031,7 +2048,7 @@ exports.processPayroll = async (req, res) => {
  */
 exports.getPayslip = async (req, res) => {
   try {
-    const { employeeId, month } = req.params;
+    const { employeeId: employeeIdParam, month } = req.params;
 
     if (!/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
@@ -2040,15 +2057,25 @@ exports.getPayslip = async (req, res) => {
       });
     }
 
+    let resolvedEmployeeId;
+    try {
+      resolvedEmployeeId = await resolvePayrollEmployeeId(employeeIdParam);
+    } catch (resolveErr) {
+      return res.status(404).json({
+        success: false,
+        message: resolveErr.message || 'Employee not found',
+      });
+    }
+
     // Check permissions
     const isAdmin = ['super_admin', 'sub_admin', 'hr'].includes(req.user.role);
-    if (!isAdmin && employeeId.toString() !== req.user.employee?.toString()) {
+    if (!isAdmin && resolvedEmployeeId.toString() !== req.user.employee?.toString()) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
     // Verify settings for non-admins
     if (!isAdmin) {
-      const payrollRecord = await PayrollRecord.findOne({ employeeId, month });
+      const payrollRecord = await PayrollRecord.findOne({ employeeId: resolvedEmployeeId, month });
       if (!payrollRecord) {
         return res.status(404).json({ success: false, message: 'Payslip not found' });
       }
@@ -2073,7 +2100,7 @@ exports.getPayslip = async (req, res) => {
       }
     }
 
-    const { payslip } = await buildPayslipData(employeeId, month);
+    const { payslip } = await buildPayslipData(employeeIdParam, month);
 
     res.status(200).json({
       success: true,
@@ -2081,9 +2108,11 @@ exports.getPayslip = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching payslip:', error);
-    res.status(500).json({
+    const notFound =
+      error.message?.includes('not found') || error.message?.includes('Payslip not found');
+    res.status(notFound ? 404 : 500).json({
       success: false,
-      message: 'Error fetching payslip',
+      message: notFound ? error.message : 'Error fetching payslip',
       error: error.message,
     });
   }

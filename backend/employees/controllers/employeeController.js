@@ -1782,7 +1782,7 @@ exports.deleteEmployee = async (req, res) => {
 exports.getEmployeeCount = async (req, res) => {
   try {
     const { is_active } = req.query;
-    const query = {};
+    const query = { ...(req.scopeFilter || {}) };
 
     if (is_active !== undefined) {
       query.is_active = is_active === 'true';

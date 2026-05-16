@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, type InAppNotification } from '@/lib/api';
+import Link from 'next/link';
 import {
   Calendar,
   Bell,
   BellRing, X,
   CheckCheck,
+  BookOpen,
   Users,
   UserCheck,
   Timer,
@@ -204,6 +206,15 @@ export default function SuperAdminDashboard() {
               <p className="text-sm text-zinc-500 dark:text-zinc-400">Real-time workforce intelligence & analytics</p>
             </div>
             <div className="flex items-center gap-2">
+              <Link
+                href="/superadmin/user-manual"
+                className="flex items-center gap-2 rounded-xl border border-indigo-600 bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700"
+                title="Open HRMS user manual"
+              >
+                <BookOpen className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden sm:inline">User Manual</span>
+                <span className="sm:hidden">Help</span>
+              </Link>
               <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-[#7E7E7E] shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                 <Calendar className="h-3.5 w-3.5 shrink-0" />
                 <span>

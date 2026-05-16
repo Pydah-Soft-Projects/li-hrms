@@ -9,6 +9,7 @@ import "react-toastify/dist/ReactToastify.css";
 import InstallPrompt from "@/components/InstallPrompt";
 import PushNotificationRegistrar from "@/components/PushNotificationRegistrar";
 import PushNotificationPrompt from "@/components/PushNotificationPrompt";
+import HrmsAssistant from "@/components/assistant/HrmsAssistant";
 
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -61,6 +62,7 @@ export default function RootLayout({
           <WorkspaceProvider>
             <SocketProvider>
               {children}
+              <HrmsAssistant />
             </SocketProvider>
           </WorkspaceProvider>
         </AuthProvider>

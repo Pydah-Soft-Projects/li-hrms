@@ -19,7 +19,8 @@ import {
   Bell,
   BellRing,
   X,
-  CheckCheck
+  CheckCheck,
+  BookOpen,
 } from 'lucide-react';
 import { useSocket } from '@/contexts/SocketContext';
 import { useDashboardPushBell } from '@/hooks/useDashboardPushBell';
@@ -260,6 +261,15 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          <Link
+            href="/user-manual"
+            className="flex items-center gap-1.5 md:gap-2 px-2.5 py-1.5 md:px-4 md:py-2 rounded-full bg-indigo-600 text-white border border-indigo-500 shadow-sm shrink-0 hover:bg-indigo-700 transition-colors"
+            title="Open HRMS user manual"
+          >
+            <BookOpen className="w-3.5 h-3.5 md:w-4 md:h-4" />
+            <span className="text-[10px] md:text-sm font-bold whitespace-nowrap hidden sm:inline">User Manual</span>
+            <span className="text-[10px] font-bold sm:hidden">Help</span>
+          </Link>
           <div className="flex items-center gap-1.5 md:gap-3 px-2 py-1 md:px-4 md:py-2 rounded-full bg-bg-surface/50 border border-border-base backdrop-blur-md shadow-sm shrink-0">
             <Calendar className="w-3 h-3 md:w-4 md:h-4 text-indigo-500" />
             <span className="text-[10px] md:text-sm font-bold text-text-secondary whitespace-nowrap">

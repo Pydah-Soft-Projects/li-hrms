@@ -199,6 +199,10 @@ app.use('/api/salary-updates', salaryUpdateRoutes);
 const assetRoutes = require('./assets/index.js');
 app.use('/api/assets', assetRoutes);
 
+// AI HR assistant (router + answer models, user-scoped data fetch)
+const assistantRoutes = require('./assistant/index.js');
+app.use('/api/assistant', assistantRoutes);
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
