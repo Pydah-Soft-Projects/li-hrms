@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Loader2, X } from 'lucide-react';
 import { api, Employee } from '@/lib/api';
+import { sortByEmpNo } from '@/lib/employeeSort';
 
 interface EmployeeSelectProps {
     value: string; // The selected employee ID or emp_no
@@ -47,7 +48,7 @@ export default function EmployeeSelect({
             try {
                 const res = await api.getEmployees({ is_active: true, limit: 50 });
                 if (isMounted && res.success) {
-                    setEmployees(res.data || []);
+                    setEmployees(sortByEmpNo(res.data || []));
                 }
             } catch (err) {
                 console.error('Failed to load initial employees:', err);
@@ -73,8 +74,7 @@ export default function EmployeeSelect({
                 const query: any = { is_active: true, search: employeeSearch, limit: 50 };
                 const res = await api.getEmployees(query);
                 if (res.success && res.data) {
-                    // Merge results or just replace. Replacing is cleaner for search results.
-                    setEmployees(res.data);
+                    setEmployees(sortByEmpNo(res.data));
                 }
             } catch (error) {
                 console.error('Error searching employees:', error);

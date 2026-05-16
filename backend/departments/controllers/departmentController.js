@@ -192,7 +192,7 @@ exports.getDepartmentEmployees = async (req, res) => {
       .populate('department_id', 'name')
       .populate('division_id', 'name code')
       .populate('designation_id', 'name code')
-      .sort({ employee_name: 1 });
+      .sort({ emp_no: 1 });
 
     res.status(200).json({
       success: true,

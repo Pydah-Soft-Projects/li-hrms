@@ -22,6 +22,7 @@ const {
 } = require('../../overtime/services/esiLeaveOtService');
 const { assertEmployeeNumberDateEditable } = require('../../shared/services/payrollPeriodLockService');
 const { reprocessAttendanceForEmployeeDate } = require('../services/attendanceSyncService');
+const { EMP_NO_SORT } = require('../../shared/utils/employeeSort');
 
 /**
  * Format date to YYYY-MM-DD
@@ -593,7 +594,7 @@ exports.getMonthlyAttendance = async (req, res) => {
       .populate('division_id', 'name')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ employee_name: 1 });
+      .sort(EMP_NO_SORT);
 
     if (limitNum !== -1) {
       employeeFind = employeeFind.skip(skip).limit(limitNum);

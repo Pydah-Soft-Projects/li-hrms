@@ -1,4 +1,5 @@
 const PayRegisterSummary = require('../model/PayRegisterSummary');
+const { compareEmpNo, EMP_NO_SORT } = require('../../shared/utils/employeeSort');
 const Employee = require('../../employees/model/Employee');
 const PayrollBatch = require('../../payroll/model/PayrollBatch');
 const {
@@ -824,7 +825,7 @@ exports.getLockedSummaryEmployees = async (req, res) => {
       });
     }
 
-    rows.sort((a, b) => (a.employee_name || '').localeCompare(b.employee_name || '', undefined, { sensitivity: 'base' }));
+    rows.sort((a, b) => compareEmpNo(a.emp_no, b.emp_no));
 
     const searchTrim = search && String(search).trim();
     const q = searchTrim ? searchTrim.toLowerCase() : '';
@@ -948,7 +949,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       .select('_id employee_name emp_no department_id designation_id leftDate leftReason')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ employee_name: 1 });
+      .sort(EMP_NO_SORT);
 
     // Bypass pagination if limit is -1
     if (limitNum !== -1) {
@@ -1527,7 +1528,7 @@ exports.exportSummaryPDF = async (req, res) => {
       .populate('department_id', 'name')
       .populate('division_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ employee_name: 1 })
+      .sort(EMP_NO_SORT)
       .lean();
 
     if (employees.length === 0) {
@@ -1626,7 +1627,7 @@ exports.exportSummaryPDF = async (req, res) => {
         );
 
         const deptEmployees = grouped[divName][deptName].sort((a, b) =>
-          (a.employee_name || '').localeCompare(b.employee_name || '', undefined, { sensitivity: 'base' })
+          compareEmpNo(a.emp_no, b.emp_no)
         );
 
         const summaryRows = [];

@@ -1019,7 +1019,7 @@ exports.getEmployeesWithoutAccount = async (req, res) => {
       .populate('department_id', 'name code')
       .populate('designation_id', 'name')
       .select('emp_no employee_name email phone_number department_id designation_id')
-      .sort({ employee_name: 1 });
+      .sort({ emp_no: 1 });
 
     res.status(200).json({
       success: true,

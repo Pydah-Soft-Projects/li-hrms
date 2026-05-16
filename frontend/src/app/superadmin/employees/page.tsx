@@ -20,6 +20,7 @@ import EmployeeExportDialog from '@/components/employee/EmployeeExportDialog';
 import { getEmployeeGroupedDynamicFieldValue } from '@/lib/employeeDynamicFieldValue';
 import { getPayPeriodRangeForCalendarMonth } from '@/lib/payPeriodRange';
 import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
+import { compareEmpNo } from '@/lib/employeeSort';
 
 import {
   EMPLOYEE_TEMPLATE_HEADERS,
@@ -835,7 +836,10 @@ export default function EmployeesPage() {
 
 
   // Sorting State
-  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>({
+    key: 'emp_no',
+    direction: 'asc',
+  });
 
   // Helper to filter data based on column filters
   // Helper to filter data based on column filters
@@ -875,6 +879,11 @@ export default function EmployeesPage() {
     if (!sortConfig) return data;
 
     return [...data].sort((a, b) => {
+      if (sortConfig.key === 'emp_no') {
+        const cmp = compareEmpNo((a as any).emp_no, (b as any).emp_no);
+        return sortConfig.direction === 'asc' ? cmp : -cmp;
+      }
+
       let aValue = (a as any)[sortConfig.key];
       let bValue = (b as any)[sortConfig.key];
 

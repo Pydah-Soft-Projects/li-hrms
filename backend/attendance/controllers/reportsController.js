@@ -19,6 +19,7 @@ const AttendanceSettings = require('../model/AttendanceSettings');
 const { payRegisterAllRowFromSummary } = require('../../shared/payRegisterAllRow');
 const { getMonthlyTableViewData } = require('../services/attendanceViewService');
 const { formatPdfDayCellText } = require('../utils/pdfDayCellText');
+const { compareEmpNo } = require('../../shared/utils/employeeSort');
 
 // Date format DD-Mon-YY (e.g. 01-Dec-25)
 function formatPDate(d) {
@@ -777,7 +778,7 @@ exports.exportAttendanceReport = async (req, res) => {
             const key = sortedGroups[g];
             const [division, department] = key.split('\t');
             const empIds = groups[key].sort((a, b) =>
-                (empMap[a]?.employee_name || '').localeCompare(empMap[b]?.employee_name || ''));
+                compareEmpNo(empMap[a]?.emp_no || a, empMap[b]?.emp_no || b));
 
             for (const empId of empIds) {
                 const info = empMap[empId];
@@ -1674,7 +1675,7 @@ exports.exportAttendanceReportPDF = async (req, res) => {
 
                 let currentY = drawMainHeader(`ATTENDANCE REPORT - DIV: ${divName.toUpperCase()}`, `Department: ${deptName.toUpperCase()} | Period: ${startDate} to ${endDate}`);
 
-                const deptEmps = grouped[divName][deptName].sort((a, b) => (a.employee_name || '').localeCompare(b.employee_name || ''));
+                const deptEmps = grouped[divName][deptName].sort((a, b) => compareEmpNo(a.emp_no, b.emp_no));
                 const deptSumData = [], deptGridData = [];
 
                 const summaries = monthStrForSummary

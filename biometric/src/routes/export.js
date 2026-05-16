@@ -457,7 +457,11 @@ router.get('/export/attendance', async (req, res) => {
             const [key, groupEmpNos] = sortedGroupEntries[g];
             const [divisionName, departmentName] = key.split('\t');
             // Sort employees by Name (or ID) within group
-            groupEmpNos.sort((a, b) => (empMap[a]?.employee_name || a).localeCompare(empMap[b]?.employee_name || b));
+            groupEmpNos.sort((a, b) => {
+              const ea = empMap[a]?.emp_no || a;
+              const eb = empMap[b]?.emp_no || b;
+              return String(ea).localeCompare(String(eb), undefined, { numeric: true, sensitivity: 'base' });
+            });
 
             for (const empNo of groupEmpNos) {
                 const info = empMap[empNo];

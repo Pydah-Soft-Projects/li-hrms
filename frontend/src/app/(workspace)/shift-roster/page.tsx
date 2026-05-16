@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { api } from '@/lib/api';
+import { compareEmpNo } from '@/lib/employeeSort';
 import { toast } from 'react-hot-toast';
 import { format, parseISO } from 'date-fns';
 
@@ -486,7 +487,7 @@ export default function RosterPage() {
         });
       }
     });
-    return summary.sort((a, b) => (a.employee.employee_name || a.employee.emp_no).localeCompare(b.employee.employee_name || b.employee.emp_no));
+    return summary.sort((a, b) => compareEmpNo(a.employee.emp_no, b.employee.emp_no));
   }, [employees, roster, shifts, activeTab]);
 
   const filteredAssignedSummary = useMemo(() => {
