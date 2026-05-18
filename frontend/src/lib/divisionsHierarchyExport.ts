@@ -1,14 +1,7 @@
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
 import type { Department, Division } from '@/lib/api';
-
-function divisionRefId(ref: string | Division): string {
-    return typeof ref === 'string' ? ref : ref._id;
-}
-
-function departmentRefId(ref: string | Department): string {
-    return typeof ref === 'string' ? ref : ref._id;
-}
+import { buildDivisionToDepartmentIdsMap } from '@/lib/divisionDepartmentUtils';
 
 function resolveManagerName(div: Division): string {
     if (!div.manager) return 'Vacant';
@@ -29,23 +22,7 @@ export function buildDivisionDepartmentGroups(
     departments: Department[]
 ): DivisionDepartmentGroup[] {
     const deptById = new Map(departments.map((d) => [d._id, d]));
-    const divToDeptIds = new Map<string, Set<string>>();
-
-    for (const div of divisions) {
-        if (!divToDeptIds.has(div._id)) divToDeptIds.set(div._id, new Set());
-        for (const ref of div.departments || []) {
-            const id = departmentRefId(ref);
-            if (deptById.has(id)) divToDeptIds.get(div._id)!.add(id);
-        }
-    }
-
-    for (const dept of departments) {
-        for (const ref of dept.divisions || []) {
-            const divId = divisionRefId(ref);
-            if (!divToDeptIds.has(divId)) divToDeptIds.set(divId, new Set());
-            divToDeptIds.get(divId)!.add(dept._id);
-        }
-    }
+    const divToDeptIds = buildDivisionToDepartmentIdsMap(divisions, departments);
 
     const sortedDivisions = [...divisions].sort((a, b) =>
         (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })

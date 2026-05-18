@@ -1,7 +1,17 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { api } from '@/lib/api';
+import { api, Division, Department } from '@/lib/api';
+import {
+  buildDivisionToDepartmentIdsMap,
+  getDepartmentsForDivision,
+} from '@/lib/divisionDepartmentUtils';
+import {
+  collectEmployeeGroupIdsFromEmployees,
+  getScopedEmployeeGroupsForFilter,
+  getUserAllowedEmployeeGroupIds,
+} from '@/lib/employeeGroupScopeUtils';
+import type { EmployeeGroup } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import { toast, ToastContainer } from 'react-toastify';
 import Swal from 'sweetalert2';
@@ -326,10 +336,44 @@ export default function SuperAdminResignationsPage() {
     department_id: 'all',
     employee_group_id: 'all',
   });
-  const [divisions, setDivisions] = useState<any[]>([]);
-  const [departments, setDepartments] = useState<any[]>([]);
-  const [groups, setGroups] = useState<any[]>([]);
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [groups, setGroups] = useState<EmployeeGroup[]>([]);
+  const [customGroupingEnabled, setCustomGroupingEnabled] = useState(false);
+  const [orgScopeGroupIds, setOrgScopeGroupIds] = useState<Set<string> | null>(null);
   const [viewType, setViewType] = useState<'card' | 'list'>('list');
+
+  const divisionDeptMap = useMemo(
+    () => buildDivisionToDepartmentIdsMap(divisions, departments),
+    [divisions, departments]
+  );
+
+  const filteredDepartmentsForFilter = useMemo(() => {
+    if (!filters.division_id || filters.division_id === 'all') return departments;
+    return getDepartmentsForDivision(filters.division_id, divisions, departments, divisionDeptMap);
+  }, [filters.division_id, divisions, departments, divisionDeptMap]);
+
+  const userAllowedGroupIds = useMemo(
+    () => getUserAllowedEmployeeGroupIds(currentUser),
+    [currentUser]
+  );
+
+  const scopedGroupsForFilter = useMemo(
+    () =>
+      getScopedEmployeeGroupsForFilter(groups, {
+        divisionId: filters.division_id !== 'all' ? filters.division_id : undefined,
+        departmentId: filters.department_id !== 'all' ? filters.department_id : undefined,
+        userAllowedGroupIds,
+        orgScopeGroupIds,
+      }),
+    [
+      groups,
+      filters.division_id,
+      filters.department_id,
+      userAllowedGroupIds,
+      orgScopeGroupIds,
+    ]
+  );
 
   const selectedApplyEmployeeAgreement = useMemo(() => {
     return applyEmployeeMeta[applySelectedEmpNo] || {};
@@ -378,6 +422,46 @@ export default function SuperAdminResignationsPage() {
     if (user) setCurrentUser(user);
   }, []);
 
+  useEffect(() => {
+    const div = filters.division_id;
+    const dept = filters.department_id;
+    if ((!div || div === 'all') && (!dept || dept === 'all')) {
+      setOrgScopeGroupIds(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.getEmployees({
+          is_active: true,
+          division_id: div && div !== 'all' ? div : undefined,
+          department_id: dept && dept !== 'all' ? dept : undefined,
+          limit: 5000,
+          page: 1,
+        });
+        if (cancelled) return;
+        const list = res?.data?.employees ?? res?.data ?? [];
+        const arr = Array.isArray(list) ? list : [];
+        setOrgScopeGroupIds(collectEmployeeGroupIdsFromEmployees(arr));
+      } catch {
+        if (!cancelled) setOrgScopeGroupIds(new Set());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [filters.division_id, filters.department_id]);
+
+  useEffect(() => {
+    if (!customGroupingEnabled || filters.employee_group_id === 'all') return;
+    const stillValid = scopedGroupsForFilter.some(
+      (g) => String(g._id) === String(filters.employee_group_id)
+    );
+    if (!stillValid) {
+      setFilters((prev) => ({ ...prev, employee_group_id: 'all' }));
+    }
+  }, [customGroupingEnabled, scopedGroupsForFilter, filters.employee_group_id]);
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -412,14 +496,24 @@ export default function SuperAdminResignationsPage() {
 
   const fetchFilterOptions = async () => {
     try {
-      const [divRes, deptRes, groupRes] = await Promise.all([
+      const [divRes, deptRes, groupRes, groupingSettingRes] = await Promise.all([
         api.getDivisions(true),
         api.getDepartments(true),
         api.getEmployeeGroups(true),
+        api.getSetting('custom_employee_grouping_enabled'),
       ]);
       if (divRes.success) setDivisions(divRes.data || []);
       if (deptRes.success) setDepartments(deptRes.data || []);
       if (groupRes.success) setGroups(groupRes.data || []);
+      const groupingOn = !!(
+        groupingSettingRes.success &&
+        groupingSettingRes.data &&
+        groupingSettingRes.data.value
+      );
+      setCustomGroupingEnabled(groupingOn);
+      if (!groupingOn) {
+        setFilters((prev) => ({ ...prev, employee_group_id: 'all' }));
+      }
     } catch (error) {
       console.error('Error fetching filter options:', error);
     }
@@ -806,7 +900,14 @@ export default function SuperAdminResignationsPage() {
                 <select
                   className="h-9 px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all dark:border-slate-800 dark:bg-slate-950 min-w-[120px]"
                   value={filters.division_id}
-                  onChange={(e) => setFilters({ ...filters, division_id: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({
+                      ...filters,
+                      division_id: e.target.value,
+                      department_id: 'all',
+                      employee_group_id: 'all',
+                    })
+                  }
                 >
                   <option value="all">All Divisions</option>
                   {divisions.map((div) => (
@@ -819,28 +920,36 @@ export default function SuperAdminResignationsPage() {
                 <select
                   className="h-9 px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all dark:border-slate-800 dark:bg-slate-950 min-w-[120px]"
                   value={filters.department_id}
-                  onChange={(e) => setFilters({ ...filters, department_id: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({
+                      ...filters,
+                      department_id: e.target.value,
+                      employee_group_id: 'all',
+                    })
+                  }
                 >
                   <option value="all">All Departments</option>
-                  {departments.map((dept) => (
+                  {filteredDepartmentsForFilter.map((dept) => (
                     <option key={dept._id} value={dept._id}>
                       {dept.name}
                     </option>
                   ))}
                 </select>
 
-                <select
-                  className="h-9 px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all dark:border-slate-800 dark:bg-slate-950 min-w-[120px]"
-                  value={filters.employee_group_id}
-                  onChange={(e) => setFilters({ ...filters, employee_group_id: e.target.value })}
-                >
-                  <option value="all">All Groups</option>
-                  {groups.map((group) => (
-                    <option key={group._id} value={group._id}>
-                      {group.name}
-                    </option>
-                  ))}
-                </select>
+                {customGroupingEnabled && (
+                  <select
+                    className="h-9 px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all dark:border-slate-800 dark:bg-slate-950 min-w-[120px]"
+                    value={filters.employee_group_id}
+                    onChange={(e) => setFilters({ ...filters, employee_group_id: e.target.value })}
+                  >
+                    <option value="all">All Groups</option>
+                    {scopedGroupsForFilter.map((group) => (
+                      <option key={group._id} value={group._id}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
 
                 <button
                   onClick={() =>

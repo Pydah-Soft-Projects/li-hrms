@@ -22,6 +22,11 @@ import {
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
 import Spinner from '@/components/Spinner';
 import {
+  buildDivisionToDepartmentIdsMap,
+  findDivisionIdForDepartment,
+  getDepartmentsForDivision,
+} from '@/lib/divisionDepartmentUtils';
+import {
   Plus,
   Edit,
   Eye,
@@ -168,6 +173,11 @@ export default function UsersPage() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+
+  const divisionDeptMap = useMemo(
+    () => buildDivisionToDepartmentIdsMap(divisions, departments),
+    [divisions, departments]
+  );
 
   const scopedUsers = useMemo(() => {
     if (!currentUser || currentUser.role === 'super_admin') return users;
@@ -745,19 +755,7 @@ export default function UsersPage() {
     // HOD fallback: if user has department but no divisionMapping, derive division from department (legacy)
     const deptId = (user as any).department?._id || (typeof (user as any).department === 'string' ? (user as any).department : '') || (mapping?.departments || [])[0];
     if (user.role === 'hod' && deptId && (!mapping || !mapping.division)) {
-      let divId = '';
-      const dept = departments.find((d: Department) => d._id === deptId);
-      const firstDiv = dept?.divisions?.[0];
-      if (firstDiv) {
-        divId = typeof firstDiv === 'string' ? firstDiv : (firstDiv as any)?._id || '';
-      }
-      // Fallback: find division that contains this department (Division.departments)
-      if (!divId && divisions.length > 0) {
-        const divWithDept = divisions.find((d: Division) =>
-          (d.departments || []).some((dep: any) => (typeof dep === 'string' ? dep : dep?._id) === deptId)
-        );
-        if (divWithDept) divId = (divWithDept as any)._id;
-      }
+      const divId = findDivisionIdForDepartment(deptId, divisions, departments);
       if (divId) {
         mapping = { division: divId, departments: [deptId] };
         finalMapping = [mapping];
@@ -907,6 +905,11 @@ export default function UsersPage() {
     });
   };
 
+  const departmentsForDivision = useCallback(
+    (divisionId: string) => getDepartmentsForDivision(divisionId, divisions, departments, divisionDeptMap),
+    [divisions, departments, divisionDeptMap]
+  );
+
   const ScopingSelector = ({ data, setData, asEmployee = false }: { data: UserFormData, setData: React.Dispatch<React.SetStateAction<UserFormData>>, asEmployee?: boolean }) => {
     // Specialized UI for Manager Role (Single Division)
     if (data.role === 'manager') {
@@ -973,14 +976,7 @@ export default function UsersPage() {
                 </div>
 
                 <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 bg-white/50 dark:bg-slate-800/50">
-                  {departments
-                    .filter(dept =>
-                      dept.divisions?.some((div: any) => {
-                        const dId = typeof div === 'string' ? div : div._id;
-                        return dId === selectedDivisionId;
-                      })
-                    )
-                    .map((dept) => (
+                  {departmentsForDivision(selectedDivisionId).map((dept) => (
                       <label key={dept._id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-blue-100/50 dark:hover:bg-blue-900/30 cursor-pointer">
                         <input
                           type="checkbox"
@@ -998,12 +994,7 @@ export default function UsersPage() {
                         <span className="text-sm text-slate-700 dark:text-slate-300">{dept.name}</span>
                       </label>
                     ))}
-                  {departments.filter(dept =>
-                    dept.divisions?.some((div: any) => {
-                      const dId = typeof div === 'string' ? div : div._id;
-                      return dId === selectedDivisionId;
-                    })
-                  ).length === 0 && (
+                  {departmentsForDivision(selectedDivisionId).length === 0 && (
                       <p className="text-xs text-slate-500 dark:text-slate-400 p-2">No departments found in this division</p>
                     )}
                 </div>
@@ -1069,7 +1060,7 @@ export default function UsersPage() {
 
                     {isSelected && (
                       <div className="p-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2">
-                        {departments.filter(dept => dept.divisions?.some((d: any) => (typeof d === 'string' ? d : d._id) === div._id)).map(dept => {
+                        {departmentsForDivision(div._id).map(dept => {
                           const deptId = dept._id;
                           const isDeptSelected = (mapping?.departments || []).some((d: any) => (typeof d === 'string' ? d : d?._id) === deptId);
                           return (
@@ -1084,7 +1075,7 @@ export default function UsersPage() {
                             </label>
                           );
                         })}
-                        {departments.filter(dept => dept.divisions?.some((d: any) => (typeof d === 'string' ? d : d._id) === div._id)).length === 0 && (
+                        {departmentsForDivision(div._id).length === 0 && (
                           <div className="col-span-2 text-center py-2 text-[10px] text-slate-400">No departments linked to this division</div>
                         )}
                       </div>
@@ -1156,7 +1147,7 @@ export default function UsersPage() {
 
                     {isSelected && (
                       <div className="p-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2">
-                        {departments.filter(dept => dept.divisions?.some((d: any) => (typeof d === 'string' ? d : d._id) === div._id)).map(dept => (
+                        {departmentsForDivision(div._id).map(dept => (
                           <label key={dept._id} className="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer">
                             <input
                               type="checkbox"
@@ -1167,7 +1158,7 @@ export default function UsersPage() {
                             <span className="text-[11px] text-slate-600 dark:text-slate-400 truncate">{dept.name}</span>
                           </label>
                         ))}
-                        {departments.filter(dept => dept.divisions?.some((d: any) => (typeof d === 'string' ? d : d._id) === div._id)).length === 0 && (
+                        {departmentsForDivision(div._id).length === 0 && (
                           <div className="col-span-2 text-center py-2 text-[10px] text-slate-400">No departments linked to this division</div>
                         )}
                       </div>
