@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useRef, useMemo, type MouseEvent } from 'react';
 
+import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
 import { api } from '@/lib/api';
 import { sortByEmpNo } from '@/lib/employeeSort';
 import { designationAccentClass } from '@/lib/designationDisplay';
@@ -64,7 +65,44 @@ import {
   isManagementRole
 } from '@/lib/permissions';
 
-
+function AttendanceEmployeeBlock({
+  employee,
+  onNameClick,
+  leading,
+  footer,
+}: {
+  employee: Record<string, unknown>;
+  onNameClick?: () => void;
+  leading?: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  const d = resolveEmployeeListDisplayParts({ employeeId: employee as any });
+  const initial = (d.name.charAt(0) || 'E').toUpperCase();
+  return (
+    <div className="flex min-w-0 items-start gap-2" title={d.tooltip}>
+      {leading}
+      {d.profilePhoto ? (
+        <img src={d.profilePhoto} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700" />
+      ) : (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-400 to-slate-600 text-[10px] font-semibold text-white">
+          {initial}
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        {onNameClick ? (
+          <button type="button" onClick={onNameClick} className="truncate text-left text-[11px] font-semibold text-slate-900 hover:text-blue-600 dark:text-white">
+            {d.name}
+          </button>
+        ) : (
+          <div className="truncate text-[11px] font-semibold text-slate-900 dark:text-white">{d.name}</div>
+        )}
+        {d.empDesigLine ? <div className="mt-0.5 truncate text-[9px] text-slate-600 dark:text-slate-400">{d.empDesigLine}</div> : null}
+        {d.deptDivLine ? <div className="mt-0.5 truncate text-[9px] text-slate-500 dark:text-slate-400">{d.deptDivLine}</div> : null}
+        {footer}
+      </div>
+    </div>
+  );
+}
 
 interface AttendanceRecord {
 
@@ -4895,9 +4933,11 @@ export default function AttendancePage() {
                                   {rowIdx + 1}
                                 </td>
                                 <td className={`sticky left-10 z-10 border-r border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:text-white shadow-[2px_0_5px_rgba(0,0,0,0.05)] ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-900'}`}>
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      {tableType === 'ot' && !otAutoCreateEnabled && (
+                                  <AttendanceEmployeeBlock
+                                    employee={item.employee as unknown as Record<string, unknown>}
+                                    onNameClick={() => handleEmployeeClick(item.employee)}
+                                    leading={
+                                      tableType === 'ot' && !otAutoCreateEnabled ? (
                                         <input
                                           type="checkbox"
                                           checked={Boolean(selectedOtEmployees[item.employee._id])}
@@ -4908,33 +4948,16 @@ export default function AttendancePage() {
                                           title="Select employee for bulk OT conversion"
                                           className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 text-green-600 focus:ring-green-500"
                                         />
-                                      )}
-                                      <div
-                                        className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1"
-                                        onClick={() => handleEmployeeClick(item.employee)}
-                                        title="Click to view monthly summary"
-                                      >
-                                        {item.employee.employee_name}
-                                      </div>
-
-                                    </div>
-                                    {workspaceDesignationName ? (
-                                      <div
-                                        className={`text-[9px] font-semibold italic mt-1 truncate ${designationAccentClass(workspaceDesignationName)}`}
-                                      >
-                                        {workspaceDesignationName}
-                                      </div>
-                                    ) : null}
-                                    <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
-                                      {item.employee.emp_no}
-                                      {item.employee.department && ` • ${(item.employee.department as any)?.name || ''}`}
-                                      {item.employee.leftDate && (
-                                        <div className="text-[9px] text-amber-600 dark:text-amber-400 font-bold mt-0.5">
+                                      ) : undefined
+                                    }
+                                    footer={
+                                      item.employee.leftDate ? (
+                                        <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
                                           Left {new Date(item.employee.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                                         </div>
-                                      )}
-                                    </div>
-                                  </div>
+                                      ) : undefined
+                                    }
+                                  />
                                 </td>
                                 {daysArray.map((dateStr) => {
                                   const record = item.dailyAttendance[dateStr] || null;

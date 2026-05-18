@@ -45,8 +45,8 @@ import {
 } from 'lucide-react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { getEmployeeInitials } from '@/lib/utils';
 import EmployeeSelect from '@/components/EmployeeSelect';
+import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
 import {
   buildLeaveODPayPeriodOptions,
   matchLeaveODPayPeriodSelectValue,
@@ -230,41 +230,71 @@ function OtEmployeeNameBlock({
   name,
   empNo,
   className = '',
+  showAvatar = true,
+  size = 'md',
+  avatarTone = 'blue',
 }: {
   employee?: Employee | null;
   name?: string;
   empNo?: string;
   className?: string;
+  showAvatar?: boolean;
+  size?: 'sm' | 'md' | 'lg';
+  avatarTone?: 'blue' | 'emerald' | 'slate';
 }) {
-  const displayName = (name ?? employee?.employee_name ?? '').trim() || (empNo ?? employee?.emp_no ?? '').trim() || '—';
-  const displayEmpNo = (empNo ?? employee?.emp_no ?? '').trim();
-  const designation = getOtEmployeeDesignation(employee);
-  const hideEmpNoLine = Boolean(displayEmpNo && displayEmpNo === displayName);
+  const leftFooter = employee?.leftDate ? (
+    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+      Left{' '}
+      {new Date(employee.leftDate).toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })}
+    </div>
+  ) : null;
+
+  const d = resolveEmployeeListDisplayParts({
+    employeeId: employee as any,
+    employee_name: name,
+    emp_no: empNo,
+  });
+  const initial = (d.name.charAt(0) || 'E').toUpperCase();
+  const grad =
+    avatarTone === 'emerald'
+      ? 'from-emerald-400 to-emerald-600'
+      : avatarTone === 'slate'
+        ? 'from-slate-400 to-slate-600'
+        : 'from-blue-400 to-blue-600';
+  const avatarSize =
+    size === 'lg' ? 'h-10 w-10 text-sm' : size === 'sm' ? 'h-8 w-8 text-[10px]' : 'h-9 w-9 text-xs';
 
   return (
-    <div
-      className={`min-w-0 ${className}`.trim()}
-      title={[displayName, designation, displayEmpNo].filter(Boolean).join(' · ')}
-    >
-      <div className="font-semibold truncate text-sm text-slate-900 dark:text-white">{displayName}</div>
-      {designation ? (
-        <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-          {designation}
-        </div>
+    <div className={`flex min-w-0 items-start gap-3 ${className}`.trim()} title={d.tooltip}>
+      {showAvatar ? (
+        d.profilePhoto ? (
+          <img
+            src={d.profilePhoto}
+            alt=""
+            className={`${avatarSize} shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700`}
+          />
+        ) : (
+          <div
+            className={`flex ${avatarSize} shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${grad} font-semibold text-white`}
+          >
+            {initial}
+          </div>
+        )
       ) : null}
-      {displayEmpNo && !hideEmpNoLine ? (
-        <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{displayEmpNo}</div>
-      ) : null}
-      {employee?.leftDate ? (
-        <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
-          Left{' '}
-          {new Date(employee.leftDate).toLocaleDateString('en-IN', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-          })}
-        </div>
-      ) : null}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">{d.name}</div>
+        {d.empDesigLine ? (
+          <div className="mt-0.5 truncate text-[11px] text-slate-600 dark:text-slate-400">{d.empDesigLine}</div>
+        ) : null}
+        {d.deptDivLine ? (
+          <div className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">{d.deptDivLine}</div>
+        ) : null}
+        {leftFooter}
+      </div>
     </div>
   );
 }
@@ -1984,12 +2014,7 @@ export default function OTAndPermissionsPage() {
                               <tr key={ot._id} onClick={() => openOTDetails(ot)} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors duration-300 cursor-pointer">
                                 {showEmployeeCol && (
                                   <td className="px-8 py-4">
-                                    <div className="flex items-center gap-4">
-                                      <div className="h-10 w-10 min-w-10 rounded-2xl bg-linear-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-blue-500/20">
-                                        {getEmployeeInitials({ employee_name: ot.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
-                                      </div>
-                                      <OtEmployeeNameBlock employee={ot.employeeId} name={ot.employeeId?.employee_name || ot.employeeNumber} empNo={ot.employeeNumber || ot.employeeId?.emp_no} className="max-w-[180px]" />
-                                    </div>
+                                    <OtEmployeeNameBlock employee={ot.employeeId} name={ot.employeeId?.employee_name || ot.employeeNumber} empNo={ot.employeeNumber || ot.employeeId?.emp_no} className="max-w-[180px]" avatarTone="blue" />
                                   </td>
                                 )}
                                 {showDivision && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">{getOtEmployeeDivisionName(ot.employeeId) || '-'}</td>}
@@ -2070,12 +2095,7 @@ export default function OTAndPermissionsPage() {
                             className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all"
                           >
                             <div className="flex justify-between items-start mb-3">
-                              <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
-                                  {getEmployeeInitials({ employee_name: ot.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
-                                </div>
-                                <OtEmployeeNameBlock employee={ot.employeeId} name={ot.employeeId?.employee_name || ot.employeeNumber} empNo={ot.employeeNumber || ot.employeeId?.emp_no} />
-                              </div>
+                              <OtEmployeeNameBlock employee={ot.employeeId} name={ot.employeeId?.employee_name || ot.employeeNumber} empNo={ot.employeeNumber || ot.employeeId?.emp_no} size="md" avatarTone="blue" />
                               <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest ${ot.status === 'approved' ? 'bg-emerald-500/10 text-emerald-600' :
                                 ot.status === 'rejected' ? 'bg-rose-500/10 text-rose-600' :
                                   'bg-amber-500/10 text-amber-600'
@@ -2205,12 +2225,7 @@ export default function OTAndPermissionsPage() {
                               <tr key={perm._id} onClick={() => openPermissionDetails(perm)} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors duration-300 cursor-pointer">
                                 {showEmployeeCol && (
                                   <td className="px-8 py-4">
-                                    <div className="flex items-center gap-4">
-                                      <div className="h-10 w-10 min-w-10 rounded-2xl bg-linear-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-emerald-500/20">
-                                        {getEmployeeInitials({ employee_name: perm.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
-                                      </div>
-                                      <OtEmployeeNameBlock employee={perm.employeeId} name={perm.employeeId?.employee_name || perm.employeeNumber} empNo={perm.employeeNumber || perm.employeeId?.emp_no} className="max-w-[180px]" />
-                                    </div>
+                                    <OtEmployeeNameBlock employee={perm.employeeId} name={perm.employeeId?.employee_name || perm.employeeNumber} empNo={perm.employeeNumber || perm.employeeId?.emp_no} className="max-w-[180px]" avatarTone="emerald" />
                                   </td>
                                 )}
                                 {showDivision && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">{getOtEmployeeDivisionName(perm.employeeId) || '-'}</td>}
@@ -2305,12 +2320,7 @@ export default function OTAndPermissionsPage() {
                             className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all"
                           >
                             <div className="flex justify-between items-start mb-3">
-                              <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400 font-bold text-xs shrink-0">
-                                  {getEmployeeInitials({ employee_name: perm.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
-                                </div>
-                                <OtEmployeeNameBlock employee={perm.employeeId} name={perm.employeeId?.employee_name || perm.employeeNumber} empNo={perm.employeeNumber || perm.employeeId?.emp_no} />
-                              </div>
+                              <OtEmployeeNameBlock employee={perm.employeeId} name={perm.employeeId?.employee_name || perm.employeeNumber} empNo={perm.employeeNumber || perm.employeeId?.emp_no} size="md" avatarTone="emerald" />
                               <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest ${perm.status === 'approved' ? 'bg-emerald-500/10 text-emerald-600' :
                                 perm.status === 'rejected' ? 'bg-rose-500/10 text-rose-600' :
                                   'bg-amber-500/10 text-amber-600'

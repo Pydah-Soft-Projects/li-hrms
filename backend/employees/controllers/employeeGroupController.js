@@ -1,4 +1,43 @@
 const EmployeeGroup = require('../model/EmployeeGroup');
+const Employee = require('../model/Employee');
+const { buildRosterEmployeeFilters } = require('../../shifts/services/rosterEmployeeFilter');
+
+/**
+ * @desc    Distinct employee groups used by employees matching roster filters (lightweight)
+ * @route   GET /api/employee-groups/for-roster-filters
+ */
+exports.getGroupsForRosterFilters = async (req, res) => {
+  try {
+    const { division_id, divisionId, department_id, departmentId, designation_id, designationId, startDate, endDate } = req.query;
+    const filters = buildRosterEmployeeFilters({
+      divisionId: division_id || divisionId,
+      departmentId: department_id || departmentId,
+      designationId: designation_id || designationId,
+      startDate,
+      endDate,
+    });
+    filters.employee_group_id = { $ne: null };
+
+    const groupIds = await Employee.distinct('employee_group_id', filters);
+    if (!groupIds.length) {
+      return res.status(200).json({ success: true, count: 0, data: [] });
+    }
+
+    const groups = await EmployeeGroup.find({ _id: { $in: groupIds }, isActive: { $ne: false } })
+      .select('name code isActive')
+      .sort({ name: 1 })
+      .lean();
+
+    res.status(200).json({ success: true, count: groups.length, data: groups });
+  } catch (error) {
+    console.error('getGroupsForRosterFilters:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching groups for roster filters',
+      error: error.message,
+    });
+  }
+};
 
 /**
  * @desc    List employee groups

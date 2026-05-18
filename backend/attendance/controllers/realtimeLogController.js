@@ -75,7 +75,7 @@ exports.receiveRealTimeLogs = async (req, res) => {
         console.log(`[RealTime] Internal sync receive: ${logs.length} log(s)`);
         logs.slice(0, 25).forEach((log, idx) => {
             console.log(
-                `[RealTime] Incoming Row[${idx + 1}]: emp=${log.employeeId}, ts=${log.timestamp}, incomingLogType=${log.logType}, rawStatus=${log.rawStatus}, deviceId=${log.deviceId}`
+                `[RealTime] Incoming Row[${idx + 1}]: emp=${log.employeeId}, ts=${log.timestamp}, incomingLogType=${log.logType}, rawStatus=${log.rawStatus}, deviceId=${log.deviceId}, deviceName=${log.deviceName}`
             );
         });
         if (logs.length > 25) {
@@ -130,6 +130,10 @@ exports.receiveRealTimeLogs = async (req, res) => {
                 const timestamp = new Date(timestampStr);
                 if (isNaN(timestamp.getTime())) continue;
 
+                const deviceId = log.deviceId || log.rawData?.deviceId || null;
+                const deviceName = (log.deviceName || log.rawData?.deviceName || '').trim()
+                    || (deviceId ? `Device ${deviceId}` : null);
+
                 rawLogsToSave.push({
                     insertOne: {
                         document: {
@@ -139,13 +143,15 @@ exports.receiveRealTimeLogs = async (req, res) => {
                             subType: typeUpper,   // 'CHECK-IN', 'BREAK-OUT'
                             source: 'biometric-realtime',
                             date: formatDate(timestamp),
+                            deviceId,
+                            deviceName,
                             rawData: {
                                 ...log,
+                                deviceId,
+                                deviceName,
                                 resolvedSubType: typeUpper,
                                 resolvedType: normalizedType
-                            },
-                            deviceId: log.deviceId,
-                            deviceName: log.deviceName
+                            }
                         }
                     }
                 });

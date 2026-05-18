@@ -636,6 +636,165 @@
         .toast--info {
             border-color: rgba(99, 102, 241, 0.45);
         }
+
+        .analytics-strip {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 16px;
+        }
+
+        .stat-card .label {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .stat-card .value {
+            font-size: 1.45rem;
+            font-weight: 600;
+            margin-top: 4px;
+            color: var(--text-main);
+        }
+
+        .category-panel {
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .category-panel h3 {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .category-chip {
+            display: block;
+            padding: 8px 10px;
+            margin-bottom: 6px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.04);
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: border-color 0.2s;
+        }
+
+        .category-chip:hover,
+        .category-chip.active {
+            border-color: var(--primary);
+        }
+
+        .category-chip .meta {
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        .machine-cat-badge {
+            display: inline-block;
+            margin-top: 4px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.65rem;
+            border: 1px solid rgba(99, 102, 241, 0.45);
+            background: rgba(99, 102, 241, 0.12);
+            color: #c7d2fe;
+        }
+
+        .machine-cat-badge--unset {
+            border-color: rgba(148, 163, 184, 0.35);
+            background: rgba(100, 116, 139, 0.15);
+            color: #94a3b8;
+        }
+
+        .settings-panel {
+            display: none;
+            flex: 1;
+            overflow-y: auto;
+            padding-top: 8px;
+        }
+
+        .settings-panel.visible {
+            display: block;
+        }
+
+        .settings-section {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            background: rgba(0, 0, 0, 0.12);
+        }
+
+        .settings-section h4 {
+            margin: 0 0 12px;
+            font-size: 0.95rem;
+            color: var(--text-main);
+        }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 14px;
+        }
+
+        .setting-field label {
+            display: block;
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+        }
+
+        .setting-field input,
+        .setting-field select {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-main);
+            font-size: 0.88rem;
+        }
+
+        .setting-field .hint {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            margin-top: 4px;
+            line-height: 1.35;
+        }
+
+        .source-tag {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            background: rgba(99, 102, 241, 0.2);
+            color: #c7d2fe;
+        }
+
+        .env-readonly {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            line-height: 1.5;
+        }
+
+        .env-readonly code {
+            color: #a5b4fc;
+        }
     </style>
 </head>
 
@@ -648,6 +807,13 @@
             </svg>
             Biometric Link
         </h2>
+        <div class="category-panel">
+            <h3>
+                Machine categories
+                <button type="button" class="btn-refresh" style="padding: 4px 8px; font-size: 0.7rem;" onclick="openCategoryDialog()">Manage</button>
+            </h3>
+            <div id="category-list-sidebar"></div>
+        </div>
         <div class="device-list" id="device-list">
             <!-- Devices will be injected here -->
         </div>
@@ -671,7 +837,18 @@
                 <button class="btn-refresh" onclick="openDeviceAttlogDialog()" style="border-color: #f59e0b; color: #f59e0b;">Backup / Clear (TCP)</button>
                 <button class="btn-refresh" onclick="openTcpSyncToDbDialog()" style="border-color: #38bdf8; color: #38bdf8;">Sync to MongoDB (TCP)</button>
                 <button class="btn-refresh" onclick="refreshData()">Refresh Data</button>
+                <button class="btn-refresh" onclick="openBulkCloneDialog()" style="border-color: #a78bfa; color: #c4b5fd;">Bulk transfer users</button>
+                <button class="btn-refresh" onclick="loadAnalytics()">Refresh analytics</button>
             </div>
+        </div>
+
+        <div class="analytics-strip" id="analytics-strip">
+            <div class="stat-card"><div class="label">Attendance logs</div><div class="value" id="stat-total-logs">—</div></div>
+            <div class="stat-card"><div class="label">Unique punchers</div><div class="value" id="stat-unique-employees">—</div></div>
+            <div class="stat-card"><div class="label">Golden users (DB)</div><div class="value" id="stat-golden-users">—</div></div>
+            <div class="stat-card"><div class="label">With fingerprints</div><div class="value" id="stat-with-fp">—</div></div>
+            <div class="stat-card"><div class="label">Devices</div><div class="value" id="stat-devices">—</div></div>
+            <div class="stat-card"><div class="label">Categories</div><div class="value" id="stat-categories">—</div></div>
         </div>
 
         <!-- NEW: Command Actions Section -->
@@ -718,6 +895,7 @@
             <div class="tab" data-table="FACE" onclick="switchTab(this)">Face Data</div>
             <div class="tab" data-table="ATTLOG" onclick="switchTab(this)">Attendance Logs</div>
             <div class="tab" data-table="OPERLOG" onclick="switchTab(this)">Operation Logs</div>
+            <div class="tab" data-table="SETTINGS" onclick="switchTab(this)">Settings</div>
         </div>
 
         <div class="data-viewer">
@@ -737,6 +915,94 @@
                         <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                     </svg>
                 </div>
+            </div>
+            <div id="settings-panel" class="settings-panel">
+                <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 16px;">
+                    Values saved here override <code>.env</code> for this service. Connection secrets (Mongo URL, HRMS key) stay in environment only.
+                </p>
+                <form id="biometric-settings-form" onsubmit="saveBiometricSettings(event)">
+                    <div class="settings-section">
+                        <h4>User sync</h4>
+                        <div class="settings-grid">
+                            <div class="setting-field">
+                                <label><input type="checkbox" id="set-auto-clone"> Auto-clone new users within machine category</label>
+                                <div class="hint">Enrolling on one device copies profile + fingerprints to other devices in the same category.</div>
+                                <span class="source-tag" id="src-autoCloneNewUsers"></span>
+                            </div>
+                            <div class="setting-field">
+                                <label><input type="checkbox" id="set-sync-userinfo"> Reconcile USERINFO when terminal data drifts</label>
+                                <span class="source-tag" id="src-syncStoredDeviceUserToTerminal"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h4>Attendance operation</h4>
+                        <div class="settings-grid">
+                            <div class="setting-field">
+                                <label for="set-operation-mode">Service mode</label>
+                                <select id="set-operation-mode">
+                                    <option value="OPERATION">Operation mode (device status codes)</option>
+                                    <option value="DEVICE">Device mode (per-device operation group)</option>
+                                </select>
+                                <span class="source-tag" id="src-operationMode"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h4>Devices &amp; sync</h4>
+                        <div class="settings-grid">
+                            <div class="setting-field">
+                                <label for="set-heartbeat-ms">Device live threshold (ms)</label>
+                                <input type="number" id="set-heartbeat-ms" min="30000" step="1000">
+                                <span class="source-tag" id="src-deviceHeartbeatStaleMs"></span>
+                            </div>
+                            <div class="setting-field">
+                                <label for="set-sync-interval">TCP sync interval (minutes, 0 = off)</label>
+                                <input type="number" id="set-sync-interval" min="0" step="1">
+                                <span class="source-tag" id="src-syncIntervalMinutes"></span>
+                            </div>
+                            <div class="setting-field">
+                                <label for="set-timezone">Timezone offset</label>
+                                <input type="text" id="set-timezone" placeholder="+05:30">
+                                <span class="source-tag" id="src-timezoneOffset"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h4>Fresh ADMS backup timing</h4>
+                        <div class="settings-grid">
+                            <div class="setting-field">
+                                <label for="set-backup-quiet">Quiet period (ms)</label>
+                                <input type="number" id="set-backup-quiet" min="2000" step="1000">
+                                <span class="source-tag" id="src-admsFreshBackupQuietPeriodMs"></span>
+                            </div>
+                            <div class="setting-field">
+                                <label for="set-backup-hard">Hard cap (ms)</label>
+                                <input type="number" id="set-backup-hard" min="60000" step="1000">
+                                <span class="source-tag" id="src-admsFreshBackupHardCapMs"></span>
+                            </div>
+                            <div class="setting-field">
+                                <label for="set-backup-first">Wait for first batch (ms)</label>
+                                <input type="number" id="set-backup-first" min="10000" step="1000">
+                                <span class="source-tag" id="src-admsFreshBackupFirstBatchWaitMs"></span>
+                            </div>
+                            <div class="setting-field">
+                                <label for="set-backup-api-cap">API max hard cap (ms)</label>
+                                <input type="number" id="set-backup-api-cap" min="60000" step="1000">
+                                <span class="source-tag" id="src-admsFreshBackupApiHardCapMs"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h4>Environment (read-only)</h4>
+                        <div id="env-readonly" class="env-readonly">Loading…</div>
+                    </div>
+                    <div style="display:flex; gap:12px; align-items:center; margin-top:8px;">
+                        <button type="submit" class="btn-download">Save settings</button>
+                        <button type="button" class="btn-refresh" onclick="loadBiometricSettings()">Reload</button>
+                        <span id="settings-save-status" style="font-size:0.82rem;color:var(--text-dim);"></span>
+                    </div>
+                </form>
             </div>
             <div id="data-container">
                 <div class="empty-state">
@@ -934,6 +1200,68 @@
         </div>
     </div>
 
+    <!-- Machine categories -->
+    <div class="dialog-overlay" id="category-dialog">
+        <div class="dialog-box dialog-box--scroll" style="max-width: 560px;">
+            <h3>Machine categories</h3>
+            <p style="color: var(--text-dim); font-size: 0.82rem; margin-bottom: 12px; line-height: 1.45;">
+                Group devices into a category. When <code>AUTO_CLONE_NEW_USERS=true</code>, enrolling a user on any device in a category copies profile + fingerprints to all other enabled devices in that category.
+            </p>
+            <div class="dialog-body-scroll">
+                <div class="dialog-row">
+                    <label>New category name</label>
+                    <input type="text" id="cat-new-name" placeholder="e.g. Main gate cluster">
+                </div>
+                <div class="dialog-row">
+                    <label>Description (optional)</label>
+                    <input type="text" id="cat-new-desc" placeholder="Building A entrance devices">
+                </div>
+                <button type="button" class="btn-download" onclick="createCategory()" style="margin-bottom: 16px;">Create category</button>
+                <div id="category-manage-list" style="font-size: 0.85rem;"></div>
+                <hr style="border-color: var(--border); margin: 16px 0;">
+                <div class="dialog-row">
+                    <label>Assign selected device to category</label>
+                    <select id="cat-assign-select">
+                        <option value="">— No category —</option>
+                    </select>
+                </div>
+                <button type="button" class="btn-refresh" onclick="assignSelectedDeviceCategory()">Save device category</button>
+            </div>
+            <div class="dialog-actions--sticky">
+                <button class="btn-cancel" onclick="closeCategoryDialog()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk user transfer -->
+    <div class="dialog-overlay" id="bulk-clone-dialog">
+        <div class="dialog-box dialog-box--scroll" style="max-width: 520px;">
+            <h3>Bulk transfer users</h3>
+            <p style="color: var(--text-dim); font-size: 0.82rem; margin-bottom: 12px;">
+                Queue golden-record users (profile + fingerprints) to all devices in a target category, or pick specific devices.
+            </p>
+            <div class="dialog-body-scroll">
+                <div class="dialog-row">
+                    <label>User IDs (comma or newline separated)</label>
+                    <textarea id="bulk-user-ids" rows="4" style="width:100%; padding:10px; background:rgba(255,255,255,0.06); border:1px solid var(--border); border-radius:8px; color:white; font-family:inherit;" placeholder="101, 102, 103"></textarea>
+                </div>
+                <div class="dialog-row">
+                    <label>Target category</label>
+                    <select id="bulk-target-category"></select>
+                </div>
+                <div class="dialog-row">
+                    <label>Or target devices (hold Ctrl)</label>
+                    <select id="bulk-target-devices" multiple size="5" style="min-height: 100px;"></select>
+                </div>
+                <div id="bulk-clone-status" style="font-size: 0.82rem; color: var(--accent); white-space: pre-wrap; min-height: 1.2em;"></div>
+            </div>
+            <div class="dialog-actions--sticky">
+                <button class="btn-cancel" onclick="closeBulkCloneDialog()">Close</button>
+                <button type="button" class="btn-download" onclick="runBulkClone()">Queue transfer</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let selectedSN = null;
         let activeTable = 'USERINFO';
@@ -945,8 +1273,270 @@
         let userListPageSize = 50;
         let userListMeta = { total: 0, page: 1, limit: 50, totalPages: 1 };
         let searchDebounceTimer = null;
+        let allCategories = [];
 
         const TZ_IST = 'Asia/Kolkata';
+
+        function categoryNameById(categoryId) {
+            if (!categoryId) return null;
+            const c = allCategories.find(x => x.categoryId === categoryId);
+            return c ? c.name : categoryId;
+        }
+
+        async function loadCategories() {
+            try {
+                const res = await fetch('/api/categories');
+                const data = await res.json();
+                if (data.success) {
+                    allCategories = data.data || [];
+                    renderCategorySidebar();
+                    populateCategorySelects();
+                }
+            } catch (e) {
+                console.error('Failed to load categories', e);
+            }
+        }
+
+        function renderCategorySidebar() {
+            const el = document.getElementById('category-list-sidebar');
+            if (!el) return;
+            if (!allCategories.length) {
+                el.innerHTML = '<p style="font-size:0.75rem;color:var(--text-dim);">No categories yet. Click Manage to create one.</p>';
+                return;
+            }
+            el.innerHTML = allCategories.map(c => `
+                <div class="category-chip" title="${(c.description || '').replace(/"/g, '&quot;')}">
+                    <strong>${c.name}</strong>
+                    <div class="meta">${c.deviceCount || 0} device(s) · auto-clone ${c.autoCloneEnabled ? 'on' : 'off'}</div>
+                </div>
+            `).join('');
+        }
+
+        function populateCategorySelects() {
+            const opts = allCategories.map(c =>
+                `<option value="${c.categoryId}">${c.name} (${c.deviceCount || 0} devices)</option>`
+            ).join('');
+            const assign = document.getElementById('cat-assign-select');
+            if (assign) {
+                assign.innerHTML = '<option value="">— No category —</option>' + opts;
+                if (selectedSN) {
+                    const dev = allDevices.find(d => d.deviceId === selectedSN);
+                    assign.value = dev?.categoryId || '';
+                }
+            }
+            const bulkCat = document.getElementById('bulk-target-category');
+            if (bulkCat) {
+                bulkCat.innerHTML = '<option value="">Select category…</option>' + opts;
+            }
+            const bulkDev = document.getElementById('bulk-target-devices');
+            if (bulkDev) {
+                bulkDev.innerHTML = allDevices.filter(d => d.enabled !== false).map(d =>
+                    `<option value="${d.deviceId}">${d.name} (${d.deviceId})</option>`
+                ).join('');
+            }
+        }
+
+        async function loadAnalytics() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                if (!data.success || !data.stats) return;
+                const s = data.stats;
+                document.getElementById('stat-total-logs').textContent = (s.totalLogs ?? 0).toLocaleString();
+                document.getElementById('stat-unique-employees').textContent = (s.uniqueEmployees ?? 0).toLocaleString();
+                document.getElementById('stat-golden-users').textContent = (s.goldenUsers ?? 0).toLocaleString();
+                document.getElementById('stat-with-fp').textContent = (s.usersWithFingerprints ?? 0).toLocaleString();
+                document.getElementById('stat-devices').textContent = (s.deviceCount ?? 0).toLocaleString();
+                document.getElementById('stat-categories').textContent = (s.categoryCount ?? 0).toLocaleString();
+                if (data.categories) allCategories = data.categories.map(c => ({
+                    ...c,
+                    deviceCount: (data.devices || []).filter(d => d.categoryId === c.categoryId).length
+                }));
+                if (data.devices) {
+                    allDevices = allDevices.length ? allDevices.map(d => {
+                        const fresh = data.devices.find(x => x.deviceId === d.deviceId);
+                        return fresh ? { ...d, categoryId: fresh.categoryId } : d;
+                    }) : data.devices;
+                }
+                renderCategorySidebar();
+                populateCategorySelects();
+            } catch (e) {
+                showToast('Could not load analytics', 'error');
+            }
+        }
+
+        function openCategoryDialog() {
+            document.getElementById('category-dialog').classList.add('open');
+            loadCategories().then(() => renderCategoryManageList());
+        }
+
+        function closeCategoryDialog() {
+            document.getElementById('category-dialog').classList.remove('open');
+        }
+
+        function renderCategoryManageList() {
+            const el = document.getElementById('category-manage-list');
+            if (!el) return;
+            if (!allCategories.length) {
+                el.innerHTML = '<p style="color:var(--text-dim);">No categories yet.</p>';
+                return;
+            }
+            el.innerHTML = allCategories.map(c => `
+                <div style="border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:8px;">
+                    <strong>${c.name}</strong> <span style="color:var(--text-dim); font-size:0.75rem;">(${c.categoryId})</span>
+                    <div style="font-size:0.75rem;color:var(--text-dim);margin:4px 0;">${c.description || '—'} · ${c.deviceCount || 0} devices</div>
+                    <label style="font-size:0.75rem;display:flex;align-items:center;gap:6px;margin:6px 0;">
+                        <input type="checkbox" ${c.autoCloneEnabled ? 'checked' : ''} onchange="toggleCategoryAutoClone('${c.categoryId}', this.checked)">
+                        Auto-clone new users within category
+                    </label>
+                    <button type="button" class="btn-refresh" style="padding:4px 10px;font-size:0.75rem;color:#ef4444;border-color:#ef4444;" onclick="deleteCategory('${c.categoryId}')">Delete</button>
+                </div>
+            `).join('');
+        }
+
+        async function createCategory() {
+            const name = document.getElementById('cat-new-name').value.trim();
+            const description = document.getElementById('cat-new-desc').value.trim();
+            if (!name) {
+                showToast('Enter a category name', 'info');
+                return;
+            }
+            const res = await fetch('/api/categories', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                showToast(data.error || 'Create failed', 'error');
+                return;
+            }
+            document.getElementById('cat-new-name').value = '';
+            document.getElementById('cat-new-desc').value = '';
+            showToast('Category created', 'success');
+            await loadCategories();
+            renderCategoryManageList();
+        }
+
+        async function assignSelectedDeviceCategory() {
+            if (!selectedSN) {
+                showToast('Select a device in the sidebar first', 'info');
+                return;
+            }
+            const categoryId = document.getElementById('cat-assign-select').value || null;
+            const res = await fetch('/api/devices/' + encodeURIComponent(selectedSN), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ categoryId: categoryId || null })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                showToast(data.error || 'Update failed', 'error');
+                return;
+            }
+            showToast('Device category saved', 'success');
+            await loadDevices();
+            populateCategorySelects();
+        }
+
+        async function toggleCategoryAutoClone(categoryId, enabled) {
+            await fetch('/api/categories/' + encodeURIComponent(categoryId), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ autoCloneEnabled: enabled })
+            });
+            await loadCategories();
+        }
+
+        async function deleteCategory(categoryId) {
+            if (!confirm('Delete this category? Devices will be unassigned.')) return;
+            const res = await fetch('/api/categories/' + encodeURIComponent(categoryId), { method: 'DELETE' });
+            const data = await res.json();
+            if (!data.success) {
+                showToast(data.error || 'Delete failed', 'error');
+                return;
+            }
+            showToast('Category deleted', 'success');
+            await loadCategories();
+            renderCategoryManageList();
+            await loadDevices();
+        }
+
+        function openBulkCloneDialog() {
+            document.getElementById('bulk-clone-dialog').classList.add('open');
+            document.getElementById('bulk-clone-status').textContent = '';
+            loadCategories();
+        }
+
+        function closeBulkCloneDialog() {
+            document.getElementById('bulk-clone-dialog').classList.remove('open');
+        }
+
+        async function runBulkClone() {
+            const raw = document.getElementById('bulk-user-ids').value;
+            const userIds = raw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+            const targetCategoryId = document.getElementById('bulk-target-category').value;
+            const devSel = document.getElementById('bulk-target-devices');
+            const targetDeviceIds = [...devSel.selectedOptions].map(o => o.value);
+            const statusEl = document.getElementById('bulk-clone-status');
+
+            if (!userIds.length) {
+                statusEl.textContent = 'Enter at least one user ID.';
+                return;
+            }
+            if (!targetCategoryId && !targetDeviceIds.length) {
+                statusEl.textContent = 'Select a target category or one or more devices.';
+                return;
+            }
+
+            statusEl.textContent = '⏳ Queuing…';
+            try {
+                const body = { userIds, sourceDeviceId: selectedSN || undefined };
+                if (targetCategoryId) body.targetCategoryId = targetCategoryId;
+                if (targetDeviceIds.length) body.targetDeviceIds = targetDeviceIds;
+
+                const res = await fetch('/api/adms/clone-users-bulk', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    statusEl.textContent = '❌ ' + (data.error || 'Failed');
+                    return;
+                }
+                const ok = (data.data?.results || []).length;
+                const errN = (data.data?.errors || []).length;
+                statusEl.textContent = `✅ Queued ${ok} user(s)${errN ? `, ${errN} error(s)` : ''}. Devices pick up commands on next heartbeat.`;
+                statusEl.style.color = '#10b981';
+            } catch (e) {
+                statusEl.textContent = '❌ ' + e.message;
+            }
+        }
+
+        async function cloneUserToCategory(userId, categoryId) {
+            if (!categoryId) return;
+            const statusEl = document.getElementById('command-status');
+            statusEl.innerText = `⏳ Cloning ${userId} to category…`;
+            try {
+                const res = await fetch('/api/adms/clone-user', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId, targetCategoryId: categoryId, sourceDeviceId: selectedSN })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    statusEl.innerText = `✅ ${userId} → ${result.data.devicesQueued} device(s)`;
+                    statusEl.style.color = 'var(--accent)';
+                } else {
+                    statusEl.innerText = '❌ ' + (result.error || 'Failed');
+                    statusEl.style.color = '#ef4444';
+                }
+                setTimeout(() => { statusEl.innerText = ''; }, 5000);
+            } catch (err) {
+                statusEl.innerText = '❌ ' + err.message;
+            }
+        }
 
         function setModeStatus(message, color = 'var(--text-dim)') {
             const el = document.getElementById('mode-status');
@@ -1574,6 +2164,9 @@
                                 <div style="margin-top: 4px;">
                                     <span class="op-group-badge ${dev.operationGroup ? '' : 'op-group-badge--unset'}">Operation Group: ${dev.operationGroup || 'Not Set'}</span>
                                 </div>
+                                <div style="margin-top: 4px;">
+                                    <span class="machine-cat-badge ${dev.categoryId ? '' : 'machine-cat-badge--unset'}">Category: ${dev.categoryId ? (categoryNameById(dev.categoryId) || dev.categoryId) : 'Not assigned'}</span>
+                                </div>
                             </div>
 
                             <div style="margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
@@ -1588,6 +2181,7 @@
                     refreshLiveBadgesOnly();
                     syncSelectedDeviceOperationGroup();
                     updateModeDeviceSourceInfo();
+                    populateCategorySelects();
                 } else {
                     container.innerHTML = '<p style="color: var(--text-dim); text-align: center; margin-top: 20px;">No devices found.</p>';
                     updateModeDeviceSourceInfo();
@@ -1706,7 +2300,124 @@
             activeTable = el.dataset.table;
             userListPage = 1;
             document.getElementById('view-title').innerText = el.innerText;
+
+            const isSettings = activeTable === 'SETTINGS';
+            const settingsPanel = document.getElementById('settings-panel');
+            const dataContainer = document.getElementById('data-container');
+            const searchWrap = document.getElementById('dashboard-search')?.parentElement;
+            if (settingsPanel) settingsPanel.classList.toggle('visible', isSettings);
+            if (dataContainer) dataContainer.style.display = isSettings ? 'none' : 'block';
+            if (searchWrap) searchWrap.style.display = isSettings ? 'none' : '';
+            const pagBar = document.getElementById('user-pagination');
+            if (pagBar && isSettings) pagBar.classList.remove('visible');
+            const actions = document.getElementById('device-actions');
+            if (actions && isSettings) actions.style.display = 'none';
+
+            if (isSettings) {
+                loadBiometricSettings();
+                return;
+            }
             fetchTableData();
+        }
+
+        function setSourceTag(id, source) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = source || '';
+            el.style.display = source ? 'inline-block' : 'none';
+        }
+
+        async function loadBiometricSettings() {
+            const statusEl = document.getElementById('settings-save-status');
+            try {
+                const res = await fetch('/api/settings');
+                const json = await res.json();
+                if (!res.ok || !json.success) {
+                    if (statusEl) statusEl.textContent = json.error || 'Failed to load settings';
+                    return;
+                }
+                const d = json.data;
+                const sources = d.sources || {};
+                document.getElementById('set-auto-clone').checked = Boolean(d.autoCloneNewUsers);
+                document.getElementById('set-sync-userinfo').checked = Boolean(d.syncStoredDeviceUserToTerminal);
+                document.getElementById('set-operation-mode').value = d.operationMode || 'OPERATION';
+                document.getElementById('set-heartbeat-ms').value = d.deviceHeartbeatStaleMs;
+                document.getElementById('set-sync-interval').value = d.syncIntervalMinutes;
+                document.getElementById('set-timezone').value = d.timezoneOffset || '+05:30';
+                document.getElementById('set-backup-quiet').value = d.admsFreshBackupQuietPeriodMs;
+                document.getElementById('set-backup-hard').value = d.admsFreshBackupHardCapMs;
+                document.getElementById('set-backup-first').value = d.admsFreshBackupFirstBatchWaitMs;
+                document.getElementById('set-backup-api-cap').value = d.admsFreshBackupApiHardCapMs;
+
+                setSourceTag('src-autoCloneNewUsers', sources.autoCloneNewUsers);
+                setSourceTag('src-syncStoredDeviceUserToTerminal', sources.syncStoredDeviceUserToTerminal);
+                setSourceTag('src-operationMode', sources.operationMode);
+                setSourceTag('src-deviceHeartbeatStaleMs', sources.deviceHeartbeatStaleMs);
+                setSourceTag('src-syncIntervalMinutes', sources.syncIntervalMinutes);
+                setSourceTag('src-timezoneOffset', sources.timezoneOffset);
+                setSourceTag('src-admsFreshBackupQuietPeriodMs', sources.admsFreshBackupQuietPeriodMs);
+                setSourceTag('src-admsFreshBackupHardCapMs', sources.admsFreshBackupHardCapMs);
+                setSourceTag('src-admsFreshBackupFirstBatchWaitMs', sources.admsFreshBackupFirstBatchWaitMs);
+                setSourceTag('src-admsFreshBackupApiHardCapMs', sources.admsFreshBackupApiHardCapMs);
+
+                const env = json.env || {};
+                const envEl = document.getElementById('env-readonly');
+                if (envEl) {
+                    envEl.innerHTML =
+                        `<div><b>Backend URL:</b> <code>${env.backendUrl || 'not set'}</code></div>` +
+                        `<div><b>HRMS sync key:</b> ${env.microserviceKeyConfigured ? 'configured (' + (env.microserviceKeyPreview || '••••') + ')' : 'not set'}</div>` +
+                        `<div><b>MongoDB:</b> ${env.mongodbConfigured ? 'configured in .env' : 'using default/local'}</div>` +
+                        `<div><b>ATTLOG backup dir:</b> <code>${env.attlogBackupDir || '—'}</code></div>` +
+                        `<div><b>S3 backup:</b> ${env.s3BackupEnabled ? 'enabled' : 'off'}</div>`;
+                }
+
+                const opSel = document.getElementById('operation-mode-select');
+                if (opSel) opSel.value = d.operationMode || 'OPERATION';
+                updateModeImpactText();
+                updateServiceModeChip();
+
+                if (statusEl) statusEl.textContent = d.updatedAt ? ('Loaded · updated ' + formatISTShort(d.updatedAt)) : 'Loaded';
+            } catch (e) {
+                if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+            }
+        }
+
+        async function saveBiometricSettings(ev) {
+            if (ev) ev.preventDefault();
+            const statusEl = document.getElementById('settings-save-status');
+            statusEl.textContent = 'Saving…';
+            const body = {
+                autoCloneNewUsers: document.getElementById('set-auto-clone').checked,
+                syncStoredDeviceUserToTerminal: document.getElementById('set-sync-userinfo').checked,
+                operationMode: document.getElementById('set-operation-mode').value,
+                deviceHeartbeatStaleMs: parseInt(document.getElementById('set-heartbeat-ms').value, 10),
+                syncIntervalMinutes: parseInt(document.getElementById('set-sync-interval').value, 10),
+                timezoneOffset: document.getElementById('set-timezone').value.trim(),
+                admsFreshBackupQuietPeriodMs: parseInt(document.getElementById('set-backup-quiet').value, 10),
+                admsFreshBackupHardCapMs: parseInt(document.getElementById('set-backup-hard').value, 10),
+                admsFreshBackupFirstBatchWaitMs: parseInt(document.getElementById('set-backup-first').value, 10),
+                admsFreshBackupApiHardCapMs: parseInt(document.getElementById('set-backup-api-cap').value, 10)
+            };
+            try {
+                const res = await fetch('/api/settings', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const json = await res.json();
+                if (!res.ok || !json.success) {
+                    statusEl.textContent = json.error || 'Save failed';
+                    showToast(json.error || 'Save failed', 'error');
+                    return;
+                }
+                showToast('Settings saved', 'success');
+                await loadBiometricSettings();
+                await loadOperationMode();
+                updateModeControlVisibility();
+            } catch (e) {
+                statusEl.textContent = 'Error: ' + e.message;
+                showToast('Save failed', 'error');
+            }
         }
 
         function syncPageSizeSelect() {
@@ -1749,6 +2460,7 @@
         }
 
         async function fetchTableData() {
+            if (activeTable === 'SETTINGS') return;
             if (!selectedSN) return;
 
             const container = document.getElementById('data-container');
@@ -1845,9 +2557,13 @@
                         const displayName = hasName ? user.name : `Staff member #${user.userId}`;
                         const subText = hasName ? `Staff ID: ${user.userId}` : `<i>(Name not set on device)</i>`;
 
-                        // Generate target devices for cloning
                         const otherDevices = allDevices.filter(d => d.deviceId !== selectedSN);
                         const cloneOptions = otherDevices.map(d => `<option value="${d.deviceId}">${d.name}</option>`).join('');
+                        const sourceDev = allDevices.find(d => d.deviceId === selectedSN);
+                        const sourceCat = sourceDev?.categoryId;
+                        const catCloneBtn = sourceCat
+                            ? `<button type="button" class="btn-refresh" style="margin-top:6px;padding:4px 10px;font-size:0.72rem;" onclick="cloneUserToCategory('${user.userId}', '${sourceCat}')">Clone to category (${categoryNameById(sourceCat) || sourceCat})</button>`
+                            : '';
 
                         return `
                         <div class="card" style="margin-bottom: 12px; padding: 20px; border: 1px solid var(--border); background: rgba(30, 41, 59, 0.3);">
@@ -1871,6 +2587,7 @@
                                         <option value="">Select Device</option>
                                         ${cloneOptions}
                                     </select>
+                                    ${catCloneBtn}
                                     <div style="margin-top: 8px; font-size: 0.65rem; color: var(--text-dim);">
                                         Synced (IST): ${user.lastSyncedAt ? formatISTShort(user.lastSyncedAt) : '—'}
                                     </div>
@@ -2097,6 +2814,8 @@
         updateServiceModeChip();
         updateModeDeviceSourceInfo();
         loadDevices();
+        loadCategories();
+        loadAnalytics();
 
         // Re-fetch device list periodically; live/offline pills also update every 5s without full reload
         setInterval(loadDevices, 15000);

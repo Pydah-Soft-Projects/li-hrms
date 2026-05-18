@@ -236,7 +236,7 @@ exports.getLoans = async (req, res) => {
 
     const [loans, total, presentPayPeriod] = await Promise.all([
       Loan.find(filter)
-        .populate('employeeId', 'employee_name emp_no gross_salary')
+        .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id')
         .populate('division_id', 'name code')
         .populate('department', 'name')
         .populate('designation', 'name')
@@ -282,7 +282,7 @@ exports.getMyLoans = async (req, res) => {
 
     const [loans, presentPayPeriod] = await Promise.all([
       Loan.find(filter)
-        .populate('employeeId', 'employee_name emp_no gross_salary')
+        .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id')
         .populate('division_id', 'name code')
         .populate('department', 'name')
         .populate('designation', 'name')
@@ -544,7 +544,7 @@ exports.getLoan = async (req, res) => {
       .populate('disbursement.disbursedBy', 'name email')
       .populate('cancellation.cancelledBy', 'name email')
       .populate('changeHistory.modifiedBy', 'name email')
-      .populate('guarantors.employeeId', 'employee_name emp_no');
+      .populate('guarantors.employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id');
 
     if (!loan) {
       return res.status(404).json({
@@ -908,7 +908,7 @@ exports.applyLoan = async (req, res) => {
 
     // Populate for response
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
+      { path: 'employeeId', select: 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id' },
       { path: 'department', select: 'name' },
       { path: 'designation', select: 'name' },
     ]);
@@ -969,7 +969,7 @@ exports.getGuarantorRequests = async (req, res) => {
       'guarantors.employeeId': mongoEmployeeId,
       isActive: true,
     })
-      .populate('employeeId', 'employee_name emp_no')
+      .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
       .populate('department', 'name')
       .populate('designation', 'name')
       .sort({ appliedAt: -1 });
@@ -1258,7 +1258,7 @@ exports.updateLoan = async (req, res) => {
 
     // Populate for response
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
+      { path: 'employeeId', select: 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id' },
       { path: 'department', select: 'name' },
       { path: 'designation', select: 'name' },
       { path: 'changeHistory.modifiedBy', select: 'name email role' },
@@ -1316,7 +1316,7 @@ exports.getPendingApprovals = async (req, res) => {
     }
 
     const loans = await Loan.find(filter)
-      .populate('employeeId', 'employee_name emp_no gross_salary')
+      .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id')
       .populate('department', 'name')
       .populate('designation', 'name')
       .sort({ appliedAt: -1 });
@@ -1343,7 +1343,7 @@ exports.processLoanAction = async (req, res) => {
     const { action, comments, approvalAmount, approvalInterestRate, firstDeductionPayrollMonth } = req.body;
     const loan = await Loan.findById(req.params.id)
       .populate('division_id')
-      .populate('employeeId', 'employee_name emp_no gross_salary');
+      .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id');
 
     if (!loan) {
       return res.status(404).json({
@@ -1933,7 +1933,7 @@ exports.disburseLoan = async (req, res) => {
     await loan.save();
 
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
+      { path: 'employeeId', select: 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id' },
       { path: 'disbursement.disbursedBy', select: 'name email' },
     ]);
 
@@ -1969,7 +1969,7 @@ exports.payEMI = async (req, res) => {
     const { id } = req.params;
     const { amount, paymentDate, remarks, payrollCycle, isEarlySettlement } = req.body;
 
-    const loan = await Loan.findById(id).populate('employeeId', 'employee_name emp_no gross_salary');
+    const loan = await Loan.findById(id).populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id');
 
     if (!loan) {
       return res.status(404).json({
@@ -2070,7 +2070,7 @@ exports.payEMI = async (req, res) => {
     await loan.save();
 
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
+      { path: 'employeeId', select: 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id' },
       { path: 'transactions.processedBy', select: 'name email' },
     ]);
 
@@ -2104,7 +2104,7 @@ exports.payAdvance = async (req, res) => {
       });
     }
 
-    const loan = await Loan.findById(id).populate('employeeId', 'employee_name emp_no gross_salary');
+    const loan = await Loan.findById(id).populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id');
 
     if (!loan) {
       return res.status(404).json({
@@ -2178,7 +2178,7 @@ exports.payAdvance = async (req, res) => {
     await loan.save();
 
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
+      { path: 'employeeId', select: 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id' },
       { path: 'transactions.processedBy', select: 'name email' },
     ]);
 
@@ -2205,7 +2205,7 @@ exports.getSettlementPreview = async (req, res) => {
     const { settlementDate } = req.query; // Optional: settlement date (default: now)
 
     const loan = await Loan.findById(id)
-      .populate('employeeId', 'employee_name emp_no gross_salary')
+      .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id')
       .select('requestType amount duration loanConfig repayment disbursement appliedAt createdAt status');
 
     if (!loan) {
@@ -2276,7 +2276,7 @@ exports.getTransactions = async (req, res) => {
     const { id } = req.params;
 
     const loan = await Loan.findById(id)
-      .populate('employeeId', 'employee_name emp_no gross_salary')
+      .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id')
       .populate('transactions.processedBy', 'name email')
       .select('transactions requestType amount loanConfig advanceConfig repayment');
 
@@ -2400,7 +2400,7 @@ exports.getLoanReportSummary = async (req, res) => {
           const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
           empQuery.division_id = { $in: divIds.map(toObjectId) };
         }
-        const emps = await Employee.find(empQuery).select('employee_name emp_no').lean();
+        const emps = await Employee.find(empQuery).select('employee_name emp_no profilePhoto department_id designation_id division_id').lean();
         children = emps.map(e => ({ _id: e._id, name: `${e.employee_name} (${e.emp_no})` }));
       }
 
@@ -2442,7 +2442,7 @@ exports.getLoanReportSummary = async (req, res) => {
 
     const [loans, total] = await Promise.all([
       Loan.find(query)
-        .populate('employeeId', 'employee_name emp_no')
+        .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
         .populate('department', 'name')
         .populate('division_id', 'name')
         .sort({ appliedAt: -1 })
@@ -2493,7 +2493,7 @@ exports.exportLoanReport = async (req, res) => {
     }
 
     const loans = await Loan.find(query)
-      .populate('employeeId', 'employee_name emp_no')
+      .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
       .populate('department', 'name')
       .populate('division_id', 'name')
       .populate('designation', 'name')
@@ -2559,7 +2559,7 @@ exports.exportLoanReportPDF = async (req, res) => {
     }
 
     const loans = await Loan.find(query)
-      .populate('employeeId', 'employee_name emp_no')
+      .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
       .populate('department', 'name')
       .populate('division_id', 'name')
       .sort({ appliedAt: -1 })

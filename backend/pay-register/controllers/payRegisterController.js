@@ -168,7 +168,7 @@ exports.getPayRegister = async (req, res) => {
       employeeId,
       month,
     })
-      .populate('employeeId', 'employee_name emp_no department_id designation_id')
+      .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
       .populate('dailyRecords.shiftId', 'name payableShifts')
       .populate('lastEditedBy', 'name email role')
       .populate('editedBy', 'name email role');

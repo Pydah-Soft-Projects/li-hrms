@@ -279,7 +279,8 @@ exports.bulkCreatePreScheduledShifts = async (req, res) => {
  */
 exports.getRoster = async (req, res) => {
   try {
-    const { month, employeeNumber, departmentId, startDate, endDate } = req.query; // month = YYYY-MM
+    const { month, startDate, endDate } = req.query; // month = YYYY-MM
+    const { resolveRosterEmployeeNumbers } = require('../services/rosterEmployeeFilter');
 
     if (!month || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       return res.status(400).json({ success: false, message: 'Valid month (YYYY-MM) is required' });
@@ -295,21 +296,23 @@ exports.getRoster = async (req, res) => {
       end = `${month}-${String(endDay).padStart(2, '0')}`;
     }
 
-    const query = { date: { $gte: start, $lte: end } };
-    let empNumbersFilter = null;
+    const rosterQuery = { ...req.query, startDate: start, endDate: end };
+    const empNumbers = await resolveRosterEmployeeNumbers(rosterQuery);
 
-    if (employeeNumber) {
-      query.employeeNumber = String(employeeNumber || '').toUpperCase();
-    } else if (departmentId) {
-      const emps = await Employee.find({ department_id: departmentId }).select('emp_no');
-      empNumbersFilter = emps.map((e) => String(e.emp_no || '').toUpperCase());
-      query.employeeNumber = { $in: empNumbersFilter };
+    if (empNumbers.length === 0) {
+      const meta = await RosterMeta.findOne({ month });
+      return res.status(200).json({
+        success: true,
+        data: { month, strict: meta?.strict || false, entries: [] },
+      });
     }
 
-    const schedules = await PreScheduledShift.find(query)
-      .select('employeeNumber shiftId actualShiftId isDeviation attendanceDailyId date status notes')
-      .populate('shiftId', 'name code startTime endTime duration')
-      .populate('actualShiftId', 'name code startTime endTime duration');
+    const schedules = await PreScheduledShift.find({
+      date: { $gte: start, $lte: end },
+      employeeNumber: { $in: empNumbers },
+    })
+      .select('employeeNumber shiftId date status notes')
+      .lean();
 
     const meta = await RosterMeta.findOne({ month });
 
@@ -319,10 +322,8 @@ exports.getRoster = async (req, res) => {
         month,
         strict: meta?.strict || false,
         entries: schedules.map((s) => {
-          // Determine status: explicit status field, or infer from shiftId being null
           let status = s.status;
           if (!status && !s.shiftId) {
-            // Legacy data: if shiftId is null and no status, check notes
             if (s.notes && s.notes.includes('Week Off')) status = 'WO';
             else if (s.notes && s.notes.includes('Holiday')) status = 'HOL';
           }
@@ -330,13 +331,8 @@ exports.getRoster = async (req, res) => {
           return {
             employeeNumber: s.employeeNumber,
             date: s.date,
-            shiftId: s.shiftId?._id || null,
-            shift: s.shiftId || null,
-            actualShiftId: s.actualShiftId?._id || null,
-            actualShift: s.actualShiftId || null,
-            isDeviation: s.isDeviation || false,
-            attendanceDailyId: s.attendanceDailyId || null,
-            status: status || undefined, // Return 'WO' or 'HOL' if set, otherwise undefined
+            shiftId: s.shiftId ? String(s.shiftId) : null,
+            status: status || undefined,
           };
         }),
       },

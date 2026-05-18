@@ -237,7 +237,7 @@ exports.getLeaves = async (req, res) => {
       Leave.find(filter)
         .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
+          select: 'employee_name emp_no profilePhoto first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
             { path: 'division', select: 'name code' },
@@ -311,7 +311,7 @@ exports.getMyLeaves = async (req, res) => {
     const leaves = await Leave.find(filter)
       .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
+          select: 'employee_name emp_no profilePhoto first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
             { path: 'division', select: 'name code' },
@@ -1477,7 +1477,7 @@ exports.getPendingApprovals = async (req, res) => {
       Leave.find(filter)
         .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
+          select: 'employee_name emp_no profilePhoto first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
             { path: 'division', select: 'name code' },
@@ -3613,7 +3613,7 @@ exports.exportReportPDF = async (req, res) => {
     const [leaves, ods] = await Promise.all([
       includeLeaves === 'true' ? Leave.find(leaveFilter).populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
+          select: 'employee_name emp_no profilePhoto first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
             { path: 'division', select: 'name code' },
@@ -3622,7 +3622,7 @@ exports.exportReportPDF = async (req, res) => {
         }).lean() : [],
       includeODs === 'true' ? OD.find(odFilter).populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
+          select: 'employee_name emp_no profilePhoto first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
             { path: 'division', select: 'name code' },

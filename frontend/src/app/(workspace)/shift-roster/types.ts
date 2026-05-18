@@ -77,12 +77,3 @@ export interface AssignmentsViewProps {
     shifts: Shift[];
     shiftLabel: (s?: Shift | null) => string;
 }
-
-export interface WeekOffModalProps {
-    showWeekOff: boolean;
-    setShowWeekOff: (val: boolean) => void;
-    weekOffDays: Record<string, boolean>;
-    setWeekOffDays: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
-    applyWeekOffs: () => void;
-    weekdays: string[];
-}

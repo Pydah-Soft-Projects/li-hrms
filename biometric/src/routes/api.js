@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const AttendanceLog = require('../models/AttendanceLog');
-const BiometricSettings = require('../models/BiometricSettings');
+const DeviceUser = require('../models/DeviceUser');
+const Device = require('../models/Device');
+const DeviceCategory = require('../models/DeviceCategory');
 const logger = require('../utils/logger');
 const { normalizeOperationMode } = require('../utils/operationModeResolver');
 
@@ -124,15 +126,14 @@ router.get('/logs/latest', async (req, res) => {
  */
 router.get('/settings/operation-mode', async (req, res) => {
     try {
-        const settings = await BiometricSettings.findOne({ key: 'global' }).lean();
-        const hasDbMode = Boolean(settings?.operationMode);
-        const mode = normalizeOperationMode(settings?.operationMode || process.env.BIOMETRIC_OPERATION_MODE || 'OPERATION');
+        const { getEffectiveSettings } = require('../services/biometricSettingsService');
+        const effective = await getEffectiveSettings(true);
         res.json({
             success: true,
             data: {
-                operationMode: mode,
-                source: hasDbMode ? 'database' : 'env-or-default',
-                updatedAt: settings?.updatedAt || null
+                operationMode: effective.values.operationMode,
+                source: effective.sources.operationMode,
+                updatedAt: effective.updatedAt
             }
         });
     } catch (error) {
@@ -155,21 +156,16 @@ router.put('/settings/operation-mode', async (req, res) => {
                 error: 'operationMode is required and must be OPERATION or DEVICE'
             });
         }
-        const mode = normalizeOperationMode(requestedRaw);
-
-        const updated = await BiometricSettings.findOneAndUpdate(
-            { key: 'global' },
-            { $set: { operationMode: mode } },
-            { new: true, upsert: true }
-        ).lean();
+        const { updateSettings } = require('../services/biometricSettingsService');
+        const effective = await updateSettings({ operationMode: requestedRaw });
 
         res.json({
             success: true,
-            message: `Operation mode updated to ${mode}`,
+            message: `Operation mode updated to ${effective.values.operationMode}`,
             data: {
-                operationMode: updated.operationMode,
+                operationMode: effective.values.operationMode,
                 source: 'database',
-                updatedAt: updated.updatedAt || null
+                updatedAt: effective.updatedAt || null
             }
         });
     } catch (error) {
@@ -266,25 +262,52 @@ router.get('/devices/status', async (req, res) => {
  */
 router.get('/stats', async (req, res) => {
     try {
-        const totalLogs = await AttendanceLog.countDocuments();
-        const uniqueEmployees = await AttendanceLog.distinct('employeeId');
+        const { startDate, endDate } = req.query;
+        const timeQuery = {};
+        if (startDate || endDate) {
+            timeQuery.timestamp = {};
+            if (startDate) timeQuery.timestamp.$gte = new Date(startDate);
+            if (endDate) timeQuery.timestamp.$lte = new Date(endDate);
+        }
 
-        const logTypeStats = await AttendanceLog.aggregate([
-            {
-                $group: {
-                    _id: '$logType',
-                    count: { $sum: 1 }
-                }
-            }
+        const [totalLogs, uniqueEmployeeIds, logTypeStats, goldenUserCount, usersWithFingerprints, deviceCount, categoryCount] = await Promise.all([
+            AttendanceLog.countDocuments(timeQuery),
+            AttendanceLog.distinct('employeeId', timeQuery),
+            AttendanceLog.aggregate([
+                ...(Object.keys(timeQuery).length ? [{ $match: timeQuery }] : []),
+                { $group: { _id: '$logType', count: { $sum: 1 } } }
+            ]),
+            DeviceUser.countDocuments(),
+            DeviceUser.countDocuments({ 'fingerprints.0': { $exists: true } }),
+            Device.countDocuments(),
+            DeviceCategory.countDocuments()
         ]);
+
+        const logsByDevice = await AttendanceLog.aggregate([
+            ...(Object.keys(timeQuery).length ? [{ $match: timeQuery }] : []),
+            { $group: { _id: '$deviceId', count: { $sum: 1 }, uniqueUsers: { $addToSet: '$employeeId' } } },
+            { $project: { deviceId: '$_id', count: 1, uniqueUsers: { $size: '$uniqueUsers' } } },
+            { $sort: { count: -1 } }
+        ]);
+
+        const devices = await Device.find().select('deviceId name categoryId status enabled').lean();
+        const categories = await DeviceCategory.find().select('categoryId name autoCloneEnabled').lean();
 
         res.json({
             success: true,
             stats: {
                 totalLogs,
-                uniqueEmployees: uniqueEmployees.length,
-                logTypeBreakdown: logTypeStats
-            }
+                uniqueEmployees: uniqueEmployeeIds.length,
+                goldenUsers: goldenUserCount,
+                usersWithFingerprints,
+                deviceCount,
+                categoryCount,
+                logTypeBreakdown: logTypeStats,
+                logsByDevice,
+                dateFilter: startDate || endDate ? { startDate: startDate || null, endDate: endDate || null } : null
+            },
+            devices,
+            categories
         });
 
     } catch (error) {

@@ -6,6 +6,7 @@ const { protect, authorize } = require('../authentication/middleware/authMiddlew
 router.use(protect);
 
 router.get('/', employeeGroupController.getEmployeeGroups);
+router.get('/for-roster-filters', employeeGroupController.getGroupsForRosterFilters);
 router.get('/:id', employeeGroupController.getEmployeeGroup);
 
 router.post(

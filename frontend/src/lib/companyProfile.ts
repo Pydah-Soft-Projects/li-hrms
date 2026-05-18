@@ -191,6 +191,26 @@ export function getBrandInitials(profile: CompanyProfile): string {
 let cachedProfile: CompanyProfile | null = null;
 let loadPromise: Promise<CompanyProfile> | null = null;
 
+function applyBrandingCssVars(profile: CompanyProfile) {
+  if (typeof document === 'undefined') return;
+  const accent = profile.branding.primaryColor || DEFAULT_COMPANY_PROFILE.branding.primaryColor;
+  document.documentElement.style.setProperty('--color-accent', accent);
+  document.documentElement.style.setProperty('--color-accent-dark', accent);
+}
+
+/** Accent from cached company profile (used by SweetAlert and UI). */
+export function getCachedCompanyAccentColor(fallback = DEFAULT_COMPANY_PROFILE.branding.primaryColor): string {
+  const fromProfile = cachedProfile?.branding?.primaryColor?.trim();
+  if (fromProfile && /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(fromProfile)) {
+    return fromProfile;
+  }
+  if (typeof window !== 'undefined') {
+    const css = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim();
+    if (css && css.startsWith('#')) return css;
+  }
+  return fallback;
+}
+
 export function invalidateCompanyProfileCache(): void {
   cachedProfile = null;
   loadPromise = null;
@@ -207,6 +227,7 @@ export async function fetchCompanyProfile(): Promise<CompanyProfile> {
             ? mergeCompanyProfile(res.data.value)
             : { ...DEFAULT_COMPANY_PROFILE };
         cachedProfile = merged;
+        applyBrandingCssVars(merged);
         return merged;
       } catch {
         const fallback = { ...DEFAULT_COMPANY_PROFILE };

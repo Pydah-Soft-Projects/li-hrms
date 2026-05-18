@@ -602,16 +602,15 @@ class DeviceService {
             throw err;
         }
 
+        const { getValues } = require('./biometricSettingsService');
+        const cfg = await getValues();
+
         const pollIntervalMs = options.pollIntervalMs ?? 2000;
-        const quietPeriodMs = options.quietPeriodMs
-            ?? envMs('ADMS_FRESH_BACKUP_QUIET_PERIOD_MS', 12000, 2000, 120000);
+        const quietPeriodMs = options.quietPeriodMs ?? cfg.admsFreshBackupQuietPeriodMs;
         /** Absolute wall-clock cap while batches may still be arriving (sync can span many minutes). */
-        const hardCapMs = options.hardCapMs
-            ?? options.maxWaitMs
-            ?? envMs('ADMS_FRESH_BACKUP_HARD_CAP_MS', 3600000, 120000, 7200000);
+        const hardCapMs = options.hardCapMs ?? options.maxWaitMs ?? cfg.admsFreshBackupHardCapMs;
         /** If no ATTLOG batch appears at all, stop after this (avoid waiting the full hard cap on offline devices). */
-        const waitForFirstBatchMs = options.waitForFirstBatchMs
-            ?? envMs('ADMS_FRESH_BACKUP_FIRST_BATCH_WAIT_MS', 180000, 10000, 3600000);
+        const waitForFirstBatchMs = options.waitForFirstBatchMs ?? cfg.admsFreshBackupFirstBatchWaitMs;
 
         const cutoff = new Date();
 

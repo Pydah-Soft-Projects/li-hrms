@@ -191,7 +191,8 @@ const admsParser = {
                 if (!parts[0].includes('=')) {
                     // Normalize timestamp string: "2023-12-25 10:45:00" -> "2023/12/25 10:45:00 +05:30"
                     // Adding the offset ensures correct UTC calculation regardless of server timezone
-                    const offset = process.env.TIMEZONE_OFFSET || '+05:30';
+                    const { getTimezoneOffsetSync } = require('../services/biometricSettingsService');
+                    const offset = getTimezoneOffsetSync();
                     const timeStr = parts[1].replace(/-/g, '/') + ' ' + offset;
 
                     records.push({

@@ -32,6 +32,12 @@ const deviceSchema = new mongoose.Schema({
         enum: ['CHECK-IN', 'CHECK-OUT', 'BREAK-IN', 'BREAK-OUT', 'OVERTIME-IN', 'OVERTIME-OUT', null],
         default: null
     },
+    /** Machine category for user sync — new users clone to all enabled devices in this category. */
+    categoryId: {
+        type: String,
+        default: null,
+        index: true
+    },
     lastSyncAt: {
         type: Date,
         default: null

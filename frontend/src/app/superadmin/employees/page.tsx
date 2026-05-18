@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { api, Employee, Department, Division, Designation, EmployeeApplication, Allowance, Deduction } from '@/lib/api';
 import { canFinalizeSalary } from '@/lib/permissions';
-import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
+import { alertSuccess, alertError, alertConfirm, alertLoading, closeAlert } from '@/lib/customSwal';
+import { fetchCompanyProfile } from '@/lib/companyProfile';
 import { auth } from '@/lib/auth';
 import Swal from 'sweetalert2';
 import BulkUpload from '@/components/BulkUpload';
@@ -18,6 +19,10 @@ import BankUpdateDialog from '@/components/employee/BankUpdateDialog';
 import Spinner from '@/components/Spinner';
 import EmployeeExportDialog from '@/components/employee/EmployeeExportDialog';
 import { getEmployeeGroupedDynamicFieldValue } from '@/lib/employeeDynamicFieldValue';
+import {
+  mapApplicationToViewEmployee,
+  mergeEmployeeWithApplicationSnapshot,
+} from '@/lib/mapApplicationToViewEmployee';
 import { getPayPeriodRangeForCalendarMonth } from '@/lib/payPeriodRange';
 import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
 import { compareEmpNo } from '@/lib/employeeSort';
@@ -1243,6 +1248,7 @@ export default function EmployeesPage() {
       setUserRole(user.role);
     }
 
+    void fetchCompanyProfile();
     loadEmployees(1); // Load first page
     loadDivisions();
     loadDepartments();
@@ -1550,9 +1556,12 @@ export default function EmployeesPage() {
   const handleBulkApprove = async () => {
     if (selectedApplicationIds.length === 0) return;
 
-    if (!confirm(`Are you sure you want to approve ${selectedApplicationIds.length} selected applications using their proposed salaries?`)) {
-      return;
-    }
+    const approveResult = await alertConfirm(
+      'Bulk approve applications?',
+      `Approve ${selectedApplicationIds.length} selected application(s) using their proposed salaries?`,
+      'Yes, approve'
+    );
+    if (!approveResult.isConfirmed) return;
 
     try {
       setLoadingApplications(true);
@@ -1590,9 +1599,12 @@ export default function EmployeesPage() {
   const handleBulkReject = async () => {
     if (selectedApplicationIds.length === 0) return;
 
-    if (!confirm(`Are you sure you want to REJECT ${selectedApplicationIds.length} selected applications? This action cannot be undone.`)) {
-      return;
-    }
+    const rejectResult = await alertConfirm(
+      'Reject applications?',
+      `Reject ${selectedApplicationIds.length} selected application(s)? This action cannot be undone.`,
+      'Yes, reject'
+    );
+    if (!rejectResult.isConfirmed) return;
 
     try {
       setLoadingApplications(true);
@@ -2561,7 +2573,12 @@ export default function EmployeesPage() {
     if (updatingStatusIds.has(empNo)) return; // Prevent duplicate clicks
 
     const action = currentStatus ? 'deactivate' : 'activate';
-    if (!confirm(`Are you sure you want to ${action} this employee?`)) return;
+    const statusResult = await alertConfirm(
+      `${action === 'deactivate' ? 'Deactivate' : 'Activate'} employee?`,
+      `Are you sure you want to ${action} this employee?`,
+      `Yes, ${action}`
+    );
+    if (!statusResult.isConfirmed) return;
 
     // Track this employee as updating
     setUpdatingStatusIds(prev => new Set(prev).add(empNo));
@@ -2819,63 +2836,25 @@ export default function EmployeesPage() {
   };
 
   const openEmployeeViewFromApplication = async (application: EmployeeApplication) => {
-    // Open unified employee view from applications workflow.
-    const mappedEmployee: any = {
-      emp_no: application.emp_no,
-      employee_name: application.employee_name,
-      division_id: application.division_id,
-      department_id: application.department_id,
-      designation_id: application.designation_id,
-      employee_group_id: (application as any).employee_group_id,
-      employee_group: (application as any).employee_group,
-      department: application.department,
-      division: (application as any).division,
-      designation: application.designation,
-      doj: application.doj,
-      dob: application.dob,
-      gross_salary: (application as any).gross_salary ?? application.proposedSalary,
-      proposedSalary: application.proposedSalary,
-      approvedSalary: application.approvedSalary,
-      second_salary: (application as any).second_salary,
-      gender: application.gender,
-      marital_status: application.marital_status,
-      blood_group: application.blood_group,
-      qualifications: application.qualifications,
-      experience: application.experience,
-      address: application.address,
-      location: application.location,
-      aadhar_number: application.aadhar_number,
-      phone_number: application.phone_number,
-      alt_phone_number: application.alt_phone_number,
-      email: application.email,
-      pf_number: application.pf_number,
-      esi_number: application.esi_number,
-      bank_account_no: application.bank_account_no,
-      bank_name: application.bank_name,
-      bank_place: application.bank_place,
-      ifsc_code: application.ifsc_code,
-      is_active: true,
-      qualificationStatus: (application as any).qualificationStatus,
-      profilePhoto: (application as any).profilePhoto,
-    };
+    const mappedEmployee = mapApplicationToViewEmployee(application as any) as Employee;
 
-    setViewingEmployee(mappedEmployee as Employee);
+    setViewingEmployee(mappedEmployee);
     setEmployeeViewTab('profile');
     setEmployeeHistory([]);
     setShowViewDialog(true);
 
-    // Keep selected application context for verify/finalize actions in unified dialog.
     setSelectedApplication(application);
     if (application.status === 'verified') {
       initApprovalState(application);
     }
 
-    // Refresh with actual employee record when it exists.
     try {
       if (application.emp_no) {
         const response = await api.getEmployee(application.emp_no);
         if (response.success && response.data) {
-          setViewingEmployee(response.data);
+          setViewingEmployee(
+            mergeEmployeeWithApplicationSnapshot(response.data as any, application as any) as Employee
+          );
         }
       }
     } catch (error) {
@@ -3061,8 +3040,14 @@ export default function EmployeesPage() {
   };
 
   const handleVerifyApplication = async (application: EmployeeApplication) => {
-    if (!confirm(`Verify application for ${application.employee_name} and create employee record?`)) return;
+    const result = await alertConfirm(
+      'Verify application?',
+      `Verify application for ${application.employee_name} and create their employee record?`,
+      'Yes, verify'
+    );
+    if (!result.isConfirmed) return;
 
+    alertLoading('Verifying application', 'Please wait...');
     try {
       setLoadingApplications(true);
       setError('');
@@ -3070,6 +3055,11 @@ export default function EmployeesPage() {
       const response = await api.verifyEmployeeApplication(application._id);
 
       if (response.success) {
+        closeAlert();
+        await alertSuccess(
+          'Application verified',
+          'Employee record created. You can finalize salary when ready.'
+        );
         setSuccess('Application verified and employee created! Now awaiting final salary approval.');
         await loadApplications();
         await loadEmployees();
@@ -3083,14 +3073,31 @@ export default function EmployeesPage() {
           if (updatedApp && updatedApp.status === 'verified') {
             setSelectedApplication(updatedApp);
             initApprovalState(updatedApp);
+            setViewingEmployee(mapApplicationToViewEmployee(updatedApp as any) as Employee);
+            if (updatedApp.emp_no) {
+              try {
+                const empRes = await api.getEmployee(updatedApp.emp_no);
+                if (empRes?.success && empRes?.data) {
+                  setViewingEmployee(
+                    mergeEmployeeWithApplicationSnapshot(empRes.data as any, updatedApp as any) as Employee
+                  );
+                }
+              } catch {
+                /* employee record may still be syncing */
+              }
+            }
           }
         } catch (e) {
           // Non-blocking: UI can still continue with current state.
         }
       } else {
+        closeAlert();
+        await alertError('Verification failed', response.message || 'Verification failed');
         setError(response.message || 'Verification failed');
       }
     } catch (err: any) {
+      closeAlert();
+      await alertError('Error', err.message || 'An error occurred');
       setError(err.message || 'An error occurred');
     } finally {
       setLoadingApplications(false);

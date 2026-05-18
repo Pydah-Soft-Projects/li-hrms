@@ -1,5 +1,3 @@
-const BiometricSettings = require('../models/BiometricSettings');
-
 const DEVICE_OPERATION_GROUPS = new Set([
     'CHECK-IN',
     'CHECK-OUT',
@@ -31,10 +29,9 @@ function normalizeOperationGroup(group) {
 }
 
 async function getEffectiveOperationMode() {
-    const envMode = normalizeOperationMode(process.env.BIOMETRIC_OPERATION_MODE);
-    const settings = await BiometricSettings.findOne({ key: 'global' }).lean();
-    const dbMode = settings?.operationMode ? normalizeOperationMode(settings.operationMode) : null;
-    return dbMode || envMode || 'OPERATION';
+    const { getValues } = require('../services/biometricSettingsService');
+    const values = await getValues();
+    return values.operationMode;
 }
 
 function resolveLogType({ rawStatusCode, deviceOperationGroup, operationMode }) {

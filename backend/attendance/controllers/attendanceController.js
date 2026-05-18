@@ -1078,7 +1078,9 @@ exports.getRecentActivity = async (req, res) => {
         punch: {
           type: log.type,
           subType: log.subType,
-          device: log.deviceName || log.deviceId
+          deviceId: log.deviceId || log.rawData?.deviceId || null,
+          deviceName: log.deviceName || log.rawData?.deviceName || null,
+          device: log.deviceName || log.rawData?.deviceName || log.deviceId || log.rawData?.deviceId || '—'
         },
         shift: {
           name: shift.name || 'Detecting...',

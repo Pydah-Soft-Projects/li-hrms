@@ -25,6 +25,28 @@ const StatusBadge = ({ status }: { status: string }) => {
 };
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
+
+function CclEmployeeBlock({ ccl }: { ccl: { employeeId?: any; emp_no?: string } }) {
+  const d = resolveEmployeeListDisplayParts({ employeeId: ccl.employeeId, emp_no: ccl.emp_no });
+  const initial = (d.name.charAt(0) || 'E').toUpperCase();
+  return (
+    <div className="flex min-w-0 items-start gap-3" title={d.tooltip}>
+      {d.profilePhoto ? (
+        <img src={d.profilePhoto} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700" />
+      ) : (
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 text-xs font-semibold text-white">
+          {initial}
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">{d.name}</div>
+        {d.empDesigLine ? <div className="mt-0.5 truncate text-[11px] text-slate-600 dark:text-slate-400">{d.empDesigLine}</div> : null}
+        {d.deptDivLine ? <div className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">{d.deptDivLine}</div> : null}
+      </div>
+    </div>
+  );
+}
 
 interface Employee {
   _id: string;
@@ -485,24 +507,7 @@ export default function SuperadminCCLPage() {
                   }).map((ccl) => (
                     <tr key={ccl._id} className="cursor-pointer transition hover:bg-gray-50 dark:hover:bg-gray-700/50" onClick={() => setSelectedCCL(ccl)}>
                       <td className="whitespace-nowrap py-4 pl-4 pr-3 sm:pl-6">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-medium text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400">
-                            {(ccl.employeeId?.employee_name || ccl.emp_no).charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0" title={[String(ccl.employeeId?.employee_name || ccl.emp_no || '—'), ((typeof ccl.employeeId?.designation_id === 'object' && ccl.employeeId?.designation_id?.name) ? String(ccl.employeeId.designation_id.name) : (typeof ccl.employeeId?.designation === 'object' && ccl.employeeId?.designation?.name) ? String(ccl.employeeId.designation.name) : ''), String(ccl.emp_no || '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {ccl.employeeId?.employee_name || ccl.emp_no || '—'}
-  </div>
-  {((typeof ccl.employeeId?.designation_id === 'object' && ccl.employeeId?.designation_id?.name) ? String(ccl.employeeId.designation_id.name) : (typeof ccl.employeeId?.designation === 'object' && ccl.employeeId?.designation?.name) ? String(ccl.employeeId.designation.name) : '') ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {((typeof ccl.employeeId?.designation_id === 'object' && ccl.employeeId?.designation_id?.name) ? String(ccl.employeeId.designation_id.name) : (typeof ccl.employeeId?.designation === 'object' && ccl.employeeId?.designation?.name) ? String(ccl.employeeId.designation.name) : '')}
-    </div>
-  ) : null}
-  {ccl.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{ccl.emp_no}</div>
-  ) : null}
-</div>
-                        </div>
+                        <CclEmployeeBlock ccl={ccl} />
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-600 dark:text-gray-300">{formatDate(ccl.date)}</td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-600 dark:text-gray-300">{ccl.isHalfDay ? `Half (${ccl.halfDayType || '-'})` : 'Full'}</td>

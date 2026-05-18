@@ -24,7 +24,7 @@ const { notifyWorkflowEvent } = require('../../notifications/services/notificati
 /** Employee refs are siblings: designation_id, department_id, division_id (not department → division). */
 const POPULATE_EMPLOYEE_OT_PERMISSION = {
   path: 'employeeId',
-  select: 'emp_no employee_name department_id designation_id division_id leftDate',
+  select: 'emp_no employee_name profilePhoto department_id designation_id division_id leftDate',
   populate: [
     { path: 'designation_id', select: 'name' },
     { path: 'designation', select: 'name' },

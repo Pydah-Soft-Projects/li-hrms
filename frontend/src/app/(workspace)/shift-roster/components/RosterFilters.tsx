@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import { Building2, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
-import { navigateMonth } from '../utils';
-import { RosterFiltersProps } from '../types';
+import { navigateMonth } from '@/lib/shiftRoster/utils';
+import { RosterFiltersProps } from '@/lib/shiftRoster/types';
 
 const RosterFilters = memo(({
     selectedDivision,

@@ -14,7 +14,7 @@ const { notifyWorkflowEvent } = require('../../notifications/services/notificati
 
 const POPULATE_EMPLOYEE_OT_PERMISSION = {
   path: 'employeeId',
-  select: 'emp_no employee_name department_id designation_id division_id leftDate',
+  select: 'emp_no employee_name profilePhoto department_id designation_id division_id leftDate',
   populate: [
     { path: 'designation_id', select: 'name' },
     { path: 'designation', select: 'name' },
@@ -25,7 +25,7 @@ const POPULATE_EMPLOYEE_OT_PERMISSION = {
 
 const POPULATE_EMPLOYEE_OT_PERMISSION_WITH_PHOTO = {
   path: 'employeeId',
-  select: 'emp_no employee_name department_id designation_id division_id leftDate photo',
+  select: 'emp_no employee_name profilePhoto department_id designation_id division_id leftDate',
   populate: [
     { path: 'designation_id', select: 'name' },
     { path: 'designation', select: 'name' },

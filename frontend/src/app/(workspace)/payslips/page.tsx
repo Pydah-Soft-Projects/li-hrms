@@ -9,6 +9,43 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { fetchCompanyProfile, type CompanyProfile } from '@/lib/companyProfile';
 import { drawPayslipCompanyHeaderCentered, drawPayslipFooter } from '@/lib/payslipPdf';
+import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
+
+function PayslipEmployeeBlock({
+  employee,
+  empNo,
+  departments,
+  designations,
+}: {
+  employee: Employee | null;
+  empNo: string;
+  departments: Department[];
+  designations: Designation[];
+}) {
+  const d = resolveEmployeeListDisplayParts(
+    { employeeId: employee as any, emp_no: empNo },
+    { departments, designations },
+  );
+  const initial = (d.name.charAt(0) || 'E').toUpperCase();
+  return (
+    <div className="flex min-w-0 items-start gap-3" title={d.tooltip}>
+      {d.profilePhoto ? (
+        <img src={d.profilePhoto} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700" />
+      ) : (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-[10px] font-semibold text-white">
+          {initial}
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-slate-900 transition-colors group-hover:text-emerald-600 dark:text-white dark:group-hover:text-emerald-400">
+          {d.name}
+        </div>
+        {d.empDesigLine ? <div className="mt-0.5 truncate text-[11px] text-slate-600 dark:text-slate-400">{d.empDesigLine}</div> : null}
+        {d.deptDivLine ? <div className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">{d.deptDivLine}</div> : null}
+      </div>
+    </div>
+  );
+}
 
 interface Employee {
   _id: string;
@@ -803,19 +840,12 @@ export default function PayslipsPage() {
                           />
                         </td>
                         <td className="px-6 py-4">
-                          <div className="min-w-0" title={[String(employee?.employee_name || 'N/A' || '—'), getDesigName(employee?.designation_id) || undefined, String(record.emp_no || '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors`}>
-    {employee?.employee_name || 'N/A' || '—'}
-  </div>
-  {getDesigName(employee?.designation_id) || undefined ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {getDesigName(employee?.designation_id) || undefined}
-    </div>
-  ) : null}
-  {record.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{record.emp_no}</div>
-  ) : null}
-</div>
+                          <PayslipEmployeeBlock
+                            employee={employee}
+                            empNo={record.emp_no}
+                            departments={departments}
+                            designations={designations}
+                          />
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex flex-col">

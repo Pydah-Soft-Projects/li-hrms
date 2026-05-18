@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
 
 /** Minimal loan/advance shape for PDF export (matches list/detail payloads). */
 export type LoanAdvancePdfLoan = {
@@ -417,8 +418,18 @@ export function downloadLoanAdvanceRequestPdf(
   const margin = 16;
   const [pr, pg, pb] = primaryRgb(loan.requestType);
   const title = loan.requestType === 'loan' ? 'Loan statement & slips' : 'Salary advance statement & slips';
-  const empName = loan.employeeId?.employee_name || 'Employee';
-  const empNo = loan.employeeId?.emp_no || loan.emp_no || '—';
+  const employeeDisplay = resolveEmployeeListDisplayParts({
+    employeeId: loan.employeeId,
+    emp_no: loan.emp_no,
+    department: loan.department,
+    designation: loan.designation,
+    division_id: loan.division_id,
+  });
+  const empNo = employeeDisplay.empNo || '—';
+  const identityPlain =
+    [employeeDisplay.name, employeeDisplay.empDesigLine, employeeDisplay.deptDivLine]
+      .filter(Boolean)
+      .join('  ·  ') || employeeDisplay.name;
   const summary = options?.summary;
   const sorted = sortTxnsChrono(transactions);
   const generated = new Date().toLocaleString('en-IN', {
@@ -455,7 +466,7 @@ export function downloadLoanAdvanceRequestPdf(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.setTextColor(15, 23, 42);
-  doc.text(`${empName}  ·  Emp. no. ${empNo}`, margin, y);
+  doc.text(identityPlain, margin, y);
   y += 5;
   const contactBits = [loan.employeeId?.email, loan.employeeId?.phone_number].filter(Boolean);
   if (contactBits.length) {

@@ -3,6 +3,7 @@
 import React from 'react';
 import type { LoanListRow } from '@/lib/loanListUi';
 import { buildLoanListEmployeeParts } from '@/lib/loanListUi';
+import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
 
 type Tone = 'emerald' | 'teal' | 'blue';
 
@@ -13,7 +14,7 @@ const avatarGradients: Record<Tone, string> = {
 };
 
 /**
- * Employee block: bold name, designation under name, #emp badge, optional division / department.
+ * Employee block: profile photo, name, #emp • designation, department • division.
  */
 export function LoanListEmployeeCell({
   loan,
@@ -30,45 +31,49 @@ export function LoanListEmployeeCell({
   tone?: Tone;
   showAvatar?: boolean;
 }) {
-  const p = buildLoanListEmployeeParts(loan, divisions, departments, designations);
-  const initial = (p.primary.charAt(0) || 'E').toUpperCase();
+  buildLoanListEmployeeParts(loan, divisions, departments, designations);
+  const d = resolveEmployeeListDisplayParts(
+    {
+      employeeId: loan.employeeId as any,
+      emp_no: loan.emp_no,
+      department: loan.department,
+      designation: loan.designation,
+      division_id: loan.division_id,
+    },
+    { divisions, departments, designations },
+  );
+  const initial = (d.name.charAt(0) || 'E').toUpperCase();
   const grad = avatarGradients[tone];
 
   return (
-    <div className="flex min-w-0 items-start gap-3" title={p.line}>
+    <div className="flex min-w-0 items-start gap-3" title={d.tooltip}>
       {showAvatar ? (
-        <div
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${grad} text-xs font-semibold text-white`}
-        >
-          {initial}
-        </div>
+        d.profilePhoto ? (
+          <img
+            src={d.profilePhoto}
+            alt=""
+            className="h-9 w-9 shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700"
+          />
+        ) : (
+          <div
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${grad} text-xs font-semibold text-white`}
+          >
+            {initial}
+          </div>
+        )
       ) : null}
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="max-w-[200px] truncate font-semibold text-sm text-slate-900 dark:text-white sm:max-w-[260px]">
-            {p.primary}
-          </span>
-          {p.empNo ? (
-            <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-              #{p.empNo}
-            </span>
-          ) : null}
+        <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+          {d.name}
         </div>
-        {p.designation ? (
-          <div className="mt-1 truncate text-[9px] font-medium italic leading-snug text-slate-600 dark:text-slate-400">
-            {p.designation}
+        {d.empDesigLine ? (
+          <div className="mt-0.5 truncate text-[11px] text-slate-600 dark:text-slate-400">
+            {d.empDesigLine}
           </div>
         ) : null}
-        {p.division ? (
-          <div className="mt-1 truncate text-[9px] font-medium leading-snug text-slate-600 dark:text-slate-400">
-            {p.division}
-          </div>
-        ) : null}
-        {p.department ? (
-          <div
-            className={`truncate text-[9px] leading-snug text-slate-500 dark:text-slate-400 ${p.division || p.designation ? 'mt-0.5' : 'mt-1'}`}
-          >
-            {p.department}
+        {d.deptDivLine ? (
+          <div className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
+            {d.deptDivLine}
           </div>
         ) : null}
       </div>

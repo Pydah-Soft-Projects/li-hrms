@@ -1500,6 +1500,24 @@ export const api = {
     return apiRequest<EmployeeGroup[]>(`/employee-groups${q}`, { method: 'GET' });
   },
 
+  /** Distinct employee groups for employees matching roster division/dept/designation filters */
+  getEmployeeGroupsForRosterFilters: (params?: {
+    division_id?: string;
+    department_id?: string;
+    designation_id?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.division_id) qs.append('division_id', params.division_id);
+    if (params?.department_id) qs.append('department_id', params.department_id);
+    if (params?.designation_id) qs.append('designation_id', params.designation_id);
+    if (params?.startDate) qs.append('startDate', params.startDate);
+    if (params?.endDate) qs.append('endDate', params.endDate);
+    const q = qs.toString() ? `?${qs.toString()}` : '';
+    return apiRequest<EmployeeGroup[]>(`/employee-groups/for-roster-filters${q}`, { method: 'GET' });
+  },
+
   getEmployeeGroup: async (id: string) => {
     return apiRequest<EmployeeGroup>(`/employee-groups/${id}`, { method: 'GET' });
   },
@@ -2672,14 +2690,26 @@ export const api = {
   getRoster: (month: string, params?: {
     departmentId?: string;
     divisionId?: string;
+    designationId?: string;
+    employeeGroupId?: string;
+    search?: string;
     startDate?: string;
     endDate?: string;
+    page?: number;
+    limit?: number;
+    employeeNumbers?: string;
   }) => {
     const qs = new URLSearchParams({ month });
     if (params?.departmentId) qs.append('departmentId', params.departmentId);
     if (params?.divisionId) qs.append('divisionId', params.divisionId);
+    if (params?.designationId) qs.append('designationId', params.designationId);
+    if (params?.employeeGroupId) qs.append('employeeGroupId', params.employeeGroupId);
+    if (params?.search) qs.append('search', params.search);
     if (params?.startDate) qs.append('startDate', params.startDate);
     if (params?.endDate) qs.append('endDate', params.endDate);
+    if (params?.page != null) qs.append('page', String(params.page));
+    if (params?.limit != null) qs.append('limit', String(params.limit));
+    if (params?.employeeNumbers) qs.append('employeeNumbers', params.employeeNumbers);
     return apiRequest(`/shifts/roster?${qs.toString()}`);
   },
   saveRoster: (data: {

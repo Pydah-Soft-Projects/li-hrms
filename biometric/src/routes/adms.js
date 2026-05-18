@@ -8,6 +8,10 @@ const Device = require('../models/Device');
 const DeviceCommand = require('../models/DeviceCommand');
 const DeviceUser = require('../models/DeviceUser');
 const { getEffectiveOperationMode, resolveLogType } = require('../utils/operationModeResolver');
+const {
+    cloneUserToDevices,
+    autoCloneUserWithinCategory
+} = require('../services/userCloneService');
 
 /**
  * Common ADMS Responses
@@ -584,8 +588,7 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
                         },
                         { upsert: true }
                     );
-                    // Trigger Auto-Sync for new fingerprint
-                    autoCloneUser(fp.userId, SN);
+                    autoCloneUserWithinCategory(fp.userId, normalizedSN);
                 }
                 logger.info(`ADMS: Parsed and updated ${fingerprints.length} Fingerprint records from SN: ${SN} (Table: ${table})`);
                 return res.send(ADMS_OK);
@@ -641,8 +644,7 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
                         },
                         { upsert: true }
                     );
-                    // Trigger Auto-Sync for new photo
-                    autoCloneUser(userId, SN);
+                    autoCloneUserWithinCategory(userId, normalizedSN);
                 }
             }
             logger.info(`ADMS: Parsed and updated User Photos from SN: ${SN}`);
@@ -752,70 +754,94 @@ router.post('/command', async (req, res) => {
 
 /**
  * POST /api/adms/clone-user
- * Clone a user's profile and fingerprints to a target machine
+ * Clone a user's profile and fingerprints to target machine(s).
+ * Body: { userId, targetDeviceId? | targetDeviceIds? | targetCategoryId?, sourceDeviceId? }
  */
 router.post('/clone-user', async (req, res) => {
     try {
-        const { userId, targetDeviceId } = req.body;
+        const { userId, targetDeviceId, targetDeviceIds, targetCategoryId, sourceDeviceId } = req.body;
 
-        if (!userId || !targetDeviceId) {
-            return res.status(400).json({ success: false, error: 'userId and targetDeviceId are required' });
+        if (!userId) {
+            return res.status(400).json({ success: false, error: 'userId is required' });
+        }
+        if (!targetDeviceId && !targetDeviceIds?.length && !targetCategoryId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Provide targetDeviceId, targetDeviceIds, or targetCategoryId'
+            });
         }
 
-        // 1. Get the user from DB
-        const user = await DeviceUser.findOne({ userId });
-        if (!user) {
-            return res.status(404).json({ success: false, error: 'User not found' });
-        }
-
-        // 2. Queue User Profile Command
-        const targetDevice = await Device.findOne({ deviceId: targetDeviceId });
-        const sep = targetDevice?.protocol?.separator || '\t';
-
-        const userCmd = `DATA UPDATE USERINFO PIN=${user.userId}${sep}Name=${user.name || ''}${sep}Password=${user.password || ''}${sep}Group=1${sep}Card=${user.card || ''}${sep}Role=${user.role || 0}`;
-
-        await DeviceCommand.create({
-            deviceId: targetDeviceId,
-            command: userCmd,
-            status: 'PENDING'
+        const result = await cloneUserToDevices(String(userId), {
+            sourceDeviceId: sourceDeviceId || undefined,
+            targetDeviceId,
+            targetDeviceIds,
+            categoryId: targetCategoryId,
+            excludeSource: true
         });
 
-        // 3. Queue Fingerprint Commands
-        if (user.fingerprints && user.fingerprints.length > 0) {
-            for (const fp of user.fingerprints) {
-                const fpCmd = `DATA UPDATE FINGERTMP PIN=${user.userId}${sep}FID=${fp.fingerIndex}${sep}Size=${fp.templateData.length}${sep}Valid=1${sep}TMP=${fp.templateData}`;
-                await DeviceCommand.create({
-                    deviceId: targetDeviceId,
-                    command: fpCmd,
-                    status: 'PENDING'
+        if (result.devicesQueued === 0) {
+            return res.status(404).json({ success: false, error: 'No target devices found' });
+        }
+
+        res.json({
+            success: true,
+            message: `User ${userId} queued on ${result.devicesQueued} device(s)`,
+            data: result
+        });
+    } catch (error) {
+        if (error.code === 'USER_NOT_FOUND') {
+            return res.status(404).json({ success: false, error: error.message });
+        }
+        logger.error('Error cloning user:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/adms/clone-users-bulk
+ * Bulk clone multiple users to a category or explicit device list.
+ * Body: { userIds: string[], targetCategoryId?, targetDeviceIds?, sourceDeviceId? }
+ */
+router.post('/clone-users-bulk', async (req, res) => {
+    try {
+        const { userIds, targetCategoryId, targetDeviceIds, sourceDeviceId } = req.body;
+
+        if (!Array.isArray(userIds) || userIds.length === 0) {
+            return res.status(400).json({ success: false, error: 'userIds array is required' });
+        }
+        if (!targetCategoryId && (!targetDeviceIds || targetDeviceIds.length === 0)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Provide targetCategoryId or targetDeviceIds'
+            });
+        }
+
+        const results = [];
+        const errors = [];
+
+        for (const userId of userIds) {
+            try {
+                const result = await cloneUserToDevices(String(userId), {
+                    sourceDeviceId: sourceDeviceId || undefined,
+                    targetDeviceIds,
+                    categoryId: targetCategoryId,
+                    excludeSource: true
                 });
+                results.push(result);
+            } catch (err) {
+                errors.push({ userId, error: err.message });
             }
         }
 
-        // 4. Queue Photo Command
-        if (user.photo && user.photo.content) {
-            const photoCmd = `DATA UPDATE USERPIC PIN=${user.userId}${sep}FileName=${user.photo.fileName || (user.userId + '.jpg')}${sep}Size=${user.photo.content.length}${sep}Content=${user.photo.content}`;
-            await DeviceCommand.create({
-                deviceId: targetDeviceId,
-                command: photoCmd,
-                status: 'PENDING'
-            });
-        }
+        const totalQueued = results.reduce((sum, r) => sum + r.devicesQueued, 0);
 
-        // 4. Queue Face Data if exists
-        if (user.face && user.face.templateData) {
-            const faceCmd = `DATA UPDATE FACE PIN=${user.userId}\tFID=0\tSize=${user.face.length}\tValid=1\tTMP=${user.face.templateData}`;
-            await DeviceCommand.create({
-                deviceId: targetDeviceId,
-                command: faceCmd,
-                status: 'PENDING'
-            });
-        }
-
-        logger.info(`ADMS Clone: User ${userId} queued for device ${targetDeviceId}`);
-        res.json({ success: true, message: `User ${userId} profile and ${user.fingerprints?.length || 0} fingerprints queued for cloning to device ${targetDeviceId}` });
+        res.json({
+            success: errors.length === 0,
+            message: `Bulk clone: ${results.length} user(s), ${totalQueued} total device queue operations`,
+            data: { results, errors }
+        });
     } catch (error) {
-        logger.error('Error cloning user:', error);
+        logger.error('Error bulk cloning users:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -913,7 +939,9 @@ function deviceUserinfoDrift(deviceData, userDoc) {
  * Push stored biometric DeviceUser profile to this device (ADMS queue). Not HRMS—local DeviceUser only.
  */
 async function queueUserInfoPushToDevice(serialNumber, userDoc) {
-    if (process.env.SYNC_STORED_DEVICEUSER_TO_TERMINAL === 'false') return;
+    const { getValues } = require('../services/biometricSettingsService');
+    const settings = await getValues();
+    if (!settings.syncStoredDeviceUserToTerminal) return;
 
     const device = await Device.findOne({ deviceId: serialNumber });
     if (!device || device.enabled === false) return;
@@ -927,46 +955,6 @@ async function queueUserInfoPushToDevice(serialNumber, userDoc) {
         status: 'PENDING'
     });
     logger.info(`ADMS: Queued USERINFO reconcile push to device ${serialNumber} for PIN ${userDoc.userId}`);
-}
-
-/**
- * HELPER: Auto-clone a user/template to all other devices
- */
-async function autoCloneUser(userId, sourceSN) {
-    if (process.env.AUTO_CLONE_NEW_USERS !== 'true') return;
-
-    try {
-        const user = await DeviceUser.findOne({ userId });
-        if (!user) return;
-
-        const devices = await Device.find({ deviceId: { $ne: sourceSN }, enabled: true });
-        if (devices.length === 0) return;
-
-        logger.info(`ADMS Auto-Sync: Distributing user ${userId} to ${devices.length} other devices.`);
-
-        for (const device of devices) {
-            const sep = device.protocol?.separator || '\t';
-            // Queue Profile
-            const userCmd = `DATA UPDATE USERINFO PIN=${user.userId}${sep}Name=${user.name || ''}${sep}Password=${user.password || ''}${sep}Group=1${sep}Card=${user.card || ''}${sep}Role=${user.role || 0}`;
-            await DeviceCommand.create({ deviceId: device.deviceId, command: userCmd, status: 'PENDING' });
-
-            // Queue Fingerprints
-            if (user.fingerprints && user.fingerprints.length > 0) {
-                for (const fp of user.fingerprints) {
-                    const fpCmd = `DATA UPDATE FINGERTMP PIN=${user.userId}${sep}FID=${fp.fingerIndex}${sep}Size=${fp.templateData.length}${sep}Valid=1${sep}TMP=${fp.templateData}`;
-                    await DeviceCommand.create({ deviceId: device.deviceId, command: fpCmd, status: 'PENDING' });
-                }
-            }
-
-            // Queue Photo
-            if (user.photo && user.photo.content) {
-                const photoCmd = `DATA UPDATE USERPIC PIN=${user.userId}${sep}FileName=${user.photo.fileName || (user.userId + '.jpg')}${sep}Size=${user.photo.content.length}${sep}Content=${user.photo.content}`;
-                await DeviceCommand.create({ deviceId: device.deviceId, command: photoCmd, status: 'PENDING' });
-            }
-        }
-    } catch (err) {
-        logger.error(`ADMS Auto-Sync Error for user ${userId}:`, err);
-    }
 }
 
 module.exports = router;
@@ -1022,7 +1010,7 @@ async function parseAndUpsertUserInfoRows(rawBody, serialNumber) {
             await queueUserInfoPushToDevice(serialNumber, stored);
         }
 
-        autoCloneUser(userId, serialNumber);
+        autoCloneUserWithinCategory(userId, serialNumber);
     }
 
     return count;

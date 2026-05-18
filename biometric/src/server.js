@@ -13,7 +13,10 @@ const internalReplayRoutes = require('./routes/internalReplay');
 const deviceRoutes = require('./routes/devices');
 const admsRoutes = require('./routes/adms');
 const userSyncRoutes = require('./routes/userSync');
+const categoryRoutes = require('./routes/categories');
+const settingsRoutes = require('./routes/settings');
 const exportRoutes = require('./routes/export');
+const { getValues } = require('./services/biometricSettingsService');
 const AdmsRawLog = require('./models/AdmsRawLog'); // Import for discovery logging
 const { connectHRMS } = require('./config/hrmsConnection');
 
@@ -45,20 +48,19 @@ app.use(express.urlencoded({ extended: true }));
 
 // Initialize services (will load devices from database)
 const deviceService = new DeviceService();
-const syncScheduler = new SyncScheduler(
-    deviceService,
-    parseInt(process.env.SYNC_INTERVAL_MINUTES) || 15
-);
+const syncScheduler = new SyncScheduler(deviceService, 15);
 
-// Make device service available to routes
 app.set('deviceService', deviceService);
+app.set('syncScheduler', syncScheduler);
 
 // Routes (Mongo → HRMS replay; no device — must use same x-system-key as HRMS)
 app.use('/api/internal', internalReplayRoutes);
 app.use('/api', apiRoutes);
 app.use('/api', exportRoutes); // HRMS filters + attendance export (GET /api/hrms/filters, GET /api/export/attendance)
 app.use('/api/devices', deviceRoutes);
-app.use('/api/user-sync', userSyncRoutes); // Added: Use userSyncRoutes
+app.use('/api/user-sync', userSyncRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/settings', settingsRoutes);
 app.use('/api/adms', admsRoutes);
 
 // Health check endpoint
@@ -158,11 +160,10 @@ mongoose.connect(MONGODB_URI)
             logger.info(`Server running on port ${PORT}`);
             logger.info(`API Documentation: http://localhost:${PORT}/`);
 
-            // Start the sync scheduler ONLY if interval > 0
-            if (parseInt(process.env.SYNC_INTERVAL_MINUTES) > 0) {
+            const bootSettings = await getValues();
+            syncScheduler.intervalMinutes = bootSettings.syncIntervalMinutes;
+            if (bootSettings.syncIntervalMinutes > 0) {
                 syncScheduler.start();
-
-                // Run initial sync after 5 seconds
                 setTimeout(async () => {
                     logger.info('Running initial sync...');
                     try {
@@ -172,7 +173,7 @@ mongoose.connect(MONGODB_URI)
                     }
                 }, 5000);
             } else {
-                logger.info('Automated TCP Sync is DISABLED (running in ADMS-Only mode).');
+                logger.info('Automated TCP Sync is DISABLED (syncIntervalMinutes=0, ADMS-only).');
             }
         });
     })

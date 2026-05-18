@@ -42,6 +42,7 @@ import Swal from 'sweetalert2';
 
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import EmployeeSelect from '@/components/EmployeeSelect';
+import { EmployeeIdentityFromRecord } from '@/components/employee/EmployeeIdentityFromRecord';
 const DualLocationMap = dynamic(() => import('@/components/DualLocationMap'), { ssr: false });
 const ODRequestsMap = dynamic(() => import('@/components/ODRequestsMap'), { ssr: false });
 import {
@@ -3941,24 +3942,12 @@ export default function LeavesPage() {
                         >
                           {currentUser?.role !== 'employee' && (
                             <td className="px-6 py-3.5">
-                              <div className="flex items-center gap-3">
-                                <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
-                                  {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
-                                </div>
-                                <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'), getItemDesignationName(leave), String(leave.employeeId?.emp_no ?? leave.emp_no ?? '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'}
-  </div>
-  {getItemDesignationName(leave) ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {getItemDesignationName(leave)}
-    </div>
-  ) : null}
-  {leave.employeeId?.emp_no ?? leave.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
-  ) : null}
-</div>
-                              </div>
+                              <EmployeeIdentityFromRecord
+                                record={leave as Record<string, unknown>}
+                                lookups={{ divisions, departments, designations }}
+                                size="sm"
+                                avatarTone="blue"
+                              />
                             </td>
                           )}
                           <td className="px-6 py-3.5">
@@ -4063,49 +4052,12 @@ export default function LeavesPage() {
                       className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all"
                     >
                       <div className="flex justify-between items-start mb-3">
-                        <div className="flex items-center gap-3">
-                          {currentUser?.role !== 'employee' && (
-                            <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
-                              {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            {currentUser?.role !== 'employee' && (
-                              <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'), getItemDesignationName(leave), String(leave.employeeId?.emp_no ?? leave.emp_no ?? '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'}
-  </div>
-  {getItemDesignationName(leave) ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {getItemDesignationName(leave)}
-    </div>
-  ) : null}
-  {leave.employeeId?.emp_no ?? leave.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
-  ) : null}
-</div>
-                            )}
-                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                              {leave.leaveType?.replace('_', ' ')}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(leave.status)} border-transparent`}>
-                            {leave.status?.replace('_', ' ')}
-                          </span>
-                          {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && leave.status === 'pending' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteRequest(leave._id, 'leave');
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-800 rounded-lg"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
+                                                <EmployeeIdentityFromRecord
+                          record={leave as Record<string, unknown>}
+                          lookups={{ divisions, departments, designations }}
+                          size="md"
+                          avatarTone="blue"
+                        />
                       </div>
 
                       <div className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl">
@@ -4220,24 +4172,12 @@ export default function LeavesPage() {
                         >
                           {currentUser?.role !== 'employee' && (
                             <td className="px-6 py-3.5">
-                              <div className="flex items-center gap-3">
-                                <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-700 dark:text-purple-400 font-bold text-xs shrink-0">
-                                  {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
-                                </div>
-                                <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'), getItemDesignationName(od), String(od.employeeId?.emp_no ?? od.emp_no ?? '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'}
-  </div>
-  {getItemDesignationName(od) ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {getItemDesignationName(od)}
-    </div>
-  ) : null}
-  {od.employeeId?.emp_no ?? od.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{od.employeeId?.emp_no ?? od.emp_no}</div>
-  ) : null}
-</div>
-                              </div>
+                              <EmployeeIdentityFromRecord
+                                record={od as Record<string, unknown>}
+                                lookups={{ divisions, departments, designations }}
+                                size="sm"
+                                avatarTone="violet"
+                              />
                             </td>
                           )}
                           <td className="px-6 py-3.5">
@@ -4345,49 +4285,12 @@ export default function LeavesPage() {
                       className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all"
                     >
                       <div className="flex justify-between items-start mb-3">
-                        <div className="flex items-center gap-3">
-                          {currentUser?.role !== 'employee' && (
-                            <div className="h-10 w-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-700 dark:text-purple-400 font-bold text-xs shrink-0">
-                              {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            {currentUser?.role !== 'employee' && (
-                              <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'), getItemDesignationName(od), String(od.employeeId?.emp_no ?? od.emp_no ?? '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'}
-  </div>
-  {getItemDesignationName(od) ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {getItemDesignationName(od)}
-    </div>
-  ) : null}
-  {od.employeeId?.emp_no ?? od.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{od.employeeId?.emp_no ?? od.emp_no}</div>
-  ) : null}
-</div>
-                            )}
-                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                              {od.odType?.replace('_', ' ')}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(od.status)} border-transparent`}>
-                            {formatOdLbl(od.status)}
-                          </span>
-                          {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && ['pending', 'draft'].includes(od.status) && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteRequest(od._id, 'od');
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-800 rounded-lg"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
+                                                <EmployeeIdentityFromRecord
+                          record={od as Record<string, unknown>}
+                          lookups={{ divisions, departments, designations }}
+                          size="md"
+                          avatarTone="violet"
+                        />
                       </div>
 
                       {od.placeVisited && (
@@ -4503,39 +4406,12 @@ export default function LeavesPage() {
                           {filteredPendingLeaves.map((leave) => (
                             <tr key={leave._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer" onClick={() => openDetailDialog(leave, 'leave')}>
                               <td className="px-6 py-3.5">
-                                <div className="flex items-center gap-3">
-                                  <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
-                                    {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
-                                  </div>
-                                  <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'), getItemDesignationName(leave), String(leave.employeeId?.emp_no ?? leave.emp_no ?? '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'}
-  </div>
-  {getItemDesignationName(leave) ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {getItemDesignationName(leave)}
-    </div>
-  ) : null}
-  {leave.employeeId?.emp_no ?? leave.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
-  ) : null}
-</div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-3.5">
-                                <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400">{getItemDivisionName(leave) || 'N/A'}</span>
-                              </td>
-                              <td className="px-6 py-3.5">
-                                <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400">{getItemDepartmentName(leave) || 'N/A'}</span>
-                              </td>
-                              <td className="px-6 py-3.5">
-                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 capitalize">{leave.leaveType.replace('_', ' ')}</span>
-                              </td>
-                              <td className="px-6 py-3.5 whitespace-nowrap">
-                                <div className="text-[11px] text-slate-700 dark:text-slate-300">
-                                  <span className="font-medium">{formatDate(leave.fromDate)}</span>
-                                  {leave.fromDate !== leave.toDate && <span className="text-slate-400 mx-1"> - {formatDate(leave.toDate)}</span>}
-                                </div>
+                                                                <EmployeeIdentityFromRecord
+                                  record={leave as Record<string, unknown>}
+                                  lookups={{ divisions, departments, designations }}
+                                  size="md"
+                                  avatarTone="blue"
+                                />
                               </td>
                               <td className="px-6 py-3.5 text-center">
                                 <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">{leave.numberOfDays}d</span>
@@ -4584,31 +4460,12 @@ export default function LeavesPage() {
 
                           {/* Header: name, division & department beside name (no labels), emp no, designation under name */}
                           <div className="flex items-start justify-between gap-3 mb-4">
-                            <div className="flex items-center gap-3 min-w-0 flex-1">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold dark:bg-blue-900/30 dark:text-blue-400">
-                                {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                {([getItemDivisionName(leave), getItemDepartmentName(leave)].filter(v => v && v !== 'N/A').length > 0) && (
-                                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">
-                                    {[getItemDivisionName(leave), getItemDepartmentName(leave)].filter(v => v && v !== 'N/A').join(' · ')}
-                                  </p>
-                                )}
-                                <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'), getItemDesignationName(leave), String(leave.employeeId?.emp_no ?? leave.emp_no ?? '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'}
-  </div>
-  {getItemDesignationName(leave) ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {getItemDesignationName(leave)}
-    </div>
-  ) : null}
-  {leave.employeeId?.emp_no ?? leave.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
-  ) : null}
-</div>
-                              </div>
-                            </div>
+                                                        <EmployeeIdentityFromRecord
+                              record={leave as Record<string, unknown>}
+                              lookups={{ divisions, departments, designations }}
+                              size="md"
+                              avatarTone="blue"
+                            />                            </div>
                             <div className="flex flex-col gap-1 items-end">
                               <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
                                 {formatLeaveLbl(leave.status)}
@@ -4719,39 +4576,12 @@ export default function LeavesPage() {
                           {filteredPendingODs.map((od) => (
                             <tr key={od._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer" onClick={() => openDetailDialog(od, 'od')}>
                               <td className="px-6 py-3.5">
-                                <div className="flex items-center gap-3">
-                                  <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-700 dark:text-purple-400 font-bold text-xs shrink-0">
-                                    {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
-                                  </div>
-                                  <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'), getItemDesignationName(od), String(od.employeeId?.emp_no ?? od.emp_no ?? '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'}
-  </div>
-  {getItemDesignationName(od) ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {getItemDesignationName(od)}
-    </div>
-  ) : null}
-  {od.employeeId?.emp_no ?? od.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{od.employeeId?.emp_no ?? od.emp_no}</div>
-  ) : null}
-</div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-3.5">
-                                <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400">{getItemDivisionName(od) || 'N/A'}</span>
-                              </td>
-                              <td className="px-6 py-3.5">
-                                <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400">{getItemDepartmentName(od) || 'N/A'}</span>
-                              </td>
-                              <td className="px-6 py-3.5">
-                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 capitalize">{od.odType.replace('_', ' ')}</span>
-                              </td>
-                              <td className="px-6 py-3.5 whitespace-nowrap">
-                                <div className="text-[11px] text-slate-700 dark:text-slate-300">
-                                  <span className="font-medium">{formatDate(od.fromDate)}</span>
-                                  {od.fromDate !== od.toDate && <span className="text-slate-400 mx-1"> - {formatDate(od.toDate)}</span>}
-                                </div>
+                                                                <EmployeeIdentityFromRecord
+                                  record={od as Record<string, unknown>}
+                                  lookups={{ divisions, departments, designations }}
+                                  size="md"
+                                  avatarTone="violet"
+                                />
                               </td>
                               <td className="px-6 py-3.5 text-center">
                                 <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">{od.numberOfDays}d</span>
@@ -4798,31 +4628,12 @@ export default function LeavesPage() {
 
                           {/* Header: name, division & department beside name (no labels), emp no, designation under name */}
                           <div className="flex items-start justify-between gap-3 mb-4">
-                            <div className="flex items-center gap-3 min-w-0 flex-1">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600 font-bold dark:bg-purple-900/30 dark:text-purple-400">
-                                {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                {([getItemDivisionName(od), getItemDepartmentName(od)].filter(v => v && v !== 'N/A').length > 0) && (
-                                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">
-                                    {[getItemDivisionName(od), getItemDepartmentName(od)].filter(v => v && v !== 'N/A').join(' · ')}
-                                  </p>
-                                )}
-                                <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'), getItemDesignationName(od), String(od.employeeId?.emp_no ?? od.emp_no ?? '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'}
-  </div>
-  {getItemDesignationName(od) ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {getItemDesignationName(od)}
-    </div>
-  ) : null}
-  {od.employeeId?.emp_no ?? od.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{od.employeeId?.emp_no ?? od.emp_no}</div>
-  ) : null}
-</div>
-                              </div>
-                            </div>
+                                                        <EmployeeIdentityFromRecord
+                              record={od as Record<string, unknown>}
+                              lookups={{ divisions, departments, designations }}
+                              size="md"
+                              avatarTone="violet"
+                            />                            </div>
                             <div className="flex flex-col gap-1 items-end">
                               <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
                                 {formatOdLbl(od.status)}
@@ -4959,26 +4770,12 @@ export default function LeavesPage() {
 
                           {/* Header */}
                           <div className="flex items-start justify-between gap-3 mb-4">
-                            <div className="flex items-center gap-3 min-w-0 flex-1">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold dark:bg-blue-900/30 dark:text-blue-400">
-                                {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'), getItemDesignationName(leave), String(leave.employeeId?.emp_no ?? leave.emp_no ?? '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee) || '—'}
-  </div>
-  {getItemDesignationName(leave) ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {getItemDesignationName(leave)}
-    </div>
-  ) : null}
-  {leave.employeeId?.emp_no ?? leave.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
-  ) : null}
-</div>
-                              </div>
-                            </div>
+                                                        <EmployeeIdentityFromRecord
+                              record={leave as Record<string, unknown>}
+                              lookups={{ divisions, departments, designations }}
+                              size="md"
+                              avatarTone="blue"
+                            />                            </div>
                             <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
                               {formatLeaveLbl(leave.status)}
                             </span>
@@ -5020,26 +4817,12 @@ export default function LeavesPage() {
                         <div key={od._id} onClick={() => openDetailDialog(od, 'od')} className="cursor-pointer group relative flex flex-col justify-between rounded-xl border border-slate-200 border-l-4 border-l-purple-500 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
                           {/* Header */}
                           <div className="flex items-start justify-between gap-3 mb-4">
-                            <div className="flex items-center gap-3 min-w-0 flex-1">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600 font-bold dark:bg-purple-900/30 dark:text-purple-400">
-                                {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="min-w-0 min-w-0" title={[String(getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'), getItemDesignationName(od), String(od.employeeId?.emp_no ?? od.emp_no ?? '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee) || '—'}
-  </div>
-  {getItemDesignationName(od) ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {getItemDesignationName(od)}
-    </div>
-  ) : null}
-  {od.employeeId?.emp_no ?? od.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{od.employeeId?.emp_no ?? od.emp_no}</div>
-  ) : null}
-</div>
-                              </div>
-                            </div>
+                                                        <EmployeeIdentityFromRecord
+                              record={od as Record<string, unknown>}
+                              lookups={{ divisions, departments, designations }}
+                              size="md"
+                              avatarTone="violet"
+                            />                            </div>
                             <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
                               {formatOdLbl(od.status)}
                             </span>

@@ -4,6 +4,51 @@ import { useState, useEffect, type MouseEvent, useMemo, useRef } from 'react';
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
 import { parseFile } from '@/lib/bulkUpload';
+import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
+
+function PayRegisterEmployeeBlock({
+  source,
+  lookups,
+}: {
+  source: {
+    employee_name?: string;
+    emp_no?: string;
+    designation?: string;
+    department?: string;
+    division?: string;
+    employeeId?: Employee | null;
+  };
+  lookups?: { divisions?: Division[]; departments?: { _id?: string; name?: string }[] };
+}) {
+  const d = resolveEmployeeListDisplayParts(
+    {
+      employeeId: source.employeeId as any,
+      employee_name: source.employee_name,
+      emp_no: source.emp_no,
+      designation: source.designation,
+      department: source.department,
+      division_id: source.division,
+    },
+    lookups,
+  );
+  const initial = (d.name.charAt(0) || 'E').toUpperCase();
+  return (
+    <div className="flex min-w-0 items-start gap-2" title={d.tooltip}>
+      {d.profilePhoto ? (
+        <img src={d.profilePhoto} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700" />
+      ) : (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-400 to-slate-600 text-[10px] font-semibold text-white">
+          {initial}
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[11px] font-semibold text-slate-900 dark:text-white">{d.name}</div>
+        {d.empDesigLine ? <div className="mt-0.5 truncate text-[9px] text-slate-600 dark:text-slate-400">{d.empDesigLine}</div> : null}
+        {d.deptDivLine ? <div className="mt-0.5 truncate text-[9px] text-slate-500 dark:text-slate-400">{d.deptDivLine}</div> : null}
+      </div>
+    </div>
+  );
+}
 import { api, apiRequest, Employee, Division, EmployeeGroup } from '@/lib/api';
 import { sortByEmpNo } from '@/lib/employeeSort';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
@@ -2302,13 +2347,16 @@ export default function PayRegisterPage() {
                               />
                             </td>
                             <td className="px-2 py-2 align-middle">
-                              <div className="font-medium text-slate-900 dark:text-white">{row.employee_name}</div>
-                              {row.designation ? (
-                                <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-                                  {row.designation}
-                                </div>
-                              ) : null}
-                              <div className="text-[10px] text-slate-500 dark:text-slate-400">{row.emp_no}</div>
+                              <PayRegisterEmployeeBlock
+                                source={{
+                                  employee_name: row.employee_name,
+                                  emp_no: row.emp_no,
+                                  designation: row.designation,
+                                  department: row.department,
+                                  division: row.division,
+                                }}
+                                lookups={{ divisions, departments }}
+                              />
                             </td>
                             <td className="px-2 py-2 align-middle text-slate-700 dark:text-slate-300 max-w-[140px] truncate" title={row.division || undefined}>
                               {row.division || '—'}

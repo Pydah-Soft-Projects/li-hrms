@@ -46,6 +46,8 @@ import Spinner from '@/components/Spinner';
 import BankUpdateDialog from '@/components/employee/BankUpdateDialog';
 import EmployeeExportDialog from '@/components/employee/EmployeeExportDialog';
 import Swal from 'sweetalert2';
+import { alertSuccess, alertError, alertConfirm, alertLoading, closeAlert } from '@/lib/customSwal';
+import { fetchCompanyProfile } from '@/lib/companyProfile';
 import {
   EMPLOYEE_TEMPLATE_HEADERS,
   EMPLOYEE_TEMPLATE_SAMPLE,
@@ -64,6 +66,14 @@ import {
   sanitizeOverallQualificationStatusStore,
 } from '@/lib/qualificationStatus';
 import ManageOverallCertificateStatusDialog from '@/components/employee/ManageOverallCertificateStatusDialog';
+import {
+  mapApplicationToViewEmployee,
+  mergeEmployeeWithApplicationSnapshot,
+} from '@/lib/mapApplicationToViewEmployee';
+import { getEmployeeGroupedDynamicFieldValue } from '@/lib/employeeDynamicFieldValue';
+
+/** Salary finalization stays superadmin-only; workspace can verify and view full application details. */
+const WORKSPACE_SALARY_FINALIZATION_ENABLED = false;
 
 interface Employee {
   _id: string;
@@ -336,8 +346,13 @@ export default function EmployeesPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [dataSource, setDataSource] = useState<string>('mongodb');
-  const [selectedDivision, setSelectedDivision] = useState('');
+  const [selectedDivisionFilter, setSelectedDivisionFilter] = useState('');
+  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
+  const [selectedDesignationFilter, setSelectedDesignationFilter] = useState('');
+  const [selectedEmployeeGroupFilter, setSelectedEmployeeGroupFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [itemsPerPage, setItemsPerPage] = useState(50);
   const [applicationSearchTerm, setApplicationSearchTerm] = useState('');
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [allowEmployeeBulkProcess, setAllowEmployeeBulkProcess] = useState(false);
@@ -432,6 +447,10 @@ export default function EmployeesPage() {
   useEffect(() => {
     fetchDeductionDefaults();
   }, [fetchDeductionDefaults]);
+
+  useEffect(() => {
+    void fetchCompanyProfile();
+  }, []);
 
   const initialFormStateWithDefaults = useMemo(() => ({
     ...initialFormState,
@@ -801,12 +820,15 @@ export default function EmployeesPage() {
     setHasBankUpdatePermission(canUpdateBankDetails(userForPermissions as any));
   }, [userForPermissions]);
 
-  // Reset pagination when filters change
+  // Reload employees when toolbar filters change (scope is applied server-side)
   useEffect(() => {
     setCurrentPage(1);
     setHasMoreEmployees(true);
     loadEmployees(1, false);
-  }, [includeLeftEmployees]);
+    if (activeTab !== 'requests' && canViewApplications) {
+      loadUpdateRequests();
+    }
+  }, [searchQuery, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter, selectedEmployeeGroupFilter, includeLeftEmployees, itemsPerPage]);
 
   // Server-side search with debounce removed - Search only on Enter or Button click
   // useEffect(() => {
@@ -845,7 +867,6 @@ export default function EmployeesPage() {
   useEffect(() => {
     if (activeTab === 'applications') {
       if (!canViewApplications && userRole) {
-        // Redirect to employees tab if user has no verify permission
         setActiveTab('employees');
         return;
       }
@@ -857,7 +878,7 @@ export default function EmployeesPage() {
       }
       loadUpdateRequests();
     }
-  }, [activeTab, canViewApplications, userRole]);
+  }, [activeTab, canViewApplications, userRole, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter, selectedEmployeeGroupFilter, applicationSearchTerm]);
 
   useEffect(() => {
     setFilteredDesignations(designations);
@@ -1135,9 +1156,12 @@ export default function EmployeesPage() {
   const handleBulkApprove = async () => {
     if (selectedApplicationIds.length === 0) return;
 
-    if (!confirm(`Are you sure you want to approve ${selectedApplicationIds.length} selected applications using their proposed salaries?`)) {
-      return;
-    }
+    const approveResult = await alertConfirm(
+      'Bulk approve applications?',
+      `Approve ${selectedApplicationIds.length} selected application(s) using their proposed salaries?`,
+      'Yes, approve'
+    );
+    if (!approveResult.isConfirmed) return;
 
     try {
       setLoadingApplications(true);
@@ -1176,9 +1200,12 @@ export default function EmployeesPage() {
   const handleBulkReject = async () => {
     if (selectedApplicationIds.length === 0) return;
 
-    if (!confirm(`Are you sure you want to REJECT ${selectedApplicationIds.length} selected applications? This action cannot be undone.`)) {
-      return;
-    }
+    const rejectResult = await alertConfirm(
+      'Reject applications?',
+      `Reject ${selectedApplicationIds.length} selected application(s)? This action cannot be undone.`,
+      'Yes, reject'
+    );
+    if (!rejectResult.isConfirmed) return;
 
     try {
       setLoadingApplications(true);
@@ -1261,27 +1288,15 @@ export default function EmployeesPage() {
   const loadEmployees = async (pageNum: number = 1, append: boolean = false) => {
     try {
       if (!append) setLoading(true);
-      // Derive division_id, department_id, designation_id from selectedDivision and header filters (by name)
-      const divisionId = selectedDivision
-        || (employeeFilters['division.name'] ? divisions.find((d) => d.name === employeeFilters['division.name'])?._id : undefined);
-      const departmentId = employeeFilters['department.name']
-        ? departments.find((d) => d.name === employeeFilters['department.name'])?._id
-        : undefined;
-      const designationId = employeeFilters['designation.name']
-        ? designations.find((d) => d.name === employeeFilters['designation.name'])?._id
-        : undefined;
-      const employeeGroupId = employeeFilters['employee_group.name']
-        ? employeeGroups.find((g) => g.name === employeeFilters['employee_group.name'])?._id
-        : undefined;
       const response = await api.getEmployees({
         ...(includeLeftEmployees ? { includeLeft: true } : {}),
         page: pageNum,
-        limit: 50,
-        search: searchTerm || undefined,
-        ...(divisionId ? { division_id: divisionId } : {}),
-        ...(departmentId ? { department_id: departmentId } : {}),
-        ...(designationId ? { designation_id: designationId } : {}),
-        ...(employeeGroupId ? { employee_group_id: employeeGroupId } : {}),
+        limit: itemsPerPage,
+        search: searchQuery || undefined,
+        ...(selectedDivisionFilter ? { division_id: selectedDivisionFilter } : {}),
+        ...(selectedDepartmentFilter ? { department_id: selectedDepartmentFilter } : {}),
+        ...(selectedDesignationFilter ? { designation_id: selectedDesignationFilter } : {}),
+        ...(selectedEmployeeGroupFilter ? { employee_group_id: selectedEmployeeGroupFilter } : {}),
       });
       if (response.success) {
         // Ensure paidLeaves is always included and is a number
@@ -1387,23 +1402,12 @@ export default function EmployeesPage() {
   const loadApplications = async () => {
     try {
       setLoadingApplications(true);
-      const divisionId = selectedDivision ||
-        (employeeFilters['division.name'] ? divisions.find((d) => d.name === employeeFilters['division.name'])?._id : undefined);
-      const departmentId = employeeFilters['department.name']
-        ? departments.find((d) => d.name === employeeFilters['department.name'])?._id
-        : undefined;
-      const designationId = employeeFilters['designation.name']
-        ? designations.find((d) => d.name === employeeFilters['designation.name'])?._id
-        : undefined;
-      const employeeGroupId = employeeFilters['employee_group.name']
-        ? employeeGroups.find((g) => g.name === employeeFilters['employee_group.name'])?._id
-        : undefined;
       const search = (applicationSearchTerm || searchTerm || '').trim() || undefined;
       const response = await api.getEmployeeApplications({
-        ...(divisionId ? { division_id: divisionId } : {}),
-        ...(departmentId ? { department_id: departmentId } : {}),
-        ...(designationId ? { designation_id: designationId } : {}),
-        ...(employeeGroupId ? { employee_group_id: employeeGroupId } : {}),
+        ...(selectedDivisionFilter ? { division_id: selectedDivisionFilter } : {}),
+        ...(selectedDepartmentFilter ? { department_id: selectedDepartmentFilter } : {}),
+        ...(selectedDesignationFilter ? { designation_id: selectedDesignationFilter } : {}),
+        ...(selectedEmployeeGroupFilter ? { employee_group_id: selectedEmployeeGroupFilter } : {}),
         ...(search ? { search } : {}),
       });
       if (response.success) {
@@ -1998,7 +2002,12 @@ export default function EmployeesPage() {
       return handleActivate(empNo);
     }
 
-    if (!confirm(`Are you sure you want to deactivate this employee?`)) return;
+    const deactivateResult = await alertConfirm(
+      'Deactivate employee?',
+      'Are you sure you want to deactivate this employee?',
+      'Yes, deactivate'
+    );
+    if (!deactivateResult.isConfirmed) return;
 
     try {
       setError('');
@@ -2031,7 +2040,12 @@ export default function EmployeesPage() {
   };
 
   const handleActivate = async (empNo: string) => {
-    if (!confirm('Are you sure you want to activate this employee?')) return;
+    const activateResult = await alertConfirm(
+      'Activate employee?',
+      'Are you sure you want to activate this employee?',
+      'Yes, activate'
+    );
+    if (!activateResult.isConfirmed) return;
 
     try {
       setError('');
@@ -2129,7 +2143,12 @@ export default function EmployeesPage() {
   };
 
   const handleRemoveLeftDate = async (employee: Employee) => {
-    if (!confirm(`Are you sure you want to reactivate ${employee.employee_name}? This will remove their left date.`)) return;
+    const result = await alertConfirm(
+      'Reactivate employee?',
+      `Reactivate ${employee.employee_name}? This will remove their left date.`,
+      'Yes, reactivate'
+    );
+    if (!result.isConfirmed) return;
 
     try {
       setError('');
@@ -2137,12 +2156,15 @@ export default function EmployeesPage() {
       const response = await api.removeEmployeeLeftDate(employee.emp_no);
 
       if (response.success) {
+        await alertSuccess('Employee reactivated', 'Employee reactivated successfully!');
         setSuccess('Employee reactivated successfully!');
         loadEmployees();
       } else {
+        await alertError('Failed to reactivate', response.message || 'Failed to reactivate employee');
         setError(response.message || 'Failed to reactivate employee');
       }
     } catch (err: any) {
+      await alertError('Error', err.message || 'An error occurred');
       setError(err.message || 'An error occurred');
       console.error(err);
     }
@@ -2266,60 +2288,22 @@ export default function EmployeesPage() {
   };
 
   const openEmployeeViewFromApplication = async (application: EmployeeApplication) => {
-    // Open the full Employee View dialog, using application data as initial snapshot.
     setViewingApplication(application);
-
-    const mapped: any = {
-      emp_no: application.emp_no,
-      employee_name: application.employee_name,
-      division_id: application.division_id,
-      department_id: application.department_id,
-      designation_id: application.designation_id,
-      employee_group_id: (application as any).employee_group_id,
-      employee_group: (application as any).employee_group,
-      department: application.department,
-      division: (application as any).division,
-      designation: application.designation,
-      doj: application.doj,
-      dob: application.dob,
-      gross_salary: (application as any).gross_salary,
-      proposedSalary: application.proposedSalary,
-      approvedSalary: application.approvedSalary,
-      gender: application.gender,
-      marital_status: application.marital_status,
-      blood_group: application.blood_group,
-      qualifications: application.qualifications,
-      experience: application.experience,
-      address: application.address,
-      location: application.location,
-      aadhar_number: application.aadhar_number,
-      phone_number: application.phone_number,
-      alt_phone_number: application.alt_phone_number,
-      email: application.email,
-      pf_number: application.pf_number,
-      esi_number: application.esi_number,
-      bank_account_no: application.bank_account_no,
-      bank_name: application.bank_name,
-      bank_place: application.bank_place,
-      ifsc_code: application.ifsc_code,
-      is_active: true,
-      qualificationStatus: (application as any).qualificationStatus,
-      profilePhoto: (application as any).profilePhoto,
-    };
-
-    setViewingEmployee(mapped as Employee);
+    setSelectedApplication(application);
+    setViewingEmployee(mapApplicationToViewEmployee(application as any) as Employee);
     setShowViewDialog(true);
 
-    // If employee record already exists (post-verify), load the real employee details.
     try {
       if (application.emp_no) {
         const res = await api.getEmployee(application.emp_no);
         if (res?.success && res?.data) {
-          setViewingEmployee(res.data as Employee);
+          setViewingEmployee(
+            mergeEmployeeWithApplicationSnapshot(res.data as any, application as any) as Employee
+          );
         }
       }
-    } catch (e) {
-      // Ignore; we still show mapped application snapshot.
+    } catch {
+      // Keep application snapshot when employee record is not available yet.
     }
   };
 
@@ -2335,10 +2319,6 @@ export default function EmployeesPage() {
 
   const filteredEmployees = employees.filter(emp => {
     // Search, division, department, designation are now applied server-side via getEmployees params
-
-    // Filter by selected division
-    const matchesDivision = !selectedDivision ||
-      ((emp as any).division?._id === selectedDivision || emp.division_id === selectedDivision);
 
     // Filter by active status
     const matchesLeftFilter = includeLeftEmployees || !emp.leftDate;
@@ -2366,11 +2346,11 @@ export default function EmployeesPage() {
       ((app.department_id as any)?.name || app.department?.name || '')?.toLowerCase().includes(search.toLowerCase()) ||
       ((app.designation_id as any)?.name || app.designation?.name || '')?.toLowerCase().includes(search.toLowerCase());
 
-    const divFilter = selectedDivision || applicationFilters['division.name'];
+    const divFilter = selectedDivisionFilter || applicationFilters['division.name'];
     const appDivName = (app as any).division?.name || (app.division_id as any)?.name || '';
     const appDivId = (app as any).division?._id || (typeof app.division_id === 'string' ? app.division_id : (app.division_id as any)?._id);
     const matchesDivision = !divFilter ||
-      appDivId === selectedDivision ||
+      appDivId === selectedDivisionFilter ||
       appDivName === applicationFilters['division.name'];
 
     const deptFilter = employeeFilters['department.name'] || applicationFilters['department.name'];
@@ -2733,8 +2713,14 @@ export default function EmployeesPage() {
   };
 
   const handleVerifyApplication = async (application: EmployeeApplication) => {
-    if (!confirm(`Verify application for ${application.employee_name}? This will create their employee record and send credentials.`)) return;
+    const result = await alertConfirm(
+      'Verify application?',
+      `Verify application for ${application.employee_name}? This will create their employee record and send credentials.`,
+      'Yes, verify'
+    );
+    if (!result.isConfirmed) return;
 
+    alertLoading('Verifying application', 'Please wait...');
     try {
       setLoading(true);
       setError('');
@@ -2742,23 +2728,42 @@ export default function EmployeesPage() {
       const response = await api.verifyEmployeeApplication(application._id);
 
       if (response.success) {
+        closeAlert();
+        await alertSuccess(
+          'Application verified',
+          'Employee record created and credentials sent successfully.'
+        );
         setSuccess('Application verified successfully! Employee record created and credentials sent.');
+        const updatedApp = { ...application, status: 'verified' as const };
+        setViewingApplication(updatedApp);
+        setSelectedApplication(updatedApp);
         await loadApplications();
         await loadEmployees();
 
-        // Refresh view with actual employee record (if available)
         try {
           if (application.emp_no) {
             const empRes = await api.getEmployee(application.emp_no);
             if (empRes?.success && empRes?.data) {
-              setViewingEmployee(empRes.data as Employee);
+              setViewingEmployee(
+                mergeEmployeeWithApplicationSnapshot(empRes.data as any, updatedApp as any) as Employee
+              );
+            } else {
+              setViewingEmployee(mapApplicationToViewEmployee(updatedApp as any) as Employee);
             }
+          } else {
+            setViewingEmployee(mapApplicationToViewEmployee(updatedApp as any) as Employee);
           }
-        } catch (e) { /* ignore */ }
+        } catch {
+          setViewingEmployee(mapApplicationToViewEmployee(updatedApp as any) as Employee);
+        }
       } else {
+        closeAlert();
+        await alertError('Verification failed', response.message || 'Failed to verify application');
         setError(response.message || 'Failed to verify application');
       }
     } catch (err: any) {
+      closeAlert();
+      await alertError('Error', err.message || 'An error occurred');
       setError(err.message || 'An error occurred');
     } finally {
       setLoading(false);
@@ -2853,6 +2858,7 @@ export default function EmployeesPage() {
   };
 
   const openApprovalDialog = (application: EmployeeApplication) => {
+    if (!WORKSPACE_SALARY_FINALIZATION_ENABLED) return;
     setSelectedApplication(application);
     // Use application DOJ if available, otherwise default to today
     let dojValue = '';
@@ -3105,6 +3111,46 @@ export default function EmployeesPage() {
     return eligibleDepts;
   }
 
+  const departmentOptions = useMemo(() => {
+    if (selectedDivisionFilter) {
+      const divId = String(selectedDivisionFilter);
+      const div =
+        scopedDivisions.find((d) => String(d._id) === divId) ??
+        divisions.find((d) => String(d._id) === divId);
+      const depts = (div?.departments ?? []) as (string | Department)[];
+      return depts.map((d) =>
+        typeof d === 'string'
+          ? { _id: d, name: d }
+          : { _id: (d as Department)._id, name: (d as Department).name, code: (d as Department).code }
+      );
+    }
+    return getScopedDepartments('');
+  }, [selectedDivisionFilter, scopedDivisions, divisions, departments, currentUser]);
+
+  const handleSearch = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setSearchQuery(searchTerm);
+  };
+
+  const employeeExportFilters = useMemo(
+    () => ({
+      search: searchQuery || undefined,
+      division_id: selectedDivisionFilter || undefined,
+      department_id: selectedDepartmentFilter || undefined,
+      designation_id: selectedDesignationFilter || undefined,
+      employee_group_id: selectedEmployeeGroupFilter || undefined,
+      includeLeft: includeLeftEmployees ? 'true' : 'false',
+    }),
+    [
+      searchQuery,
+      selectedDivisionFilter,
+      selectedDepartmentFilter,
+      selectedDesignationFilter,
+      selectedEmployeeGroupFilter,
+      includeLeftEmployees,
+    ]
+  );
+
   // Permission checks using read/write pattern (respects Feature Control from Settings when user has no explicit list)
   const user = auth.getUser();
   const hasViewPermission = userForPermissions ? canViewEmployees(userForPermissions as any) : false;
@@ -3229,290 +3275,432 @@ export default function EmployeesPage() {
 
 
   return (
-    <div className="relative min-h-screen bg-bg-base overflow-x-hidden">
-
-
-      <div className="relative z-10 max-w-[1920px] mx-auto  sm:px-8 py-6 sm:py-8 space-y-8">
-        {/* Header - Unified Layout */}
-        <div className="space-y-4 mb-2">
-          {/* Top Row: Title and Icon */}
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl hidden md:flex bg-gradient-to-br from-indigo-500 to-indigo-600 items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-              <Users className="w-5 h-5 md:w-6 md:h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                {(commonDepartment || commonDesignation) ? (
-                  <>
-                    {commonDepartment && (
-                      <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider">{commonDepartment.name}</span>
-                    )}
-                    {commonDepartment && commonDesignation && (
-                      <span className="text-text-secondary/30">/</span>
-                    )}
-                    {commonDesignation && (
-                      <span className="text-xs font-bold text-blue-500 uppercase tracking-wider">{commonDesignation.name}</span>
-                    )}
-                  </>
-                ) : commonDivision && (
-                  <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider">{commonDivision.name}</span>
-                )}
-              </div>
-              <h1 className="text-base md:text-2xl font-black tracking-tight text-text-primary">Employee Management</h1>
-              {/* <p className="text-xs md:text-sm text-text-secondary font-medium">Manage workforce records • <span className="text-indigo-500">Source: {dataSource.toUpperCase()}</span></p> */}
-            </div>
+    <div className="relative min-h-screen">
+      <div className="relative z-10 mx-auto max-w-[1920px] px-4 pb-8 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Employee Management</h1>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              Manage employee records • Data source:{' '}
+              <span className="font-medium text-green-600 dark:text-green-400">{dataSource.toUpperCase()}</span>
+            </p>
           </div>
 
-          {/* Bottom Row: Action Buttons - Full Width on Desktop */}
-          <div className="flex flex-wrap md:flex-nowrap items-center gap-1.5 md:gap-3">
-            {(commonDivision || commonDepartment) && (
-              <div className="hidden items-center gap-2 sm:flex">
-                {commonDivision && (
-                  <span className="inline-flex items-center rounded-lg bg-bg-surface px-2.5 py-1 text-xs font-bold text-text-secondary border border-border-base">
-                    {commonDivision.name}
-                  </span>
-                )}
-                <div className="h-4 w-px bg-border-base mx-1"></div>
-              </div>
-            )}
-
-            {/* Tab Slider or Single Badge */}
+          <div className="flex items-center gap-3">
             {canViewApplications ? (
-              <div className="relative grid grid-cols-3 items-center rounded-2xl bg-bg-surface/50 border border-border-base p-1 backdrop-blur-md shadow-sm">
+              <div className="relative flex h-10 items-center rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
                 <div
-                  className={`absolute h-8 rounded-xl bg-bg-base border border-border-base shadow-sm transition-all duration-300 ease-in-out`}
-                  style={{
-                    width: 'calc(33.333% - 4px)',
-                    transform:
-                      activeTab === 'employees'
-                        ? 'translateX(0px)'
-                        : activeTab === 'applications'
-                          ? 'translateX(calc(100% + 2px))'
-                          : 'translateX(calc(200% + 4px))'
-                  }}
+                  className={`absolute h-8 rounded-lg bg-white shadow-sm transition-all duration-300 ease-in-out dark:bg-slate-700 ${
+                    activeTab === 'employees'
+                      ? 'left-1 w-36'
+                      : activeTab === 'applications'
+                        ? 'left-[calc(9rem+4px)] w-36'
+                        : 'left-[calc(18rem+8px)] w-[9.5rem]'
+                  }`}
                 />
                 <button
                   onClick={() => setActiveTab('employees')}
-                  className={`relative z-10 w-full flex items-center justify-center px-2 py-1 md:px-4 md:py-1.5 text-[9px] md:text-xs font-black uppercase tracking-widest transition-colors ${activeTab === 'employees'
-                    ? 'text-text-primary'
-                    : 'text-text-secondary hover:text-text-primary'
-                    }`}
+                  className={`relative z-10 w-36 px-4 py-1.5 text-sm font-semibold transition-colors ${
+                    activeTab === 'employees'
+                      ? 'text-slate-900 dark:text-slate-100'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
                 >
                   Employees
                 </button>
                 <button
                   onClick={() => setActiveTab('applications')}
-                  className={`relative z-10 w-full px-2 py-1 md:px-4 md:py-1.5 text-[9px] md:text-xs font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2 ${activeTab === 'applications'
-                    ? 'text-text-primary'
-                    : 'text-text-secondary hover:text-text-primary'
-                    }`}
+                  className={`relative z-10 w-36 px-4 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${
+                    activeTab === 'applications'
+                      ? 'text-slate-900 dark:text-slate-100'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
                 >
-                  <span className="md:hidden">Apps</span>
-                  <span className="hidden md:inline">Applications</span>
+                  Applications
                   {pendingApplications.length > 0 && (
-                    <span className="flex h-4 min-w-[16px] md:h-5 md:min-w-[20px] items-center justify-center rounded-full bg-status-negative px-1 text-[9px] md:text-[10px] text-white font-bold">
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] bg-red-500 text-white">
                       {pendingApplications.length}
                     </span>
                   )}
                 </button>
                 <button
                   onClick={() => setActiveTab('requests')}
-                  className={`relative z-10 w-full px-2 py-1 md:px-4 md:py-1.5 text-[9px] md:text-xs font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2 ${activeTab === 'requests'
-                    ? 'text-text-primary'
-                    : 'text-text-secondary hover:text-text-primary'
-                    }`}
+                  className={`relative z-10 w-[9.5rem] px-2 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 ${
+                    activeTab === 'requests'
+                      ? 'text-slate-900 dark:text-slate-100'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
                 >
-                  <span className="md:hidden">Req</span>
-                  <span className="hidden md:inline">Profile Requests</span>
+                  Profile Requests
                   {pendingProfileRequests.length > 0 && (
-                    <span className="flex h-4 min-w-[16px] md:h-5 md:min-w-[20px] items-center justify-center rounded-full bg-status-warning px-1 text-[9px] md:text-[10px] text-white font-bold">
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] bg-indigo-500 text-white">
                       {pendingProfileRequests.length}
                     </span>
                   )}
                 </button>
               </div>
             ) : (
-              <div className="flex items-center rounded-xl bg-bg-surface/50 border border-border-base px-3 py-1.5 md:px-4 md:py-2 backdrop-blur-md shadow-sm">
-                <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-text-primary">
-                  Employees
-                </span>
+              <div className="flex items-center rounded-xl bg-slate-100 px-4 py-2 dark:bg-slate-800">
+                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">Employees</span>
               </div>
             )}
 
-            {/* Settings Button */}
             {hasManagePermission && (
               <Link
                 href="/employees/form-settings"
-                className="flex items-center justify-center rounded-xl md:rounded-2xl border border-border-base bg-bg-surface/50 p-1.5 md:p-2.5 text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
+                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                 title="Form Settings"
               >
-                <Settings className="h-4 w-4 md:h-5 md:w-5" />
+                <Settings className="h-5 w-5" />
               </Link>
             )}
-
-            {/* Import Button */}
-            {hasManagePermission && allowEmployeeBulkProcess && (
-              <button
-                onClick={() => setShowBulkUpload(true)}
-                className="flex items-center gap-2 rounded-xl md:rounded-2xl border border-border-base bg-bg-surface/50 px-2 py-1.5 md:px-4 md:py-2.5 text-xs md:text-sm font-bold text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
-              >
-                <div className="w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-500">
-                  <Upload className="h-3 w-3 md:h-3.5 md:w-3.5" />
-                </div>
-                <span className="hidden sm:inline uppercase tracking-widest text-[10px]">Import</span>
-              </button>
-            )}
-
-            {/* Export Button */}
-            {hasViewPermission && (
-              <button
-                onClick={() => {
-                  setSelectedEmployeeForExport(null);
-                  setShowExportDialog(true);
-                }}
-                className="flex items-center gap-2 rounded-xl md:rounded-2xl border border-border-base bg-bg-surface/50 px-2 py-1.5 md:px-4 md:py-2.5 text-xs md:text-sm font-bold text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
-              >
-                <div className="w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-lg bg-green-500/10 text-green-500">
-                  <Download className="h-3 w-3 md:h-3.5 md:w-3.5" />
-                </div>
-                <span className="hidden sm:inline uppercase tracking-widest text-[10px]">Export</span>
-              </button>
-            )}
-
-            {/* New Application Button - Responsive */}
-            {hasManagePermission && (
-              <>
-                {/* Mobile: Icon Only */}
-                <button
-                  onClick={() => setShowApplicationDialog(true)}
-                  className="md:hidden flex items-center justify-center rounded-xl border border-border-base bg-bg-surface/50 p-1.5 text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
-                  title="New Application"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-
-                {/* Desktop: Full Button */}
-                <button
-                  onClick={() => setShowApplicationDialog(true)}
-                  className="hidden md:flex md:items-center md:gap-2 md:rounded-2xl md:bg-gradient-to-br md:from-indigo-500 md:to-indigo-600 md:px-5 md:py-2.5 md:text-xs md:font-black md:uppercase md:tracking-widest md:text-white md:shadow-xl md:shadow-indigo-500/20 md:transition-all md:hover:scale-[1.02] md:active:scale-95"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>New Application</span>
-                </button>
-              </>
-            )}
-
           </div>
         </div>
 
-        {/* Pagination Controls & Search */}
-        {/* Pagination Controls & Search */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 md:gap-6 md:p-5 md:rounded-[2.5rem] md:border md:border-border-base md:bg-bg-surface/40 md:backdrop-blur-2xl md:shadow-xl md:shadow-indigo-500/5">
-          {/* Search Section - Full width on desktop, stacked on mobile */}
-          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 md:gap-4 flex-1">
-            <div className="relative flex-1 lg:max-w-2xl group w-full">
-              <div className="absolute inset-0 bg-indigo-500/5 rounded-2xl blur-xl transition-opacity opacity-0 group-focus-within:opacity-100" />
-              <Search className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 md:w-4 md:h-4 text-text-secondary transition-colors group-focus-within:text-indigo-500" />
-              <input
-                type="text"
-                placeholder="Search by name, emp no, or department..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && loadEmployees(1, false)}
-                className="relative w-full h-10 md:h-12 pl-10 md:pl-12 pr-10 md:pr-4 rounded-xl md:rounded-2xl border border-border-base bg-bg-base/60 text-xs md:text-sm font-semibold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-text-primary placeholder:text-text-secondary/40 shadow-sm"
-              />
-              {/* Mobile Embedded Search Button */}
+        {/* Global Toolbar */}
+        <div className="mb-6 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            {activeTab === 'employees' ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSearch();
+                  }}
+                  className="relative min-w-[300px]"
+                >
+                  <input
+                    type="text"
+                    placeholder="Search name, emp no, phone..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSearch();
+                      }
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-12 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                  <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                  <button
+                    type="submit"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-green-500 p-2 text-white hover:bg-green-600 transition-all flex items-center justify-center"
+                    title="Search"
+                  >
+                    <Search className="h-4 w-4" />
+                  </button>
+                </form>
+
+                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
+
+                <div className="min-w-[150px]">
+                  <select
+                    value={selectedDivisionFilter}
+                    onChange={(e) => {
+                      setSelectedDivisionFilter(e.target.value);
+                      setSelectedDepartmentFilter('');
+                      setSelectedDesignationFilter('');
+                      setSelectedEmployeeGroupFilter('');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Divisions</option>
+                    {scopedDivisions.map((d) => (
+                      <option key={d._id} value={d._id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="min-w-[150px]">
+                  <select
+                    value={selectedDepartmentFilter}
+                    onChange={(e) => {
+                      setSelectedDepartmentFilter(e.target.value);
+                      setSelectedDesignationFilter('');
+                      setSelectedEmployeeGroupFilter('');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Departments</option>
+                    {departmentOptions.map((d) => (
+                      <option key={d._id} value={d._id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="min-w-[150px]">
+                  <select
+                    value={selectedDesignationFilter}
+                    onChange={(e) => setSelectedDesignationFilter(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Designations</option>
+                    {designations.map((d) => (
+                      <option key={d._id} value={d._id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {customEmployeeGroupingEnabled && (
+                  <div className="min-w-[150px]">
+                    <select
+                      value={selectedEmployeeGroupFilter}
+                      onChange={(e) => setSelectedEmployeeGroupFilter(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    >
+                      <option value="">All Groups</option>
+                      {employeeGroups
+                        .filter((g) => g.isActive !== false)
+                        .map((g) => (
+                          <option key={g._id} value={g._id}>
+                            {g.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+
+                <label className="flex items-center gap-2 cursor-pointer ml-2">
+                  <input
+                    type="checkbox"
+                    checked={includeLeftEmployees}
+                    onChange={(e) => setIncludeLeftEmployees(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Include Left</span>
+                </label>
+              </div>
+            ) : activeTab === 'applications' ? (
+              <div className="flex flex-wrap items-center gap-3 flex-1">
+                <div className="relative min-w-[200px] max-w-md flex-1">
+                  <input
+                    type="text"
+                    placeholder="Search applications by name, emp no, dept..."
+                    value={applicationSearchTerm}
+                    onChange={(e) => setApplicationSearchTerm(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                  <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                </div>
+                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
+                <div className="min-w-[140px]">
+                  <select
+                    value={selectedDivisionFilter}
+                    onChange={(e) => {
+                      setSelectedDivisionFilter(e.target.value);
+                      setSelectedDepartmentFilter('');
+                      setSelectedDesignationFilter('');
+                      setSelectedEmployeeGroupFilter('');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Divisions</option>
+                    {scopedDivisions.map((d) => (
+                      <option key={d._id} value={d._id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="min-w-[140px]">
+                  <select
+                    value={selectedDepartmentFilter}
+                    onChange={(e) => {
+                      setSelectedDepartmentFilter(e.target.value);
+                      setSelectedDesignationFilter('');
+                      setSelectedEmployeeGroupFilter('');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Departments</option>
+                    {departmentOptions.map((d) => (
+                      <option key={d._id} value={d._id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="min-w-[140px]">
+                  <select
+                    value={selectedDesignationFilter}
+                    onChange={(e) => setSelectedDesignationFilter(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Designations</option>
+                    {designations.map((d) => (
+                      <option key={d._id} value={d._id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {customEmployeeGroupingEnabled && (
+                  <div className="min-w-[140px]">
+                    <select
+                      value={selectedEmployeeGroupFilter}
+                      onChange={(e) => setSelectedEmployeeGroupFilter(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    >
+                      <option value="">All Groups</option>
+                      {employeeGroups
+                        .filter((g) => g.isActive !== false)
+                        .map((g) => (
+                          <option key={g._id} value={g._id}>
+                            {g.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            <div className="flex items-center gap-3">
               <button
-                onClick={() => loadEmployees(1, false)}
-                className="md:hidden absolute right-1.5 top-1/2 -translate-y-1/2 p-2 rounded-lg bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+                onClick={() =>
+                  activeTab === 'employees' ? loadEmployees(currentPage, false) : loadApplications()
+                }
+                className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
               >
-                <Search className="w-4 h-4" />
+                <svg
+                  className={`h-4 w-4 ${loading || loadingApplications ? 'animate-spin' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  />
+                </svg>
+                <span>Refresh</span>
               </button>
+
+              {(activeTab === 'employees' || activeTab === 'applications') &&
+                hasManagePermission &&
+                allowEmployeeBulkProcess && (
+                  <>
+                    <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
+                    <button
+                      onClick={() => setShowBulkUpload(true)}
+                      className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
+                    >
+                      <Upload className="h-4 w-4" />
+                      <span>Import</span>
+                    </button>
+                  </>
+                )}
+
+              {activeTab === 'employees' && hasViewPermission && (
+                <button
+                  onClick={() => {
+                    setSelectedEmployeeForExport(null);
+                    setShowExportDialog(true);
+                  }}
+                  className="flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-700 transition-all hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Bulk Export</span>
+                </button>
+              )}
+
+              {hasManagePermission && (
+                <button
+                  onClick={() => setShowApplicationDialog(true)}
+                  className="flex items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-600/20 transition-all hover:bg-green-700"
+                >
+                  <Plus className="h-4 w-4" />
+                  New Application
+                </button>
+              )}
             </div>
-
-            {/* Desktop Search Button */}
-            <button
-              onClick={() => loadEmployees(1, false)}
-              className="hidden md:flex h-10 md:h-12 px-6 md:px-8 rounded-xl md:rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-95 transition-all items-center justify-center gap-2 whitespace-nowrap flex-shrink-0"
-            >
-              <Search className="w-3 h-3 md:w-3.5 h-3.5" />
-              <span>Search</span>
-            </button>
-
-
           </div>
 
-          {/* Desktop: Pagination on right */}
-          <div className="hidden lg:flex items-center justify-end gap-6 md:gap-8 flex-shrink-0">
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary">Page</span>
+          {activeTab === 'employees' && totalPages > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/50 backdrop-blur-sm px-6 py-3 dark:border-slate-700 dark:bg-slate-900/50">
+              <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
+                <p>
+                  Showing{' '}
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+                    {filteredEmployees.length}
+                  </span>{' '}
+                  of{' '}
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">{totalCount}</span>{' '}
+                  employees
+                </p>
+                <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
+                <div className="flex items-center gap-2">
+                  <span>Rows per page:</span>
+                  <select
+                    value={itemsPerPage}
+                    onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                    className="rounded-lg border border-slate-200 bg-transparent px-2 py-1 text-sm focus:outline-none dark:border-slate-700"
+                  >
+                    {[20, 50, 100, 200].map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => loadEmployees(currentPage - 1, false)}
-                  disabled={currentPage <= 1 || loading}
-                  className="w-10 h-10 flex items-center justify-center rounded-xl border border-border-base bg-bg-base/50 text-text-secondary hover:text-indigo-500 hover:border-indigo-500/50 disabled:opacity-30 disabled:hover:border-border-base disabled:hover:text-text-secondary transition-all"
+                  disabled={currentPage === 1 || loading}
+                  className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                 >
-                  <ChevronLeft className="w-4 h-4" />
+                  <ChevronLeft className="h-4 w-4" />
+                  Prev
                 </button>
-                <div className="min-w-[80px] text-center px-1">
-                  <span className="text-sm font-black text-text-primary">{currentPage}</span>
-                  <span className="mx-1.5 text-[10px] font-bold text-text-secondary">of</span>
-                  <span className="text-sm font-black text-text-primary">{totalPages || 1}</span>
+
+                <div className="flex items-center gap-1">
+                  {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                    let pageNum = 1;
+                    if (totalPages <= 5) pageNum = i + 1;
+                    else if (currentPage <= 3) pageNum = i + 1;
+                    else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                    else pageNum = currentPage - 2 + i;
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => loadEmployees(pageNum, false)}
+                        className={`min-w-[32px] h-8 rounded-lg text-sm font-medium transition-all ${
+                          currentPage === pageNum
+                            ? 'bg-green-600 text-white shadow-md shadow-green-600/20'
+                            : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
                 </div>
+
                 <button
                   onClick={() => loadEmployees(currentPage + 1, false)}
-                  disabled={currentPage >= totalPages || loading}
-                  className="w-10 h-10 flex items-center justify-center rounded-xl border border-border-base bg-bg-base/50 text-text-secondary hover:text-indigo-500 hover:border-indigo-500/50 disabled:opacity-30 disabled:hover:border-border-base disabled:hover:text-text-secondary transition-all"
+                  disabled={currentPage === totalPages || loading}
+                  className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                 >
-                  <ChevronRight className="w-4 h-4" />
+                  Next
+                  <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
             </div>
-
-            <div className="hidden sm:block h-8 w-px bg-border-base"></div>
-
-            <div className="flex flex-col items-end">
-              <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary mb-0.5">Total Records</span>
-              <span className="text-sm font-black text-indigo-500">{totalCount}</span>
-            </div>
-
-          </div>
-
-          {/* Mobile: Minimized Pagination */}
-          <div className="lg:hidden flex items-center justify-between mt-2 w-full px-2 gap-2">
-
-            {/* Total Count */}
-            <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary whitespace-nowrap">
-              Total: <span className="text-indigo-500">{totalCount}</span>
-            </span>
-
-            {/* Controls */}
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => loadEmployees(currentPage - 1, false)}
-                disabled={currentPage <= 1 || loading}
-                className="w-8 h-8 flex items-center justify-center rounded-lg bg-bg-surface border border-border-base text-text-secondary hover:text-indigo-500 disabled:opacity-30 disabled:hover:text-text-secondary transition-all shadow-sm"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-
-              <span className="text-xs font-black text-text-primary uppercase tracking-widest">
-                {currentPage} / {totalPages || 1}
-              </span>
-
-              <button
-                onClick={() => loadEmployees(currentPage + 1, false)}
-                disabled={currentPage >= totalPages || loading}
-                className="w-8 h-8 flex items-center justify-center rounded-lg bg-bg-surface border border-border-base text-text-secondary hover:text-indigo-500 disabled:opacity-30 disabled:hover:text-text-secondary transition-all shadow-sm"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
+          )}
         </div>
-      </div>
-
       {/* Employee List with Skeleton Loading */}
       {loading || (activeTab === 'applications' && loadingApplications) || (activeTab === 'requests' && loadingUpdateRequests) ? (
         <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
@@ -3828,12 +4016,19 @@ export default function EmployeesPage() {
                               <button
                                 onClick={async (e) => {
                                   e.stopPropagation();
-                                  if (!confirm(`Resend credentials to ${employee.employee_name}? Their current credentials will be sent without resetting the password.`)) return;
+                                  const resendResult = await alertConfirm(
+                                    'Resend credentials?',
+                                    `Resend credentials to ${employee.employee_name}? Their current credentials will be sent without resetting the password.`,
+                                    'Yes, resend'
+                                  );
+                                  if (!resendResult.isConfirmed) return;
                                   setIsResending(employee.emp_no);
                                   try {
                                     await api.resendEmployeeCredentials(employee.emp_no, { notificationChannels });
+                                    await alertSuccess('Credentials sent', 'Login credentials were resent successfully.');
                                     setSuccess('Credentials sent!');
                                   } catch (err) {
+                                    await alertError('Failed to resend', 'Could not resend credentials.');
                                     setError('Failed to resend');
                                   } finally {
                                     setIsResending(null);
@@ -4060,12 +4255,19 @@ export default function EmployeesPage() {
                       <button
                         onClick={async (e) => {
                           e.stopPropagation();
-                          if (!confirm(`Resend credentials to ${employee.employee_name}? Their current credentials will be sent without resetting the password.`)) return;
+                          const resendResult = await alertConfirm(
+                            'Resend credentials?',
+                            `Resend credentials to ${employee.employee_name}? Their current credentials will be sent without resetting the password.`,
+                            'Yes, resend'
+                          );
+                          if (!resendResult.isConfirmed) return;
                           setIsResending(employee.emp_no);
                           try {
                             await api.resendEmployeeCredentials(employee.emp_no, { notificationChannels });
+                            await alertSuccess('Credentials sent', 'Login credentials were resent successfully.');
                             setSuccess('Credentials sent!');
                           } catch (err) {
+                            await alertError('Failed to resend', 'Could not resend credentials.');
                             setError('Failed to resend');
                           } finally {
                             setIsResending(null);
@@ -4383,13 +4585,13 @@ export default function EmployeesPage() {
                                 <Eye className="h-3 w-3" />
                                 <span>View Details</span>
                               </button>
-                            ) : app.status === 'verified' && canFinalizeSalary(userForPermissions as any) ? (
+                            ) : app.status === 'verified' ? (
                               <button
                                 onClick={(e) => { e.stopPropagation(); openEmployeeViewFromApplication(app); }}
-                                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-blue-500/10 px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-blue-500 transition-colors hover:bg-blue-500/20"
+                                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-indigo-500/10 px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-500 transition-colors hover:bg-indigo-500/20"
                               >
-                                <ShieldCheck className="h-3 w-3" />
-                                <span>Finalize Salary</span>
+                                <Eye className="h-3 w-3" />
+                                <span>View Details</span>
                               </button>
                             ) : null}
                           </div>
@@ -4753,6 +4955,7 @@ export default function EmployeesPage() {
                                       min="0"
                                       step="0.01"
                                       value={current === null ? '' : current}
+                                      onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
                                       onWheel={(e) => e.currentTarget.blur()}
                                       className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100 no-spinner"
                                     />
@@ -4819,8 +5022,9 @@ export default function EmployeesPage() {
                                       min="0"
                                       step="0.01"
                                       value={current === null ? '' : current}
+                                      onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
                                       onWheel={(e) => e.currentTarget.blur()}
-                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-green-950 dark:text-green-100 no-spinner"
+                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-green-950 dark:text-red-100 no-spinner"
                                     />
                                   </div>
                                 </div>
@@ -4945,7 +5149,7 @@ export default function EmployeesPage() {
 
       {/* Approval Dialog with Salary Modification */}
       {
-        showApprovalDialog && selectedApplication && (
+        WORKSPACE_SALARY_FINALIZATION_ENABLED && showApprovalDialog && selectedApplication && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApprovalDialog(false)} />
             <div className="relative z-50 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
@@ -6144,7 +6348,9 @@ export default function EmployeesPage() {
                           Verify
                         </button>
                       )}
-                      {viewingApplication.status === 'verified' && canFinalizeSalary(userForPermissions as any) && (
+                      {WORKSPACE_SALARY_FINALIZATION_ENABLED &&
+                        viewingApplication.status === 'verified' &&
+                        canFinalizeSalary(userForPermissions as any) && (
                         <button
                           type="button"
                           onClick={() => openApprovalDialog(viewingApplication)}
@@ -6776,6 +6982,134 @@ export default function EmployeesPage() {
                   </div>
                 </div>
 
+                {/* Custom dynamic form groups from form settings */}
+                {formSettings?.groups
+                  ?.filter(
+                    (g: any) =>
+                      g.isEnabled &&
+                      ![
+                        'basic_info',
+                        'personal_info',
+                        'contact_info',
+                        'bank_details',
+                        'reporting_authority',
+                        'leave_info',
+                        'leave_information',
+                        'salaries',
+                      ].includes(g.id) &&
+                      !g.isSystem
+                  )
+                  .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+                  .map((group: any) => {
+                    const groupFields = group.fields?.filter((f: any) => f.isEnabled !== false) || [];
+                    return (
+                      <div
+                        key={group.id}
+                        className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50"
+                      >
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                          {group.label}
+                        </h3>
+                        {group.isArray ? (
+                          <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                            <table className="w-full text-left text-sm">
+                              <thead>
+                                <tr className="border-b border-slate-200 bg-slate-100/80 dark:border-slate-700 dark:bg-slate-800/80">
+                                  {groupFields
+                                    .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+                                    .map((f: any) => (
+                                      <th
+                                        key={f.id}
+                                        className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-300"
+                                      >
+                                        {f.label}
+                                      </th>
+                                    ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(() => {
+                                  let rows =
+                                    (viewingEmployee as any)?.[group.id] ||
+                                    viewingEmployee?.dynamicFields?.[group.id];
+                                  if (typeof rows === 'string') {
+                                    try {
+                                      rows = JSON.parse(rows);
+                                    } catch {
+                                      rows = [];
+                                    }
+                                  }
+                                  if (!Array.isArray(rows) || rows.length === 0) {
+                                    return (
+                                      <tr>
+                                        <td
+                                          colSpan={groupFields.length}
+                                          className="px-3 py-4 text-center text-slate-500 italic"
+                                        >
+                                          No data provided.
+                                        </td>
+                                      </tr>
+                                    );
+                                  }
+                                  return rows.map((row: any, idx: number) => (
+                                    <tr
+                                      key={idx}
+                                      className="border-b border-slate-100 last:border-0 dark:border-slate-800"
+                                    >
+                                      {groupFields
+                                        .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+                                        .map((f: any) => {
+                                          const val = row[f.id];
+                                          const displayVal =
+                                            val === undefined || val === null || val === ''
+                                              ? '-'
+                                              : String(val);
+                                          return (
+                                            <td
+                                              key={f.id}
+                                              className="px-3 py-2 text-slate-900 dark:text-slate-100"
+                                            >
+                                              {displayVal}
+                                            </td>
+                                          );
+                                        })}
+                                    </tr>
+                                  ));
+                                })()}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            {groupFields
+                              .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+                              .map((field: any) => {
+                                const value = getEmployeeGroupedDynamicFieldValue(
+                                  viewingEmployee,
+                                  group.id,
+                                  field.id
+                                );
+                                return (
+                                  <div key={field.id}>
+                                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                                      {field.label}
+                                    </label>
+                                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                                      {value != null && value !== ''
+                                        ? typeof value === 'object'
+                                          ? JSON.stringify(value)
+                                          : String(value)
+                                        : '-'}
+                                    </p>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
                 {/* Reporting Authority Section - Check both root and dynamicFields, handle both reporting_to and reporting_to_ */}
                 {((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_) && (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
@@ -6951,15 +7285,9 @@ export default function EmployeesPage() {
         onClose={() => setShowExportDialog(false)}
         empNo={selectedEmployeeForExport?.emp_no}
         employeeName={selectedEmployeeForExport?.employee_name}
-        filters={{
-          searchTerm,
-          includeLeft: includeLeftEmployees,
-          division_id: selectedDivision || (employeeFilters['division.name'] ? divisions.find((d) => d.name === employeeFilters['division.name'])?._id : undefined),
-          department_id: employeeFilters['department.name'] ? departments.find((d) => d.name === employeeFilters['department.name'])?._id : undefined,
-          designation_id: employeeFilters['designation.name'] ? designations.find((d) => d.name === employeeFilters['designation.name'])?._id : undefined,
-          employee_group_id: employeeFilters['employee_group.name'] ? employeeGroups.find((g) => g.name === employeeFilters['employee_group.name'])?._id : undefined,
-        }}
+        filters={employeeExportFilters}
       />
+      </div>
     </div>
   );
 }
