@@ -96,6 +96,9 @@ router.get('/', authorize('manager', 'super_admin', 'sub_admin', 'hr'), applyMet
 // Get single user
 router.get('/:id', userController.getUser);
 
+// User activity log (super admin only)
+router.get('/:id/activity', authorize('super_admin'), userController.getUserActivity);
+
 // ==========================================
 // USER UPDATE ROUTES
 // ==========================================

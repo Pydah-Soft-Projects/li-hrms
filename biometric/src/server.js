@@ -155,13 +155,14 @@ mongoose.connect(MONGODB_URI)
         // Connect to HRMS MongoDB for export (employee name, department, division)
         await connectHRMS().catch(() => { });
 
+        const bootSettings = await getValues();
+        syncScheduler.intervalMinutes = bootSettings.syncIntervalMinutes;
+
         // Start the server
         app.listen(PORT, () => {
             logger.info(`Server running on port ${PORT}`);
             logger.info(`API Documentation: http://localhost:${PORT}/`);
 
-            const bootSettings = await getValues();
-            syncScheduler.intervalMinutes = bootSettings.syncIntervalMinutes;
             if (bootSettings.syncIntervalMinutes > 0) {
                 syncScheduler.start();
                 setTimeout(async () => {

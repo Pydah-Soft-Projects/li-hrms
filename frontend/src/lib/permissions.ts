@@ -13,6 +13,8 @@ export interface User {
     dataScope?: 'all' | 'department' | 'division' | 'own';
     departments?: any[];
     featureControl?: string[];
+    /** Holiday groups this user may manage (scoped calendar write). */
+    managedHolidayGroupIds?: string[];
 }
 
 // ==========================================
@@ -611,5 +613,27 @@ export function canViewHolidayCalendar(user: User): boolean {
 }
 
 export function canManageHolidayCalendar(user: User): boolean {
-    return hasAnyRole(user, ['sub_admin', 'hr', 'manager']) && canManageFeature(user, 'HOLIDAY_CALENDAR');
+    if (user.role === 'super_admin') return true;
+    return canManageFeature(user, 'HOLIDAY_CALENDAR');
+}
+
+/** Global manage: can create/edit GLOBAL holidays (org-wide) and holiday groups. */
+export function canManageHolidayCalendarGlobal(user: User): boolean {
+    if (user.role === 'super_admin') return true;
+    return canManageFeature(user, 'HOLIDAY_CALENDAR_MANAGE_GLOBAL');
+}
+
+export function canManageHolidayGroups(user: User): boolean {
+    return canManageHolidayCalendarGlobal(user);
+}
+
+/** Whether the user may edit/deactivate this holiday row (scoped managers: group rows only). */
+export function canEditHolidayRecord(user: User, holiday: { scope?: string; groupId?: string | { _id: string } }): boolean {
+    if (!canManageHolidayCalendar(user)) return false;
+    if (canManageHolidayCalendarGlobal(user)) return true;
+    if (holiday.scope === 'GLOBAL') return false;
+    const gid = typeof holiday.groupId === 'object' ? holiday.groupId?._id : holiday.groupId;
+    if (!gid) return false;
+    const allowed = user.managedHolidayGroupIds || [];
+    return allowed.includes(gid);
 }

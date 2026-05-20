@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { api, Department, Division, User, Employee, DataScope, Role } from '@/lib/api';
+import { api, Department, Division, User, Employee, DataScope, Role, HolidayGroup, UserHistoryRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
 import Spinner from '@/components/Spinner';
@@ -108,6 +108,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
+  const [holidayGroups, setHolidayGroups] = useState<HolidayGroup[]>([]);
   const [employeesWithoutAccount, setEmployeesWithoutAccount] = useState<Employee[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
   const { user: currentUser } = useAuth();
@@ -163,7 +164,9 @@ export default function UsersPage() {
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedViewUser, setSelectedViewUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'permissions'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'permissions' | 'activity'>('overview');
+  const [userActivity, setUserActivity] = useState<UserHistoryRow[]>([]);
+  const [loadingUserActivity, setLoadingUserActivity] = useState(false);
 
   const [formData, setFormData] = useState<UserFormData>({
     email: '',
@@ -211,7 +214,7 @@ export default function UsersPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [usersRes, deptRes, divRes, statsRes] = await Promise.all([
+      const [usersRes, deptRes, divRes, statsRes, holGroupsRes] = await Promise.all([
         api.getUsers({
           role: roleFilter || undefined,
           isActive: statusFilter ? statusFilter === 'active' : undefined,
@@ -220,12 +223,14 @@ export default function UsersPage() {
         api.getDepartments(true),
         api.getDivisions(),
         api.getUserStats(),
+        api.getHolidayGroupsAdmin(),
       ]);
 
       if (usersRes.success) setUsers(usersRes.data || []);
       if (deptRes.success) setDepartments(deptRes.data || []);
       if (divRes.success) setDivisions(divRes.data || []);
       if (statsRes.success) setStats(statsRes.data);
+      if (holGroupsRes.success) setHolidayGroups(holGroupsRes.data || []);
 
       const [rolesRes, resSettEmp, resSettHOD, resSettHR, resSettMgr] = await Promise.all([
         api.getRoles(),
@@ -262,6 +267,27 @@ export default function UsersPage() {
       console.error('Failed to load employees:', err);
     }
   };
+
+  useEffect(() => {
+    const load = async () => {
+      if (!showViewDialog || !selectedViewUser?._id) return;
+      if (activeTab !== 'activity') return;
+      if (currentUser?.role !== 'super_admin') return;
+
+      try {
+        setLoadingUserActivity(true);
+        const res = await api.getUserActivity(selectedViewUser._id, 120);
+        if (res.success) setUserActivity(res.data || []);
+        else setUserActivity([]);
+      } catch (e) {
+        console.error('Failed to load user activity:', e);
+        setUserActivity([]);
+      } finally {
+        setLoadingUserActivity(false);
+      }
+    };
+    load();
+  }, [activeTab, showViewDialog, selectedViewUser?._id, currentUser?.role]);
 
   useEffect(() => {
     loadData();
@@ -406,6 +432,7 @@ export default function UsersPage() {
 
       // Add feature control (always send to ensure overrides work)
       payload.featureControl = formData.featureControl;
+      (payload as any).managedHolidayGroupIds = formData.managedHolidayGroupIds || [];
 
       const res = await api.createUser(payload as any);
 
@@ -495,6 +522,7 @@ export default function UsersPage() {
 
       // Add feature control (always send to ensure overrides work)
       payload.featureControl = employeeFormData.featureControl;
+      (payload as any).managedHolidayGroupIds = employeeFormData.managedHolidayGroupIds || [];
 
       const res = await api.createUserFromEmployee(payload);
 
@@ -571,6 +599,7 @@ export default function UsersPage() {
 
       // Add feature control (always send to ensure overrides work)
       payload.featureControl = formData.featureControl;
+      (payload as any).managedHolidayGroupIds = formData.managedHolidayGroupIds || [];
 
       const res = await api.updateUser(selectedUser._id, payload);
 
@@ -743,6 +772,7 @@ export default function UsersPage() {
       divisionMapping: finalMapping,
       division: (user.role === 'hod' || user.role === 'manager') && mapping ? mapping.division : '',
       phone_number: user.phone_number || '',
+      managedHolidayGroupIds: ((user as any).managedHolidayGroupIds || []).map((g: any) => typeof g === 'string' ? g : g?._id).filter(Boolean),
     });
     // Prevent useEffect from reloading defaults and overwriting user data
     previousRoleRef.current = user.role;
@@ -789,6 +819,7 @@ export default function UsersPage() {
       divisionMapping: [],
       division: '',
       phone_number: '',
+      managedHolidayGroupIds: [],
     });
     previousRoleRef.current = '';
   };
@@ -807,6 +838,7 @@ export default function UsersPage() {
       divisionMapping: [],
       division: '',
       phone_number: '',
+      managedHolidayGroupIds: [],
     });
     previousRoleRef.current = '';
   };
@@ -1751,6 +1783,51 @@ export default function UsersPage() {
                     {/* RIGHT COLUMN - Feature Privileges */}
                     <div className="flex-1 p-8 space-y-6 bg-slate-50/50 dark:bg-slate-900/30">
                       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                        <div className="mb-4 flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-500/10">
+                            <Users className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Holiday Group Scope</h3>
+                            <p className="text-xs text-slate-500">Assign which holiday groups this user can manage</p>
+                          </div>
+                        </div>
+
+                        {holidayGroups.length === 0 ? (
+                          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">
+                            No holiday groups found.
+                          </div>
+                        ) : (
+                          <div className="max-h-56 overflow-y-auto space-y-2 pr-2">
+                            {holidayGroups.map((g) => {
+                              const selected = (formData.managedHolidayGroupIds || []).includes(g._id);
+                              return (
+                                <label key={g._id} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-white p-3 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:bg-slate-800/40 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={selected}
+                                    onChange={(e) => {
+                                      const next = e.target.checked
+                                        ? Array.from(new Set([...(formData.managedHolidayGroupIds || []), g._id]))
+                                        : (formData.managedHolidayGroupIds || []).filter((id: string) => id !== g._id);
+                                      setFormData({ ...formData, managedHolidayGroupIds: next });
+                                    }}
+                                    className="mt-1 h-4 w-4"
+                                  />
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{g.name}</div>
+                                    {g.description && (
+                                      <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{g.description}</div>
+                                    )}
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
                         <div className="mb-5 flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-500/10">
@@ -2250,6 +2327,51 @@ export default function UsersPage() {
                   {/* RIGHT COLUMN - Feature Privileges */}
                   <div className="flex-1 p-8 space-y-6 bg-slate-50/50 dark:bg-slate-900/30">
                     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                      <div className="mb-4 flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-500/10">
+                          <Users className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900 dark:text-white">Holiday Group Scope</h3>
+                          <p className="text-xs text-slate-500">Assign which holiday groups this user can manage</p>
+                        </div>
+                      </div>
+
+                      {holidayGroups.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">
+                          No holiday groups found.
+                        </div>
+                      ) : (
+                        <div className="max-h-56 overflow-y-auto space-y-2 pr-2">
+                          {holidayGroups.map((g) => {
+                            const selected = (employeeFormData.managedHolidayGroupIds || []).includes(g._id);
+                            return (
+                              <label key={g._id} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-white p-3 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:bg-slate-800/40 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={selected}
+                                  onChange={(e) => {
+                                    const next = e.target.checked
+                                      ? Array.from(new Set([...(employeeFormData.managedHolidayGroupIds || []), g._id]))
+                                      : (employeeFormData.managedHolidayGroupIds || []).filter((id: string) => id !== g._id);
+                                    setEmployeeFormData({ ...employeeFormData, managedHolidayGroupIds: next });
+                                  }}
+                                  className="mt-1 h-4 w-4"
+                                />
+                                <div className="min-w-0">
+                                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{g.name}</div>
+                                  {g.description && (
+                                    <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{g.description}</div>
+                                  )}
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
                       <div className="mb-5 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-500/10">
@@ -2638,6 +2760,51 @@ export default function UsersPage() {
                         <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/30">
                           <ScopingSelector data={formData} setData={setFormData} />
                         </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                        <div className="mb-4 flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-500/10">
+                            <Users className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Holiday Group Scope</h3>
+                            <p className="text-xs text-slate-500">Assign which holiday groups this user can manage</p>
+                          </div>
+                        </div>
+
+                        {holidayGroups.length === 0 ? (
+                          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">
+                            No holiday groups found.
+                          </div>
+                        ) : (
+                          <div className="max-h-56 overflow-y-auto space-y-2 pr-2">
+                            {holidayGroups.map((g) => {
+                              const selected = (formData.managedHolidayGroupIds || []).includes(g._id);
+                              return (
+                                <label key={g._id} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-white p-3 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:bg-slate-800/40 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={selected}
+                                    onChange={(e) => {
+                                      const next = e.target.checked
+                                        ? Array.from(new Set([...(formData.managedHolidayGroupIds || []), g._id]))
+                                        : (formData.managedHolidayGroupIds || []).filter((id: string) => id !== g._id);
+                                      setFormData({ ...formData, managedHolidayGroupIds: next });
+                                    }}
+                                    className="mt-1 h-4 w-4"
+                                  />
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{g.name}</div>
+                                    {g.description && (
+                                      <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{g.description}</div>
+                                    )}
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
 
                       {/* Action Buttons */}
@@ -3111,6 +3278,7 @@ export default function UsersPage() {
                       {[
                         { id: 'overview', label: 'Overview', icon: Layers },
                         { id: 'permissions', label: 'Feature Access', icon: Lock },
+                        ...(currentUser?.role === 'super_admin' ? [{ id: 'activity', label: 'Activity Log', icon: Info }] : []),
                       ].map((tab) => (
                         <button
                           key={tab.id}
@@ -3208,7 +3376,7 @@ export default function UsersPage() {
                               </div>
                             </section>
                           </div>
-                        ) : (
+                        ) : activeTab === 'permissions' ? (
                           <div className="space-y-10">
                             <div className="mb-6">
                               <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase">Module Permissions</h3>
@@ -3271,6 +3439,50 @@ export default function UsersPage() {
                                     </div>
                                   );
                                 })}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-6">
+                            <div className="mb-2">
+                              <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase">Activity Log</h3>
+                              <p className="text-xs font-medium text-slate-500">Tracked changes for this user profile</p>
+                            </div>
+
+                            {currentUser?.role !== 'super_admin' ? (
+                              <div className="rounded-[2rem] border border-dashed border-slate-200 bg-slate-50 p-10 text-center text-sm font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-400">
+                                Only super admins can view activity logs.
+                              </div>
+                            ) : loadingUserActivity ? (
+                              <div className="flex h-48 items-center justify-center rounded-[2rem] border border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-950/40">
+                                <Spinner />
+                              </div>
+                            ) : userActivity.length === 0 ? (
+                              <div className="rounded-[2rem] border border-dashed border-slate-200 bg-slate-50 p-10 text-center text-sm font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-400">
+                                No activity recorded yet.
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {userActivity.map((row) => (
+                                  <div key={row._id} className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/40">
+                                    <div className="flex items-start justify-between gap-4">
+                                      <div className="min-w-0">
+                                        <div className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white truncate">
+                                          {row.event}
+                                        </div>
+                                        <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                          {row.comments || '—'}
+                                        </div>
+                                        <div className="mt-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                          By {row.performedByName || 'System'} {row.performedByRole ? `(${row.performedByRole})` : ''}
+                                        </div>
+                                      </div>
+                                      <div className="shrink-0 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                        {row.timestamp ? new Date(row.timestamp).toLocaleString() : '—'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             )}
                           </div>

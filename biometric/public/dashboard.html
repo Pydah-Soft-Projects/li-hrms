@@ -795,6 +795,111 @@
         .env-readonly code {
             color: #a5b4fc;
         }
+
+        .btn-settings-primary {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border: none;
+            color: white;
+            font-weight: 600;
+            padding: 10px 18px;
+            box-shadow: 0 4px 14px var(--primary-glow);
+        }
+
+        .btn-settings-primary:hover {
+            opacity: 0.92;
+            transform: translateY(-1px);
+        }
+
+        .tab.tab--settings {
+            margin-left: auto;
+            border: 1px solid rgba(139, 92, 246, 0.5);
+            background: rgba(139, 92, 246, 0.12);
+        }
+
+        .tab.tab--settings.active {
+            background: #8b5cf6;
+            border-color: transparent;
+        }
+
+        .tabs {
+            flex-wrap: wrap;
+        }
+
+        .user-transfer-toolbar {
+            display: none;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            padding: 12px 0;
+            margin-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .user-transfer-toolbar.visible {
+            display: flex;
+        }
+
+        .user-transfer-toolbar label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.88rem;
+            cursor: pointer;
+        }
+
+        #user-selection-count {
+            font-size: 0.85rem;
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        .user-card-checkbox {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+            cursor: pointer;
+            accent-color: var(--primary);
+        }
+
+        .device-checkbox-list {
+            max-height: 220px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.15);
+        }
+
+        .device-checkbox-list label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+
+        .device-checkbox-list label:hover {
+            background: rgba(99, 102, 241, 0.12);
+        }
+
+        .transfer-users-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin: 8px 0 12px;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+
+        .transfer-chip {
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            background: rgba(99, 102, 241, 0.25);
+            border: 1px solid rgba(99, 102, 241, 0.4);
+        }
     </style>
 </head>
 
@@ -825,7 +930,8 @@
                 <h1 id="selected-device-name">Select a Device</h1>
                 <p id="selected-device-sn" style="color: var(--text-dim); font-size: 0.9rem;">To view data pulls</p>
             </div>
-            <div style="display: flex; gap: 12px; align-items: center;">
+            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                <button type="button" class="btn-refresh btn-settings-primary" onclick="openSettingsPage()" title="Service settings (auto-clone, sync, operation mode)">⚙ Service Settings</button>
                 <button class="btn-refresh" onclick="openDownloadDialog('logs')" style="border-data: #10b981;">Download
                     Logs</button>
                 <button class="btn-refresh" onclick="openDownloadDialog('report')">Download Report</button>
@@ -837,7 +943,7 @@
                 <button class="btn-refresh" onclick="openDeviceAttlogDialog()" style="border-color: #f59e0b; color: #f59e0b;">Backup / Clear (TCP)</button>
                 <button class="btn-refresh" onclick="openTcpSyncToDbDialog()" style="border-color: #38bdf8; color: #38bdf8;">Sync to MongoDB (TCP)</button>
                 <button class="btn-refresh" onclick="refreshData()">Refresh Data</button>
-                <button class="btn-refresh" onclick="openBulkCloneDialog()" style="border-color: #a78bfa; color: #c4b5fd;">Bulk transfer users</button>
+                <button class="btn-refresh" onclick="openTransferUsersDialog()" style="border-color: #a78bfa; color: #c4b5fd;">Transfer users</button>
                 <button class="btn-refresh" onclick="loadAnalytics()">Refresh analytics</button>
             </div>
         </div>
@@ -895,7 +1001,7 @@
             <div class="tab" data-table="FACE" onclick="switchTab(this)">Face Data</div>
             <div class="tab" data-table="ATTLOG" onclick="switchTab(this)">Attendance Logs</div>
             <div class="tab" data-table="OPERLOG" onclick="switchTab(this)">Operation Logs</div>
-            <div class="tab" data-table="SETTINGS" onclick="switchTab(this)">Settings</div>
+            <div class="tab tab--settings" id="tab-settings" data-table="SETTINGS" onclick="switchTab(this)">⚙ Settings</div>
         </div>
 
         <div class="data-viewer">
@@ -915,6 +1021,16 @@
                         <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                     </svg>
                 </div>
+            </div>
+            <div id="user-transfer-toolbar" class="user-transfer-toolbar">
+                <label>
+                    <input type="checkbox" id="select-all-users-page" onchange="toggleSelectAllUsersOnPage(this.checked)">
+                    Select all on this page
+                </label>
+                <span id="user-selection-count">0 users selected</span>
+                <button type="button" class="btn-download" id="btn-transfer-selected" onclick="openTransferUsersDialog()" disabled>
+                    Transfer to devices…
+                </button>
             </div>
             <div id="settings-panel" class="settings-panel">
                 <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 16px;">
@@ -1236,28 +1352,47 @@
     <!-- Bulk user transfer -->
     <div class="dialog-overlay" id="bulk-clone-dialog">
         <div class="dialog-box dialog-box--scroll" style="max-width: 520px;">
-            <h3>Bulk transfer users</h3>
-            <p style="color: var(--text-dim); font-size: 0.82rem; margin-bottom: 12px;">
-                Queue golden-record users (profile + fingerprints) to all devices in a target category, or pick specific devices.
+            <h3>Transfer users to devices</h3>
+            <p style="color: var(--text-dim); font-size: 0.82rem; margin-bottom: 8px; line-height: 1.45;">
+                Copies profile + fingerprints to each selected terminal (applied on next device heartbeat).
             </p>
             <div class="dialog-body-scroll">
                 <div class="dialog-row">
-                    <label>User IDs (comma or newline separated)</label>
-                    <textarea id="bulk-user-ids" rows="4" style="width:100%; padding:10px; background:rgba(255,255,255,0.06); border:1px solid var(--border); border-radius:8px; color:white; font-family:inherit;" placeholder="101, 102, 103"></textarea>
+                    <label>Selected users</label>
+                    <div id="transfer-selected-users-summary" class="transfer-users-chips"></div>
                 </div>
                 <div class="dialog-row">
-                    <label>Target category</label>
-                    <select id="bulk-target-category"></select>
+                    <label style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                        <span>Target devices</span>
+                        <span>
+                            <button type="button" class="btn-refresh" style="padding:4px 10px;font-size:0.72rem;" onclick="toggleAllBulkDevices(true)">All</button>
+                            <button type="button" class="btn-refresh" style="padding:4px 10px;font-size:0.72rem;" onclick="toggleAllBulkDevices(false)">None</button>
+                        </span>
+                    </label>
+                    <div id="bulk-target-devices-list" class="device-checkbox-list"></div>
                 </div>
                 <div class="dialog-row">
-                    <label>Or target devices (hold Ctrl)</label>
-                    <select id="bulk-target-devices" multiple size="5" style="min-height: 100px;"></select>
+                    <label for="bulk-target-category">Or all devices in category</label>
+                    <select id="bulk-target-category">
+                        <option value="">— Use device checklist above —</option>
+                    </select>
+                    <p style="font-size:0.75rem;color:var(--text-dim);margin:6px 0 0;">Category overrides the device checklist.</p>
                 </div>
+                <div class="dialog-row" style="display:flex;align-items:center;gap:8px;">
+                    <input type="checkbox" id="bulk-exclude-source" checked style="width:18px;height:18px;" onchange="renderBulkTargetDevicesList()">
+                    <label for="bulk-exclude-source" style="margin:0;cursor:pointer;font-size:0.82rem;">Exclude current device from targets</label>
+                </div>
+                <details style="margin-top:8px;">
+                    <summary style="cursor:pointer;font-size:0.8rem;color:var(--text-dim);">Add user IDs manually</summary>
+                    <div class="dialog-row" style="margin-top:8px;">
+                        <textarea id="bulk-user-ids" rows="3" style="width:100%; padding:10px; background:rgba(255,255,255,0.06); border:1px solid var(--border); border-radius:8px; color:white; font-family:inherit;" placeholder="101, 102"></textarea>
+                    </div>
+                </details>
                 <div id="bulk-clone-status" style="font-size: 0.82rem; color: var(--accent); white-space: pre-wrap; min-height: 1.2em;"></div>
             </div>
             <div class="dialog-actions--sticky">
-                <button class="btn-cancel" onclick="closeBulkCloneDialog()">Close</button>
-                <button type="button" class="btn-download" onclick="runBulkClone()">Queue transfer</button>
+                <button class="btn-cancel" onclick="closeBulkCloneDialog()">Cancel</button>
+                <button type="button" class="btn-download" onclick="runBulkClone()">Confirm transfer</button>
             </div>
         </div>
     </div>
@@ -1273,6 +1408,7 @@
         let userListPageSize = 50;
         let userListMeta = { total: 0, page: 1, limit: 50, totalPages: 1 };
         let searchDebounceTimer = null;
+        let selectedUserIds = new Set();
         let allCategories = [];
 
         const TZ_IST = 'Asia/Kolkata';
@@ -1328,12 +1464,116 @@
             if (bulkCat) {
                 bulkCat.innerHTML = '<option value="">Select category…</option>' + opts;
             }
-            const bulkDev = document.getElementById('bulk-target-devices');
-            if (bulkDev) {
-                bulkDev.innerHTML = allDevices.filter(d => d.enabled !== false).map(d =>
-                    `<option value="${d.deviceId}">${d.name} (${d.deviceId})</option>`
-                ).join('');
+        }
+
+        function isUserListTab() {
+            return ['USERINFO', 'FINGERTMP', 'FACE'].includes(activeTable);
+        }
+
+        function updateUserTransferToolbar() {
+            const bar = document.getElementById('user-transfer-toolbar');
+            if (!bar) return;
+            bar.classList.toggle('visible', isUserListTab() && activeTable !== 'SETTINGS');
+            const count = selectedUserIds.size;
+            const countEl = document.getElementById('user-selection-count');
+            if (countEl) countEl.textContent = count + (count === 1 ? ' user selected' : ' users selected');
+            const btn = document.getElementById('btn-transfer-selected');
+            if (btn) btn.disabled = count === 0;
+            const allCb = document.getElementById('select-all-users-page');
+            if (allCb && lastFetchedData.length) {
+                const onPage = lastFetchedData.map(u => String(u.userId));
+                allCb.checked = onPage.length > 0 && onPage.every(id => selectedUserIds.has(id));
+                allCb.indeterminate = !allCb.checked && onPage.some(id => selectedUserIds.has(id));
             }
+        }
+
+        function toggleUserSelection(userId, checked) {
+            const id = String(userId);
+            if (checked) selectedUserIds.add(id);
+            else selectedUserIds.delete(id);
+            updateUserTransferToolbar();
+        }
+
+        function toggleSelectAllUsersOnPage(checked) {
+            (lastFetchedData || []).forEach(u => {
+                const id = String(u.userId);
+                if (checked) selectedUserIds.add(id);
+                else selectedUserIds.delete(id);
+            });
+            document.querySelectorAll('.user-select-cb').forEach(cb => { cb.checked = checked; });
+            updateUserTransferToolbar();
+        }
+
+        function getTransferUserIds() {
+            const manual = document.getElementById('bulk-user-ids')?.value || '';
+            const manualIds = manual.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+            const fromCheckboxes = [...selectedUserIds];
+            return [...new Set([...fromCheckboxes, ...manualIds])];
+        }
+
+        function renderTransferUsersSummary() {
+            const el = document.getElementById('transfer-selected-users-summary');
+            if (!el) return;
+            const ids = getTransferUserIds();
+            if (!ids.length) {
+                el.innerHTML = '<span style="color:var(--text-dim);font-size:0.82rem;">No users selected</span>';
+                return;
+            }
+            el.innerHTML = ids.map(id => {
+                const u = lastFetchedData.find(x => String(x.userId) === id);
+                const label = u?.name && u.name.trim() ? `${id} · ${u.name}` : id;
+                return `<span class="transfer-chip">${label}</span>`;
+            }).join('');
+        }
+
+        function renderBulkTargetDevicesList() {
+            const list = document.getElementById('bulk-target-devices-list');
+            if (!list) return;
+            const excludeSource = document.getElementById('bulk-exclude-source')?.checked !== false;
+            const devices = allDevices.filter(d => {
+                if (d.enabled === false) return false;
+                if (excludeSource && selectedSN && d.deviceId === selectedSN) return false;
+                return true;
+            });
+            if (!devices.length) {
+                list.innerHTML = '<p style="color:var(--text-dim);font-size:0.82rem;padding:8px;">No target devices available.</p>';
+                return;
+            }
+            list.innerHTML = devices.map(d => `
+                <label>
+                    <input type="checkbox" class="bulk-device-cb" value="${d.deviceId}" checked>
+                    <span>${d.name} <span style="color:var(--text-dim);font-size:0.75rem;">(${d.deviceId})</span></span>
+                </label>
+            `).join('');
+        }
+
+        function toggleAllBulkDevices(checked) {
+            document.querySelectorAll('.bulk-device-cb').forEach(cb => { cb.checked = checked; });
+        }
+
+        function getSelectedBulkDeviceIds() {
+            return [...document.querySelectorAll('.bulk-device-cb:checked')].map(cb => cb.value);
+        }
+
+        function openTransferUsersDialog() {
+            if (!selectedSN) {
+                showToast('Select a source device in the sidebar first', 'info');
+                return;
+            }
+            if (selectedUserIds.size === 0) {
+                showToast('Select one or more users from the list', 'info');
+                return;
+            }
+            document.getElementById('bulk-clone-dialog').classList.add('open');
+            document.getElementById('bulk-clone-status').textContent = '';
+            document.getElementById('bulk-user-ids').value = '';
+            loadCategories();
+            renderTransferUsersSummary();
+            renderBulkTargetDevicesList();
+        }
+
+        function openBulkCloneDialog() {
+            openTransferUsersDialog();
         }
 
         async function loadAnalytics() {
@@ -1473,27 +1713,29 @@
         }
 
         async function runBulkClone() {
-            const raw = document.getElementById('bulk-user-ids').value;
-            const userIds = raw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+            const userIds = getTransferUserIds();
             const targetCategoryId = document.getElementById('bulk-target-category').value;
-            const devSel = document.getElementById('bulk-target-devices');
-            const targetDeviceIds = [...devSel.selectedOptions].map(o => o.value);
+            const targetDeviceIds = getSelectedBulkDeviceIds();
             const statusEl = document.getElementById('bulk-clone-status');
 
             if (!userIds.length) {
-                statusEl.textContent = 'Enter at least one user ID.';
+                statusEl.textContent = 'Select at least one user.';
                 return;
             }
             if (!targetCategoryId && !targetDeviceIds.length) {
-                statusEl.textContent = 'Select a target category or one or more devices.';
+                statusEl.textContent = 'Select one or more target devices, or a category.';
                 return;
             }
 
-            statusEl.textContent = '⏳ Queuing…';
+            statusEl.textContent = '⏳ Queuing ' + userIds.length + ' user(s) → ' +
+                (targetCategoryId ? 'category' : targetDeviceIds.length + ' device(s)') + '…';
             try {
                 const body = { userIds, sourceDeviceId: selectedSN || undefined };
-                if (targetCategoryId) body.targetCategoryId = targetCategoryId;
-                if (targetDeviceIds.length) body.targetDeviceIds = targetDeviceIds;
+                if (targetCategoryId) {
+                    body.targetCategoryId = targetCategoryId;
+                } else {
+                    body.targetDeviceIds = targetDeviceIds;
+                }
 
                 const res = await fetch('/api/adms/clone-users-bulk', {
                     method: 'POST',
@@ -2224,6 +2466,7 @@
 
         async function selectDevice(sn) {
             selectedSN = sn;
+            selectedUserIds.clear();
             userListPage = 1;
             const dev = allDevices.find(d => d.deviceId === sn);
             const name = dev ? dev.name : sn;
@@ -2294,6 +2537,14 @@
             }
         }
 
+        function openSettingsPage() {
+            const tab = document.getElementById('tab-settings');
+            if (tab) {
+                switchTab(tab);
+                tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'end' });
+            }
+        }
+
         function switchTab(el) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             el.classList.add('active');
@@ -2312,6 +2563,8 @@
             if (pagBar && isSettings) pagBar.classList.remove('visible');
             const actions = document.getElementById('device-actions');
             if (actions && isSettings) actions.style.display = 'none';
+
+            updateUserTransferToolbar();
 
             if (isSettings) {
                 loadBiometricSettings();
@@ -2557,17 +2810,15 @@
                         const displayName = hasName ? user.name : `Staff member #${user.userId}`;
                         const subText = hasName ? `Staff ID: ${user.userId}` : `<i>(Name not set on device)</i>`;
 
-                        const otherDevices = allDevices.filter(d => d.deviceId !== selectedSN);
-                        const cloneOptions = otherDevices.map(d => `<option value="${d.deviceId}">${d.name}</option>`).join('');
-                        const sourceDev = allDevices.find(d => d.deviceId === selectedSN);
-                        const sourceCat = sourceDev?.categoryId;
-                        const catCloneBtn = sourceCat
-                            ? `<button type="button" class="btn-refresh" style="margin-top:6px;padding:4px 10px;font-size:0.72rem;" onclick="cloneUserToCategory('${user.userId}', '${sourceCat}')">Clone to category (${categoryNameById(sourceCat) || sourceCat})</button>`
-                            : '';
+                        const uid = String(user.userId).replace(/'/g, "\\'");
+                        const isChecked = selectedUserIds.has(String(user.userId));
 
                         return `
                         <div class="card" style="margin-bottom: 12px; padding: 20px; border: 1px solid var(--border); background: rgba(30, 41, 59, 0.3);">
-                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <div style="display: flex; justify-content: space-between; align-items: start; gap: 12px;">
+                                <label style="display:flex;align-items:flex-start;padding-top:4px;cursor:pointer;" title="Select for transfer">
+                                    <input type="checkbox" class="user-select-cb user-card-checkbox" data-user-id="${user.userId}" ${isChecked ? 'checked' : ''} onchange="toggleUserSelection('${uid}', this.checked)">
+                                </label>
                                 <div style="flex: 1;">
                                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
                                         <span style="background: var(--primary); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; letter-spacing: 1px;">ID: ${user.userId}</span>
@@ -2581,16 +2832,10 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div style="text-align: right;">
-                                    <div style="margin-bottom: 4px; font-size: 0.75rem; color: var(--text-dim);">Clone to...</div>
-                                    <select onchange="if(this.value) cloneUser('${user.userId}', this.value)" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border); color: white; font-size: 0.75rem; padding: 4px 8px; border-radius: 4px; outline: none; cursor: pointer;">
-                                        <option value="">Select Device</option>
-                                        ${cloneOptions}
-                                    </select>
-                                    ${catCloneBtn}
-                                    <div style="margin-top: 8px; font-size: 0.65rem; color: var(--text-dim);">
-                                        Synced (IST): ${user.lastSyncedAt ? formatISTShort(user.lastSyncedAt) : '—'}
-                                    </div>
+                                <div style="text-align: right; font-size: 0.65rem; color: var(--text-dim); min-width: 110px;">
+                                    <div>Synced (IST):</div>
+                                    <div>${user.lastSyncedAt ? formatISTShort(user.lastSyncedAt) : '—'}</div>
+                                </div>
                                 </div>
                             </div>
                             
@@ -2608,6 +2853,7 @@
                         `;
                     }).join('');
                     container.innerHTML = content;
+                    updateUserTransferToolbar();
                 } else {
                     const content = dataList.map((log, index) => {
                         let extractedId = '';

@@ -34,6 +34,8 @@ export const MODULE_CATEGORIES = [
             { code: 'CONFUSED_SHIFTS', label: 'Confused Shifts', href: '/confused-shifts' },
             { code: 'SHIFT_ROSTER', label: 'Shift Roster', href: '/shift-roster' },
             { code: 'HOLIDAY_CALENDAR', label: 'Holiday Calendar', href: '/holidays' },
+            // Permission-only module: grants ability to manage GLOBAL holidays (not just scoped groups)
+            { code: 'HOLIDAY_CALENDAR_MANAGE_GLOBAL', label: 'Holiday Calendar (Global Manage)', href: '/holidays' },
             { code: 'SHIFTS', label: 'Shifts', href: '/shifts' }
         ]
     },

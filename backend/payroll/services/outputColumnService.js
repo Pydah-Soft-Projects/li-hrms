@@ -38,6 +38,12 @@ function getContextFromPayslip(payslip) {
     designation: emp.designation ?? '',
     department: emp.department ?? '',
     division: emp.division ?? '',
+    salary_mode: emp.salary_mode ?? emp.payment_mode ?? '',
+    bank_account_no: emp.bank_account_no ?? '',
+    bank_name: emp.bank_name ?? '',
+    bank_place: emp.bank_place ?? '',
+    ifsc_code: emp.ifsc_code ?? '',
+    payment_mode: emp.payment_mode ?? emp.salary_mode ?? '',
     basicPay: num(earn.basicPay),
     basic_pay: num(earn.basicPay),
     grossSalary: num(earn.grossSalary),
@@ -229,6 +235,12 @@ function getValueByPath(obj, path) {
     const n = Number(obj?.manualDeductionsAmount ?? obj?.manualDeductions?.manualDeductionsAmount);
     return Number.isFinite(n) ? n : 0;
   }
+  // employee.salary_mode is stored on Employee; payslip uses payment_mode (from salary_mode).
+  if (trimmed === 'employee.salary_mode') {
+    const mode = obj?.employee?.salary_mode ?? obj?.employee?.payment_mode;
+    return mode != null && mode !== '' ? mode : '';
+  }
+
   const parts = trimmed.split('.').filter(Boolean);
   let val = obj;
   for (const p of parts) {

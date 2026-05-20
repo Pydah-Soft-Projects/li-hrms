@@ -72,6 +72,8 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(100);
   const [exportingBundle, setExportingBundle] = useState(false);
+  const [bundleExportModalOpen, setBundleExportModalOpen] = useState(false);
+  const [bundleExportFormat, setBundleExportFormat] = useState<'combined' | 'by_department'>('combined');
 
   const totalRows = rows.length;
   const effectivePerPage = rowsPerPage === ROWS_PER_PAGE_ALL ? Math.max(totalRows, 1) : rowsPerPage;
@@ -267,15 +269,22 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
     loadExisting();
   }, [loadExisting, selectedMonth]);
 
-  const exportPaysheetBundle = async () => {
+  const openBundleExportModal = () => {
     if (!selectedMonth) {
       toast.warning('Please select a month');
       return;
     }
+    setBundleExportFormat('by_department');
+    setBundleExportModalOpen(true);
+  };
+
+  const confirmExportPaysheetBundle = async () => {
+    if (!selectedMonth) return;
     setExportingBundle(true);
     try {
       const blob = await api.exportPaysheetBundleExcel({
         month: selectedMonth,
+        format: bundleExportFormat,
         departmentId: selectedDepartment || undefined,
         divisionId: selectedDivision || undefined,
         designationId: selectedDesignation || undefined,
@@ -286,10 +295,16 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `paysheet_bundle_${selectedMonth}.xlsx`;
+      const suffix = bundleExportFormat === 'by_department' ? '_by_dept' : '';
+      a.download = `paysheet_bundle_${selectedMonth}${suffix}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success('Downloaded paysheet bundle (Regular, 2nd salary, Comparison)');
+      setBundleExportModalOpen(false);
+      toast.success(
+        bundleExportFormat === 'by_department'
+          ? `Downloaded paysheet bundle (by department${secondSalaryEnabled ? ', incl. 2nd salary' : ''})`
+          : `Downloaded paysheet bundle${secondSalaryEnabled ? ' (Regular + 2nd + Bank)' : ' (Regular + Bank)'}`
+      );
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Export failed';
       toast.error(msg);
@@ -597,7 +612,7 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
             </button>
             <button
               type="button"
-              onClick={exportPaysheetBundle}
+              onClick={openBundleExportModal}
               disabled={!selectedMonth || exportingBundle}
               className="inline-flex items-center justify-center gap-2 h-9 px-3 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-semibold shadow-sm hover:opacity-90 disabled:opacity-50 disabled:pointer-events-none transition-opacity"
             >
@@ -720,6 +735,88 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
           </div>
         )}
       </div>
+
+      {bundleExportModalOpen && (
+        <div
+          className="fixed inset-0 z-[201] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="paysheet-bundle-export-title"
+          onClick={() => !exportingBundle && setBundleExportModalOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl ring-1 ring-slate-200 dark:ring-slate-700 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 bg-gradient-to-r from-slate-800 to-slate-900 text-white">
+              <h2 id="paysheet-bundle-export-title" className="text-base font-semibold">
+                Export paysheet bundle
+              </h2>
+              <p className="text-xs text-white/90 mt-1 leading-snug">
+                Excel: Regular paysheet
+                {secondSalaryEnabled ? ' (with 2nd net & difference at end), 2nd salary sheet,' : ','} and Bank
+                candidates (salary mode Bank only).
+              </p>
+            </div>
+            <div className="p-5 space-y-3">
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-600 p-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 has-[:checked]:ring-2 has-[:checked]:ring-violet-500/40">
+                <input
+                  type="radio"
+                  name="bundleExportFormat"
+                  className="mt-0.5"
+                  checked={bundleExportFormat === 'combined'}
+                  disabled={exportingBundle}
+                  onChange={() => setBundleExportFormat('combined')}
+                />
+                <span>
+                  <span className="text-sm font-medium text-slate-900 dark:text-slate-100">Combined table</span>
+                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    One table per sheet with company header, division, pay period, departments in scope, and S.No.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-600 p-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 has-[:checked]:ring-2 has-[:checked]:ring-violet-500/40">
+                <input
+                  type="radio"
+                  name="bundleExportFormat"
+                  className="mt-0.5"
+                  checked={bundleExportFormat === 'by_department'}
+                  disabled={exportingBundle}
+                  onChange={() => setBundleExportFormat('by_department')}
+                />
+                <span>
+                  <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    By division &amp; department (recommended)
+                  </span>
+                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    One sheet: DIVISION banner → DEPARTMENT banner → employee table (emp no order, S.No per
+                    department). Repeats for each department.
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 px-5 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40">
+              <button
+                type="button"
+                disabled={exportingBundle}
+                onClick={() => setBundleExportModalOpen(false)}
+                className="rounded-lg px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={exportingBundle}
+                onClick={() => void confirmExportPaysheetBundle()}
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-4 py-2 text-xs font-semibold hover:opacity-90 disabled:opacity-50"
+              >
+                {exportingBundle ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                Download Excel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 

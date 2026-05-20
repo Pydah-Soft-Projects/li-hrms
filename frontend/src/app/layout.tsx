@@ -9,8 +9,6 @@ import "react-toastify/dist/ReactToastify.css";
 import InstallPrompt from "@/components/InstallPrompt";
 import PushNotificationRegistrar from "@/components/PushNotificationRegistrar";
 import PushNotificationPrompt from "@/components/PushNotificationPrompt";
-
-
 const plusJakartaSans = Plus_Jakarta_Sans({
   variable: "--font-sans",
   subsets: ["latin"],

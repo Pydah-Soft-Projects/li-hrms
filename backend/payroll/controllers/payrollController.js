@@ -13,6 +13,9 @@ const {
   buildSecondSalaryPaysheetFromOutputColumns,
   getStatutoryCodesForPaysheetExpansion,
   writeBundleBuffer,
+  resolvePaysheetExportMeta,
+  enrichExportRowsWithOrg,
+  refreshEmployeeFieldColumnsOnRows,
 } = require('../utils/paysheetBundleExport');
 const User = require('../../users/model/User');
 const Settings = require('../../settings/model/Settings');
@@ -1146,6 +1149,9 @@ exports.getPaysheetData = async (req, res) => {
         return leftDate >= payrollRangeStart && leftDate <= payrollRangeEnd;
       });
 
+      const config2 = await PayrollConfiguration.get();
+      const outputCols2nd = normalizeOutputColumns(config2?.outputColumns);
+
       // Prefer frozen snapshots for historical stability (if available for all rows)
       if (filtered.length > 0) {
         try {
@@ -1156,7 +1162,12 @@ exports.getPaysheetData = async (req, res) => {
           if (allPresent) {
             const sample = snapMap.get(String(empIds[0]));
             const hdrs = Array.isArray(sample?.headers) ? sample.headers : [];
-            const rowsSnap = empIds.map((id, index) => ({ 'S.No': index + 1, ...(snapMap.get(String(id))?.row || {}) }));
+            const payslipsSnap = filtered.map((r) => secondSalaryRecordToPayslipShape(r));
+            let rowsSnap = filtered.map((r, index) => {
+              const id = String(r.employeeId?._id || r.employeeId);
+              return { 'S.No': index + 1, ...(snapMap.get(id)?.row || {}) };
+            });
+            rowsSnap = refreshEmployeeFieldColumnsOnRows(rowsSnap, payslipsSnap, outputCols2nd);
             return res.status(200).json({
               success: true,
               data: { headers: ['S.No', ...hdrs], rows: rowsSnap },
@@ -1169,9 +1180,6 @@ exports.getPaysheetData = async (req, res) => {
           console.warn('[getPaysheetData] snapshot read (2nd salary) failed:', e.message);
         }
       }
-
-      const config2 = await PayrollConfiguration.get();
-      const outputCols2nd = normalizeOutputColumns(config2?.outputColumns);
       const statutoryCodesForSheet = await getStatutoryCodesForPaysheetExpansion();
 
       let headers;
@@ -1292,7 +1300,12 @@ exports.getPaysheetData = async (req, res) => {
           if (allPresent) {
             const sample = snapMap.get(String(orderedEmpIds[0]));
             const hdrs = Array.isArray(sample?.headers) ? sample.headers : [];
-            const rowsSnap = orderedEmpIds.map((id, index) => ({ 'S.No': index + 1, ...(snapMap.get(String(id))?.row || {}) }));
+            const payslipsSnap = filtered.map((r) => recordToPayslip(r));
+            let rowsSnap = filtered.map((r, index) => {
+              const id = String(r.employeeId?._id || r.employeeId);
+              return { 'S.No': index + 1, ...(snapMap.get(id)?.row || {}) };
+            });
+            rowsSnap = refreshEmployeeFieldColumnsOnRows(rowsSnap, payslipsSnap, outputColumns);
             return res.status(200).json({
               success: true,
               data: { headers: ['S.No', ...hdrs], rows: rowsSnap },
@@ -1491,7 +1504,8 @@ exports.getPaysheetData = async (req, res) => {
  */
 exports.exportPaysheetBundleExcel = async (req, res) => {
   try {
-    const { month, departmentId, divisionId, status, search, employeeIds, designationId, employee_group_id } = req.query;
+    const { month, departmentId, divisionId, status, search, employeeIds, designationId, employee_group_id, format: exportFormat } = req.query;
+    const bundleFormat = String(exportFormat || 'combined').toLowerCase() === 'by_department' ? 'by_department' : 'combined';
     const desFilt = designationId && designationId !== 'all' ? String(designationId) : undefined;
     const groupFilt = employee_group_id && employee_group_id !== 'all' ? String(employee_group_id) : undefined;
 
@@ -1569,6 +1583,13 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
       return leftDate >= payrollRangeStart && leftDate <= payrollRangeEnd;
     });
 
+    const orderIndex = new Map(targetEmployeeIds.map((id, i) => [id, i]));
+    payrollRecords.sort((a, b) => {
+      const aId = (a.employeeId?._id || a.employeeId).toString();
+      const bId = (b.employeeId?._id || b.employeeId).toString();
+      return (orderIndex.get(aId) ?? 999999) - (orderIndex.get(bId) ?? 999999);
+    });
+
     if (!payrollRecords.length) {
       return res.status(404).json({
         success: false,
@@ -1580,7 +1601,8 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
     const secondRecords = await SecondSalaryRecord.find({ month, employeeId: { $in: prEmpIds } })
       .populate({
         path: 'employeeId',
-        select: 'employee_name emp_no department_id division_id designation_id salaries leftDate',
+        select:
+          'employee_name emp_no department_id division_id designation_id salaries location bank_account_no bank_name bank_place ifsc_code salary_mode doj leftDate',
         populate: [
           { path: 'department_id', select: 'name' },
           { path: 'division_id', select: 'name' },
@@ -1665,8 +1687,33 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
       });
     }
 
-    const buf = writeBundleBuffer(regularRows, secondRows, (reg, sec, i) => netsSec[i] - netsReg[i]);
-    const filename = `paysheet_bundle_${month}${departmentId ? `_dept_${departmentId}` : ''}.xlsx`;
+    const enriched = enrichExportRowsWithOrg(payrollRecords, regularRows, secondRows);
+    regularRows = enriched.regularRows;
+    secondRows = enriched.secondRows;
+
+    const scope =
+      req.scopeFilter && typeof req.scopeFilter === 'object' && Object.keys(req.scopeFilter).length > 0
+        ? req.scopeFilter
+        : null;
+    const exportMeta = await resolvePaysheetExportMeta({
+      month,
+      divisionId: divisionId && divisionId !== 'all' ? String(divisionId) : undefined,
+      departmentId: departmentId && departmentId !== 'all' ? String(departmentId) : undefined,
+      designationId: desFilt,
+      employeeGroupId: groupFilt,
+      status: status || undefined,
+      search: search || undefined,
+      scopeFilter: scope,
+      regularRows,
+    });
+    const secondSalaryEnabled = await isSecondSalaryGloballyEnabled();
+    const buf = writeBundleBuffer(regularRows, secondRows, (reg, sec, i) => netsSec[i] - netsReg[i], {
+      format: bundleFormat,
+      exportMeta,
+      secondSalaryEnabled,
+    });
+    const formatSuffix = bundleFormat === 'by_department' ? '_by_dept' : '';
+    const filename = `paysheet_bundle_${month}${formatSuffix}${departmentId && departmentId !== 'all' ? `_dept_${departmentId}` : ''}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     return res.send(buf);

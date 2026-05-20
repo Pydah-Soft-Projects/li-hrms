@@ -2,6 +2,7 @@ const User = require('../model/User');
 const Employee = require('../../employees/model/Employee');
 const { EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 const EmployeeHistory = require('../../employees/model/EmployeeHistory');
+const UserHistory = require('../model/UserHistory');
 const Department = require('../../departments/model/Department');
 const Division = require('../../departments/model/Division');
 const jwt = require('jsonwebtoken');
@@ -16,6 +17,22 @@ const generateToken = (userId) => {
     expiresIn: process.env.JWT_EXPIRE || '7d',
   });
 };
+
+async function logUserHistory({ userId, event, reqUser, details, comments }) {
+  try {
+    await UserHistory.create({
+      userId,
+      event,
+      performedBy: reqUser?._id || null,
+      performedByName: reqUser?.name || null,
+      performedByRole: reqUser?.role || null,
+      details: details || {},
+      comments: comments || null,
+    });
+  } catch (err) {
+    console.error('[UserHistory] log failed:', err.message);
+  }
+}
 
 
 
@@ -40,6 +57,7 @@ exports.registerUser = async (req, res) => {
       divisionMapping,
       phone_number,
       customRoles,
+      managedHolidayGroupIds,
     } = req.body;
     const { department, division } = req.body;
 
@@ -119,6 +137,7 @@ exports.registerUser = async (req, res) => {
       divisionMapping: finalDivisionMapping,
       phone_number: phone_number || null,
       customRoles: customRoles || [],
+      managedHolidayGroupIds: Array.isArray(managedHolidayGroupIds) ? managedHolidayGroupIds : [],
     };
 
     // Only add employeeId and employeeRef if they have values (sparse index)
@@ -127,6 +146,20 @@ exports.registerUser = async (req, res) => {
 
     // Create user
     const user = await User.create(userData);
+
+    await logUserHistory({
+      userId: user._id,
+      event: 'user_created',
+      reqUser: req.user,
+      details: {
+        role: user.role,
+        roles: user.roles,
+        scope: user.scope,
+        dataScope: user.dataScope,
+        managedHolidayGroupIds: user.managedHolidayGroupIds || [],
+      },
+      comments: 'User created',
+    });
 
     // HOD Sync: Update every department in divisionMapping with this user as HOD for the respective division
     if (role === 'hod' && finalDivisionMapping.length > 0) {
@@ -218,6 +251,7 @@ exports.createUserFromEmployee = async (req, res) => {
       divisionMapping,
       phone_number,
       customRoles,
+      managedHolidayGroupIds,
     } = req.body;
     const { departments, department, division } = req.body;
 
@@ -350,6 +384,21 @@ exports.createUserFromEmployee = async (req, res) => {
       createdBy: req.user?._id,
       phone_number: phone_number || employee.phone_number || null,
       customRoles: customRoles || [],
+      managedHolidayGroupIds: Array.isArray(managedHolidayGroupIds) ? managedHolidayGroupIds : [],
+    });
+
+    await logUserHistory({
+      userId: user._id,
+      event: 'user_created_from_employee',
+      reqUser: req.user,
+      details: {
+        employeeId: user.employeeId,
+        employeeRef: user.employeeRef,
+        role: user.role,
+        roles: user.roles,
+        managedHolidayGroupIds: user.managedHolidayGroupIds || [],
+      },
+      comments: 'User created from employee',
     });
 
     // Employee history: user created / promoted (from employee to role)
@@ -556,6 +605,7 @@ exports.updateUser = async (req, res) => {
       divisionMapping,
       phone_number,
       customRoles,
+      managedHolidayGroupIds,
     } = req.body;
     const { department, division } = req.body;
 
@@ -619,8 +669,32 @@ exports.updateUser = async (req, res) => {
       user.divisionMapping = [{ division, departments: [department] }];
     }
     if (customRoles !== undefined) user.customRoles = customRoles;
+    if (managedHolidayGroupIds !== undefined) {
+      user.managedHolidayGroupIds = Array.isArray(managedHolidayGroupIds) ? managedHolidayGroupIds : [];
+    }
 
     await user.save();
+
+    await logUserHistory({
+      userId: user._id,
+      event: 'user_updated',
+      reqUser: req.user,
+      details: {
+        changed: {
+          name: name !== undefined,
+          role: role !== undefined,
+          isActive: isActive !== undefined,
+          scope: scope !== undefined,
+          dataScope: dataScope !== undefined,
+          divisionMapping: divisionMapping !== undefined || (!!division && !!department),
+          featureControl: featureControl !== undefined,
+          customRoles: customRoles !== undefined,
+          managedHolidayGroupIds: managedHolidayGroupIds !== undefined,
+        },
+        managedHolidayGroupIds: user.managedHolidayGroupIds || [],
+      },
+      comments: 'User updated',
+    });
 
     const newDeptIds = new Set();
     (user.divisionMapping || []).forEach(m => {
@@ -1135,6 +1209,28 @@ exports.updateProfile = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error updating profile',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get user activity log (admin)
+// @route   GET /api/users/:id/activity
+// @access  Private (Super Admin)
+exports.getUserActivity = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const rows = await UserHistory.find({ userId })
+      .populate('performedBy', 'name email role')
+      .sort({ timestamp: -1 })
+      .limit(limit)
+      .lean();
+    res.status(200).json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching user activity',
       error: error.message,
     });
   }

@@ -813,10 +813,24 @@ export interface User {
   divisionMapping?: any[];
   isActive: boolean;
   featureControl?: string[];
+  /** Holiday groups this user can manage (scoped holiday admin). */
+  managedHolidayGroupIds?: (string | HolidayGroup)[];
   phone_number?: string | null;
   lastLogin?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface UserHistoryRow {
+  _id: string;
+  userId: string | User;
+  event: string;
+  performedBy?: string | User | null;
+  performedByName?: string | null;
+  performedByRole?: string | null;
+  details?: any;
+  comments?: string | null;
+  timestamp: string;
 }
 export interface Role {
   _id: string;
@@ -1035,11 +1049,26 @@ export interface Holiday {
   description?: string;
   sourceHolidayId?: string | Holiday; // For propagated copies
   isSynced?: boolean; // True if synced with global, false if edited
+  isActive?: boolean;
+  deactivatedAt?: string | null;
+  deactivatedBy?: string | User | null;
   createdBy?: string;
   createdAt?: string;
   updatedAt?: string;
   rosterFillMode?: 'HOL' | 'WEEK_OFF';
   onDeleteAction?: 'RESTORE_PATTERN' | 'WEEK_OFF';
+}
+
+export interface HolidayHistoryRow {
+  _id: string;
+  holidayId: string | Holiday;
+  event: string;
+  performedBy?: string | User | null;
+  performedByName?: string | null;
+  performedByRole?: string | null;
+  details?: any;
+  comments?: string | null;
+  timestamp: string;
 }
 
 export const api = {
@@ -1176,7 +1205,15 @@ export const api = {
   // Holidays
   getAllHolidaysAdmin: async (year?: number) => {
     const query = year ? `?year=${year}` : '';
-    return apiRequest<{ holidays: Holiday[]; groups: HolidayGroup[] }>(`/holidays/admin${query}`, { method: 'GET' });
+    return apiRequest<{
+      holidays: Holiday[];
+      groups: HolidayGroup[];
+      access?: { canManageGlobal: boolean; managedHolidayGroupIds: string[] };
+    }>(`/holidays/admin${query}`, { method: 'GET' });
+  },
+
+  getHolidayGroupsAdmin: async () => {
+    return apiRequest<HolidayGroup[]>('/holidays/groups', { method: 'GET' });
   },
 
   getMyHolidays: async (year?: number) => {
@@ -1221,6 +1258,12 @@ export const api = {
       method: 'DELETE',
       body: JSON.stringify(options || {})
     });
+  },
+
+  getHolidayActivity: async (id: string, limit = 120) => {
+    const q = new URLSearchParams();
+    if (limit) q.append('limit', String(limit));
+    return apiRequest<HolidayHistoryRow[]>(`/holidays/${id}/activity?${q.toString()}`, { method: 'GET' });
   },
 
   // Shifts
@@ -1366,6 +1409,12 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     });
+  },
+
+  getUserActivity: async (id: string, limit = 80) => {
+    const q = new URLSearchParams();
+    if (limit) q.append('limit', String(limit));
+    return apiRequest<UserHistoryRow[]>(`/users/${id}/activity?${q.toString()}`, { method: 'GET' });
   },
 
   resetUserPassword: async (id: string, data: { newPassword?: string; autoGenerate?: boolean }) => {
@@ -4091,9 +4140,12 @@ export const api = {
     status?: string;
     search?: string;
     employeeIds?: string[];
+    /** combined = single table; by_department = division/department sections */
+    format?: 'combined' | 'by_department';
   }) => {
     const queryParams = new URLSearchParams();
     queryParams.append('month', params.month);
+    if (params.format) queryParams.append('format', params.format);
     if (params.departmentId) queryParams.append('departmentId', params.departmentId);
     if (params.divisionId) queryParams.append('divisionId', params.divisionId);
     if (params.designationId) queryParams.append('designationId', params.designationId);

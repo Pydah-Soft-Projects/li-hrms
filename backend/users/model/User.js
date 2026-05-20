@@ -85,6 +85,16 @@ const userSchema = new mongoose.Schema(
         ref: 'EmployeeGroup',
       }
     ],
+    /**
+     * Holiday groups this user is allowed to manage (scoped holiday admin).
+     * If empty: user has no scoped holiday-group management unless granted global manage permission.
+     */
+    managedHolidayGroupIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'HolidayGroup',
+      },
+    ],
     preferences: {
       language: {
         type: String,

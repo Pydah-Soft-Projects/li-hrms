@@ -155,6 +155,9 @@ exports.login = async (req, res) => {
           featureControl: userType === 'user' ? resolveFeatureControl(user) : undefined,
           dataScope: userType === 'user' ? user.dataScope : 'own',
           divisionMapping: userType === 'user' ? user.divisionMapping : undefined,
+          managedHolidayGroupIds: userType === 'user'
+            ? (user.managedHolidayGroupIds || []).map((id) => id.toString())
+            : undefined,
           phone_number: userType === 'employee' ? user.phone_number : (user.employeeRef ? (await Employee.findById(user.employeeRef)).phone_number : null),
         },
       },
@@ -225,6 +228,9 @@ exports.getMe = async (req, res) => {
           isActive: user.isActive,
           dataScope: userType === 'user' ? user.dataScope : 'own',
           divisionMapping: userType === 'user' ? user.divisionMapping : undefined,
+          managedHolidayGroupIds: userType === 'user'
+            ? (user.managedHolidayGroupIds || []).map((id) => id.toString())
+            : undefined,
           profilePhoto,
           createdAt: joined,
           lastLogin,
@@ -456,6 +462,9 @@ exports.ssoLogin = async (req, res) => {
           featureControl: userType === 'user' ? resolveFeatureControl(user) : undefined,
           dataScope: userType === 'user' ? user.dataScope : 'own',
           divisionMapping: userType === 'user' ? user.divisionMapping : undefined,
+          managedHolidayGroupIds: userType === 'user'
+            ? (user.managedHolidayGroupIds || []).map((id) => id.toString())
+            : undefined,
           loginMethod: 'sso',
         },
         workspaces,

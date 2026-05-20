@@ -44,6 +44,13 @@ body {
   --status-positive: #10b981;
   --status-warning: #f59e0b;
   --status-negative: #ef4444;
+
+  /* Highlighter-marker selection (lime ink, soft edges) */
+  --selection-marker-ink: rgba(163, 230, 53, 0.78);
+  --selection-marker-ink-strong: rgba(132, 204, 22, 0.82);
+  --selection-marker-ink-soft: rgba(217, 249, 157, 0.45);
+  --selection-marker-text: #000000;
+  --selection-marker-glow: rgba(134, 239, 172, 0.55);
 }
 
 @theme inline {
@@ -74,17 +81,28 @@ body {
   caret-color: #22c55e; /* Branded green cursor */
 }
 
-/* Custom Text Selection Highlight */
+/* Highlighter marker — solid background (CSS gradients are ignored on ::selection in Chrome/Edge) */
 ::selection {
-  background: rgba(34, 197, 94, 0.3); /* Slightly more opaque for better contrast */
-  color: #052e16;
-  text-shadow: 0 0 10px rgba(34, 197, 94, 0.4); /* Premium glow effect */
+  background-color: rgba(190, 242, 100, 0.9) !important;
+  color: var(--selection-marker-text) !important;
+  -webkit-text-fill-color: var(--selection-marker-text) !important;
 }
 
 ::-moz-selection {
-  background: rgba(34, 197, 94, 0.3);
-  color: #052e16;
-  text-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
+  background-color: rgba(190, 242, 100, 0.9) !important;
+  color: var(--selection-marker-text) !important;
+}
+
+input::selection,
+textarea::selection {
+  background-color: rgba(190, 242, 100, 0.9) !important;
+  color: var(--selection-marker-text) !important;
+}
+
+input::-moz-selection,
+textarea::-moz-selection {
+  background-color: rgba(190, 242, 100, 0.9) !important;
+  color: var(--selection-marker-text) !important;
 }
 
 h1, h2, h3, h4, .font-display {
