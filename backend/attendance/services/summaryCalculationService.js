@@ -829,13 +829,24 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         const status = day.attendance.status;
         if (status === 'PRESENT') {
           attFirst = 0.5; attSecond = 0.5;
+        } else if (status === 'PARTIAL' && processingModeIsSingleShift) {
+          const {
+            computeRawAttendanceHalfCreditsSync,
+          } = require('../utils/attendanceHalfPresence');
+          const partialCredits = computeRawAttendanceHalfCreditsSync(day.attendance, day.ods, {
+            processingMode: 'single_shift',
+          });
+          attFirst = partialCredits.attFirst;
+          attSecond = partialCredits.attSecond;
         } else if (status === 'HALF_DAY') {
-          // Detect which half was worked based on which penalty is higher.
-          const eo = Number(day.attendance.totalEarlyOutMinutes) || 0;
-          const li = Number(day.attendance.totalLateInMinutes) || 0;
-          if (eo > li) attFirst = 0.5;
-          else if (li > eo) attSecond = 0.5;
-          else attFirst = 0.5; // Default to first half if we can't tell
+          const {
+            computeRawAttendanceHalfCreditsSync,
+          } = require('../utils/attendanceHalfPresence');
+          const hdCredits = computeRawAttendanceHalfCreditsSync(day.attendance, day.ods, {
+            processingMode: processingModeIsSingleShift ? 'single_shift' : 'multi_shift',
+          });
+          attFirst = hdCredits.attFirst;
+          attSecond = hdCredits.attSecond;
         } else if (status === 'OD' && day.ods.length > 0) {
           // Half-day OD while daily status is OD: credit the office half toward present (same intent as HD/OD in UI).
           const halfOd = day.ods.find(
@@ -845,14 +856,17 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
               (o.halfDayType === 'first_half' || o.halfDayType === 'second_half')
           );
           if (halfOd) {
-            const shifts = Array.isArray(day.attendance.shifts) ? day.attendance.shifts : [];
-            const hasIn = shifts.some((s) => s && s.inTime) || !!day.attendance.inTime;
-            const hasOut = shifts.some((s) => s && s.outTime) || !!day.attendance.outTime;
+            const {
+              dailyHasShiftLevelIn,
+              dailyHasShiftLevelOut,
+            } = require('../utils/attendanceHalfPresence');
+            const hasIn = dailyHasShiftLevelIn(day.attendance);
+            const hasOut = dailyHasShiftLevelOut(day.attendance);
             if (halfOd.halfDayType === 'second_half' && hasIn) attFirst = 0.5;
             else if (halfOd.halfDayType === 'first_half' && hasOut) attSecond = 0.5;
           }
         }
-        // PARTIAL/ABSENT: base is 0.0 per user request
+        // ABSENT / PARTIAL (multi_shift): base is 0.0
       }
 
       // Overlay ODs

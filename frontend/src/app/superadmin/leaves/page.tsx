@@ -1585,13 +1585,29 @@ function LeavesPageContent() {
         }
       }
 
-      if (applyType === 'leave' && approvedRecordsInfo.attendanceInfo) {
+      const isSingleDayRequest =
+        formData.fromDate === formData.toDate || !formData.toDate;
+      const isHoursOdRequest =
+        applyType === 'od' && formData.odType_extended === 'hours';
+      if (
+        approvedRecordsInfo.attendanceInfo &&
+        isSingleDayRequest &&
+        (applyType === 'leave' || (applyType === 'od' && !isHoursOdRequest))
+      ) {
+        const isHalfDayOdRequest =
+          applyType === 'od' &&
+          (formData.odType_extended === 'half_day' || Boolean(formData.isHalfDay));
         const attendanceGuidance = getLeaveAttendanceSuggestion(approvedRecordsInfo.attendanceInfo, {
-          isHalfDay: Boolean(formData.isHalfDay),
+          isHalfDay:
+            applyType === 'leave' ? Boolean(formData.isHalfDay) : isHalfDayOdRequest,
           halfDayType: formData.halfDayType || null,
         });
         if (attendanceGuidance.blocked) {
-          toast.error(attendanceGuidance.suggestion || 'Attendance already exists for this date. Please update leave duration and try again.');
+          const requestLabel = applyType === 'leave' ? 'leave' : 'OD';
+          toast.error(
+            attendanceGuidance.suggestion ||
+              `Attendance already exists for this date. Attendance is preferred over ${requestLabel}.`
+          );
           return;
         }
       }

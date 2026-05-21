@@ -5,6 +5,7 @@
  * Scope (current):
  * - Leave: single-day rows are auto-reconciled (reject/narrow). Multi-day is skipped.
  * - OD: single-day full/half-day rows are auto-reconciled (reject/narrow). Multi-day/hours are skipped.
+ * - Single-shift PARTIAL: IN-only → first-half presence; OUT-only (no IN) → second-half presence.
  */
 
 const Settings = require('../../settings/model/Settings');
@@ -15,6 +16,10 @@ const leaveRegisterYearMonthlyApplyService = require('./leaveRegisterYearMonthly
 const { assertEmployeeDateRequestsEditable } = require('../../shared/services/payrollRequestLockService');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 const { isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
+const AttendanceSettings = require('../../attendance/model/AttendanceSettings');
+const {
+  computeRawAttendanceHalfCredits,
+} = require('../../attendance/utils/attendanceHalfPresence');
 
 const REMARK_PREFIX = '[Auto attendance reconciliation]';
 
@@ -40,52 +45,6 @@ async function loadSettingEnabled() {
   } catch {
     return true;
   }
-}
-
-/**
- * Raw attendance half credits (aligned with summaryCalculationService before OD "dayPresent" net).
- * @param {import('mongoose').Document} daily - AttendanceDaily
- * @param {Array} ods - approved OD lean docs for that calendar day
- */
-function computeRawAttendanceHalfCredits(daily, ods) {
-  let attFirst = 0;
-  let attSecond = 0;
-  if (!daily) return { attFirst, attSecond };
-
-  const st = String(daily.status || '').toUpperCase();
-  if (st === 'HOLIDAY' || st === 'WEEK_OFF') {
-    return { attFirst, attSecond };
-  }
-
-  const dayOds = Array.isArray(ods) ? ods : [];
-  if (st === 'PRESENT') {
-    attFirst = 0.5;
-    attSecond = 0.5;
-  } else if (st === 'HALF_DAY') {
-    const eo = Number(daily.totalEarlyOutMinutes) || 0;
-    const li = Number(daily.totalLateInMinutes) || 0;
-    if (eo > li) attFirst = 0.5;
-    else if (li > eo) attSecond = 0.5;
-    else attFirst = 0.5;
-  } else if (st === 'OD' && dayOds.length > 0) {
-    const halfOd = dayOds.find(
-      (o) =>
-        o &&
-        o.isHalfDay &&
-        o.odType_extended === 'half_day' &&
-        (o.halfDayType === 'first_half' || o.halfDayType === 'second_half')
-    );
-    if (halfOd) {
-      const shifts = Array.isArray(daily.shifts) ? daily.shifts : [];
-      const hasIn = shifts.some((s) => s && s.inTime) || !!daily.inTime;
-      const hasOut = shifts.some((s) => s && s.outTime) || !!daily.outTime;
-      if (halfOd.halfDayType === 'second_half' && hasIn) attFirst = 0.5;
-      else if (halfOd.halfDayType === 'first_half' && hasOut) attSecond = 0.5;
-    }
-  }
-  // PARTIAL / ABSENT / incomplete: no raw half credits (do not auto-adjust leave in v1)
-
-  return { attFirst, attSecond };
 }
 
 function isSingleCalendarDayLeave(leave) {
@@ -363,7 +322,12 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
   if (!daily || !dateStr) return { ran: false, reason: 'no_daily' };
 
   const ods = await findApprovedOdsForDate(employee._id, dateStr);
-  const { attFirst, attSecond } = computeRawAttendanceHalfCredits(daily, ods);
+  const attSettingsDoc = await AttendanceSettings.getSettings();
+  const processingMode = AttendanceSettings.getProcessingMode(attSettingsDoc).mode;
+  const { attFirst, attSecond } = await computeRawAttendanceHalfCredits(daily, ods, {
+    processingMode,
+    dateStr,
+  });
   const { p1, p2 } = physicalMask(attFirst, attSecond);
   const physTotal = p1 + p2;
   if (physTotal < 0.5 - 1e-6) {

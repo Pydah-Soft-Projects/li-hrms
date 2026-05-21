@@ -953,6 +953,47 @@ exports.applyOD = async (req, res) => {
       });
     }
 
+    const fromStr = extractISTComponents(from).dateStr;
+    const toStr = extractISTComponents(to).dateStr;
+    const isSingleDayOd = fromStr === toStr;
+    const isHalfDayOd =
+      isHalfDay || odType_extended === 'half_day' || (numberOfDays > 0 && numberOfDays < 1);
+    if (isSingleDayOd && odType_extended !== 'hours') {
+      try {
+        const daily = await AttendanceDaily.findOne({
+          employeeNumber: String(employee.emp_no || '').toUpperCase(),
+          date: fromStr,
+        }).select('status totalEarlyOutMinutes totalLateInMinutes shifts inTime outTime');
+        if (daily) {
+          const AttendanceSettings = require('../../attendance/model/AttendanceSettings');
+          const { attendanceHalfPresenceFlags } = require('../../attendance/utils/attendanceHalfPresence');
+          const attSettingsDoc = await AttendanceSettings.getSettings();
+          const processingMode = AttendanceSettings.getProcessingMode(attSettingsDoc).mode;
+          const { attFirst, attSecond } = attendanceHalfPresenceFlags(daily, processingMode);
+          if (!isHalfDayOd && (attFirst || attSecond)) {
+            return res.status(400).json({
+              success: false,
+              error: 'Attendance already exists on this date. Attendance is preferred over OD.',
+            });
+          }
+          if (isHalfDayOd && halfDayType === 'first_half' && attFirst) {
+            return res.status(400).json({
+              success: false,
+              error: 'First-half attendance already present. Attendance is preferred over OD on same half.',
+            });
+          }
+          if (isHalfDayOd && halfDayType === 'second_half' && attSecond) {
+            return res.status(400).json({
+              success: false,
+              error: 'Second-half attendance already present. Attendance is preferred over OD on same half.',
+            });
+          }
+        }
+      } catch (attErr) {
+        console.error('OD attendance apply-time guard failed:', attErr);
+      }
+    }
+
     // Store warnings to include in success response
     const warnings = validation.warnings || [];
 

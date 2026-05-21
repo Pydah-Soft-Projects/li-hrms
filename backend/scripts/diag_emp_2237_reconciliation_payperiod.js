@@ -24,9 +24,9 @@ const AttendanceSettings = require('../attendance/model/AttendanceSettings');
 const dateCycleService = require('../leaves/services/dateCycleService');
 const { createISTDate, extractISTComponents, getAllDatesInRange } = require('../shared/utils/dateUtils');
 const {
-  computeRawAttendanceHalfCredits,
-  _REMARK_PREFIX: REMARK_PREFIX,
-} = require('../leaves/services/leaveAttendanceReconciliationService');
+  computeRawAttendanceHalfCreditsSync,
+} = require('../attendance/utils/attendanceHalfPresence');
+const { _REMARK_PREFIX: REMARK_PREFIX } = require('../leaves/services/leaveAttendanceReconciliationService');
 const { isEsiLeaveType } = require('../overtime/services/esiLeaveOtService');
 
 const EMP_NO = process.env.DIAG_EMP_NO || '2237';
@@ -79,13 +79,13 @@ function physicalMask(attFirst, attSecond) {
 }
 
 /** Read-only: expected reconciliation action vs approved leave + daily (same rules as service v1). */
-function expectedReconAction(leaveLean, daily, ods) {
+function expectedReconAction(leaveLean, daily, ods, processingMode = 'multi_shift') {
   if (String(leaveLean.splitStatus || '') === 'split_approved') return { action: 'skip', reason: 'split_approved' };
   if (isEsiLeaveType(leaveLean.leaveType)) return { action: 'skip', reason: 'esi' };
   if (!isSingleCalendarDayLeave(leaveLean)) return { action: 'skip', reason: 'multi_day' };
   if (leaveLean.status !== 'approved') return { action: 'skip', reason: 'not_approved' };
 
-  const { attFirst, attSecond } = computeRawAttendanceHalfCredits(daily, ods);
+  const { attFirst, attSecond } = computeRawAttendanceHalfCreditsSync(daily, ods, { processingMode });
   const { p1, p2 } = physicalMask(attFirst, attSecond);
   const physTotal = p1 + p2;
   if (physTotal < 0.5 - 1e-6) {
@@ -291,6 +291,9 @@ async function main() {
   console.log('\n=== AttendanceDaily in cycle ===');
   console.log('rows:', dailies.length, '(expected calendar span:', periodDates.length, ')');
 
+  const processingMode =
+    attSettings?.processingMode?.mode === 'single_shift' ? 'single_shift' : 'multi_shift';
+
   const conflicts = [];
   for (const dateStr of periodDates) {
     const daily = dailyByDate.get(dateStr);
@@ -302,7 +305,7 @@ async function main() {
     });
     for (const L of dayLeaves) {
       if (L.status !== 'approved') continue;
-      const exp = expectedReconAction(L, daily, ods);
+      const exp = expectedReconAction(L, daily, ods, processingMode);
       if (['rejected_full', 'rejected_half', 'narrowed_first', 'narrowed_second'].includes(exp.action)) {
         conflicts.push({
           date: dateStr,
@@ -343,7 +346,7 @@ async function main() {
   );
   for (const d of interesting.slice(0, 40)) {
     const ods = await findApprovedOdsForDate(employee._id, d.date);
-    const { attFirst, attSecond } = computeRawAttendanceHalfCredits(d, ods);
+    const { attFirst, attSecond } = computeRawAttendanceHalfCreditsSync(d, ods, { processingMode });
     console.log({
       date: d.date,
       status: d.status,

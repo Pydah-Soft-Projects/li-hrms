@@ -794,21 +794,13 @@ exports.applyLeave = async (req, res) => {
         const daily = await AttendanceDaily.findOne({
           employeeNumber: String(employee.emp_no || '').toUpperCase(),
           date: dateStr,
-        }).select('status totalEarlyOutMinutes totalLateInMinutes');
+        }).select('status totalEarlyOutMinutes totalLateInMinutes shifts inTime outTime');
         if (daily) {
-          const st = String(daily.status || '').toUpperCase();
-          let attFirst = false;
-          let attSecond = false;
-          if (st === 'PRESENT') {
-            attFirst = true;
-            attSecond = true;
-          } else if (st === 'HALF_DAY') {
-            const eo = Number(daily.totalEarlyOutMinutes) || 0;
-            const li = Number(daily.totalLateInMinutes) || 0;
-            if (eo > li) attFirst = true;
-            else if (li > eo) attSecond = true;
-            else attFirst = true;
-          }
+          const AttendanceSettings = require('../../attendance/model/AttendanceSettings');
+          const { attendanceHalfPresenceFlags } = require('../../attendance/utils/attendanceHalfPresence');
+          const attSettingsDoc = await AttendanceSettings.getSettings();
+          const processingMode = AttendanceSettings.getProcessingMode(attSettingsDoc).mode;
+          const { attFirst, attSecond } = attendanceHalfPresenceFlags(daily, processingMode);
 
           if (!isHalfDay && (attFirst || attSecond)) {
             return res.status(400).json({

@@ -1949,25 +1949,38 @@ export default function LeavesPage() {
         }
       }
 
-      // Attendance-first safety at apply-time (single-day leave only): block same-half/full-day overlap.
+      // Attendance-first safety at apply-time (single-day leave/OD): block same-half/full-day overlap.
+      const isSingleDayRequest = formData.fromDate === formData.toDate || !formData.toDate;
+      const isHalfDayOdRequest =
+        applyType === 'od' &&
+        (formData.odType_extended === 'half_day' || Boolean(formData.isHalfDay));
+      const isHoursOdRequest = applyType === 'od' && formData.odType_extended === 'hours';
       if (
-        applyType === 'leave' &&
         approvedRecordsInfo?.attendanceInfo &&
-        (formData.fromDate === formData.toDate || !formData.toDate)
+        isSingleDayRequest &&
+        (applyType === 'leave' || (applyType === 'od' && !isHoursOdRequest))
       ) {
         const a = approvedRecordsInfo.attendanceInfo;
+        const requestLabel = applyType === 'leave' ? 'leave' : 'OD';
+        const isHalfDayRequest =
+          applyType === 'leave' ? Boolean(formData.isHalfDay) : isHalfDayOdRequest;
         if (a.fullDayPresent) {
-          toast.error('Attendance exists for full day on this date. Attendance is preferred over leave.');
+          toast.error(`Attendance exists for full day on this date. Attendance is preferred over ${requestLabel}.`);
           setLoading(false);
           return;
         }
-        if (formData.isHalfDay && formData.halfDayType === 'first_half' && a.firstHalfPresent) {
-          toast.error('First-half attendance already present. Attendance is preferred over leave on same half.');
+        if (isHalfDayRequest && formData.halfDayType === 'first_half' && a.firstHalfPresent) {
+          toast.error(`First-half attendance already present. Attendance is preferred over ${requestLabel} on same half.`);
           setLoading(false);
           return;
         }
-        if (formData.isHalfDay && formData.halfDayType === 'second_half' && a.secondHalfPresent) {
-          toast.error('Second-half attendance already present. Attendance is preferred over leave on same half.');
+        if (isHalfDayRequest && formData.halfDayType === 'second_half' && a.secondHalfPresent) {
+          toast.error(`Second-half attendance already present. Attendance is preferred over ${requestLabel} on same half.`);
+          setLoading(false);
+          return;
+        }
+        if (!isHalfDayRequest && (a.firstHalfPresent || a.secondHalfPresent)) {
+          toast.error(`Attendance already exists on this date. Attendance is preferred over ${requestLabel}.`);
           setLoading(false);
           return;
         }
