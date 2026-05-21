@@ -4473,12 +4473,12 @@ export default function LeavesPage() {
 
                           {/* Header: name, division & department beside name (no labels), emp no, designation under name */}
                           <div className="flex items-start justify-between gap-3 mb-4">
-                                                        <EmployeeIdentityFromRecord
+                            <EmployeeIdentityFromRecord
                               record={leave as Record<string, unknown>}
                               lookups={{ divisions, departments, designations }}
                               size="md"
                               avatarTone="blue"
-                            />                            </div>
+                            />
                             <div className="flex flex-col gap-1 items-end">
                               <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
                                 {formatLeaveLbl(leave.status)}
@@ -4641,12 +4641,12 @@ export default function LeavesPage() {
 
                           {/* Header: name, division & department beside name (no labels), emp no, designation under name */}
                           <div className="flex items-start justify-between gap-3 mb-4">
-                                                        <EmployeeIdentityFromRecord
+                            <EmployeeIdentityFromRecord
                               record={od as Record<string, unknown>}
                               lookups={{ divisions, departments, designations }}
                               size="md"
                               avatarTone="violet"
-                            />                            </div>
+                            />
                             <div className="flex flex-col gap-1 items-end">
                               <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
                                 {formatOdLbl(od.status)}
@@ -4783,12 +4783,12 @@ export default function LeavesPage() {
 
                           {/* Header */}
                           <div className="flex items-start justify-between gap-3 mb-4">
-                                                        <EmployeeIdentityFromRecord
+                            <EmployeeIdentityFromRecord
                               record={leave as Record<string, unknown>}
                               lookups={{ divisions, departments, designations }}
                               size="md"
                               avatarTone="blue"
-                            />                            </div>
+                            />
                             <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
                               {formatLeaveLbl(leave.status)}
                             </span>
@@ -4830,12 +4830,12 @@ export default function LeavesPage() {
                         <div key={od._id} onClick={() => openDetailDialog(od, 'od')} className="cursor-pointer group relative flex flex-col justify-between rounded-xl border border-slate-200 border-l-4 border-l-purple-500 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
                           {/* Header */}
                           <div className="flex items-start justify-between gap-3 mb-4">
-                                                        <EmployeeIdentityFromRecord
+                            <EmployeeIdentityFromRecord
                               record={od as Record<string, unknown>}
                               lookups={{ divisions, departments, designations }}
                               size="md"
                               avatarTone="violet"
-                            />                            </div>
+                            />
                             <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
                               {formatOdLbl(od.status)}
                             </span>

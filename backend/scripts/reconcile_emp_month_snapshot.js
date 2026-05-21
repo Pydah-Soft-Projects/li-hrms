@@ -145,7 +145,7 @@ async function main() {
 
   const before = await buildSnapshot(employee._id, empNo, startDateStr, endDateStr, processingMode);
 
-  console.log('=== Employee 1613 — April 2026 pay period ===');
+  console.log(`=== Employee ${empNo} — April 2026 pay period ===`);
   console.log('Window:', startDateStr, 'to', endDateStr, '| mode:', processingMode);
   console.log('\n--- BEFORE apply ---');
   console.log('Summary:', summaryBefore || '(none)');
