@@ -100,7 +100,7 @@ const getStatusLabel = (status: string) => {
 interface Arrears {
   _id: string;
   type?: 'incremental' | 'direct';
-  employee: { _id: string; emp_no: string; employee_name?: string; first_name?: string; last_name?: string; division_id?: string; department_id?: string; designation_id?: string; };
+  employee: { _id: string; emp_no: string; employee_name?: string; first_name?: string; last_name?: string; division_id?: string; department_id?: string; designation_id?: string; leftDate?: string; };
   startMonth?: string;
   endMonth?: string;
   totalAmount: number;

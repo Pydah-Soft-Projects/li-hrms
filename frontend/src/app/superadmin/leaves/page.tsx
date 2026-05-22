@@ -387,6 +387,7 @@ interface LeaveApplication {
     emp_no: string;
     designation?: { _id?: string; name?: string; code?: string };
     designation_id?: { _id?: string; name?: string; code?: string } | string;
+    leftDate?: string;
   };
   emp_no?: string;
   leaveType: string;
@@ -453,6 +454,7 @@ interface ODApplication {
     emp_no: string;
     designation?: { _id?: string; name?: string; code?: string };
     designation_id?: { _id?: string; name?: string; code?: string } | string;
+    leftDate?: string;
   };
   emp_no?: string;
   odType: string;

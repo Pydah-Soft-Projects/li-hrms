@@ -53,6 +53,9 @@ interface AttendanceRecord {
         employee_name: string;
         department_id?: { name: string };
         division_id?: { name: string };
+        designation_id?: { name: string };
+        designation?: { name: string };
+        leftDate?: string;
     };
     date: string;
     status: string;

@@ -1983,9 +1983,9 @@ export default function LoansPage() {
                             <div className="flex items-center gap-3 mb-2 flex-wrap">
                               <LoanListEmployeeCell
                                 loan={loan}
-                                divisions={divisions}
-                                departments={departments}
-                                designations={designations}
+                                divisions={loanOrgDivisions}
+                                departments={loanOrgDepartments}
+                                designations={loanOrgDesignations}
                                 tone="blue"
                                 showAvatar={false}
                               />
@@ -2046,9 +2046,9 @@ export default function LoansPage() {
                             <div className="flex items-center gap-3 mb-2 flex-wrap">
                               <LoanListEmployeeCell
                                 loan={advance}
-                                divisions={divisions}
-                                departments={departments}
-                                designations={designations}
+                                divisions={loanOrgDivisions}
+                                departments={loanOrgDepartments}
+                                designations={loanOrgDesignations}
                                 tone="teal"
                                 showAvatar={false}
                               />

@@ -34,7 +34,10 @@ interface ConfusedShift {
     emp_no: string;
     employee_name: string;
     department?: { _id: string; name: string };
+    department_id?: { _id: string; name: string };
     designation?: { _id: string; name: string };
+    designation_id?: { _id: string; name: string };
+    leftDate?: string;
   };
 }
 

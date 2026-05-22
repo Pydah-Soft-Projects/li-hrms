@@ -58,6 +58,8 @@ interface ResignationRequest {
     emp_no: string;
     department_id?: { _id: string; name: string };
     division_id?: { _id: string; name: string };
+    designation_id?: { name: string } | string;
+    designation?: { name: string };
     employee_group_id?: { _id: string; name: string };
     doj?: string;
     dynamicFields?: Record<string, any>;

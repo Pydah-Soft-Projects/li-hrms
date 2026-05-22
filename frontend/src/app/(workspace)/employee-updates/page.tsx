@@ -36,6 +36,7 @@ interface UpdateRequest {
         emp_no: string;
         department?: { name: string };
         designation?: { name: string };
+        designation_id?: { name: string };
     };
     emp_no: string;
     requestedChanges: Record<string, any>;

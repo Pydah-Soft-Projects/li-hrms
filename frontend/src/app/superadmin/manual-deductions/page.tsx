@@ -57,7 +57,7 @@ interface Deduction {
 }
 
 interface BulkRow {
-  employee: { _id: string; emp_no?: string; employee_name?: string; first_name?: string; last_name?: string; leftDate?: string; department_id?: { _id: string; name?: string } | string; division_id?: { _id: string; name?: string } | string };
+  employee: { _id: string; emp_no?: string; employee_name?: string; first_name?: string; last_name?: string; leftDate?: string; department_id?: { _id: string; name?: string } | string; division_id?: { _id: string; name?: string } | string; designation_id?: { _id?: string; name?: string; code?: string; title?: string } | string };
   amount: number;
   remarks: string;
 }

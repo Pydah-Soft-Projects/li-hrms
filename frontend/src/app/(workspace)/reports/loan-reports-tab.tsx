@@ -38,6 +38,9 @@ interface LoanRecord {
     employeeId: {
         emp_no: string;
         employee_name: string;
+        designation_id?: { name: string };
+        designation?: { name: string };
+        leftDate?: string;
     };
     requestType: 'loan' | 'salary_advance';
     amount: number;

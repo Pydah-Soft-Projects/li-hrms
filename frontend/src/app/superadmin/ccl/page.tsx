@@ -53,6 +53,8 @@ interface Employee {
   emp_no: string;
   employee_name: string;
   department?: { _id: string; name: string };
+  designation_id?: { name: string } | string;
+  designation?: { name: string };
 }
 
 interface User {

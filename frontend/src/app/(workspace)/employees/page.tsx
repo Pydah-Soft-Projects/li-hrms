@@ -3770,7 +3770,7 @@ export default function EmployeesPage() {
               onClick={() => {
                 setSearchTerm('');
                 setEmployeeFilters({});
-                setSelectedDivision('');
+                setSelectedDivisionFilter('');
               }}
               className="mt-6 px-6 py-2.5 rounded-xl bg-bg-base border border-border-base text-xs font-black uppercase tracking-widest text-text-primary hover:bg-bg-surface transition-colors"
             >
@@ -4375,7 +4375,7 @@ export default function EmployeesPage() {
                   setApplicationSearchTerm('');
                   setApplicationFilters({});
                   setEmployeeFilters({});
-                  setSelectedDivision('');
+                  setSelectedDivisionFilter('');
                   loadApplications();
                 }}
                 className="mt-6 px-6 py-2.5 rounded-xl bg-bg-base border border-border-base text-xs font-black uppercase tracking-widest text-text-primary hover:bg-bg-surface transition-colors"

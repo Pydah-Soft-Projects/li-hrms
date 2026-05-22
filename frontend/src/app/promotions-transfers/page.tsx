@@ -58,6 +58,7 @@ type PtRequest = {
     division_id?: { name?: string };
     department_id?: { name?: string };
     designation_id?: { name?: string };
+    designation?: { name?: string };
   };
   requestedBy?: { _id?: string; name?: string };
   proposedDesignationId?: { name?: string };

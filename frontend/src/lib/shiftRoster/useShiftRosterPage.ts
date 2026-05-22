@@ -578,7 +578,7 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
     if (!selectedShiftForAssign) return;
     const { shiftId, status } = parseQuickAssignValue(selectedShiftForAssign);
     const count = applyWeekdayAssign(
-      shiftId,
+      shiftId ?? null,
       shiftAssignDays,
       employees.map((e) => e.emp_no),
       status
@@ -597,7 +597,7 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
       return;
     }
     const { shiftId, status } = parseQuickAssignValue(selectedShiftForAssign);
-    const count = applyWeekdayAssign(shiftId, shiftAssignDays, Array.from(selectedEmpNos), status);
+    const count = applyWeekdayAssign(shiftId ?? null, shiftAssignDays, Array.from(selectedEmpNos), status);
     if (count) {
       toast.success(
         `Applied ${quickAssignLabel(selectedShiftForAssign, (id) => shiftLabel(shifts.find((s) => s._id === id) || null))} to ${count} cells (${selectedEmpNos.size} selected)`
@@ -608,7 +608,7 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
   const applyEmployeeWeekdays = useCallback(
     (empNo: string, assignmentValue: string, weekdayFlags: Record<string, boolean>) => {
       const { shiftId, status } = parseQuickAssignValue(assignmentValue);
-      const count = applyWeekdayAssign(shiftId, weekdayFlags, [empNo], status);
+      const count = applyWeekdayAssign(shiftId ?? null, weekdayFlags, [empNo], status);
       if (count) {
         toast.success(
           `Applied ${quickAssignLabel(assignmentValue, (id) => shiftLabel(shifts.find((s) => s._id === id) || null))} to ${count} day(s)`
@@ -851,7 +851,10 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
     return departments.filter((dept: { _id: string; divisions?: unknown[] }) => {
       const deptDivisionIds = Array.isArray(dept?.divisions)
         ? dept.divisions
-            .map((div: { _id?: string } | string) => (typeof div === 'string' ? div : div?._id))
+            .map((div) => {
+              const d = div as { _id?: string } | string;
+              return typeof d === 'string' ? d : d?._id;
+            })
             .filter(Boolean)
         : [];
       return deptDivisionIds.includes(selectedDivision) || linkedDepartmentIds.has(dept?._id);
