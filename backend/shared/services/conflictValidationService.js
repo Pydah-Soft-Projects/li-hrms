@@ -244,7 +244,7 @@ const getAttendanceCoverageForDate = async (employeeNumber, date) => {
     const attendance = await AttendanceDaily.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
-    }).select('status totalLateInMinutes totalEarlyOutMinutes');
+    }).select('status totalLateInMinutes totalEarlyOutMinutes shifts inTime outTime');
     if (!attendance) return out;
 
     out.hasAttendance = true;
@@ -270,9 +270,30 @@ const getAttendanceCoverageForDate = async (employeeNumber, date) => {
         out.firstHalfPresent = true;
         out.label = 'First-half attendance present';
       }
+      if (out.firstHalfPresent && out.secondHalfPresent) out.fullDayPresent = true;
       return out;
     }
     if (st === 'PARTIAL') {
+      const AttendanceSettings = require('../../attendance/model/AttendanceSettings');
+      const { attendanceHalfPresenceFlags } = require('../../attendance/utils/attendanceHalfPresence');
+      const attSettingsDoc = await AttendanceSettings.getSettings();
+      const processingMode = AttendanceSettings.getProcessingMode(attSettingsDoc).mode;
+      if (processingMode === 'single_shift') {
+        const flags = attendanceHalfPresenceFlags(attendance, processingMode);
+        out.firstHalfPresent = flags.attFirst;
+        out.secondHalfPresent = flags.attSecond;
+        out.fullDayPresent = flags.attFirst && flags.attSecond;
+        if (flags.attFirst && flags.attSecond) {
+          out.label = 'Full-day attendance present (partial)';
+        } else if (flags.attFirst) {
+          out.label = 'First-half attendance present (partial check-in)';
+        } else if (flags.attSecond) {
+          out.label = 'Second-half attendance present (partial check-out)';
+        } else {
+          out.label = 'Partial attendance present';
+        }
+        return out;
+      }
       out.label = 'Partial attendance present';
       return out;
     }

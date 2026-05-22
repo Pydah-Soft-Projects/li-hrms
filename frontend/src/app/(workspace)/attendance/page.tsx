@@ -4,7 +4,10 @@
 
 import { useState, useEffect, useRef, useMemo, type MouseEvent } from 'react';
 
+import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
 import { api } from '@/lib/api';
+import { sortByEmpNo } from '@/lib/employeeSort';
+import { designationAccentClass } from '@/lib/designationDisplay';
 import Swal from 'sweetalert2';
 
 import {
@@ -62,7 +65,44 @@ import {
   isManagementRole
 } from '@/lib/permissions';
 
-
+function AttendanceEmployeeBlock({
+  employee,
+  onNameClick,
+  leading,
+  footer,
+}: {
+  employee: Record<string, unknown>;
+  onNameClick?: () => void;
+  leading?: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  const d = resolveEmployeeListDisplayParts({ employeeId: employee as any });
+  const initial = (d.name.charAt(0) || 'E').toUpperCase();
+  return (
+    <div className="flex min-w-0 items-start gap-2" title={d.tooltip}>
+      {leading}
+      {d.profilePhoto ? (
+        <img src={d.profilePhoto} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700" />
+      ) : (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-400 to-slate-600 text-[10px] font-semibold text-white">
+          {initial}
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        {onNameClick ? (
+          <button type="button" onClick={onNameClick} className="truncate text-left text-[11px] font-semibold text-slate-900 hover:text-blue-600 dark:text-white">
+            {d.name}
+          </button>
+        ) : (
+          <div className="truncate text-[11px] font-semibold text-slate-900 dark:text-white">{d.name}</div>
+        )}
+        {d.empDesigLine ? <div className="mt-0.5 truncate text-[9px] text-slate-600 dark:text-slate-400">{d.empDesigLine}</div> : null}
+        {d.deptDivLine ? <div className="mt-0.5 truncate text-[9px] text-slate-500 dark:text-slate-400">{d.deptDivLine}</div> : null}
+        {footer}
+      </div>
+    </div>
+  );
+}
 
 interface AttendanceRecord {
 
@@ -343,6 +383,12 @@ interface MonthlyAttendanceData {
     /** Policy-based (payroll-aligned) late/early + absent-extra deduction days */
     totalAttendanceDeductionDays?: number;
 
+    /** Permission deduction days from payroll-aligned permission deduction rules */
+    totalPermissionDeductionDays?: number;
+
+    /** Total number of permission records / counts for the month */
+    totalPermissionCount?: number;
+
     attendanceDeductionBreakdown?: {
       lateInsCount?: number;
       earlyOutsCount?: number;
@@ -356,6 +402,12 @@ interface MonthlyAttendanceData {
       lopDaysPerAbsent?: number | null;
       deductionType?: string | null;
       calculationMode?: string | null;
+    };
+
+    permissionDeductionBreakdown?: {
+      full_day?: number;
+      partial_day?: number;
+      total?: number;
     };
 
     lastCalculatedAt: string;
@@ -1282,14 +1334,17 @@ export default function AttendancePage() {
     if (isEmployee && searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       setFilteredMonthlyData(
-        monthlyData.filter(
-          (item) =>
-            item.employee.employee_name?.toLowerCase().includes(query) ||
-            String(item.employee.emp_no || '').toLowerCase().includes(query),
-        ),
+        sortByEmpNo(
+          monthlyData.filter(
+            (item) =>
+              item.employee.employee_name?.toLowerCase().includes(query) ||
+              String(item.employee.emp_no || '').toLowerCase().includes(query),
+          ),
+          (item) => item.employee.emp_no
+        )
       );
     } else {
-      setFilteredMonthlyData([...monthlyData]);
+      setFilteredMonthlyData(sortByEmpNo(monthlyData, (item) => item.employee.emp_no));
     }
   }, [monthlyData, searchQuery, isEmployee]);
 
@@ -3534,7 +3589,7 @@ export default function AttendancePage() {
   const attendanceTableColSpan = useMemo(() => {
     const summaryCols =
       tableType === 'complete' && usePayRegisterAllComplete
-        ? 12
+        ? 14
         : tableType === 'complete'
         ? Math.max(1, visibleWorkspaceCompleteKeys.length)
         : tableType === 'present_absent'
@@ -3548,7 +3603,7 @@ export default function AttendancePage() {
                 : tableType === 'ot'
                   ? 2
                   : 0;
-    return 1 + daysArray.length + summaryCols;
+    return 2 + daysArray.length + summaryCols;
   }, [tableType, daysArray.length, visibleWorkspaceCompleteKeys.length, usePayRegisterAllComplete]);
 
   const activeHighlightDates = useMemo(() => {
@@ -3626,7 +3681,7 @@ export default function AttendancePage() {
 
   return (
 
-    <div className="relative min-h-screen">
+    <div className="relative min-h-screen pb-10 pt-1">
 
       {/* Background */}
 
@@ -3636,17 +3691,20 @@ export default function AttendancePage() {
 
 
 
-      <div className="relative z-10 mx-auto max-w-[1920px]">
+      <div className="relative z-10 mx-auto max-w-[1920px] px-2 sm:px-4 md:px-6">
 
+        {/* Sticky toolbar — horizontal scroll (superadmin-style) */}
+        <div className="sticky top-4 z-40 px-2 md:px-4 mb-2 md:mb-6">
+          <div className="max-w-[1920px] mx-auto md:bg-white/70 md:dark:bg-slate-900/70 md:backdrop-blur-2xl md:rounded-[2.5rem] md:border md:border-white/20 md:dark:border-slate-800 md:shadow-2xl md:shadow-slate-200/50 md:dark:shadow-none">
         {/* Header */}
 
-        <div className="mb-6 flex flex-col sm:flex-row items-center sm:justify-between gap-4 pb-2">
+        <div className="mb-0 flex flex-nowrap items-center justify-between gap-4 overflow-x-auto pb-2 scrollbar-hide px-3 sm:px-6 py-2 md:py-3 min-w-0 min-h-[4.5rem]">
 
-          <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+          <div className="flex flex-nowrap items-center gap-4 shrink-0">
 
             {/* Title Section */}
 
-            <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
+            <div className="flex flex-nowrap items-center gap-3 shrink-0">
 
               <div className="flex flex-col">
                 <h1 className="text-xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">Attendance</h1>
@@ -3795,7 +3853,7 @@ export default function AttendancePage() {
 
             {/* Employee: table type + view mode (Table / Cards) */}
             {isEmployee && (
-              <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+              <div className="flex flex-nowrap items-center gap-2 p-2 bg-slate-100/50 shrink-0 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
                 <select
                   value={tableType}
                   onChange={(e) => setTableType(e.target.value as any)}
@@ -3830,7 +3888,7 @@ export default function AttendancePage() {
 
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+          <div className="flex flex-nowrap items-center gap-3 shrink-0">
 
             {/* Month/Year Navigation */}
 
@@ -3928,7 +3986,7 @@ export default function AttendancePage() {
 
 
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-nowrap items-center gap-2 shrink-0">
               {hasManagePermission && (
                 <button
                   onClick={handleSyncShifts}
@@ -3996,7 +4054,8 @@ export default function AttendancePage() {
           </div>
 
         </div>
-
+          </div>
+        </div>
 
         {/* Employee: Monthly summary block above content */}
         {isEmployee && filteredMonthlyData.length > 0 && (() => {
@@ -4135,6 +4194,14 @@ export default function AttendancePage() {
               value: Number(s?.totalAttendanceDeductionDays ?? 0).toFixed(2).replace(/\.?0+$/, '') || '0',
               color: 'text-purple-700 dark:text-purple-300',
               bcolor: 'bg-purple-50/50 dark:bg-purple-900/10',
+            },
+            {
+              id: 'permissionDeductionDays',
+              column: null,
+              label: 'Permission deduction days',
+              value: Number(s?.totalPermissionDeductionDays ?? 0).toFixed(2).replace(/\.?0+$/, '') || '0',
+              color: 'text-rose-700 dark:text-rose-300',
+              bcolor: 'bg-rose-50/50 dark:bg-rose-900/10',
             },
             {
               id: 'payable',
@@ -4378,13 +4445,19 @@ export default function AttendancePage() {
             <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
               <div ref={tableScrollRef} className="max-h-[70vh] overflow-auto scrollbar-hide">
                 <table className="w-full border-separate border-spacing-0 text-xs">
-                  <thead className="sticky top-0 z-20 shadow-sm">
+                  <thead className="sticky top-0 z-30 bg-slate-50 shadow-sm dark:bg-slate-800">
                     {tableType === 'complete' && usePayRegisterAllComplete ? (
                       <>
                         <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800">
                           <th
                             rowSpan={2}
-                            className="sticky left-0 top-0 z-30 w-[160px] min-w-[160px] border-r border-b border-slate-200 bg-slate-100 px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]"
+                            className="sticky left-0 top-0 z-[36] w-10 min-w-[2.5rem] border-r border-b border-slate-200 bg-slate-200/90 px-1 py-2.5 text-center text-[9px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]"
+                          >
+                            #
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="sticky left-10 top-0 z-[35] w-[148px] min-w-[148px] border-r border-b border-slate-200 bg-slate-100 px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]"
                           >
                             Employee
                           </th>
@@ -4414,7 +4487,13 @@ export default function AttendancePage() {
                             W.off
                           </th>
                           <th rowSpan={2} className="w-[64px] min-w-[64px] border-r border-slate-200 bg-purple-50 dark:bg-purple-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-purple-800">Hol</th>
-                          <th rowSpan={2} className="w-[78px] min-w-[78px] border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-yellow-900">T.leave</th>
+                          <th
+                            colSpan={2}
+                            className="border-b border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/25 px-1 py-1.5 text-center text-[9px] font-bold uppercase text-yellow-900 dark:text-yellow-100"
+                            title="Total leave broken down into paid vs LOP (loss of pay) leave units"
+                          >
+                            Total leave
+                          </th>
                           <th rowSpan={2} className="w-[64px] min-w-[64px] border-r border-slate-200 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-indigo-800">OD</th>
                           <th rowSpan={2} className="w-[64px] min-w-[64px] border-r border-slate-200 bg-red-50 dark:bg-red-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-red-800">Abs</th>
                           <th
@@ -4448,6 +4527,18 @@ export default function AttendancePage() {
                         </tr>
                         <tr className="border-b border-slate-200 bg-slate-50/90 dark:border-slate-800">
                           <th
+                            className="w-[52px] min-w-[52px] border-r border-slate-200 bg-amber-50/95 dark:bg-amber-900/30 px-1 py-1.5 text-center text-[8px] font-bold text-amber-900 dark:text-amber-100"
+                            title="Paid leave day-units"
+                          >
+                            Paid
+                          </th>
+                          <th
+                            className="w-[52px] min-w-[52px] border-r border-slate-200 bg-orange-50/95 dark:bg-orange-900/25 px-1 py-1.5 text-center text-[8px] font-bold text-orange-900 dark:text-orange-100"
+                            title="LOP (loss of pay) leave day-units"
+                          >
+                            LOP
+                          </th>
+                          <th
                             className="w-[60px] min-w-[60px] border-r border-slate-200 bg-red-50/90 dark:bg-red-950/30 px-1 py-1.5 text-center text-[8px] font-bold text-red-800 dark:text-red-200"
                             title="Absent days (deduction / calendar absent total)"
                           >
@@ -4455,7 +4546,7 @@ export default function AttendancePage() {
                           </th>
                           <th
                             className="w-[60px] min-w-[60px] border-r border-slate-200 bg-red-50/90 dark:bg-red-950/30 px-1 py-1.5 text-center text-[8px] font-bold text-red-800 dark:text-red-200"
-                            title="Loss of pay (LOP) leave"
+                            title="Loss of pay (LOP) leave — deduction block"
                           >
                             LOP
                           </th>
@@ -4472,7 +4563,10 @@ export default function AttendancePage() {
                       </>
                     ) : (
                     <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800">
-                      <th className="sticky left-0 top-0 z-30 w-[160px] min-w-[160px] border-r border-b border-slate-200 bg-slate-100 px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                      <th className="sticky left-0 top-0 z-[36] w-10 min-w-[2.5rem] border-r border-b border-slate-200 bg-slate-200/90 px-1 py-2.5 text-center text-[9px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                        #
+                      </th>
+                      <th className="sticky left-10 top-0 z-[35] w-[148px] min-w-[148px] border-r border-b border-slate-200 bg-slate-100 px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
                         Employee
                       </th>
                       {daysArray.map((dateStr) => {
@@ -4576,6 +4670,16 @@ export default function AttendancePage() {
                                   Permissions
                                 </th>
                               );
+                            case 'permissionDeductionDays':
+                              return (
+                                <th
+                                  key={colKey}
+                                  className={`w-[100px] ${edge} border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-teal-900/20 bg-teal-50`}
+                                  title="Permission deduction days"
+                                >
+                                  Perm Ded
+                                </th>
+                              );
                             case 'lateEarly':
                               return (
                                 <th
@@ -4648,7 +4752,10 @@ export default function AttendancePage() {
                         {/* Skeleton Loading - only tbody cells */}
                         {[1, 2, 3, 4, 5].map((i) => (
                           <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                            <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                            <td className="sticky left-0 z-[11] w-10 min-w-[2.5rem] border-r border-slate-200 bg-white px-1 py-2 dark:border-slate-700 dark:bg-slate-950">
+                              <div className="mx-auto h-4 w-4 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
+                            </td>
+                            <td className="sticky left-10 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
                               <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                               <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                             </td>
@@ -4661,7 +4768,7 @@ export default function AttendancePage() {
                               </td>
                             ))}
                             {tableType === 'complete' && usePayRegisterAllComplete
-                              ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
+                              ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((i) => (
                                   <td
                                     key={i}
                                     className="border-r border-slate-200 px-2 py-2 text-center dark:border-slate-700 bg-slate-50/80"
@@ -4693,11 +4800,13 @@ export default function AttendancePage() {
                                                   ? 'bg-purple-50 dark:bg-purple-900/20'
                                                   : colKey === 'permissions'
                                                     ? 'bg-cyan-50 dark:bg-cyan-900/20'
-                                                    : colKey === 'lateEarly'
-                                                      ? 'bg-rose-50 dark:bg-rose-900/20'
-                                                      : colKey === 'attDed'
-                                                        ? 'bg-violet-50 dark:bg-violet-900/25'
-                                                        : 'bg-green-50 dark:bg-green-900/20';
+                                                    : colKey === 'permissionDeductionDays'
+                                                      ? 'bg-teal-50 dark:bg-teal-900/20'
+                                                      : colKey === 'lateEarly'
+                                                        ? 'bg-rose-50 dark:bg-rose-900/20'
+                                                        : colKey === 'attDed'
+                                                          ? 'bg-violet-50 dark:bg-violet-900/25'
+                                                          : 'bg-green-50 dark:bg-green-900/20';
                                 return (
                                   <td
                                     key={colKey}
@@ -4745,7 +4854,7 @@ export default function AttendancePage() {
                             </td>
                           </tr>
                         ) : (
-                          filteredMonthlyData.map((item) => {
+                          filteredMonthlyData.map((item, rowIdx) => {
                             const presentFromSummary = getPresentExcludingOD(item.summary);
                             const daysPresent = presentFromSummary != null
                               ? presentFromSummary
@@ -4810,12 +4919,25 @@ export default function AttendancePage() {
 
                             const isHighAbsenteeism = monthAbsent > 2;
 
+                            const workspaceDesignationName =
+                              (item.employee as any).designation?.name ||
+                              ((item.employee as any).designation_id &&
+                              typeof (item.employee as any).designation_id === 'object'
+                                ? (item.employee as any).designation_id.name
+                                : '') ||
+                              '';
+
                             return (
                               <tr key={item.employee._id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 ${isHighAbsenteeism ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}>
-                                <td className={`sticky left-0 z-10 border-r border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:text-white shadow-[2px_0_5px_rgba(0,0,0,0.05)] ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-900'}`}>
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      {tableType === 'ot' && !otAutoCreateEnabled && (
+                                <td className={`sticky left-0 z-[11] w-10 min-w-[2.5rem] border-r border-slate-200 px-1 py-2 text-center text-[11px] font-semibold tabular-nums text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)] ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-950'}`}>
+                                  {rowIdx + 1}
+                                </td>
+                                <td className={`sticky left-10 z-10 border-r border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:text-white shadow-[2px_0_5px_rgba(0,0,0,0.05)] ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-900'}`}>
+                                  <AttendanceEmployeeBlock
+                                    employee={item.employee as unknown as Record<string, unknown>}
+                                    onNameClick={() => handleEmployeeClick(item.employee)}
+                                    leading={
+                                      tableType === 'ot' && !otAutoCreateEnabled ? (
                                         <input
                                           type="checkbox"
                                           checked={Boolean(selectedOtEmployees[item.employee._id])}
@@ -4826,26 +4948,16 @@ export default function AttendancePage() {
                                           title="Select employee for bulk OT conversion"
                                           className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 text-green-600 focus:ring-green-500"
                                         />
-                                      )}
-                                      <div
-                                        className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1"
-                                        onClick={() => handleEmployeeClick(item.employee)}
-                                        title="Click to view monthly summary"
-                                      >
-                                        {item.employee.employee_name}
-                                      </div>
-
-                                    </div>
-                                    <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
-                                      {item.employee.emp_no}
-                                      {item.employee.department && ` • ${(item.employee.department as any)?.name || ''}`}
-                                      {item.employee.leftDate && (
-                                        <div className="text-[9px] text-amber-600 dark:text-amber-400 font-bold mt-0.5">
+                                      ) : undefined
+                                    }
+                                    footer={
+                                      item.employee.leftDate ? (
+                                        <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
                                           Left {new Date(item.employee.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                                         </div>
-                                      )}
-                                    </div>
-                                  </div>
+                                      ) : undefined
+                                    }
+                                  />
                                 </td>
                                 {daysArray.map((dateStr) => {
                                   const record = item.dailyAttendance[dateStr] || null;
@@ -5039,18 +5151,18 @@ export default function AttendancePage() {
                                         {prAllRow.holidays.toFixed(1)}
                                       </td>
                                       <td
-                                        onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'leaves', 'leaves', item)}
-                                        className="border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-yellow-900 dark:text-yellow-100 cursor-pointer"
+                                        onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'paidLeaves', 'leaves', item)}
+                                        className="border-r border-slate-200 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-2 text-center text-[11px] font-bold text-amber-900 dark:text-amber-100 cursor-pointer"
+                                        title="Paid leave day-units"
                                       >
-                                        <div className="flex flex-col items-center gap-0.5 leading-tight">
-                                          <span>{prAllRow.totalLeaves.toFixed(1)}</span>
-                                          <span
-                                            className="text-[8px] font-semibold text-yellow-900/90"
-                                            title={`Leave by nature: ${paidLopSublabel(prAllRow.paidLeaves, prAllRow.dedLop)}`}
-                                          >
-                                            {paidLopSublabel(prAllRow.paidLeaves, prAllRow.dedLop)}
-                                          </span>
-                                        </div>
+                                        {prAllRow.paidLeaves.toFixed(1)}
+                                      </td>
+                                      <td
+                                        onClick={() => handleSummaryClick(item.employee._id, 'lopLeaves')}
+                                        className="border-r border-slate-200 bg-orange-50 dark:bg-orange-900/25 px-1.5 py-2 text-center text-[11px] font-bold text-orange-900 dark:text-orange-100 cursor-pointer"
+                                        title="LOP (loss of pay) leave day-units"
+                                      >
+                                        {prAllRow.dedLop.toFixed(1)}
                                       </td>
                                       <td
                                         onClick={() => handleSummaryClick(item.employee._id, 'ods')}
@@ -5205,7 +5317,16 @@ export default function AttendancePage() {
                                             onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'permissions', 'permission', item)}
                                             className={`${edge} border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 cursor-pointer hover:bg-cyan-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'permissions' ? 'ring-2 ring-cyan-500 ring-inset shadow-inner' : ''}`}
                                           >
-                                            {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.permissionCount || 0), 0)}
+                                            {item.summary?.totalPermissionCount ?? Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.permissionCount || 0), 0)}
+                                          </td>
+                                        );
+                                      case 'permissionDeductionDays':
+                                        return (
+                                          <td
+                                            key={colKey}
+                                            className={`${edge} border-slate-200 bg-teal-50 px-2 py-2 text-center text-[11px] font-bold text-teal-700 dark:border-slate-700 dark:bg-teal-900/20 dark:text-teal-300`}
+                                          >
+                                            {Number(item.summary?.totalPermissionDeductionDays ?? item.summary?.permissionDeductionBreakdown?.full_day ?? 0).toFixed(2).replace(/\.?0+$/, '') || '0'}
                                           </td>
                                         );
                                       case 'lateEarly':
@@ -5932,6 +6053,11 @@ export default function AttendancePage() {
                           Payroll Locked
                         </span>
                       )}
+                      {attendanceDetail.isEdited && (
+                        <span className="ml-2 inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20" title="This record has been manually modified">
+                          Edited
+                        </span>
+                      )}
                       {attendanceDetail.leftDate && (
                         <span className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-0.5 rounded-md font-bold shadow-sm border border-amber-200/50 dark:border-amber-800/50">
                           Left {new Date(attendanceDetail.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -5966,173 +6092,329 @@ export default function AttendancePage() {
                 )}
 
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Status</label>
-                      <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                        {(() => {
-                          const statuses = [attendanceDetail.status || 'ABSENT'];
-                          if (attendanceDetail.hasOD) statuses.push('OD');
-                          if (attendanceDetail.hasLeave) statuses.push('LEAVE');
-                          return Array.from(new Set(statuses.filter(s => s !== 'N/A' && s !== '-'))).join(' / ');
-                        })()}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Shift</label>
-                      <div className="mt-1 flex items-center gap-2 flex-wrap">
-                        <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {attendanceDetail.shifts && attendanceDetail.shifts.length > 0
-                            ? attendanceDetail.shifts.map((s: any, index: number) => {
-                              const sName = s.shiftId && typeof s.shiftId === 'object' ? (s.shiftId as any).name : '-';
-                              return (
-                                <span key={index} className="block">
-                                  {sName} {attendanceDetail.shifts!.length > 1 ? `(#${index + 1})` : ''}
-                                </span>
-                              );
-                            })
-                            : (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
-                              ? attendanceDetail.shiftId.name
-                              : '-')}
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Daily Status</label>
+                        <div className="mt-1">
+                          <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${attendanceDetail.status === 'PRESENT' ? 'bg-green-50 text-green-700 ring-green-600/20' : attendanceDetail.status === 'HALF_DAY' ? 'bg-yellow-50 text-yellow-800 ring-yellow-600/20' : attendanceDetail.status === 'ABSENT' ? 'bg-red-50 text-red-700 ring-red-600/10' : 'bg-gray-50 text-gray-600 ring-gray-500/10'}`}>
+                            {(() => {
+                              const statuses = [attendanceDetail.status || 'N/A'];
+                              if (attendanceDetail.hasOD) statuses.push('OD');
+                              if (attendanceDetail.hasLeave) statuses.push('LEAVE');
+                              return Array.from(new Set(statuses)).join(' / ');
+                            })()}
+                          </span>
                         </div>
-                        {attendanceFeatureFlags.allowShiftChange && selectedEmployee && selectedDate && (attendanceDetail.shifts?.length > 0 || attendanceDetail.shiftId) && !editingShift && !isAttendanceDetailLocked && (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const firstShiftId = attendanceDetail.shifts?.[0]?._id ?? null;
-                              setSelectedShiftRecordId(firstShiftId);
-                              setEditingShift(true);
-                              if (availableShifts.length === 0 && selectedEmployee) {
-                                await loadAvailableShifts(selectedEmployee.emp_no, selectedDate || attendanceDetail.date);
-                              }
-                            }}
-                            className="text-xs font-semibold text-violet-600 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
-                          >
-                            Change shift
-                          </button>
-                        )}
                       </div>
-                      {editingShift && selectedEmployee && selectedDate && (
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <select
-                            value={selectedShiftId}
-                            onChange={(e) => setSelectedShiftId(e.target.value)}
-                            className="h-8 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm min-w-[140px] focus:ring-2 focus:ring-violet-500/50"
-                          >
-                            <option value="">Select shift</option>
-                            {availableShifts.map((s: any) => (
-                              <option key={s._id} value={s._id}>{s.name}</option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={handleAssignShift}
-                            disabled={savingShift || !selectedShiftId}
-                            className="h-8 px-3 rounded-lg bg-violet-600 text-white text-xs font-medium hover:bg-violet-700 disabled:opacity-50"
-                          >
-                            {savingShift ? 'Saving…' : 'Assign'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { setEditingShift(false); setSelectedShiftId(''); setSelectedShiftRecordId(null); }}
-                            className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800"
-                          >
-                            Cancel
-                          </button>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Hours</label>
+                        <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
+                          {formatHours(attendanceDetail.totalWorkingHours ?? attendanceDetail.totalHours ?? 0)} hrs
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">OT Hours</label>
+                        <div className="mt-1 text-sm font-bold text-orange-600 dark:text-orange-400">
+                          {formatHours(Number(attendanceDetail?.esiConversion?.consideredOtHours ?? attendanceDetail?.otRequest?.otHours ?? attendanceDetail.totalOTHours ?? attendanceDetail.otHours ?? 0))} hrs
+                        </div>
+                      </div>
+                      {Number(attendanceDetail.approvedOtHours || 0) > 0 && (
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Approved OT Hours</label>
+                          <div className="mt-1 text-sm font-bold text-green-600 dark:text-green-400">
+                            {formatHours(Number(attendanceDetail.approvedOtHours || 0))} hrs
+                          </div>
                         </div>
                       )}
+                      {Number(attendanceDetail?.otRequest?.rawOtHours ?? 0) > 0 && (
+                        <div className="sm:col-span-2">
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">OT Policy Split</label>
+                          <div className="mt-1 text-xs text-slate-700 dark:text-slate-300">
+                            Actual: {formatHours(Number(attendanceDetail?.otRequest?.rawOtHours || 0))} hrs, Considered: {formatHours(Number(attendanceDetail?.otRequest?.consideredOtHours ?? attendanceDetail?.otRequest?.otHours ?? 0))} hrs
+                          </div>
+                        </div>
+                      )}
+                      {(attendanceDetail.extraHours && attendanceDetail.extraHours > 0) ? (
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Extra Hours</label>
+                          <div className="mt-1 text-sm font-bold text-purple-600 dark:text-purple-400">
+                            {formatHours(attendanceDetail.extraHours)} hrs
+                          </div>
+                        </div>
+                      ) : (
+                        attendanceDetail.status === 'PRESENT' && (
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Expected</label>
+                            <div className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-300">
+                              {attendanceDetail.expectedHours ?? '-'} hrs
+                            </div>
+                          </div>
+                        )
+                      )}
                     </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">In Time</label>
-                      <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                        {attendanceDetail.shifts && attendanceDetail.shifts.length > 0
-                          ? attendanceDetail.shifts.map((s: any, i: number) => (
-                            <div key={i}>{s.inTime ? formatTime(s.inTime) : '-'}</div>
-                          ))
-                          : (attendanceDetail.inTime ? formatTime(attendanceDetail.inTime) : '-')}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Out Time</label>
-                      <div className="mt-1 flex flex-col gap-1">
-                        <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {attendanceDetail.shifts && attendanceDetail.shifts.length > 0
-                            ? attendanceDetail.shifts.map((s: any, i: number) => (
-                              <div key={i}>
-                                <span>{s.outTime ? formatTime(s.outTime) : '-'}</span>
-                              </div>
-                            ))
-                            : (
-                              <span>{attendanceDetail.outTime ? formatTime(attendanceDetail.outTime) : '-'}</span>
-                            )}
+
+                    {attendanceDetail.approvedEsiLeave && attendanceDetail.esiConversion && (
+                      <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-800/50 dark:bg-amber-900/10">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-amber-700/80 dark:text-amber-400/80">
+                          ESI Day OT Split
+                        </label>
+                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                          <div>
+                            <span className="text-slate-500 dark:text-slate-400">Punch Hours:</span>{' '}
+                            <span className="font-bold text-slate-900 dark:text-slate-100">
+                              {formatHours(Number(attendanceDetail.esiConversion.punchHours || 0))} hrs
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 dark:text-slate-400">Considered to OT:</span>{' '}
+                            <span className="font-bold text-orange-700 dark:text-orange-300">
+                              {formatHours(Number(attendanceDetail.esiConversion.consideredOtHours || 0))} hrs
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 dark:text-slate-400">Remaining:</span>{' '}
+                            <span className="font-bold text-blue-700 dark:text-blue-300">
+                              {formatHours(Number(attendanceDetail.esiConversion.remainingHoursForAttendance || 0))} hrs
+                            </span>
+                          </div>
                         </div>
                       </div>
+                    )}
 
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Total Hours</label>
-                      <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                        {formatHours(attendanceDetail.totalHours)}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Expected Hours</label>
-                      <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                        {attendanceDetail.expectedHours ? formatHours(attendanceDetail.expectedHours) : '-'}
-                      </div>
-                    </div>
-                    {selectedEmployee && selectedDate && attendanceDetail.date && (attendanceFeatureFlags.allowInTimeEditing || attendanceFeatureFlags.allowOutTimeEditing) && !isAttendanceDetailLocked && (
-                      <div className="col-span-full sm:col-span-2 flex items-end gap-3">
-                        {attendanceFeatureFlags.allowInTimeEditing && (
+                    {attendanceDetail.extraHours > 0 && !hasExistingOT && (!effectiveOtAutoCreateForSelectedEmployee || otPolicyEligibleForConvert) && (
+                      <div className="mt-3 flex justify-end">
+                        <div className="text-right">
                           <button
-                            type="button"
-                            onClick={() => {
-                              const firstShift = attendanceDetail.shifts?.[0];
-                              const inTime = firstShift?.inTime ? new Date(firstShift.inTime) : null;
-                              const baseDate = selectedDate || attendanceDetail.date;
-                              const defaultDateTime = inTime
-                                ? `${inTime.getFullYear()}-${String(inTime.getMonth() + 1).padStart(2, '0')}-${String(inTime.getDate()).padStart(2, '0')}T${String(inTime.getHours()).padStart(2, '0')}:${String(inTime.getMinutes()).padStart(2, '0')}`
-                                : `${baseDate}T09:00`;
-                              setInTimeDialogValue(defaultDateTime);
-                              setSelectedRecordForInTime({
-                                employee: selectedEmployee,
-                                date: baseDate,
-                                shiftRecordId: firstShift?._id,
-                              });
-                              setShowInTimeDialog(true);
-                              setShowDetailDialog(false);
-                            }}
-                            className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                            onClick={handleConvertExtraHoursToOT}
+                            disabled={isAttendanceDetailLocked || convertingToOT || singleOtConfirmLoading}
+                            className="rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-4 py-2 text-xs font-bold text-white shadow-md shadow-purple-500/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
                           >
-                            Edit In Time
+                            {convertingToOT
+                              ? 'Converting...'
+                              : singleOtConfirmLoading
+                                ? 'Checking…'
+                                : 'Convert Extra to OT'}
                           </button>
-                        )}
-                        {attendanceFeatureFlags.allowOutTimeEditing && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const firstShift = attendanceDetail.shifts?.[0];
-                              const outTime = firstShift?.outTime ? new Date(firstShift.outTime) : null;
-                              const baseDate = selectedDate || attendanceDetail.date;
-                              const defaultDateTime = outTime
-                                ? `${outTime.getFullYear()}-${String(outTime.getMonth() + 1).padStart(2, '0')}-${String(outTime.getDate()).padStart(2, '0')}T${String(outTime.getHours()).padStart(2, '0')}:${String(outTime.getMinutes()).padStart(2, '0')}`
-                                : `${baseDate}T18:00`;
-                              setOutTimeValue(defaultDateTime);
-                              setSelectedRecordForOutTime({
-                                employee: selectedEmployee,
-                                date: baseDate,
-                                shiftRecordId: firstShift?._id,
-                              });
-                              setShowOutTimeDialog(true);
-                              setShowDetailDialog(false);
-                            }}
-                            className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                          >
-                            Edit Out Time
-                          </button>
-                        )}
+                          {otPolicyPreview?.policy?.eligible && (
+                            <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                              Slab/base value: {formatHours(Number(otPolicyPreview?.policy?.finalHours || 0))} hrs from actual {formatHours(Number(otPolicyPreview?.rawExtraHours || attendanceDetail?.extraHours || 0))} hrs
+                            </div>
+                          )}
+                          {isAttendanceDetailLocked && (
+                            <div className="mt-1 text-[10px] font-medium text-rose-600 dark:text-rose-300">
+                              Batch locked. No further operation will be performed.
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
+
+                    {!hasExistingOT && (attendanceDetail.shiftId || attendanceDetail.shifts?.length > 0) && effectiveOtAutoCreateForSelectedEmployee && !otPolicyEligibleForConvert && (
+                      <div className="mt-3 text-right">
+                        <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
+                          Not eligible to convert to OT
+                        </span>
+                        <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                          {(otPolicyPreview?.policy?.steps || []).join('; ') || `Check OT slab minimum (threshold ${Number(otPolicyPreview?.mergedPolicy?.thresholdHours || 0).toFixed(2)}h, min OT ${Number(otPolicyPreview?.mergedPolicy?.minOTHours || 0).toFixed(2)}h).`}
+                        </div>
+                      </div>
+                    )}
+                    {hasExistingOT && (
+                      <div className="mt-3 text-right">
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${otRequestStatus === 'approved'
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                          }`}>
+                          {otRequestStatus === 'approved' ? 'Already Converted' : 'Pending approval'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {attendanceDetail.shifts && attendanceDetail.shifts.length > 0 ? (
+                    <div className="space-y-3">
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Attendance Segments</h4>
+                      {attendanceDetail.shifts.map((shift: any, index: number) => {
+                        const shiftName = shift.shiftName || (shift.shiftId && typeof shift.shiftId === 'object' ? (shift.shiftId as any).name : 'Unknown Shift');
+                        const isEditingThisShift = editingShift && selectedShiftRecordId === shift._id;
+
+                        return (
+                          <div key={shift._id || index} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:shadow-md">
+                            <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-2 dark:border-slate-800">
+                              <div className="flex items-center gap-2">
+                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-500 dark:bg-slate-800">{index + 1}</span>
+                                <div className="font-bold text-sm text-slate-800 dark:text-white">{shiftName}</div>
+                              </div>
+                              <div className="text-[11px] font-bold text-slate-500 bg-slate-50 dark:bg-slate-800/50 px-2 py-0.5 rounded-full">
+                                {formatHours(shift.workingHours)} hrs
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Configured Shift</label>
+                                <div className="flex items-center gap-3 flex-wrap">
+                                  <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate" title={shiftName}>{shiftName}</div>
+                                  {attendanceFeatureFlags.allowShiftChange && selectedEmployee && selectedDate && !isEditingThisShift && !isAttendanceDetailLocked && (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        setSelectedShiftRecordId(shift._id);
+                                        setEditingShift(true);
+                                        if (availableShifts.length === 0 && selectedEmployee) {
+                                          await loadAvailableShifts(selectedEmployee.emp_no, selectedDate || attendanceDetail.date);
+                                        }
+                                      }}
+                                      className="text-xs font-semibold text-violet-600 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
+                                    >
+                                      Change shift
+                                    </button>
+                                  )}
+                                  {isEditingThisShift && (
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                      <select
+                                        value={selectedShiftId}
+                                        onChange={(e) => setSelectedShiftId(e.target.value)}
+                                        className="h-8 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm min-w-[140px] focus:ring-2 focus:ring-violet-500/50"
+                                      >
+                                        <option value="">Select shift</option>
+                                        {availableShifts.map((s: any) => (
+                                          <option key={s._id} value={s._id}>{s.name}</option>
+                                        ))}
+                                      </select>
+                                      <button
+                                        type="button"
+                                        onClick={handleAssignShift}
+                                        disabled={savingShift || !selectedShiftId}
+                                        className="h-8 px-3 rounded-lg bg-violet-600 text-white text-xs font-medium hover:bg-violet-700 disabled:opacity-50"
+                                      >
+                                        {savingShift ? 'Saving…' : 'Assign'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => { setEditingShift(false); setSelectedShiftId(''); setSelectedShiftRecordId(null); }}
+                                        className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="flex flex-col gap-1">
+                                  <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600/70">Check-In</label>
+                                  <div className="text-sm font-black text-slate-800 dark:text-white">{formatTime(shift.inTime)}</div>
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  <label className="text-[10px] font-black uppercase tracking-widest text-rose-600/70">Check-Out</label>
+                                  <div className="text-sm font-black text-slate-800 dark:text-white">{formatTime(shift.outTime, true, selectedDate || '')}</div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 flex flex-wrap gap-4 border-t border-slate-50 pt-3 dark:border-slate-800">
+                              {shift.lateInMinutes > 0 && (
+                                <div className="flex items-center gap-1.5">
+                                  <div className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse"></div>
+                                  <span className="text-[10px] font-bold text-orange-600">Late: {shift.lateInMinutes}m</span>
+                                </div>
+                              )}
+                              {shift.earlyOutMinutes > 0 && (
+                                <div className="flex items-center gap-1.5">
+                                  <div className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse"></div>
+                                  <span className="text-[10px] font-bold text-orange-600">Early: {shift.earlyOutMinutes}m</span>
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Status</span>
+                                <span className={`text-[10px] font-black uppercase ${shift.status === 'PRESENT' ? 'text-green-600' : 'text-slate-500'}`}>
+                                  {(() => {
+                                    const statuses = [shift.status || '-'];
+                                    if (attendanceDetail.hasOD) statuses.push('OD');
+                                    if (attendanceDetail.hasLeave) statuses.push('LEAVE');
+                                    return Array.from(new Set(statuses)).join(' / ');
+                                  })()}
+                                </span>
+                              </div>
+                            </div>
+                            {selectedEmployee && selectedDate && (attendanceFeatureFlags.allowInTimeEditing || attendanceFeatureFlags.allowOutTimeEditing) && !isAttendanceDetailLocked && (
+                              <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-3">
+                                {attendanceFeatureFlags.allowInTimeEditing && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const inTime = shift.inTime ? new Date(shift.inTime) : null;
+                                      const baseDate = selectedDate || attendanceDetail.date;
+                                      const defaultDateTime = inTime
+                                        ? `${inTime.getFullYear()}-${String(inTime.getMonth() + 1).padStart(2, '0')}-${String(inTime.getDate()).padStart(2, '0')}T${String(inTime.getHours()).padStart(2, '0')}:${String(inTime.getMinutes()).padStart(2, '0')}`
+                                        : `${baseDate}T09:00`;
+                                      setInTimeDialogValue(defaultDateTime);
+                                      setSelectedRecordForInTime({
+                                        employee: selectedEmployee,
+                                        date: baseDate,
+                                        shiftRecordId: shift._id,
+                                      });
+                                      setShowInTimeDialog(true);
+                                      setShowDetailDialog(false);
+                                    }}
+                                    className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                                  >
+                                    Edit In Time
+                                  </button>
+                                )}
+                                {attendanceFeatureFlags.allowOutTimeEditing && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const outTime = shift.outTime ? new Date(shift.outTime) : null;
+                                      const baseDate = selectedDate || attendanceDetail.date;
+                                      const defaultDateTime = outTime
+                                        ? `${outTime.getFullYear()}-${String(outTime.getMonth() + 1).padStart(2, '0')}-${String(outTime.getDate()).padStart(2, '0')}T${String(outTime.getHours()).padStart(2, '0')}:${String(outTime.getMinutes()).padStart(2, '0')}`
+                                        : `${baseDate}T18:00`;
+                                      setOutTimeValue(defaultDateTime);
+                                      setSelectedRecordForOutTime({
+                                        employee: selectedEmployee,
+                                        date: baseDate,
+                                        shiftRecordId: shift._id,
+                                      });
+                                      setShowOutTimeDialog(true);
+                                      setShowDetailDialog(false);
+                                    }}
+                                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                                  >
+                                    Edit Out Time
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                            {isAttendanceDetailLocked && (
+                              <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-700 dark:border-violet-800/60 dark:bg-violet-900/20 dark:text-violet-300">
+                                  This attendance day is locked, so in-time, out-time, and shift edits are disabled.
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    attendanceDetail.status === 'ABSENT' ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center dark:border-slate-700 bg-slate-50/50">
+                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-800">
+                          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </div>
+                        <h5 className="mt-4 text-sm font-bold text-slate-900 dark:text-white">No attendance records today</h5>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Employee was marked as absent for this date.</p>
+                      </div>
+                    ) : null
+                  )}
+                  {/* Late In Display - Support Multi-Shift */}
                     {isAttendanceDetailLocked && (
                       <div className="col-span-full sm:col-span-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-700 dark:border-violet-800/60 dark:bg-violet-900/20 dark:text-violet-300">
                         This attendance day is locked, so in-time, out-time, and shift edits are disabled.
@@ -6962,7 +7244,7 @@ export default function AttendancePage() {
                         attendanceDetail.odInfo.odType_extended !== 'half_day' &&
                         attendanceDetail.odInfo.odType_extended !== 'hours' && (
                           <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
-                            ⚠️ Conflict: OD approved but attendance logged for this date
+                            Conflict: OD approved but attendance logged for this date
                           </div>
                         )}
                     </div>
@@ -7006,9 +7288,8 @@ export default function AttendancePage() {
                   )}
                 </div>
               </div>
-            </div>
-          )
-        }
+            )
+          }
 
         {attendanceDeductionInfo && (
           <div
@@ -7122,6 +7403,7 @@ export default function AttendancePage() {
                             <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Days</th>
                             <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Payable Shifts</th>
                             <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white" title="Late/early policy + absent extra (same as payroll)">Att. deduction days</th>
+                            <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white" title="Permission deduction days from payroll permission rules">Permission deduction days</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -7135,6 +7417,7 @@ export default function AttendancePage() {
                             <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalDaysInMonth || 0}</td>
                             <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPayableShifts?.toFixed(2) || '0.00'}</td>
                             <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-purple-800 dark:text-purple-200">{Number(monthlySummary.totalAttendanceDeductionDays ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</td>
+                            <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-rose-800 dark:text-rose-200">{Number(monthlySummary.totalPermissionDeductionDays ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -7648,5 +7931,4 @@ export default function AttendancePage() {
       </div>
     </div >
   );
-
 }

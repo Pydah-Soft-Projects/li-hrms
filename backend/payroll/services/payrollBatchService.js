@@ -5,6 +5,7 @@ const Department = require('../../departments/model/Department');
 const leaveRegisterService = require('../../leaves/services/leaveRegisterService');
 const ArrearsIntegrationService = require('./arrearsIntegrationService');
 const DeductionIntegrationService = require('./deductionIntegrationService');
+const loanAdvanceService = require('./loanAdvanceService');
 const ArrearsRequest = require('../../arrears/model/ArrearsRequest');
 const DeductionRequest = require('../../manual-deductions/model/DeductionRequest');
 const { autoRejectPendingRequestsForCompletedBatch } = require('../../shared/services/payrollBatchAutoRejectService');
@@ -291,7 +292,7 @@ class PayrollBatchService {
                 // Settle arrears and manual deductions for all payrolls in this batch (idempotent: only not-yet-settled)
                 let payrollRecords = await PayrollRecord.find({
                     payrollBatchId: batch._id
-                }).select('_id employeeId emp_no month startDate endDate arrearsSettlements deductionSettlements').lean();
+                }).select('_id employeeId emp_no month startDate endDate arrearsSettlements deductionSettlements loanAdvance').lean();
 
                 let attendanceLockTargets = payrollRecords.map((pr) => ({
                     employeeId: pr.employeeId,
@@ -375,6 +376,35 @@ class PayrollBatchService {
                             } catch (err) {
                                 console.error(`[PayrollBatch] Deduction settlement failed for payroll ${payrollIdStr}:`, err.message);
                             }
+                        }
+                    }
+
+                    // Loan EMI & salary advance: apply breakdowns to Loan documents (idempotent via payrollSettlementKey)
+                    const la = pr.loanAdvance || {};
+                    const emiBreakdown = Array.isArray(la.emiBreakdown) ? la.emiBreakdown : [];
+                    const advanceBreakdown = Array.isArray(la.advanceBreakdown) ? la.advanceBreakdown : [];
+                    if (emiBreakdown.length > 0) {
+                        try {
+                            await loanAdvanceService.updateLoanRecordsAfterEMI(
+                                emiBreakdown,
+                                month,
+                                userId,
+                                payrollIdStr
+                            );
+                        } catch (err) {
+                            console.error(`[PayrollBatch] Loan EMI settlement failed for payroll ${payrollIdStr}:`, err.message);
+                        }
+                    }
+                    if (advanceBreakdown.length > 0) {
+                        try {
+                            await loanAdvanceService.updateAdvanceRecordsAfterDeduction(
+                                advanceBreakdown,
+                                month,
+                                userId,
+                                payrollIdStr
+                            );
+                        } catch (err) {
+                            console.error(`[PayrollBatch] Salary advance settlement failed for payroll ${payrollIdStr}:`, err.message);
                         }
                     }
                 }

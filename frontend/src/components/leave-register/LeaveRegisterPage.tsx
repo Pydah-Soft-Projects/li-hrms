@@ -1812,12 +1812,19 @@ export default function LeaveRegisterPage({
                               <User className={isSuperadmin ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
                             </div>
                             <div className="min-w-0">
-                              <p className="font-medium text-slate-900 dark:text-white text-sm leading-tight">
+                            <div className="min-w-0" title={[String(row.employee?.name || '—'), String(row.employee?.designation || ''), String(row.employee?.empNo || '')].filter(Boolean).join(' · ')}>
+                              <div className="font-semibold truncate text-slate-900 dark:text-white text-sm">
                                 {row.employee?.name || '—'}
-                              </p>
-                              <p className="text-[11px] text-slate-500 leading-snug">
-                                {row.employee?.empNo || '—'}
-                              </p>
+                              </div>
+                              {row.employee?.designation ? (
+                                <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+                                  {row.employee.designation}
+                                </div>
+                              ) : null}
+                              {row.employee?.empNo ? (
+                                <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{row.employee.empNo}</div>
+                              ) : null}
+                            </div>
                               {row.yearSnapshot?.financialYear ? (
                                 <p className="text-[10px] text-slate-400 mt-0.5 leading-snug">
                                   FY {row.yearSnapshot.financialYear} · year register

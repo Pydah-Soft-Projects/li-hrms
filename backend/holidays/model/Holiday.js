@@ -87,6 +87,20 @@ const holidaySchema = new mongoose.Schema(
             type: String,
             trim: true,
         },
+        isActive: {
+            type: Boolean,
+            default: true,
+            index: true,
+        },
+        deactivatedAt: {
+            type: Date,
+            default: null,
+        },
+        deactivatedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            default: null,
+        },
         createdBy: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
@@ -101,5 +115,6 @@ const holidaySchema = new mongoose.Schema(
 holidaySchema.index({ date: 1 });
 holidaySchema.index({ groupId: 1 });
 holidaySchema.index({ isMaster: 1 });
+holidaySchema.index({ isActive: 1 });
 
 module.exports = mongoose.model('Holiday', holidaySchema);

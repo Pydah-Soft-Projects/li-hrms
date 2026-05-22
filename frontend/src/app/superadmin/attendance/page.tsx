@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, type MouseEvent } from 'react';
 import { api } from '@/lib/api';
+import { sortByEmpNo } from '@/lib/employeeSort';
+import { designationAccentClass } from '@/lib/designationDisplay';
 import Swal from 'sweetalert2';
 import {
   formatHighlightContribution,
@@ -25,6 +27,8 @@ import {
 } from '@/lib/payRegisterAllSummaryRow';
 import { toast } from 'react-toastify';
 import { MultiSelect } from '@/components/MultiSelect';
+import { AutoEdgePermissionModal } from '@/components/AutoEdgePermissionModal';
+import { ShiftSegmentRefreshModal } from '@/components/ShiftSegmentRefreshModal';
 import { format, parseISO } from 'date-fns';
 import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
 import {
@@ -213,6 +217,17 @@ interface MonthlyAttendanceData {
       lopDaysPerAbsent?: number | null;
       deductionType?: string | null;
       calculationMode?: string | null;
+    };
+    lateInCount?: number;
+    earlyOutCount?: number;
+    /** Permission deduction days from payroll-aligned permission deduction rules */
+    totalPermissionDeductionDays?: number;
+    /** Total number of permission records / counts for the month */
+    totalPermissionCount?: number;
+    permissionDeductionBreakdown?: {
+      full_day?: number;
+      partial_day?: number;
+      total?: number;
     };
     contributingDates?: {
       present?: string[];
@@ -488,6 +503,8 @@ export default function AttendancePage() {
   const [uploading, setUploading] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [showAutoEdgePermissionModal, setShowAutoEdgePermissionModal] = useState(false);
+  const [showShiftSegmentRefreshModal, setShowShiftSegmentRefreshModal] = useState(false);
   const [syncingShifts, setSyncingShifts] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -946,7 +963,7 @@ export default function AttendancePage() {
     // In server-side pagination mode, we don't apply local filters
     // unless we have all data loaded (which we won't at 5k scale).
     // So we just pass through monthlyData.
-    setFilteredMonthlyData(monthlyData);
+    setFilteredMonthlyData(sortByEmpNo(monthlyData, (item) => item.employee.emp_no));
   }, [monthlyData]);
 
   // Intersection Observer for infinite scroll
@@ -2392,7 +2409,7 @@ export default function AttendancePage() {
   const usePayRegisterAllComplete = attendanceProcessingMode === 'single_shift' && tableType === 'complete';
 
   const superadminTrailingSummaryCount = useMemo(() => {
-    if (tableType === 'complete' && usePayRegisterAllComplete) return 12;
+    if (tableType === 'complete' && usePayRegisterAllComplete) return 14;
     if (tableType === 'complete') return Math.max(1, visibleSuperadminCompleteKeys.length);
     if (tableType === 'present_absent') return 2;
     if (tableType === 'in_out') return 1;
@@ -2402,7 +2419,7 @@ export default function AttendancePage() {
     return 0;
   }, [tableType, visibleSuperadminCompleteKeys.length, usePayRegisterAllComplete]);
 
-  const superadminTableEmptyColSpan = 1 + daysArray.length + superadminTrailingSummaryCount;
+  const superadminTableEmptyColSpan = 2 + daysArray.length + superadminTrailingSummaryCount;
 
   // Virtualized row component
 
@@ -2638,6 +2655,27 @@ export default function AttendancePage() {
                 )}
                 {exportingPDF ? 'Generating...' : 'Download PDF'}
               </button>
+
+              <button
+                onClick={() => setShowAutoEdgePermissionModal(true)}
+                title="Generate auto edge permissions for current attendance filters"
+                className="h-9 flex items-center px-4 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-emerald-600 hover:border-emerald-200 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-emerald-400"
+              >
+                <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Generate Auto Edge
+              </button>
+              <button
+                onClick={() => setShowShiftSegmentRefreshModal(true)}
+                title="Refresh first/second half segment data from current shift definitions"
+                className="h-9 flex items-center px-4 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-teal-600 hover:border-teal-200 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-teal-400"
+              >
+                <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h10" />
+                </svg>
+                Refresh Half-Segments
+              </button>
             </div>
           </div>
         </div>
@@ -2742,7 +2780,13 @@ export default function AttendancePage() {
                   <tr className="border-b border-slate-200 dark:border-slate-700 w-full">
                     <th
                       rowSpan={2}
-                      className="sticky left-0 top-0 z-30 border-r border-slate-200 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 w-[200px] min-w-[200px]"
+                      className="sticky left-0 top-0 z-[36] border-r border-slate-200 bg-slate-200/90 dark:bg-slate-800 px-1 py-3 text-center text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 w-10 min-w-[2.5rem]"
+                    >
+                      #
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="sticky left-10 top-0 z-[35] border-r border-slate-200 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 w-[188px] min-w-[188px] shadow-[2px_0_5px_rgba(0,0,0,0.05)]"
                     >
                       Employee
                     </th>
@@ -2781,10 +2825,11 @@ export default function AttendancePage() {
                       Hol
                     </th>
                     <th
-                      rowSpan={2}
-                      className="w-[78px] min-w-[78px] border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/20 px-1.5 py-2 text-center text-[9px] font-bold uppercase text-yellow-900"
+                      colSpan={2}
+                      className="border-b border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/25 px-1 py-1.5 text-center text-[9px] font-bold uppercase text-yellow-900 dark:text-yellow-100"
+                      title="Total leave broken down into paid vs LOP (loss of pay) leave units"
                     >
-                      T.leave
+                      Total leave
                     </th>
                     <th
                       rowSpan={2}
@@ -2829,6 +2874,18 @@ export default function AttendancePage() {
                   </tr>
                   <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800">
                     <th
+                      className="w-[52px] min-w-[52px] border-r border-slate-200 bg-amber-50/95 dark:bg-amber-900/30 px-1 py-1.5 text-center text-[8px] font-bold text-amber-900 dark:text-amber-100"
+                      title="Paid leave day-units"
+                    >
+                      Paid
+                    </th>
+                    <th
+                      className="w-[52px] min-w-[52px] border-r border-slate-200 bg-orange-50/95 dark:bg-orange-900/25 px-1 py-1.5 text-center text-[8px] font-bold text-orange-900 dark:text-orange-100"
+                      title="LOP (loss of pay) leave day-units"
+                    >
+                      LOP
+                    </th>
+                    <th
                       className="w-[60px] min-w-[60px] border-r border-slate-200 bg-red-50/90 dark:bg-red-950/30 px-1 py-1.5 text-center text-[8px] font-bold text-red-800 dark:text-red-200"
                       title="Absent days in deduction / same as main Abs for calendar absent total"
                     >
@@ -2853,7 +2910,10 @@ export default function AttendancePage() {
                 </>
               ) : (
                 <tr className="border-b border-slate-200 dark:border-slate-700 w-full">
-                  <th className="sticky left-0 top-0 z-30 border-r border-slate-200 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 w-[200px] min-w-[200px]">
+                  <th className="sticky left-0 top-0 z-[36] border-r border-slate-200 bg-slate-200/90 dark:bg-slate-800 px-1 py-3 text-center text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 w-10 min-w-[2.5rem]">
+                    #
+                  </th>
+                  <th className="sticky left-10 top-0 z-[35] border-r border-slate-200 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 w-[188px] min-w-[188px] shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
                     Employee
                   </th>
                   {daysArray.map((dateStr) => {
@@ -2966,6 +3026,16 @@ export default function AttendancePage() {
                             className={`${edge} ${base} bg-cyan-50 text-cyan-700 dark:bg-cyan-900/20 w-[80px] min-w-[80px]`}
                           >
                             Perms
+                          </th>
+                        );
+                      case 'permissionDeductionDays':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`${edge} ${base} bg-teal-50 text-teal-700 dark:bg-teal-900/20 w-[100px] min-w-[100px]`}
+                            title="Permission deduction days"
+                          >
+                            Perm Ded
                           </th>
                         );
                       case 'lateEarly':
@@ -3085,21 +3155,25 @@ export default function AttendancePage() {
                                               ? 'bg-purple-50 dark:bg-purple-900/20'
                                               : colKey === 'permissions'
                                                 ? 'bg-cyan-50 dark:bg-cyan-900/20'
-                                                : colKey === 'lateEarly'
-                                                  ? 'bg-rose-50 dark:bg-rose-900/20'
-                                                  : colKey === 'attDed'
-                                                    ? 'bg-violet-50 dark:bg-violet-900/25'
-                                                    : 'bg-green-50 dark:bg-green-900/20';
+                                                : colKey === 'permissionDeductionDays'
+                                                  ? 'bg-teal-50 dark:bg-teal-900/20'
+                                                  : colKey === 'lateEarly'
+                                                    ? 'bg-rose-50 dark:bg-rose-900/20'
+                                                    : colKey === 'attDed'
+                                                      ? 'bg-violet-50 dark:bg-violet-900/25'
+                                                      : 'bg-green-50 dark:bg-green-900/20';
                           const w =
                             colKey === 'permissions'
                               ? 'w-[80px] min-w-[80px]'
-                              : colKey === 'lateEarly'
-                                ? 'w-[70px] min-w-[70px]'
-                                : colKey === 'attDed'
-                                  ? 'w-[64px] min-w-[64px]'
-                                  : colKey === 'payableShifts'
-                                    ? 'w-[70px] min-w-[70px]'
-                                    : 'w-[60px] min-w-[60px]';
+                              : colKey === 'permissionDeductionDays'
+                                ? 'w-[100px] min-w-[100px]'
+                                : colKey === 'lateEarly'
+                                  ? 'w-[70px] min-w-[70px]'
+                                  : colKey === 'attDed'
+                                    ? 'w-[64px] min-w-[64px]'
+                                    : colKey === 'payableShifts'
+                                      ? 'w-[70px] min-w-[70px]'
+                                      : 'w-[60px] min-w-[60px]';
                           return (
                             <td key={colKey} className={`${edge} border-slate-200 px-2 py-2 text-center dark:border-slate-700 ${bg} ${w}`}>
                               <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
@@ -3225,7 +3299,7 @@ export default function AttendancePage() {
                   const getDesignationName = (emp: Employee) => {
                     if (emp.designation && typeof emp.designation === 'object') return emp.designation.name;
                     if (emp.designation_id && typeof emp.designation_id === 'object') return emp.designation_id.name;
-                    return 'Staff';
+                    return '';
                   };
 
                   const isHighAbsenteeism = monthAbsent > 2;
@@ -3235,7 +3309,10 @@ export default function AttendancePage() {
                       key={item.employee?._id || index}
                       className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 transition-colors w-full ${isHighAbsenteeism ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}
                     >
-                      <td className={`sticky left-0 z-10 border-r border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:text-white w-[200px] min-w-[200px] ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-900'}`}>
+                      <td className={`sticky left-0 z-[11] border-r border-slate-200 px-1 py-2 text-center text-[11px] font-semibold tabular-nums text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 w-10 min-w-[2.5rem] ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-950'}`}>
+                        {index + 1}
+                      </td>
+                      <td className={`sticky left-10 z-10 border-r border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:text-white w-[188px] min-w-[188px] ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-900'}`}>
                         <div>
                           <div className="flex items-center gap-2">
                             {tableType === 'ot' && !otAutoCreateEnabled && item.employee?._id && (
@@ -3258,11 +3335,16 @@ export default function AttendancePage() {
                               {item.employee?.employee_name || 'Unknown Employee'}
                             </div>
                           </div>
+                          {item.employee && getDesignationName(item.employee) ? (
+                            <div
+                              className={`text-[9px] font-semibold italic mt-1 truncate ${designationAccentClass(getDesignationName(item.employee))}`}
+                            >
+                              {getDesignationName(item.employee)}
+                            </div>
+                          ) : null}
                           <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1 flex flex-col gap-0.5">
                             <div className="flex items-center gap-1">
                               <span>{item.employee?.emp_no || '-'}</span>
-                              <span>•</span>
-                              <span className="font-medium">{item.employee ? getDesignationName(item.employee) : 'Staff'}</span>
                             </div>
                             {item.employee && getDeptName(item.employee) && (
                               <span className="text-blue-500/80 dark:text-blue-400/80 font-bold tracking-widest uppercase text-[8px]">
@@ -3459,18 +3541,18 @@ export default function AttendancePage() {
                               {prAllRow.holidays.toFixed(1)}
                             </td>
                             <td
-                              onClick={() => item.employee && handleSummaryClick(item.employee._id, 'leaves')}
-                              className="border-r border-slate-200 bg-yellow-50 dark:bg-yellow-900/20 px-1.5 py-2 text-center text-[11px] font-bold text-yellow-900 dark:text-yellow-100 w-[78px] min-w-[78px] cursor-pointer"
+                              onClick={() => item.employee && handleSummaryClick(item.employee._id, 'paidLeaves')}
+                              className="border-r border-slate-200 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-2 text-center text-[11px] font-bold text-amber-900 dark:text-amber-100 w-[52px] min-w-[52px] cursor-pointer"
+                              title="Paid leave day-units"
                             >
-                              <div className="flex flex-col items-center gap-0.5 leading-tight">
-                                <span>{prAllRow.totalLeaves.toFixed(1)}</span>
-                                <span
-                                  className="text-[8px] font-semibold text-yellow-900/90 dark:text-yellow-200/90"
-                                  title={`Leave by nature: ${paidLopSublabel(prAllRow.paidLeaves, prAllRow.dedLop)}`}
-                                >
-                                  {paidLopSublabel(prAllRow.paidLeaves, prAllRow.dedLop)}
-                                </span>
-                              </div>
+                              {prAllRow.paidLeaves.toFixed(1)}
+                            </td>
+                            <td
+                              onClick={() => item.employee && handleSummaryClick(item.employee._id, 'lopLeaves')}
+                              className="border-r border-slate-200 bg-orange-50 dark:bg-orange-900/25 px-1.5 py-2 text-center text-[11px] font-bold text-orange-900 dark:text-orange-100 w-[52px] min-w-[52px] cursor-pointer"
+                              title="LOP (loss of pay) leave day-units"
+                            >
+                              {prAllRow.dedLop.toFixed(1)}
                             </td>
                             <td
                               onClick={() => item.employee && handleSummaryClick(item.employee._id, 'ods')}
@@ -3630,7 +3712,16 @@ export default function AttendancePage() {
                                   onClick={() => item.employee && handleSummaryClick(item.employee._id, 'permissions')}
                                   className={`${edge} border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 w-[80px] min-w-[80px] cursor-pointer hover:bg-cyan-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'permissions' ? 'ring-2 ring-cyan-400 ring-inset bg-white dark:bg-cyan-900/40 shadow-inner scale-[0.98]' : ''}`}
                                 >
-                                  {dailyValues.reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
+                                  {item.summary?.totalPermissionCount ?? dailyValues.reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
+                                </td>
+                              );
+                            case 'permissionDeductionDays':
+                              return (
+                                <td
+                                  key={colKey}
+                                  className={`${edge} border-slate-200 bg-teal-50 px-2 py-2 text-center text-[11px] font-bold text-teal-700 dark:border-slate-700 dark:bg-teal-900/20 dark:text-teal-300 w-[100px] min-w-[100px]`}
+                                >
+                                  {Number(item.summary?.totalPermissionDeductionDays ?? item.summary?.permissionDeductionBreakdown?.full_day ?? 0).toFixed(2).replace(/\.?0+$/, '') || '0'}
                                 </td>
                               );
                             case 'lateEarly':
@@ -4127,6 +4218,28 @@ export default function AttendancePage() {
             </div>
           </div>
         )}
+
+        <AutoEdgePermissionModal
+          open={showAutoEdgePermissionModal}
+          currentStartDate={cycleDates.startDate}
+          currentEndDate={cycleDates.endDate}
+          divisionId={selectedDivision}
+          departmentId={selectedDepartment}
+          designationId={selectedDesignation}
+          searchQuery={searchQuery}
+          onClose={() => setShowAutoEdgePermissionModal(false)}
+        />
+
+        <ShiftSegmentRefreshModal
+          open={showShiftSegmentRefreshModal}
+          currentStartDate={cycleDates.startDate}
+          currentEndDate={cycleDates.endDate}
+          divisionId={selectedDivision}
+          departmentId={selectedDepartment}
+          designationId={selectedDesignation}
+          searchQuery={searchQuery}
+          onClose={() => setShowShiftSegmentRefreshModal(false)}
+        />
 
         {showOutTimeDialog && selectedRecordForOutTime && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">

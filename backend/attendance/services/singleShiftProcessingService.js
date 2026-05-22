@@ -33,6 +33,9 @@ const {
   applyEdgePermissionAdjustmentsToShiftSegment,
   applyStatusFromDuration,
 } = require('../../permissions/services/permissionEdgeAttendanceService');
+const {
+  autoCreateEdgePermissionsForAttendance,
+} = require('../../permissions/services/autoEdgePermissionCreationService');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 const formatDate = (date) => extractISTComponents(date).dateStr;
@@ -724,6 +727,13 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
       const basePayable = (assignedShiftDef?.payableShifts ?? 1);
       pShift.basePayable = basePayable;
       applyStatusFromDuration(pShift, expectedHours);
+
+      try {
+        const { enrichShiftRecordWithSegments, resolveGraceFromSettings } = require('./shiftSegmentAttendanceService');
+        await enrichShiftRecordWithSegments(pShift, date, await resolveGraceFromSettings());
+      } catch (segErr) {
+        console.warn('[SingleShift] enrichShiftRecordWithSegments:', segErr.message);
+      }
     } else {
       pShift.status = 'PRESENT';
       pShift.payableShift = 1;
@@ -915,6 +925,11 @@ async function upsertDaily(employeeNumber, date, updateData) {
     dailyRecord.source.push('biometric-realtime');
   }
   await dailyRecord.save();
+  try {
+    await autoCreateEdgePermissionsForAttendance(dailyRecord);
+  } catch (error) {
+    console.error('[SingleShift] Auto edge permission creation failed:', error.message);
+  }
   return dailyRecord;
 }
 

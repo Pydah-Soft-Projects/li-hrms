@@ -1,5 +1,6 @@
 const Holiday = require('../model/Holiday');
 const HolidayGroup = require('../model/HolidayGroup');
+const HolidayHistory = require('../model/HolidayHistory');
 const User = require('../../users/model/User');
 const Division = require('../../departments/model/Division');
 const Department = require('../../departments/model/Department');
@@ -7,6 +8,14 @@ const Employee = require('../../employees/model/Employee');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const cacheService = require('../../shared/services/cacheService');
 const { rosterSyncQueue } = require('../../shared/jobs/queueManager');
+const {
+    loadHolidayActor,
+    canManageGlobal,
+    canManageHoliday,
+    getManagedGroupIdStrings,
+    assertCanManageHolidayRecord,
+    normalizeHolidayWritePayload,
+} = require('../utils/holidayAccess');
 
 // Normalize to YYYY-MM-DD from a Date or date string (avoids timezone shifting calendar day)
 function toDateString(d) {
@@ -15,6 +24,22 @@ function toDateString(d) {
     const m = String(x.getUTCMonth() + 1).padStart(2, '0');
     const day = String(x.getUTCDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
+}
+
+async function logHolidayHistory({ holidayId, event, reqUser, details, comments }) {
+    try {
+        await HolidayHistory.create({
+            holidayId,
+            event,
+            performedBy: reqUser?._id || reqUser?.userId || null,
+            performedByName: reqUser?.name || null,
+            performedByRole: reqUser?.role || null,
+            details: details || {},
+            comments: comments || null,
+        });
+    } catch (err) {
+        console.error('[HolidayHistory] log failed:', err.message);
+    }
 }
 
 // Helper to sync holiday to shift roster
@@ -196,11 +221,14 @@ async function applyRosterEntriesAndSync(entries, userId) {
 // @access  Private (Super Admin, HR)
 exports.getAllHolidaysAdmin = async (req, res) => {
     try {
+        const actor = await loadHolidayActor(req);
         const { year } = req.query;
-        let query = {};
+        const includeInactive = String(req.query.includeInactive || '').toLowerCase() === 'true';
+        let query = includeInactive ? {} : { isActive: { $ne: false } };
 
         if (year) {
             query = {
+                ...(includeInactive ? {} : { isActive: { $ne: false } }),
                 $or: [
                     { date: { $gte: new Date(`${year}-01-01`), $lte: new Date(`${year}-12-31`) } },
                     { endDate: { $gte: new Date(`${year}-01-01`), $lte: new Date(`${year}-12-31`) } }
@@ -208,27 +236,68 @@ exports.getAllHolidaysAdmin = async (req, res) => {
             };
         }
 
-        const holidays = await Holiday.find(query)
+        let holidays = await Holiday.find(query)
             .populate('targetGroupIds', 'name')
             .populate('groupId', 'name')
             .sort({ date: 1 });
 
-        const groups = await HolidayGroup.find({ isActive: true })
+        let groups = await HolidayGroup.find({ isActive: true })
             .populate('divisionMapping.division', 'name')
             .populate('divisionMapping.departments', 'name')
             .populate('divisionMapping.employeeGroups', 'name code');
+
+        const isGlobalManager = canManageGlobal(actor);
+        const managedIds = getManagedGroupIdStrings(actor);
+
+        if (!isGlobalManager && canManageHoliday(actor)) {
+            groups = groups.filter((g) => managedIds.includes(g._id.toString()));
+            holidays = holidays.filter((h) => {
+                if (h.scope === 'GLOBAL') return true;
+                const gid = h.groupId?._id?.toString() || h.groupId?.toString();
+                return gid && managedIds.includes(gid);
+            });
+        }
 
         res.status(200).json({
             success: true,
             data: {
                 holidays,
-                groups
+                groups,
+                access: {
+                    canManageGlobal: isGlobalManager,
+                    managedHolidayGroupIds: managedIds,
+                },
             }
         });
     } catch (error) {
         res.status(500).json({
             success: false,
             message: 'Error fetching holidays',
+            error: error.message
+        });
+    }
+};
+
+// @desc    Get holiday groups (admin)
+// @route   GET /api/holidays/groups
+// @access  Private (Super Admin, Sub Admin, HR)
+exports.getHolidayGroupsAdmin = async (req, res) => {
+    try {
+        const actor = await loadHolidayActor(req);
+        let groupQuery = { isActive: true };
+        if (!canManageGlobal(actor)) {
+            const managedIds = getManagedGroupIdStrings(actor);
+            groupQuery._id = { $in: managedIds };
+        }
+        const groups = await HolidayGroup.find(groupQuery)
+            .select('name description divisionMapping isActive createdBy createdAt updatedAt')
+            .sort({ name: 1 })
+            .lean();
+        res.status(200).json({ success: true, data: groups });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching holiday groups',
             error: error.message
         });
     }
@@ -291,6 +360,7 @@ exports.getMyHolidays = async (req, res) => {
         // - Partial (applicableTo: 'SPECIFIC_GROUPS' and user's group is in targetGroupIds)
         const masterHolidays = await Holiday.find({
             ...dateQuery,
+            isActive: { $ne: false },
             isMaster: true,
             $or: [
                 { applicableTo: 'ALL' },
@@ -304,6 +374,7 @@ exports.getMyHolidays = async (req, res) => {
         // 3. Fetch Group Specific Holidays
         const groupHolidays = await Holiday.find({
             ...dateQuery,
+            isActive: { $ne: false },
             scope: 'GROUP',
             groupId: { $in: groupIds }
         }).lean();
@@ -450,7 +521,9 @@ exports.saveHolidayGroup = async (req, res) => {
 // @access  Private (Super Admin)
 exports.saveHoliday = async (req, res) => {
     try {
-        const { _id, name, date, endDate, type, isMaster, scope, applicableTo, targetGroupIds, groupId, overridesMasterId, description, rosterFillMode } = req.body;
+        const actor = await loadHolidayActor(req);
+        const normalized = normalizeHolidayWritePayload(actor, req.body);
+        const { _id, name, date, endDate, type, isMaster, scope, applicableTo, targetGroupIds, groupId, overridesMasterId, description, rosterFillMode } = normalized;
         let createdMessage = null;
 
         // Validation
@@ -463,6 +536,20 @@ exports.saveHoliday = async (req, res) => {
         if (_id) {
             holiday = await Holiday.findById(_id);
             if (!holiday) return res.status(404).json({ success: false, message: 'Holiday not found' });
+            if (holiday.isActive === false) return res.status(400).json({ success: false, message: 'Cannot update a deactivated holiday' });
+
+            try {
+                assertCanManageHolidayRecord(actor, holiday);
+            } catch (accessErr) {
+                return res.status(accessErr.statusCode || 403).json({ success: false, message: accessErr.message });
+            }
+
+            if (!canManageGlobal(actor) && (scope === 'GLOBAL' || isMaster)) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Only users with global holiday management can modify org-wide holidays',
+                });
+            }
 
             const wasGlobal = holiday.scope === 'GLOBAL';
             const isNowGlobal = scope === 'GLOBAL';
@@ -486,6 +573,14 @@ exports.saveHoliday = async (req, res) => {
             }
 
             await holiday.save();
+
+            await logHolidayHistory({
+                holidayId: holiday._id,
+                event: 'holiday_updated',
+                reqUser: req.user,
+                details: { scope: holiday.scope, applicableTo: holiday.applicableTo, groupId: holiday.groupId, targetGroupIds: holiday.targetGroupIds },
+                comments: 'Holiday updated',
+            });
 
             // PROPAGATION: If Global Holiday Updated
             if (isNowGlobal) {
@@ -540,6 +635,14 @@ exports.saveHoliday = async (req, res) => {
                     createdBy: req.user.userId,
                     // Default new holidays to synced (if they become copies later logic handles it, but here it's main)
                     isSynced: true
+                });
+
+                await logHolidayHistory({
+                    holidayId: holiday._id,
+                    event: 'holiday_created',
+                    reqUser: req.user,
+                    details: { scope: holiday.scope, applicableTo: holiday.applicableTo, targetGroupIds: holiday.targetGroupIds, groupId: holiday.groupId },
+                    comments: 'Holiday created',
                 });
 
                 // PROPAGATION: If Global Holiday Created -> Create Synced Copies for ALL or SPECIFIC Groups
@@ -621,9 +724,17 @@ exports.saveHoliday = async (req, res) => {
 // @access  Private (Super Admin)
 exports.deleteHoliday = async (req, res) => {
     try {
+        const actor = await loadHolidayActor(req);
         const { onDeleteAction = 'RESTORE_PATTERN' } = req.body || {};
         const holiday = await Holiday.findById(req.params.id);
         if (!holiday) return res.status(404).json({ success: false, message: 'Holiday not found' });
+        if (holiday.isActive === false) return res.status(200).json({ success: true, message: 'Holiday already deactivated' });
+
+        try {
+            assertCanManageHolidayRecord(actor, holiday);
+        } catch (accessErr) {
+            return res.status(accessErr.statusCode || 403).json({ success: false, message: accessErr.message });
+        }
 
         const deleteDates = getDateRangeStrings(holiday.date, holiday.endDate);
         const employeeNumbers = await resolveEmployeesForHolidayScope({
@@ -633,10 +744,12 @@ exports.deleteHoliday = async (req, res) => {
             targetGroupIds: holiday.targetGroupIds
         });
 
-        // If deleting a Global Holiday -> Delete it AND all synced copies
+        // If deactivating a Global Holiday -> deactivate it AND all synced copies
         if (holiday.scope === 'GLOBAL') {
-            // Delete copies that are still synced
-            await Holiday.deleteMany({ sourceHolidayId: holiday._id, isSynced: true });
+            await Holiday.updateMany(
+                { sourceHolidayId: holiday._id, isSynced: true },
+                { $set: { isActive: false, deactivatedAt: new Date(), deactivatedBy: req.user.userId } }
+            );
 
             // For copies that are NOT synced (overridden), detach them (clear sourceHolidayId)
             await Holiday.updateMany(
@@ -645,10 +758,19 @@ exports.deleteHoliday = async (req, res) => {
             );
         }
 
-        // If deleting a Group Copy -> Just delete it (Opt-out)
-        // No extra logic needed, just standard delete below
+        // Soft delete this holiday record
+        holiday.isActive = false;
+        holiday.deactivatedAt = new Date();
+        holiday.deactivatedBy = req.user.userId;
+        await holiday.save();
 
-        await holiday.deleteOne();
+        await logHolidayHistory({
+            holidayId: holiday._id,
+            event: 'holiday_deactivated',
+            reqUser: req.user,
+            details: { onDeleteAction, scope: holiday.scope },
+            comments: 'Holiday deactivated (soft delete)',
+        });
 
         const rosterEntries = [];
         if (onDeleteAction === 'WEEK_OFF') {
@@ -668,7 +790,7 @@ exports.deleteHoliday = async (req, res) => {
         }
         await applyRosterEntriesAndSync(rosterEntries, req.user.userId);
 
-        res.status(200).json({ success: true, message: 'Holiday deleted' });
+        res.status(200).json({ success: true, message: 'Holiday deactivated' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error deleting holiday', error: error.message });
     }
@@ -696,5 +818,31 @@ exports.deleteHolidayGroup = async (req, res) => {
         res.status(200).json({ success: true, message: 'Holiday Group deleted' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error deleting group', error: error.message });
+    }
+};
+
+// @desc    Get holiday activity log (admin)
+// @route   GET /api/holidays/:id/activity
+// @access  Private (Super Admin, Sub Admin, HR)
+exports.getHolidayActivity = async (req, res) => {
+    try {
+        const actor = await loadHolidayActor(req);
+        const holidayId = req.params.id;
+        const holiday = await Holiday.findById(holidayId).select('scope groupId isMaster');
+        if (!holiday) return res.status(404).json({ success: false, message: 'Holiday not found' });
+        try {
+            assertCanManageHolidayRecord(actor, holiday);
+        } catch (accessErr) {
+            return res.status(accessErr.statusCode || 403).json({ success: false, message: accessErr.message });
+        }
+        const limit = Math.min(Number(req.query.limit) || 80, 200);
+        const rows = await HolidayHistory.find({ holidayId })
+            .populate('performedBy', 'name email role')
+            .sort({ timestamp: -1 })
+            .limit(limit)
+            .lean();
+        res.status(200).json({ success: true, data: rows });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error fetching holiday activity', error: error.message });
     }
 };

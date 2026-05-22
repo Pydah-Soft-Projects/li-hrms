@@ -67,6 +67,8 @@ interface ResignationRequest {
     emp_no: string;
     department_id?: { _id: string; name: string };
     division_id?: { _id: string; name: string };
+    designation_id?: { name: string } | string;
+    designation?: { name: string };
     employee_group_id?: { _id: string; name: string };
     doj?: string;
     dynamicFields?: Record<string, any>;
@@ -1253,10 +1255,19 @@ export default function ResignationsPage() {
                           }`}>
                             {getEmployeeInitials(req)}
                           </div>
-                          <div>
-                            <div className="font-semibold text-slate-900 dark:text-white text-sm whitespace-nowrap">{getEmployeeName(req)}</div>
-                            <div className="text-[10px] text-slate-400 font-bold tracking-tighter uppercase">{req.emp_no}</div>
-                          </div>
+                          <div className="min-w-0" title={[String(getEmployeeName(req) || '—'), ((typeof req.employeeId?.designation_id === 'object' && req.employeeId?.designation_id?.name) ? String(req.employeeId.designation_id.name) : (typeof req.employeeId?.designation === 'object' && req.employeeId?.designation?.name) ? String(req.employeeId.designation.name) : ''), String(req.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName(req) || '—'}
+  </div>
+  {((typeof req.employeeId?.designation_id === 'object' && req.employeeId?.designation_id?.name) ? String(req.employeeId.designation_id.name) : (typeof req.employeeId?.designation === 'object' && req.employeeId?.designation?.name) ? String(req.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof req.employeeId?.designation_id === 'object' && req.employeeId?.designation_id?.name) ? String(req.employeeId.designation_id.name) : (typeof req.employeeId?.designation === 'object' && req.employeeId?.designation?.name) ? String(req.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {req.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{req.emp_no}</div>
+  ) : null}
+</div>
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -1360,10 +1371,19 @@ export default function ResignationsPage() {
                       }`}>
                         {getEmployeeInitials(req)}
                       </div>
-                      <div>
-                        <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">{getEmployeeName(req)}</h4>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{req.emp_no}</p>
-                      </div>
+                      <div className="min-w-0" title={[String(getEmployeeName(req) || '—'), ((typeof req.employeeId?.designation_id === 'object' && req.employeeId?.designation_id?.name) ? String(req.employeeId.designation_id.name) : (typeof req.employeeId?.designation === 'object' && req.employeeId?.designation?.name) ? String(req.employeeId.designation.name) : ''), String(req.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName(req) || '—'}
+  </div>
+  {((typeof req.employeeId?.designation_id === 'object' && req.employeeId?.designation_id?.name) ? String(req.employeeId.designation_id.name) : (typeof req.employeeId?.designation === 'object' && req.employeeId?.designation?.name) ? String(req.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof req.employeeId?.designation_id === 'object' && req.employeeId?.designation_id?.name) ? String(req.employeeId.designation_id.name) : (typeof req.employeeId?.designation === 'object' && req.employeeId?.designation?.name) ? String(req.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {req.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{req.emp_no}</div>
+  ) : null}
+</div>
                     </div>
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                       <span className={`shrink-0 rounded-full px-2.5 py-1 text-sm font-semibold ${getStatusColor(getStatusVisualKey(req))}`}>
@@ -1670,11 +1690,22 @@ export default function ResignationsPage() {
               </div>
             </div>
             <div className="mb-4 border-b border-slate-200 pb-4 dark:border-slate-800">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">{getEmployeeName(selectedRequest)}</h3>
-                <span className={`rounded-full px-2.5 py-1 text-sm font-semibold ${getStatusColor(getStatusVisualKey(selectedRequest))}`}>{getDisplayStatusText(selectedRequest)}</span>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 min-w-0 flex-1" title={[String(getEmployeeName(selectedRequest) || '—'), ((typeof selectedRequest.employeeId?.designation_id === 'object' && selectedRequest.employeeId?.designation_id?.name) ? String(selectedRequest.employeeId.designation_id.name) : (typeof selectedRequest.employeeId?.designation === 'object' && selectedRequest.employeeId?.designation?.name) ? String(selectedRequest.employeeId.designation.name) : ''), String(selectedRequest.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName(selectedRequest) || '—'}
+  </div>
+  {((typeof selectedRequest.employeeId?.designation_id === 'object' && selectedRequest.employeeId?.designation_id?.name) ? String(selectedRequest.employeeId.designation_id.name) : (typeof selectedRequest.employeeId?.designation === 'object' && selectedRequest.employeeId?.designation?.name) ? String(selectedRequest.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof selectedRequest.employeeId?.designation_id === 'object' && selectedRequest.employeeId?.designation_id?.name) ? String(selectedRequest.employeeId.designation_id.name) : (typeof selectedRequest.employeeId?.designation === 'object' && selectedRequest.employeeId?.designation?.name) ? String(selectedRequest.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {selectedRequest.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{selectedRequest.emp_no}</div>
+  ) : null}
+</div>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-sm font-semibold ${getStatusColor(getStatusVisualKey(selectedRequest))}`}>{getDisplayStatusText(selectedRequest)}</span>
               </div>
-              <p className="mt-0.5 text-sm font-semibold text-slate-500 dark:text-slate-400">Employee ID: {selectedRequest.emp_no}</p>
               <div className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
                 <div><p className="text-[10px] font-bold uppercase text-slate-400">Division</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{selectedRequest.employeeId?.division_id?.name || '—'}</p></div>
                 <div><p className="text-[10px] font-bold uppercase text-slate-400">Department</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{selectedRequest.employeeId?.department_id?.name || '—'}</p></div>

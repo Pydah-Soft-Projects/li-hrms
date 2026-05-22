@@ -18,6 +18,7 @@ const ALLOWED_FORMULA_VARS = new Set([
   'arrearsAmount', 'arrears', 'manualDeductionsAmount', 'manual_deductions_amount', 'manual_deductions',
   'extraDays', 'paidLeaveDays', 'odDays', 'absentDays', 'weeklyOffs', 'holidays',
   'perDayBasicPay', 'basic_pay', 'lopDays', 'elUsedInPayroll', 'attendanceDeductionDays',
+  'permissionCount', 'permissionDeductionDays',
 ]);
 
 function getContextFromPayslip(payslip) {
@@ -37,6 +38,12 @@ function getContextFromPayslip(payslip) {
     designation: emp.designation ?? '',
     department: emp.department ?? '',
     division: emp.division ?? '',
+    salary_mode: emp.salary_mode ?? emp.payment_mode ?? '',
+    bank_account_no: emp.bank_account_no ?? '',
+    bank_name: emp.bank_name ?? '',
+    bank_place: emp.bank_place ?? '',
+    ifsc_code: emp.ifsc_code ?? '',
+    payment_mode: emp.payment_mode ?? emp.salary_mode ?? '',
     basicPay: num(earn.basicPay),
     basic_pay: num(earn.basicPay),
     grossSalary: num(earn.grossSalary),
@@ -58,6 +65,8 @@ function getContextFromPayslip(payslip) {
     perDayBasicPay: num(earn.perDayBasicPay),
     attendanceDeduction: num(ded.attendanceDeduction),
     permissionDeduction: num(ded.permissionDeduction),
+    permissionCount: num(ded.permissionDeductionBreakdown?.permissionCount),
+    permissionDeductionDays: num(att.permissionDeductionDays ?? payslip.permissionDeductionDays ?? ded.permissionDeductionBreakdown?.daysDeducted),
     leaveDeduction: num(ded.leaveDeduction),
     arrearsAmount: num(arrears.arrearsAmount ?? payslip.arrearsAmount),
     arrears: num(arrears.arrearsAmount ?? payslip.arrearsAmount),
@@ -185,6 +194,10 @@ function getValueByPath(obj, path) {
     const n = Number(obj?.deductions?.attendanceDeductionBreakdown?.daysDeducted);
     return Number.isFinite(n) ? n : 0;
   }
+  if (trimmed === 'attendance.elUsedInPayroll') {
+    const n = Number(obj?.attendance?.elUsedInPayroll ?? obj?.elUsedInPayroll);
+    return Number.isFinite(n) ? n : 0;
+  }
   if (trimmed === 'attendance.attendanceDeductionDays' || trimmed === 'attendanceDeductionDays') {
     const a = obj?.attendance?.attendanceDeductionDays;
     if (a !== undefined && a !== null && a !== '') {
@@ -199,6 +212,11 @@ function getValueByPath(obj, path) {
     const dd = obj?.deductions?.attendanceDeductionBreakdown?.daysDeducted;
     const n2 = Number(dd);
     return Number.isFinite(n2) ? n2 : 0;
+  }
+  if (trimmed === 'permissionDeductionDays' || trimmed === 'deductions.permissionDeductionBreakdown.daysDeducted') {
+    const root = obj?.permissionDeductionDays ?? obj?.deductions?.permissionDeductionBreakdown?.daysDeducted;
+    const n = Number(root);
+    return Number.isFinite(n) ? n : 0;
   }
   // Missing loanAdvance subdoc makes generic path walk return '' before leaf; always return numeric 0
   if (trimmed === 'loanAdvance.advanceDeduction') {
@@ -217,6 +235,12 @@ function getValueByPath(obj, path) {
     const n = Number(obj?.manualDeductionsAmount ?? obj?.manualDeductions?.manualDeductionsAmount);
     return Number.isFinite(n) ? n : 0;
   }
+  // employee.salary_mode is stored on Employee; payslip uses payment_mode (from salary_mode).
+  if (trimmed === 'employee.salary_mode') {
+    const mode = obj?.employee?.salary_mode ?? obj?.employee?.payment_mode;
+    return mode != null && mode !== '' ? mode : '';
+  }
+
   const parts = trimmed.split('.').filter(Boolean);
   let val = obj;
   for (const p of parts) {

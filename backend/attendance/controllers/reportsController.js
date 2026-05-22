@@ -19,6 +19,7 @@ const AttendanceSettings = require('../model/AttendanceSettings');
 const { payRegisterAllRowFromSummary } = require('../../shared/payRegisterAllRow');
 const { getMonthlyTableViewData } = require('../services/attendanceViewService');
 const { formatPdfDayCellText } = require('../utils/pdfDayCellText');
+const { compareEmpNo } = require('../../shared/utils/employeeSort');
 
 // Date format DD-Mon-YY (e.g. 01-Dec-25)
 function formatPDate(d) {
@@ -571,6 +572,8 @@ exports.exportAttendanceReport = async (req, res) => {
             .select('emp_no employee_name department_id division_id doj leftDate')
             .lean();
 
+        employees.sort((a, b) => compareEmpNo(a.emp_no, b.emp_no));
+
         const empNosFromHRMS = employees.map(e => String(e.emp_no).toUpperCase());
         if (empNosFromHRMS.length > 0 && (departmentId || divisionId || employeeId || search)) {
             query.employeeNumber = { $in: empNosFromHRMS };
@@ -777,7 +780,7 @@ exports.exportAttendanceReport = async (req, res) => {
             const key = sortedGroups[g];
             const [division, department] = key.split('\t');
             const empIds = groups[key].sort((a, b) =>
-                (empMap[a]?.employee_name || '').localeCompare(empMap[b]?.employee_name || ''));
+                compareEmpNo(empMap[a]?.emp_no || a, empMap[b]?.emp_no || b));
 
             for (const empId of empIds) {
                 const info = empMap[empId];
@@ -1063,8 +1066,85 @@ const SUMMARY_HDR_ROW1 = 20;
 const SUMMARY_HDR_ROW2 = 18;
 const SUMMARY_HDR_H = SUMMARY_HDR_ROW1 + SUMMARY_HDR_ROW2;
 
+/** Landscape pay-register PDF summary columns: S.NO, NAME, E.NO, … Total leave (Paid | LOP), … Deduction block, PAID */
+const PAYREG_PDF_SUMMARY_COL_WIDTHS = [22, 92, 48, 40, 38, 38, 20, 20, 40, 38, 40, 34, 40, 38, 40, 42];
+
+const DESIGNATION_PDF_COLORS = ['#7c3aed', '#0891b2', '#059669', '#d97706', '#dc2626', '#4f46e5', '#0d9488', '#be185d'];
+
+function designationPdfColor(label) {
+    const s = String(label || '').trim();
+    if (!s) return '#64748b';
+    let h = 0;
+    for (let i = 0; i < s.length; i += 1) {
+        h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    }
+    return DESIGNATION_PDF_COLORS[h % DESIGNATION_PDF_COLORS.length];
+}
+
+function parsePdfNameCell(cell) {
+    if (cell && typeof cell === 'object' && !Array.isArray(cell)) {
+        return {
+            name: cell.name != null ? String(cell.name) : '',
+            designation: cell.designation ? String(cell.designation).trim() : '',
+        };
+    }
+    const str = String(cell ?? '');
+    const nl = str.indexOf('\n');
+    if (nl >= 0) {
+        return { name: str.slice(0, nl).trim(), designation: str.slice(nl + 1).trim() };
+    }
+    return { name: str, designation: '' };
+}
+
+/** Column text alignment to match centered headers (NAME stays left). */
+function pdfSummaryColAlign(colIndex) {
+    if (colIndex === 1) return 'left';
+    return 'center';
+}
+
+function pdfSummaryCellText(cell) {
+    if (cell && typeof cell === 'object' && !Array.isArray(cell) && cell.name != null) {
+        return String(cell.name);
+    }
+    return String(cell ?? '');
+}
+
+function measurePdfSummaryNameCellHeight(doc, cell, colWidth, fontSize, cellPaddingX) {
+    const { name, designation } = parsePdfNameCell(cell);
+    const cw = Math.max(1, colWidth - cellPaddingX * 2);
+    doc.font('Helvetica-Bold').fontSize(fontSize);
+    let h = doc.heightOfString(name || '-', { width: cw, align: 'left' });
+    if (designation) {
+        doc.font('Helvetica-Oblique').fontSize(Math.max(5.5, fontSize - 0.5));
+        h += 2 + doc.heightOfString(designation, { width: cw, align: 'left' });
+    }
+    doc.font('Helvetica').fontSize(fontSize);
+    return h;
+}
+
+function drawPdfSummaryNameCell(doc, cell, x, y, colWidth, fontSize, cellPaddingX, cellPaddingY) {
+    const { name, designation } = parsePdfNameCell(cell);
+    const cw = Math.max(1, colWidth - cellPaddingX * 2);
+    const tx = x + cellPaddingX;
+    let ty = y + cellPaddingY;
+
+    doc.fillColor('#1e293b').font('Helvetica-Bold').fontSize(fontSize);
+    doc.text(name || '-', tx, ty, { width: cw, align: 'left', lineBreak: true, ellipsis: true });
+    ty += doc.heightOfString(name || '-', { width: cw, align: 'left' });
+
+    if (designation) {
+        ty += 1;
+        doc.fillColor(designationPdfColor(designation))
+            .font('Helvetica-Oblique')
+            .fontSize(Math.max(5.5, fontSize - 0.5));
+        doc.text(designation, tx, ty, { width: cw, align: 'left', lineBreak: true, ellipsis: true });
+    }
+
+    doc.font('Helvetica').fontSize(fontSize).fillColor('#33414d');
+}
+
 /**
- * Pay-register style summary: parent header "Deduction days" with subheaders Absents, LOP, Att. deduction
+ * Pay-register style summary: "Total leave" with Paid | LOP; "Deduction days" with Absents, LOP, Att. deduction
  * (aligns with attendance complete table).
  */
 function drawPayRegisterAllSummaryTablePdf(doc, dataRows, startX, startY, colWidths, options = {}) {
@@ -1083,42 +1163,63 @@ function drawPayRegisterAllSummaryTablePdf(doc, dataRows, startX, startY, colWid
     const drawGroupedHeader = (x0, y0) => {
         const w = (i) => colWidths[i] || 0;
         const tableW = colWidths.reduce((a, b) => a + b, 0);
-        const tMain = ['PRES', 'WO', 'HOL', 'T.LV', 'OD', 'ABS', 'TOT', 'L/E'];
         let x = x0;
-        for (let i = 0; i < 2; i++) {
+
+        const hdrSingleY = y0 + Math.floor((SUMMARY_HDR_H - 8) / 2);
+        const hdrSingle = (i, label) => {
             doc.fillColor(headerFill).rect(x, y0, w(i), SUMMARY_HDR_H).fill();
             doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(6.5);
-            const lab = i === 0 ? 'NAME' : 'E.NO';
-            doc.text(lab, x + 1, y0 + 10, { width: w(i) - 2, align: 'center' });
+            doc.text(label, x + 1, hdrSingleY, { width: w(i) - 2, align: 'center' });
             x += w(i);
+        };
+
+        hdrSingle(0, 'S.NO');
+        hdrSingle(1, 'NAME');
+        hdrSingle(2, 'E.NO');
+
+        ['PRES', 'WO', 'HOL'].forEach((lab, j) => hdrSingle(3 + j, lab));
+
+        const tlW = w(6) + w(7);
+        doc.fillColor('#a5b4fc');
+        doc.rect(x, y0, tlW, SUMMARY_HDR_ROW1).fill();
+        doc.fillColor('#312e81').font('Helvetica-Bold').fontSize(5.5)
+            .text('Total leave', x + 2, y0 + 5, { width: tlW - 4, align: 'center' });
+        const y2 = y0 + SUMMARY_HDR_ROW1;
+        const tlSub = ['Paid', 'LOP'];
+        for (let j = 0; j < 2; j++) {
+            const k = 6 + j;
+            const ww = w(k);
+            doc.fillColor(j === 0 ? '#c7d2fe' : '#ddd6fe');
+            doc.rect(x, y2, ww, SUMMARY_HDR_ROW2).fill();
+            doc.fillColor('#312e81');
+            doc.font('Helvetica-Bold').fontSize(4.5)
+                .text(tlSub[j], x + 1, y2 + 4, { width: ww - 2, align: 'center' });
+            x += ww;
         }
-        for (let j = 0; j < 8; j++) {
-            const i = 2 + j;
-            doc.fillColor(headerFill).rect(x, y0, w(i), SUMMARY_HDR_H).fill();
-            doc.fillColor('#ffffff').font('Helvetica-Bold').text(tMain[j], x + 1, y0 + 10, { width: w(i) - 2, align: 'center' });
-            x += w(i);
-        }
-        const dW = w(10) + w(11) + w(12);
+
+        ['OD', 'ABS', 'TOT', 'L/E'].forEach((lab, j) => hdrSingle(8 + j, lab));
+
+        const dW = w(12) + w(13) + w(14);
         doc.fillColor('#f9a8d4');
         doc.rect(x, y0, dW, SUMMARY_HDR_ROW1).fill();
         doc.fillColor('#831843').font('Helvetica-Bold').fontSize(5.5)
             .text('Deduction days', x + 2, y0 + 5, { width: dW - 4, align: 'center' });
-        const y2 = y0 + SUMMARY_HDR_ROW1;
+        const yDed = y0 + SUMMARY_HDR_ROW1;
         const subL = ['Absents', 'LOP', 'Att. deduction'];
         for (let j = 0; j < 3; j++) {
-            const k = 10 + j;
+            const k = 12 + j;
             const ww = w(k);
             doc.fillColor(j < 2 ? '#fecdd3' : '#fdbacb');
-            doc.rect(x, y2, ww, SUMMARY_HDR_ROW2).fill();
+            doc.rect(x, yDed, ww, SUMMARY_HDR_ROW2).fill();
             doc.fillColor(j < 2 ? '#991b1b' : '#9f1239');
             doc.font('Helvetica-Bold').fontSize(4.5)
-                .text(subL[j], x + 1, y2 + 4, { width: ww - 2, align: 'center' });
+                .text(subL[j], x + 1, yDed + 4, { width: ww - 2, align: 'center' });
             x += ww;
         }
-        const px = x0 + colWidths.slice(0, 13).reduce((a, b) => a + b, 0);
-        doc.fillColor(headerFill).rect(px, y0, w(13), SUMMARY_HDR_H).fill();
+        const px = x0 + colWidths.slice(0, 15).reduce((a, b) => a + b, 0);
+        doc.fillColor(headerFill).rect(px, y0, w(15), SUMMARY_HDR_H).fill();
         doc.fillColor('#ffffff').fontSize(6.5).font('Helvetica-Bold');
-        doc.text('PAID', px + 2, y0 + 10, { width: w(13) - 4, align: 'center' });
+        doc.text('PAID', px + 2, hdrSingleY, { width: w(15) - 4, align: 'center' });
         doc.lineWidth(0.5);
         doc.strokeColor('#e0e7ff');
         doc.rect(x0, y0, tableW, SUMMARY_HDR_H).stroke();
@@ -1138,15 +1239,20 @@ function drawPayRegisterAllSummaryTablePdf(doc, dataRows, startX, startY, colWid
 
     dataRows.forEach((row, rowIndex) => {
         let rowHeight = minRowHeight;
-        if (lineBreak) {
-            row.forEach((cell, i) => {
-                const h = doc.heightOfString(String(cell || ''), {
-                    width: Math.max(1, colWidths[i] - (cellPaddingX * 2)),
-                    align: 'left',
+        row.forEach((cell, i) => {
+            const cw = Math.max(1, colWidths[i] - cellPaddingX * 2);
+            const align = pdfSummaryColAlign(i);
+            let h;
+            if (i === 1) {
+                h = measurePdfSummaryNameCellHeight(doc, cell, colWidths[i], fontSize, cellPaddingX);
+            } else {
+                h = doc.heightOfString(pdfSummaryCellText(cell), {
+                    width: cw,
+                    align,
                 });
-                rowHeight = Math.max(rowHeight, h + cellPaddingY * 2);
-            });
-        }
+            }
+            rowHeight = Math.max(rowHeight, h + cellPaddingY * 2);
+        });
         if (y + rowHeight > threshold) {
             doc.addPage({ size: 'A4', layout: pageLayout, margin: 25 });
             if (onPageAdd) onPageAdd();
@@ -1158,14 +1264,19 @@ function drawPayRegisterAllSummaryTablePdf(doc, dataRows, startX, startY, colWid
         }
         let xR = startX;
         row.forEach((cell, i) => {
-            doc.fillColor('#33414d');
-            doc.text(String(cell || ''), xR + cellPaddingX, y + cellPaddingY, {
-                width: Math.max(1, colWidths[i] - (cellPaddingX * 2)),
-                align: 'left',
-                lineBreak,
-                ellipsis: true,
-            });
-            xR += colWidths[i];
+            const colW = colWidths[i];
+            if (i === 1) {
+                drawPdfSummaryNameCell(doc, cell, xR, y, colW, fontSize, cellPaddingX, cellPaddingY);
+            } else {
+                doc.fillColor('#33414d').font('Helvetica').fontSize(fontSize);
+                doc.text(pdfSummaryCellText(cell), xR + cellPaddingX, y + cellPaddingY, {
+                    width: Math.max(1, colW - cellPaddingX * 2),
+                    align: pdfSummaryColAlign(i),
+                    lineBreak,
+                    ellipsis: true,
+                });
+            }
+            xR += colW;
         });
         y += rowHeight;
         doc.strokeColor('#e2e8f0').lineWidth(0.5).moveTo(startX, y).lineTo(startX + tableW, y).stroke();
@@ -1351,15 +1462,12 @@ exports.exportAttendanceReportPDF = async (req, res) => {
             doc.fontSize(10).font('Helvetica').text(`Generated on ${dayjs().format('DD MMM YYYY, hh:mm A')}`, 30, 42);
             doc.fillColor('#1e293b').fontSize(12).font('Helvetica-Bold').text(`PERIOD: ${dayjs(startDate).format('DD MMM YYYY')} TO ${dayjs(endDate).format('DD MMM YYYY')}`, 30, 80, { align: 'right' });
 
-            const headers = [
-                'NAME / ENTITY', 'E.NO', 'PRES', 'WO', 'HOL', 'T.LV', 'OD', 'ABS', 'TOT', 'L/E', 'A.ABS', 'LOP', 'ATT.D', 'PAID',
-            ];
-            const colWidths = [150, 52, 40, 38, 38, 40, 40, 38, 40, 34, 40, 38, 40, 48];
             const tableData = [];
 
             const monthStr = (year && month) ? `${year}-${String(month).padStart(2, '0')}` : null;
 
-            for (const child of children) {
+            for (let aggIx = 0; aggIx < children.length; aggIx++) {
+                const child = children[aggIx];
                 const childEmpFilter = { is_active: { $ne: false } };
                 if (groupBy === 'division') {
                     const division = await Division.findById(child._id).select('departments').lean();
@@ -1417,12 +1525,14 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                 }
 
                 tableData.push([
+                    String(aggIx + 1),
                     child.employee_name || child.name,
                     child.emp_no || '-',
                     entityStats.present.toFixed(1),
                     entityStats.weekOffs.toFixed(1),
                     entityStats.holidays.toFixed(1),
-                    entityStats.totalLeaves.toFixed(1),
+                    entityStats.paidLeaves.toFixed(1),
+                    entityStats.dedLop.toFixed(1),
                     entityStats.od.toFixed(1),
                     entityStats.absent.toFixed(1),
                     entityStats.totalDaysSummed.toFixed(1),
@@ -1434,7 +1544,12 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                 ]);
             }
 
-            drawPDFTableModern(doc, headers, tableData, 30, doc.y + 20, colWidths);
+            drawPayRegisterAllSummaryTablePdf(doc, tableData, 30, doc.y + 20, PAYREG_PDF_SUMMARY_COL_WIDTHS, {
+                fontSize: 7,
+                lineBreak: true,
+                minRowHeight: 18,
+                pageLayout: 'landscape',
+            });
             const pages = doc.bufferedPageRange();
             for (let i = 0; i < pages.count; i++) {
                 doc.switchToPage(i);
@@ -1471,8 +1586,11 @@ exports.exportAttendanceReportPDF = async (req, res) => {
         const employees = await Employee.find(empQuery)
             .populate('department_id', 'name')
             .populate('division_id', 'name')
-            .select('emp_no employee_name department_id division_id doj leftDate')
+            .populate('designation_id', 'name')
+            .select('emp_no employee_name department_id division_id designation_id doj leftDate')
             .lean();
+
+        employees.sort((a, b) => compareEmpNo(a.emp_no, b.emp_no));
 
         if (employees.length === 0) {
             return res.status(404).json({ success: false, message: 'No employees found with the selected filters' });
@@ -1604,13 +1722,14 @@ exports.exportAttendanceReportPDF = async (req, res) => {
             grouped[div][dept].push(e);
         });
 
-        const sumWidths = [130, 48, 40, 38, 38, 40, 40, 38, 40, 34, 40, 38, 40, 48];
-        const gridHeaders = ['Employee Name', 'Emp ID', ...daysArray.map(d => dayjs(d).date().toString())];
-        const employeeNameColWidth = 92;
-        const employeeIdColWidth = 32;
-        const availableDayColsWidth = Math.max(300, (pWidth - (2 * m)) - employeeNameColWidth - employeeIdColWidth);
+        const sumWidths = PAYREG_PDF_SUMMARY_COL_WIDTHS;
+        const serialColWidth = 20;
+        const employeeNameColWidth = 74;
+        const employeeIdColWidth = 30;
+        const gridHeaders = ['#', 'Employee', 'ID', ...daysArray.map(d => dayjs(d).date().toString())];
+        const availableDayColsWidth = Math.max(300, (pWidth - (2 * m)) - serialColWidth - employeeNameColWidth - employeeIdColWidth);
         const perDayColWidth = Number((availableDayColsWidth / Math.max(1, daysArray.length)).toFixed(2));
-        const gridWidths = [employeeNameColWidth, employeeIdColWidth, ...daysArray.map(() => perDayColWidth)];
+        const gridWidths = [serialColWidth, employeeNameColWidth, employeeIdColWidth, ...daysArray.map(() => perDayColWidth)];
 
         const periodInfoForPdf = await dateCycleService.getPeriodInfo(dayjs.tz(startDate, 'Asia/Kolkata').toDate());
         const pdfCycleY = periodInfoForPdf && periodInfoForPdf.payrollCycle ? periodInfoForPdf.payrollCycle.year : null;
@@ -1639,6 +1758,7 @@ exports.exportAttendanceReportPDF = async (req, res) => {
 
         const sortedDivisions = Object.keys(grouped).sort();
         let firstPageProcessed = false;
+        let pdfEmployeeSerial = 0;
 
         const formatGridPunchTime = (value) => {
             if (!value) return '-';
@@ -1674,7 +1794,7 @@ exports.exportAttendanceReportPDF = async (req, res) => {
 
                 let currentY = drawMainHeader(`ATTENDANCE REPORT - DIV: ${divName.toUpperCase()}`, `Department: ${deptName.toUpperCase()} | Period: ${startDate} to ${endDate}`);
 
-                const deptEmps = grouped[divName][deptName].sort((a, b) => (a.employee_name || '').localeCompare(b.employee_name || ''));
+                const deptEmps = grouped[divName][deptName].sort((a, b) => compareEmpNo(a.emp_no, b.emp_no));
                 const deptSumData = [], deptGridData = [];
 
                 const summaries = monthStrForSummary
@@ -1685,8 +1805,10 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                     : [];
 
                 for (const emp of deptEmps) {
+                    pdfEmployeeSerial++;
                     const eid = String(emp.emp_no).toUpperCase();
                     const eName = emp.employee_name || '-';
+                    const desigName = emp.designation_id?.name ? String(emp.designation_id.name) : '';
                     const empDaily = dailyRecords.filter(r => String(r.employeeNumber).toUpperCase() === eid);
 
                     let summary = summaries.find(s => String(s.employeeId) === String(emp._id));
@@ -1696,7 +1818,9 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                         } catch (err) { console.error('Calc failed', err); }
                     }
 
-                    const gridRow = [eName, emp.emp_no];
+                    const nameCell = desigName ? { name: eName, designation: desigName } : eName;
+                    const nameLines = desigName ? `${eName}\n${desigName}` : eName;
+                    const gridRow = [String(pdfEmployeeSerial), nameLines, emp.emp_no];
                     const todayIST = dayjs().tz('Asia/Kolkata').format('YYYY-MM-DD');
                     daysArray.forEach(dStr => {
                         const dojStr = emp.doj ? dayjs(emp.doj).tz('Asia/Kolkata').format('YYYY-MM-DD') : null;
@@ -1756,12 +1880,14 @@ exports.exportAttendanceReportPDF = async (req, res) => {
 
                     const r = payRegisterAllRowFromSummary(summary || null, payRegisterPresentProcessingMode);
                     deptSumData.push([
-                        eName,
+                        String(pdfEmployeeSerial),
+                        nameCell,
                         emp.emp_no,
                         r.present.toFixed(1),
                         r.weekOffs.toFixed(1),
                         r.holidays.toFixed(1),
-                        r.totalLeaves.toFixed(1),
+                        r.paidLeaves.toFixed(1),
+                        r.dedLop.toFixed(1),
                         r.od.toFixed(1),
                         r.absent.toFixed(1),
                         r.totalDaysSummed.toFixed(1),

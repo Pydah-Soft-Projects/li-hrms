@@ -251,7 +251,7 @@ exports.getCCLs = async (req, res) => {
 
     const [ccls, total] = await Promise.all([
       CCLRequest.find(filter)
-        .populate('employeeId', 'employee_name emp_no')
+        .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
         .populate('department_id', 'name')
         .populate('assignedBy', 'name email')
         .populate('appliedBy', 'name email')
@@ -294,7 +294,7 @@ exports.getMyCCLs = async (req, res) => {
     const filter = { isActive: true, $or: orConditions };
 
     const ccls = await CCLRequest.find(filter)
-      .populate('employeeId', 'employee_name emp_no')
+      .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
       .populate('department_id', 'name')
       .populate('assignedBy', 'name email')
       .populate('appliedBy', 'name email')
@@ -618,7 +618,7 @@ exports.getPendingApprovals = async (req, res) => {
     }
 
     const ccls = await CCLRequest.find(filter)
-      .populate('employeeId', 'employee_name emp_no')
+      .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
       .populate('department_id', 'name')
       .populate('assignedBy', 'name email')
       .populate('appliedBy', 'name email')

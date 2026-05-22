@@ -14,6 +14,9 @@
     "test:punch-pipeline": "node attendance/test/simulateDedupeAndRedundancyScenarios.js && node attendance/test/redundancyFilterTest.js",
     "test:post-verify-backfill": "jest attendance/services/__tests__/postVerifyBiometricBackfillService.test.js --no-coverage",
     "test:post-verify-backfill:live": "node scripts/liveTestPostVerifyBiometricBackfill.js",
+    "test:holiday-access": "jest holidays/utils/__tests__/holidayAccess.test.js --no-coverage",
+    "test:holiday-access:api": "node scripts/test_holiday_scoped_access_api.js",
+    "seed:holiday-test-users": "node scripts/seed_holiday_scoped_test_users.js",
     "test:single-shift-partial": "node scripts/test_single_shift_out_only_partial.js",
     "sync:atlas-biometric": "node scripts/sync_atlas_biometric_to_attendance.js",
     "test:watch": "jest --watch",
@@ -51,7 +54,8 @@
     "socket.io": "^4.8.3",
     "uuid": "^13.0.0",
     "web-push": "^3.6.7",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",

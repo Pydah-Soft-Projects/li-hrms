@@ -137,26 +137,66 @@ class SecondSalaryService {
         // If regular payroll for the same month already completed, addELUsedInPayroll is idempotent per payroll month.
         if (status === 'complete') {
             const leaveRegisterService = require('../../leaves/services/leaveRegisterService');
+            const loanAdvanceService = require('./loanAdvanceService');
             const recIds = (batch.employeePayrolls || []).filter(Boolean);
             if (recIds.length > 0) {
                 const records = await SecondSalaryRecord.find({ _id: { $in: recIds } })
-                    .select('employeeId month attendance.elUsedInPayroll')
+                    .select('employeeId month attendance.elUsedInPayroll loanAdvance')
                     .lean();
                 for (const rec of records) {
                     const days = Number(rec.attendance?.elUsedInPayroll) || 0;
-                    if (days <= 0 || !rec.employeeId || !rec.month) continue;
-                    try {
-                        await leaveRegisterService.addELUsedInPayroll(
-                            rec.employeeId,
-                            days,
-                            rec.month,
-                            batch._id
-                        );
-                    } catch (err) {
-                        console.error(
-                            `[SecondSalaryService] EL used in payroll debit failed for employee ${rec.employeeId}:`,
-                            err.message
-                        );
+                    if (days > 0 && rec.employeeId && rec.month) {
+                        try {
+                            await leaveRegisterService.addELUsedInPayroll(
+                                rec.employeeId,
+                                days,
+                                rec.month,
+                                batch._id
+                            );
+                        } catch (err) {
+                            console.error(
+                                `[SecondSalaryService] EL used in payroll debit failed for employee ${rec.employeeId}:`,
+                                err.message
+                            );
+                        }
+                    }
+
+                    const recordIdStr = rec._id?.toString?.();
+                    const month = rec.month;
+                    if (!recordIdStr || !month) continue;
+                    const la = rec.loanAdvance || {};
+                    const emiBreakdown = Array.isArray(la.emiBreakdown) ? la.emiBreakdown : [];
+                    const advanceBreakdown = Array.isArray(la.advanceBreakdown) ? la.advanceBreakdown : [];
+                    const settlementId = `ss:${recordIdStr}`;
+                    if (emiBreakdown.length > 0) {
+                        try {
+                            await loanAdvanceService.updateLoanRecordsAfterEMI(
+                                emiBreakdown,
+                                month,
+                                userId,
+                                settlementId
+                            );
+                        } catch (err) {
+                            console.error(
+                                `[SecondSalaryService] Loan EMI settlement failed for second-salary record ${recordIdStr}:`,
+                                err.message
+                            );
+                        }
+                    }
+                    if (advanceBreakdown.length > 0) {
+                        try {
+                            await loanAdvanceService.updateAdvanceRecordsAfterDeduction(
+                                advanceBreakdown,
+                                month,
+                                userId,
+                                settlementId
+                            );
+                        } catch (err) {
+                            console.error(
+                                `[SecondSalaryService] Salary advance settlement failed for second-salary record ${recordIdStr}:`,
+                                err.message
+                            );
+                        }
                     }
                 }
             }

@@ -5,6 +5,7 @@
  * period when policy disables pool roll for that type.
  */
 
+const mongoose = require('mongoose');
 const LeaveRegisterYear = require('../model/LeaveRegisterYear');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const Employee = require('../../employees/model/Employee');
@@ -104,24 +105,45 @@ function allocateLockedByPriority(lockedDays, scheduled, used, elInPool) {
   return { locked, unallocatedLocked: remaining };
 }
 
+/** Resolve org labels without Mongoose populate(), so standalone scripts never need ref models (Division, etc.) registered. */
+async function fetchNameFromCollection(collectionName, id) {
+  if (id == null) return null;
+  const s = String(id);
+  if (!mongoose.Types.ObjectId.isValid(s)) return null;
+  const db = mongoose.connection && mongoose.connection.db;
+  if (!db) return null;
+  const oid = new mongoose.Types.ObjectId(s);
+  const doc = await db.collection(collectionName).findOne({ _id: oid }, { projection: { name: 1 } });
+  return doc && doc.name != null ? String(doc.name) : null;
+}
+
 async function buildEmployeeTxPayload(employeeId) {
   const employee = await Employee.findById(employeeId)
     .select('_id emp_no employee_name department_id division_id designation_id doj is_active')
-    .populate('department_id', 'name')
-    .populate('division_id', 'name')
-    .populate('designation_id', 'name')
     .lean();
   if (!employee) return null;
-  const department = employee.department_id?.name || 'N/A';
-  const designation = employee.designation_id?.name || 'N/A';
+
+  let department = 'N/A';
+  let designation = 'N/A';
+  try {
+    const [deptName, desName] = await Promise.all([
+      fetchNameFromCollection('departments', employee.department_id),
+      fetchNameFromCollection('designations', employee.designation_id),
+    ]);
+    if (deptName) department = deptName;
+    if (desName) designation = desName;
+  } catch {
+    /* keep N/A */
+  }
+
   return {
     employeeId: employee._id,
     empNo: employee.emp_no,
     employeeName: employee.employee_name || 'N/A',
     designation,
     department,
-    divisionId: employee.division_id?._id || employee.division_id,
-    departmentId: employee.department_id?._id || employee.department_id,
+    divisionId: employee.division_id ?? null,
+    departmentId: employee.department_id ?? null,
     dateOfJoining: employee.doj,
     employmentStatus: employee.is_active ? 'active' : 'inactive',
   };

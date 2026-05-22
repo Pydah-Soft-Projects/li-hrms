@@ -188,13 +188,130 @@ exports.getShift = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.createShift = async (req, res) => {
   try {
-    const { name, startTime, endTime, duration, payableShifts, color } = req.body;
+    const {
+      name,
+      startTime,
+      endTime,
+      duration,
+      payableShifts,
+      color,
+      gracePeriod,
+      firstHalf,
+      break: breakSegment,
+      secondHalf,
+    } = req.body;
+
+    const parseTimeToMinutes = (time) => {
+      if (!time) return null;
+      const [hour, min] = time.split(':').map(Number);
+      if (Number.isNaN(hour) || Number.isNaN(min)) return null;
+      return hour * 60 + min;
+    };
+
+    const calculateDurationFromTimes = (start, end) => {
+      if (!start || !end) return null;
+      const startMinutes = parseTimeToMinutes(start);
+      const endMinutes = parseTimeToMinutes(end);
+      if (startMinutes === null || endMinutes === null) return null;
+      let diff = endMinutes - startMinutes;
+      if (diff <= 0) diff += 24 * 60;
+      return Math.round((diff / 60) * 100) / 100;
+    };
+
+    const normalizeHalfSegment = (segment) => {
+      if (!segment || typeof segment !== 'object') return null;
+      const normalized = {
+        startTime: segment.startTime || null,
+        endTime: segment.endTime || null,
+        duration: segment.duration !== undefined ? Number(segment.duration) : undefined,
+        minDuration: segment.minDuration !== undefined ? Number(segment.minDuration) : undefined,
+        gracePeriod: segment.gracePeriod !== undefined ? Number(segment.gracePeriod) : 15,
+        payableShifts: segment.payableShifts !== undefined ? Number(segment.payableShifts) : 0,
+      };
+
+      if (normalized.startTime && normalized.endTime && normalized.duration == null) {
+        normalized.duration = calculateDurationFromTimes(normalized.startTime, normalized.endTime);
+      }
+
+      return normalized;
+    };
+
+    const normalizeBreakSegment = (segment) => {
+      if (!segment || typeof segment !== 'object') return null;
+      return {
+        startTime: segment.startTime || null,
+        endTime: segment.endTime || null,
+      };
+    };
 
     // Validate required fields
     if (!name) {
       return res.status(400).json({
         success: false,
         message: 'Shift name is required',
+      });
+    }
+
+    let finalDuration = duration;
+    let finalStartTime = startTime;
+    let finalEndTime = endTime;
+
+    if (duration && startTime && !endTime) {
+      const [startHour, startMin] = startTime.split(':').map(Number);
+      const startMinutes = startHour * 60 + startMin;
+      const endMinutes = startMinutes + Number(duration) * 60;
+      const endHours = Math.floor(endMinutes / 60) % 24;
+      const endMins = endMinutes % 60;
+      finalEndTime = `${String(endHours).padStart(2, '0')}:${String(endMins).padStart(2, '0')}`;
+    } else if (startTime && endTime && !duration) {
+      finalDuration = calculateDurationFromTimes(startTime, endTime);
+    }
+
+    const firstHalfData = normalizeHalfSegment(firstHalf);
+    const secondHalfData = normalizeHalfSegment(secondHalf);
+    const breakData = normalizeBreakSegment(breakSegment);
+
+    if (!finalStartTime || !finalEndTime || !finalDuration) {
+      return res.status(400).json({
+        success: false,
+        message: 'Either provide (name, startTime, endTime) or (name, startTime, duration)',
+      });
+    }
+
+    if (firstHalfData && firstHalfData.startTime && !firstHalfData.endTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'First half endTime is required when first half startTime is provided',
+      });
+    }
+    if (firstHalfData && firstHalfData.endTime && !firstHalfData.startTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'First half startTime is required when first half endTime is provided',
+      });
+    }
+    if (secondHalfData && secondHalfData.startTime && !secondHalfData.endTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Second half endTime is required when second half startTime is provided',
+      });
+    }
+    if (secondHalfData && secondHalfData.endTime && !secondHalfData.startTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Second half startTime is required when second half endTime is provided',
+      });
+    }
+    if (breakData && breakData.startTime && !breakData.endTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Break endTime is required when break startTime is provided',
+      });
+    }
+    if (breakData && breakData.endTime && !breakData.startTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Break startTime is required when break endTime is provided',
       });
     }
 
@@ -205,68 +322,32 @@ exports.createShift = async (req, res) => {
       allowedDurations = durationDocs.map((d) => d.duration);
     } catch (err) {
       console.warn('ShiftDuration model not available, skipping validation:', err.message);
-      // If ShiftDuration doesn't exist yet, allow all durations
     }
 
-    let finalDuration = duration;
-    let finalStartTime = startTime;
-    let finalEndTime = endTime;
-
-    // If duration is provided, calculate end time from start time
-    if (duration && startTime && !endTime) {
-      const [startHour, startMin] = startTime.split(':').map(Number);
-      const startMinutes = startHour * 60 + startMin;
-      const endMinutes = startMinutes + duration * 60;
-      const endHours = Math.floor(endMinutes / 60) % 24;
-      const endMins = endMinutes % 60;
-      finalEndTime = `${String(endHours).padStart(2, '0')}:${String(endMins).padStart(2, '0')}`;
-    }
-    // If start and end are provided, calculate duration
-    else if (startTime && endTime && !duration) {
-      const [startHour, startMin] = startTime.split(':').map(Number);
-      const [endHour, endMin] = endTime.split(':').map(Number);
-
-      let startMinutes = startHour * 60 + startMin;
-      let endMinutes = endHour * 60 + endMin;
-
-      // Handle overnight shifts
-      if (endMinutes <= startMinutes) {
-        endMinutes += 24 * 60;
-      }
-
-      const durationMinutes = endMinutes - startMinutes;
-      finalDuration = Math.round((durationMinutes / 60) * 100) / 100;
-    }
-
-    // Validate duration against allowed durations (Warning only in logs)
-    if (allowedDurations.length > 0) {
+    if (allowedDurations.length > 0 && finalDuration != null) {
       const isAllowed = allowedDurations.some(
-        (allowed) => Math.abs(allowed - finalDuration) < 0.01
+        (allowed) => Math.abs(allowed - Number(finalDuration)) < 0.01
       );
-
       if (!isAllowed) {
         console.warn(`Creating shift with non-standard duration: ${finalDuration} hours`);
       }
     }
 
-    // Validate that we have all required fields
-    if (!finalStartTime || !finalEndTime || !finalDuration) {
-      return res.status(400).json({
-        success: false,
-        message: 'Either provide (name, startTime, endTime) or (name, startTime, duration)',
-      });
-    }
-
-    // Create shift
-    const shift = await Shift.create({
+    const shiftPayload = {
       name,
       startTime: finalStartTime,
       endTime: finalEndTime,
-      duration: finalDuration,
+      duration: Number(finalDuration),
       payableShifts: payableShifts !== undefined ? Number(payableShifts) : 1,
+      gracePeriod: gracePeriod !== undefined ? Number(gracePeriod) : 15,
       color: color || '#3b82f6',
       createdBy: req.user?.userId,
-    });
+      firstHalf: firstHalfData,
+      break: breakData,
+      secondHalf: secondHalfData,
+    };
+
+    const shift = await Shift.create(shiftPayload);
 
     // Clear cache
     const cacheService = require('../../shared/services/cacheService');
@@ -325,13 +406,109 @@ exports.createShift = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.updateShift = async (req, res) => {
   try {
-    const { name, startTime, endTime, duration, payableShifts, isActive, color } = req.body;
+    const { name, startTime, endTime, duration, payableShifts, isActive, color, gracePeriod, firstHalf, break: breakSegment, secondHalf } = req.body;
+
+    const parseTimeToMinutes = (time) => {
+      if (!time) return null;
+      const [hour, min] = time.split(':').map(Number);
+      if (Number.isNaN(hour) || Number.isNaN(min)) return null;
+      return hour * 60 + min;
+    };
+
+    const calculateDurationFromTimes = (start, end) => {
+      if (!start || !end) return null;
+      const startMinutes = parseTimeToMinutes(start);
+      const endMinutes = parseTimeToMinutes(end);
+      if (startMinutes === null || endMinutes === null) return null;
+      let diff = endMinutes - startMinutes;
+      if (diff <= 0) diff += 24 * 60;
+      return Math.round((diff / 60) * 100) / 100;
+    };
+
+    const normalizeHalfSegment = (segment) => {
+      if (segment === undefined) return undefined;
+      if (!segment || typeof segment !== 'object') return null;
+      const normalized = {
+        startTime: segment.startTime || null,
+        endTime: segment.endTime || null,
+        duration: segment.duration !== undefined ? Number(segment.duration) : undefined,
+        minDuration: segment.minDuration !== undefined ? Number(segment.minDuration) : undefined,
+        gracePeriod: segment.gracePeriod !== undefined ? Number(segment.gracePeriod) : 15,
+        payableShifts: segment.payableShifts !== undefined ? Number(segment.payableShifts) : 0,
+      };
+
+      if (normalized.startTime && normalized.endTime && normalized.duration == null) {
+        normalized.duration = calculateDurationFromTimes(normalized.startTime, normalized.endTime);
+      }
+
+      return normalized;
+    };
+
+    const normalizeBreakSegment = (segment) => {
+      if (segment === undefined) return undefined;
+      if (!segment || typeof segment !== 'object') return null;
+      return {
+        startTime: segment.startTime || null,
+        endTime: segment.endTime || null,
+      };
+    };
 
     const shift = await Shift.findById(req.params.id);
     if (!shift) {
       return res.status(404).json({
         success: false,
         message: 'Shift not found',
+      });
+    }
+
+    if (firstHalf !== undefined) {
+      shift.firstHalf = normalizeHalfSegment(firstHalf);
+    }
+    if (breakSegment !== undefined) {
+      shift.break = normalizeBreakSegment(breakSegment);
+    }
+    if (secondHalf !== undefined) {
+      shift.secondHalf = normalizeHalfSegment(secondHalf);
+    }
+
+    const finalFirstHalf = shift.firstHalf;
+    const finalSecondHalf = shift.secondHalf;
+    const finalBreak = shift.break;
+
+    if (finalFirstHalf && finalFirstHalf.startTime && !finalFirstHalf.endTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'First half endTime is required when first half startTime is provided',
+      });
+    }
+    if (finalFirstHalf && finalFirstHalf.endTime && !finalFirstHalf.startTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'First half startTime is required when first half endTime is provided',
+      });
+    }
+    if (finalSecondHalf && finalSecondHalf.startTime && !finalSecondHalf.endTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Second half endTime is required when second half startTime is provided',
+      });
+    }
+    if (finalSecondHalf && finalSecondHalf.endTime && !finalSecondHalf.startTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Second half startTime is required when second half endTime is provided',
+      });
+    }
+    if (finalBreak && finalBreak.startTime && !finalBreak.endTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Break endTime is required when break startTime is provided',
+      });
+    }
+    if (finalBreak && finalBreak.endTime && !finalBreak.startTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Break startTime is required when break endTime is provided',
       });
     }
 
@@ -351,6 +528,7 @@ exports.updateShift = async (req, res) => {
     if (payableShifts !== undefined) shift.payableShifts = Number(payableShifts);
     if (isActive !== undefined) shift.isActive = isActive;
     if (color) shift.color = color;
+    if (gracePeriod !== undefined) shift.gracePeriod = Number(gracePeriod);
 
     // Recalculate duration if times changed
     if (startTime || endTime) {
@@ -369,7 +547,7 @@ exports.updateShift = async (req, res) => {
 
       const durationMinutes = endMinutes - startMinutes;
       shift.duration = Math.round((durationMinutes / 60) * 100) / 100;
-    } else if (duration) {
+    } else if (duration !== undefined) {
       shift.duration = duration;
     }
 

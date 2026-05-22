@@ -117,6 +117,18 @@ const attendanceDailySchema = new mongoose.Schema(
         type: Number,
         default: 0, // workingHours - expectedHours when > 0
       },
+      shiftSegments: {
+        type: [mongoose.Schema.Types.Mixed],
+        default: undefined,
+      },
+      segmentContinuityWarnings: {
+        type: [String],
+        default: undefined,
+      },
+      segmentTotalPayableShifts: {
+        type: Number,
+        default: null,
+      },
     }],
     // Aggregate fields for multi-shift
     totalShifts: {

@@ -17,6 +17,12 @@ const { extractISTComponents, createISTDate } = require('../../shared/utils/date
 const dateCycleService = require('./dateCycleService');
 
 /**
+ * Temporary: when true, EL calculation skips compliance.probationPeriod (no "probation not completed").
+ * Set to false to restore probation gating from Leave Policy settings.
+ */
+const SKIP_PROBATION_CHECK_FOR_EL = true;
+
+/**
  * Calculate earned leave for an employee for a specific month
  * @param {String} employeeId - Employee ID
  * @param {Number} month - Month (1-12)
@@ -59,45 +65,55 @@ async function calculateEarnedLeave(employeeId, month, year, cycleStart = null, 
         }
 
         // Check probation period (guarding against missing settings/DOJ)
-        const probation = settings?.compliance?.probationPeriod;
-        if (probation?.elApplicableAfter) {
-            if (!employee.doj) {
-                return {
-                    eligible: false,
-                    reason: 'Probation period cannot be evaluated due to missing DOJ',
-                    elEarned: 0,
-                    attendanceDays: 0,
-                };
-            }
-            const doj = new Date(employee.doj);
-            if (Number.isNaN(doj.getTime())) {
-                return {
-                    eligible: false,
-                    reason: 'Probation period cannot be evaluated due to invalid DOJ',
-                    elEarned: 0,
-                    attendanceDays: 0,
-                };
-            }
-            const currentDate = cycleEnd;
-            const monthsInService = (currentDate.getFullYear() - doj.getFullYear()) * 12 +
-                (currentDate.getMonth() - doj.getMonth());
+        if (!SKIP_PROBATION_CHECK_FOR_EL) {
+            const probation = settings?.compliance?.probationPeriod;
+            if (probation?.elApplicableAfter) {
+                if (!employee.doj) {
+                    return {
+                        eligible: false,
+                        reason: 'Probation period cannot be evaluated due to missing DOJ',
+                        elEarned: 0,
+                        attendanceDays: 0,
+                    };
+                }
+                const doj = new Date(employee.doj);
+                if (Number.isNaN(doj.getTime())) {
+                    return {
+                        eligible: false,
+                        reason: 'Probation period cannot be evaluated due to invalid DOJ',
+                        elEarned: 0,
+                        attendanceDays: 0,
+                    };
+                }
+                const currentDate = cycleEnd;
+                const monthsInService = (currentDate.getFullYear() - doj.getFullYear()) * 12 +
+                    (currentDate.getMonth() - doj.getMonth());
 
-            if (monthsInService < probation.months) {
-                return {
-                    eligible: false,
-                    reason: 'Probation period not completed',
-                    elEarned: 0,
-                    attendanceDays: 0,
-                    requiredDays: effectiveEL.attendanceRules?.minDaysForFirstEL
-                };
+                if (monthsInService < probation.months) {
+                    return {
+                        eligible: false,
+                        reason: 'Probation period not completed',
+                        elEarned: 0,
+                        attendanceDays: 0,
+                        requiredDays: effectiveEL.attendanceRules?.minDaysForFirstEL
+                    };
+                }
             }
         }
 
         const earningType = effectiveEL.earningType;
         const elPolicyWrapper = { earnedLeave: effectiveEL, compliance: settings.compliance };
 
-        // Get attendance data for the specific payroll cycle
-        const attendanceData = await getAttendanceData(employeeId, month, year, employee, cycleStart, cycleEnd);
+        // Get attendance data for the specific payroll cycle (policy drives WO/HOL + present merge; payable shifts are always the core)
+        const attendanceData = await getAttendanceData(
+            employeeId,
+            month,
+            year,
+            employee,
+            cycleStart,
+            cycleEnd,
+            effectiveEL.attendanceRules || {}
+        );
 
         // Calculate EL based on earning type (rules = global policy + department overrides)
         let elCalculation;
@@ -138,9 +154,15 @@ async function calculateEarnedLeave(employeeId, month, year, cycleStart = null, 
 
 /**
  * EL attendance input: **monthly attendance summary only** (same engine as payroll / pay register).
- * Credit-day basis = totalPayableShifts + totalWeeklyOffs + totalHolidays (capped at pay-period days).
+ *
+ * **Credit-day basis** (fed into attendance ranges & ratio EL):
+ * - Always anchored on **totalPayableShifts** from the summary.
+ * - Adds weekly-offs + holidays only when `attendanceRules.considerHolidays !== false` (default true).
+ * - When `attendanceRules.considerPresentDays !== false` (default true), uses `max(basis, totalPresentDays)`
+ *   so EL is not under-counted vs payable shift totals when present exceeds that sum.
+ * - Final `effectiveDays = min(periodDays, basis)` so bands never exceed the payroll window.
  */
-async function getAttendanceData(employeeId, month, year, employee, cycleStart, cycleEnd) {
+async function getAttendanceData(employeeId, month, year, employee, cycleStart, cycleEnd, attendanceRules = {}) {
     const empNoRaw = employee.emp_no && String(employee.emp_no).trim();
     const empNo = empNoRaw ? empNoRaw.toUpperCase() : employee.emp_no;
     const monthStr = `${year}-${String(month).padStart(2, '0')}`;
@@ -166,9 +188,25 @@ async function getAttendanceData(employeeId, month, year, employee, cycleStart, 
     const holidays = Number(summary.totalHolidays) || 0;
     const presentDays = Number(summary.totalPresentDays) || 0;
 
-    const creditDaysRaw = payableShifts + weeklyOffs + holidays;
-    const creditDays = Math.round(creditDaysRaw * 1000) / 1000;
+    const considerHolidays = attendanceRules.considerHolidays !== false;
+    const considerPresentDays = attendanceRules.considerPresentDays !== false;
+
+    let basis = payableShifts;
+    if (considerHolidays) {
+        basis += weeklyOffs + holidays;
+    }
+    if (considerPresentDays) {
+        basis = Math.max(basis, presentDays);
+    }
+
+    const creditDays = Math.round(basis * 1000) / 1000;
     const effectiveDays = Math.min(totalDays, creditDays);
+
+    const basisDescription = [
+        `payableShifts=${payableShifts}`,
+        considerHolidays ? `+WO+HOL=${weeklyOffs + holidays}` : '(WO/HOL excluded)',
+        considerPresentDays ? `max(presentDays=${presentDays})` : '(present days not merged)',
+    ].join('; ');
 
     // Single "days" figure exposed on EL API = same basis used for range + ratio EL
     const attendanceDays = effectiveDays;
@@ -189,6 +227,8 @@ async function getAttendanceData(employeeId, month, year, employee, cycleStart, 
         summaryStartDate: summary.startDate,
         summaryEndDate: summary.endDate,
         creditDays,
+        /** Human-readable basis line for EL breakdown / audits */
+        elCreditBasisDescription: `${basisDescription} → min(periodDays=${totalDays}, basis)=${effectiveDays}`,
         attendanceRecords: [],
         monthlySummaryId: summary._id,
     };
@@ -203,7 +243,7 @@ function calculateAttendanceBasedEL(attendanceData, settings) {
     const breakdown = [];
 
     // Use attendance ranges if configured (cumulative logic)
-    // effectiveDays = min(periodDays, payableShifts + weeklyOffs + holidays) from monthly summary
+    // effectiveDays = policy-based basis from monthly summary (payable shifts core; see getAttendanceData)
     if (rules.attendanceRanges && rules.attendanceRanges.length > 0) {
         const effectiveDays = attendanceData.effectiveDays !== undefined
             ? attendanceData.effectiveDays
@@ -225,12 +265,13 @@ function calculateAttendanceBasedEL(attendanceData, settings) {
             holidays: attendanceData.holidays,
             presentDays: attendanceData.presentDays,
             creditDays: attendanceData.creditDays,
+            creditBasisNotes: attendanceData.elCreditBasisDescription,
             summaryMonth: attendanceData.monthlySummaryMonth,
             totalEL: elEarned,
             maxELForMonth: rules.maxELPerMonth,
             ranges: rangeBreakdown,
             calculation:
-                'creditDays = totalPayableShifts+totalWeeklyOffs+totalHolidays (monthly summary); effectiveDays=min(periodDays,creditDays); EL=sum(range.elEarned for each range with effectiveDays>=minDays), then cap maxELPerMonth',
+                'Bands compare against effectiveDays from MonthlyAttendanceSummary: payableShifts core; +WO/HOL if considerHolidays; max(presentDays) if considerPresentDays; then min(periodDays). EL=sum(range.elEarned for each range with effectiveDays>=minDays), cap maxELPerMonth',
         });
 
     } else {
@@ -289,6 +330,45 @@ function calculateFixedEL(settings, deptSettings = null) {
             elPerMonth: elPerMonth,
             maxELPerYear: rules.maxELPerYear
         }]
+    };
+}
+
+/**
+ * Same EL day math as calculateEarnedLeave uses after policy resolution (no probation / DOJ gates).
+ * For audits: compare with calculateEarnedLeave(); if they differ while the service is eligible, investigate gates.
+ */
+function previewElEarnedAfterPolicy(effectiveEL, earningType, attendanceData, deptSettings = null) {
+    if (!effectiveEL || !effectiveEL.enabled) {
+        return {
+            elEarned: 0,
+            path: 'disabled',
+            note: 'Resolved EL policy has enabled=false',
+        };
+    }
+    const elPolicyWrapper = { earnedLeave: effectiveEL, compliance: {} };
+    const et = earningType || effectiveEL.earningType || 'attendance_based';
+    if (et === 'fixed') {
+        const r = calculateFixedEL(elPolicyWrapper, deptSettings);
+        return {
+            elEarned: r.elEarned,
+            maxELForMonth: r.maxELForMonth,
+            path: 'fixed',
+            breakdown: r.breakdown,
+        };
+    }
+    if (!attendanceData) {
+        return {
+            elEarned: 0,
+            path: 'attendance_based',
+            note: 'No attendanceData (pass getAttendanceData result)',
+        };
+    }
+    const r = calculateAttendanceBasedEL(attendanceData, elPolicyWrapper);
+    return {
+        elEarned: r.elEarned,
+        maxELForMonth: r.maxELForMonth,
+        path: 'attendance_based',
+        breakdown: r.breakdown,
     };
 }
 
@@ -465,5 +545,9 @@ function calculateCarryForwardExpiry(employee, settings, asOfDate) {
 module.exports = {
     calculateEarnedLeave,
     updateEarnedLeaveForAllEmployees,
-    getELBalance
+    getELBalance,
+    /** Used by scripts/tests to show the same credit-day basis as EL accrual (must pass merged `attendanceRules`). */
+    getAttendanceData,
+    /** Policy + attendance math only (same branches as calculateEarnedLeave); ignores probation. */
+    previewElEarnedAfterPolicy,
 };

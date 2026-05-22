@@ -238,6 +238,7 @@ exports.getCalendarViewData = async (employee, year, month) => {
       extraHours: record.extraHours || 0,
       permissionHours: record.permissionHours || 0,
       permissionCount: record.permissionCount || 0,
+      permissionDeduction: record.permissionDeduction || 0,
       hasLeave: hasLeave,
       leaveInfo: leaveMap[record.date] || null,
       hasOD: hasOD,
@@ -326,7 +327,7 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
     employeeNumber: { $in: empNos },
     date: { $gte: startYmd, $lte: endYmd },
   })
-    .select('employeeNumber date status shifts totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount notes earlyOutDeduction isEdited editHistory policyMeta payableShifts')
+    .select('employeeNumber date status shifts totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount permissionDeduction notes earlyOutDeduction isEdited editHistory policyMeta payableShifts')
     .populate('shifts.shiftId', 'name startTime endTime duration payableShifts')
     .sort({ employeeNumber: 1, date: 1 })
     .lean();
@@ -539,6 +540,7 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
         payableShifts: record?.payableShifts || 0,
         permissionHours: record?.permissionHours || 0,
         permissionCount: record?.permissionCount || 0,
+        permissionDeduction: record?.permissionDeduction || 0,
         notes: record?.notes || '',
         earlyOutDeduction: record?.earlyOutDeduction || null,
         hasLeave,

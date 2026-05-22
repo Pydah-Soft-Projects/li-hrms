@@ -7,6 +7,8 @@ import { useSidebar } from '@/contexts/SidebarContext';
 import { auth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { MODULE_CATEGORIES, isModuleEnabled, isCategoryEnabled } from '@/config/moduleCategories';
+import { CompanyBrandMark } from '@/components/CompanyBrandMark';
+import { useCompanyProfile } from '@/hooks/useCompanyProfile';
 import {
     LayoutDashboard,
     Plane,
@@ -89,6 +91,7 @@ export default function WorkspaceSidebar() {
     const router = useRouter();
     const { isCollapsed, toggleSidebar } = useSidebar();
     const [user, setUser] = useState<{ name: string; email: string; role: string; emp_no?: string; featureControl?: string[] | null } | null>(null);
+    const { profile: companyProfile } = useCompanyProfile();
     const [featureControl, setFeatureControl] = useState<string[] | null>(null);
     const [isMobileOpen, setIsMobileOpen] = useState(false);
     const [mounted, setMounted] = useState(false);
@@ -189,14 +192,10 @@ export default function WorkspaceSidebar() {
                 <div className="flex flex-col h-full overflow-hidden">
                     {/* Logo/Header */}
                     <div className={`px-4 py-4 flex items-center border-b border-slate-200/60 dark:border-slate-800 ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
-                        <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center w-full' : ''}`}>
-                            <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 flex-shrink-0">
-                                <span className="text-sm font-bold text-white">H</span>
-                            </div>
-                            {(!isCollapsed || isMobileOpen) && (
-                                <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">HRMS</h2>
-                            )}
-                        </div>
+                        <CompanyBrandMark
+                            profile={companyProfile}
+                            collapsed={isCollapsed && !isMobileOpen}
+                        />
                     </div>
 
                     {/* Navigation */}
@@ -228,7 +227,8 @@ export default function WorkspaceSidebar() {
                                                 (module.code === 'PROMOTIONS_TRANSFERS' && pathname === '/promotions-transfers') ||
                                                 (module.code === 'ASSETS_MANAGEMENT' && pathname === '/assets-management') ||
                                                 (module.code === 'EMPLOYEE_BIRTHDAYS' && pathname === '/employee-birthdays') ||
-                                                (module.code === 'EMPLOYEE_GROUPS' && pathname === '/employee-groups');
+                                                (module.code === 'EMPLOYEE_GROUPS' && pathname === '/employee-groups') ||
+                                                (module.code === 'LOANS' && pathname === '/loans');
 
                                             const Icon = moduleIcons[module.code] || LayoutDashboard;
 

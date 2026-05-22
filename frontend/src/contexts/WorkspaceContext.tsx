@@ -160,11 +160,11 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
     (moduleCode: string, permission: keyof ModulePermissions): boolean => {
       if (!activeWorkspace) return false;
 
-      const module = activeWorkspace.modules?.find(
+      const workspaceModule = activeWorkspace.modules?.find(
         (m) => m.moduleCode === moduleCode && m.isEnabled
       );
 
-      return module?.permissions?.[permission] === true;
+      return workspaceModule?.permissions?.[permission] === true;
     },
     [activeWorkspace]
   );

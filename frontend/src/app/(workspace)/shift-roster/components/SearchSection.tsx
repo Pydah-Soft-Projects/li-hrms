@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Search } from 'lucide-react';
-import { SearchSectionProps } from '../types';
+import { SearchSectionProps } from '@/lib/shiftRoster/types';
 
 const SearchSection = memo(({
     value,

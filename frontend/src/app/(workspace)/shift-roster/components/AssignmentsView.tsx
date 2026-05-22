@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Search } from 'lucide-react';
-import { AssignmentsViewProps } from '../types';
+import { AssignmentsViewProps } from '@/lib/shiftRoster/types';
 
 const AssignmentsView = memo(({
     filteredAssignedSummary,

@@ -238,20 +238,35 @@ async function runVerification() {
             }
         });
 
+        const bypassFirstDeductionYm = (() => {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        })();
         req = {
             params: { id: bypassLoan._id },
             user: superAdmin,
-            body: { action: 'approve', comments: 'SuperAdmin Instant Approval' }
+            body: {
+                action: 'approve',
+                comments: 'SuperAdmin Instant Approval',
+                firstDeductionPayrollMonth: bypassFirstDeductionYm,
+            },
         };
         res = mockRes();
 
         await loanController.processLoanAction(req, res);
 
         const checkedBypass = await Loan.findById(bypassLoan._id);
-        if (checkedBypass.status === 'approved' && checkedBypass.workflow.currentStep === 'completed') {
-            console.log('✅ PASS: SuperAdmin bypass worked perfectly.');
+        const scheduleOk =
+            checkedBypass.approvals?.final?.firstDeductionPayrollMonth === bypassFirstDeductionYm
+            && checkedBypass.repayment?.nextPaymentDate;
+        if (
+            checkedBypass.status === 'approved'
+            && checkedBypass.workflow.currentStep === 'completed'
+            && scheduleOk
+        ) {
+            console.log('✅ PASS: SuperAdmin bypass worked perfectly (with first deduction pay period).');
         } else {
-            console.log('❌ FAIL: SuperAdmin bypass failed. Status:', checkedBypass.status);
+            console.log('❌ FAIL: SuperAdmin bypass failed. Status:', checkedBypass.status, 'Schedule:', scheduleOk);
         }
 
         // --- 7. FINAL AUTHORITY OVERRIDE TEST ---

@@ -45,8 +45,8 @@ import {
 } from 'lucide-react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { getEmployeeInitials } from '@/lib/utils';
 import EmployeeSelect from '@/components/EmployeeSelect';
+import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
 import {
   buildLeaveODPayPeriodOptions,
   matchLeaveODPayPeriodSelectValue,
@@ -186,6 +186,117 @@ interface Employee {
   employee_name: string;
   department?: { _id: string; name: string; division?: { name: string } };
   designation?: { _id: string; name: string };
+  designation_id?: { _id: string; name: string };
+  leftDate?: string;
+}
+
+function getOtEmployeeDesignation(employee?: Employee | null): string {
+  if (!employee) return '';
+  const e = employee as Employee & { designation_id?: { name?: string } | string };
+  if (e.designation && typeof e.designation === 'object' && e.designation.name) {
+    return String(e.designation.name);
+  }
+  if (e.designation_id && typeof e.designation_id === 'object' && 'name' in e.designation_id && e.designation_id.name) {
+    return String(e.designation_id.name);
+  }
+  return '';
+}
+
+function getOtEmployeeDepartmentName(employee?: Employee | null): string {
+  if (!employee) return '';
+  const e = employee as Employee & { department_id?: { name?: string } };
+  if (employee.department && typeof employee.department === 'object' && employee.department.name) {
+    return employee.department.name;
+  }
+  if (e.department_id && typeof e.department_id === 'object' && e.department_id.name) {
+    return e.department_id.name;
+  }
+  return '';
+}
+
+function getOtEmployeeDivisionName(employee?: Employee | null): string {
+  if (!employee) return '';
+  const e = employee as Employee & { division_id?: { name?: string; code?: string } };
+  if (e.division_id && typeof e.division_id === 'object' && e.division_id.name) {
+    return String(e.division_id.name);
+  }
+  const dept = employee?.department;
+  if (dept?.division?.name) return dept.division.name;
+  return '';
+}
+
+function OtEmployeeNameBlock({
+  employee,
+  name,
+  empNo,
+  className = '',
+  showAvatar = true,
+  size = 'md',
+  avatarTone = 'blue',
+}: {
+  employee?: Employee | null;
+  name?: string;
+  empNo?: string;
+  className?: string;
+  showAvatar?: boolean;
+  size?: 'sm' | 'md' | 'lg';
+  avatarTone?: 'blue' | 'emerald' | 'slate';
+}) {
+  const leftFooter = employee?.leftDate ? (
+    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+      Left{' '}
+      {new Date(employee.leftDate).toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })}
+    </div>
+  ) : null;
+
+  const d = resolveEmployeeListDisplayParts({
+    employeeId: employee as any,
+    employee_name: name,
+    emp_no: empNo,
+  });
+  const initial = (d.name.charAt(0) || 'E').toUpperCase();
+  const grad =
+    avatarTone === 'emerald'
+      ? 'from-emerald-400 to-emerald-600'
+      : avatarTone === 'slate'
+        ? 'from-slate-400 to-slate-600'
+        : 'from-blue-400 to-blue-600';
+  const avatarSize =
+    size === 'lg' ? 'h-10 w-10 text-sm' : size === 'sm' ? 'h-8 w-8 text-[10px]' : 'h-9 w-9 text-xs';
+
+  return (
+    <div className={`flex min-w-0 items-start gap-3 ${className}`.trim()} title={d.tooltip}>
+      {showAvatar ? (
+        d.profilePhoto ? (
+          <img
+            src={d.profilePhoto}
+            alt=""
+            className={`${avatarSize} shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700`}
+          />
+        ) : (
+          <div
+            className={`flex ${avatarSize} shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${grad} font-semibold text-white`}
+          >
+            {initial}
+          </div>
+        )
+      ) : null}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">{d.name}</div>
+        {d.empDesigLine ? (
+          <div className="mt-0.5 truncate text-[11px] text-slate-600 dark:text-slate-400">{d.empDesigLine}</div>
+        ) : null}
+        {d.deptDivLine ? (
+          <div className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">{d.deptDivLine}</div>
+        ) : null}
+        {leftFooter}
+      </div>
+    </div>
+  );
 }
 
 interface Shift {
@@ -1722,7 +1833,9 @@ export default function OTAndPermissionsPage() {
                           ) : (
                             pendingOTs.map((ot) => (
                               <tr key={ot._id} onClick={() => openOTDetails(ot)} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer">
-                                <td className="px-6 py-4 text-sm font-bold text-slate-900 dark:text-white">{ot.employeeId?.employee_name || ot.employeeNumber}</td>
+                                <td className="px-6 py-4">
+                                  <OtEmployeeNameBlock employee={ot.employeeId} name={ot.employeeId?.employee_name || ot.employeeNumber} empNo={ot.employeeNumber || ot.employeeId?.emp_no} />
+                                </td>
                                 <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">{formatDate(ot.date)}</td>
                                 <td className="px-6 py-4 text-center text-sm text-slate-600 dark:text-slate-300">{formatTime(ot.otInTime)}</td>
                                 <td className="px-6 py-4 text-center text-sm text-slate-600 dark:text-slate-300">{formatTime(ot.otOutTime)}</td>
@@ -1790,7 +1903,9 @@ export default function OTAndPermissionsPage() {
                           ) : (
                             pendingPermissions.map((perm) => (
                               <tr key={perm._id} onClick={() => openPermissionDetails(perm)} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer">
-                                <td className="px-6 py-4 text-sm font-bold text-slate-900 dark:text-white">{perm.employeeId?.employee_name || perm.employeeNumber}</td>
+                                <td className="px-6 py-4">
+                                  <OtEmployeeNameBlock employee={perm.employeeId} name={perm.employeeId?.employee_name || perm.employeeNumber} empNo={perm.employeeNumber || perm.employeeId?.emp_no} />
+                                </td>
                                 <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">{formatDate(perm.date)}</td>
                                 <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">
                                   <span className="font-black text-[10px] uppercase tracking-widest text-slate-400 mr-2">{getPermissionDisplay(perm).typeLabel}</span>
@@ -1899,23 +2014,11 @@ export default function OTAndPermissionsPage() {
                               <tr key={ot._id} onClick={() => openOTDetails(ot)} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors duration-300 cursor-pointer">
                                 {showEmployeeCol && (
                                   <td className="px-8 py-4">
-                                    <div className="flex items-center gap-4">
-                                      <div className="h-10 w-10 min-w-10 rounded-2xl bg-linear-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-blue-500/20">
-                                        {getEmployeeInitials({ employee_name: ot.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
-                                      </div>
-                                      <div className="min-w-0">
-                                        <div className="font-bold text-slate-900 dark:text-white text-sm truncate max-w-[180px]">
-                                          {ot.employeeId?.employee_name || ot.employeeNumber}
-                                        </div>
-                                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-0.5">
-                                          {ot.employeeNumber}
-                                        </div>
-                                      </div>
-                                    </div>
+                                    <OtEmployeeNameBlock employee={ot.employeeId} name={ot.employeeId?.employee_name || ot.employeeNumber} empNo={ot.employeeNumber || ot.employeeId?.emp_no} className="max-w-[180px]" avatarTone="blue" />
                                   </td>
                                 )}
-                                {showDivision && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">{ot.employeeId?.department?.division?.name || '-'}</td>}
-                                {showDepartment && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">{ot.employeeId?.department?.name || '-'}</td>}
+                                {showDivision && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">{getOtEmployeeDivisionName(ot.employeeId) || '-'}</td>}
+                                {showDepartment && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">{getOtEmployeeDepartmentName(ot.employeeId) || '-'}</td>}
                                 <td className="px-6 py-4 whitespace-nowrap text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">{formatDate(ot.date)}</td>
                                 <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">
                                   {ot.shiftId?.name || '-'}
@@ -1992,19 +2095,7 @@ export default function OTAndPermissionsPage() {
                             className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all"
                           >
                             <div className="flex justify-between items-start mb-3">
-                              <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
-                                  {getEmployeeInitials({ employee_name: ot.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
-                                </div>
-                                <div>
-                                  <h4 className="font-bold text-slate-900 dark:text-white text-sm">
-                                    {ot.employeeId?.employee_name || ot.employeeNumber}
-                                  </h4>
-                                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                                    {ot.employeeNumber}
-                                  </p>
-                                </div>
-                              </div>
+                              <OtEmployeeNameBlock employee={ot.employeeId} name={ot.employeeId?.employee_name || ot.employeeNumber} empNo={ot.employeeNumber || ot.employeeId?.emp_no} size="md" avatarTone="blue" />
                               <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest ${ot.status === 'approved' ? 'bg-emerald-500/10 text-emerald-600' :
                                 ot.status === 'rejected' ? 'bg-rose-500/10 text-rose-600' :
                                   'bg-amber-500/10 text-amber-600'
@@ -2134,23 +2225,11 @@ export default function OTAndPermissionsPage() {
                               <tr key={perm._id} onClick={() => openPermissionDetails(perm)} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors duration-300 cursor-pointer">
                                 {showEmployeeCol && (
                                   <td className="px-8 py-4">
-                                    <div className="flex items-center gap-4">
-                                      <div className="h-10 w-10 min-w-10 rounded-2xl bg-linear-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-emerald-500/20">
-                                        {getEmployeeInitials({ employee_name: perm.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
-                                      </div>
-                                      <div className="min-w-0">
-                                        <div className="font-bold text-slate-900 dark:text-white text-sm truncate max-w-[180px]">
-                                          {perm.employeeId?.employee_name || perm.employeeNumber}
-                                        </div>
-                                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-0.5">
-                                          {perm.employeeNumber}
-                                        </div>
-                                      </div>
-                                    </div>
+                                    <OtEmployeeNameBlock employee={perm.employeeId} name={perm.employeeId?.employee_name || perm.employeeNumber} empNo={perm.employeeNumber || perm.employeeId?.emp_no} className="max-w-[180px]" avatarTone="emerald" />
                                   </td>
                                 )}
-                                {showDivision && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">{perm.employeeId?.department?.division?.name || '-'}</td>}
-                                {showDepartment && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">{perm.employeeId?.department?.name || '-'}</td>}
+                                {showDivision && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">{getOtEmployeeDivisionName(perm.employeeId) || '-'}</td>}
+                                {showDepartment && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">{getOtEmployeeDepartmentName(perm.employeeId) || '-'}</td>}
                                 <td className="px-6 py-4 whitespace-nowrap text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">{formatDate(perm.date)}</td>
                                 <td className="px-6 py-4 text-center text-xs font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                                   <span className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center gap-2">
@@ -2241,19 +2320,7 @@ export default function OTAndPermissionsPage() {
                             className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all"
                           >
                             <div className="flex justify-between items-start mb-3">
-                              <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400 font-bold text-xs shrink-0">
-                                  {getEmployeeInitials({ employee_name: perm.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
-                                </div>
-                                <div>
-                                  <h4 className="font-bold text-slate-900 dark:text-white text-sm">
-                                    {perm.employeeId?.employee_name || perm.employeeNumber}
-                                  </h4>
-                                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                                    {perm.employeeNumber}
-                                  </p>
-                                </div>
-                              </div>
+                              <OtEmployeeNameBlock employee={perm.employeeId} name={perm.employeeId?.employee_name || perm.employeeNumber} empNo={perm.employeeNumber || perm.employeeId?.emp_no} size="md" avatarTone="emerald" />
                               <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest ${perm.status === 'approved' ? 'bg-emerald-500/10 text-emerald-600' :
                                 perm.status === 'rejected' ? 'bg-rose-500/10 text-rose-600' :
                                   'bg-amber-500/10 text-amber-600'
@@ -2482,6 +2549,7 @@ export default function OTAndPermissionsPage() {
                         </label>
                         <input
                           type="datetime-local"
+                          lang="en-GB"
                           value={otFormData.otOutTime}
                           onChange={(e) => setOTFormData(prev => ({ ...prev, otOutTime: e.target.value }))}
                           className="w-full h-10 sm:h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white cursor-pointer"
@@ -2654,6 +2722,7 @@ export default function OTAndPermissionsPage() {
                             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Start Time <span className="text-rose-500">*</span></label>
                             <input
                               type="datetime-local"
+                              lang="en-GB"
                               value={permissionFormData.permissionStartTime}
                               onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionStartTime: e.target.value }))}
                               className="w-full h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all dark:text-white cursor-pointer"
@@ -2663,6 +2732,7 @@ export default function OTAndPermissionsPage() {
                             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">End Time <span className="text-rose-500">*</span></label>
                             <input
                               type="datetime-local"
+                              lang="en-GB"
                               value={permissionFormData.permissionEndTime}
                               onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionEndTime: e.target.value }))}
                               className="w-full h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all dark:text-white cursor-pointer"
@@ -2676,6 +2746,7 @@ export default function OTAndPermissionsPage() {
                           </label>
                           <input
                             type="time"
+                            lang="en-GB"
                             value={permissionFormData.permittedEdgeTime}
                             onChange={(e) => setPermissionFormData(prev => ({ ...prev, permittedEdgeTime: e.target.value }))}
                             className="w-full h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all dark:text-white"
@@ -2788,12 +2859,7 @@ export default function OTAndPermissionsPage() {
                               <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-xl bg-blue-600 shadow-blue-500/20">
                                 {(selectedOTDetails.employeeId?.employee_name?.[0] || selectedOTDetails.employeeNumber?.[0] || 'E').toUpperCase()}
                               </div>
-                              <div>
-                                <h3 className="font-black text-slate-900 dark:text-white text-xl">
-                                  {selectedOTDetails.employeeId?.employee_name || selectedOTDetails.employeeNumber}
-                                </h3>
-                                <p className="text-sm text-slate-500 font-bold uppercase tracking-tight">{selectedOTDetails.employeeNumber}</p>
-                              </div>
+                              <OtEmployeeNameBlock employee={selectedOTDetails.employeeId} name={selectedOTDetails.employeeId?.employee_name || selectedOTDetails.employeeNumber} empNo={selectedOTDetails.employeeNumber || selectedOTDetails.employeeId?.emp_no} />
                             </div>
                             <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto justify-between sm:justify-start">
                               <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest ${selectedOTDetails.status === 'approved' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50' : selectedOTDetails.status === 'rejected' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50'}`}>
@@ -2832,12 +2898,7 @@ export default function OTAndPermissionsPage() {
                               <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-xl bg-emerald-600 shadow-emerald-500/20">
                                 {(selectedPermissionDetails.employeeId?.employee_name?.[0] || selectedPermissionDetails.employeeNumber?.[0] || 'E').toUpperCase()}
                               </div>
-                              <div>
-                                <h3 className="font-black text-slate-900 dark:text-white text-xl">
-                                  {selectedPermissionDetails.employeeId?.employee_name || selectedPermissionDetails.employeeNumber}
-                                </h3>
-                                <p className="text-sm text-slate-500 font-bold uppercase tracking-tight">{selectedPermissionDetails.employeeNumber}</p>
-                              </div>
+                              <OtEmployeeNameBlock employee={selectedPermissionDetails.employeeId} name={selectedPermissionDetails.employeeId?.employee_name || selectedPermissionDetails.employeeNumber} empNo={selectedPermissionDetails.employeeNumber || selectedPermissionDetails.employeeId?.emp_no} />
                             </div>
                             <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto justify-between sm:justify-start">
                               <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest ${selectedPermissionDetails.status === 'approved' || selectedPermissionDetails.status === 'checked_in' || selectedPermissionDetails.status === 'checked_out' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50' : selectedPermissionDetails.status === 'rejected' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50'}`}>
@@ -3022,7 +3083,11 @@ export default function OTAndPermissionsPage() {
                         {/* Employee Info */}
                         <div className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 text-left">
                           <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Employee Info</p>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white line-clamp-1">{selectedQR.employeeId?.employee_name}</p>
+                          <OtEmployeeNameBlock
+                            employee={selectedQR.employeeId as Employee}
+                            name={selectedQR.employeeId?.employee_name}
+                            empNo={selectedQR.employeeNumber || selectedQR.employeeId?.emp_no}
+                          />
                           <p className="text-[10px] font-bold text-slate-500 mt-2">{formatDate(selectedQR.date)}</p>
                           {(selectedQR.permissionType && selectedQR.permissionType !== 'mid_shift') && (
                             <p className="text-[10px] font-black uppercase text-blue-600 dark:text-blue-400 mt-2">

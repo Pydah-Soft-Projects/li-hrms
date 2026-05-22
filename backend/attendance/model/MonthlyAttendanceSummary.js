@@ -270,6 +270,40 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
       calculationMode: { type: String, default: null },
     },
 
+    // Permission-based deduction (from approved/checked-in/checked-out permissions)
+    totalPermissionDeductionDays: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    totalPermissionDeductionAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    permissionDeductionBreakdown: {
+      quarter_day: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      half_day: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      full_day: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      custom_amount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+    },
+
     // Last calculated/updated timestamp
     lastCalculatedAt: {
       type: Date,

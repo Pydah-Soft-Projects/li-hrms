@@ -13,6 +13,9 @@ const { getPunchesForPairing } = require('./punchFilteringHelper');
 const { processSingleShiftAttendance } = require('./singleShiftProcessingService');
 const Employee = require('../../employees/model/Employee');
 const OD = require('../../leaves/model/OD');
+const {
+    autoCreateEdgePermissionsForAttendance,
+} = require('../../permissions/services/autoEdgePermissionCreationService');
 
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
@@ -800,6 +803,18 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             processedShifts.push(pShift);
         }
 
+        try {
+            const { enrichShiftRecordWithSegments, resolveGraceFromSettings } = require('./shiftSegmentAttendanceService');
+            const graceSeg = await resolveGraceFromSettings();
+            for (let si = 0; si < processedShifts.length; si++) {
+                const row = processedShifts[si];
+                const plain = typeof row.toObject === 'function' ? row.toObject() : { ...row };
+                processedShifts[si] = await enrichShiftRecordWithSegments(plain, date, graceSeg);
+            }
+        } catch (segErr) {
+            console.warn('[MultiShift] enrichShiftRecordWithSegments:', segErr.message);
+        }
+
         // Step 5: Calculate daily totals
         const totals = calculateDailyTotals(processedShifts);
 
@@ -889,6 +904,11 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
 
         // Trigger hooks via .save() — monthly summary is recalculated in background by post-save hook
         await dailyRecord.save();
+        try {
+            await autoCreateEdgePermissionsForAttendance(dailyRecord);
+        } catch (autoPermissionError) {
+            console.error('[Multi-Shift Processing] Auto edge permission creation failed:', autoPermissionError.message);
+        }
 
         console.log(`[Multi-Shift Processing] ✓ Daily record updated and hooks triggered successfully`);
         return {

@@ -1,4 +1,14 @@
 const Loan = require('../../loans/model/Loan');
+const { isRepaymentDueForPayrollMonth } = require('../../loans/services/loanHistoryRepairService');
+
+async function filterForPayrollMonth(loans, payrollMonth) {
+    if (!payrollMonth) return loans;
+    const out = [];
+    for (const loan of loans) {
+        if (await isRepaymentDueForPayrollMonth(loan, payrollMonth)) out.push(loan);
+    }
+    return out;
+}
 
 /**
  * Second Salary Loan & Advance Processing Service
@@ -8,17 +18,18 @@ const Loan = require('../../loans/model/Loan');
 /**
  * Get active loans for an employee
  */
-async function getActiveLoans(employeeId) {
+async function getActiveLoans(employeeId, payrollMonth = null) {
     try {
-        // Current limitation: same loans as regular payroll
-        // In a future update, we could add 'deductFrom' field to Loan model
-        return await Loan.find({
+        const loans = await Loan.find({
             employeeId,
             requestType: 'loan',
-            status: 'active',
+            status: { $in: ['active', 'disbursed'] },
             'repayment.remainingBalance': { $gt: 0 },
             'loanConfig.emiAmount': { $gt: 0 },
-        }).select('_id loanConfig repayment');
+        }).select(
+            '_id loanConfig repayment advanceConfig requestType duration approvals.final.firstDeductionPayrollMonth'
+        );
+        return filterForPayrollMonth(loans, payrollMonth);
     } catch (error) {
         console.error('Error fetching active loans for second salary:', error);
         return [];
@@ -28,14 +39,17 @@ async function getActiveLoans(employeeId) {
 /**
  * Get active salary advances for an employee
  */
-async function getActiveAdvances(employeeId) {
+async function getActiveAdvances(employeeId, payrollMonth = null) {
     try {
-        return await Loan.find({
+        const advances = await Loan.find({
             employeeId,
             requestType: 'salary_advance',
-            status: 'active',
+            status: { $in: ['active', 'disbursed'] },
             'repayment.remainingBalance': { $gt: 0 },
-        }).select('_id repayment amount');
+        }).select(
+            '_id repayment amount advanceConfig requestType duration approvals.final.firstDeductionPayrollMonth'
+        );
+        return filterForPayrollMonth(advances, payrollMonth);
     } catch (error) {
         console.error('Error fetching active advances for second salary:', error);
         return [];
@@ -45,9 +59,9 @@ async function getActiveAdvances(employeeId) {
 /**
  * Calculate total EMI
  */
-async function calculateTotalEMI(employeeId) {
+async function calculateTotalEMI(employeeId, payrollMonth = null) {
     try {
-        const loans = await getActiveLoans(employeeId);
+        const loans = await getActiveLoans(employeeId, payrollMonth);
         let totalEMI = 0;
         const emiBreakdown = [];
 
@@ -76,9 +90,9 @@ async function calculateTotalEMI(employeeId) {
 /**
  * Process salary advance deduction
  */
-async function processSalaryAdvance(employeeId, payableAmount) {
+async function processSalaryAdvance(employeeId, payableAmount, payrollMonth = null) {
     try {
-        const advances = await getActiveAdvances(employeeId);
+        const advances = await getActiveAdvances(employeeId, payrollMonth);
 
         if (advances.length === 0) {
             return { advanceDeduction: 0, advanceBreakdown: [], totalAdvanceBalance: 0 };
@@ -136,8 +150,8 @@ async function calculateLoanAdvance(employeeId, month, payableAmount = 0) {
     // IMPORTANT: For many implementations, loans are only deducted from the main salary.
     // We provide the functionality here to match "full calculation", but it can be
     // disabled by simply not calling it in calculationService if desired.
-    const loanResult = await calculateTotalEMI(employeeId);
-    const advanceResult = await processSalaryAdvance(employeeId, payableAmount);
+    const loanResult = await calculateTotalEMI(employeeId, month);
+    const advanceResult = await processSalaryAdvance(employeeId, payableAmount, month);
 
     return {
         totalEMI: loanResult.totalEMI || 0,

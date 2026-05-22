@@ -1,0 +1,370 @@
+  return (
+    <div className="relative min-h-screen">
+      <div className="relative z-10 mx-auto max-w-[1920px] px-4 py-6 sm:px-6">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Employee Management</h1>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              Manage employee records in your scope • Data source:{' '}
+              <span className="font-medium text-green-600 dark:text-green-400">{dataSource.toUpperCase()}</span>
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {canViewApplications ? (
+              <div className="relative flex h-10 items-center rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+                <div
+                  className={`absolute h-8 rounded-lg bg-white shadow-sm transition-all duration-300 ease-in-out dark:bg-slate-700 ${
+                    activeTab === 'employees'
+                      ? 'left-1 w-28'
+                      : activeTab === 'applications'
+                        ? 'left-[calc(7rem+4px)] w-32'
+                        : 'left-[calc(15rem+8px)] w-36'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('employees')}
+                  className={`relative z-10 px-4 py-1.5 text-sm font-semibold transition-colors ${
+                    activeTab === 'employees'
+                      ? 'text-slate-900 dark:text-slate-100'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
+                >
+                  Employees
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('applications')}
+                  className={`relative z-10 flex items-center justify-center gap-2 px-4 py-1.5 text-sm font-semibold transition-colors ${
+                    activeTab === 'applications'
+                      ? 'text-slate-900 dark:text-slate-100'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
+                >
+                  Applications
+                  {pendingApplications.length > 0 && (
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] text-white">
+                      {pendingApplications.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('requests')}
+                  className={`relative z-10 flex items-center justify-center gap-2 px-4 py-1.5 text-sm font-semibold transition-colors ${
+                    activeTab === 'requests'
+                      ? 'text-slate-900 dark:text-slate-100'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
+                >
+                  Profile Requests
+                  {pendingProfileRequests.length > 0 && (
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-indigo-500 px-1.5 text-[10px] text-white">
+                      {pendingProfileRequests.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                Employees
+              </div>
+            )}
+
+            {hasManagePermission && (
+              <Link
+                href="/employees/form-settings"
+                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                title="Form Settings"
+              >
+                <Settings className="h-5 w-5" />
+              </Link>
+            )}
+          </div>
+        </div>
+
+        <div className="mb-6 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            {activeTab === 'employees' ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <form onSubmit={handleSearch} className="relative min-w-[280px] flex-1 sm:max-w-[320px] sm:flex-none">
+                  <input
+                    type="text"
+                    placeholder="Search name, emp no, phone..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSearch();
+                      }
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-12 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                  <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <button
+                    type="submit"
+                    className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-lg bg-green-500 p-2 text-white transition-all hover:bg-green-600"
+                    title="Search"
+                  >
+                    <Search className="h-4 w-4" />
+                  </button>
+                </form>
+
+                <div className="mx-1 hidden h-8 w-px bg-slate-200 dark:bg-slate-700 sm:block" />
+
+                <div className="min-w-[140px]">
+                  <select
+                    value={selectedDivisionFilter}
+                    onChange={(e) => {
+                      setSelectedDivisionFilter(e.target.value);
+                      setSelectedDepartmentFilter('');
+                      setSelectedDesignationFilter('');
+                      setSelectedEmployeeGroupFilter('');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Divisions</option>
+                    {scopedDivisions.map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="min-w-[140px]">
+                  <select
+                    value={selectedDepartmentFilter}
+                    onChange={(e) => {
+                      setSelectedDepartmentFilter(e.target.value);
+                      setSelectedDesignationFilter('');
+                      setSelectedEmployeeGroupFilter('');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Departments</option>
+                    {departmentOptions.map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="min-w-[140px]">
+                  <select
+                    value={selectedDesignationFilter}
+                    onChange={(e) => setSelectedDesignationFilter(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Designations</option>
+                    {designations.map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {customEmployeeGroupingEnabled && (
+                  <div className="min-w-[140px]">
+                    <select
+                      value={selectedEmployeeGroupFilter}
+                      onChange={(e) => setSelectedEmployeeGroupFilter(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    >
+                      <option value="">All Groups</option>
+                      {employeeGroups.filter((g) => g.isActive !== false).map((g) => (
+                        <option key={g._id} value={g._id}>{g.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <label className="ml-1 flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={includeLeftEmployees}
+                    onChange={(e) => setIncludeLeftEmployees(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Include Left</span>
+                </label>
+              </div>
+            ) : (
+              <div className="flex flex-1 flex-wrap items-center gap-3">
+                <div className="relative min-w-[200px] max-w-md flex-1">
+                  <input
+                    type="text"
+                    placeholder="Search applications by name, emp no, dept..."
+                    value={applicationSearchTerm}
+                    onChange={(e) => setApplicationSearchTerm(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                  <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <div className="hidden h-8 w-px bg-slate-200 dark:bg-slate-700 sm:block" />
+                <div className="min-w-[130px]">
+                  <select
+                    value={selectedDivisionFilter}
+                    onChange={(e) => {
+                      setSelectedDivisionFilter(e.target.value);
+                      setSelectedDepartmentFilter('');
+                      setSelectedDesignationFilter('');
+                      setSelectedEmployeeGroupFilter('');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Divisions</option>
+                    {scopedDivisions.map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="min-w-[130px]">
+                  <select
+                    value={selectedDepartmentFilter}
+                    onChange={(e) => {
+                      setSelectedDepartmentFilter(e.target.value);
+                      setSelectedDesignationFilter('');
+                      setSelectedEmployeeGroupFilter('');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Departments</option>
+                    {departmentOptions.map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="min-w-[130px]">
+                  <select
+                    value={selectedDesignationFilter}
+                    onChange={(e) => setSelectedDesignationFilter(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Designations</option>
+                    {designations.map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {customEmployeeGroupingEnabled && (
+                  <div className="min-w-[130px]">
+                    <select
+                      value={selectedEmployeeGroupFilter}
+                      onChange={(e) => setSelectedEmployeeGroupFilter(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    >
+                      <option value="">All Groups</option>
+                      {employeeGroups.filter((g) => g.isActive !== false).map((g) => (
+                        <option key={g._id} value={g._id}>{g.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeTab === 'employees') loadEmployees(currentPage, false);
+                  else if (activeTab === 'applications') loadApplications();
+                  else loadUpdateRequests();
+                }}
+                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              >
+                <svg className={`h-4 w-4 ${loading || loadingApplications || loadingUpdateRequests ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>Refresh</span>
+              </button>
+
+              <div className="hidden h-8 w-px bg-slate-200 dark:bg-slate-700 sm:block" />
+
+              {hasManagePermission && allowEmployeeBulkProcess && (activeTab === 'employees' || activeTab === 'applications') && (
+                <button
+                  type="button"
+                  onClick={() => setShowBulkUpload(true)}
+                  className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
+                >
+                  <Upload className="h-4 w-4" />
+                  <span>Import</span>
+                </button>
+              )}
+
+              {activeTab === 'employees' && hasViewPermission && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedEmployeeForExport(null);
+                    setShowExportDialog(true);
+                  }}
+                  className="flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Bulk Export</span>
+                </button>
+              )}
+
+              {hasManagePermission && (
+                <button
+                  type="button"
+                  onClick={() => setShowApplicationDialog(true)}
+                  className="flex items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-600/20 hover:bg-green-700"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>New Application</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {activeTab === 'employees' && totalPages > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/50 px-4 py-3 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/50 sm:px-6">
+              <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
+                <p>
+                  Showing <span className="font-semibold text-slate-900 dark:text-slate-100">{employees.length}</span> of{' '}
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">{totalCount}</span> employees
+                </p>
+                <div className="hidden h-4 w-px bg-slate-200 dark:bg-slate-700 sm:block" />
+                <div className="flex items-center gap-2">
+                  <span>Rows per page:</span>
+                  <select
+                    value={itemsPerPage}
+                    onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                    className="rounded-lg border border-slate-200 bg-transparent px-2 py-1 text-sm focus:outline-none dark:border-slate-700"
+                  >
+                    {[20, 50, 100, 200].map((size) => (
+                      <option key={size} value={size}>{size}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => loadEmployees(currentPage - 1, false)}
+                  disabled={currentPage === 1 || loading}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm disabled:opacity-50 dark:border-slate-700"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-slate-600 dark:text-slate-400">
+                  Page {currentPage} of {totalPages || 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => loadEmployees(currentPage + 1, false)}
+                  disabled={currentPage >= totalPages || loading}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm disabled:opacity-50 dark:border-slate-700"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>

@@ -7,6 +7,45 @@ import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { fetchCompanyProfile, type CompanyProfile } from '@/lib/companyProfile';
+import { drawPayslipCompanyHeaderCentered, drawPayslipFooter } from '@/lib/payslipPdf';
+import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
+
+function PayslipEmployeeBlock({
+  employee,
+  empNo,
+  departments,
+  designations,
+}: {
+  employee: Employee | null;
+  empNo: string;
+  departments: Department[];
+  designations: Designation[];
+}) {
+  const d = resolveEmployeeListDisplayParts(
+    { employeeId: employee as any, emp_no: empNo },
+    { departments, designations },
+  );
+  const initial = (d.name.charAt(0) || 'E').toUpperCase();
+  return (
+    <div className="flex min-w-0 items-start gap-3" title={d.tooltip}>
+      {d.profilePhoto ? (
+        <img src={d.profilePhoto} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700" />
+      ) : (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-[10px] font-semibold text-white">
+          {initial}
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-slate-900 transition-colors group-hover:text-emerald-600 dark:text-white dark:group-hover:text-emerald-400">
+          {d.name}
+        </div>
+        {d.empDesigLine ? <div className="mt-0.5 truncate text-[11px] text-slate-600 dark:text-slate-400">{d.empDesigLine}</div> : null}
+        {d.deptDivLine ? <div className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">{d.deptDivLine}</div> : null}
+      </div>
+    </div>
+  );
+}
 
 interface Employee {
   _id: string;
@@ -107,6 +146,7 @@ export default function PayslipsPage() {
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const [generatingBulkPDF, setGeneratingBulkPDF] = useState(false);
   const [selectedRecords, setSelectedRecords] = useState<Set<string>>(new Set());
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -128,6 +168,7 @@ export default function PayslipsPage() {
 
     fetchDepartments();
     fetchEmployees();
+    fetchCompanyProfile().then(setCompanyProfile);
   }, []);
 
   useEffect(() => {
@@ -254,39 +295,34 @@ export default function PayslipsPage() {
     return designations.find(d => d._id === id)?.name || (typeof id === 'string' ? id : 'N/A');
   };
 
-  const drawPayslipOnDoc = (doc: jsPDF, record: PayrollRecord) => {
+  const drawPayslipOnDoc = async (doc: jsPDF, record: PayrollRecord) => {
     const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
     if (!employee) return false;
 
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
+    const profile = companyProfile ?? (await fetchCompanyProfile());
 
-    // Company Header
-    doc.setFontSize(18);
-    doc.setFont('helvetica', 'bold');
-    doc.text('PAYSLIP', pageWidth / 2, 20, { align: 'center' });
-
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    let monthLabel = `Month: ${record.monthName}`;
+    let monthLabel = `Month: ${record.monthName} ${record.year}`;
     if (record.startDate && record.endDate) {
       const startStr = new Date(record.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
       const endStr = new Date(record.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
       monthLabel += ` (${startStr} to ${endStr})`;
     }
-    doc.text(monthLabel, pageWidth / 2, 28, { align: 'center' });
+
+    const detailsY = await drawPayslipCompanyHeaderCentered(doc, profile, { monthLabel });
 
     // Employee Details Box
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
-    doc.text('EMPLOYEE DETAILS', 14, 40);
+    doc.text('EMPLOYEE DETAILS', 14, detailsY);
 
     doc.setFont('helvetica', 'normal');
     const col1X = 14;
     const col2X = 80;
     const col3X = 145;
 
-    let yPos = 48;
+    let yPos = detailsY + 8;
 
     // Row 1
     doc.setFont('helvetica', 'bold');
@@ -451,10 +487,7 @@ export default function PayslipsPage() {
     doc.text('NET SALARY:', 14, summaryY + 32);
     doc.text(`₹ ${record.netSalary.toFixed(2)}`, 80, summaryY + 32);
 
-    // Footer
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'italic');
-    doc.text('This is a computer-generated payslip and does not require a signature.', pageWidth / 2, pageHeight - 10, { align: 'center' });
+    drawPayslipFooter(doc, profile, summaryY + 40);
 
     return true;
   };
@@ -464,7 +497,7 @@ export default function PayslipsPage() {
     toast.info('Generating payslip PDF...', { autoClose: 1000 });
     try {
       const doc = new jsPDF();
-      const success = drawPayslipOnDoc(doc, record);
+      const success = await drawPayslipOnDoc(doc, record);
       if (success) {
         doc.save(`Payslip_${record.emp_no}_${record.month}.pdf`);
         toast.success('Payslip PDF generated successfully!');
@@ -496,7 +529,7 @@ export default function PayslipsPage() {
         const record = recordsToExport[i];
         if (addedPages > 0) doc.addPage();
 
-        const success = drawPayslipOnDoc(doc, record);
+        const success = await drawPayslipOnDoc(doc, record);
         if (success) {
           addedPages++;
         }
@@ -807,14 +840,12 @@ export default function PayslipsPage() {
                           />
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex flex-col">
-                            <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                              {employee?.employee_name || 'N/A'}
-                            </span>
-                            <span className="text-xs text-slate-500 font-mono tracking-tighter">
-                              {record.emp_no}
-                            </span>
-                          </div>
+                          <PayslipEmployeeBlock
+                            employee={employee}
+                            empNo={record.emp_no}
+                            departments={departments}
+                            designations={designations}
+                          />
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex flex-col">

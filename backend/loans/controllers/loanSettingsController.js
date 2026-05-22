@@ -42,9 +42,9 @@ const DEFAULT_WORKFLOW = {
       stepName: 'HR Approval',
       approverRole: 'hr',
       availableActions: ['approve', 'reject', 'return'],
-      approvedStatus: 'approved',
+      approvedStatus: 'hr_approved',
       rejectedStatus: 'hr_rejected',
-      nextStepOnApprove: null, // Final step
+      nextStepOnApprove: null,
       isActive: true,
     },
   ],

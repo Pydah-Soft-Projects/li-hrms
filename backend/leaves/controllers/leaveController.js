@@ -237,7 +237,7 @@ exports.getLeaves = async (req, res) => {
       Leave.find(filter)
         .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
+          select: 'employee_name emp_no profilePhoto first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
             { path: 'division', select: 'name code' },
@@ -311,7 +311,7 @@ exports.getMyLeaves = async (req, res) => {
     const leaves = await Leave.find(filter)
       .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
+          select: 'employee_name emp_no profilePhoto first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
             { path: 'division', select: 'name code' },
@@ -794,21 +794,13 @@ exports.applyLeave = async (req, res) => {
         const daily = await AttendanceDaily.findOne({
           employeeNumber: String(employee.emp_no || '').toUpperCase(),
           date: dateStr,
-        }).select('status totalEarlyOutMinutes totalLateInMinutes');
+        }).select('status totalEarlyOutMinutes totalLateInMinutes shifts inTime outTime');
         if (daily) {
-          const st = String(daily.status || '').toUpperCase();
-          let attFirst = false;
-          let attSecond = false;
-          if (st === 'PRESENT') {
-            attFirst = true;
-            attSecond = true;
-          } else if (st === 'HALF_DAY') {
-            const eo = Number(daily.totalEarlyOutMinutes) || 0;
-            const li = Number(daily.totalLateInMinutes) || 0;
-            if (eo > li) attFirst = true;
-            else if (li > eo) attSecond = true;
-            else attFirst = true;
-          }
+          const AttendanceSettings = require('../../attendance/model/AttendanceSettings');
+          const { attendanceHalfPresenceFlags } = require('../../attendance/utils/attendanceHalfPresence');
+          const attSettingsDoc = await AttendanceSettings.getSettings();
+          const processingMode = AttendanceSettings.getProcessingMode(attSettingsDoc).mode;
+          const { attFirst, attSecond } = attendanceHalfPresenceFlags(daily, processingMode);
 
           if (!isHalfDay && (attFirst || attSecond)) {
             return res.status(400).json({
@@ -1477,7 +1469,7 @@ exports.getPendingApprovals = async (req, res) => {
       Leave.find(filter)
         .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
+          select: 'employee_name emp_no profilePhoto first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
             { path: 'division', select: 'name code' },
@@ -2964,6 +2956,7 @@ exports.listLeaveRegister = async (req, res) => {
       search,
       page = '1',
       limit = '25',
+      debug,
     } = req.query;
 
     const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
@@ -2988,6 +2981,30 @@ exports.listLeaveRegister = async (req, res) => {
       empNo: empNo && String(empNo).trim() ? String(empNo).trim() : undefined,
       searchTerm: search && String(search).trim() ? String(search).trim() : undefined,
     };
+
+    // Opt-in debug: help diagnose “DB has docs but API returns empty”.
+    // Call with `&debug=1` (only logs; response unchanged).
+    const debugOn =
+      String(debug) === '1' || String(debug).toLowerCase() === 'true';
+    if (debugOn && filters.financialYear) {
+      try {
+        const LeaveRegisterYear = require('../model/LeaveRegisterYear');
+        const conn = mongoose.connection;
+        const count = await LeaveRegisterYear.countDocuments({ financialYear: filters.financialYear });
+        console.log('[LeaveRegister:list] debug', {
+          financialYear: filters.financialYear,
+          mongoDb: conn?.name,
+          mongoHost: conn?.host,
+          mongoPort: conn?.port,
+          modelCollection: LeaveRegisterYear?.collection?.name,
+          countDocuments: count,
+          role: user?.role,
+          dataScope: user?.dataScope,
+        });
+      } catch (e) {
+        console.warn('[LeaveRegister:list] debug failed:', e?.message || String(e));
+      }
+    }
 
     const fullAccess =
       user.role === 'super_admin' ||
@@ -3588,7 +3605,7 @@ exports.exportReportPDF = async (req, res) => {
     const [leaves, ods] = await Promise.all([
       includeLeaves === 'true' ? Leave.find(leaveFilter).populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
+          select: 'employee_name emp_no profilePhoto first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
             { path: 'division', select: 'name code' },
@@ -3597,7 +3614,7 @@ exports.exportReportPDF = async (req, res) => {
         }).lean() : [],
       includeODs === 'true' ? OD.find(odFilter).populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
+          select: 'employee_name emp_no profilePhoto first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
             { path: 'division', select: 'name code' },

@@ -7,7 +7,28 @@ import { toast, ToastContainer } from 'react-toastify';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
 import EmployeeSelect from '@/components/EmployeeSelect';
+import { MultiSelect } from '@/components/MultiSelect';
+import {
+  loanMatchesListOrgAndStatus,
+  loanMatchesSearch,
+  LOAN_LIST_STATUS_OPTIONS,
+} from '@/lib/loanListUi';
+import { LoanListEmployeeCell } from '@/components/LoanListEmployeeCell';
+import { downloadLoanAdvanceRequestPdf, type LoanAdvancePdfLoan } from '@/lib/loanAdvanceRequestPdf';
 import { Department, Division, Designation } from '@/lib/api';
+import {
+  buildLeaveODPayPeriodOptions,
+  formatPayrollMonthKeyLabel,
+  getPayPeriodRangeForCalendarMonth,
+  loanNeedsDisbursementPayPeriod,
+  payPeriodSelectValueToMonthKey,
+  payrollMonthKeyToPayPeriodSelectValue,
+} from '@/lib/payPeriodRange';
+import {
+  buildLoanTimelineSteps,
+  canUserActOnLoan,
+  isLoanFinalApprovalStep,
+} from '@/lib/loanWorkflowUi';
 
 // Icons
 const PlusIcon = () => (
@@ -25,6 +46,12 @@ const CheckIcon = () => (
 const XIcon = () => (
   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
+const PrintIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z" />
   </svg>
 );
 
@@ -52,6 +79,7 @@ interface LoanApplication {
   appliedAt: string;
   department?: { _id: string; name: string };
   designation?: { _id: string; name: string };
+  division_id?: { _id: string; name?: string; code?: string } | string;
   loanConfig?: {
     emiAmount: number;
     interestRate: number;
@@ -60,6 +88,7 @@ interface LoanApplication {
   advanceConfig?: {
     deductionCycles: number;
     deductionPerCycle: number;
+    deductionStartCycle?: string;
   };
   repayment?: {
     totalPaid: number;
@@ -88,9 +117,27 @@ interface LoanApplication {
     modifiedAt: string;
     reason?: string;
   }>;
+  approvals?: {
+    final?: {
+      firstDeductionPayrollMonth?: string;
+      approvedAt?: string;
+    };
+  };
   workflow?: {
     currentStep: string;
     nextApprover: string | null;
+    nextApproverRole?: string | null;
+    isCompleted?: boolean;
+    approvalChain?: Array<{
+      role: string;
+      label?: string;
+      status: string;
+      isCurrent?: boolean;
+      actionByName?: string;
+      actionByRole?: string;
+      comments?: string;
+      updatedAt?: string;
+    }>;
     history: Array<{
       step: string;
       action: string;
@@ -110,6 +157,15 @@ interface LoanApplication {
     actionAt?: string;
     remarks?: string;
   }>;
+}
+
+/** Pay period containing today (IST); matches PayrollRecord.month when that period is processed. */
+interface PresentPayPeriod {
+  payrollMonthKey: string;
+  startDate: string;
+  endDate: string;
+  lastDate: string;
+  totalDays?: number;
 }
 
 interface Employee {
@@ -139,15 +195,20 @@ export default function LoansPage() {
   const [actionComment, setActionComment] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [presentPayPeriod, setPresentPayPeriod] = useState<PresentPayPeriod | null>(null);
+  const [payCycleStartDay, setPayCycleStartDay] = useState(1);
+  const [payCycleEndDay, setPayCycleEndDay] = useState<number | null>(null);
+  const [finalApprovalPayPeriod, setFinalApprovalPayPeriod] = useState('');
 
   // Filter Select states
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
 
-  const [selectedDivisionFilter, setSelectedDivisionFilter] = useState('');
-  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
-  const [selectedDesignationFilter, setSelectedDesignationFilter] = useState('');
+  const [listFilterDivisions, setListFilterDivisions] = useState<string[]>([]);
+  const [listFilterDepartments, setListFilterDepartments] = useState<string[]>([]);
+  const [listFilterDesignations, setListFilterDesignations] = useState<string[]>([]);
+  const [listFilterStatuses, setListFilterStatuses] = useState<string[]>([]);
 
   // Edit dialog state
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -177,8 +238,10 @@ export default function LoansPage() {
     transactionReference: '',
     remarks: '',
   });
+  const [disbursementPayPeriod, setDisbursementPayPeriod] = useState('');
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   // Settlement preview state
   const [settlementPreview, setSettlementPreview] = useState<any>(null);
@@ -247,6 +310,28 @@ export default function LoansPage() {
   }, [activeTab, currentUser]);
 
   useEffect(() => {
+    const fetchPayrollCycleSettings = async () => {
+      try {
+        const [startRes, endRes] = await Promise.all([
+          api.getSetting('payroll_cycle_start_day'),
+          api.getSetting('payroll_cycle_end_day'),
+        ]);
+        if (startRes?.data?.value) {
+          const startDay = parseInt(startRes.data.value, 10);
+          if (!isNaN(startDay) && startDay >= 1 && startDay <= 31) setPayCycleStartDay(startDay);
+        }
+        if (endRes?.data?.value) {
+          const endDay = parseInt(endRes.data.value, 10);
+          if (!isNaN(endDay) && endDay >= 1 && endDay <= 31) setPayCycleEndDay(endDay);
+        }
+      } catch (err) {
+        console.error('Failed to fetch payroll cycle settings:', err);
+      }
+    };
+    fetchPayrollCycleSettings();
+  }, []);
+
+  useEffect(() => {
     if (showDetailDialog && selectedLoan) {
       loadTransactions(selectedLoan._id);
       // Load settlement preview for loans
@@ -267,80 +352,102 @@ export default function LoansPage() {
 
       // Fetch settings for the specific request type to generate the timeline
       loadLoanSettings(selectedLoan.requestType);
+
+      const pk = presentPayPeriod?.payrollMonthKey;
+      setFinalApprovalPayPeriod(pk ? payrollMonthKeyToPayPeriodSelectValue(pk) : '__default__');
     }
-  }, [showDetailDialog, selectedLoan?._id]);
+  }, [showDetailDialog, selectedLoan?._id, presentPayPeriod?.payrollMonthKey]);
 
-  const timelineSteps = useMemo(() => {
-    if (!selectedLoan || !loanSettings || loanSettings.type !== selectedLoan.requestType) return [];
+  const isFinalApprovalStep = useMemo(
+    () => isLoanFinalApprovalStep(selectedLoan as any, loanSettings),
+    [selectedLoan, loanSettings]
+  );
 
-    const history = (selectedLoan as any).workflow?.history || [];
-    const workflowSteps = (loanSettings as any).workflow?.steps || [];
-    const finalAuth = (loanSettings as any).workflow?.finalAuthority;
-    const currentApprover = (selectedLoan as any).workflow?.nextApprover;
-    const isCompleted = (selectedLoan as any).workflow?.currentStep === 'completed';
+  const canActOnSelectedLoan = useMemo(
+    () => canUserActOnLoan(selectedLoan as any, currentUser, loanSettings),
+    [selectedLoan, currentUser, loanSettings]
+  );
 
-    const steps: any[] = [];
+  const timelineSteps = useMemo(
+    () =>
+      selectedLoan && loanSettings
+        ? buildLoanTimelineSteps(selectedLoan as any, loanSettings)
+        : [],
+    [selectedLoan, loanSettings]
+  );
 
-    // 1. Employee Submission
-    const submission = history.find((h: any) => h.action === 'submitted');
-    steps.push({
-      label: 'Employee Application',
-      status: 'approved',
-      actionByName: submission?.actionByName,
-      actionByRole: 'Employee',
-      timestamp: submission?.timestamp,
-      comments: submission?.comments
-    });
+  const finalApprovalPayPeriodOptions = useMemo(
+    () =>
+      buildLeaveODPayPeriodOptions({
+        payrollCycleStartDay: payCycleStartDay,
+        payrollCycleEndDay: payCycleEndDay,
+        monthsBack: 3,
+        monthsForward: 12,
+        getDefaultRange: () => {
+          const pk = presentPayPeriod?.payrollMonthKey;
+          if (pk) {
+            const [y, m] = pk.split('-').map(Number);
+            return getPayPeriodRangeForCalendarMonth(y, m, payCycleStartDay, payCycleEndDay);
+          }
+          const now = new Date();
+          return getPayPeriodRangeForCalendarMonth(
+            now.getFullYear(),
+            now.getMonth() + 1,
+            payCycleStartDay,
+            payCycleEndDay
+          );
+        },
+        defaultLabel: 'Current pay period',
+      }),
+    [payCycleStartDay, payCycleEndDay, presentPayPeriod?.payrollMonthKey]
+  );
 
-    // 2. HOD Step (Hardcoded fallback or Dynamic)
-    const dynamicHod = workflowSteps.find((s: any) => s.approverRole === 'hod' && s.isActive);
-    
-    if (!dynamicHod) {
-      const hodEntry = history.find((h: any) => h.step === 'hod' && h.action !== 'submitted');
-      const isHodCurrent = !isCompleted && currentApprover === 'hod';
-      steps.push({
-        label: 'HOD Approval',
-        status: hodEntry ? (hodEntry.action === 'approved' ? 'approved' : 'rejected') : (isHodCurrent ? 'current' : 'pending'),
-        actionByName: hodEntry?.actionByName,
-        actionByRole: hodEntry?.actionByRole || 'HOD',
-        timestamp: hodEntry?.timestamp,
-        comments: hodEntry?.comments
-      });
-    }
+  const selectedFinalPayPeriodPreview = useMemo(() => {
+    const opt = finalApprovalPayPeriodOptions.find((o) => o.value === finalApprovalPayPeriod);
+    return opt?.range?.to ?? null;
+  }, [finalApprovalPayPeriod, finalApprovalPayPeriodOptions]);
 
-    // 3. Dynamic Steps
-    workflowSteps.filter((s: any) => s.isActive).forEach((step: any) => {
-      const historyEntry = history.find((h: any) => h.step === step.approverRole);
-      const isCurrent = !isCompleted && currentApprover === step.approverRole;
+  const needsDisbursementPayPeriod = useMemo(
+    () => (selectedLoan ? loanNeedsDisbursementPayPeriod(selectedLoan) : false),
+    [selectedLoan]
+  );
 
-      steps.push({
-        label: step.stepName || `${step.approverRole.replace(/_/g, ' ')} Approval`,
-        role: step.approverRole,
-        status: historyEntry ? (historyEntry.action === 'approved' ? 'approved' : 'rejected') : (isCurrent ? 'current' : 'pending'),
-        actionByName: historyEntry?.actionByName,
-        actionByRole: historyEntry?.actionByRole || step.approverRole,
-        timestamp: historyEntry?.timestamp,
-        comments: historyEntry?.comments
-      });
-    });
+  const disbursementPayPeriodOptions = useMemo(
+    () =>
+      buildLeaveODPayPeriodOptions({
+        payrollCycleStartDay: payCycleStartDay,
+        payrollCycleEndDay: payCycleEndDay,
+        monthsBack: 3,
+        monthsForward: 12,
+        getDefaultRange: () => {
+          const pk = presentPayPeriod?.payrollMonthKey;
+          if (pk) {
+            const [y, m] = pk.split('-').map(Number);
+            return getPayPeriodRangeForCalendarMonth(y, m, payCycleStartDay, payCycleEndDay);
+          }
+          const now = new Date();
+          return getPayPeriodRangeForCalendarMonth(
+            now.getFullYear(),
+            now.getMonth() + 1,
+            payCycleStartDay,
+            payCycleEndDay
+          );
+        },
+        defaultLabel: 'Current pay period',
+      }),
+    [payCycleStartDay, payCycleEndDay, presentPayPeriod?.payrollMonthKey]
+  );
 
-    // 4. Final Authority
-    if (finalAuth && finalAuth.role) {
-      const finalEntry = history.find((h: any) => h.step === 'final_authority');
-      const isCurrent = !isCompleted && currentApprover === 'final_authority';
+  const selectedDisbursementPayPeriodPreview = useMemo(() => {
+    const opt = disbursementPayPeriodOptions.find((o) => o.value === disbursementPayPeriod);
+    return opt?.range?.to ?? null;
+  }, [disbursementPayPeriod, disbursementPayPeriodOptions]);
 
-      steps.push({
-        label: 'Final Approval',
-        status: finalEntry ? (finalEntry.action === 'approved' ? 'approved' : 'rejected') : (isCurrent ? 'current' : 'pending'),
-        actionByName: finalEntry?.actionByName,
-        actionByRole: finalEntry?.actionByRole || 'Admin',
-        timestamp: finalEntry?.timestamp,
-        comments: finalEntry?.comments
-      });
-    }
-
-    return steps;
-  }, [selectedLoan, loanSettings]);
+  useEffect(() => {
+    if (!showDisbursementDialog) return;
+    const pk = presentPayPeriod?.payrollMonthKey;
+    setDisbursementPayPeriod(pk ? payrollMonthKeyToPayPeriodSelectValue(pk) : '__default__');
+  }, [showDisbursementDialog, presentPayPeriod?.payrollMonthKey]);
 
   // Fetch eligibility when viewing/editing a salary advance
   useEffect(() => {
@@ -498,6 +605,7 @@ export default function LoansPage() {
         const allLoans = Array.isArray(loansRes.data) ? loansRes.data : [];
         console.log('[Superadmin Loans] All loans:', allLoans);
         setLoans(allLoans);
+        if (loansRes.presentPayPeriod) setPresentPayPeriod(loansRes.presentPayPeriod);
       } else {
         setLoans([]);
       }
@@ -553,17 +661,110 @@ export default function LoansPage() {
     loadFilterData();
   }, []);
 
-  // Filtered departments based on selected division
-  const filteredDepartments = useMemo(() => {
-    if (!selectedDivisionFilter) return departments;
-    const div = divisions.find(d => String(d._id) === selectedDivisionFilter);
-    if (!div || !div.departments) return departments;
-    return departments.filter(dept =>
-      (div.departments || []).some((d: any) =>
-        (typeof d === 'string' ? d : String((d as any)._id)) === String(dept._id)
-      )
-    );
-  }, [selectedDivisionFilter, divisions, departments]);
+  const loanListDepartmentOptions = useMemo(() => {
+    if (listFilterDivisions.length === 0) return departments;
+    const allowed = new Set<string>();
+    for (const divId of listFilterDivisions) {
+      const div = divisions.find((d: any) => String(d._id) === String(divId));
+      const deptIds = ((div?.departments ?? []) as any[]).map((d: any) => (typeof d === 'string' ? d : d?._id));
+      if (deptIds.length) {
+        deptIds.forEach((id) => {
+          if (id) allowed.add(String(id));
+        });
+      } else {
+        departments
+          .filter((d: any) => String(d.division_id || d.division) === String(divId))
+          .forEach((d: any) => allowed.add(String(d._id)));
+      }
+    }
+    if (allowed.size === 0) {
+      return departments.filter((d: any) => listFilterDivisions.includes(String(d.division_id || d.division)));
+    }
+    return departments.filter((d: any) => allowed.has(String(d._id)));
+  }, [listFilterDivisions, divisions, departments]);
+
+  useEffect(() => {
+    if (listFilterDepartments.length === 0) return;
+    const allowed = new Set(loanListDepartmentOptions.map((d: any) => String(d._id)));
+    setListFilterDepartments((prev) => prev.filter((id) => allowed.has(id)));
+  }, [loanListDepartmentOptions, listFilterDivisions]);
+
+  const filteredLoansForList = useMemo(
+    () =>
+      loans.filter(
+        (l) =>
+          loanMatchesSearch(l, searchTerm)
+          && loanMatchesListOrgAndStatus(
+            l,
+            listFilterDivisions,
+            listFilterDepartments,
+            listFilterDesignations,
+            listFilterStatuses,
+          ),
+      ),
+    [loans, searchTerm, listFilterDivisions, listFilterDepartments, listFilterDesignations, listFilterStatuses],
+  );
+
+  const filteredAdvancesForList = useMemo(
+    () =>
+      advances.filter(
+        (l) =>
+          loanMatchesSearch(l, searchTerm)
+          && loanMatchesListOrgAndStatus(
+            l,
+            listFilterDivisions,
+            listFilterDepartments,
+            listFilterDesignations,
+            listFilterStatuses,
+          ),
+      ),
+    [advances, searchTerm, listFilterDivisions, listFilterDepartments, listFilterDesignations, listFilterStatuses],
+  );
+
+  const filteredPendingLoansForList = useMemo(
+    () =>
+      pendingLoans.filter(
+        (l) =>
+          loanMatchesSearch(l, searchTerm)
+          && loanMatchesListOrgAndStatus(
+            l,
+            listFilterDivisions,
+            listFilterDepartments,
+            listFilterDesignations,
+            listFilterStatuses,
+          ),
+      ),
+    [pendingLoans, searchTerm, listFilterDivisions, listFilterDepartments, listFilterDesignations, listFilterStatuses],
+  );
+
+  const filteredPendingAdvancesForList = useMemo(
+    () =>
+      pendingAdvances.filter(
+        (l) =>
+          loanMatchesSearch(l, searchTerm)
+          && loanMatchesListOrgAndStatus(
+            l,
+            listFilterDivisions,
+            listFilterDepartments,
+            listFilterDesignations,
+            listFilterStatuses,
+          ),
+      ),
+    [pendingAdvances, searchTerm, listFilterDivisions, listFilterDepartments, listFilterDesignations, listFilterStatuses],
+  );
+
+  const anyListFilterActive =
+    listFilterDivisions.length > 0
+    || listFilterDepartments.length > 0
+    || listFilterDesignations.length > 0
+    || listFilterStatuses.length > 0;
+
+  const clearLoanListFilters = () => {
+    setListFilterDivisions([]);
+    setListFilterDepartments([]);
+    setListFilterDesignations([]);
+    setListFilterStatuses([]);
+  };
 
   const handleAction = async (loanId: string, action: 'approve' | 'reject' | 'forward') => {
     if (action === 'approve' && approvalValidation?.level === 'error') {
@@ -573,6 +774,21 @@ export default function LoansPage() {
         text: approvalValidation.message,
       });
       return;
+    }
+
+    if (action === 'approve' && isFinalApprovalStep) {
+      const monthKey = payPeriodSelectValueToMonthKey(
+        finalApprovalPayPeriod,
+        presentPayPeriod?.payrollMonthKey
+      );
+      if (!monthKey) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Pay period required',
+          text: 'Select the first deduction pay period before final approval.',
+        });
+        return;
+      }
     }
 
     try {
@@ -585,6 +801,12 @@ export default function LoansPage() {
       if (action === 'approve') {
         if (approvalAmount) payload.approvalAmount = parseFloat(approvalAmount);
         if (approvalInterestRate) payload.approvalInterestRate = parseFloat(approvalInterestRate);
+        if (isFinalApprovalStep) {
+          payload.firstDeductionPayrollMonth = payPeriodSelectValueToMonthKey(
+            finalApprovalPayPeriod,
+            presentPayPeriod?.payrollMonthKey
+          );
+        }
       }
 
       const response = await api.processLoanAction(loanId, payload);
@@ -639,15 +861,43 @@ export default function LoansPage() {
     e.preventDefault();
     if (!selectedLoan) return;
 
+    if (needsDisbursementPayPeriod) {
+      const monthKey = payPeriodSelectValueToMonthKey(
+        disbursementPayPeriod,
+        presentPayPeriod?.payrollMonthKey
+      );
+      if (!monthKey) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Pay period required',
+          text: 'Select the first deduction pay period before disbursing this record.',
+        });
+        return;
+      }
+    }
+
     try {
       setSaving(true);
       setMessage(null);
 
-      const response = await api.disburseLoan(selectedLoan._id, {
+      const payload: {
+        disbursementMethod: string;
+        transactionReference: string;
+        remarks: string;
+        firstDeductionPayrollMonth?: string;
+      } = {
         disbursementMethod: disbursementData.disbursementMethod,
         transactionReference: disbursementData.transactionReference,
         remarks: disbursementData.remarks,
-      });
+      };
+      if (needsDisbursementPayPeriod) {
+        payload.firstDeductionPayrollMonth = payPeriodSelectValueToMonthKey(
+          disbursementPayPeriod,
+          presentPayPeriod?.payrollMonthKey
+        )!;
+      }
+
+      const response = await api.disburseLoan(selectedLoan._id, payload);
 
       if (response.success) {
         setMessage({ type: 'success', text: 'Funds released successfully. Transaction recorded.' });
@@ -658,6 +908,7 @@ export default function LoansPage() {
         const loanRes = await api.getLoan(selectedLoan._id);
         if (loanRes.success) {
           setSelectedLoan(loanRes.data);
+          if (loanRes.presentPayPeriod) setPresentPayPeriod(loanRes.presentPayPeriod);
         }
         loadTransactions(selectedLoan._id);
         loadData();
@@ -682,6 +933,33 @@ export default function LoansPage() {
       console.error('Error loading transactions:', err);
     } finally {
       setLoadingTransactions(false);
+    }
+  };
+
+  const handleDownloadRequestPdf = async () => {
+    if (!selectedLoan) return;
+    setExportingPdf(true);
+    try {
+      const [loanRes, txnRes] = await Promise.all([
+        api.getLoan(selectedLoan._id),
+        api.getLoanTransactions(selectedLoan._id),
+      ]);
+      if (!txnRes.success || !txnRes.data) {
+        toast.error(txnRes.error || 'Could not load transactions for PDF');
+        return;
+      }
+      if (!loanRes.success || !loanRes.data) {
+        toast.error(loanRes.error || 'Could not load full loan record for PDF');
+        return;
+      }
+      const txns = txnRes.data.transactions || [];
+      const summary = txnRes.data.summary;
+      downloadLoanAdvanceRequestPdf(loanRes.data as LoanAdvancePdfLoan, txns, { summary });
+      toast.success('PDF downloaded');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to generate PDF');
+    } finally {
+      setExportingPdf(false);
     }
   };
 
@@ -831,6 +1109,7 @@ export default function LoansPage() {
         const loanRes = await api.getLoan(selectedLoan._id);
         if (loanRes.success) {
           setSelectedLoan(loanRes.data);
+          if (loanRes.presentPayPeriod) setPresentPayPeriod(loanRes.presentPayPeriod);
         }
         loadTransactions(selectedLoan._id);
         if (selectedLoan.requestType === 'loan') {
@@ -1301,44 +1580,60 @@ export default function LoansPage() {
 
         {/* Filters and Search Input */}
         {(activeTab === 'loans' || activeTab === 'advances' || activeTab === 'pending') && (
-          <div className="flex flex-wrap items-center gap-3 flex-1">
-            <select
-              value={selectedDivisionFilter}
-              onChange={(e) => {
-                setSelectedDivisionFilter(e.target.value);
-                setSelectedDepartmentFilter(''); // Reset department when division changes
-              }}
-              className="rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/10 dark:border-slate-800/60 dark:bg-slate-950/80 dark:text-white"
-            >
-              <option value="">All Divisions</option>
-              {divisions.map((div) => (
-                <option key={div._id} value={div._id}>{div.name}</option>
-              ))}
-            </select>
-
-            <select
-              value={selectedDepartmentFilter}
-              onChange={(e) => setSelectedDepartmentFilter(e.target.value)}
-              className="rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/10 dark:border-slate-800/60 dark:bg-slate-950/80 dark:text-white"
-            >
-              <option value="">All Departments</option>
-              {filteredDepartments.map((dept) => (
-                <option key={dept._id} value={dept._id}>{dept.name}</option>
-              ))}
-            </select>
-
-            <select
-              value={selectedDesignationFilter}
-              onChange={(e) => setSelectedDesignationFilter(e.target.value)}
-              className="rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/10 dark:border-slate-800/60 dark:bg-slate-950/80 dark:text-white"
-            >
-              <option value="">All Designations</option>
-              {designations.map((desig) => (
-                <option key={desig._id} value={desig._id}>{desig.name}</option>
-              ))}
-            </select>
-
-            <div className="relative flex-1 min-w-[200px]">
+          <div className="flex flex-col gap-3 flex-1 min-w-0">
+            <div className="flex flex-wrap items-end gap-3">
+              <MultiSelect
+                label="Division"
+                options={divisions.map((d: any) => ({ id: String(d._id), name: d.name ?? d.code ?? 'Division' }))}
+                selectedIds={listFilterDivisions}
+                onChange={(vals) => {
+                  setListFilterDivisions(vals);
+                  setListFilterDepartments([]);
+                }}
+                placeholder="All divisions"
+                className="w-full sm:w-40 md:w-44"
+              />
+              <MultiSelect
+                label="Department"
+                options={loanListDepartmentOptions.map((d: any) => ({
+                  id: String(d._id),
+                  name: d.name ?? (d as any).department_name ?? 'Department',
+                }))}
+                selectedIds={listFilterDepartments}
+                onChange={setListFilterDepartments}
+                placeholder="All departments"
+                className="w-full sm:w-40 md:w-44"
+              />
+              <MultiSelect
+                label="Designation"
+                options={designations.map((d: any) => ({
+                  id: String(d._id),
+                  name: d.name ?? (d as any).designation_name ?? (d as any).title ?? 'Designation',
+                }))}
+                selectedIds={listFilterDesignations}
+                onChange={setListFilterDesignations}
+                placeholder="All designations"
+                className="w-full sm:w-40 md:w-44"
+              />
+              <MultiSelect
+                label="Status"
+                options={LOAN_LIST_STATUS_OPTIONS}
+                selectedIds={listFilterStatuses}
+                onChange={setListFilterStatuses}
+                placeholder="All statuses"
+                className="w-full sm:w-48 md:w-56"
+              />
+              {anyListFilterActive && (
+                <button
+                  type="button"
+                  onClick={clearLoanListFilters}
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-emerald-600 hover:bg-emerald-50 dark:border-slate-600 dark:bg-slate-800 dark:text-emerald-400 dark:hover:bg-slate-700"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+            <div className="relative w-full min-w-[200px] max-w-xl">
               <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
                 <SearchIcon />
               </div>
@@ -1387,85 +1682,34 @@ export default function LoansPage() {
                       Loading...
                     </td>
                   </tr>
-                ) : loans.filter((loan) => {
-                  if (searchTerm) {
-                    const searchLower = searchTerm.toLowerCase();
-                    const empName = loan.employeeId?.employee_name || '';
-                    const empNo = loan.emp_no || loan.employeeId?.emp_no || '';
-                    if (!(
-                      empName.toLowerCase().includes(searchLower) ||
-                      empNo.toLowerCase().includes(searchLower) ||
-                      (loan.reason && loan.reason.toLowerCase().includes(searchLower))
-                    )) {
-                      return false;
-                    }
-                  }
-
-                  const emp = loan.employeeId as any;
-                  if (selectedDivisionFilter) {
-                    const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
-                    if (String(divId) !== String(selectedDivisionFilter)) return false;
-                  }
-                  if (selectedDepartmentFilter) {
-                    const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
-                    if (String(deptId) !== String(selectedDepartmentFilter)) return false;
-                  }
-                  if (selectedDesignationFilter) {
-                    const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
-                    if (String(desigId) !== String(selectedDesignationFilter)) return false;
-                  }
-
-                  return true;
-                }).length === 0 ? (
+                ) : filteredLoansForList.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                       No loan applications found
                     </td>
                   </tr>
                 ) : (
-                  loans.filter((loan) => {
-                    if (searchTerm) {
-                      const searchLower = searchTerm.toLowerCase();
-                      const empName = loan.employeeId?.employee_name || '';
-                      const empNo = loan.emp_no || loan.employeeId?.emp_no || '';
-                      if (!(
-                        empName.toLowerCase().includes(searchLower) ||
-                        empNo.toLowerCase().includes(searchLower) ||
-                        (loan.reason && loan.reason.toLowerCase().includes(searchLower))
-                      )) {
-                        return false;
-                      }
-                    }
-
-                    const emp = loan.employeeId as any;
-                    if (selectedDivisionFilter) {
-                      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
-                      if (String(divId) !== String(selectedDivisionFilter)) return false;
-                    }
-                    if (selectedDepartmentFilter) {
-                      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
-                      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
-                    }
-                    if (selectedDesignationFilter) {
-                      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
-                      if (String(desigId) !== String(selectedDesignationFilter)) return false;
-                    }
-
-                    return true;
-                  }).map((loan) => (
+                  filteredLoansForList.map((loan, idx) => (
                     <tr
                       key={loan._id}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
+                      className={`cursor-pointer border-b border-slate-200 transition-colors duration-200 dark:border-slate-700 ${
+                        idx % 2 === 0
+                          ? 'bg-white dark:bg-slate-800'
+                          : 'bg-slate-50 dark:bg-slate-900/50'
+                      } hover:bg-blue-50 dark:hover:bg-blue-900/20`}
                       onClick={() => {
                         setSelectedLoan(loan);
                         setShowDetailDialog(true);
                       }}
                     >
                       <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900 dark:text-white">
-                          {loan.employeeId?.employee_name || loan.emp_no || 'Unknown'}
-                        </div>
-                        <div className="text-xs text-slate-500">{loan.emp_no || loan.employeeId?.emp_no || 'N/A'}</div>
+                        <LoanListEmployeeCell
+                          loan={loan}
+                          divisions={divisions}
+                          departments={departments}
+                          designations={designations}
+                          tone="emerald"
+                        />
                       </td>
                       <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">
                         ₹{loan.amount.toLocaleString()}
@@ -1511,68 +1755,34 @@ export default function LoansPage() {
                       Loading...
                     </td>
                   </tr>
-                ) : advances.filter((advance) => {
-                  if (searchTerm) {
-                    const searchLower = searchTerm.toLowerCase();
-                    const empName = advance.employeeId?.employee_name || '';
-                    const empNo = advance.emp_no || advance.employeeId?.emp_no || '';
-                    return (
-                      empName.toLowerCase().includes(searchLower) ||
-                      empNo.toLowerCase().includes(searchLower) ||
-                      (advance.reason && advance.reason.toLowerCase().includes(searchLower))
-                    );
-                  }
-                  return true;
-                }).length === 0 ? (
+                ) : filteredAdvancesForList.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
                       No salary advance applications found
                     </td>
                   </tr>
                 ) : (
-                  advances.filter((advance) => {
-                    if (searchTerm) {
-                      const searchLower = searchTerm.toLowerCase();
-                      const empName = advance.employeeId?.employee_name || '';
-                      const empNo = advance.emp_no || advance.employeeId?.emp_no || '';
-                      if (!(
-                        empName.toLowerCase().includes(searchLower) ||
-                        empNo.toLowerCase().includes(searchLower) ||
-                        (advance.reason && advance.reason.toLowerCase().includes(searchLower))
-                      )) {
-                        return false;
-                      }
-                    }
-
-                    const emp = advance.employeeId as any;
-                    if (selectedDivisionFilter) {
-                      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
-                      if (String(divId) !== String(selectedDivisionFilter)) return false;
-                    }
-                    if (selectedDepartmentFilter) {
-                      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
-                      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
-                    }
-                    if (selectedDesignationFilter) {
-                      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
-                      if (String(desigId) !== String(selectedDesignationFilter)) return false;
-                    }
-
-                    return true;
-                  }).map((advance) => (
+                  filteredAdvancesForList.map((advance, idx) => (
                     <tr
                       key={advance._id}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
+                      className={`cursor-pointer border-b border-slate-200 transition-colors duration-200 dark:border-slate-700 ${
+                        idx % 2 === 0
+                          ? 'bg-white dark:bg-slate-800'
+                          : 'bg-slate-50 dark:bg-slate-900/50'
+                      } hover:bg-blue-50 dark:hover:bg-blue-900/20`}
                       onClick={() => {
                         setSelectedLoan(advance);
                         setShowDetailDialog(true);
                       }}
                     >
                       <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900 dark:text-white">
-                          {advance.employeeId?.employee_name || advance.emp_no || 'Unknown'}
-                        </div>
-                        <div className="text-xs text-slate-500">{advance.emp_no || advance.employeeId?.emp_no || 'N/A'}</div>
+                        <LoanListEmployeeCell
+                          loan={advance}
+                          divisions={divisions}
+                          departments={departments}
+                          designations={designations}
+                          tone="teal"
+                        />
                       </td>
                       <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">
                         ₹{advance.amount.toLocaleString()}
@@ -1606,48 +1816,25 @@ export default function LoansPage() {
                   <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white">
                     <LoanIcon />
                   </div>
-                  Pending Loans ({pendingLoans.length})
+                  Pending Loans ({filteredPendingLoansForList.length}
+                  {filteredPendingLoansForList.length !== pendingLoans.length ? ` of ${pendingLoans.length}` : ''})
                 </h3>
                 <div className="space-y-4">
-                  {pendingLoans.filter((loan) => {
-                    if (searchTerm) {
-                      const searchLower = searchTerm.toLowerCase();
-                      const empName = loan.employeeId?.employee_name || '';
-                      const empNo = loan.emp_no || loan.employeeId?.emp_no || '';
-                      if (!(
-                        empName.toLowerCase().includes(searchLower) ||
-                        empNo.toLowerCase().includes(searchLower) ||
-                        (loan.reason && loan.reason.toLowerCase().includes(searchLower))
-                      )) {
-                        return false;
-                      }
-                    }
-
-                    const emp = loan.employeeId as any;
-                    if (selectedDivisionFilter) {
-                      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
-                      if (String(divId) !== String(selectedDivisionFilter)) return false;
-                    }
-                    if (selectedDepartmentFilter) {
-                      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
-                      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
-                    }
-                    if (selectedDesignationFilter) {
-                      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
-                      if (String(desigId) !== String(selectedDesignationFilter)) return false;
-                    }
-
-                    return true;
-                  }).map((loan) => (
+                  {filteredPendingLoansForList.map((loan) => (
                     <div key={loan._id} className="rounded-2xl border-2 border-amber-200/50 bg-gradient-to-br from-amber-50/80 to-yellow-50/50 p-5 dark:border-amber-800/30 dark:from-amber-900/20 dark:to-yellow-900/10 shadow-sm hover:shadow-md transition-all duration-300">
                       <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="font-medium text-slate-900 dark:text-white">
-                              {loan.employeeId?.employee_name || loan.emp_no || 'Unknown'}
-                            </span>
-                            <span className="text-xs text-slate-500">({loan.emp_no || loan.employeeId?.emp_no || 'N/A'})</span>
-                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(loan.status)}`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <LoanListEmployeeCell
+                                loan={loan}
+                                divisions={divisions}
+                                departments={departments}
+                                designations={designations}
+                                tone="blue"
+                              />
+                            </div>
+                            <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${getStatusColor(loan.status)}`}>
                               {loan.status.replace('_', ' ')}
                             </span>
                           </div>
@@ -1690,48 +1877,25 @@ export default function LoansPage() {
                   <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white">
                     <AdvanceIcon />
                   </div>
-                  Pending Advances ({pendingAdvances.length})
+                  Pending Advances ({filteredPendingAdvancesForList.length}
+                  {filteredPendingAdvancesForList.length !== pendingAdvances.length ? ` of ${pendingAdvances.length}` : ''})
                 </h3>
                 <div className="space-y-4">
-                  {pendingAdvances.filter((advance) => {
-                    if (searchTerm) {
-                      const searchLower = searchTerm.toLowerCase();
-                      const empName = advance.employeeId?.employee_name || '';
-                      const empNo = advance.emp_no || advance.employeeId?.emp_no || '';
-                      if (!(
-                        empName.toLowerCase().includes(searchLower) ||
-                        empNo.toLowerCase().includes(searchLower) ||
-                        (advance.reason && advance.reason.toLowerCase().includes(searchLower))
-                      )) {
-                        return false;
-                      }
-                    }
-
-                    const emp = advance.employeeId as any;
-                    if (selectedDivisionFilter) {
-                      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
-                      if (String(divId) !== String(selectedDivisionFilter)) return false;
-                    }
-                    if (selectedDepartmentFilter) {
-                      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
-                      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
-                    }
-                    if (selectedDesignationFilter) {
-                      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
-                      if (String(desigId) !== String(selectedDesignationFilter)) return false;
-                    }
-
-                    return true;
-                  }).map((advance) => (
+                  {filteredPendingAdvancesForList.map((advance) => (
                     <div key={advance._id} className="rounded-2xl border-2 border-amber-200/50 bg-gradient-to-br from-amber-50/80 to-yellow-50/50 p-5 dark:border-amber-800/30 dark:from-amber-900/20 dark:to-yellow-900/10 shadow-sm hover:shadow-md transition-all duration-300">
                       <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="font-medium text-slate-900 dark:text-white">
-                              {advance.employeeId?.employee_name || advance.emp_no || 'Unknown'}
-                            </span>
-                            <span className="text-xs text-slate-500">({advance.emp_no || advance.employeeId?.emp_no || 'N/A'})</span>
-                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(advance.status)}`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <LoanListEmployeeCell
+                                loan={advance}
+                                divisions={divisions}
+                                departments={departments}
+                                designations={designations}
+                                tone="teal"
+                              />
+                            </div>
+                            <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${getStatusColor(advance.status)}`}>
                               {advance.status.replace('_', ' ')}
                             </span>
                           </div>
@@ -1789,26 +1953,38 @@ export default function LoansPage() {
           }} />
           <div className="relative z-50 w-full max-w-2xl rounded-2xl bg-white shadow-2xl dark:bg-slate-900 max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header */}
-            <div className={`p-6 bg-gradient-to-r ${selectedLoan.requestType === 'loan'
+              <div className={`p-6 bg-gradient-to-r ${selectedLoan.requestType === 'loan'
               ? 'from-blue-500 to-indigo-600'
               : 'from-purple-500 to-red-600'
               } text-white`}>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <h2 className="text-xl font-bold">
                   {selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'} Details
                 </h2>
-                <button
-                  onClick={() => {
-                    setShowDetailDialog(false);
-                    setSelectedLoan(null);
-                    setTransactions([]);
-                    setShowPaymentForm(false);
-                    setShowDisbursementDialog(false);
-                  }}
-                  className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors"
-                >
-                  <XIcon />
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadRequestPdf()}
+                    disabled={exportingPdf}
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/40 bg-white/15 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/25 disabled:opacity-50"
+                    title="Download PDF: summary, ledger, and one slip per transaction"
+                  >
+                    <PrintIcon />
+                    {exportingPdf ? '…' : 'Print PDF'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowDetailDialog(false);
+                      setSelectedLoan(null);
+                      setTransactions([]);
+                      setShowPaymentForm(false);
+                      setShowDisbursementDialog(false);
+                    }}
+                    className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors"
+                  >
+                    <XIcon />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1826,6 +2002,31 @@ export default function LoansPage() {
                   })}</span>
                 </div>
               </div>
+
+              {presentPayPeriod && (
+                <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40 text-xs text-slate-600 dark:text-slate-300 space-y-1.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current pay period (today)</p>
+                  <p>
+                    <span className="font-medium text-slate-800 dark:text-slate-200">Last day of period:</span>{' '}
+                    {new Date(`${presentPayPeriod.lastDate}T12:00:00`).toLocaleDateString('en-IN', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                    })}{' '}
+                    <span className="text-slate-400">(</span>
+                    {presentPayPeriod.startDate} → {presentPayPeriod.endDate}
+                    <span className="text-slate-400">)</span>
+                  </p>
+                  <p>
+                    <span className="font-medium text-slate-800 dark:text-slate-200">Payroll month key:</span>{' '}
+                    <code className="rounded bg-slate-200 px-1.5 py-0.5 text-[11px] dark:bg-slate-700">{presentPayPeriod.payrollMonthKey}</code>
+                  </p>
+                  <p className="text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200 dark:border-slate-600">
+                    Salary advance deductions (and loan EMI) are included when payroll is calculated or completed for that month key; each deduction line stores the same value as{' '}
+                    <code className="rounded bg-slate-200 px-1 text-[10px] dark:bg-slate-700">payrollCycle</code> on the advance or loan transaction.
+                  </p>
+                </div>
+              )}
 
               {/* Employee Info */}
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50">
@@ -2065,7 +2266,7 @@ export default function LoansPage() {
                               {isApproved && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 shadow-sm border border-green-200/50">✓ Processed</span>}
                               {isRejected && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 shadow-sm border border-red-200/50">✗ Rejected</span>}
                               {isCurrent && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shadow-sm border border-blue-200/50">⏳ Your Turn</span>}
-                              {isPending && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 shadow-sm border border-slate-200/50">○ Pending</span>}
+                              {isPending && !isCurrent && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 shadow-sm border border-slate-200/50">○ Pending</span>}
                             </div>
 
                             {(isApproved || isRejected) && (
@@ -2256,9 +2457,24 @@ export default function LoansPage() {
                             {selectedLoan.repayment.installmentsPaid || 0} / {selectedLoan.repayment.totalInstallments || selectedLoan.duration}
                           </p>
                         </div>
+                        {(selectedLoan.approvals?.final?.firstDeductionPayrollMonth ||
+                          selectedLoan.advanceConfig?.deductionStartCycle) && (
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">First deduction pay period</p>
+                            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                              {formatPayrollMonthKeyLabel(
+                                selectedLoan.approvals?.final?.firstDeductionPayrollMonth ||
+                                  selectedLoan.advanceConfig?.deductionStartCycle ||
+                                  '',
+                                payCycleStartDay,
+                                payCycleEndDay
+                              )}
+                            </p>
+                          </div>
+                        )}
                         {selectedLoan.repayment.nextPaymentDate && (
                           <div>
-                            <p className="text-xs text-slate-500 mb-1">Next Payment Due</p>
+                            <p className="text-xs text-slate-500 mb-1">Next payment due (period end)</p>
                             <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                               {new Date(selectedLoan.repayment.nextPaymentDate).toLocaleDateString('en-IN', {
                                 day: '2-digit',
@@ -2271,12 +2487,29 @@ export default function LoansPage() {
                       </>
                     )}
                     {selectedLoan.requestType === 'salary_advance' && (
-                      <div>
-                        <p className="text-xs text-slate-500 mb-1">Cycles Paid</p>
-                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                          {selectedLoan.repayment.installmentsPaid || 0} / {selectedLoan.repayment.totalInstallments || selectedLoan.duration}
-                        </p>
-                      </div>
+                      <>
+                        <div>
+                          <p className="text-xs text-slate-500 mb-1">Cycles Paid</p>
+                          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            {selectedLoan.repayment.installmentsPaid || 0} / {selectedLoan.repayment.totalInstallments || selectedLoan.duration}
+                          </p>
+                        </div>
+                        {(selectedLoan.approvals?.final?.firstDeductionPayrollMonth ||
+                          selectedLoan.advanceConfig?.deductionStartCycle) && (
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">First deduction pay period</p>
+                            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                              {formatPayrollMonthKeyLabel(
+                                selectedLoan.approvals?.final?.firstDeductionPayrollMonth ||
+                                  selectedLoan.advanceConfig?.deductionStartCycle ||
+                                  '',
+                                payCycleStartDay,
+                                payCycleEndDay
+                              )}
+                            </p>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 ) : (
@@ -2487,8 +2720,15 @@ export default function LoansPage() {
                           Release Funds
                         </h3>
                         <p className="text-xs text-green-700 dark:text-green-300 mt-1">
-                          Disburse ₹{selectedLoan.requestType === 'loan' ? (selectedLoan.loanConfig?.totalAmount || selectedLoan.amount) : selectedLoan.amount} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}
+                          Transfer ₹{(selectedLoan.amount ?? 0).toLocaleString()} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no} (approved principal).
                         </p>
+                        {selectedLoan.requestType === 'loan' &&
+                          selectedLoan.loanConfig?.totalAmount != null &&
+                          Number(selectedLoan.loanConfig.totalAmount) !== Number(selectedLoan.amount) && (
+                          <p className="text-xs text-green-600/90 dark:text-green-400/80 mt-0.5">
+                            Total to be recovered (principal + interest): ₹{Number(selectedLoan.loanConfig.totalAmount).toLocaleString()}
+                          </p>
+                        )}
                       </div>
                       <button
                         onClick={() => setShowDisbursementDialog(true)}
@@ -2506,7 +2746,24 @@ export default function LoansPage() {
 
               {/* Action Section */}
               {
-                !['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) && (
+                !['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) &&
+                !canActOnSelectedLoan &&
+                (selectedLoan as any).workflow?.nextApprover && (
+                  <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/80 dark:border-amber-800/50 dark:bg-amber-900/10">
+                    <p className="text-sm text-amber-900 dark:text-amber-100">
+                      Waiting for{' '}
+                      <span className="font-semibold capitalize">
+                        {(selectedLoan as any).workflow?.nextApprover === 'final_authority'
+                          ? 'Final Approval'
+                          : String((selectedLoan as any).workflow?.nextApprover || '').replace(/_/g, ' ')}
+                      </span>
+                      . You cannot act on this step yet.
+                    </p>
+                  </div>
+                )}
+              {
+                !['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) &&
+                canActOnSelectedLoan && (
                   <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
                     {/* Approval Amount Modification */}
                     {(selectedLoan.requestType === 'salary_advance' || (selectedLoan.requestType === 'loan' && ['super_admin', 'hr', 'sub_admin'].includes(currentUser?.role))) && (
@@ -2625,6 +2882,33 @@ export default function LoansPage() {
                         </div>
                       )}
 
+                    {isFinalApprovalStep && (
+                      <div className="mb-4 p-3 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-800/50 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
+                          Final approval
+                        </p>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          First deduction pay period *
+                        </label>
+                        <select
+                          value={finalApprovalPayPeriod}
+                          onChange={(e) => setFinalApprovalPayPeriod(e.target.value)}
+                          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm dark:bg-slate-900 dark:text-white"
+                        >
+                          {finalApprovalPayPeriodOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label} ({opt.range.from} → {opt.range.to})
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Next payment due date will be the end of the selected pay period
+                          {selectedFinalPayPeriodPreview ? ` (${selectedFinalPayPeriodPreview})` : ''}.
+                          Payroll will deduct from this period onward.
+                        </p>
+                      </div>
+                    )}
+
                     <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
 
                     {/* Comment */}
@@ -2676,8 +2960,15 @@ export default function LoansPage() {
                     Release Funds
                   </h2>
                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                    Disburse ₹{selectedLoan.amount.toLocaleString()} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}
+                    Transfer ₹{(selectedLoan.amount ?? 0).toLocaleString()} (approved principal) to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}.
                   </p>
+                  {selectedLoan.requestType === 'loan' &&
+                    selectedLoan.loanConfig?.totalAmount != null &&
+                    Number(selectedLoan.loanConfig.totalAmount) !== Number(selectedLoan.amount) && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Total to be recovered (principal + interest): ₹{Number(selectedLoan.loanConfig.totalAmount).toLocaleString()}
+                    </p>
+                  )}
                 </div>
                 <button
                   onClick={() => setShowDisbursementDialog(false)}
@@ -2688,6 +2979,32 @@ export default function LoansPage() {
               </div>
 
               <form onSubmit={handleDisburse} className="space-y-4">
+                {needsDisbursementPayPeriod && (
+                  <div className="p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-800/50 space-y-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      First deduction pay period *
+                    </label>
+                    <p className="text-xs text-amber-800 dark:text-amber-200/90">
+                      This record was approved before EMI scheduling was added. Choose when payroll should start deducting.
+                    </p>
+                    <select
+                      required
+                      value={disbursementPayPeriod}
+                      onChange={(e) => setDisbursementPayPeriod(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm dark:bg-slate-800 dark:text-white"
+                    >
+                      {disbursementPayPeriodOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label} ({opt.range.from} → {opt.range.to})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Next payment due = end of selected period
+                      {selectedDisbursementPayPeriodPreview ? ` (${selectedDisbursementPayPeriodPreview})` : ''}.
+                    </p>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                     Disbursement Method *

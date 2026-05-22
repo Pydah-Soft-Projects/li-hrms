@@ -1,4 +1,5 @@
 const PayRegisterSummary = require('../model/PayRegisterSummary');
+const { compareEmpNo, EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 const Employee = require('../../employees/model/Employee');
 const PayrollBatch = require('../../payroll/model/PayrollBatch');
 const {
@@ -167,7 +168,7 @@ exports.getPayRegister = async (req, res) => {
       employeeId,
       month,
     })
-      .populate('employeeId', 'employee_name emp_no department_id designation_id')
+      .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
       .populate('dailyRecords.shiftId', 'name payableShifts')
       .populate('lastEditedBy', 'name email role')
       .populate('editedBy', 'name email role');
@@ -824,7 +825,7 @@ exports.getLockedSummaryEmployees = async (req, res) => {
       });
     }
 
-    rows.sort((a, b) => (a.employee_name || '').localeCompare(b.employee_name || '', undefined, { sensitivity: 'base' }));
+    rows.sort((a, b) => compareEmpNo(a.emp_no, b.emp_no));
 
     const searchTrim = search && String(search).trim();
     const q = searchTrim ? searchTrim.toLowerCase() : '';
@@ -948,7 +949,8 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       .select('_id employee_name emp_no department_id designation_id leftDate leftReason')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ employee_name: 1 });
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION);
 
     // Bypass pagination if limit is -1
     if (limitNum !== -1) {
@@ -978,8 +980,15 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       employeeId: { $in: employeeIds },
       month
     })
-      .populate('employeeId', 'employee_name emp_no department_id designation_id leftDate leftReason')
-      .select('employeeId emp_no month status totals lastEditedAt dailyRecords startDate endDate totalDaysInMonth summaryLocked summaryLockedAt totalAttendanceDeductionDays attendanceDeductionBreakdown attendanceDeductionCalculatedAt');
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no department_id designation_id leftDate leftReason',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'designation_id', select: 'name' },
+        ],
+      })
+      .select('employeeId emp_no month status totals lastEditedAt dailyRecords startDate endDate totalDaysInMonth summaryLocked summaryLockedAt totalAttendanceDeductionDays attendanceDeductionBreakdown attendanceDeductionCalculatedAt totalPermissionHours totalPermissionCount totalPermissionDeductionDays totalPermissionDeductionAmount permissionDeductionBreakdown');
 
     // Map for O(1) Access
     const prMap = new Map();
@@ -1006,7 +1015,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       if (existingPR) {
         return {
           _id: existingPR._id,
-          employeeId: existingPR.employeeId,
+          employeeId: employee,
           emp_no: existingPR.emp_no,
           month: existingPR.month,
           status: existingPR.status,
@@ -1022,6 +1031,11 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
           totalAttendanceDeductionDays: existingPR.totalAttendanceDeductionDays ?? 0,
           attendanceDeductionBreakdown: existingPR.attendanceDeductionBreakdown ?? null,
           attendanceDeductionCalculatedAt: existingPR.attendanceDeductionCalculatedAt ?? null,
+          totalPermissionHours: existingPR.totalPermissionHours ?? 0,
+          totalPermissionCount: existingPR.totalPermissionCount ?? 0,
+          totalPermissionDeductionDays: existingPR.totalPermissionDeductionDays ?? 0,
+          totalPermissionDeductionAmount: existingPR.totalPermissionDeductionAmount ?? 0,
+          permissionDeductionBreakdown: existingPR.permissionDeductionBreakdown ?? null,
         };
       } else {
         // Return In-Memory Stub (Fast!)
@@ -1066,6 +1080,11 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
           totalAttendanceDeductionDays: 0,
           attendanceDeductionBreakdown: null,
           attendanceDeductionCalculatedAt: null,
+          totalPermissionHours: 0,
+          totalPermissionCount: 0,
+          totalPermissionDeductionDays: 0,
+          totalPermissionDeductionAmount: 0,
+          permissionDeductionBreakdown: null,
         };
       }
     });
@@ -1432,7 +1451,8 @@ exports.exportSummaryExcel = async (req, res) => {
       .populate('department_id', 'name')
       .populate('division_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ emp_no: 1 });
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION);
 
     const employeeIds = employees.map(e => e._id);
 
@@ -1517,7 +1537,8 @@ exports.exportSummaryPDF = async (req, res) => {
       .populate('department_id', 'name')
       .populate('division_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ employee_name: 1 })
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION)
       .lean();
 
     if (employees.length === 0) {
@@ -1529,7 +1550,7 @@ exports.exportSummaryPDF = async (req, res) => {
       employeeId: { $in: employeeIds },
       month,
     })
-      .select('employeeId emp_no month totals dailyRecords startDate endDate totalDaysInMonth totalAttendanceDeductionDays')
+      .select('employeeId emp_no month totals dailyRecords startDate endDate totalDaysInMonth totalAttendanceDeductionDays totalPermissionHours totalPermissionCount totalPermissionDeductionDays totalPermissionDeductionAmount permissionDeductionBreakdown')
       .lean();
 
     const prMap = new Map(payRegisters.map((pr) => [String(pr.employeeId), pr]));
@@ -1616,7 +1637,7 @@ exports.exportSummaryPDF = async (req, res) => {
         );
 
         const deptEmployees = grouped[divName][deptName].sort((a, b) =>
-          (a.employee_name || '').localeCompare(b.employee_name || '', undefined, { sensitivity: 'base' })
+          compareEmpNo(a.emp_no, b.emp_no)
         );
 
         const summaryRows = [];

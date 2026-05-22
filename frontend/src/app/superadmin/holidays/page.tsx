@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { api, Holiday, HolidayGroup, Division, Department, EmployeeGroup } from '@/lib/api';
+import { api, Holiday, HolidayGroup, Division, Department, EmployeeGroup, HolidayHistoryRow } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Swal from 'sweetalert2';
 
@@ -39,6 +39,9 @@ export default function HolidayManagementPage() {
     const [editingGroup, setEditingGroup] = useState<HolidayGroup | null>(null);
     const [prefilledDate, setPrefilledDate] = useState<string | null>(null);
     const [applicableTo, setApplicableTo] = useState<"ALL" | "SPECIFIC_GROUPS">("ALL");
+    const [showHolidayActivity, setShowHolidayActivity] = useState(false);
+    const [holidayActivity, setHolidayActivity] = useState<HolidayHistoryRow[]>([]);
+    const [loadingHolidayActivity, setLoadingHolidayActivity] = useState(false);
 
     useEffect(() => {
         if (showHolidayForm) {
@@ -49,6 +52,33 @@ export default function HolidayManagementPage() {
     // Filter Date/Year
     const [currentMonth, setCurrentMonth] = useState(new Date());
     const selectedYear = currentMonth.getFullYear();
+
+    const getHolidayGroupId = useCallback((h: Holiday | null | undefined) => {
+        if (!h?.groupId) return null;
+        return typeof h.groupId === 'object' ? h.groupId._id : h.groupId;
+    }, []);
+
+    const getHolidayGroupName = useCallback((h: Holiday | null | undefined) => {
+        const gid = getHolidayGroupId(h);
+        if (!gid) return null;
+        const g = groups.find((x) => x._id === gid);
+        return g?.name || (typeof h?.groupId === 'object' ? h.groupId.name : null) || null;
+    }, [groups, getHolidayGroupId]);
+
+    const openHolidayActivity = useCallback(async (h: Holiday) => {
+        try {
+            setShowHolidayActivity(true);
+            setLoadingHolidayActivity(true);
+            const res = await api.getHolidayActivity(h._id, 120);
+            if (res.success) setHolidayActivity(res.data || []);
+            else setHolidayActivity([]);
+        } catch (e) {
+            console.error('Failed to load holiday activity:', e);
+            setHolidayActivity([]);
+        } finally {
+            setLoadingHolidayActivity(false);
+        }
+    }, []);
 
     const loadData = useCallback(async () => {
         try {
@@ -137,15 +167,27 @@ export default function HolidayManagementPage() {
     const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
 
     const currentHolidays = useMemo(() => {
+        // Global calendar should give a single-glance view of:
+        // - All GLOBAL holidays (master definitions)
+        // - Group-specific holidays that are NOT just synced copies of global holidays
+        //   (otherwise the global calendar gets flooded with duplicates).
         if (selectedGroupId === 'GLOBAL') {
-            return allHolidays.filter(h => h.scope === 'GLOBAL');
-        } else {
-            // With Propagation Logic, we don't need to merge Global holidays manually.
-            // The Group copies already exist in the database.
-            return allHolidays.filter(h =>
-                (h.scope === 'GROUP' && (h.groupId && typeof h.groupId === 'object' ? h.groupId._id : h.groupId) === selectedGroupId)
-            );
+            return allHolidays.filter((h) => {
+                if (h.scope === 'GLOBAL') return true;
+                if (h.scope === 'GROUP') {
+                    const isIndependent = !h.sourceHolidayId;
+                    const isModified = h.isSynced === false;
+                    const isOverride = !!h.overridesMasterId;
+                    return isIndependent || isModified || isOverride;
+                }
+                return false;
+            });
         }
+
+        // Group view: show that group's calendar (copies + group-only + overrides)
+        return allHolidays.filter(h =>
+            (h.scope === 'GROUP' && (h.groupId && typeof h.groupId === 'object' ? h.groupId._id : h.groupId) === selectedGroupId)
+        );
     }, [allHolidays, selectedGroupId]);
 
     const getHolidaysForDate = (date: Date) => {
@@ -344,6 +386,13 @@ export default function HolidayManagementPage() {
                                                                         {h.type}
                                                                     </span>
                                                                 </div>
+                                                                {h.scope === 'GROUP' && (
+                                                                    <div className="flex items-center justify-between gap-1 overflow-hidden mt-0.5">
+                                                                        <span className="text-[9px] opacity-80 font-semibold truncate">
+                                                                            Group: {getHolidayGroupName(h) || '—'}
+                                                                        </span>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         ))}
                                                     </div>
@@ -470,9 +519,23 @@ export default function HolidayManagementPage() {
                                         {editingHoliday ? 'Edit Holiday' : (selectedGroupId === 'GLOBAL' ? 'Add Global Holiday' : 'Add Group Holiday')}
                                     </h2>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                        {selectedGroupId === 'GLOBAL' ? 'Visible to all employees' : `For ${groups.find(g => g._id === selectedGroupId)?.name}`}
+                                        {editingHoliday?.scope === 'GROUP'
+                                            ? `For ${getHolidayGroupName(editingHoliday) || 'Selected group'}`
+                                            : (selectedGroupId === 'GLOBAL'
+                                                ? 'Visible to all employees'
+                                                : `For ${groups.find(g => g._id === selectedGroupId)?.name}`)}
                                     </p>
                                 </div>
+                                <div className="flex items-center gap-2">
+                                    {editingHoliday && (
+                                        <button
+                                            type="button"
+                                            onClick={() => openHolidayActivity(editingHoliday)}
+                                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                                        >
+                                            Activity
+                                        </button>
+                                    )}
                                 <button
                                     onClick={() => {
                                         setShowHolidayForm(false);
@@ -482,6 +545,7 @@ export default function HolidayManagementPage() {
                                 >
                                     <X className="w-5 h-5" />
                                 </button>
+                                </div>
                             </div>
 
                             {/* Drawer Body - Scrollable */}
@@ -714,13 +778,13 @@ export default function HolidayManagementPage() {
                                                     <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-xl border border-orange-100 dark:border-orange-800">
                                                         <h4 className="text-xs font-bold text-orange-700 dark:text-orange-400 mb-1">Group Context</h4>
                                                         <p className="text-[11px] text-orange-600 dark:text-orange-500 leading-normal">
-                                                            This holiday is exclusive to <strong>{groups.find(g => g._id === (editingHoliday?.groupId as string || selectedGroupId))?.name}</strong>.
+                                                            This holiday is exclusive to <strong>{getHolidayGroupName(editingHoliday) || groups.find(g => g._id === selectedGroupId)?.name || 'Selected group'}</strong>.
                                                         </p>
                                                     </div>
 
                                                     <div className="space-y-3">
                                                         <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Applicable Divisions</label>
-                                                        {groups.find(g => g._id === (editingHoliday?.groupId as string || selectedGroupId))?.divisionMapping.map((m, idx) => (
+                                                        {groups.find(g => g._id === (getHolidayGroupId(editingHoliday) || selectedGroupId))?.divisionMapping.map((m, idx) => (
                                                             <div key={idx} className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
                                                                 <div className="text-xs font-bold text-slate-900 dark:text-white">
                                                                     {typeof m.division === 'object' ? m.division.name : 'Selected Division'}
@@ -837,6 +901,61 @@ export default function HolidayManagementPage() {
                     </div>
                 )
             }
+
+            {/* Holiday Activity Modal */}
+            {showHolidayActivity && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-700 overflow-hidden">
+                        <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-slate-700">
+                            <div>
+                                <div className="text-xs font-black uppercase tracking-widest text-slate-400">Holiday Activity</div>
+                                <div className="text-sm font-bold text-slate-900 dark:text-white">
+                                    {editingHoliday?.name || '—'}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowHolidayActivity(false)}
+                                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="max-h-[70vh] overflow-y-auto p-5 space-y-3">
+                            {loadingHolidayActivity ? (
+                                <div className="flex h-40 items-center justify-center">
+                                    <HolidaySkeleton />
+                                </div>
+                            ) : holidayActivity.length === 0 ? (
+                                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center text-sm font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">
+                                    No activity recorded yet.
+                                </div>
+                            ) : (
+                                holidayActivity.map((row) => (
+                                    <div key={row._id} className="rounded-2xl border border-slate-100 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="min-w-0">
+                                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white truncate">
+                                                    {row.event}
+                                                </div>
+                                                <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                                    {row.comments || '—'}
+                                                </div>
+                                                <div className="mt-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                                    By {row.performedByName || 'System'} {row.performedByRole ? `(${row.performedByRole})` : ''}
+                                                </div>
+                                            </div>
+                                            <div className="shrink-0 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                                {row.timestamp ? new Date(row.timestamp).toLocaleString() : '—'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div >
     );
 }

@@ -8,26 +8,25 @@ const { normalizeOperationGroup } = require('../utils/operationModeResolver');
 /** Same command the dashboard sends for “Sync All Attendance” — device uploads ATTLOG via ADMS push after next heartbeat(s). */
 const ADMS_ATTLOG_FULL_SYNC_COMMAND = 'DATA QUERY ATTLOG';
 
-/** Max age of lastSeenAt (ms) to treat device as "live" in dashboard. Override with DEVICE_HEARTBEAT_STALE_MS. */
-const HEARTBEAT_STALE_MS = parseInt(process.env.DEVICE_HEARTBEAT_STALE_MS, 10) || 180000;
-
 /**
  * GET /api/devices
  * Get all devices
  */
 router.get('/', async (req, res) => {
     try {
+        const { getValues } = require('../services/biometricSettingsService');
+        const { deviceHeartbeatStaleMs } = await getValues();
         const devices = await Device.find().sort({ createdAt: -1 }).lean();
         const now = Date.now();
         const data = devices.map((d) => ({
             ...d,
-            isOnline: Boolean(d.lastSeenAt && now - new Date(d.lastSeenAt).getTime() <= HEARTBEAT_STALE_MS),
+            isOnline: Boolean(d.lastSeenAt && now - new Date(d.lastSeenAt).getTime() <= deviceHeartbeatStaleMs),
         }));
 
         res.json({
             success: true,
             count: data.length,
-            heartbeatStaleMs: HEARTBEAT_STALE_MS,
+            heartbeatStaleMs: deviceHeartbeatStaleMs,
             data
         });
     } catch (error) {
@@ -140,12 +139,9 @@ router.post('/:deviceId/attendance/backup-adms-fresh', async (req, res) => {
     try {
         const { deviceId } = req.params;
         const body = req.body || {};
-        const apiCap = (() => {
-            const raw = process.env.ADMS_FRESH_BACKUP_API_HARD_CAP_MS;
-            if (raw == null || String(raw).trim() === '') return 7200000;
-            const n = parseInt(String(raw), 10);
-            return Number.isFinite(n) ? Math.min(Math.max(n, 60000), 14400000) : 7200000;
-        })();
+        const { getValues } = require('../services/biometricSettingsService');
+        const cfg = await getValues();
+        const apiCap = Math.min(Math.max(cfg.admsFreshBackupApiHardCapMs, 60000), 14400000);
         const hardRaw = body.hardCapMs != null ? parseInt(body.hardCapMs, 10) : body.maxWaitMs != null ? parseInt(body.maxWaitMs, 10) : undefined;
         const quietPeriodMs = body.quietPeriodMs != null ? parseInt(body.quietPeriodMs, 10) : undefined;
         const waitForFirstBatchMs = body.waitForFirstBatchMs != null ? parseInt(body.waitForFirstBatchMs, 10) : undefined;
@@ -392,7 +388,7 @@ router.post('/test-pull', async (req, res) => {
  */
 router.post('/', async (req, res) => {
     try {
-        const { deviceId, name, ip, port, enabled, location, operationGroup } = req.body;
+        const { deviceId, name, ip, port, enabled, location, operationGroup, categoryId } = req.body;
         const normalizedOperationGroup = normalizeOperationGroup(operationGroup);
 
         // Validation
@@ -426,7 +422,8 @@ router.post('/', async (req, res) => {
             port: port || 4370,
             enabled: enabled !== undefined ? enabled : true,
             location: location || '',
-            operationGroup: normalizedOperationGroup
+            operationGroup: normalizedOperationGroup,
+            categoryId: categoryId ? String(categoryId).trim() : null
         });
 
         await device.save();
@@ -454,7 +451,7 @@ router.post('/', async (req, res) => {
  */
 router.put('/:deviceId', async (req, res) => {
     try {
-        const { name, ip, port, enabled, location, operationGroup } = req.body;
+        const { name, ip, port, enabled, location, operationGroup, categoryId } = req.body;
         const normalizedOperationGroup = normalizeOperationGroup(operationGroup);
 
         const device = await Device.findOne({ deviceId: req.params.deviceId });
@@ -480,6 +477,9 @@ router.put('/:deviceId', async (req, res) => {
                 });
             }
             device.operationGroup = normalizedOperationGroup;
+        }
+        if (categoryId !== undefined) {
+            device.categoryId = categoryId ? String(categoryId).trim() : null;
         }
 
         await device.save();

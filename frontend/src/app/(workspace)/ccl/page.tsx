@@ -28,6 +28,30 @@ import WorkflowTimeline from '@/components/WorkflowTimeline';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import Swal from 'sweetalert2';
+import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
+
+function CclEmployeeBlock({ ccl }: { ccl: { employeeId?: any; emp_no?: string } }) {
+  const d = resolveEmployeeListDisplayParts({ employeeId: ccl.employeeId, emp_no: ccl.emp_no });
+  const initial = (d.name.charAt(0) || 'E').toUpperCase();
+  return (
+    <div className="flex min-w-0 items-start gap-3" title={d.tooltip}>
+      {d.profilePhoto ? (
+        <img src={d.profilePhoto} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700" />
+      ) : (
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 text-xs font-semibold text-white">
+          {initial}
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-slate-900 transition-colors group-hover:text-indigo-600 dark:text-white dark:group-hover:text-indigo-400">
+          {d.name}
+        </div>
+        {d.empDesigLine ? <div className="mt-0.5 truncate text-[11px] text-slate-600 dark:text-slate-400">{d.empDesigLine}</div> : null}
+        {d.deptDivLine ? <div className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">{d.deptDivLine}</div> : null}
+      </div>
+    </div>
+  );
+}
 
 // Premium Stat Card
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend, loading }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, trend?: { value: string, positive: boolean }, loading?: boolean }) => (
@@ -715,15 +739,7 @@ export default function CCLPage() {
                       onClick={() => setSelectedCCL(ccl)}
                     >
                       <td className="whitespace-nowrap py-4 pl-6 pr-3">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 font-black text-xs">
-                            {(ccl.employeeId?.employee_name || ccl.emp_no).charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="text-sm font-bold text-slate-900 dark:text-white transition-colors group-hover:text-indigo-600 dark:group-hover:text-indigo-400">{ccl.employeeId?.employee_name || ccl.emp_no}</div>
-                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{ccl.emp_no}</div>
-                          </div>
-                        </div>
+                        <CclEmployeeBlock ccl={ccl} />
                       </td>
                       <td className="whitespace-nowrap px-3 py-4">
                         <div className="flex flex-col">
@@ -812,19 +828,7 @@ export default function CCLPage() {
                   className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all"
                 >
                   <div className="flex justify-between items-start mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-700 dark:text-indigo-400 font-bold text-xs shrink-0">
-                        {(ccl.employeeId?.employee_name || ccl.emp_no).charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-slate-900 dark:text-white text-sm">
-                          {ccl.employeeId?.employee_name || ccl.emp_no}
-                        </h4>
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                          {ccl.emp_no}
-                        </p>
-                      </div>
-                    </div>
+                    <CclEmployeeBlock ccl={ccl} />
                     <StatusBadge status={ccl.status} />
                   </div>
 
@@ -1061,15 +1065,7 @@ export default function CCLPage() {
               <div className="p-6 sm:p-8 space-y-8">
                 {/* Employee & Status */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
-                  <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 rounded-xl bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 flex items-center justify-center font-black text-lg">
-                      {(selectedCCL.employeeId?.employee_name || selectedCCL.emp_no).charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-slate-900 dark:text-white">{selectedCCL.employeeId?.employee_name || selectedCCL.emp_no}</h3>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{selectedCCL.emp_no}</p>
-                    </div>
-                  </div>
+                  <CclEmployeeBlock ccl={selectedCCL} />
                   <div className="flex flex-col items-end gap-1.5">
                     <StatusBadge status={selectedCCL.status} />
                     <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px] uppercase tracking-wider">

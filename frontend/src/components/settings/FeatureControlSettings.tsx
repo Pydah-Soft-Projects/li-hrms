@@ -26,6 +26,7 @@ const availableModules: { id: string; label: string }[] = [
   { id: 'LOANS', label: 'Loans & Salary Advance' },
   { id: 'CCL', label: 'CCL' },
   { id: 'HOLIDAY_CALENDAR', label: 'Holidays' },
+  { id: 'HOLIDAY_CALENDAR_MANAGE_GLOBAL', label: 'Holidays (Global Manage)' },
   { id: 'SETTINGS', label: 'Settings' },
 ];
 

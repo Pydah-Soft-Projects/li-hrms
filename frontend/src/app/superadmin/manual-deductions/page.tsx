@@ -57,7 +57,7 @@ interface Deduction {
 }
 
 interface BulkRow {
-  employee: { _id: string; emp_no?: string; employee_name?: string; first_name?: string; last_name?: string; leftDate?: string; department_id?: { _id: string; name?: string } | string; division_id?: { _id: string; name?: string } | string };
+  employee: { _id: string; emp_no?: string; employee_name?: string; first_name?: string; last_name?: string; leftDate?: string; department_id?: { _id: string; name?: string } | string; division_id?: { _id: string; name?: string } | string; designation_id?: { _id?: string; name?: string; code?: string; title?: string } | string };
   amount: number;
   remarks: string;
 }
@@ -491,19 +491,27 @@ export function ManualDeductionsContent() {
                         return (
                           <tr key={row.employee._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
                             <td className="px-4 py-2 font-medium text-slate-950 dark:text-white">
-                              <div className="flex flex-col">
-                                <span>{row.employee.employee_name || [row.employee.first_name, row.employee.last_name].filter(Boolean).join(' ') || row.employee.emp_no || '—'}</span>
-                                {row.employee.leftDate && format(new Date(row.employee.leftDate), 'yyyy-MM') === bulkMonth && (
-                                  <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                                    <AlertCircle className="h-3 w-3" />
-                                    Left at {format(new Date(row.employee.leftDate), 'yyyy-MM-dd')}
-                                  </span>
-                                )}
-                              </div>
+                              <div className="min-w-0" title={[String(row.employee?.employee_name || '—'), getEntityName(row.employee?.designation_id) || undefined, String(row.employee.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {row.employee?.employee_name || '—'}
+  </div>
+  {getEntityName(row.employee?.designation_id) || undefined ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getEntityName(row.employee?.designation_id) || undefined}
+    </div>
+  ) : null}
+  {row.employee.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{row.employee.emp_no}</div>
+  ) : null}
+  {row.employee.leftDate ? (
+    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+      Left at {format(new Date(row.employee.leftDate), 'yyyy-MM-dd')}
+    </div>
+  ) : null}
+</div>
                             </td>
                             <td className="px-4 py-2 text-slate-600 dark:text-slate-400">
-                              {row.employee.emp_no || '—'}
-                              {(row.employee.department_id as any)?.name && ` / ${(row.employee.department_id as any).name}`}
+                              {(row.employee.department_id as any)?.name || '—'}
                             </td>
                             <td className="px-4 py-2 text-right">
                               <input
@@ -683,10 +691,21 @@ export function ManualDeductionsContent() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      <p className="font-medium text-slate-950 dark:text-white">{getEmployeeName(d.employee)}</p>
-                      <p className="text-xs text-slate-600 dark:text-slate-400">{d.employee?.emp_no || '—'}</p>
+                      <div className="min-w-0" title={[String(getEmployeeName(d.employee) || '—'), getEntityName(d.employee?.designation_id) || undefined, String(d.employee?.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName(d.employee) || '—'}
+  </div>
+  {getEntityName(d.employee?.designation_id) || undefined ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getEntityName(d.employee?.designation_id) || undefined}
+    </div>
+  ) : null}
+  {d.employee?.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{d.employee?.emp_no}</div>
+  ) : null}
+</div>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                        {getEntityName(d.employee?.division_id)} / {getEntityName(d.employee?.department_id)} / {getEntityName(d.employee?.designation_id)}
+                        {getEntityName(d.employee?.division_id)} / {getEntityName(d.employee?.department_id)}
                       </p>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">
@@ -919,10 +938,19 @@ function DeductionDetailModal({ deductionId, onClose, onUpdate }: { deductionId:
               {deduction ? (
                 <>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <h2 className="truncate text-lg font-black tracking-tight text-slate-950 dark:text-white">{getEmployeeName(deduction.employee)}</h2>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                      {deduction.employee?.emp_no || '—'}
-                    </span>
+                    <div className="min-w-0 min-w-0 flex-1" title={[String(getEmployeeName(deduction.employee) || '—'), getEntityName(deduction.employee?.designation_id) || undefined, String(deduction.employee?.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {getEmployeeName(deduction.employee) || '—'}
+  </div>
+  {getEntityName(deduction.employee?.designation_id) || undefined ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {getEntityName(deduction.employee?.designation_id) || undefined}
+    </div>
+  ) : null}
+  {deduction.employee?.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{deduction.employee?.emp_no}</div>
+  ) : null}
+</div>
                     <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${getStatusColor(deduction.status)}`}>
                       {getStatusLabel(deduction.status)}
                     </span>

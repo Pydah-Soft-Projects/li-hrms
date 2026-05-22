@@ -36,6 +36,7 @@ interface UpdateRequest {
         emp_no: string;
         department?: { name: string };
         designation?: { name: string };
+        designation_id?: { name: string };
     };
     emp_no: string;
     requestedChanges: Record<string, any>;
@@ -277,10 +278,19 @@ const UpdateRequestsPage = () => {
                                                 <User className="w-6 h-6 text-slate-300" />
                                             )}
                                         </div>
-                                        <div>
-                                            <h4 className="text-sm font-bold text-slate-900 line-clamp-1">{request.employee_id?.employee_name || 'Unknown Employee'}</h4>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{request.emp_no}</p>
-                                        </div>
+                                        <div className="min-w-0" title={[String(request.employee_id?.employee_name || 'Unknown Employee' || '—'), ((typeof request.employee_id?.designation_id === 'object' && request.employee_id?.designation_id?.name) ? String(request.employee_id.designation_id.name) : (typeof request.employee_id?.designation === 'object' && request.employee_id?.designation?.name) ? String(request.employee_id.designation.name) : ''), String(request.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {request.employee_id?.employee_name || 'Unknown Employee' || '—'}
+  </div>
+  {((typeof request.employee_id?.designation_id === 'object' && request.employee_id?.designation_id?.name) ? String(request.employee_id.designation_id.name) : (typeof request.employee_id?.designation === 'object' && request.employee_id?.designation?.name) ? String(request.employee_id.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof request.employee_id?.designation_id === 'object' && request.employee_id?.designation_id?.name) ? String(request.employee_id.designation_id.name) : (typeof request.employee_id?.designation === 'object' && request.employee_id?.designation?.name) ? String(request.employee_id.designation.name) : '')}
+    </div>
+  ) : null}
+  {request.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{request.emp_no}</div>
+  ) : null}
+</div>
                                     </div>
                                     <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${request.status === 'pending' ? 'bg-amber-50 text-amber-600 border-amber-100' :
                                         request.status === 'approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :

@@ -1,5 +1,58 @@
 const mongoose = require('mongoose');
 
+const timeValidator = {
+  validator: function (v) {
+    return /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/.test(v);
+  },
+  message: 'Time must be in HH:mm format (e.g., 09:00)',
+};
+
+const shiftHalfSchema = new mongoose.Schema(
+  {
+    startTime: {
+      type: String,
+      validate: timeValidator,
+    },
+    endTime: {
+      type: String,
+      validate: timeValidator,
+    },
+    duration: {
+      type: Number,
+      min: [0, 'Duration must be positive'],
+    },
+    minDuration: {
+      type: Number,
+      min: [0, 'Minimum duration must be positive'],
+    },
+    gracePeriod: {
+      type: Number,
+      default: 15,
+      min: [0, 'Grace period must be positive'],
+    },
+    payableShifts: {
+      type: Number,
+      default: 0,
+      min: [0, 'Payable shifts must be positive'],
+    },
+  },
+  { _id: false }
+);
+
+const shiftBreakSchema = new mongoose.Schema(
+  {
+    startTime: {
+      type: String,
+      validate: timeValidator,
+    },
+    endTime: {
+      type: String,
+      validate: timeValidator,
+    },
+  },
+  { _id: false }
+);
+
 const shiftSchema = new mongoose.Schema(
   {
     name: {
@@ -11,24 +64,12 @@ const shiftSchema = new mongoose.Schema(
     startTime: {
       type: String, // Format: "HH:mm" (e.g., "09:00")
       required: [true, 'Shift start time is required'],
-      validate: {
-        validator: function (v) {
-          // Validate time format HH:mm
-          return /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/.test(v);
-        },
-        message: 'Start time must be in HH:mm format (e.g., 09:00)',
-      },
+      validate: timeValidator,
     },
     endTime: {
       type: String, // Format: "HH:mm" (e.g., "18:00")
       required: [true, 'Shift end time is required'],
-      validate: {
-        validator: function (v) {
-          // Validate time format HH:mm
-          return /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/.test(v);
-        },
-        message: 'End time must be in HH:mm format (e.g., 18:00)',
-      },
+      validate: timeValidator,
     },
     duration: {
       type: Number, // Duration in hours (e.g., 9, 12, 24)
@@ -44,6 +85,18 @@ const shiftSchema = new mongoose.Schema(
       type: Number, // Grace period in minutes (default 15)
       default: 15,
       min: [0, 'Grace period must be positive'],
+    },
+    firstHalf: {
+      type: shiftHalfSchema,
+      default: null,
+    },
+    break: {
+      type: shiftBreakSchema,
+      default: null,
+    },
+    secondHalf: {
+      type: shiftHalfSchema,
+      default: null,
     },
     description: {
       type: String,
@@ -69,34 +122,42 @@ const shiftSchema = new mongoose.Schema(
   }
 );
 
-// Calculate duration from start and end times
-shiftSchema.methods.calculateDuration = function () {
-  const [startHour, startMin] = this.startTime.split(':').map(Number);
-  const [endHour, endMin] = this.endTime.split(':').map(Number);
-
+function calculateDurationFromTimes(startTime, endTime) {
+  if (!startTime || !endTime) return null;
+  const [startHour, startMin] = startTime.split(':').map(Number);
+  const [endHour, endMin] = endTime.split(':').map(Number);
   let startMinutes = startHour * 60 + startMin;
   let endMinutes = endHour * 60 + endMin;
-
-  // Handle overnight shifts (end time is next day)
   if (endMinutes <= startMinutes) {
-    endMinutes += 24 * 60; // Add 24 hours
+    endMinutes += 24 * 60;
   }
-
   const durationMinutes = endMinutes - startMinutes;
-  const durationHours = durationMinutes / 60;
+  return Math.round((durationMinutes / 60) * 100) / 100;
+}
 
-  return Math.round(durationHours * 100) / 100; // Round to 2 decimal places
+shiftSchema.methods.calculateDuration = function () {
+  return calculateDurationFromTimes(this.startTime, this.endTime);
 };
 
-// Validate duration against allowed durations before saving
 shiftSchema.pre('save', async function () {
-  // Calculate duration if not set
   if (!this.duration || this.isModified('startTime') || this.isModified('endTime')) {
-    this.duration = this.calculateDuration();
+    const calculated = this.calculateDuration();
+    if (calculated !== null) {
+      this.duration = calculated;
+    }
   }
 
-  // Validate against allowed durations from ShiftDuration model
-  // Use mongoose.model to avoid circular dependency
+  const normalizeHalf = (half) => {
+    if (!half) return null;
+    if (half.startTime && half.endTime && !half.duration) {
+      half.duration = calculateDurationFromTimes(half.startTime, half.endTime);
+    }
+    return half;
+  };
+
+  this.firstHalf = normalizeHalf(this.firstHalf);
+  this.secondHalf = normalizeHalf(this.secondHalf);
+
   if (mongoose.models.ShiftDuration) {
     const ShiftDuration = mongoose.model('ShiftDuration');
     const allowedDurations = await ShiftDuration.find({ isActive: true }).select('duration');
@@ -104,7 +165,7 @@ shiftSchema.pre('save', async function () {
     if (allowedDurations && allowedDurations.length > 0) {
       const durationValues = allowedDurations.map((d) => d.duration);
       const isAllowed = durationValues.some(
-        (allowed) => Math.abs(allowed - this.duration) < 0.01 // Allow small floating point differences
+        (allowed) => Math.abs(allowed - this.duration) < 0.01
       );
 
       if (!isAllowed) {
@@ -112,7 +173,6 @@ shiftSchema.pre('save', async function () {
       }
     }
   }
-  // If ShiftDuration model doesn't exist yet, skip validation (for initial setup)
 });
 
 module.exports = mongoose.models.Shift || mongoose.model('Shift', shiftSchema);

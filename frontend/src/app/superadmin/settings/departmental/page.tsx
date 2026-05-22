@@ -46,7 +46,7 @@ interface Division {
 
 interface DepartmentSettings {
   _id?: string;
-  department: Department | string;
+  department?: Department | string | null;
   payroll?: {
     includeMissingEmployeeComponents?: boolean | null;
   };
@@ -188,6 +188,8 @@ export default function DepartmentalSettingsPage() {
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [selectedDivisionId, setSelectedDivisionId] = useState<string>('');
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('');
+  /** Edit division-wide row (no department): saved as DepartmentSettings { department: null, division } */
+  const [divisionWideDefaultsMode, setDivisionWideDefaultsMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(false);
@@ -321,12 +323,27 @@ export default function DepartmentalSettingsPage() {
     );
   }, [filteredDeptMenu]);
 
-  const filteredDepartments = useMemo(() => {
-    if (!selectedDivisionId) return departments;
-    return departments.filter((dept) =>
-      dept.divisions?.some((div) => (typeof div === 'string' ? div : div._id) === selectedDivisionId)
+  const { sidebarDepartments, showAllDeptsFallbackForDivision } = useMemo(() => {
+    if (!selectedDivisionId) {
+      return { sidebarDepartments: departments, showAllDeptsFallbackForDivision: false };
+    }
+    const sid = String(selectedDivisionId);
+    const linked = departments.filter((dept) =>
+      (dept.divisions || []).some((div) => {
+        const id = typeof div === 'string' ? div : (div as { _id: string })._id;
+        return String(id) === sid;
+      })
     );
+    // Master data may not list dept↔division links; still allow configuring any department for this division scope
+    if (linked.length === 0) {
+      return { sidebarDepartments: departments, showAllDeptsFallbackForDivision: true };
+    }
+    return { sidebarDepartments: linked, showAllDeptsFallbackForDivision: false };
   }, [departments, selectedDivisionId]);
+
+  const scopeReady =
+    (divisionWideDefaultsMode && !!selectedDivisionId) ||
+    (!divisionWideDefaultsMode && !!selectedDepartmentId);
 
   const resetForm = useCallback(() => {
     setEffectiveEarnedLeave(null);
@@ -531,6 +548,119 @@ export default function DepartmentalSettingsPage() {
   [resetForm, selectedDivisionId]
 );
 
+  const loadDivisionWideSettings = useCallback(
+    async (divisionId: string) => {
+      try {
+        setLoadingSettings(true);
+        setEffectiveEarnedLeave(null);
+        const response = await api.getDivisionWideDepartmentSettings(divisionId);
+        if (response.success && response.data) {
+          const s = response.data;
+          setFormData({
+            leaves: {
+              leavesPerDay: s.leaves?.leavesPerDay ?? null,
+              paidLeavesCount: s.leaves?.paidLeavesCount ?? null,
+              dailyLimit: s.leaves?.dailyLimit ?? null,
+              monthlyLimit: s.leaves?.monthlyLimit ?? null,
+              elMaxCarryForward: s.leaves?.elMaxCarryForward ?? null,
+              cclExpiryMonths: s.leaves?.cclExpiryMonths ?? null,
+              earnedLeave: mapApiLeavesToEarnedLeaveForm(s.leaves),
+            },
+            loans: {
+              interestRate: s.loans?.interestRate ?? null,
+              isInterestApplicable: s.loans?.isInterestApplicable ?? null,
+              minTenure: s.loans?.minTenure ?? null,
+              maxTenure: s.loans?.maxTenure ?? null,
+              minAmount: s.loans?.minAmount ?? null,
+              maxAmount: s.loans?.maxAmount ?? null,
+              maxPerEmployee: s.loans?.maxPerEmployee ?? null,
+              maxActivePerEmployee: s.loans?.maxActivePerEmployee ?? null,
+              minServicePeriod: s.loans?.minServicePeriod ?? null,
+            },
+            salaryAdvance: {
+              interestRate: s.salaryAdvance?.interestRate ?? null,
+              isInterestApplicable: s.salaryAdvance?.isInterestApplicable ?? null,
+              minTenure: s.salaryAdvance?.minTenure ?? null,
+              maxTenure: s.salaryAdvance?.maxTenure ?? null,
+              minAmount: s.salaryAdvance?.minAmount ?? null,
+              maxAmount: s.salaryAdvance?.maxAmount ?? null,
+              maxPerEmployee: s.salaryAdvance?.maxPerEmployee ?? null,
+              maxActivePerEmployee: s.salaryAdvance?.maxActivePerEmployee ?? null,
+              minServicePeriod: s.salaryAdvance?.minServicePeriod ?? null,
+            },
+            permissions: {
+              perDayLimit: s.permissions?.perDayLimit ?? null,
+              monthlyLimit: s.permissions?.monthlyLimit ?? null,
+              deductFromSalary: s.permissions?.deductFromSalary ?? null,
+              deductionAmount: s.permissions?.deductionAmount ?? null,
+              deductionRules: {
+                countThreshold: s.permissions?.deductionRules?.countThreshold ?? null,
+                deductionType: s.permissions?.deductionRules?.deductionType ?? null,
+                deductionAmount: s.permissions?.deductionRules?.deductionAmount ?? null,
+                minimumDuration: s.permissions?.deductionRules?.minimumDuration ?? null,
+                calculationMode: s.permissions?.deductionRules?.calculationMode ?? null,
+              },
+            },
+            ot: {
+              otPayPerHour: s.ot?.otPayPerHour ?? null,
+              minOTHours: s.ot?.minOTHours ?? null,
+              recognitionMode: s.ot?.recognitionMode ?? null,
+              thresholdHours: s.ot?.thresholdHours ?? null,
+              roundUpIfFractionMinutesGte: s.ot?.roundUpIfFractionMinutesGte ?? null,
+              roundingMinutes: s.ot?.roundingMinutes ?? null,
+              autoCreateOtRequest: s.ot?.autoCreateOtRequest ?? null,
+              otHourRanges: Array.isArray(s.ot?.otHourRanges) ? s.ot.otHourRanges : [],
+              defaultWorkingHoursPerDay: s.ot?.defaultWorkingHoursPerDay ?? null,
+              workingHoursPerDay: s.ot?.workingHoursPerDay ?? null,
+              groupWorkingHours: Array.isArray(s.ot?.groupWorkingHours) ? s.ot.groupWorkingHours : [],
+              otMultiplier: s.ot?.otMultiplier ?? null,
+              allowBackdated: s.ot?.allowBackdated ?? null,
+              maxBackdatedDays: s.ot?.maxBackdatedDays ?? null,
+              allowFutureDated: s.ot?.allowFutureDated ?? null,
+              maxAdvanceDays: s.ot?.maxAdvanceDays ?? null,
+              workflow: (s.ot?.workflow as WorkflowData | null | undefined) ?? null,
+            },
+            attendance: {
+              deductionRules: {
+                combinedCountThreshold: s.attendance?.deductionRules?.combinedCountThreshold ?? null,
+                deductionType: s.attendance?.deductionRules?.deductionType ?? null,
+                deductionAmount: s.attendance?.deductionRules?.deductionAmount ?? null,
+                minimumDuration: s.attendance?.deductionRules?.minimumDuration ?? null,
+                calculationMode: s.attendance?.deductionRules?.calculationMode ?? null,
+              },
+              earlyOut: {
+                isEnabled: s.attendance?.earlyOut?.isEnabled ?? false,
+                allowedDurationMinutes: s.attendance?.earlyOut?.allowedDurationMinutes ?? 0,
+                minimumDuration: s.attendance?.earlyOut?.minimumDuration ?? 0,
+                deductionRanges: Array.isArray(s.attendance?.earlyOut?.deductionRanges)
+                  ? s.attendance.earlyOut.deductionRanges
+                  : [],
+              },
+            },
+            payroll: {
+              includeMissingEmployeeComponents: s.payroll?.includeMissingEmployeeComponents ?? null,
+            },
+          });
+          try {
+            const resolvedRes = await api.getResolvedDivisionWideDepartmentSettings(divisionId, 'leaves');
+            if (resolvedRes.success && resolvedRes.data?.leaves?.earnedLeave) {
+              setEffectiveEarnedLeave(resolvedRes.data.leaves.earnedLeave as Record<string, unknown>);
+            }
+          } catch {
+            /* optional preview */
+          }
+        }
+      } catch (error) {
+        console.error('Error loading division-wide settings:', error);
+        toast.error('Failed to load division-wide settings');
+        resetForm();
+      } finally {
+        setLoadingSettings(false);
+      }
+    },
+    [resetForm]
+  );
+
   const loadDivisions = async () => {
     try {
       const response = await api.getDivisions();
@@ -608,16 +738,25 @@ export default function DepartmentalSettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedDepartmentId) {
+    if (divisionWideDefaultsMode && selectedDivisionId) {
+      void loadDivisionWideSettings(selectedDivisionId);
+    } else if (!divisionWideDefaultsMode && selectedDepartmentId) {
       void loadDepartmentSettings(selectedDepartmentId);
     } else {
       resetForm();
     }
-  }, [selectedDepartmentId, selectedDivisionId, loadDepartmentSettings, resetForm]);
+  }, [
+    divisionWideDefaultsMode,
+    selectedDivisionId,
+    selectedDepartmentId,
+    loadDivisionWideSettings,
+    loadDepartmentSettings,
+    resetForm,
+  ]);
 
   useEffect(() => {
-    if (!selectedDepartmentId) setActiveDeptTab('leaves');
-  }, [selectedDepartmentId]);
+    if (!scopeReady) setActiveDeptTab('leaves');
+  }, [scopeReady]);
 
   const handleInputChange = (
     section: 'leaves' | 'loans' | 'salaryAdvance' | 'permissions' | 'ot' | 'attendance' | 'payroll',
@@ -681,6 +820,26 @@ export default function DepartmentalSettingsPage() {
   };
 
   const handleClearElOverridesOnServer = async () => {
+    if (divisionWideDefaultsMode) {
+      if (!selectedDivisionId) return;
+      try {
+        setClearingServerEl(true);
+        const response = await api.updateDivisionWideDepartmentSettings(selectedDivisionId, {
+          leaves: { earnedLeave: null, elEarningType: null },
+        });
+        if (response.success) {
+          toast.success('Division-wide EL overrides cleared');
+          await loadDivisionWideSettings(selectedDivisionId);
+        } else {
+          toast.error(response.message || 'Failed to clear EL overrides');
+        }
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : 'Failed to clear EL overrides');
+      } finally {
+        setClearingServerEl(false);
+      }
+      return;
+    }
     if (!selectedDepartmentId) return;
     try {
       setClearingServerEl(true);
@@ -703,7 +862,12 @@ export default function DepartmentalSettingsPage() {
   };
 
   const handleSave = async () => {
-    if (!selectedDepartmentId) {
+    if (divisionWideDefaultsMode) {
+      if (!selectedDivisionId) {
+        toast.error('Select a division for division-wide defaults');
+        return;
+      }
+    } else if (!selectedDepartmentId) {
       toast.error('Please select a department');
       return;
     }
@@ -711,29 +875,39 @@ export default function DepartmentalSettingsPage() {
     try {
       setSaving(true);
 
-      // Prepare data for API
       const updateData: DepartmentSettingsUpdatePayload = {
         leaves: buildLeavesPayload(),
         loans: formData.loans,
         salaryAdvance: formData.salaryAdvance,
         permissions: formData.permissions,
-        // OT is saved only from the OT panel (same UX as global settings) to avoid overwriting with stale form state.
         attendance: formData.attendance,
         payroll: formData.payroll,
       };
 
-      const response = await api.updateDepartmentSettings(
-        selectedDepartmentId,
-        updateData,
-        selectedDivisionId || undefined
-      );
+      if (divisionWideDefaultsMode && selectedDivisionId) {
+        const response = await api.updateDivisionWideDepartmentSettings(
+          selectedDivisionId,
+          updateData as Record<string, unknown>
+        );
+        if (response.success) {
+          toast.success('Division-wide settings saved successfully!');
+          await loadDivisionWideSettings(selectedDivisionId);
+        } else {
+          toast.error(response.message || 'Failed to save settings');
+        }
+      } else if (selectedDepartmentId) {
+        const response = await api.updateDepartmentSettings(
+          selectedDepartmentId,
+          updateData,
+          selectedDivisionId || undefined
+        );
 
-      if (response.success) {
-        toast.success('Department settings saved successfully!');
-        // Reload settings
-        await loadDepartmentSettings(selectedDepartmentId);
-      } else {
-        toast.error(response.message || 'Failed to save settings');
+        if (response.success) {
+          toast.success('Department settings saved successfully!');
+          await loadDepartmentSettings(selectedDepartmentId);
+        } else {
+          toast.error(response.message || 'Failed to save settings');
+        }
       }
     } catch (error: unknown) {
       console.error('Error saving settings:', error);
@@ -744,6 +918,7 @@ export default function DepartmentalSettingsPage() {
   };
 
   const selectedDepartment = departments.find((d) => d._id === selectedDepartmentId);
+  const selectedDivision = divisions.find((d) => d._id === selectedDivisionId);
   const activeDeptTabLabel = DEPT_SETTINGS_MENU.find((m) => m.id === activeDeptTab)?.label ?? '';
 
   return (
@@ -787,6 +962,7 @@ export default function DepartmentalSettingsPage() {
               onChange={(e) => {
                 setSelectedDivisionId(e.target.value);
                 setSelectedDepartmentId('');
+                setDivisionWideDefaultsMode(false);
               }}
               className={`${DEPT_INPUT} mt-1.5 text-sm`}
             >
@@ -797,23 +973,52 @@ export default function DepartmentalSettingsPage() {
                 </option>
               ))}
             </select>
+            {selectedDivisionId ? (
+              <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/40">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={divisionWideDefaultsMode}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setDivisionWideDefaultsMode(on);
+                    if (on) setSelectedDepartmentId('');
+                  }}
+                />
+                <span className="text-[11px] leading-snug text-slate-600 dark:text-slate-300">
+                  <span className="font-semibold text-slate-800 dark:text-slate-100">Division-wide defaults</span> — applies to{' '}
+                  <strong>every department</strong> in this division. Per-department rows (and per-department+division rows) override
+                  these when set. Effective resolution: department+division → division-wide → department default (all divisions).
+                </span>
+              </label>
+            ) : null}
           </div>
 
           <div className="relative mt-4">
             <label className={DEPT_LABEL}>Department</label>
             <select
               value={selectedDepartmentId}
-              onChange={(e) => setSelectedDepartmentId(e.target.value)}
+              onChange={(e) => {
+                setDivisionWideDefaultsMode(false);
+                setSelectedDepartmentId(e.target.value);
+              }}
               className={`${DEPT_INPUT} mt-1.5 text-sm`}
               disabled={loading}
             >
               <option value="">Select department…</option>
-              {filteredDepartments.map((dept) => (
+              {sidebarDepartments.map((dept) => (
                 <option key={dept._id} value={dept._id}>
                   {dept.name} {dept.code ? `(${dept.code})` : ''}
                 </option>
               ))}
             </select>
+            {showAllDeptsFallbackForDivision && (
+              <p className="mt-1.5 text-[11px] leading-snug text-amber-800/90 dark:text-amber-200/90">
+                No departments are linked to this division in organization data — showing{' '}
+                <strong>all departments</strong>. Link departments to the division under Organizations if you want this list
+                filtered.
+              </p>
+            )}
           </div>
 
           <div className="relative mt-4">
@@ -836,7 +1041,7 @@ export default function DepartmentalSettingsPage() {
                 <button
                   key={item.id}
                   type="button"
-                  disabled={!selectedDepartmentId}
+                  disabled={!scopeReady}
                   onClick={() => {
                     setActiveDeptTab(item.id);
                     setDeptMobileMenuOpen(false);
@@ -874,7 +1079,9 @@ export default function DepartmentalSettingsPage() {
             <div>
               <p className="text-xs font-bold text-indigo-950 dark:text-indigo-100">Division-aware overrides</p>
               <p className="mt-1 text-xs leading-relaxed text-indigo-900/75 dark:text-indigo-200/80">
-                Choose a division to edit division-specific settings, or leave &quot;All divisions&quot; for the department default row.
+                Pick a division to enable <strong>division-wide defaults</strong>, or choose a department. Runtime merge order:{' '}
+                department+division row, then division-wide row, then department default row — so division-wide fills gaps when a
+                department has no division-specific overrides.
               </p>
             </div>
           </div>
@@ -883,15 +1090,16 @@ export default function DepartmentalSettingsPage() {
 
       <main className="min-w-0 flex-1 overflow-x-hidden">
         <div className="mx-auto w-full max-w-7xl p-4 sm:p-6 lg:p-10">
-          {!selectedDepartmentId ? (
+          {!scopeReady ? (
             <div className={`${DEPT_CARD} animate-in fade-in p-10 text-center duration-500 sm:p-14`}>
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
                 <Building2 className="h-8 w-8 text-slate-400 dark:text-slate-500" aria-hidden />
               </div>
               <h3 className="mt-6 text-xl font-bold tracking-tight text-slate-900 dark:text-white">Choose scope</h3>
-              <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-                Optionally pick a division, then select a department in the sidebar. Division-specific rows override the department default
-                when a division is selected.
+              <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+                Select a <strong>division</strong> and turn on <strong>Division-wide defaults</strong> to configure all departments in
+                that division without picking each department, or pick a <strong>department</strong> (optionally with a division filter)
+                for targeted overrides.
               </p>
             </div>
           ) : loadingSettings ? (
@@ -905,17 +1113,21 @@ export default function DepartmentalSettingsPage() {
                 <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-5">
                   <div className="min-w-0 flex-1">
                     <h2 className="truncate text-lg font-semibold tracking-tight text-slate-900 dark:text-white sm:text-xl">
-                      {selectedDepartment?.name ?? 'Department'}
-                      {selectedDepartment?.code ? (
+                      {divisionWideDefaultsMode
+                        ? `Division-wide · ${selectedDivision?.name ?? 'Division'}`
+                        : selectedDepartment?.name ?? 'Department'}
+                      {!divisionWideDefaultsMode && selectedDepartment?.code ? (
                         <span className="ml-2 font-mono text-sm font-normal text-slate-500 dark:text-slate-400">
                           {selectedDepartment.code}
                         </span>
                       ) : null}
                     </h2>
                     <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
-                      {selectedDivisionId
-                        ? `${divisions.find((d) => d._id === selectedDivisionId)?.name ?? 'Division'} · division override`
-                        : 'All divisions · default row'}
+                      {divisionWideDefaultsMode
+                        ? 'Defaults for every department in this division (overridden by department-specific rows when present)'
+                        : selectedDivisionId
+                          ? `${selectedDivision?.name ?? 'Division'} · division override row`
+                          : 'All divisions · department default row'}
                     </p>
                   </div>
                   <div className="flex flex-shrink-0 items-center gap-2 sm:justify-end">
@@ -947,9 +1159,7 @@ export default function DepartmentalSettingsPage() {
                 }))
               }
               effectiveEarnedLeave={effectiveEarnedLeave}
-              onClearServerOverrides={
-                selectedDepartmentId ? handleClearElOverridesOnServer : undefined
-              }
+              onClearServerOverrides={scopeReady ? handleClearElOverridesOnServer : undefined}
               clearingServer={clearingServerEl}
             />
           </div>
@@ -1380,13 +1590,25 @@ export default function DepartmentalSettingsPage() {
           </div>
                   )}
 
-                  {activeDeptTab === 'ot' && selectedDepartmentId && (
-                    <OTSettingsDepartment
-                      departmentId={selectedDepartmentId}
-                      divisionId={selectedDivisionId || undefined}
-                      employeeGroups={employeeGroups}
-                      onSaved={() => void loadDepartmentSettings(selectedDepartmentId)}
-                    />
+                  {activeDeptTab === 'ot' && scopeReady && (
+                    <>
+                      {divisionWideDefaultsMode && selectedDivisionId ? (
+                        <OTSettingsDepartment
+                          variant="divisionWide"
+                          departmentId=""
+                          divisionId={selectedDivisionId}
+                          employeeGroups={employeeGroups}
+                          onSaved={() => void loadDivisionWideSettings(selectedDivisionId)}
+                        />
+                      ) : selectedDepartmentId ? (
+                        <OTSettingsDepartment
+                          departmentId={selectedDepartmentId}
+                          divisionId={selectedDivisionId || undefined}
+                          employeeGroups={employeeGroups}
+                          onSaved={() => void loadDepartmentSettings(selectedDepartmentId)}
+                        />
+                      ) : null}
+                    </>
                   )}
 
                   {activeDeptTab === 'attendance' && (
@@ -1697,7 +1919,8 @@ export default function DepartmentalSettingsPage() {
           <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
                 <h3 className="text-base font-semibold text-slate-900 dark:text-white">Payroll</h3>
                       <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
-                        Same control as global Payroll settings; saved to this department (and optional division scope) via
+                        Same control as global Payroll settings; saved to{' '}
+                        {divisionWideDefaultsMode ? 'this division-wide row' : 'this department (and optional division scope)'} via
                         departmental endpoints.
                       </p>
                       <IncludeMissingPayrollComponentsCard
@@ -1716,10 +1939,16 @@ export default function DepartmentalSettingsPage() {
                     <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6">
                       <h3 className={DEPT_CARD_TITLE}>Save</h3>
                       <p className={`${DEPT_CARD_DESC} mt-1`}>
-                        <span className="font-medium text-slate-700 dark:text-slate-300">{selectedDepartment?.name ?? 'Department'}</span>
-                        {selectedDivisionId
-                          ? ` · ${divisions.find((d) => d._id === selectedDivisionId)?.name ?? 'division'}`
-                          : ' · all divisions'}
+                        <span className="font-medium text-slate-700 dark:text-slate-300">
+                          {divisionWideDefaultsMode
+                            ? `Division-wide · ${selectedDivision?.name ?? 'Division'}`
+                            : selectedDepartment?.name ?? 'Department'}
+                        </span>
+                        {!divisionWideDefaultsMode && selectedDivisionId
+                          ? ` · ${selectedDivision?.name ?? 'division'}`
+                          : !divisionWideDefaultsMode
+                            ? ' · all divisions'
+                            : ''}
                       </p>
                     </div>
                     <div className="flex flex-col gap-3 p-5 sm:p-6">
@@ -1735,11 +1964,12 @@ export default function DepartmentalSettingsPage() {
                         type="button"
                         onClick={() => {
                           setSelectedDepartmentId('');
+                          setDivisionWideDefaultsMode(false);
                           resetForm();
                         }}
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                       >
-                        Switch department
+                        Switch scope
                       </button>
                     </div>
                   </div>

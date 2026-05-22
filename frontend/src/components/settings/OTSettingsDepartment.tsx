@@ -123,11 +123,14 @@ export default function OTSettingsDepartment({
   divisionId,
   employeeGroups = [],
   onSaved,
+  variant = 'department',
 }: {
   departmentId: string;
   divisionId?: string;
   employeeGroups?: { _id: string; name: string }[];
   onSaved?: () => void;
+  /** divisionWide: load/save `/departments/settings/division/:id` (defaults for all departments in division) */
+  variant?: 'department' | 'divisionWide';
 }) {
   const [orgOt, setOrgOt] = useState<Record<string, unknown> | null>(null);
   const [draft, setDraft] = useState<DepartmentOtDraft>(emptyDraft);
@@ -142,7 +145,9 @@ export default function OTSettingsDepartment({
       setLoading(true);
       const [orgRes, deptRes] = await Promise.all([
         api.getOvertimeSettings(),
-        api.getDepartmentSettings(departmentId, divisionId),
+        variant === 'divisionWide' && divisionId
+          ? api.getDivisionWideDepartmentSettings(divisionId)
+          : api.getDepartmentSettings(departmentId, divisionId),
       ]);
       if (orgRes.success && orgRes.data) {
         setOrgOt(orgRes.data as Record<string, unknown>);
@@ -161,18 +166,30 @@ export default function OTSettingsDepartment({
     } finally {
       setLoading(false);
     }
-  }, [departmentId, divisionId]);
+  }, [departmentId, divisionId, variant]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const handleSaveParams = async () => {
+    if (variant === 'divisionWide') {
+      if (!divisionId) {
+        toast.error('Select a division for division-wide OT settings');
+        return;
+      }
+    } else if (!departmentId) {
+      toast.error('Missing department');
+      return;
+    }
     try {
       setSaving(true);
-      const res = await api.updateDepartmentSettings(departmentId, { ot: draftToApiPayload(draft) }, divisionId);
+      const res =
+        variant === 'divisionWide' && divisionId
+          ? await api.updateDivisionWideDepartmentSettings(divisionId, { ot: draftToApiPayload(draft) })
+          : await api.updateDepartmentSettings(departmentId, { ot: draftToApiPayload(draft) }, divisionId);
       if (res.success) {
-        toast.success('OT parameters saved for this department');
+        toast.success(variant === 'divisionWide' ? 'OT parameters saved for this division' : 'OT parameters saved for this department');
         onSaved?.();
         await load();
       } else {
@@ -186,6 +203,10 @@ export default function OTSettingsDepartment({
   };
 
   const handleSimulatePolicy = async () => {
+    if (variant === 'divisionWide' || !departmentId) {
+      toast.error('Simulation needs a specific department; switch off division-wide defaults or pick a department.');
+      return;
+    }
     const rawMinutes = hhmmToMinutes(simRawHours);
     if (!simRawHours || !/^\d{1,2}:[0-5]\d$/.test(simRawHours) || rawMinutes < 0) {
       toast.error('Enter a valid raw OT duration in HH:MM format');
@@ -197,7 +218,7 @@ export default function OTSettingsDepartment({
       const policy = mergePolicyForSim(orgOt, draft);
       const res = await api.simulateOtHoursPolicy({
         rawHours: raw,
-        departmentId,
+        departmentId: departmentId || undefined,
         divisionId,
         policy,
       });
@@ -351,6 +372,7 @@ export default function OTSettingsDepartment({
                   <span className="text-[10px] text-gray-500">Threshold (HH:MM)</span>
                   <input
                     type="time"
+                    lang="en-GB"
                     step={60}
                     value={hoursToHHMM(draft.thresholdHours)}
                     onChange={(e) =>
@@ -492,6 +514,7 @@ export default function OTSettingsDepartment({
                     >
                       <input
                         type="time"
+                        lang="en-GB"
                         step={60}
                         value={minutesToHHMM(r.minMinutes)}
                         onChange={(e) => {
@@ -504,6 +527,7 @@ export default function OTSettingsDepartment({
                       <span className="text-center text-[10px] text-gray-500">to</span>
                       <input
                         type="time"
+                        lang="en-GB"
                         step={60}
                         value={minutesToHHMM(r.maxMinutes)}
                         onChange={(e) => {
@@ -516,6 +540,7 @@ export default function OTSettingsDepartment({
                       <span className="text-center text-[10px] text-gray-500">consider</span>
                       <input
                         type="time"
+                        lang="en-GB"
                         step={60}
                         value={minutesToHHMM(r.creditedMinutes)}
                         onChange={(e) => {
@@ -569,40 +594,50 @@ export default function OTSettingsDepartment({
 
       <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1E293B] sm:p-8">
         <h3 className="mb-4 text-sm font-bold uppercase tracking-wider text-gray-900 dark:text-white">Policy simulator</h3>
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="mb-1 block text-[10px] font-bold uppercase text-gray-500">Raw OT (HH:MM)</label>
-            <input
-              type="time"
-              step={60}
-              value={simRawHours}
-              onChange={(e) => setSimRawHours(e.target.value)}
-              className="w-28 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-slate-900"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={handleSimulatePolicy}
-            disabled={simLoading}
-            className="rounded-xl bg-slate-800 px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 dark:bg-slate-600"
-          >
-            {simLoading ? 'Running…' : 'Run simulation'}
-          </button>
-        </div>
-        {simResult && (
-          <div className="mt-4 space-y-2 rounded-xl border border-gray-100 bg-gray-50/80 p-4 text-xs dark:border-gray-800 dark:bg-black/20">
-            <p>
-              <span className="font-semibold text-gray-700 dark:text-gray-300">Eligible:</span> {simResult.eligible ? 'yes' : 'no'}
-            </p>
-            <p>
-              <span className="font-semibold text-gray-700 dark:text-gray-300">Final hours:</span>{' '}
-              {minutesToHHMM(Math.round((simResult.finalHours || 0) * 60))} ({simResult.finalHours})
-            </p>
-            <p className="text-gray-600 dark:text-gray-400">
-              <span className="font-semibold text-gray-700 dark:text-gray-300">Steps:</span>{' '}
-              {simResult.steps?.join(' → ') || '—'}
-            </p>
-          </div>
+        {variant === 'divisionWide' || !departmentId ? (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Simulator is available when editing a specific department. Division-wide OT still applies in payroll and OT flows.
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-gray-500">Raw OT (HH:MM)</label>
+                <input
+                  type="time"
+                  lang="en-GB"
+                  step={60}
+                  value={simRawHours}
+                  onChange={(e) => setSimRawHours(e.target.value)}
+                  className="w-28 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-slate-900"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleSimulatePolicy}
+                disabled={simLoading}
+                className="rounded-xl bg-slate-800 px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 dark:bg-slate-600"
+              >
+                {simLoading ? 'Running…' : 'Run simulation'}
+              </button>
+            </div>
+            {simResult && (
+              <div className="mt-4 space-y-2 rounded-xl border border-gray-100 bg-gray-50/80 p-4 text-xs dark:border-gray-800 dark:bg-black/20">
+                <p>
+                  <span className="font-semibold text-gray-700 dark:text-gray-300">Eligible:</span>{' '}
+                  {simResult.eligible ? 'yes' : 'no'}
+                </p>
+                <p>
+                  <span className="font-semibold text-gray-700 dark:text-gray-300">Final hours:</span>{' '}
+                  {minutesToHHMM(Math.round((simResult.finalHours || 0) * 60))} ({simResult.finalHours})
+                </p>
+                <p className="text-gray-600 dark:text-gray-400">
+                  <span className="font-semibold text-gray-700 dark:text-gray-300">Steps:</span>{' '}
+                  {simResult.steps?.join(' → ') || '—'}
+                </p>
+              </div>
+            )}
+          </>
         )}
       </section>
     </div>

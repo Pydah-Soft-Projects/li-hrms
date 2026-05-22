@@ -3,7 +3,14 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { api, Holiday, HolidayGroup, Division, Department, EmployeeGroup } from '@/lib/api';
 import { auth } from '@/lib/auth';
-import { canManageHolidayCalendar, canViewHolidayCalendar, User } from '@/lib/permissions';
+import {
+    canManageHolidayCalendar,
+    canManageHolidayCalendarGlobal,
+    canManageHolidayGroups,
+    canEditHolidayRecord,
+    canViewHolidayCalendar,
+    User,
+} from '@/lib/permissions';
 import { toast } from 'react-toastify';
 import Swal from 'sweetalert2';
 import Spinner from '@/components/Spinner';
@@ -35,6 +42,9 @@ export default function WorkspaceHolidaysPage() {
     const [customEmployeeGroupingEnabled, setCustomEmployeeGroupingEnabled] = useState(false);
     const [selectedGroupId, setSelectedGroupId] = useState<string>('GLOBAL');
     const [canManage, setCanManage] = useState(false);
+    const [canManageGlobal, setCanManageGlobal] = useState(false);
+    const [canManageGroups, setCanManageGroups] = useState(false);
+    const [managedGroupIds, setManagedGroupIds] = useState<string[]>([]);
     const [canView, setCanView] = useState(true);
 
     const [showHolidayForm, setShowHolidayForm] = useState(false);
@@ -49,6 +59,18 @@ export default function WorkspaceHolidaysPage() {
     const [currentMonth, setCurrentMonth] = useState(new Date());
     const selectedYear = currentMonth.getFullYear();
 
+    const getHolidayGroupId = useCallback((h: Holiday | null | undefined) => {
+        if (!h?.groupId) return null;
+        return typeof h.groupId === 'object' ? h.groupId._id : h.groupId;
+    }, []);
+
+    const getHolidayGroupName = useCallback((h: Holiday | null | undefined) => {
+        const gid = getHolidayGroupId(h);
+        if (!gid) return null;
+        const g = groups.find((x) => x._id === gid);
+        return g?.name || (typeof h?.groupId === 'object' ? h.groupId.name : null) || null;
+    }, [groups, getHolidayGroupId]);
+
     useEffect(() => {
         const user = auth.getUser() as User | null;
         const canViewByRole = user ? canViewHolidayCalendar(user) : false;
@@ -56,7 +78,24 @@ export default function WorkspaceHolidaysPage() {
 
         setCanView(canViewByRole);
         setCanManage(canManageByRole);
+        setCanManageGlobal(user ? canManageHolidayCalendarGlobal(user) : false);
+        setCanManageGroups(user ? canManageHolidayGroups(user) : false);
+        setManagedGroupIds(user?.managedHolidayGroupIds || []);
     }, []);
+
+    const visibleGroups = useMemo(() => {
+        if (canManageGlobal) return groups;
+        return groups.filter((g) => managedGroupIds.includes(g._id));
+    }, [groups, canManageGlobal, managedGroupIds]);
+
+    const canEditHoliday = useCallback(
+        (h: Holiday) => {
+            const user = auth.getUser() as User | null;
+            if (!user || !canManage) return false;
+            return canEditHolidayRecord(user, h);
+        },
+        [canManage]
+    );
 
     useEffect(() => {
         if (showHolidayForm) {
@@ -73,6 +112,10 @@ export default function WorkspaceHolidaysPage() {
                 if (response.success && response.data) {
                     setAllHolidays(response.data.holidays || []);
                     setGroups(response.data.groups || []);
+                    if (response.data.access) {
+                        setCanManageGlobal(response.data.access.canManageGlobal);
+                        setManagedGroupIds(response.data.access.managedHolidayGroupIds || []);
+                    }
                 }
             } else {
                 const response = await api.getMyHolidays(selectedYear);
@@ -132,7 +175,26 @@ export default function WorkspaceHolidaysPage() {
 
     const currentHolidays = useMemo(() => {
         if (!canManage) return allHolidays;
-        if (selectedGroupId === 'GLOBAL') return allHolidays.filter((h) => h.scope === 'GLOBAL');
+        // Global calendar should give a single-glance view of:
+        // - All GLOBAL holidays (master definitions)
+        // - Group-specific holidays that are NOT just synced copies of global holidays
+        //   (otherwise the global calendar gets flooded with duplicates).
+        if (selectedGroupId === 'GLOBAL') {
+            return allHolidays.filter((h) => {
+                if (h.scope === 'GLOBAL') return true;
+                // include group entries that represent something unique for that group:
+                // - independent group holiday (no sourceHolidayId)
+                // - modified copy (isSynced === false)
+                // - override rows (overridesMasterId set)
+                if (h.scope === 'GROUP') {
+                    const isIndependent = !h.sourceHolidayId;
+                    const isModified = h.isSynced === false;
+                    const isOverride = !!h.overridesMasterId;
+                    return isIndependent || isModified || isOverride;
+                }
+                return false;
+            });
+        }
         return allHolidays.filter((h) =>
             h.scope === 'GROUP' &&
             (h.groupId && (typeof h.groupId === 'object' ? h.groupId._id : h.groupId) === selectedGroupId)
@@ -166,6 +228,10 @@ export default function WorkspaceHolidaysPage() {
     const handleDeleteHoliday = async (id: string) => {
         if (!canManage) return;
         const holiday = allHolidays.find((h) => h._id === id);
+        if (holiday && !canEditHoliday(holiday)) {
+            toast.info('You cannot modify org-wide holidays without global manage permission.');
+            return;
+        }
         const isGroupView = selectedGroupId !== 'GLOBAL';
         if (isGroupView && holiday?.scope === 'GLOBAL') {
             toast.info('Global holidays cannot be deleted from group context.');
@@ -234,15 +300,17 @@ export default function WorkspaceHolidaysPage() {
                             >
                                 Calendar View
                             </button>
-                            <button
-                                onClick={() => setActiveTab('groups')}
-                                className={`whitespace-nowrap border-b-2 px-1 pb-4 text-sm font-medium transition-colors ${activeTab === 'groups'
-                                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                                    : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                                    }`}
-                            >
-                                Holiday Groups
-                            </button>
+                            {canManageGroups && (
+                                <button
+                                    onClick={() => setActiveTab('groups')}
+                                    className={`whitespace-nowrap border-b-2 px-1 pb-4 text-sm font-medium transition-colors ${activeTab === 'groups'
+                                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                                        : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                                        }`}
+                                >
+                                    Holiday Groups
+                                </button>
+                            )}
                         </nav>
                     </div>
                 )}
@@ -268,8 +336,10 @@ export default function WorkspaceHolidaysPage() {
                                                         onChange={(e) => setSelectedGroupId(e.target.value)}
                                                         className="pl-9 pr-10 py-2 bg-slate-50 dark:bg-slate-800 border-none text-sm font-bold text-slate-700 dark:text-slate-200 rounded-xl cursor-pointer focus:ring-2 focus:ring-blue-500/20 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-all appearance-none"
                                                     >
-                                                        <option value="GLOBAL">Global Calendar</option>
-                                                        {groups.map((g) => (
+                                                        <option value="GLOBAL">
+                                                            {canManageGlobal ? 'Global Calendar' : 'All Assigned Groups'}
+                                                        </option>
+                                                        {visibleGroups.map((g) => (
                                                             <option key={g._id} value={g._id}>{g.name}</option>
                                                         ))}
                                                     </select>
@@ -343,6 +413,7 @@ export default function WorkspaceHolidaysPage() {
                                                     key={idx}
                                                     onClick={() => {
                                                         if (!canManage) return;
+                                                        if (selectedGroupId === 'GLOBAL' && !canManageGlobal && managedGroupIds.length === 0) return;
                                                         if (holidays.length === 0) {
                                                             setPrefilledDate(format(date, 'yyyy-MM-dd'));
                                                             setEditingHoliday(null);
@@ -366,6 +437,11 @@ export default function WorkspaceHolidaysPage() {
                                                                 key={h._id}
                                                                 onClick={(e) => {
                                                                     if (!canManage) return;
+                                                                    if (!canEditHoliday(h)) {
+                                                                        e.stopPropagation();
+                                                                        toast.info('Org-wide holidays are read-only for your account.');
+                                                                        return;
+                                                                    }
                                                                     e.stopPropagation();
                                                                     setEditingHoliday(h);
                                                                     setPrefilledDate(null);
@@ -384,6 +460,11 @@ export default function WorkspaceHolidaysPage() {
                                                                 <span className="text-[9px] opacity-70 font-semibold truncate uppercase tracking-wider mt-0.5">
                                                                     {h.type}
                                                                 </span>
+                                                                {h.scope === 'GROUP' && (
+                                                                    <span className="text-[9px] opacity-80 font-semibold truncate mt-0.5">
+                                                                        Group: {getHolidayGroupName(h) || '—'}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         ))}
                                                     </div>
@@ -408,7 +489,7 @@ export default function WorkspaceHolidaysPage() {
                                     </button>
                                 </div>
                                 <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                                    {groups.map((group) => (
+                                    {visibleGroups.map((group) => (
                                         <div key={group._id} className="flex flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
                                             <div className="mb-4 flex items-start justify-between">
                                                 <div>
@@ -457,10 +538,16 @@ export default function WorkspaceHolidaysPage() {
                         <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
                             <div>
                                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                                    {editingHoliday ? 'Edit Holiday' : (selectedGroupId === 'GLOBAL' ? 'Add Global Holiday' : 'Add Group Holiday')}
+                                    {editingHoliday ? 'Edit Holiday' : (selectedGroupId === 'GLOBAL'
+                                        ? (canManageGlobal ? 'Add Global Holiday' : 'Add Holiday to All Assigned Groups')
+                                        : 'Add Group Holiday')}
                                 </h2>
                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                    {selectedGroupId === 'GLOBAL' ? 'Visible to all employees' : `For ${groups.find((g) => g._id === selectedGroupId)?.name}`}
+                                    {editingHoliday?.scope === 'GROUP'
+                                        ? `For ${getHolidayGroupName(editingHoliday) || 'Selected group'}`
+                                        : (selectedGroupId === 'GLOBAL'
+                                            ? (canManageGlobal ? 'Visible to all employees' : 'Applied to each of your assigned holiday groups')
+                                            : `For ${visibleGroups.find((g) => g._id === selectedGroupId)?.name}`)}
                                 </p>
                             </div>
                             <button
@@ -482,7 +569,19 @@ export default function WorkspaceHolidaysPage() {
                                     const formData = new FormData(e.currentTarget);
                                     const isGlobalContext = editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL';
                                     const isCreatingOverride = !isGlobalContext && editingHoliday?.scope === 'GLOBAL';
-                                    const selectedApplicableTo = isGlobalContext ? (formData.get('applicableTo') as 'ALL' | 'SPECIFIC_GROUPS') : 'SPECIFIC_GROUPS';
+                                    let selectedApplicableTo = isGlobalContext
+                                        ? (formData.get('applicableTo') as 'ALL' | 'SPECIFIC_GROUPS')
+                                        : 'SPECIFIC_GROUPS';
+                                    let targetIds = isGlobalContext && selectedApplicableTo === 'SPECIFIC_GROUPS'
+                                        ? (formData.getAll('targetGroupIds') as string[])
+                                        : undefined;
+
+                                    if (isGlobalContext && !canManageGlobal) {
+                                        selectedApplicableTo = 'SPECIFIC_GROUPS';
+                                        targetIds = managedGroupIds.length > 0
+                                            ? managedGroupIds
+                                            : (formData.getAll('targetGroupIds') as string[]).filter((id) => managedGroupIds.includes(id));
+                                    }
 
                                     try {
                                         const data: Partial<Holiday> & { isMaster: boolean; scope: string; applicableTo: string; groupId?: string; targetGroupIds?: string[]; endDate?: string; overridesMasterId?: string } = {
@@ -491,11 +590,11 @@ export default function WorkspaceHolidaysPage() {
                                             endDate: (formData.get('endDate') as string) || undefined,
                                             type: formData.get('type') as Holiday['type'],
                                             description: formData.get('description') as string,
-                                            isMaster: isGlobalContext,
+                                            isMaster: isGlobalContext && canManageGlobal,
                                             scope: isGlobalContext ? 'GLOBAL' : 'GROUP',
                                             applicableTo: selectedApplicableTo,
                                             groupId: isGlobalContext ? undefined : (selectedGroupId !== 'GLOBAL' ? selectedGroupId : (editingHoliday?.groupId as string)),
-                                            targetGroupIds: isGlobalContext && selectedApplicableTo === 'SPECIFIC_GROUPS' ? formData.getAll('targetGroupIds') as string[] : undefined
+                                            targetGroupIds: targetIds,
                                         };
 
                                         if (editingHoliday) {
@@ -560,7 +659,7 @@ export default function WorkspaceHolidaysPage() {
                                     </div>
                                 </div>
 
-                                {(editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL') && (
+                                {(editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL') && canManageGlobal && (
                                     <div className="space-y-4">
                                         <div className="flex items-center gap-2">
                                             <Users className="h-4 w-4 text-orange-500" />
@@ -576,7 +675,7 @@ export default function WorkspaceHolidaysPage() {
                                         </label>
                                         {applicableTo === 'SPECIFIC_GROUPS' && (
                                             <div className="space-y-2 max-h-[220px] overflow-y-auto">
-                                                {groups.map((group) => (
+                                                {visibleGroups.map((group) => (
                                                     <label key={group._id} className="flex items-center gap-3">
                                                         <input
                                                             type="checkbox"
@@ -590,6 +689,11 @@ export default function WorkspaceHolidaysPage() {
                                             </div>
                                         )}
                                     </div>
+                                )}
+                                {(editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL') && !canManageGlobal && (
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+                                        This holiday will be created for all holiday groups assigned to your account ({managedGroupIds.length} group{managedGroupIds.length === 1 ? '' : 's'}).
+                                    </p>
                                 )}
 
                                 <div className="space-y-4">
@@ -610,7 +714,7 @@ export default function WorkspaceHolidaysPage() {
                         <div className="p-6 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
                             <div className="flex items-center justify-between gap-4">
                                 <div>
-                                    {editingHoliday && (
+                                    {editingHoliday && canEditHoliday(editingHoliday) && (
                                         <div className="flex items-center gap-2">
                                             <select
                                                 value={deleteAction}

@@ -42,6 +42,17 @@ const attendanceRawLogSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    deviceId: {
+      type: String,
+      trim: true,
+      default: null,
+      index: true,
+    },
+    deviceName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
   },
   {
     timestamps: true,

@@ -22,6 +22,7 @@ const {
 } = require('../../employee-applications/services/fieldMappingService');
 const { resolveForEmployee } = require('../../payroll/services/allowanceDeductionResolverService');
 const mongoose = require('mongoose');
+const { compareEmpNo, EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 const {
   isHRMSConnected,
   createEmployeeMSSQL,
@@ -500,7 +501,8 @@ exports.getAllEmployees = async (req, res) => {
       // Fetch from MSSQL
       const mssqlEmployees = await getAllEmployeesMSSQL(filters);
       total = mssqlEmployees.length;
-      const sortedMssql = mssqlEmployees.slice(skip, skip + parseInt(limit));
+      const sortedAll = [...mssqlEmployees].sort((a, b) => compareEmpNo(a.emp_no, b.emp_no));
+      const sortedMssql = sortedAll.slice(skip, skip + parseInt(limit));
 
       // Resolve names/refs for MSSQL employees
       const resolved = await resolveEmployeeReferences(sortedMssql);
@@ -541,7 +543,8 @@ exports.getAllEmployees = async (req, res) => {
         .populate('department_id', 'name code')
         .populate('designation_id', 'name code')
         .populate('employee_group_id', 'name code isActive')
-        .sort({ employee_name: 1 })
+        .sort(EMP_NO_SORT)
+        .collation(EMP_NO_COLLATION)
         .skip(skip)
         .limit(parseInt(limit));
 
@@ -656,7 +659,8 @@ exports.getBirthdaysSummary = async (req, res) => {
         .populate('division_id', 'name code')
         .populate('department_id', 'name code')
         .populate('designation_id', 'name code')
-        .sort({ employee_name: 1 })
+        .sort(EMP_NO_SORT)
+        .collation(EMP_NO_COLLATION)
         .lean();
       data = mongoEmployees.map(mapMongoBirthdayRow);
     }

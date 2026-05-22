@@ -13,6 +13,23 @@ const Department = require('../../departments/model/Department');
 const XLSX = require('xlsx');
 const PDFDocument = require('pdfkit');
 const dayjs = require('dayjs');
+const {
+  calculateEMI,
+  syncLoanMoneyAndPayrollSchedule,
+  setNextPaymentDateFromInstallmentsPaid,
+  computeLoanPayrollAnchors,
+  applyRepaymentScheduleFromPayrollMonth,
+  firstPayrollMonthKeyForRepaymentSchedule,
+  needsFirstDeductionPayPeriodSelection,
+} = require('../services/loanHistoryRepairService');
+const { getPresentPayPeriod } = require('../../shared/utils/dateUtils');
+const { EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
+const {
+  buildLoanApprovalChain,
+  ensureLoanApprovalChain,
+  isLoanFinalApprovalStep,
+  syncChainAfterWorkflowAction,
+} = require('../services/loanWorkflowService');
 
 // ============================================
 // NO HARDCODED BYPASS - Uses database setting: workflow.allowHigherAuthorityToApproveLowerLevels
@@ -132,31 +149,6 @@ const findEmployeeByIdOrEmpNo = async (identifier) => {
  * Handles CRUD operations and approval workflow
  */
 
-// Helper to calculate EMI for loans with simple interest
-const calculateEMI = (principal, interestRate, duration) => {
-  if (interestRate === 0 || !interestRate) {
-    // No interest - simple division
-    const emi = principal / duration;
-    return {
-      emiAmount: Math.round(emi),
-      totalInterest: 0,
-      totalAmount: principal,
-    };
-  }
-
-  // Simple Interest Method: SI = (P × R × T) / 100
-  // T is in months, so convert to years: T/12
-  const totalInterest = (principal * interestRate * (duration / 12)) / 100;
-  const totalAmount = principal + totalInterest;
-  const emi = totalAmount / duration;
-
-  return {
-    emiAmount: Math.round(emi),
-    totalInterest: Math.round(totalInterest),
-    totalAmount: Math.round(totalAmount),
-  };
-};
-
 // Helper to calculate early settlement amount
 const calculateEarlySettlement = (loan, settlementDate = new Date()) => {
   if (loan.requestType !== 'loan' || !loan.loanConfig) {
@@ -242,9 +234,10 @@ exports.getLoans = async (req, res) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const [loans, total] = await Promise.all([
+    const [loans, total, presentPayPeriod] = await Promise.all([
       Loan.find(filter)
-        .populate('employeeId', 'employee_name emp_no gross_salary')
+        .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id')
+        .populate('division_id', 'name code')
         .populate('department', 'name')
         .populate('designation', 'name')
         .populate('appliedBy', 'name email')
@@ -252,6 +245,7 @@ exports.getLoans = async (req, res) => {
         .skip(skip)
         .limit(parseInt(limit)),
       Loan.countDocuments(filter),
+      getPresentPayPeriod(),
     ]);
 
     res.status(200).json({
@@ -261,6 +255,7 @@ exports.getLoans = async (req, res) => {
       page: parseInt(page),
       totalPages: Math.ceil(total / parseInt(limit)),
       data: loans,
+      presentPayPeriod,
     });
   } catch (error) {
     console.error('Error fetching loans:', error);
@@ -285,16 +280,21 @@ exports.getMyLoans = async (req, res) => {
     if (status) filter.status = status;
     if (requestType) filter.requestType = requestType;
 
-    const loans = await Loan.find(filter)
-      .populate('employeeId', 'employee_name emp_no gross_salary')
-      .populate('department', 'name')
-      .populate('designation', 'name')
-      .sort({ createdAt: -1 });
+    const [loans, presentPayPeriod] = await Promise.all([
+      Loan.find(filter)
+        .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id')
+        .populate('division_id', 'name code')
+        .populate('department', 'name')
+        .populate('designation', 'name')
+        .sort({ createdAt: -1 }),
+      getPresentPayPeriod(),
+    ]);
 
     res.status(200).json({
       success: true,
       count: loans.length,
       data: loans,
+      presentPayPeriod,
     });
   } catch (error) {
     console.error('Error fetching my loans:', error);
@@ -352,7 +352,8 @@ exports.getGuarantorCandidates = async (req, res) => {
       .select('emp_no employee_name department_id designation_id division_id')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ employee_name: 1 })
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION)
       .limit(max);
 
     res.status(200).json({
@@ -537,9 +538,13 @@ exports.getLoan = async (req, res) => {
       .populate('appliedBy', 'name email')
       .populate('workflow.history.actionBy', 'name email')
       .populate('approvals.hod.approvedBy', 'name email')
+      .populate('approvals.manager.approvedBy', 'name email')
       .populate('approvals.hr.approvedBy', 'name email')
       .populate('approvals.final.approvedBy', 'name email')
-      .populate('disbursement.disbursedBy', 'name email');
+      .populate('disbursement.disbursedBy', 'name email')
+      .populate('cancellation.cancelledBy', 'name email')
+      .populate('changeHistory.modifiedBy', 'name email')
+      .populate('guarantors.employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id');
 
     if (!loan) {
       return res.status(404).json({
@@ -548,9 +553,23 @@ exports.getLoan = async (req, res) => {
       });
     }
 
+    if (loan.requestType === 'loan') {
+      const updated = await syncLoanMoneyAndPayrollSchedule(loan);
+      if (updated) {
+        await loan.save();
+      }
+    }
+
+    const wfSettings = await resolveLoanWorkflowSettings(loan.requestType, loan.division_id?._id || loan.division_id);
+    ensureLoanApprovalChain(loan, wfSettings);
+    loan.markModified('workflow');
+
+    const presentPayPeriod = await getPresentPayPeriod();
+
     res.status(200).json({
       success: true,
       data: loan,
+      presentPayPeriod,
     });
   } catch (error) {
     console.error('Error fetching loan:', error);
@@ -798,6 +817,7 @@ exports.applyLoan = async (req, res) => {
     let advanceConfig = {};
     let totalAmount = amount;
     let totalInterest = 0; // Declare in outer scope
+    let firstEmiDueDate = null;
 
     if (requestType === 'loan') {
       const interestRate = settings.interestRate || 0;
@@ -806,20 +826,15 @@ exports.applyLoan = async (req, res) => {
       totalAmount = calculatedTotal;
       totalInterest = calculatedInterest; // Assign to outer scope variable
 
-      // Calculate start and end dates (start from next month)
-      const startDate = new Date();
-      startDate.setMonth(startDate.getMonth() + 1);
-      startDate.setDate(1); // First day of next month
-
-      const endDate = new Date(startDate);
-      endDate.setMonth(endDate.getMonth() + duration);
+      const anchors = await computeLoanPayrollAnchors(new Date(), duration);
+      firstEmiDueDate = anchors.firstDueDate;
 
       loanConfig = {
         emiAmount,
         interestRate,
         totalInterest,
-        startDate,
-        endDate,
+        startDate: anchors.startDate,
+        endDate: anchors.endDate,
         totalAmount,
       };
     } else {
@@ -832,7 +847,7 @@ exports.applyLoan = async (req, res) => {
     }
 
     // Create loan application
-    const loan = new Loan({
+    const loanPayload = {
       employeeId: employee._id,
       emp_no: employee.emp_no,
       requestType,
@@ -855,18 +870,27 @@ exports.applyLoan = async (req, res) => {
         remainingBalance: requestType === 'loan' ? totalAmount : amount,
         installmentsPaid: 0,
         totalInstallments: duration,
-        nextPaymentDate: requestType === 'loan' ? loanConfig.startDate : null,
+        nextPaymentDate: requestType === 'loan' ? firstEmiDueDate : null,
       },
-    });
+    };
+    if (requestType === 'loan') {
+      loanPayload.loanConfig = loanConfig;
+    }
+    const loan = new Loan(loanPayload);
 
-    // Determine initial workflow step
-    // Fixed requirement: Always start with HOD as the default first step
-    const initialStep = 'hod';
-    const initialApprover = 'hod';
+    const wfSettings = await resolveLoanWorkflowSettings(requestType, employee.division_id?._id || employee.division_id);
+    const approvalChain = buildLoanApprovalChain(wfSettings);
+    const initialApprover = approvalChain[0]?.role || 'hod';
+    const initialStep =
+      initialApprover === 'final_authority' ? 'final' : ['hod', 'manager', 'hr'].includes(initialApprover) ? initialApprover : 'hod';
 
     loan.workflow = {
       currentStep: initialStep,
       nextApprover: initialApprover,
+      nextApproverRole: initialApprover,
+      finalAuthority: wfSettings?.workflow?.finalAuthority?.role || 'hr',
+      approvalChain,
+      isCompleted: false,
       history: [
         {
           step: 'employee',
@@ -884,7 +908,7 @@ exports.applyLoan = async (req, res) => {
 
     // Populate for response
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
+      { path: 'employeeId', select: 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id' },
       { path: 'department', select: 'name' },
       { path: 'designation', select: 'name' },
     ]);
@@ -945,7 +969,7 @@ exports.getGuarantorRequests = async (req, res) => {
       'guarantors.employeeId': mongoEmployeeId,
       isActive: true,
     })
-      .populate('employeeId', 'employee_name emp_no')
+      .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
       .populate('department', 'name')
       .populate('designation', 'name')
       .sort({ appliedAt: -1 });
@@ -1234,7 +1258,7 @@ exports.updateLoan = async (req, res) => {
 
     // Populate for response
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
+      { path: 'employeeId', select: 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id' },
       { path: 'department', select: 'name' },
       { path: 'designation', select: 'name' },
       { path: 'changeHistory.modifiedBy', select: 'name email role' },
@@ -1292,7 +1316,7 @@ exports.getPendingApprovals = async (req, res) => {
     }
 
     const loans = await Loan.find(filter)
-      .populate('employeeId', 'employee_name emp_no gross_salary')
+      .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id')
       .populate('department', 'name')
       .populate('designation', 'name')
       .sort({ appliedAt: -1 });
@@ -1316,10 +1340,10 @@ exports.getPendingApprovals = async (req, res) => {
 // @access  Private (HOD, Manager, HR, Admin)
 exports.processLoanAction = async (req, res) => {
   try {
-    const { action, comments, approvalAmount, approvalInterestRate } = req.body;
+    const { action, comments, approvalAmount, approvalInterestRate, firstDeductionPayrollMonth } = req.body;
     const loan = await Loan.findById(req.params.id)
       .populate('division_id')
-      .populate('employeeId', 'employee_name emp_no gross_salary');
+      .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id');
 
     if (!loan) {
       return res.status(404).json({
@@ -1348,6 +1372,7 @@ exports.processLoanAction = async (req, res) => {
 
     // Active workflow for this loan (division override → global)
     const settings = await resolveLoanWorkflowSettings(loan.requestType, loan.division_id?._id || loan.division_id);
+    ensureLoanApprovalChain(loan, settings);
     const allowBypass = settings?.workflow?.allowHigherAuthorityToApproveLowerLevels || false;
 
     // Validate user can perform this action
@@ -1409,6 +1434,7 @@ exports.processLoanAction = async (req, res) => {
       // 1. Handle Interest Rate Update (only for loans)
       if (loan.requestType === 'loan' && approvalInterestRate !== undefined && !isNaN(parseFloat(approvalInterestRate))) {
         const newRate = parseFloat(approvalInterestRate);
+        if (!loan.loanConfig) loan.loanConfig = {};
         if (newRate !== loan.loanConfig.interestRate) {
           const oldRate = loan.loanConfig.interestRate || 0;
           loan.loanConfig.interestRate = newRate;
@@ -1449,6 +1475,7 @@ exports.processLoanAction = async (req, res) => {
       // 3. Recalculate configurations if anything changed
       if (configChanged) {
         if (loan.requestType === 'loan') {
+          if (!loan.loanConfig) loan.loanConfig = {};
           const currentAmount = loan.amount;
           const currentRate = loan.loanConfig.interestRate || 0;
           const duration = loan.duration;
@@ -1573,7 +1600,22 @@ exports.processLoanAction = async (req, res) => {
             };
           }
         } else {
-          // Final Approval
+          // Final Approval — first deduction pay period required
+          if (!firstDeductionPayrollMonth) {
+            return res.status(400).json({
+              success: false,
+              error: 'First deduction pay period is required for final approval (YYYY-MM).',
+            });
+          }
+          let lockedPayrollMonth;
+          try {
+            lockedPayrollMonth = await applyRepaymentScheduleFromPayrollMonth(loan, firstDeductionPayrollMonth);
+          } catch (scheduleErr) {
+            return res.status(400).json({
+              success: false,
+              error: scheduleErr.message || 'Invalid first deduction pay period',
+            });
+          }
           loan.status = 'approved';
           loan.workflow.currentStep = 'completed';
           loan.workflow.nextApprover = null;
@@ -1582,6 +1624,7 @@ exports.processLoanAction = async (req, res) => {
             approvedBy: req.user._id,
             approvedAt: new Date(),
             comments,
+            firstDeductionPayrollMonth: lockedPayrollMonth,
           };
         }
         break;
@@ -1644,7 +1687,18 @@ exports.processLoanAction = async (req, res) => {
         return res.status(400).json({ success: false, error: 'Invalid action' });
     }
 
+    syncChainAfterWorkflowAction(loan, {
+      currentApprover,
+      action: historyEntry.action,
+      isFinalStep: action === 'approve' && loan.workflow.currentStep === 'completed',
+      nextRole: loan.workflow.nextApprover,
+    });
+    ensureLoanApprovalChain(loan, settings);
+    loan.workflow.nextApproverRole = loan.workflow.nextApprover;
+    loan.workflow.isCompleted = loan.workflow.currentStep === 'completed';
+
     loan.workflow.history.push(historyEntry);
+    loan.markModified('workflow');
     await loan.save();
 
     res.status(200).json({
@@ -1762,7 +1816,7 @@ exports.cancelLoan = async (req, res) => {
 // @access  Private (HR, Admin)
 exports.disburseLoan = async (req, res) => {
   try {
-    const { disbursementMethod, transactionReference, remarks } = req.body;
+    const { disbursementMethod, transactionReference, remarks, firstDeductionPayrollMonth } = req.body;
     const loan = await Loan.findById(req.params.id);
 
     if (!loan) {
@@ -1795,6 +1849,35 @@ exports.disburseLoan = async (req, res) => {
         success: false,
         error: 'Not authorized to disburse loans',
       });
+    }
+
+    if (needsFirstDeductionPayPeriodSelection(loan)) {
+      if (!firstDeductionPayrollMonth) {
+        return res.status(400).json({
+          success: false,
+          error: 'First deduction pay period is required before disbursement (YYYY-MM).',
+          requiresFirstDeductionPayrollMonth: true,
+        });
+      }
+      let lockedPayrollMonth;
+      try {
+        lockedPayrollMonth = await applyRepaymentScheduleFromPayrollMonth(loan, firstDeductionPayrollMonth);
+      } catch (scheduleErr) {
+        return res.status(400).json({
+          success: false,
+          error: scheduleErr.message || 'Invalid first deduction pay period',
+        });
+      }
+      if (!loan.approvals) loan.approvals = {};
+      if (!loan.approvals.final) {
+        loan.approvals.final = {
+          status: 'approved',
+          approvedAt: new Date(),
+          comments: 'First deduction pay period set at disbursement (legacy record)',
+        };
+      }
+      loan.approvals.final.firstDeductionPayrollMonth = lockedPayrollMonth;
+      loan.markModified('approvals');
     }
 
     loan.status = 'disbursed';
@@ -1835,10 +1918,22 @@ exports.disburseLoan = async (req, res) => {
       timestamp: new Date(),
     });
 
+    await syncLoanMoneyAndPayrollSchedule(loan, { fromDisburse: true });
+
+    if (loan.requestType === 'salary_advance') {
+      if (!loan.advanceConfig) loan.advanceConfig = {};
+      if (!loan.advanceConfig.deductionStartCycle && !loan.approvals?.final?.firstDeductionPayrollMonth) {
+        loan.advanceConfig.deductionStartCycle = await firstPayrollMonthKeyForRepaymentSchedule(loan);
+      }
+      await setNextPaymentDateFromInstallmentsPaid(loan);
+      loan.markModified('advanceConfig');
+      loan.markModified('repayment');
+    }
+
     await loan.save();
 
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
+      { path: 'employeeId', select: 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id' },
       { path: 'disbursement.disbursedBy', select: 'name email' },
     ]);
 
@@ -1874,7 +1969,7 @@ exports.payEMI = async (req, res) => {
     const { id } = req.params;
     const { amount, paymentDate, remarks, payrollCycle, isEarlySettlement } = req.body;
 
-    const loan = await Loan.findById(id).populate('employeeId', 'employee_name emp_no gross_salary');
+    const loan = await Loan.findById(id).populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id');
 
     if (!loan) {
       return res.status(404).json({
@@ -1958,13 +2053,9 @@ exports.payEMI = async (req, res) => {
 
     loan.repayment.lastPaymentDate = transaction.transactionDate;
 
-    // Calculate next payment date (if not fully paid)
-    if (loan.repayment.remainingBalance > 0 && loan.loanConfig.startDate && !isEarlySettlement) {
-      const monthsPaid = loan.repayment.installmentsPaid;
-      const nextDate = new Date(loan.loanConfig.startDate);
-      nextDate.setMonth(nextDate.getMonth() + monthsPaid);
-      loan.repayment.nextPaymentDate = nextDate;
-    } else {
+    if (loan.requestType === 'loan' && !isEarlySettlement) {
+      await setNextPaymentDateFromInstallmentsPaid(loan);
+    } else if (loan.repayment.remainingBalance <= 0 || isEarlySettlement) {
       loan.repayment.nextPaymentDate = null;
     }
 
@@ -1979,7 +2070,7 @@ exports.payEMI = async (req, res) => {
     await loan.save();
 
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
+      { path: 'employeeId', select: 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id' },
       { path: 'transactions.processedBy', select: 'name email' },
     ]);
 
@@ -2013,7 +2104,7 @@ exports.payAdvance = async (req, res) => {
       });
     }
 
-    const loan = await Loan.findById(id).populate('employeeId', 'employee_name emp_no gross_salary');
+    const loan = await Loan.findById(id).populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id');
 
     if (!loan) {
       return res.status(404).json({
@@ -2067,14 +2158,27 @@ exports.payAdvance = async (req, res) => {
     if (loan.repayment.remainingBalance <= 0) {
       loan.status = 'completed';
       loan.repayment.remainingBalance = 0;
+      loan.repayment.nextPaymentDate = null;
     } else if (loan.status === 'disbursed') {
       loan.status = 'active';
     }
 
+    if (!loan.advanceConfig) loan.advanceConfig = {};
+    const pc = payrollCycle != null ? String(payrollCycle).trim() : '';
+    if (pc && /^\d{4}-\d{2}$/.test(pc) && !loan.advanceConfig.deductionStartCycle) {
+      loan.advanceConfig.deductionStartCycle = pc;
+    }
+    if (loan.repayment.remainingBalance > 0) {
+      await setNextPaymentDateFromInstallmentsPaid(loan);
+    }
+
+    loan.markModified('advanceConfig');
+    loan.markModified('repayment');
+
     await loan.save();
 
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
+      { path: 'employeeId', select: 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id' },
       { path: 'transactions.processedBy', select: 'name email' },
     ]);
 
@@ -2101,7 +2205,7 @@ exports.getSettlementPreview = async (req, res) => {
     const { settlementDate } = req.query; // Optional: settlement date (default: now)
 
     const loan = await Loan.findById(id)
-      .populate('employeeId', 'employee_name emp_no gross_salary')
+      .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id')
       .select('requestType amount duration loanConfig repayment disbursement appliedAt createdAt status');
 
     if (!loan) {
@@ -2172,7 +2276,7 @@ exports.getTransactions = async (req, res) => {
     const { id } = req.params;
 
     const loan = await Loan.findById(id)
-      .populate('employeeId', 'employee_name emp_no gross_salary')
+      .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id')
       .populate('transactions.processedBy', 'name email')
       .select('transactions requestType amount loanConfig advanceConfig repayment');
 
@@ -2296,7 +2400,7 @@ exports.getLoanReportSummary = async (req, res) => {
           const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
           empQuery.division_id = { $in: divIds.map(toObjectId) };
         }
-        const emps = await Employee.find(empQuery).select('employee_name emp_no').lean();
+        const emps = await Employee.find(empQuery).select('employee_name emp_no profilePhoto department_id designation_id division_id').lean();
         children = emps.map(e => ({ _id: e._id, name: `${e.employee_name} (${e.emp_no})` }));
       }
 
@@ -2338,7 +2442,7 @@ exports.getLoanReportSummary = async (req, res) => {
 
     const [loans, total] = await Promise.all([
       Loan.find(query)
-        .populate('employeeId', 'employee_name emp_no')
+        .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
         .populate('department', 'name')
         .populate('division_id', 'name')
         .sort({ appliedAt: -1 })
@@ -2389,7 +2493,7 @@ exports.exportLoanReport = async (req, res) => {
     }
 
     const loans = await Loan.find(query)
-      .populate('employeeId', 'employee_name emp_no')
+      .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
       .populate('department', 'name')
       .populate('division_id', 'name')
       .populate('designation', 'name')
@@ -2455,7 +2559,7 @@ exports.exportLoanReportPDF = async (req, res) => {
     }
 
     const loans = await Loan.find(query)
-      .populate('employeeId', 'employee_name emp_no')
+      .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
       .populate('department', 'name')
       .populate('division_id', 'name')
       .sort({ appliedAt: -1 })

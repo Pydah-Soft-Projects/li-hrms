@@ -236,9 +236,19 @@ export default function SecondSalaryBatchDetailPage() {
                                             <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 font-bold text-xs uppercase">
                                                 {record.employeeId?.employee_name?.[0] || 'E'}
                                             </div>
-                                            <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                                                {record.employeeId?.employee_name || 'Unknown'}
-                                            </div>
+                                            <div className="min-w-0" title={[String(record.employeeId?.employee_name || 'Unknown' || '—'), ((typeof record.employeeId?.designation_id === 'object' && record.employeeId?.designation_id?.name) ? String(record.employeeId.designation_id.name) : (typeof record.employeeId?.designation === 'object' && record.employeeId?.designation?.name) ? String(record.employeeId.designation.name) : ''), String(record.emp_no || '')].filter(Boolean).join(' · ')}>
+  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+    {record.employeeId?.employee_name || 'Unknown' || '—'}
+  </div>
+  {((typeof record.employeeId?.designation_id === 'object' && record.employeeId?.designation_id?.name) ? String(record.employeeId.designation_id.name) : (typeof record.employeeId?.designation === 'object' && record.employeeId?.designation?.name) ? String(record.employeeId.designation.name) : '') ? (
+    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+      {((typeof record.employeeId?.designation_id === 'object' && record.employeeId?.designation_id?.name) ? String(record.employeeId.designation_id.name) : (typeof record.employeeId?.designation === 'object' && record.employeeId?.designation?.name) ? String(record.employeeId.designation.name) : '')}
+    </div>
+  ) : null}
+  {record.emp_no ? (
+    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{record.emp_no}</div>
+  ) : null}
+</div>
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400 font-medium">

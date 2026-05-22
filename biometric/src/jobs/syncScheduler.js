@@ -54,7 +54,26 @@ class SyncScheduler {
     stop() {
         if (this.task) {
             this.task.stop();
-            logger.info('Sync scheduler stopped');
+            this.task = null;
+        }
+        if (this.userSyncTask) {
+            this.userSyncTask.stop();
+        }
+        logger.info('Sync scheduler stopped');
+    }
+
+    /**
+     * Apply new TCP sync interval from settings (0 = disabled).
+     */
+    reschedule(intervalMinutes) {
+        const mins = parseInt(intervalMinutes, 10);
+        this.stop();
+        this.intervalMinutes = Number.isFinite(mins) ? mins : 15;
+        if (this.intervalMinutes > 0) {
+            this.start();
+            logger.info(`Sync scheduler rescheduled: every ${this.intervalMinutes} minutes`);
+        } else {
+            logger.info('Sync scheduler disabled (syncIntervalMinutes=0)');
         }
     }
 

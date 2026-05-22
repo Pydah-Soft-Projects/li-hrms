@@ -21,6 +21,18 @@ const {
 } = require('../../shared/middleware/dataScopeMiddleware');
 const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
 
+/** Employee refs are siblings: designation_id, department_id, division_id (not department → division). */
+const POPULATE_EMPLOYEE_OT_PERMISSION = {
+  path: 'employeeId',
+  select: 'emp_no employee_name profilePhoto department_id designation_id division_id leftDate',
+  populate: [
+    { path: 'designation_id', select: 'name' },
+    { path: 'designation', select: 'name' },
+    { path: 'department_id', select: 'name' },
+    { path: 'division_id', select: 'name code' },
+  ],
+};
+
 const formatOTDate = (value) => {
   if (!value) return '';
   const date = new Date(value);
@@ -156,7 +168,7 @@ exports.createOT = async (req, res) => {
     }
 
     const otRequest = await OT.findById(result.data._id)
-      .populate('employeeId', 'emp_no employee_name department designation')
+      .populate(POPULATE_EMPLOYEE_OT_PERMISSION)
       .populate('shiftId', 'name startTime endTime duration')
       .populate('requestedBy', 'name email');
 
@@ -234,7 +246,7 @@ exports.getOTRequests = async (req, res) => {
     const total = await OT.countDocuments(combinedQuery);
 
     const otRequests = await OT.find(combinedQuery)
-      .populate('employeeId', 'emp_no employee_name department designation')
+      .populate(POPULATE_EMPLOYEE_OT_PERMISSION)
       .populate('shiftId', 'name startTime endTime duration')
       .populate('requestedBy', 'name email')
       .populate('approvedBy', 'name email')
@@ -302,7 +314,7 @@ exports.getPendingOTApprovals = async (req, res) => {
     const total = await OT.countDocuments(baseFilter);
 
     const otRequests = await OT.find(baseFilter)
-      .populate('employeeId', 'emp_no employee_name department designation')
+      .populate(POPULATE_EMPLOYEE_OT_PERMISSION)
       .populate('shiftId', 'name startTime endTime duration')
       .populate('requestedBy', 'name email')
       .sort({ requestedAt: -1 })
@@ -336,7 +348,7 @@ exports.getPendingOTApprovals = async (req, res) => {
 exports.getOTRequest = async (req, res) => {
   try {
     const otRequest = await OT.findById(req.params.id)
-      .populate('employeeId', 'emp_no employee_name department designation')
+      .populate(POPULATE_EMPLOYEE_OT_PERMISSION)
       .populate('shiftId', 'name startTime endTime duration')
       .populate('requestedBy', 'name email')
       .populate('approvedBy', 'name email')
@@ -383,7 +395,7 @@ exports.approveOT = async (req, res) => {
     }
 
     const otRequest = await OT.findById(req.params.id)
-      .populate('employeeId', 'emp_no employee_name department designation')
+      .populate(POPULATE_EMPLOYEE_OT_PERMISSION)
       .populate('shiftId', 'name startTime endTime duration')
       .populate('approvedBy', 'name email');
 
@@ -435,7 +447,7 @@ exports.rejectOT = async (req, res) => {
     }
 
     const otRequest = await OT.findById(req.params.id)
-      .populate('employeeId', 'emp_no employee_name department designation')
+      .populate(POPULATE_EMPLOYEE_OT_PERMISSION)
       .populate('rejectedBy', 'name email');
 
     res.status(200).json({
@@ -547,7 +559,7 @@ exports.convertExtraHoursToOT = async (req, res) => {
     }
 
     const otRecord = await OT.findById(result.data._id)
-      .populate('employeeId', 'emp_no employee_name department designation')
+      .populate(POPULATE_EMPLOYEE_OT_PERMISSION)
       .populate('shiftId', 'name startTime endTime duration')
       .populate('convertedBy', 'name email');
 

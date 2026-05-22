@@ -22,6 +22,7 @@ const {
 } = require('../../overtime/services/esiLeaveOtService');
 const { assertEmployeeNumberDateEditable } = require('../../shared/services/payrollPeriodLockService');
 const { reprocessAttendanceForEmployeeDate } = require('../services/attendanceSyncService');
+const { EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 
 /**
  * Format date to YYYY-MM-DD
@@ -474,7 +475,8 @@ exports.getEmployeesWithAttendance = async (req, res) => {
       .populate('division_id', 'name')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ emp_no: 1 });
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION);
 
     if (limitNum !== -1) {
       employeeQuery = employeeQuery.skip(skip).limit(limitNum);
@@ -593,7 +595,8 @@ exports.getMonthlyAttendance = async (req, res) => {
       .populate('division_id', 'name')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ employee_name: 1 });
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION);
 
     if (limitNum !== -1) {
       employeeFind = employeeFind.skip(skip).limit(limitNum);
@@ -1075,7 +1078,9 @@ exports.getRecentActivity = async (req, res) => {
         punch: {
           type: log.type,
           subType: log.subType,
-          device: log.deviceName || log.deviceId
+          deviceId: log.deviceId || log.rawData?.deviceId || null,
+          deviceName: log.deviceName || log.rawData?.deviceName || null,
+          device: log.deviceName || log.rawData?.deviceName || log.deviceId || log.rawData?.deviceId || '—'
         },
         shift: {
           name: shift.name || 'Detecting...',

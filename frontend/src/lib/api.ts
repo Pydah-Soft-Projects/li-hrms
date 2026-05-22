@@ -406,6 +406,14 @@ export interface ApiResponse<T> {
     settingsStartDay: number;
     settingsEndDay: number;
   };
+  /** GET /loans and GET /loans/:id may include current pay period (IST) alongside `data`. */
+  presentPayPeriod?: {
+    payrollMonthKey: string;
+    startDate: string;
+    endDate: string;
+    lastDate: string;
+    totalDays?: number;
+  };
 }
 
 export interface InAppNotification {
@@ -617,6 +625,20 @@ async function apiRequestWithTimeout<T>(
 }
 
 
+export interface ShiftHalf {
+  startTime?: string;
+  endTime?: string;
+  duration?: number;
+  minDuration?: number;
+  gracePeriod?: number;
+  payableShifts?: number;
+}
+
+export interface ShiftBreak {
+  startTime?: string;
+  endTime?: string;
+}
+
 export interface Shift {
   _id: string;
   name: string;
@@ -625,6 +647,10 @@ export interface Shift {
   duration: number;
   code?: string;
   payableShifts?: number;
+  gracePeriod?: number;
+  firstHalf?: ShiftHalf | null;
+  break?: ShiftBreak | null;
+  secondHalf?: ShiftHalf | null;
   isActive?: boolean;
   color?: string;
   createdAt?: string;
@@ -637,6 +663,34 @@ export interface Setting {
   value: any;
   description?: string;
   category: string;
+}
+
+export type AutoEdgePermissionApplyFor = 'late_in' | 'early_out' | 'both';
+
+export interface AutoEdgePermissionRange {
+  _id?: string;
+  minShiftHours: number;
+  maxShiftHours: number;
+  minimumMinutes?: number;
+  allowedMinutes: number;
+  description?: string;
+}
+
+export interface AutoEdgePermissionRuleSet {
+  shiftDurationRanges: AutoEdgePermissionRange[];
+}
+
+export interface AutoEdgePermissionSettings {
+  _id?: string;
+  isEnabled: boolean;
+  applyFor: AutoEdgePermissionApplyFor;
+  useSameRulesForBoth: boolean;
+  lateInRules: AutoEdgePermissionRuleSet;
+  earlyOutRules: AutoEdgePermissionRuleSet;
+  isDefault?: boolean;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Designation {
@@ -759,10 +813,24 @@ export interface User {
   divisionMapping?: any[];
   isActive: boolean;
   featureControl?: string[];
+  /** Holiday groups this user can manage (scoped holiday admin). */
+  managedHolidayGroupIds?: (string | HolidayGroup)[];
   phone_number?: string | null;
   lastLogin?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface UserHistoryRow {
+  _id: string;
+  userId: string | User;
+  event: string;
+  performedBy?: string | User | null;
+  performedByName?: string | null;
+  performedByRole?: string | null;
+  details?: any;
+  comments?: string | null;
+  timestamp: string;
 }
 export interface Role {
   _id: string;
@@ -981,11 +1049,26 @@ export interface Holiday {
   description?: string;
   sourceHolidayId?: string | Holiday; // For propagated copies
   isSynced?: boolean; // True if synced with global, false if edited
+  isActive?: boolean;
+  deactivatedAt?: string | null;
+  deactivatedBy?: string | User | null;
   createdBy?: string;
   createdAt?: string;
   updatedAt?: string;
   rosterFillMode?: 'HOL' | 'WEEK_OFF';
   onDeleteAction?: 'RESTORE_PATTERN' | 'WEEK_OFF';
+}
+
+export interface HolidayHistoryRow {
+  _id: string;
+  holidayId: string | Holiday;
+  event: string;
+  performedBy?: string | User | null;
+  performedByName?: string | null;
+  performedByRole?: string | null;
+  details?: any;
+  comments?: string | null;
+  timestamp: string;
 }
 
 export const api = {
@@ -1122,7 +1205,15 @@ export const api = {
   // Holidays
   getAllHolidaysAdmin: async (year?: number) => {
     const query = year ? `?year=${year}` : '';
-    return apiRequest<{ holidays: Holiday[]; groups: HolidayGroup[] }>(`/holidays/admin${query}`, { method: 'GET' });
+    return apiRequest<{
+      holidays: Holiday[];
+      groups: HolidayGroup[];
+      access?: { canManageGlobal: boolean; managedHolidayGroupIds: string[] };
+    }>(`/holidays/admin${query}`, { method: 'GET' });
+  },
+
+  getHolidayGroupsAdmin: async () => {
+    return apiRequest<HolidayGroup[]>('/holidays/groups', { method: 'GET' });
   },
 
   getMyHolidays: async (year?: number) => {
@@ -1169,6 +1260,12 @@ export const api = {
     });
   },
 
+  getHolidayActivity: async (id: string, limit = 120) => {
+    const q = new URLSearchParams();
+    if (limit) q.append('limit', String(limit));
+    return apiRequest<HolidayHistoryRow[]>(`/holidays/${id}/activity?${q.toString()}`, { method: 'GET' });
+  },
+
   // Shifts
   getShifts: async (isActive?: boolean) => {
     const query = isActive !== undefined ? `?isActive=${String(isActive)}` : '';
@@ -1179,7 +1276,18 @@ export const api = {
     return apiRequest<Shift>(`/shifts/${id}`, { method: 'GET' });
   },
 
-  createShift: async (data: { name: string; startTime?: string; endTime?: string; duration?: number }) => {
+  createShift: async (data: {
+    name: string;
+    startTime?: string;
+    endTime?: string;
+    duration?: number;
+    gracePeriod?: number;
+    payableShifts?: number;
+    color?: string;
+    firstHalf?: ShiftHalf;
+    break?: ShiftBreak;
+    secondHalf?: ShiftHalf;
+  }) => {
     return apiRequest<Shift>('/shifts', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -1301,6 +1409,12 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     });
+  },
+
+  getUserActivity: async (id: string, limit = 80) => {
+    const q = new URLSearchParams();
+    if (limit) q.append('limit', String(limit));
+    return apiRequest<UserHistoryRow[]>(`/users/${id}/activity?${q.toString()}`, { method: 'GET' });
   },
 
   resetUserPassword: async (id: string, data: { newPassword?: string; autoGenerate?: boolean }) => {
@@ -1435,6 +1549,24 @@ export const api = {
     return apiRequest<EmployeeGroup[]>(`/employee-groups${q}`, { method: 'GET' });
   },
 
+  /** Distinct employee groups for employees matching roster division/dept/designation filters */
+  getEmployeeGroupsForRosterFilters: (params?: {
+    division_id?: string;
+    department_id?: string;
+    designation_id?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.division_id) qs.append('division_id', params.division_id);
+    if (params?.department_id) qs.append('department_id', params.department_id);
+    if (params?.designation_id) qs.append('designation_id', params.designation_id);
+    if (params?.startDate) qs.append('startDate', params.startDate);
+    if (params?.endDate) qs.append('endDate', params.endDate);
+    const q = qs.toString() ? `?${qs.toString()}` : '';
+    return apiRequest<EmployeeGroup[]>(`/employee-groups/for-roster-filters${q}`, { method: 'GET' });
+  },
+
   getEmployeeGroup: async (id: string) => {
     return apiRequest<EmployeeGroup>(`/employee-groups/${id}`, { method: 'GET' });
   },
@@ -1487,6 +1619,26 @@ export const api = {
     let url = `/departments/${deptId}/settings`;
     if (divisionId) url += `?divisionId=${divisionId}`;
     return apiRequest<any>(url, { method: 'GET' });
+  },
+
+  /** Division-wide defaults (no department): applies to all departments in the division until a department row overrides. */
+  getDivisionWideDepartmentSettings: async (divisionId: string) => {
+    return apiRequest<any>(`/departments/settings/division/${divisionId}`, { method: 'GET' });
+  },
+
+  updateDivisionWideDepartmentSettings: async (divisionId: string, data: Record<string, unknown>) => {
+    return apiRequest<any>(`/departments/settings/division/${divisionId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  getResolvedDivisionWideDepartmentSettings: async (
+    divisionId: string,
+    type?: 'leaves' | 'loans' | 'salary_advance' | 'permissions' | 'ot' | 'overtime' | 'all' | 'attendance'
+  ) => {
+    const query = type ? `?type=${type}` : '';
+    return apiRequest<any>(`/departments/settings/division/${divisionId}/resolved${query}`, { method: 'GET' });
   },
 
   // Bulk Allowance & Deduction
@@ -1701,6 +1853,46 @@ export const api = {
     return apiRequest<any>('/permissions/settings/deduction', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+
+  getAutoEdgePermissionSettings: async () => {
+    return apiRequest<AutoEdgePermissionSettings>('/permissions/settings/auto-edge', { method: 'GET' });
+  },
+
+  saveAutoEdgePermissionSettings: async (data: AutoEdgePermissionSettings) => {
+    return apiRequest<AutoEdgePermissionSettings>('/permissions/settings/auto-edge', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  generateAutoEdgePermissions: async (payload: {
+    startDate: string;
+    endDate: string;
+    divisionId?: string;
+    departmentId?: string;
+    designationId?: string;
+    search?: string;
+  }) => {
+    return apiRequest<any>('/permissions/generate-auto-edge-permissions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  /** Backfill / refresh first-half second-half segment metadata from current Shift definitions */
+  refreshAttendanceShiftSegments: async (payload: {
+    startDate: string;
+    endDate: string;
+    divisionId?: string;
+    departmentId?: string;
+    designationId?: string;
+    search?: string;
+  }) => {
+    return apiRequest<any>('/attendance/refresh-shift-segments', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 
@@ -2547,14 +2739,26 @@ export const api = {
   getRoster: (month: string, params?: {
     departmentId?: string;
     divisionId?: string;
+    designationId?: string;
+    employeeGroupId?: string;
+    search?: string;
     startDate?: string;
     endDate?: string;
+    page?: number;
+    limit?: number;
+    employeeNumbers?: string;
   }) => {
     const qs = new URLSearchParams({ month });
     if (params?.departmentId) qs.append('departmentId', params.departmentId);
     if (params?.divisionId) qs.append('divisionId', params.divisionId);
+    if (params?.designationId) qs.append('designationId', params.designationId);
+    if (params?.employeeGroupId) qs.append('employeeGroupId', params.employeeGroupId);
+    if (params?.search) qs.append('search', params.search);
     if (params?.startDate) qs.append('startDate', params.startDate);
     if (params?.endDate) qs.append('endDate', params.endDate);
+    if (params?.page != null) qs.append('page', String(params.page));
+    if (params?.limit != null) qs.append('limit', String(params.limit));
+    if (params?.employeeNumbers) qs.append('employeeNumbers', params.employeeNumbers);
     return apiRequest(`/shifts/roster?${qs.toString()}`);
   },
   saveRoster: (data: {
@@ -3143,7 +3347,12 @@ export const api = {
   },
 
   // Disburse loan
-  disburseLoan: async (id: string, data: { disbursementMethod?: string; transactionReference?: string; remarks?: string }) => {
+  disburseLoan: async (id: string, data: {
+    disbursementMethod?: string;
+    transactionReference?: string;
+    remarks?: string;
+    firstDeductionPayrollMonth?: string;
+  }) => {
     return apiRequest<any>(`/loans/${id}/disburse`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -3931,9 +4140,12 @@ export const api = {
     status?: string;
     search?: string;
     employeeIds?: string[];
+    /** combined = single table; by_department = division/department sections */
+    format?: 'combined' | 'by_department';
   }) => {
     const queryParams = new URLSearchParams();
     queryParams.append('month', params.month);
+    if (params.format) queryParams.append('format', params.format);
     if (params.departmentId) queryParams.append('departmentId', params.departmentId);
     if (params.divisionId) queryParams.append('divisionId', params.divisionId);
     if (params.designationId) queryParams.append('designationId', params.designationId);
@@ -4402,6 +4614,17 @@ export const api = {
       method: 'POST',
       body: formData,
     });
+  },
+
+  uploadCompanyLogo: async (
+    file: File
+  ): Promise<ApiResponse<{ url: string; filename: string }> & { url?: string; filename?: string }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiRequest<{ url: string; filename: string }>('/upload/company-logo', {
+      method: 'POST',
+      body: formData,
+    }) as Promise<ApiResponse<{ url: string; filename: string }> & { url?: string; filename?: string }>;
   },
 
   // Asset management

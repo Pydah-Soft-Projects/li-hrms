@@ -829,13 +829,24 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         const status = day.attendance.status;
         if (status === 'PRESENT') {
           attFirst = 0.5; attSecond = 0.5;
+        } else if (status === 'PARTIAL' && processingModeIsSingleShift) {
+          const {
+            computeRawAttendanceHalfCreditsSync,
+          } = require('../utils/attendanceHalfPresence');
+          const partialCredits = computeRawAttendanceHalfCreditsSync(day.attendance, day.ods, {
+            processingMode: 'single_shift',
+          });
+          attFirst = partialCredits.attFirst;
+          attSecond = partialCredits.attSecond;
         } else if (status === 'HALF_DAY') {
-          // Detect which half was worked based on which penalty is higher.
-          const eo = Number(day.attendance.totalEarlyOutMinutes) || 0;
-          const li = Number(day.attendance.totalLateInMinutes) || 0;
-          if (eo > li) attFirst = 0.5;
-          else if (li > eo) attSecond = 0.5;
-          else attFirst = 0.5; // Default to first half if we can't tell
+          const {
+            computeRawAttendanceHalfCreditsSync,
+          } = require('../utils/attendanceHalfPresence');
+          const hdCredits = computeRawAttendanceHalfCreditsSync(day.attendance, day.ods, {
+            processingMode: processingModeIsSingleShift ? 'single_shift' : 'multi_shift',
+          });
+          attFirst = hdCredits.attFirst;
+          attSecond = hdCredits.attSecond;
         } else if (status === 'OD' && day.ods.length > 0) {
           // Half-day OD while daily status is OD: credit the office half toward present (same intent as HD/OD in UI).
           const halfOd = day.ods.find(
@@ -845,14 +856,17 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
               (o.halfDayType === 'first_half' || o.halfDayType === 'second_half')
           );
           if (halfOd) {
-            const shifts = Array.isArray(day.attendance.shifts) ? day.attendance.shifts : [];
-            const hasIn = shifts.some((s) => s && s.inTime) || !!day.attendance.inTime;
-            const hasOut = shifts.some((s) => s && s.outTime) || !!day.attendance.outTime;
+            const {
+              dailyHasShiftLevelIn,
+              dailyHasShiftLevelOut,
+            } = require('../utils/attendanceHalfPresence');
+            const hasIn = dailyHasShiftLevelIn(day.attendance);
+            const hasOut = dailyHasShiftLevelOut(day.attendance);
             if (halfOd.halfDayType === 'second_half' && hasIn) attFirst = 0.5;
             else if (halfOd.halfDayType === 'first_half' && hasOut) attSecond = 0.5;
           }
         }
-        // PARTIAL/ABSENT: base is 0.0 per user request
+        // ABSENT / PARTIAL (multi_shift): base is 0.0
       }
 
       // Overlay ODs
@@ -1235,10 +1249,10 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     const Permission = require('../../permissions/model/Permission');
     const approvedPermissions = await Permission.find({
       employeeId,
-      status: 'approved',
+      status: { $in: ['approved', 'checked_out', 'checked_in'] },
       date: { $gte: startDateStr, $lte: endDateStr },
       isActive: true,
-    }).select('permissionHours').lean();
+    }).select('permissionHours date').lean();
 
     let totalPermissionHours = 0;
     for (const permission of approvedPermissions) {
@@ -1250,7 +1264,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       }
     }
     summary.totalPermissionHours = Math.round(totalPermissionHours * 100) / 100;
-    summary.totalPermissionCount = contributingDates.permissions.length;
+    summary.totalPermissionCount = approvedPermissions.length;
 
     // Early Out Deductions Summary
     let totalEarlyOutDeductionDays = 0;
@@ -1282,6 +1296,56 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
     summary.totalLateOrEarlyMinutes = Math.round((summary.totalLateInMinutes + summary.totalEarlyOutMinutes) * 100) / 100;
     summary.lateOrEarlyCount = summary.lateInCount + summary.earlyOutCount;
+
+    // Permission Deductions Summary (using deductionService for consistency)
+    let totalPermissionDeductionDays = 0;
+    const permissionDeductionBreakdown = { quarter_day: 0, half_day: 0, full_day: 0, custom_amount: 0 };
+
+    try {
+      const employee = await Employee.findById(employeeId)
+        .select('department_id division_id deductPermission')
+        .lean();
+      if (employee && employee.department_id && summary.totalPermissionCount > 0) {
+        const monthStr = `${year}-${String(monthNumber).padStart(2, '0')}`;
+        const gross = Number(employee.gross_salary) || 0;
+        const perDayBasicPay =
+          summary.totalDaysInMonth > 0
+            ? Math.round((gross / summary.totalDaysInMonth) * 100) / 100
+            : 0;
+
+        const permDed = await deductionService.calculatePermissionDeduction(
+          employeeId,
+          monthStr,
+          String(employee.department_id),
+          perDayBasicPay,
+          employee.division_id ? String(employee.division_id) : null,
+          { employee }
+        );
+        const bd = permDed.breakdown || {};
+        totalPermissionDeductionDays = Number(bd.daysDeducted) || 0;
+        
+        // Map breakdown to days by type (similar to early-out)
+        if (bd.deductionType === 'half_day') {
+          permissionDeductionBreakdown.half_day = Math.round((totalPermissionDeductionDays / 0.5)) || 0;
+        } else if (bd.deductionType === 'full_day') {
+          permissionDeductionBreakdown.full_day = totalPermissionDeductionDays;
+        } else if (bd.deductionType === 'custom_days') {
+          permissionDeductionBreakdown.full_day = Math.round(totalPermissionDeductionDays);
+        } else if (bd.deductionType === 'custom_amount') {
+          permissionDeductionBreakdown.custom_amount = Number(permDed.permissionDeduction) || 0;
+        }
+      }
+    } catch (e) {
+      console.error('[Summary] Permission deduction calculation failed:', e.message);
+    }
+
+    summary.totalPermissionDeductionDays = Math.round(totalPermissionDeductionDays * 100) / 100;
+    summary.permissionDeductionBreakdown = {
+      quarter_day: Math.round(permissionDeductionBreakdown.quarter_day * 100) / 100,
+      half_day: Math.round(permissionDeductionBreakdown.half_day * 100) / 100,
+      full_day: Math.round(permissionDeductionBreakdown.full_day * 100) / 100,
+      custom_amount: Math.round(permissionDeductionBreakdown.custom_amount * 100) / 100,
+    };
 
     // Policy attendance deduction (aligned with payroll deductionService — late/early counts + absent extra)
     let policyDedDays = 0;

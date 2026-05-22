@@ -14,6 +14,7 @@ export interface User {
   employeeRef?: string;
   emp_no?: string;
   featureControl?: string[];
+  managedHolidayGroupIds?: string[];
   loginMethod?: string;
 }
 

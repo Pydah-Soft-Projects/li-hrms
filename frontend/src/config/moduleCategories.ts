@@ -34,6 +34,8 @@ export const MODULE_CATEGORIES = [
             { code: 'CONFUSED_SHIFTS', label: 'Confused Shifts', href: '/confused-shifts' },
             { code: 'SHIFT_ROSTER', label: 'Shift Roster', href: '/shift-roster' },
             { code: 'HOLIDAY_CALENDAR', label: 'Holiday Calendar', href: '/holidays' },
+            // Permission-only module: grants ability to manage GLOBAL holidays (not just scoped groups)
+            { code: 'HOLIDAY_CALENDAR_MANAGE_GLOBAL', label: 'Holiday Calendar (Global Manage)', href: '/holidays' },
             { code: 'SHIFTS', label: 'Shifts', href: '/shifts' }
         ]
     },
@@ -72,7 +74,7 @@ export const MODULE_CATEGORIES = [
             { code: 'ARREARS', label: 'Arrears', href: '/arrears' },
             { code: 'MANUAL_DEDUCTIONS', label: 'Manual Deductions', href: '/manual-deductions' },
             { code: 'ALLOWANCES_DEDUCTIONS', label: 'Allowances & Deductions', href: '/allowances-deductions' },
-            { code: 'LOANS_SALARY_ADVANCE', label: 'Loans & Salary Advance', href: '/loans' }
+            { code: 'LOANS', label: 'Loans & Salary Advance', href: '/loans' }
         ]
     },
     {
@@ -91,17 +93,32 @@ export function getModulesForCategory(categoryCode: string) {
     return category?.modules || [];
 }
 
+/** Legacy / alternate module codes that grant the same access (e.g. feature control vs nav config). */
+const MODULE_CODE_ALIASES: Record<string, string[]> = {
+    LOANS: ['LOANS_SALARY_ADVANCE', 'LOAN'],
+    LOANS_SALARY_ADVANCE: ['LOANS', 'LOAN'],
+};
+
+function moduleCodesToCheck(moduleCode: string): string[] {
+    const aliases = MODULE_CODE_ALIASES[moduleCode] || [];
+    return [moduleCode, ...aliases];
+}
+
+function hasModulePermission(moduleCode: string, featureControl: string[]): boolean {
+    return moduleCodesToCheck(moduleCode).some(
+        (code) =>
+            featureControl.includes(code) ||
+            featureControl.includes(`${code}:read`) ||
+            featureControl.includes(`${code}:write`) ||
+            featureControl.includes(`${code}:verify`)
+    );
+}
+
 // Helper to check if a module is enabled based on feature control
 export function isModuleEnabled(moduleCode: string, featureControl: string[] | null): boolean {
     if (!featureControl || featureControl.length === 0) return true; // If no feature control or empty, allow all
 
-    // Check for exact match OR :read OR :write OR :verify permissions
-    const direct =
-        featureControl.includes(moduleCode) ||
-        featureControl.includes(`${moduleCode}:read`) ||
-        featureControl.includes(`${moduleCode}:write`) ||
-        featureControl.includes(`${moduleCode}:verify`);
-    if (direct) return true;
+    if (hasModulePermission(moduleCode, featureControl)) return true;
 
     // Employee groups: treat as part of org setup if departments access exists (backward compatible)
     if (moduleCode === 'EMPLOYEE_GROUPS') {
