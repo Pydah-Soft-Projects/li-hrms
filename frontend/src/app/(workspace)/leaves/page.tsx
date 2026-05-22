@@ -31,6 +31,10 @@ import {
   subscribeOdTrailUpdates,
 } from '@/lib/odTrailSocket';
 import { MultiSelect } from '@/components/MultiSelect';
+import {
+  buildDivisionToDepartmentIdsMap,
+  getDepartmentsForDivision,
+} from '@/lib/divisionDepartmentUtils';
 import { auth } from '@/lib/auth';
 import {
   canViewLeaves,
@@ -1608,63 +1612,83 @@ export default function LeavesPage() {
     return divs;
   }, [currentUser, divisions, activeWorkspace?.scopeConfig]);
 
-  const departmentBelongsToDivision = useCallback(
-    (dept: any, divisionId: string) => {
-      if (!divisionId || !dept) return false;
-      const div = divisions.find((dv: any) => dv._id === divisionId);
-      if (div?.departments) {
-        const divDeptIds = div.departments.map((dd: any) => (typeof dd === 'string' ? dd : dd._id));
-        if (divDeptIds.includes(dept._id)) return true;
-      }
-      if (dept.divisions) {
-        const deptDivIds = dept.divisions.map((dv: any) => (typeof dv === 'string' ? dv : dv._id));
-        if (deptDivIds.includes(divisionId)) return true;
-      }
-      if (dept.division_id) {
-        const dDivId = typeof dept.division_id === 'string' ? dept.division_id : dept.division_id?._id;
-        if (dDivId === divisionId) return true;
-      }
-      return false;
-    },
-    [divisions]
+  const divisionDeptMap = useMemo(
+    () => buildDivisionToDepartmentIdsMap(divisions, departments),
+    [divisions, departments]
   );
 
   const getScopedDepartmentsForDivision = useCallback(
     (selectedDivisionId: string) => {
-      const eligibleDepts = departments.filter((d: any) => {
-        if (!selectedDivisionId) return true;
-        return departmentBelongsToDivision(d, selectedDivisionId);
-      });
+      const eligibleDepts = selectedDivisionId
+        ? getDepartmentsForDivision(selectedDivisionId, divisions, departments, divisionDeptMap)
+        : departments;
 
       if (!currentUser || currentUser.dataScope === 'all') return eligibleDepts;
 
-      if (currentUser.divisionMapping && currentUser.divisionMapping.length > 0) {
-        const mapping = currentUser.divisionMapping.find((m: any) => {
-          const mDivId = typeof m.division === 'string' ? m.division : m.division._id;
-          return mDivId === selectedDivisionId;
-        });
+      // When a division is selected in the filter, scope to that division only — do not fall back to a single global department.
+      if (selectedDivisionId) {
+        if (currentUser.divisionMapping && currentUser.divisionMapping.length > 0) {
+          const mapping = currentUser.divisionMapping.find((m: any) => {
+            const mDivId = typeof m.division === 'string' ? m.division : m.division._id;
+            return String(mDivId) === String(selectedDivisionId);
+          });
 
-        if (mapping) {
-          if (!mapping.departments || mapping.departments.length === 0) return eligibleDepts;
-          const allowedDeptIds = mapping.departments.map((dd: any) => (typeof dd === 'string' ? dd : dd._id));
-          return eligibleDepts.filter((d: any) => allowedDeptIds.includes(d._id));
+          if (mapping) {
+            if (!mapping.departments || mapping.departments.length === 0) return eligibleDepts;
+            const allowedDeptIds = new Set(
+              mapping.departments.map((dd: any) => String(typeof dd === 'string' ? dd : dd._id))
+            );
+            const scoped = eligibleDepts.filter((d: any) => allowedDeptIds.has(String(d._id)));
+            return scoped.length > 0 ? scoped : eligibleDepts;
+          }
         }
+
+        if (currentUser.allowedDivisions && currentUser.allowedDivisions.length > 0) {
+          const allowedDivIds = currentUser.allowedDivisions.map((d: any) =>
+            String(typeof d === 'string' ? d : d._id)
+          );
+          if (allowedDivIds.includes(String(selectedDivisionId))) {
+            if (currentUser.departments && currentUser.departments.length > 0) {
+              const allowedDeptIds = new Set(
+                currentUser.departments.map((d: any) => String(typeof d === 'object' ? d._id : d))
+              );
+              const scoped = eligibleDepts.filter((d: any) => allowedDeptIds.has(String(d._id)));
+              return scoped.length > 0 ? scoped : eligibleDepts;
+            }
+            return eligibleDepts;
+          }
+        }
+
+        return eligibleDepts;
+      }
+
+      if (currentUser.divisionMapping && currentUser.divisionMapping.length > 0) {
+        const pool: any[] = [];
+        for (const m of currentUser.divisionMapping) {
+          const mDivId = typeof m.division === 'string' ? m.division : m.division._id;
+          pool.push(...getDepartmentsForDivision(mDivId, divisions, departments, divisionDeptMap));
+        }
+        return Array.from(new Map(pool.map((d) => [String(d._id), d])).values());
       }
 
       if (currentUser.departments && currentUser.departments.length > 0) {
-        const allowedDeptIds = currentUser.departments.map((d: any) => d._id);
-        return eligibleDepts.filter((d: any) => allowedDeptIds.includes(d._id));
+        const allowedDeptIds = new Set(
+          currentUser.departments.map((d: any) => String(typeof d === 'object' ? d._id : d))
+        );
+        return departments.filter((d: any) => allowedDeptIds.has(String(d._id)));
       }
 
       if (currentUser.department) {
         const deptId =
-          typeof currentUser.department === 'string' ? currentUser.department : currentUser.department._id;
-        return eligibleDepts.filter((d: any) => d._id === deptId);
+          typeof currentUser.department === 'string'
+            ? currentUser.department
+            : currentUser.department._id;
+        return departments.filter((d: any) => String(d._id) === String(deptId));
       }
 
       return eligibleDepts;
     },
-    [currentUser, departments, departmentBelongsToDivision]
+    [currentUser, departments, divisions, divisionDeptMap]
   );
 
   const scopedDepartmentFilterOptions = useMemo(() => {

@@ -15,6 +15,10 @@ import autoTable from 'jspdf-autotable';
 import { Loader2, Calendar, Briefcase, X, Clock as Clock3, Star, FileText, CheckCircle2, AlertCircle, Plus } from 'lucide-react';
 import { MultiSelect } from '@/components/MultiSelect';
 import {
+  buildDivisionToDepartmentIdsMap,
+  getDepartmentsForDivision,
+} from '@/lib/divisionDepartmentUtils';
+import {
   buildLeaveODPayPeriodOptions,
   matchLeaveODPayPeriodSelectValue,
 } from '@/lib/payPeriodRange';
@@ -1138,23 +1142,21 @@ function LeavesPageContent() {
     }
   };
 
-  // Filtered departments based on selected divisions
+  const divisionDeptMap = useMemo(
+    () => buildDivisionToDepartmentIdsMap(divisions, departments),
+    [divisions, departments]
+  );
+
+  // Filtered departments based on selected divisions (both link directions)
   const filteredDepartments = useMemo(() => {
     if (leaveFilters.division.length === 0) return departments;
-    
-    // Get all divisions that are currently selected
-    const selectedDivs = divisions.filter(d => leaveFilters.division.includes(String(d._id)));
-    
-    // Extract all department IDs from these divisions
-    const allowedDeptIds = new Set<string>();
-    selectedDivs.forEach(div => {
-      (div.departments || []).forEach(d => {
-        allowedDeptIds.add(typeof d === 'string' ? d : String((d as any)._id));
-      });
-    });
 
-    return departments.filter(dept => dept?._id && allowedDeptIds.has(String(dept._id)));
-  }, [leaveFilters.division, divisions, departments]);
+    const pool: Department[] = [];
+    for (const divId of leaveFilters.division) {
+      pool.push(...getDepartmentsForDivision(divId, divisions, departments, divisionDeptMap));
+    }
+    return Array.from(new Map(pool.map((d) => [String(d._id), d])).values());
+  }, [leaveFilters.division, divisions, departments, divisionDeptMap]);
 
   useEffect(() => {
     loadDashboardStats();

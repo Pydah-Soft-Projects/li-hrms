@@ -1,8 +1,19 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { api } from '@/lib/api';
+import { api, type Department, type Division, type EmployeeGroup } from '@/lib/api';
 import { auth } from '@/lib/auth';
+import {
+  getScopedDepartmentFilterOptions,
+  getScopedDivisions,
+  type ScopeUser,
+} from '@/lib/departmentScopeUtils';
+import {
+  collectEmployeeGroupIdsFromEmployees,
+  getScopedEmployeeGroupsForFilter,
+  getUserAllowedEmployeeGroupIds,
+} from '@/lib/employeeGroupScopeUtils';
+import { useWorkspaceSafe } from '@/contexts/WorkspaceContext';
 import { toast } from 'react-toastify';
 import {
   Search,
@@ -580,11 +591,14 @@ export default function LeaveRegisterPage({
   allowAdminMonthEdits,
 }: LeaveRegisterPageProps) {
   const isSuperadmin = variant === 'superadmin';
-  const currentUser = useMemo(() => auth.getUser(), []);
+  const workspaceContext = useWorkspaceSafe();
+  const activeWorkspace = workspaceContext?.activeWorkspace ?? null;
+  const currentUser = useMemo(() => auth.getUser() as ScopeUser | null, []);
   const hasMonthEditPrivilege = useMemo(() => {
     if (!currentUser) return false;
     const adminRoles = ['super_admin', 'sub_admin', 'manager', 'hr', 'hod'];
-    if (adminRoles.includes(currentUser.role)) return true;
+    const role = currentUser.role ?? '';
+    if (role && adminRoles.includes(role)) return true;
     const fc = Array.isArray(currentUser.featureControl) ? currentUser.featureControl : [];
     return fc.includes('LEAVE_REGISTER_MONTH_EDIT:write') || fc.includes('LEAVE_REGISTER_MONTH_EDIT');
   }, [currentUser]);
@@ -606,10 +620,12 @@ export default function LeaveRegisterPage({
   const [departmentId, setDepartmentId] = useState('');
   const [designationId, setDesignationId] = useState('');
   const [employeeGroupId, setEmployeeGroupId] = useState('');
-  const [divisions, setDivisions] = useState<{ _id: string; name: string }[]>([]);
-  const [departments, setDepartments] = useState<{ _id: string; name: string }[]>([]);
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<{ _id: string; name: string }[]>([]);
-  const [employeeGroups, setEmployeeGroups] = useState<{ _id: string; name: string }[]>([]);
+  const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
+  const [customGroupingEnabled, setCustomGroupingEnabled] = useState(false);
+  const [orgScopeGroupIds, setOrgScopeGroupIds] = useState<Set<string> | null>(null);
   const PAGE_SIZE = 25;
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ListRow[]>([]);
@@ -686,28 +702,110 @@ export default function LeaveRegisterPage({
     return () => clearTimeout(t);
   }, [search]);
 
+  const scopedDivisions = useMemo(
+    () => getScopedDivisions(divisions, currentUser, activeWorkspace?.scopeConfig ?? null),
+    [divisions, currentUser, activeWorkspace?.scopeConfig]
+  );
+
+  const filteredDepartments = useMemo(
+    () =>
+      getScopedDepartmentFilterOptions(
+        divisionId,
+        scopedDivisions,
+        divisions,
+        departments,
+        currentUser,
+        activeWorkspace?.scopeConfig ?? null
+      ),
+    [divisionId, scopedDivisions, divisions, departments, currentUser, activeWorkspace?.scopeConfig]
+  );
+
+  const userAllowedGroupIds = useMemo(
+    () => getUserAllowedEmployeeGroupIds(currentUser),
+    [currentUser]
+  );
+
+  const scopedEmployeeGroups = useMemo(
+    () =>
+      getScopedEmployeeGroupsForFilter(employeeGroups, {
+        divisionId: divisionId || undefined,
+        departmentId: departmentId || undefined,
+        userAllowedGroupIds,
+        orgScopeGroupIds,
+      }),
+    [employeeGroups, divisionId, departmentId, userAllowedGroupIds, orgScopeGroupIds]
+  );
+
   useEffect(() => {
     (async () => {
       try {
-        const [divRes, deptRes, groupRes] = await Promise.all([
+        const [divRes, deptRes, groupRes, groupingSettingRes] = await Promise.all([
           api.getDivisions(true),
-          api.getDepartments(true, divisionId || undefined),
+          api.getDepartments(true),
           api.getEmployeeGroups(true),
+          api.getSetting('custom_employee_grouping_enabled'),
         ]);
         if (divRes.success && Array.isArray(divRes.data)) {
-          setDivisions(divRes.data.map((d: any) => ({ _id: d._id, name: d.name })));
+          setDivisions(divRes.data);
         }
         if (deptRes.success && Array.isArray(deptRes.data)) {
-          setDepartments(deptRes.data.map((d: any) => ({ _id: d._id, name: d.name })));
+          setDepartments(deptRes.data);
         }
         if (groupRes.success && Array.isArray(groupRes.data)) {
-          setEmployeeGroups(groupRes.data.map((d: any) => ({ _id: d._id, name: d.name })));
+          setEmployeeGroups(groupRes.data);
         }
+        const groupingOn = !!(
+          groupingSettingRes.success &&
+          groupingSettingRes.data &&
+          groupingSettingRes.data.value
+        );
+        setCustomGroupingEnabled(groupingOn);
+        if (!groupingOn) setEmployeeGroupId('');
       } catch {
         /* ignore */
       }
     })();
-  }, [divisionId]);
+  }, []);
+
+  useEffect(() => {
+    if (!divisionId && !departmentId) {
+      setOrgScopeGroupIds(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.getEmployees({
+          is_active: true,
+          division_id: divisionId || undefined,
+          department_id: departmentId || undefined,
+          limit: 5000,
+          page: 1,
+        });
+        if (cancelled) return;
+        const list = res?.data?.employees ?? res?.data ?? [];
+        const arr = Array.isArray(list) ? list : [];
+        setOrgScopeGroupIds(collectEmployeeGroupIdsFromEmployees(arr));
+      } catch {
+        if (!cancelled) setOrgScopeGroupIds(new Set());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [divisionId, departmentId]);
+
+  useEffect(() => {
+    if (!customGroupingEnabled || !employeeGroupId) return;
+    const stillValid = scopedEmployeeGroups.some((g) => String(g._id) === String(employeeGroupId));
+    if (!stillValid) setEmployeeGroupId('');
+  }, [customGroupingEnabled, scopedEmployeeGroups, employeeGroupId]);
+
+  useEffect(() => {
+    if (!departmentId) return;
+    const stillValid = filteredDepartments.some((d) => String(d._id) === String(departmentId));
+    if (!stillValid) setDepartmentId('');
+  }, [filteredDepartments, departmentId]);
 
   useEffect(() => {
     (async () => {
@@ -1451,12 +1549,14 @@ export default function LeaveRegisterPage({
                 onChange={(e) => {
                   setDivisionId(e.target.value);
                   setDepartmentId('');
+                  setDesignationId('');
+                  setEmployeeGroupId('');
                 }}
                 title="Division"
                 className={`${compactSelectClass} max-w-[8.5rem]`}
               >
                 <option value="">All divisions</option>
-                {divisions.map((d) => (
+                {scopedDivisions.map((d) => (
                   <option key={d._id} value={d._id}>
                     {d.name}
                   </option>
@@ -1464,12 +1564,15 @@ export default function LeaveRegisterPage({
               </select>
               <select
                 value={departmentId}
-                onChange={(e) => setDepartmentId(e.target.value)}
+                onChange={(e) => {
+                  setDepartmentId(e.target.value);
+                  setEmployeeGroupId('');
+                }}
                 title="Department"
                 className={`${compactSelectClass} max-w-[8.5rem]`}
               >
                 <option value="">All departments</option>
-                {departments.map((d) => (
+                {filteredDepartments.map((d) => (
                   <option key={d._id} value={d._id}>
                     {d.name}
                   </option>
@@ -1488,19 +1591,21 @@ export default function LeaveRegisterPage({
                   </option>
                 ))}
               </select>
-              <select
-                value={employeeGroupId}
-                onChange={(e) => setEmployeeGroupId(e.target.value)}
-                title="Employee Group"
-                className={`${compactSelectClass} max-w-[8.5rem]`}
-              >
-                <option value="">All groups</option>
-                {employeeGroups.map((g) => (
-                  <option key={g._id} value={g._id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
+              {customGroupingEnabled && (
+                <select
+                  value={employeeGroupId}
+                  onChange={(e) => setEmployeeGroupId(e.target.value)}
+                  title="Employee Group"
+                  className={`${compactSelectClass} max-w-[8.5rem]`}
+                >
+                  <option value="">All groups</option>
+                  {scopedEmployeeGroups.map((g) => (
+                    <option key={g._id} value={g._id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
 

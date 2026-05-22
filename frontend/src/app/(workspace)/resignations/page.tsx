@@ -2,6 +2,15 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { api, Division, Department, EmployeeGroup } from '@/lib/api';
+import {
+  buildDivisionToDepartmentIdsMap,
+  getDepartmentsForDivision,
+} from '@/lib/divisionDepartmentUtils';
+import {
+  collectEmployeeGroupIdsFromEmployees,
+  getScopedEmployeeGroupsForFilter,
+  getUserAllowedEmployeeGroupIds,
+} from '@/lib/employeeGroupScopeUtils';
 import { auth } from '@/lib/auth';
 import { canViewResignation, canApplyResignation, canApproveResignation } from '@/lib/permissions';
 import { toast, ToastContainer } from 'react-toastify';
@@ -350,6 +359,40 @@ export default function ResignationsPage() {
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [groups, setGroups] = useState<EmployeeGroup[]>([]);
+  const [customGroupingEnabled, setCustomGroupingEnabled] = useState(false);
+  const [orgScopeGroupIds, setOrgScopeGroupIds] = useState<Set<string> | null>(null);
+
+  const divisionDeptMap = useMemo(
+    () => buildDivisionToDepartmentIdsMap(divisions, departments),
+    [divisions, departments]
+  );
+
+  const filteredDepartmentsForFilter = useMemo(() => {
+    if (!filters.division_id) return departments;
+    return getDepartmentsForDivision(filters.division_id, divisions, departments, divisionDeptMap);
+  }, [filters.division_id, divisions, departments, divisionDeptMap]);
+
+  const userAllowedGroupIds = useMemo(
+    () => getUserAllowedEmployeeGroupIds(currentUser),
+    [currentUser]
+  );
+
+  const scopedGroupsForFilter = useMemo(
+    () =>
+      getScopedEmployeeGroupsForFilter(groups, {
+        divisionId: filters.division_id || undefined,
+        departmentId: filters.department_id || undefined,
+        userAllowedGroupIds,
+        orgScopeGroupIds,
+      }),
+    [
+      groups,
+      filters.division_id,
+      filters.department_id,
+      userAllowedGroupIds,
+      orgScopeGroupIds,
+    ]
+  );
 
   const [resignationSettings, setResignationSettings] = useState<any>(null);
   const [viewType, setViewType] = useState<'card' | 'list'>('list');
@@ -410,16 +453,55 @@ export default function ResignationsPage() {
     if (user) setCurrentUser(user);
   }, []);
 
+  useEffect(() => {
+    if (!filters.division_id && !filters.department_id) {
+      setOrgScopeGroupIds(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.getEmployees({
+          is_active: true,
+          division_id: filters.division_id || undefined,
+          department_id: filters.department_id || undefined,
+          limit: 5000,
+          page: 1,
+        });
+        if (cancelled) return;
+        const list = res?.data?.employees ?? res?.data ?? [];
+        const arr = Array.isArray(list) ? list : [];
+        setOrgScopeGroupIds(collectEmployeeGroupIdsFromEmployees(arr));
+      } catch {
+        if (!cancelled) setOrgScopeGroupIds(new Set());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [filters.division_id, filters.department_id]);
+
+  useEffect(() => {
+    if (!customGroupingEnabled || !filters.employee_group_id) return;
+    const stillValid = scopedGroupsForFilter.some(
+      (g) => String(g._id) === String(filters.employee_group_id)
+    );
+    if (!stillValid) {
+      setFilters((prev) => ({ ...prev, employee_group_id: '' }));
+    }
+  }, [customGroupingEnabled, scopedGroupsForFilter, filters.employee_group_id]);
+
   const loadData = async () => {
     setLoading(true);
     try {
       const user = auth.getUser();
       const isEmployee = isEmployeeRole(user);
-      const [allRes, divRes, depRes, grpRes] = await Promise.all([
+      const [allRes, divRes, depRes, grpRes, groupingSettingRes] = await Promise.all([
         api.getResignationRequests(),
         api.getDivisions(true),
         api.getDepartments(true),
-        api.getEmployeeGroups(true)
+        api.getEmployeeGroups(true),
+        api.getSetting('custom_employee_grouping_enabled'),
       ]);
 
       if (allRes.success && allRes.data) setAllRequests(Array.isArray(allRes.data) ? allRes.data : []);
@@ -428,6 +510,15 @@ export default function ResignationsPage() {
       if (divRes.success && divRes.data) setDivisions(divRes.data);
       if (depRes.success && depRes.data) setDepartments(depRes.data);
       if (grpRes.success && grpRes.data) setGroups(grpRes.data);
+      const groupingOn = !!(
+        groupingSettingRes.success &&
+        groupingSettingRes.data &&
+        groupingSettingRes.data.value
+      );
+      setCustomGroupingEnabled(groupingOn);
+      if (!groupingOn) {
+        setFilters((prev) => ({ ...prev, employee_group_id: '' }));
+      }
 
       if (!isEmployee) {
         const [pendingRes, settingsRes] = await Promise.all([
@@ -1007,7 +1098,14 @@ export default function ResignationsPage() {
               <div className="relative">
                 <select
                   value={filters.division_id}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, division_id: e.target.value, department_id: '' }))}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      division_id: e.target.value,
+                      department_id: '',
+                      employee_group_id: '',
+                    }))
+                  }
                   className="w-full h-10 pl-4 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-green-500/10 outline-none transition-all appearance-none cursor-pointer"
                 >
                   <option value="">All Divisions</option>
@@ -1020,30 +1118,36 @@ export default function ResignationsPage() {
               <div className="relative">
                 <select
                   value={filters.department_id}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, department_id: e.target.value }))}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      department_id: e.target.value,
+                      employee_group_id: '',
+                    }))
+                  }
                   className="w-full h-10 pl-4 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-green-500/10 outline-none transition-all appearance-none cursor-pointer"
                 >
                   <option value="">All Departments</option>
-                  {departments
-                    .filter(dep => !filters.division_id || (Array.isArray(dep.divisions) ? dep.divisions.some((div: any) => (typeof div === 'string' ? div : div._id) === filters.division_id) : true))
-                    .map((d) => (
+                  {filteredDepartmentsForFilter.map((d) => (
                       <option key={d._id} value={d._id}>{d.name}</option>
                     ))}
                 </select>
               </div>
 
-              <div className="relative">
-                <select
-                  value={filters.employee_group_id}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, employee_group_id: e.target.value }))}
-                  className="w-full h-10 pl-4 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-green-500/10 outline-none transition-all appearance-none cursor-pointer"
-                >
-                  <option value="">All Groups</option>
-                  {groups.map((g) => (
-                    <option key={g._id} value={g._id}>{g.name}</option>
-                  ))}
-                </select>
-              </div>
+              {customGroupingEnabled ? (
+                <div className="relative">
+                  <select
+                    value={filters.employee_group_id}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, employee_group_id: e.target.value }))}
+                    className="w-full h-10 pl-4 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-green-500/10 outline-none transition-all appearance-none cursor-pointer"
+                  >
+                    <option value="">All Groups</option>
+                    {scopedGroupsForFilter.map((g) => (
+                      <option key={g._id} value={g._id}>{g.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
 
               <div className="relative">
                 <select
