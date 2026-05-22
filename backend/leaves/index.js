@@ -180,6 +180,11 @@ router.get('/my', leaveController.getMyLeaves);
 
 // Leave apply dialog: stored monthly cap / balances for payroll period of fromDate
 router.get(
+  '/payroll-period-bounds',
+  authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'),
+  leaveController.getPayrollPeriodBounds
+);
+router.get(
   '/apply-period-context',
   authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'),
   applyScopeFilter,

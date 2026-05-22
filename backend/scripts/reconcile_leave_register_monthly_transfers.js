@@ -8,6 +8,7 @@
  *   3) Recomputes actual unused pool from current slot credits minus actual used
  *      debits (net of old reversal credits) and locked CL.
  *   4) Reposts matching transfer-out/transfer-in rows and refreshes balances.
+ *   5) Auto-rejects non-final Leave applications only in ended payroll periods (--apply; not OD/OT/Permission).
  *
  * Usage:
  *   node scripts/reconcile_leave_register_monthly_transfers.js --empNo 61 --untilMonth 5 --untilYear 2026
@@ -33,6 +34,13 @@ const dateCycleService = require('../leaves/services/dateCycleService');
 const leaveRegisterService = require('../leaves/services/leaveRegisterService');
 const leaveRegisterYearLedgerService = require('../leaves/services/leaveRegisterYearLedgerService');
 const leaveRegisterYearMonthlyApplyService = require('../leaves/services/leaveRegisterYearMonthlyApplyService');
+const {
+  autoRejectStalePendingForRegisterReconcile,
+} = require('../leaves/services/leaveRegisterReconcileAutoRejectService');
+const {
+  allocateLockedByPriorityForSlot,
+  isPayrollPeriodEndedOnOrBeforeAsOf,
+} = require('../leaves/services/leaveRegisterYearService');
 
 const LEAVE_TYPES = ['CL', 'CCL', 'EL'];
 const TRANSFER_OUT_PREFIX = 'MONTHLY_POOL_TRANSFER_OUT_';
@@ -147,19 +155,28 @@ function slotCredits(slot, rollFlags) {
 
 function computeCarry(slot, rollFlags) {
   const credits = slotCredits(slot, rollFlags);
-  const used = {
-    CL: netUsedDaysForType(slot, 'CL'),
-    CCL: netUsedDaysForType(slot, 'CCL'),
-    EL: netUsedDaysForType(slot, 'EL'),
-  };
-  const clLocked = roundHalf(Number(slot?.lockedCredits) || 0);
+  const usedCl = netUsedDaysForType(slot, 'CL');
+  const usedCcl = netUsedDaysForType(slot, 'CCL');
+  const usedEl = netUsedDaysForType(slot, 'EL');
+  const periodEnded =
+    slot?.payPeriodEnd && isPayrollPeriodEndedOnOrBeforeAsOf(slot.payPeriodEnd, new Date());
+  const slotForLock =
+    periodEnded && Number(slot?.monthlyApplyLocked) > 0
+      ? { ...slot, monthlyApplyLocked: 0 }
+      : slot;
+  const locked = allocateLockedByPriorityForSlot(
+    slotForLock,
+    { cl: credits.CL, ccl: credits.CCL, el: credits.EL },
+    { cl: usedCl, ccl: usedCcl, el: usedEl },
+    rollFlags.elInPool
+  );
   return {
     credits,
-    used: { ...used, clLocked },
+    used: { CL: usedCl, CCL: usedCcl, EL: usedEl },
     carry: {
-      CL: rollFlags.CL ? roundHalf(Math.max(0, credits.CL - used.CL)) : 0,
-      CCL: rollFlags.CCL ? roundHalf(Math.max(0, credits.CCL - used.CCL)) : 0,
-      EL: rollFlags.EL ? roundHalf(Math.max(0, credits.EL - used.EL)) : 0,
+      CL: rollFlags.CL ? roundHalf(Math.max(0, credits.CL - usedCl - locked.cl)) : 0,
+      CCL: rollFlags.CCL ? roundHalf(Math.max(0, credits.CCL - usedCcl - locked.ccl)) : 0,
+      EL: rollFlags.EL ? roundHalf(Math.max(0, credits.EL - usedEl - locked.el)) : 0,
     },
   };
 }
@@ -447,7 +464,8 @@ async function syncTouchedSlots(employeeId, doc, targetIdx) {
   }
 }
 
-async function reconcileOneDoc({ doc, emp, targetIdx, rollFlags, apply }) {
+async function reconcileOneDoc({ doc, emp, targetIdx, rollFlags, apply, skipAutoReject = false }) {
+  const ordered = sortSlotRefs(doc.months);
   const before = snapshotMonths(doc, targetIdx, rollFlags);
   const workingDoc = await LeaveRegisterYear.findById(doc._id);
   const strip = stripTransfersThroughTarget(workingDoc, targetIdx);
@@ -458,12 +476,24 @@ async function reconcileOneDoc({ doc, emp, targetIdx, rollFlags, apply }) {
     strip.revertedCarryIn.length > 0 ||
     rebuiltEdges.some((edge) => edge.posted);
 
+  const autoRejectDryRun = skipAutoReject
+    ? { skipped: true, reason: 'skip_auto_reject_flag' }
+    : await autoRejectStalePendingForRegisterReconcile(doc.employeeId, ordered, targetIdx, {
+        dryRun: true,
+      });
+
   let after = afterPreview;
+  let autoRejectSummary = null;
   if (apply) {
     workingDoc.markModified('months');
     await workingDoc.save();
     for (const lt of LEAVE_TYPES) {
       await leaveRegisterYearLedgerService.recalculateRegisterBalances(doc.employeeId, lt, null);
+    }
+    if (!skipAutoReject) {
+      autoRejectSummary = await autoRejectStalePendingForRegisterReconcile(doc.employeeId, ordered, targetIdx, {
+        dryRun: false,
+      });
     }
     await syncTouchedSlots(doc.employeeId, workingDoc, targetIdx);
     const fresh = await LeaveRegisterYear.findById(workingDoc._id);
@@ -482,6 +512,7 @@ async function reconcileOneDoc({ doc, emp, targetIdx, rollFlags, apply }) {
     empNo: doc.empNo || emp?.emp_no,
     employeeName: doc.employeeName || emp?.employee_name || '',
     changed,
+    autoRejectPending: apply ? autoRejectSummary : autoRejectDryRun,
     removedTransferRows: strip.removed.reduce((sum, row) => sum + row.removedCount, 0),
     rebuiltEdges: rebuiltEdges.filter((edge) => edge.posted).length,
     april: {
@@ -511,6 +542,7 @@ async function main() {
   const untilYear = Number(parseArg('untilYear') || parseArg('year') || '2026');
   const financialYearArg = parseArg('financialYear');
   const apply = hasFlag('apply');
+  const skipAutoReject = hasFlag('skip-auto-reject');
 
   if (!empNo && !all) {
     console.error('Missing --empNo or --all');
@@ -588,6 +620,7 @@ async function main() {
           targetIdx,
           rollFlags,
           apply,
+          skipAutoReject,
         });
         summary.applied++;
         summary.totalRemovedTransferRows += row.removedTransferRows;
@@ -674,35 +707,25 @@ async function main() {
     return;
   }
 
-  const before = snapshotMonths(beforeDoc, targetIdx, rollFlags);
   const beforeService = await getRegisterServiceSummary(emp._id, fyName);
-
-  const workingDoc = await LeaveRegisterYear.findById(beforeDoc._id);
-  const strip = stripTransfersThroughTarget(workingDoc, targetIdx);
-  const rebuiltEdges = rebuildTransfersThroughTarget(workingDoc, targetIdx, rollFlags);
-
-  let after = snapshotMonths(workingDoc, targetIdx, rollFlags);
-  let afterService = null;
-  const changed =
-    strip.removed.length > 0 ||
-    strip.revertedCarryIn.length > 0 ||
-    rebuiltEdges.some((e) => e.posted);
-
-  if (apply) {
-    workingDoc.markModified('months');
-    await workingDoc.save();
-    for (const lt of LEAVE_TYPES) {
-      await leaveRegisterYearLedgerService.recalculateRegisterBalances(emp._id, lt, null);
-    }
-    await syncTouchedSlots(emp._id, workingDoc, targetIdx);
-    const fresh = await LeaveRegisterYear.findById(workingDoc._id);
-    after = snapshotMonths(fresh, targetIdx, rollFlags);
-    afterService = await getRegisterServiceSummary(emp._id, fyName);
-  }
+  const reconcileRow = await reconcileOneDoc({
+    doc: beforeDoc,
+    emp,
+    targetIdx,
+    rollFlags,
+    apply,
+    skipAutoReject,
+  });
+  const afterService = apply ? await getRegisterServiceSummary(emp._id, fyName) : null;
+  const freshDoc = apply ? await LeaveRegisterYear.findById(beforeDoc._id) : beforeDoc;
+  const before = snapshotMonths(beforeDoc, targetIdx, rollFlags);
+  const after = snapshotMonths(freshDoc, targetIdx, rollFlags);
 
   const result = {
     ok: true,
     dryRun: !apply,
+    skipAutoReject,
+    autoRejectPending: reconcileRow.autoRejectPending,
     message: apply
       ? 'Applied monthly transfer reconciliation.'
       : 'Dry run only. Re-run with --apply to persist this reconciliation.',
@@ -721,9 +744,11 @@ async function main() {
     financialYear: fyName,
     targetOpening: { month: untilMonth, year: untilYear },
     rollFlags,
-    changed,
-    strip,
-    rebuiltEdges,
+    changed: reconcileRow.changed,
+    april: reconcileRow.april,
+    mayOpening: reconcileRow.mayOpening,
+    removedTransferRows: reconcileRow.removedTransferRows,
+    rebuiltEdges: reconcileRow.rebuiltEdges,
     before,
     after,
     registerServiceBefore: beforeService.filter((m) => {

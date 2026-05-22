@@ -23,6 +23,12 @@ import {
   matchLeaveODPayPeriodSelectValue,
 } from '@/lib/payPeriodRange';
 import {
+  buildCrossPayrollPeriodLeaveError,
+  capToDateToPayrollPeriod,
+  getLeaveApplyPayrollPeriod,
+  earliestIsoDate,
+} from '@/lib/leavePayrollPeriod';
+import {
   buildStatusLabelMap,
   formatLeaveStatusLabel as fmtLeaveStatus,
   formatOdStatusLabel as fmtOdStatus,
@@ -1002,6 +1008,39 @@ function LeavesPageContent() {
     remarks: '',
   });
 
+  const [applyLeavePayrollPeriod, setApplyLeavePayrollPeriod] = useState<{
+    from: string;
+    to: string;
+    month: number;
+    year: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (applyType !== 'leave' || !formData.fromDate) {
+      setApplyLeavePayrollPeriod(null);
+      return;
+    }
+    const local = getLeaveApplyPayrollPeriod(formData.fromDate, payCycleStartDay, payCycleEndDay);
+    setApplyLeavePayrollPeriod(local);
+    let cancelled = false;
+    api
+      .getLeavePayrollPeriodBounds(formData.fromDate)
+      .then((res) => {
+        if (cancelled || !res?.success || !res.data?.payrollCycle) return;
+        const c = res.data.payrollCycle;
+        setApplyLeavePayrollPeriod({
+          from: c.start,
+          to: c.end,
+          month: c.month,
+          year: c.year,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [applyType, formData.fromDate, payCycleStartDay, payCycleEndDay]);
+
   // Approved records info for conflict checking
   const [approvedRecordsInfo, setApprovedRecordsInfo] = useState<{
     hasLeave: boolean;
@@ -1703,6 +1742,20 @@ function LeavesPageContent() {
         } catch (uploadError) {
           console.error("Evidence upload failed:", uploadError);
           toast.error("Failed to upload photo evidence");
+          return;
+        }
+      }
+
+      if (applyType === 'leave' && formData.fromDate) {
+        const crossPeriodErr = buildCrossPayrollPeriodLeaveError(
+          formData.fromDate,
+          formData.isHalfDay ? formData.fromDate : formData.toDate || formData.fromDate,
+          payCycleStartDay,
+          payCycleEndDay
+        );
+        if (crossPeriodErr) {
+          toast.error(crossPeriodErr);
+          setLoading(false);
           return;
         }
       }
@@ -4133,12 +4186,8 @@ function LeavesPageContent() {
                                 return d.toISOString().split('T')[0];
                               })()
                             : undefined;
-                        const toMax =
-                          maxToDateISO != null
-                            ? maxDate && maxToDateISO > maxDate
-                              ? maxDate
-                              : maxToDateISO
-                            : maxDate;
+                        const payrollPeriodEnd = applyLeavePayrollPeriod?.to;
+                        const toMax = earliestIsoDate(maxDate, payrollPeriodEnd, maxToDateISO);
                         return (
                           <div className="grid grid-cols-2 gap-4">
                             <div>
@@ -4148,10 +4197,29 @@ function LeavesPageContent() {
                                 min={minDate}
                                 max={maxDate}
                                 value={formData.fromDate}
-                                onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
+                                onChange={(e) => {
+                                  const fromDate = e.target.value;
+                                  const capped = capToDateToPayrollPeriod(
+                                    fromDate,
+                                    formData.toDate || fromDate,
+                                    payCycleStartDay,
+                                    payCycleEndDay
+                                  );
+                                  if (capped.adjusted && capped.periodLabel) {
+                                    toast.info(
+                                      `To date adjusted — leave must stay within payroll period ${capped.periodLabel}.`
+                                    );
+                                  }
+                                  setFormData({ ...formData, fromDate, toDate: capped.toDate });
+                                }}
                                 required
                                 className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                               />
+                              {applyLeavePayrollPeriod && (
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                  Payroll period (IST): {applyLeavePayrollPeriod.from} → {applyLeavePayrollPeriod.to}. Cannot cross into the next period in one request.
+                                </p>
+                              )}
                             </div>
                             <div>
                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
@@ -4162,6 +4230,14 @@ function LeavesPageContent() {
                                 value={formData.toDate}
                                 onChange={(e) => {
                                   let toDate = e.target.value;
+                                  if (payrollPeriodEnd && toDate > payrollPeriodEnd) {
+                                    toDate = payrollPeriodEnd;
+                                    toast.info(
+                                      applyLeavePayrollPeriod
+                                        ? `To date capped to ${applyLeavePayrollPeriod.to}. Submit a separate leave for the next payroll period.`
+                                        : 'To date capped to payroll period end.'
+                                    );
+                                  }
                                   if (maxToDateISO && toDate > maxToDateISO) {
                                     toDate = maxToDateISO;
                                     toast.info(
@@ -4169,6 +4245,16 @@ function LeavesPageContent() {
                                     );
                                   }
                                   if (maxDate && toDate > maxDate) toDate = maxDate;
+                                  const crossErr = buildCrossPayrollPeriodLeaveError(
+                                    formData.fromDate,
+                                    toDate,
+                                    payCycleStartDay,
+                                    payCycleEndDay
+                                  );
+                                  if (crossErr) {
+                                    toast.error(crossErr);
+                                    return;
+                                  }
                                   setFormData({ ...formData, toDate });
                                 }}
                                 required

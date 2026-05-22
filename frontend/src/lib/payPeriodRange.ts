@@ -1,7 +1,114 @@
 /**
- * Payroll month date range aligned with attendance / payroll settings
- * (same rules as workspace attendance month + payroll_cycle_start_day / payroll_cycle_end_day).
+ * Payroll month date range aligned with attendance / payroll settings (IST).
+ * Same rules as backend dateCycleService + payroll_cycle_start_day / payroll_cycle_end_day.
  */
+
+import { istYmdToParts, normalizeToISTYmd } from './istDate';
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function lastDayOfMonth(year: number, month1Based: number): number {
+  return new Date(year, month1Based, 0).getDate();
+}
+
+/**
+ * Payroll period (from/to YYYY-MM-DD, IST) that contains a calendar date.
+ * e.g. cycle 26–25 → 26 Jan–25 Feb is the February-labelled period.
+ */
+export function getPayrollPeriodForDate(
+  dateInput: string,
+  payrollCycleStartDay: number,
+  payrollCycleEndDay: number | null | undefined
+): { from: string; to: string; month: number; year: number } | null {
+  const ymd = normalizeToISTYmd(dateInput);
+  if (!ymd) return null;
+  const parts = istYmdToParts(ymd);
+  if (!parts) return null;
+  const year = parts.year;
+  const month1 = parts.month;
+  const day = parts.day;
+  const startDay =
+    payrollCycleStartDay >= 1 && payrollCycleStartDay <= 31 ? payrollCycleStartDay : 1;
+  const rawEnd = payrollCycleEndDay;
+  const endDay =
+    rawEnd != null && !Number.isNaN(Number(rawEnd)) && Number(rawEnd) >= 1 && Number(rawEnd) <= 31
+      ? Number(rawEnd)
+      : startDay > 1
+        ? startDay - 1
+        : 31;
+
+  if (startDay <= 1 && endDay >= 28) {
+    const actualEnd = Math.min(endDay, lastDayOfMonth(year, month1));
+    return {
+      from: `${year}-${pad2(month1)}-01`,
+      to: `${year}-${pad2(month1)}-${pad2(actualEnd)}`,
+      month: month1,
+      year,
+    };
+  }
+
+  if (day >= startDay) {
+    let nextMonth = month1 + 1;
+    let nextYear = year;
+    if (nextMonth > 12) {
+      nextMonth = 1;
+      nextYear += 1;
+    }
+    const endActual = Math.min(endDay, lastDayOfMonth(nextYear, nextMonth));
+    const periodEndMonth = nextMonth;
+    const periodEndYear = nextYear;
+    return {
+      from: `${year}-${pad2(month1)}-${pad2(startDay)}`,
+      to: `${nextYear}-${pad2(nextMonth)}-${pad2(endActual)}`,
+      month: periodEndMonth,
+      year: periodEndYear,
+    };
+  }
+
+  let prevMonth = month1 - 1;
+  let prevYear = year;
+  if (prevMonth < 1) {
+    prevMonth = 12;
+    prevYear -= 1;
+  }
+  const endActual = Math.min(endDay, lastDayOfMonth(year, month1));
+  return {
+    from: `${prevYear}-${pad2(prevMonth)}-${pad2(startDay)}`,
+    to: `${year}-${pad2(month1)}-${pad2(endActual)}`,
+    month: month1,
+    year,
+  };
+}
+
+export function formatPayrollPeriodRangeLabel(fromYmd: string, toYmd: string): string {
+  const fmt = (ymd: string) => {
+    const p = ymd.split('-').map((x) => parseInt(x, 10));
+    const d = new Date(p[0], p[1] - 1, p[2]);
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+  return `${fmt(fromYmd)} – ${fmt(toYmd)}`;
+}
+
+/** True when from and to (inclusive) lie in the same payroll period. */
+export function leaveDatesInSinglePayrollPeriod(
+  fromYmd: string,
+  toYmd: string,
+  payrollCycleStartDay: number,
+  payrollCycleEndDay: number | null | undefined
+): { ok: true; period: { from: string; to: string } } | { ok: false; fromPeriod: { from: string; to: string }; toPeriod: { from: string; to: string } } {
+  const to = toYmd?.trim() || fromYmd;
+  const fromPeriod = getPayrollPeriodForDate(fromYmd, payrollCycleStartDay, payrollCycleEndDay);
+  const toPeriod = getPayrollPeriodForDate(to, payrollCycleStartDay, payrollCycleEndDay);
+  if (!fromPeriod || !toPeriod) {
+    return { ok: true, period: fromPeriod || toPeriod || { from: fromYmd, to: to } };
+  }
+  if (fromPeriod.from === toPeriod.from && fromPeriod.to === toPeriod.to) {
+    return { ok: true, period: { from: fromPeriod.from, to: fromPeriod.to } };
+  }
+  return { ok: false, fromPeriod: { from: fromPeriod.from, to: fromPeriod.to }, toPeriod: { from: toPeriod.from, to: toPeriod.to } };
+}
 
 export function getPayPeriodRangeForCalendarMonth(
   year: number,

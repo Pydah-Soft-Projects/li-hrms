@@ -10,6 +10,12 @@ import {
   matchLeaveODPayPeriodSelectValue,
 } from '@/lib/payPeriodRange';
 import {
+  buildCrossPayrollPeriodLeaveError,
+  capToDateToPayrollPeriod,
+  getLeaveApplyPayrollPeriod,
+  earliestIsoDate,
+} from '@/lib/leavePayrollPeriod';
+import {
   buildStatusLabelMap,
   formatLeaveStatusLabel as fmtLeaveStatus,
   formatOdStatusLabel as fmtOdStatus,
@@ -852,6 +858,7 @@ export default function LeavesPage() {
       ),
     [dateRange.from, dateRange.to, payPeriodOptions, payCycleStartDay]
   );
+
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
@@ -972,6 +979,71 @@ export default function LeavesPage() {
     halfDayType: null,
     remarks: '',
   });
+
+  const [applyLeavePayrollPeriod, setApplyLeavePayrollPeriod] = useState<{
+    from: string;
+    to: string;
+    month: number;
+    year: number;
+  } | null>(null);
+  const [editLeavePayrollPeriod, setEditLeavePayrollPeriod] = useState<{
+    from: string;
+    to: string;
+    month: number;
+    year: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (applyType !== 'leave' || !formData.fromDate) {
+      setApplyLeavePayrollPeriod(null);
+      return;
+    }
+    const local = getLeaveApplyPayrollPeriod(formData.fromDate, payCycleStartDay, payCycleEndDay);
+    setApplyLeavePayrollPeriod(local);
+    let cancelled = false;
+    api
+      .getLeavePayrollPeriodBounds(formData.fromDate)
+      .then((res) => {
+        if (cancelled || !res?.success || !res.data?.payrollCycle) return;
+        const c = res.data.payrollCycle;
+        setApplyLeavePayrollPeriod({
+          from: c.start,
+          to: c.end,
+          month: c.month,
+          year: c.year,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [applyType, formData.fromDate, payCycleStartDay, payCycleEndDay]);
+
+  useEffect(() => {
+    if (detailType !== 'leave' || !editFormData.fromDate) {
+      setEditLeavePayrollPeriod(null);
+      return;
+    }
+    const local = getLeaveApplyPayrollPeriod(editFormData.fromDate, payCycleStartDay, payCycleEndDay);
+    setEditLeavePayrollPeriod(local);
+    let cancelled = false;
+    api
+      .getLeavePayrollPeriodBounds(editFormData.fromDate)
+      .then((res) => {
+        if (cancelled || !res?.success || !res.data?.payrollCycle) return;
+        const c = res.data.payrollCycle;
+        setEditLeavePayrollPeriod({
+          from: c.start,
+          to: c.end,
+          month: c.month,
+          year: c.year,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [detailType, editFormData.fromDate, payCycleStartDay, payCycleEndDay]);
 
   const [leaveFilters, setLeaveFilters] = useState({
     employeeNumber: '',
@@ -1898,6 +1970,17 @@ export default function LeavesPage() {
       if (applyType === 'leave') {
         if (!formData.leaveType || !formData.fromDate || !formData.toDate || !formData.purpose) {
           toast.error('Please fill all required fields');
+          setLoading(false);
+          return;
+        }
+        const crossPeriodErr = buildCrossPayrollPeriodLeaveError(
+          formData.fromDate,
+          formData.isHalfDay ? formData.fromDate : formData.toDate,
+          payCycleStartDay,
+          payCycleEndDay
+        );
+        if (crossPeriodErr) {
+          toast.error(crossPeriodErr);
           setLoading(false);
           return;
         }
@@ -5288,9 +5371,8 @@ export default function LeavesPage() {
                         return d.toISOString().split('T')[0];
                       })()
                       : undefined;
-                    const toMax = maxToDateISO
-                      ? (policyMax && maxToDateISO > policyMax ? policyMax : maxToDateISO)
-                      : policyMax;
+                    const payrollPeriodEnd = applyLeavePayrollPeriod?.to;
+                    const toMax = earliestIsoDate(policyMax, payrollPeriodEnd, maxToDateISO);
                     return (
                       <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -5300,10 +5382,33 @@ export default function LeavesPage() {
                             min={fromMin}
                             max={policyMax}
                             value={formData.fromDate}
-                            onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
+                            onChange={(e) => {
+                              const fromDate = e.target.value;
+                              const capped = capToDateToPayrollPeriod(
+                                fromDate,
+                                formData.toDate || fromDate,
+                                payCycleStartDay,
+                                payCycleEndDay
+                              );
+                              if (capped.adjusted && capped.periodLabel) {
+                                toast.info(
+                                  `To date adjusted — leave must stay within payroll period ${capped.periodLabel}.`
+                                );
+                              }
+                              setFormData({
+                                ...formData,
+                                fromDate,
+                                toDate: capped.toDate,
+                              });
+                            }}
                             required
                             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                           />
+                          {applyLeavePayrollPeriod && (
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              Payroll period (IST): {applyLeavePayrollPeriod.from} → {applyLeavePayrollPeriod.to}. To date cannot cross into the next period.
+                            </p>
+                          )}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">To Date *</label>
@@ -5314,11 +5419,29 @@ export default function LeavesPage() {
                             value={formData.toDate}
                             onChange={(e) => {
                               let toDate = e.target.value;
+                              if (payrollPeriodEnd && toDate > payrollPeriodEnd) {
+                                toDate = payrollPeriodEnd;
+                                toast.info(
+                                  applyLeavePayrollPeriod
+                                    ? `To date capped to payroll period end (${applyLeavePayrollPeriod.to}). Submit a separate leave for the next period.`
+                                    : 'To date capped to payroll period end.'
+                                );
+                              }
                               if (maxToDateISO && toDate > maxToDateISO) {
                                 toDate = maxToDateISO;
                                 toast.info(`CL allowed for this period: up to ${clBalanceForMonth} days; To date capped.`);
                               }
                               if (policyMax && toDate > policyMax) toDate = policyMax;
+                              const crossErr = buildCrossPayrollPeriodLeaveError(
+                                formData.fromDate,
+                                toDate,
+                                payCycleStartDay,
+                                payCycleEndDay
+                              );
+                              if (crossErr) {
+                                toast.error(crossErr);
+                                return;
+                              }
                               setFormData({ ...formData, toDate });
                             }}
                             required
@@ -6544,6 +6667,21 @@ export default function LeavesPage() {
                 try {
                   const user = auth.getUser();
 
+                  if (detailType === 'leave' && editFormData.fromDate) {
+                    const crossPeriodErr = buildCrossPayrollPeriodLeaveError(
+                      editFormData.fromDate,
+                      editFormData.isHalfDay
+                        ? editFormData.fromDate
+                        : editFormData.toDate || editFormData.fromDate,
+                      payCycleStartDay,
+                      payCycleEndDay
+                    );
+                    if (crossPeriodErr) {
+                      Swal.fire({ icon: 'error', title: 'Invalid dates', text: crossPeriodErr });
+                      return;
+                    }
+                  }
+
                   // Clean up data before sending - convert empty strings to null for enum fields
                   const cleanedData: any = {
                     ...editFormData,
@@ -6702,15 +6840,35 @@ export default function LeavesPage() {
                       value={editFormData.fromDate}
                       onChange={(e) => {
                         const newFromDate = e.target.value;
-                        // Auto-set end date = start date for half-day and hour-based OD
-                        const newToDate = (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours'))
-                          ? newFromDate
-                          : editFormData.toDate;
+                        let newToDate =
+                          detailType === 'od' &&
+                          (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')
+                            ? newFromDate
+                            : editFormData.toDate;
+                        if (detailType === 'leave') {
+                          const capped = capToDateToPayrollPeriod(
+                            newFromDate,
+                            newToDate || newFromDate,
+                            payCycleStartDay,
+                            payCycleEndDay
+                          );
+                          newToDate = capped.toDate;
+                          if (capped.adjusted && capped.periodLabel) {
+                            toast.info(
+                              `To date adjusted — leave must stay within payroll period ${capped.periodLabel}.`
+                            );
+                          }
+                        }
                         setEditFormData({ ...editFormData, fromDate: newFromDate, toDate: newToDate });
                       }}
                       required
                       className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     />
+                    {detailType === 'leave' && editLeavePayrollPeriod && (
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Payroll period: {editLeavePayrollPeriod.from} → {editLeavePayrollPeriod.to}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
@@ -6732,14 +6890,37 @@ export default function LeavesPage() {
                     <input
                       type="date"
                       value={editFormData.toDate}
+                      max={
+                        detailType === 'leave' && editLeavePayrollPeriod
+                          ? editLeavePayrollPeriod.to
+                          : undefined
+                      }
                       onChange={(e) => {
                         // For half-day and hour-based OD, prevent changing end date separately
                         if (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')) {
-                          // Auto-set to start date
                           setEditFormData({ ...editFormData, toDate: editFormData.fromDate });
-                        } else {
-                          setEditFormData({ ...editFormData, toDate: e.target.value });
+                          return;
                         }
+                        let toDate = e.target.value;
+                        if (detailType === 'leave' && editLeavePayrollPeriod && toDate > editLeavePayrollPeriod.to) {
+                          toDate = editLeavePayrollPeriod.to;
+                          toast.info(
+                            `To date capped to payroll period end (${editLeavePayrollPeriod.to}). Use a separate leave for the next period.`
+                          );
+                        }
+                        if (detailType === 'leave') {
+                          const crossErr = buildCrossPayrollPeriodLeaveError(
+                            editFormData.fromDate,
+                            toDate,
+                            payCycleStartDay,
+                            payCycleEndDay
+                          );
+                          if (crossErr) {
+                            toast.error(crossErr);
+                            return;
+                          }
+                        }
+                        setEditFormData({ ...editFormData, toDate });
                       }}
                       required
                       disabled={detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')}

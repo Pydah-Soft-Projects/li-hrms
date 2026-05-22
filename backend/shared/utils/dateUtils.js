@@ -12,6 +12,25 @@ function createISTDate(dateStr, timeStr = '00:00') {
 }
 
 /**
+ * Parse a leave/attendance calendar date as IST midnight.
+ * Accepts YYYY-MM-DD (from HTML date inputs) or any value extractISTComponents understands.
+ * @param {string|Date} value
+ * @returns {Date|null}
+ */
+function parseCalendarDateAsIST(value) {
+    if (value == null || value === '') return null;
+    const raw = String(value).trim();
+    const ymd = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+    if (ymd) {
+        return createISTDate(`${ymd[1]}-${ymd[2]}-${ymd[3]}`);
+    }
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    const ist = extractISTComponents(d);
+    return createISTDate(ist.dateStr);
+}
+
+/**
  * Extract date components in IST
  * @param {Date|string} dateInput 
  * @returns {{year: number, month: number, day: number, dateStr: string}}
@@ -334,6 +353,7 @@ async function getPresentPayPeriod() {
 
 module.exports = {
     createISTDate,
+    parseCalendarDateAsIST,
     extractISTComponents,
     getTodayISTDateString,
     getPayrollDateRange,

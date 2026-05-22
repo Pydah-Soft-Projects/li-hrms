@@ -13,11 +13,16 @@
  *   4) Recomputes actual used by month from approved Leave / LeaveSplit rows and
  *      ledger debits, ignoring stale application debits whose Leave is now not approved.
  *   5) Rebuilds transfer-out and transfer-in rows sequentially until the target opening.
- *   6) Rechains CL/CCL/EL balances and refreshes monthly apply cache when --apply is used.
+ *   6) Auto-rejects non-final Leave applications only in ended payroll periods (not OD/OT/Permission).
+ *   7) Rechains CL/CCL/EL balances and refreshes monthly apply cache when --apply is used.
+ *
+ * Flags:
+ *   --skip-auto-reject   Do not reject stale pending requests in closed periods (not recommended).
  *
  * Usage:
  *   node scripts/reconcile_leave_register_all_transfers_to_opening.js --empNo 61 --untilMonth 5 --untilYear 2026
  *   node scripts/reconcile_leave_register_all_transfers_to_opening.js --empNo 61 --untilMonth 5 --untilYear 2026 --apply
+ *   node scripts/reconcile_leave_register_all_transfers_to_opening.js --all --untilMonth 5 --untilYear 2026 --apply
  */
 
 const path = require('path');
@@ -37,6 +42,10 @@ const dateCycleService = require('../leaves/services/dateCycleService');
 const leaveRegisterService = require('../leaves/services/leaveRegisterService');
 const leaveRegisterYearLedgerService = require('../leaves/services/leaveRegisterYearLedgerService');
 const leaveRegisterYearMonthlyApplyService = require('../leaves/services/leaveRegisterYearMonthlyApplyService');
+const {
+  autoRejectStalePendingForRegisterReconcile,
+} = require('../leaves/services/leaveRegisterReconcileAutoRejectService');
+const { isPayrollPeriodEndedOnOrBeforeAsOf } = require('../leaves/services/leaveRegisterYearService');
 
 const LEAVE_TYPES = ['CL', 'CCL', 'EL'];
 const TRANSFER_OUT_PREFIX = 'MONTHLY_POOL_TRANSFER_OUT_';
@@ -351,9 +360,13 @@ function allocateLockedByPriority(lockedDays, credits, used, rollFlags) {
 function computeCarry(slot, rollFlags, actualByPayroll, leaveStatusById) {
   const credits = slotCredits(slot, rollFlags);
   const c = computeUsed(slot, rollFlags, actualByPayroll, leaveStatusById);
-  const monthLocked = roundHalf(
-    Math.max(Number(slot?.lockedCredits) || 0, Number(slot?.monthlyApplyLocked) || 0)
-  );
+  const periodEnded =
+    slot?.payPeriodEnd && isPayrollPeriodEndedOnOrBeforeAsOf(slot.payPeriodEnd, new Date());
+  const monthLocked = periodEnded
+    ? roundHalf(Number(slot?.lockedCredits) || 0)
+    : roundHalf(
+        Math.max(Number(slot?.lockedCredits) || 0, Number(slot?.monthlyApplyLocked) || 0)
+      );
   const lockAllocation = allocateLockedByPriority(monthLocked, credits, c.used, rollFlags);
   return {
     credits,
@@ -624,50 +637,29 @@ function compactComparison(before, after) {
   });
 }
 
-async function main() {
-  const empNo = parseArg('empNo');
-  const untilMonth = Number(parseArg('untilMonth') || parseArg('month') || '5');
-  const untilYear = Number(parseArg('untilYear') || parseArg('year') || '2026');
-  const financialYearArg = parseArg('financialYear');
-  const apply = hasFlag('apply');
-
-  if (!empNo) throw new Error('Pass --empNo <number>');
-  if (!Number.isFinite(untilMonth) || untilMonth < 1 || untilMonth > 12 || !Number.isFinite(untilYear)) {
-    throw new Error('Invalid --untilMonth / --untilYear');
-  }
-  if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI missing');
-
-  await mongoose.connect(process.env.MONGODB_URI);
-
-  const emp = await Employee.findOne({
-    $or: [{ emp_no: String(empNo) }, { emp_no: Number(empNo) }],
-  })
-    .select('_id emp_no employee_name casualLeaves paidLeaves compensatoryOffs is_active')
-    .lean();
-  if (!emp) throw new Error(`Employee not found: ${empNo}`);
-
-  const fyName = financialYearArg
-    ? String(financialYearArg).trim()
-    : (await dateCycleService.getFinancialYearForDate(new Date(untilYear, untilMonth - 1, 1))).name;
-  const policy = await LeavePolicySettings.getSettings().catch(() => ({}));
-  const rollFlags = resolveRollFlags(policy);
-
-  const beforeDoc = await LeaveRegisterYear.findOne({ employeeId: emp._id, financialYear: fyName });
-  if (!beforeDoc) throw new Error(`LeaveRegisterYear not found for empNo ${empNo}, FY ${fyName}`);
-
+async function reconcileOneEmployee({
+  beforeDoc,
+  emp,
+  untilMonth,
+  untilYear,
+  rollFlags,
+  apply,
+  skipAutoReject,
+  verbose = false,
+}) {
   const ordered = sortSlotRefs(beforeDoc.months);
   const targetIdx = findTargetIndex(ordered, untilMonth, untilYear);
   if (targetIdx < 0) {
-    throw new Error(
-      `Target payroll slot ${untilMonth}/${untilYear} not found. Existing slots: ${ordered
-        .map(({ slot }) => monthKey(slot))
-        .join(', ')}`
-    );
+    return {
+      ok: false,
+      empNo: beforeDoc.empNo || emp?.emp_no,
+      employeeId: String(beforeDoc.employeeId),
+      error: 'target_slot_not_found',
+    };
   }
 
-  const actual = await buildActualApprovedUsage(emp._id, ordered, targetIdx);
+  const actual = await buildActualApprovedUsage(beforeDoc.employeeId, ordered, targetIdx);
   const before = snapshotMonths(beforeDoc, targetIdx, rollFlags, actual.actualByPayroll, actual.leaveStatusById);
-  const yearAggregatesBefore = snapshotYearAggregates(beforeDoc).stored;
 
   const workingDoc = await LeaveRegisterYear.findById(beforeDoc._id);
   const strip = stripTransfersThroughTarget(workingDoc, targetIdx);
@@ -678,23 +670,188 @@ async function main() {
     actual.actualByPayroll,
     actual.leaveStatusById
   );
-  const yearAggregates = reconcileYearAggregates(workingDoc);
+  reconcileYearAggregates(workingDoc);
 
   let after = snapshotMonths(workingDoc, targetIdx, rollFlags, actual.actualByPayroll, actual.leaveStatusById);
-  let registerServiceAfter = null;
+  let autoRejectSummary = null;
+
+  const autoRejectDryRun = skipAutoReject
+    ? { skipped: true, reason: 'skip_auto_reject_flag' }
+    : await autoRejectStalePendingForRegisterReconcile(beforeDoc.employeeId, ordered, targetIdx, {
+        dryRun: true,
+      });
 
   if (apply) {
     workingDoc.markModified('months');
     await workingDoc.save();
     for (const lt of LEAVE_TYPES) {
-      await leaveRegisterYearLedgerService.recalculateRegisterBalances(emp._id, lt, null);
+      await leaveRegisterYearLedgerService.recalculateRegisterBalances(beforeDoc.employeeId, lt, null);
     }
     const aggregateFresh = await LeaveRegisterYear.findById(workingDoc._id);
     reconcileYearAggregates(aggregateFresh);
     await aggregateFresh.save();
-    await syncTouchedSlots(emp._id, workingDoc, targetIdx);
+    if (!skipAutoReject) {
+      autoRejectSummary = await autoRejectStalePendingForRegisterReconcile(beforeDoc.employeeId, ordered, targetIdx, {
+        dryRun: false,
+      });
+    }
+    await syncTouchedSlots(beforeDoc.employeeId, workingDoc, targetIdx);
     const fresh = await LeaveRegisterYear.findById(workingDoc._id);
     after = snapshotMonths(fresh, targetIdx, rollFlags, actual.actualByPayroll, actual.leaveStatusById);
+  }
+
+  const postedEdges = rebuiltEdges.filter((e) => e.posted).length;
+  const row = {
+    ok: true,
+    empNo: beforeDoc.empNo || emp?.emp_no,
+    employeeId: String(beforeDoc.employeeId),
+    employeeName: beforeDoc.employeeName || emp?.employee_name || '',
+    targetIdx,
+    removedTransferRows: strip.removed.reduce((sum, r) => sum + r.removedCount, 0),
+    rebuiltEdgesPosted: postedEdges,
+    autoRejectPending: apply ? autoRejectSummary : autoRejectDryRun,
+    leaveRejected: (apply ? autoRejectSummary : autoRejectDryRun)?.leaveRejected ?? 0,
+    odRejected: (apply ? autoRejectSummary : autoRejectDryRun)?.odRejected ?? 0,
+    permissionRejected: (apply ? autoRejectSummary : autoRejectDryRun)?.permissionRejected ?? 0,
+    otRejected: (apply ? autoRejectSummary : autoRejectDryRun)?.otRejected ?? 0,
+  };
+
+  if (verbose) {
+    row.comparison = compactComparison(before, after);
+    row.rebuiltEdges = rebuiltEdges;
+  }
+  return row;
+}
+
+async function main() {
+  const all = hasFlag('all');
+  const verbose = hasFlag('verbose');
+  const empNo = parseArg('empNo');
+  const untilMonth = Number(parseArg('untilMonth') || parseArg('month') || '5');
+  const untilYear = Number(parseArg('untilYear') || parseArg('year') || '2026');
+  const financialYearArg = parseArg('financialYear');
+  const apply = hasFlag('apply');
+  const skipAutoReject = hasFlag('skip-auto-reject');
+
+  if (!empNo && !all) throw new Error('Pass --empNo <number> or --all');
+  if (!Number.isFinite(untilMonth) || untilMonth < 1 || untilMonth > 12 || !Number.isFinite(untilYear)) {
+    throw new Error('Invalid --untilMonth / --untilYear');
+  }
+  if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI missing');
+
+  await mongoose.connect(process.env.MONGODB_URI);
+
+  const fyName = financialYearArg
+    ? String(financialYearArg).trim()
+    : (await dateCycleService.getFinancialYearForDate(new Date(untilYear, untilMonth - 1, 1))).name;
+  const policy = await LeavePolicySettings.getSettings().catch(() => ({}));
+  const rollFlags = resolveRollFlags(policy);
+
+  if (all) {
+    const docs = await LeaveRegisterYear.find({
+      financialYear: fyName,
+      months: {
+        $elemMatch: {
+          payrollCycleMonth: untilMonth,
+          payrollCycleYear: untilYear,
+        },
+      },
+    }).sort({ empNo: 1 });
+
+    const summary = {
+      ok: true,
+      dryRun: !apply,
+      skipAutoReject,
+      message: apply
+        ? 'Applied full transfer reconciliation for all matching employees.'
+        : 'Dry run only. Re-run with --apply to persist.',
+      database: redactMongoUri(process.env.MONGODB_URI),
+      financialYear: fyName,
+      targetOpening: { month: untilMonth, year: untilYear },
+      rollFlags,
+      scanned: docs.length,
+      succeeded: 0,
+      failed: 0,
+      totalRemovedTransferRows: 0,
+      totalRebuiltEdgesPosted: 0,
+      totalLeaveRejected: 0,
+      totalOdRejected: 0,
+      totalPermissionRejected: 0,
+      totalOtRejected: 0,
+      errors: [],
+      rows: verbose ? [] : undefined,
+    };
+
+    let n = 0;
+    for (const doc of docs) {
+      n += 1;
+      if (n % 25 === 0) {
+        console.error(`[reconcile-all] progress ${n}/${docs.length} empNo=${doc.empNo || '?'}`);
+      }
+      try {
+        const row = await reconcileOneEmployee({
+          beforeDoc: doc,
+          emp: null,
+          untilMonth,
+          untilYear,
+          rollFlags,
+          apply,
+          skipAutoReject,
+          verbose,
+        });
+        if (!row.ok) {
+          summary.failed++;
+          summary.errors.push({ empNo: row.empNo, error: row.error });
+          continue;
+        }
+        summary.succeeded++;
+        summary.totalRemovedTransferRows += row.removedTransferRows;
+        summary.totalRebuiltEdgesPosted += row.rebuiltEdgesPosted;
+        summary.totalLeaveRejected += row.leaveRejected;
+        summary.totalOdRejected += row.odRejected;
+        summary.totalPermissionRejected += row.permissionRejected;
+        summary.totalOtRejected += row.otRejected;
+        if (verbose) summary.rows.push(row);
+      } catch (error) {
+        summary.failed++;
+        summary.errors.push({
+          empNo: doc.empNo,
+          employeeId: String(doc.employeeId),
+          error: error?.message || String(error),
+        });
+      }
+    }
+
+    console.log(JSON.stringify(summary, null, 2));
+    await mongoose.disconnect();
+    return;
+  }
+
+  const emp = await Employee.findOne({
+    $or: [{ emp_no: String(empNo) }, { emp_no: Number(empNo) }],
+  })
+    .select('_id emp_no employee_name casualLeaves paidLeaves compensatoryOffs is_active')
+    .lean();
+  if (!emp) throw new Error(`Employee not found: ${empNo}`);
+
+  const beforeDoc = await LeaveRegisterYear.findOne({ employeeId: emp._id, financialYear: fyName });
+  if (!beforeDoc) throw new Error(`LeaveRegisterYear not found for empNo ${empNo}, FY ${fyName}`);
+
+  const yearAggregatesBefore = snapshotYearAggregates(beforeDoc).stored;
+  const single = await reconcileOneEmployee({
+    beforeDoc,
+    emp,
+    untilMonth,
+    untilYear,
+    rollFlags,
+    apply,
+    skipAutoReject,
+    verbose: true,
+  });
+  if (!single.ok) throw new Error(single.error || 'reconcile failed');
+
+  let registerServiceAfter = null;
+  if (apply) {
     const grouped = await leaveRegisterService.getLeaveRegister({ employeeId: emp._id, financialYear: fyName }, null, null);
     const row = Array.isArray(grouped) ? grouped[0] : grouped;
     registerServiceAfter = {
@@ -703,9 +860,16 @@ async function main() {
     };
   }
 
+  const freshDoc = apply ? await LeaveRegisterYear.findById(beforeDoc._id) : beforeDoc;
+  const yearAggregatesAfter = apply
+    ? snapshotYearAggregates(freshDoc).stored
+    : reconcileYearAggregates(freshDoc).after;
+
   const result = {
     ok: true,
     dryRun: !apply,
+    skipAutoReject,
+    autoRejectPending: single.autoRejectPending,
     message: apply
       ? 'Applied transfer reconciliation up to target opening.'
       : 'Dry run only. Re-run with --apply to persist.',
@@ -724,18 +888,13 @@ async function main() {
     financialYear: fyName,
     targetOpening: { month: untilMonth, year: untilYear },
     rollFlags,
-    removedTransferRows: strip.removed.reduce((sum, row) => sum + row.removedCount, 0),
-    revertedCarryInSlots: strip.revertedCarryIn,
-    rebuiltEdges,
+    removedTransferRows: single.removedTransferRows,
+    rebuiltEdges: single.rebuiltEdges,
     yearAggregates: {
       before: yearAggregatesBefore,
-      after: apply
-        ? snapshotYearAggregates(await LeaveRegisterYear.findById(workingDoc._id)).stored
-        : yearAggregates.after,
+      after: yearAggregatesAfter,
     },
-    comparison: compactComparison(before, after),
-    before,
-    after,
+    comparison: single.comparison,
     registerServiceAfter,
   };
 

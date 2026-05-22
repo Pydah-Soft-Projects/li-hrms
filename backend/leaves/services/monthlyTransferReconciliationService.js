@@ -3,6 +3,10 @@ const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const dateCycleService = require('./dateCycleService');
 const leaveRegisterYearLedgerService = require('./leaveRegisterYearLedgerService');
 const leaveRegisterYearMonthlyApplyService = require('./leaveRegisterYearMonthlyApplyService');
+const {
+  allocateLockedByPriorityForSlot,
+  isPayrollPeriodEndedOnOrBeforeAsOf,
+} = require('./leaveRegisterYearService');
 
 const LEAVE_TYPES = ['CL', 'CCL', 'EL'];
 const TRANSFER_OUT_PREFIX = 'MONTHLY_POOL_TRANSFER_OUT_';
@@ -105,34 +109,61 @@ function computeCarry(slot, rollFlags) {
     CCL: roundHalf(Number(slot?.compensatoryOffs) || 0),
     EL: rollFlags.elInPool ? roundHalf(Number(slot?.elCredits) || 0) : 0,
   };
-  const used = {
-    CL: netUsedDaysForType(slot, 'CL'),
-    CCL: netUsedDaysForType(slot, 'CCL'),
-    EL: netUsedDaysForType(slot, 'EL'),
-  };
-  const monthLocked = roundHalf(
-    Math.max(Number(slot?.lockedCredits) || 0, Number(slot?.monthlyApplyLocked) || 0)
+  const usedCl = netUsedDaysForType(slot, 'CL');
+  const usedCcl = netUsedDaysForType(slot, 'CCL');
+  const usedEl = netUsedDaysForType(slot, 'EL');
+  const periodEnded =
+    slot?.payPeriodEnd && isPayrollPeriodEndedOnOrBeforeAsOf(slot.payPeriodEnd, new Date());
+  const slotForLock =
+    periodEnded && Number(slot?.monthlyApplyLocked) > 0
+      ? { ...slot, monthlyApplyLocked: 0 }
+      : slot;
+  const locked = allocateLockedByPriorityForSlot(
+    slotForLock,
+    { cl: credits.CL, ccl: credits.CCL, el: credits.EL },
+    { cl: usedCl, ccl: usedCcl, el: usedEl },
+    rollFlags.elInPool
   );
-  const locked = { CL: 0, CCL: 0, EL: 0 };
-  let remainingLocked = monthLocked;
-  for (const lt of LEAVE_TYPES) {
-    if (lt === 'EL' && !rollFlags.elInPool) continue;
-    const availableAfterUsed = roundHalf(Math.max(0, credits[lt] - used[lt]));
-    locked[lt] = roundHalf(Math.min(remainingLocked, availableAfterUsed));
-    remainingLocked = roundHalf(Math.max(0, remainingLocked - locked[lt]));
-  }
+  const lockedUpper = {
+    CL: locked.cl,
+    CCL: locked.ccl,
+    EL: locked.el,
+  };
   return {
     credits,
-    used: { ...used, monthLocked },
-    locked,
-    unallocatedLocked: remainingLocked,
+    used: { CL: usedCl, CCL: usedCcl, EL: usedEl },
+    locked: lockedUpper,
+    unallocatedLocked: 0,
     carry: {
-      CL: rollFlags.CL ? roundHalf(Math.max(0, credits.CL - used.CL - locked.CL)) : 0,
-      CCL: rollFlags.CCL ? roundHalf(Math.max(0, credits.CCL - used.CCL - locked.CCL)) : 0,
-      EL: rollFlags.EL ? roundHalf(Math.max(0, credits.EL - used.EL - locked.EL)) : 0,
+      CL: rollFlags.CL ? roundHalf(Math.max(0, credits.CL - usedCl - locked.cl)) : 0,
+      CCL: rollFlags.CCL ? roundHalf(Math.max(0, credits.CCL - usedCcl - locked.ccl)) : 0,
+      EL: rollFlags.EL ? roundHalf(Math.max(0, credits.EL - usedEl - locked.el)) : 0,
     },
   };
 }
+
+function coerceDate(value) {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+/** Earliest calendar date that may affect payroll months (current + prior range on edit). */
+function earliestPayrollAnchorDate(leaveRecord, options = {}) {
+  const candidates = [
+    leaveRecord?.fromDate,
+    leaveRecord?.toDate,
+    options.originalFromDate,
+    options.originalToDate,
+  ]
+    .map(coerceDate)
+    .filter(Boolean);
+  if (!candidates.length) return null;
+  return candidates.reduce((min, d) => (d < min ? d : min));
+}
+
+/** Pending rebuilds per employee — coalesce reverse+add in one request into a single rebuild. */
+const pendingRebuildByEmployee = new Map();
 
 function monthKey(slot) {
   return `${Number(slot?.payrollCycleMonth)}/${Number(slot?.payrollCycleYear)}`;
@@ -392,19 +423,76 @@ async function reconcileEmployeeFromDate({
 }
 
 async function reconcileForLeaveChange(leaveRecord, options = {}) {
-  if (!leaveRecord?.employeeId || !leaveRecord?.fromDate) {
+  if (!leaveRecord?.employeeId) {
+    return { ok: false, skipped: true, reason: 'invalid_leave_record' };
+  }
+  const fromDate = earliestPayrollAnchorDate(leaveRecord, options) || leaveRecord.fromDate;
+  if (!fromDate) {
     return { ok: false, skipped: true, reason: 'invalid_leave_record' };
   }
   return reconcileEmployeeFromDate({
     employeeId: leaveRecord.employeeId,
-    fromDate: leaveRecord.fromDate,
+    fromDate,
     ...options,
+  });
+}
+
+function scheduleTransferRebuildForLeaveChange(leaveRecord, options = {}) {
+  const employeeId = leaveRecord?.employeeId ? String(leaveRecord.employeeId) : '';
+  const anchorDate = earliestPayrollAnchorDate(leaveRecord, options) || coerceDate(leaveRecord?.fromDate);
+  if (!employeeId || !anchorDate) return;
+
+  const existing = pendingRebuildByEmployee.get(employeeId);
+  if (existing) {
+    if (anchorDate < existing.anchorDate) existing.anchorDate = anchorDate;
+    if (options.originalFromDate && (!existing.options.originalFromDate || options.originalFromDate < existing.options.originalFromDate)) {
+      existing.options.originalFromDate = options.originalFromDate;
+    }
+    if (options.originalToDate && (!existing.options.originalToDate || options.originalToDate < existing.options.originalToDate)) {
+      existing.options.originalToDate = options.originalToDate;
+    }
+    return;
+  }
+
+  const entry = { anchorDate, options: { ...options }, leaveRecord };
+  pendingRebuildByEmployee.set(employeeId, entry);
+
+  setImmediate(async () => {
+    pendingRebuildByEmployee.delete(employeeId);
+    const { leaveRecord: lr, options: opts } = entry;
+    try {
+      const anchor = earliestPayrollAnchorDate(lr, opts) || entry.anchorDate;
+      const syncDates = new Set();
+      const addSync = (d) => {
+        const coerced = coerceDate(d);
+        if (coerced) syncDates.add(coerced.toISOString());
+      };
+      addSync(anchor);
+      addSync(lr?.fromDate);
+      addSync(lr?.toDate);
+      addSync(opts.originalFromDate);
+      addSync(opts.originalToDate);
+      for (const iso of syncDates) {
+        await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(
+          employeeId,
+          new Date(iso)
+        );
+      }
+      const result = await reconcileForLeaveChange(lr, { apply: true, ...opts });
+      if (result && !result.skipped && result.ok === false) {
+        console.warn('[monthlyTransfer rebuild] incomplete:', result);
+      }
+    } catch (e) {
+      console.warn('[monthlyTransfer rebuild]', e?.message || e);
+    }
   });
 }
 
 module.exports = {
   reconcileForLeaveChange,
   reconcileEmployeeFromDate,
+  scheduleTransferRebuildForLeaveChange,
+  earliestPayrollAnchorDate,
   resolveRollFlags,
   netUsedDaysForType,
   sumMonthlyClSchedule,

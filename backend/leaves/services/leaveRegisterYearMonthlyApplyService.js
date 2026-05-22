@@ -8,6 +8,7 @@ const LeaveRegisterYear = require('../model/LeaveRegisterYear');
 const Leave = require('../model/Leave');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const dateCycleService = require('./dateCycleService');
+const { isPayrollPeriodEndedOnOrBeforeAsOf } = require('./payrollPeriodDateUtils');
 const {
   CAP_COUNT_STATUSES,
   computeScheduledPoolApplyCeiling,
@@ -98,6 +99,15 @@ async function syncStoredMonthApplyFieldsForEmployeeDate(employeeId, fromDate) {
 
   consumed += manualUsedTotal;
   approvedSum += manualUsedTotal; // treat admin used as approved consumption (not pending lock)
+
+  // Closed payroll month: pool already carried/reconciled — pending must not reserve slot or inflate Used.
+  const periodEnded =
+    slot.payPeriodEnd &&
+    isPayrollPeriodEndedOnOrBeforeAsOf(slot.payPeriodEnd, new Date());
+  if (periodEnded) {
+    locked = 0;
+    consumed = approvedSum;
+  }
 
   slot.monthlyApplyConsumed = consumed;
   slot.monthlyApplyLocked = locked;

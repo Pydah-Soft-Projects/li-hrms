@@ -998,7 +998,7 @@ function resolveMonthlyPoolCarryRollFlags(policy) {
  * Only non-zero for payroll periods ended on/before asOf (IST). Uses global roll toggles (same basis as bulk carry rebuild).
  */
 function computeRegisterMonthPoolTransferOutDisplay(
-  { payPeriodEnd, scheduled, usedCl, usedCcl, usedEl },
+  { payPeriodEnd, scheduled, usedCl, usedCcl, usedEl, lockedCl, lockedCcl, lockedEl },
   asOf,
   policy
 ) {
@@ -1014,12 +1014,15 @@ function computeRegisterMonthPoolTransferOutDisplay(
   const uCl = round2(Number(usedCl) || 0);
   const uCcl = round2(Number(usedCcl) || 0);
   const uEl = round2(Number(usedEl) || 0);
+  const lCl = round2(Number(lockedCl) || 0);
+  const lCcl = round2(Number(lockedCcl) || 0);
+  const lEl = round2(Number(lockedEl) || 0);
 
-  let clCarry = Math.max(0, round2(clCredits - uCl));
+  let clCarry = Math.max(0, round2(clCredits - uCl - lCl));
   if (!clRoll) clCarry = 0;
-  let cclCarry = Math.max(0, round2(cco - uCcl));
+  let cclCarry = Math.max(0, round2(cco - uCcl - lCcl));
   if (!cclRoll) cclCarry = 0;
-  let elCarry = Math.max(0, round2(elCr - uEl));
+  let elCarry = Math.max(0, round2(elCr - uEl - lEl));
   if (!elRoll) elCarry = 0;
 
   return { cl: clCarry, ccl: cclCarry, el: elCarry };
@@ -1566,4 +1569,5 @@ module.exports = {
   computeRegisterMonthPoolTransferOutDisplay,
   /** CCL/CL/EL debits on a slot excluding MONTHLY_POOL_TRANSFER_OUT_* — same basis as register Xfer + applySequential carry. */
   sumUsedDaysForType,
+  allocateLockedByPriorityForSlot,
 };

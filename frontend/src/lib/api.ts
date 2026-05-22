@@ -5137,6 +5137,17 @@ export const api = {
   },
 
   /** Stored monthly apply ceiling / consumption for payroll period of fromDate (CL apply dialog). */
+  /** Payroll period start/end (IST) for a calendar date — matches backend dateCycleService. */
+  getLeavePayrollPeriodBounds: async (date: string) => {
+    const q = new URLSearchParams();
+    q.set('date', date);
+    return apiRequest<{
+      date: string;
+      timezone: string;
+      payrollCycle: { start: string; end: string; month: number; year: number; label: string };
+    }>(`/leaves/payroll-period-bounds?${q}`, { method: 'GET' });
+  },
+
   getLeaveApplyPeriodContext: async (params: {
     fromDate: string;
     employeeId?: string;

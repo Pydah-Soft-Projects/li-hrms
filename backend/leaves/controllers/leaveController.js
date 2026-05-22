@@ -24,8 +24,13 @@ const { resolveLeaveRegisterExportRequest } = require('../services/leaveRegister
 const { buildLeaveRegisterXlsxBuffer } = require('../services/leaveRegisterXlsxExportService');
 const dateCycleService = require('../services/dateCycleService');
 const leaveRegisterYearMonthlyApplyService = require('../services/leaveRegisterYearMonthlyApplyService');
+const monthlyTransferReconciliationService = require('../services/monthlyTransferReconciliationService');
+
+function scheduleLeaveRegisterTransferRebuild(leave, options = {}) {
+  monthlyTransferReconciliationService.scheduleTransferRebuildForLeaveChange(leave, options);
+}
 const leaveRegisterYearService = require('../services/leaveRegisterYearService');
-const { extractISTComponents } = require('../../shared/utils/dateUtils');
+const { extractISTComponents, parseCalendarDateAsIST } = require('../../shared/utils/dateUtils');
 const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
 const { assertEmployeeRangeRequestsEditable } = require('../../shared/services/payrollRequestLockService');
 const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
@@ -678,16 +683,36 @@ exports.applyLeave = async (req, res) => {
       resolvedLeaveSettings = await getResolvedLeaveSettings(employee.department_id, employee.division_id);
     }
 
-    // Calculate number of days
-    const from = new Date(fromDate);
-    const to = new Date(toDate);
+    // Calendar dates from the client are interpreted in IST (Asia/Kolkata).
+    const from = parseCalendarDateAsIST(fromDate);
+    const to = parseCalendarDateAsIST(toDate || fromDate);
+    if (!from || !to) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid from/to date.',
+      });
+    }
     let numberOfDays;
 
     if (isHalfDay) {
       numberOfDays = 0.5;
     } else {
-      const diffTime = Math.abs(to - from);
+      const diffTime = Math.abs(to.getTime() - from.getTime());
       numberOfDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    }
+
+    const leavePayrollPeriodValidationService = require('../services/leavePayrollPeriodValidationService');
+    const periodCheck = await leavePayrollPeriodValidationService.assertSinglePayrollPeriodForLeaveRange(
+      fromDate,
+      toDate || fromDate
+    );
+    if (!periodCheck.ok) {
+      return res.status(400).json({
+        success: false,
+        code: periodCheck.code,
+        error: periodCheck.error,
+        periods: periodCheck.periods,
+      });
     }
 
     // Check leave limits using resolved settings - WARN ONLY, don't block
@@ -1115,6 +1140,16 @@ exports.updateLeave = async (req, res) => {
         if (field === 'halfDayType' && (newValue === '' || newValue === null)) {
           newValue = null;
         }
+        if (field === 'fromDate' || field === 'toDate') {
+          const parsed = parseCalendarDateAsIST(newValue);
+          if (!parsed) {
+            return res.status(400).json({
+              success: false,
+              error: `Invalid ${field === 'fromDate' ? 'from' : 'to'} date.`,
+            });
+          }
+          newValue = parsed;
+        }
 
         // Store change
         changes.push({
@@ -1152,6 +1187,20 @@ exports.updateLeave = async (req, res) => {
         const diffTime = Math.abs(leave.toDate - leave.fromDate);
         leave.numberOfDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
       }
+    }
+
+    const leavePayrollPeriodValidationService = require('../services/leavePayrollPeriodValidationService');
+    const periodCheck = await leavePayrollPeriodValidationService.assertSinglePayrollPeriodForLeaveRange(
+      leave.fromDate,
+      leave.toDate || leave.fromDate
+    );
+    if (!periodCheck.ok) {
+      return res.status(400).json({
+        success: false,
+        code: periodCheck.code,
+        error: periodCheck.error,
+        periods: periodCheck.periods,
+      });
     }
 
     const capAffectingFields = new Set([
@@ -1258,6 +1307,13 @@ exports.updateLeave = async (req, res) => {
       } catch (summaryErr) {
         console.error('Failed to recalculate monthly summary during leave update:', summaryErr);
       }
+    }
+
+    if (affectsLedger || wasApprovedBefore !== isApprovedNow || affectsMonthlyApply) {
+      scheduleLeaveRegisterTransferRebuild(leave, {
+        originalFromDate: originalApprovedSnapshot.fromDate,
+        originalToDate: originalApprovedSnapshot.toDate,
+      });
     }
 
     // Populate for response
@@ -1855,6 +1911,10 @@ exports.processLeaveAction = async (req, res) => {
       }
     }
 
+    if (finalApprove || finalRejectCanonical) {
+      scheduleLeaveRegisterTransferRebuild(leave);
+    }
+
     // Employee history: leave final decision
     try {
       if (action === 'approve' && leave.status === 'approved') {
@@ -2106,6 +2166,10 @@ exports.revokeLeaveApproval = async (req, res) => {
 
     leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
 
+    if (originalStatus === 'approved') {
+      scheduleLeaveRegisterTransferRebuild(leave);
+    }
+
     // If a final approval was revoked, recompute monthly summary for touched payroll cycles.
     if (originalStatus === 'approved') {
       try {
@@ -2179,6 +2243,10 @@ exports.deleteLeave = async (req, res) => {
     }
 
     leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
+
+    if (wasApproved) {
+      scheduleLeaveRegisterTransferRebuild(leave);
+    }
 
     // Recompute monthly summary for all payroll cycles touched by this leave.
     if (wasApproved) {
@@ -2864,6 +2932,32 @@ exports.validateLeaveSplits = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to validate leave splits',
+    });
+  }
+};
+
+/**
+ * @desc    Payroll period bounds (IST) for a calendar date — used by leave apply UI (start/end from settings)
+ * @route   GET /api/leaves/payroll-period-bounds
+ * @query   date (required, YYYY-MM-DD)
+ */
+exports.getPayrollPeriodBounds = async (req, res) => {
+  try {
+    const { date } = req.query;
+    if (!date || !String(date).trim()) {
+      return res.status(400).json({ success: false, error: 'date is required (YYYY-MM-DD)' });
+    }
+    const leavePayrollPeriodValidationService = require('../services/leavePayrollPeriodValidationService');
+    const result = await leavePayrollPeriodValidationService.getPayrollPeriodBoundsForLeaveDate(date);
+    if (!result.ok) {
+      return res.status(400).json({ success: false, error: result.error, code: result.code });
+    }
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error('getPayrollPeriodBounds:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to resolve payroll period',
     });
   }
 };
