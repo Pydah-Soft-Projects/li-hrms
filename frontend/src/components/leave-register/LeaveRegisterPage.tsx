@@ -521,6 +521,15 @@ function formatDateShort(v: unknown): string {
   return d.toLocaleDateString('en-IN');
 }
 
+function formatTransactionPeriod(tx: { startDate?: unknown; endDate?: unknown }): string {
+  const start = formatDateShort(tx.startDate);
+  const end = formatDateShort(tx.endDate);
+  if (start === '—' && end === '—') return '—';
+  if (start === end || end === '—') return start;
+  if (start === '—') return end;
+  return `${start} – ${end}`;
+}
+
 function computeFinancialYearNameFromPolicy(settings: any, date: Date): string {
   const fy = settings?.financialYear || {};
   const useCalendarYear = !!fy?.useCalendarYear;
@@ -2403,7 +2412,7 @@ export default function LeaveRegisterPage({
           onClick={() => setMonthModal(null)}
         >
           <div
-            className={`bg-white dark:bg-slate-900 w-full sm:max-w-2xl sm:rounded-xl shadow-2xl max-h-[88vh] overflow-hidden flex flex-col border ${
+            className={`bg-white dark:bg-slate-900 w-full sm:max-w-4xl lg:max-w-5xl sm:rounded-xl shadow-2xl max-h-[88vh] overflow-hidden flex flex-col border ${
               isSuperadmin
                 ? 'border-slate-200/80 dark:border-slate-600'
                 : 'border-slate-200 dark:border-slate-700'
@@ -2584,7 +2593,14 @@ export default function LeaveRegisterPage({
                         isSuperadmin ? 'rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden' : ''
                       }
                     >
-                      <table className={`w-full ${isSuperadmin ? 'text-xs' : 'text-sm'}`}>
+                      <table className={`w-full table-fixed ${isSuperadmin ? 'text-xs' : 'text-sm'}`}>
+                    <colgroup>
+                      <col className="w-[14%]" />
+                      <col className="w-[9%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[17%]" />
+                      <col />
+                    </colgroup>
                     <thead>
                       <tr
                         className={
@@ -2604,10 +2620,11 @@ export default function LeaveRegisterPage({
                         >
                           Days
                         </th>
-                        <th
-                          className={`hidden sm:table-cell font-medium ${isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3 font-semibold'}`}
-                        >
-                          Reason
+                        <th className={`font-medium ${isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3 font-semibold'}`}>
+                          Period
+                        </th>
+                        <th className={`font-medium ${isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3 font-semibold'}`}>
+                          Remarks
                         </th>
                       </tr>
                     </thead>
@@ -2625,17 +2642,22 @@ export default function LeaveRegisterPage({
                               : 'border-b border-slate-100 dark:border-slate-800/80'
                           }
                         >
-                          <td className={isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3'}>{tx.transactionType}</td>
-                          <td className={isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3'}>{tx.leaveType}</td>
+                          <td className={`align-top ${isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3'}`}>{tx.transactionType}</td>
+                          <td className={`align-top ${isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3'}`}>{tx.leaveType}</td>
                           <td
-                            className={`text-right font-mono tabular-nums ${isSuperadmin ? 'py-1.5 px-2 font-medium' : 'py-2.5 px-3 font-medium'}`}
+                            className={`align-top text-right font-mono tabular-nums ${isSuperadmin ? 'py-1.5 px-2 font-medium' : 'py-2.5 px-3 font-medium'}`}
                           >
                             {formatNum(tx.days)}
                           </td>
                           <td
-                            className={`text-slate-500 dark:text-slate-400 hidden sm:table-cell max-w-[220px] truncate ${isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3'}`}
+                            className={`align-top text-slate-600 dark:text-slate-300 whitespace-nowrap ${isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3'}`}
                           >
-                            {tx.reason || '—'}
+                            {formatTransactionPeriod(tx)}
+                          </td>
+                          <td
+                            className={`align-top text-slate-600 dark:text-slate-300 whitespace-pre-wrap break-words leading-snug ${isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3'}`}
+                          >
+                            {tx.reason?.trim() ? tx.reason.trim() : '—'}
                           </td>
                         </tr>
                       ))}

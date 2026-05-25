@@ -99,8 +99,20 @@ export function buildRosterApiParams(q: RosterListQuery, opts?: { paginate?: boo
   };
 }
 
+function parseHalfStatus(v?: string | null): RosterCell['firstHalfStatus'] {
+  if (v === 'WO' || v === 'HOL') return v;
+  return undefined;
+}
+
 export function parseRosterEntries(
-  entries: { employeeNumber: string; date: string; shiftId?: string | null; status?: string }[]
+  entries: {
+    employeeNumber: string;
+    date: string;
+    shiftId?: string | null;
+    status?: string;
+    firstHalfStatus?: string;
+    secondHalfStatus?: string;
+  }[]
 ): RosterState {
   const map = new Map<string, Record<string, RosterCell>>();
   entries.forEach((e) => {
@@ -109,6 +121,8 @@ export function parseRosterEntries(
     map.get(e.employeeNumber)![e.date] = {
       shiftId: e.shiftId || null,
       status: e.status === 'WO' ? 'WO' : (e.status === 'HOL' ? 'HOL' : undefined),
+      firstHalfStatus: parseHalfStatus(e.firstHalfStatus),
+      secondHalfStatus: parseHalfStatus(e.secondHalfStatus),
     };
   });
   return map;

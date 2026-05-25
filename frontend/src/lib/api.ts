@@ -815,6 +815,8 @@ export interface User {
   featureControl?: string[];
   /** Holiday groups this user can manage (scoped holiday admin). */
   managedHolidayGroupIds?: (string | HolidayGroup)[];
+  /** Direct employee scope for holiday management (division/dept/employee group). */
+  holidayDivisionMapping?: Holiday['divisionMapping'];
   phone_number?: string | null;
   lastLogin?: string;
   createdAt: string;
@@ -1041,7 +1043,12 @@ export interface Holiday {
   endDate?: string; // Optional end date
   type: 'National' | 'Regional' | 'Optional' | 'Company' | 'Academic' | 'Observance' | 'Seasonal';
   isMaster: boolean;
-  scope: 'GLOBAL' | 'GROUP';
+  scope: 'GLOBAL' | 'GROUP' | 'MAPPING';
+  divisionMapping?: {
+    division: string | { _id: string; name?: string; code?: string };
+    departments?: (string | { _id: string; name?: string })[];
+    employeeGroups?: (string | { _id: string; name?: string; code?: string })[];
+  }[];
   applicableTo?: 'ALL' | 'SPECIFIC_GROUPS';
   targetGroupIds?: (string | HolidayGroup)[];
   groupId?: string | HolidayGroup;
@@ -1208,7 +1215,12 @@ export const api = {
     return apiRequest<{
       holidays: Holiday[];
       groups: HolidayGroup[];
-      access?: { canManageGlobal: boolean; managedHolidayGroupIds: string[] };
+      access?: {
+        canManageGlobal: boolean;
+        managedHolidayGroupIds: string[];
+        holidayDivisionMapping?: Holiday['divisionMapping'];
+        hasEmployeeScope?: boolean;
+      };
     }>(`/holidays/admin${query}`, { method: 'GET' });
   },
 
@@ -1257,6 +1269,19 @@ export const api = {
     return apiRequest<void>(`/holidays/${id}`, {
       method: 'DELETE',
       body: JSON.stringify(options || {})
+    });
+  },
+
+  previewHolidayImpact: async (data: {
+    scope: string;
+    groupId?: string;
+    applicableTo?: string;
+    targetGroupIds?: string[];
+    divisionMapping?: Holiday['divisionMapping'];
+  }) => {
+    return apiRequest<{ employeeCount: number; dayCount: number; scope: string }>('/holidays/preview-impact', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   },
 

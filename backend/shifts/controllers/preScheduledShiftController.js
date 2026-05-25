@@ -311,7 +311,7 @@ exports.getRoster = async (req, res) => {
       date: { $gte: start, $lte: end },
       employeeNumber: { $in: empNumbers },
     })
-      .select('employeeNumber shiftId date status notes')
+      .select('employeeNumber shiftId date status firstHalfStatus secondHalfStatus notes')
       .lean();
 
     const meta = await RosterMeta.findOne({ month });
@@ -333,6 +333,8 @@ exports.getRoster = async (req, res) => {
             date: s.date,
             shiftId: s.shiftId ? String(s.shiftId) : null,
             status: status || undefined,
+            firstHalfStatus: s.firstHalfStatus || undefined,
+            secondHalfStatus: s.secondHalfStatus || undefined,
           };
         }),
       },
@@ -431,34 +433,40 @@ exports.saveRoster = async (req, res) => {
         }
       }
 
-      // Validate: must have either shiftId or status='WO' or 'HOL'
-      if (!e.shiftId && e.status !== 'WO' && e.status !== 'HOL') {
+      const firstHalfStatus = ['WO', 'HOL'].includes(e.firstHalfStatus) ? e.firstHalfStatus : null;
+      const secondHalfStatus = ['WO', 'HOL'].includes(e.secondHalfStatus) ? e.secondHalfStatus : null;
+      const hasHalfNonWorking = !!(firstHalfStatus || secondHalfStatus);
+
+      if (!e.shiftId && e.status !== 'WO' && e.status !== 'HOL' && !hasHalfNonWorking) {
         skippedCount++;
         console.warn(`[Entry ${index}] Skipping: no shiftId and status is not 'WO' or 'HOL':`, e);
         return;
       }
+      if (hasHalfNonWorking && !e.shiftId && e.status !== 'WO' && e.status !== 'HOL') {
+        skippedCount++;
+        console.warn(`[Entry ${index}] Skipping: half WO/HOL requires shiftId:`, e);
+        return;
+      }
 
-      // Build entry object
       const entry = {
         employeeNumber: empNo,
         date: day,
         scheduledBy: req.user._id,
       };
 
-      // Handle week off or holiday
       if (e.status === 'WO' || e.status === 'HOL') {
         entry.shiftId = null;
         entry.status = e.status;
+        entry.firstHalfStatus = null;
+        entry.secondHalfStatus = null;
         entry.notes = e.status === 'WO' ? 'Week Off' : 'Holiday';
         console.log(`[Entry ${index}] ${e.status} for ${empNo} on ${day}`);
       } else {
-        // Regular shift - must have valid shiftId
         if (!e.shiftId) {
           skippedCount++;
           console.warn(`[Entry ${index}] Skipping: no shiftId for regular shift:`, e);
           return;
         }
-        // Ensure shiftId is a valid ObjectId string
         try {
           const mongoose = require('mongoose');
           if (!mongoose.Types.ObjectId.isValid(e.shiftId)) {
@@ -472,9 +480,11 @@ exports.saveRoster = async (req, res) => {
           console.warn(`[Entry ${index}] Skipping: error validating shiftId:`, err.message);
           return;
         }
-        // Don't set status field for regular shifts (leave it undefined)
+        entry.status = undefined;
+        entry.firstHalfStatus = firstHalfStatus;
+        entry.secondHalfStatus = secondHalfStatus;
         entry.notes = null;
-        console.log(`[Entry ${index}] Regular shift ${e.shiftId} for ${empNo} on ${day}`);
+        console.log(`[Entry ${index}] Shift ${e.shiftId} for ${empNo} on ${day}`, { firstHalfStatus, secondHalfStatus });
       }
 
       bulk.push(entry);

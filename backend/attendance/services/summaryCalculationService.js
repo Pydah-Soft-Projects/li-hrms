@@ -106,10 +106,11 @@ function pickLeaveMetaForHalf(leaves, half) {
 }
 
 function buildPayRegisterHalfFromCredits(leaveC, odC, attC, day, halfKey, leaves) {
-  if (day.isWO) {
+  const { isRosterHalfNonWorking } = require('../../shifts/utils/rosterHalfNonWorking');
+  if (isRosterHalfNonWorking(day, halfKey, 'WO')) {
     return { status: 'week_off', leaveType: null, leaveNature: null, isOD: false, otHours: 0 };
   }
-  if (day.isHOL) {
+  if (isRosterHalfNonWorking(day, halfKey, 'HOL')) {
     return { status: 'holiday', leaveType: null, leaveNature: null, isOD: false, otHours: 0 };
   }
   const lc = Number(leaveC) || 0;
@@ -415,8 +416,12 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         attendance: null,
         ods: [],
         leaves: [],
-        isWO: false, // Will be set from rosterNonWorking
-        isHOL: false, // Will be set from rosterNonWorking
+        isWO: false,
+        isHOL: false,
+        rosterFirstHalfHOL: false,
+        rosterSecondHalfHOL: false,
+        rosterFirstHalfWO: false,
+        rosterSecondHalfWO: false,
         // Results for this day
         present: 0,
         payable: 0,
@@ -429,31 +434,43 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     }
 
     // 2. Week-offs and holidays in period from shift roster (PreScheduledShift), then leave + sandwich rules adjust counts below.
-    const rosterNonWorking = await PreScheduledShift.find({
+    const { parseRosterHalfNonWorking } = require('../../shifts/utils/rosterHalfNonWorking');
+    const rosterRows = await PreScheduledShift.find({
       employeeNumber: empNoNorm,
       date: { $gte: startDateStr, $lte: endDateStr },
-      status: { $in: ['WO', 'HOL'] },
     })
-      .select('date status')
+      .select('date status shiftId firstHalfStatus secondHalfStatus')
       .lean();
 
     const weekOffDates = new Set();
     const holidayDates = new Set();
+    let halfHolidayCreditTotal = 0;
     const originalNonWorkingStatusByDate = new Map();
-    for (const row of rosterNonWorking) {
+    for (const row of rosterRows) {
       const dateKey = toNormalizedDateStr(row?.date);
       if (!dateKey || isOutsideEmploymentBound(dateKey)) continue;
-      if (dailyStatsMap.has(dateKey)) {
-        if (row.status === 'WO') {
-          dailyStatsMap.get(dateKey).isWO = true;
-          weekOffDates.add(dateKey);
-          originalNonWorkingStatusByDate.set(dateKey, 'WO');
-        }
-        if (row.status === 'HOL') {
-          dailyStatsMap.get(dateKey).isHOL = true;
-          holidayDates.add(dateKey);
-          originalNonWorkingStatusByDate.set(dateKey, 'HOL');
-        }
+      if (!dailyStatsMap.has(dateKey)) continue;
+      const day = dailyStatsMap.get(dateKey);
+      const parsed = parseRosterHalfNonWorking(row);
+      if (parsed.isFullWO) {
+        day.isWO = true;
+        weekOffDates.add(dateKey);
+        originalNonWorkingStatusByDate.set(dateKey, 'WO');
+      } else if (parsed.firstWO || parsed.secondWO) {
+        day.rosterFirstHalfWO = parsed.firstWO;
+        day.rosterSecondHalfWO = parsed.secondWO;
+      }
+      if (parsed.isFullHOL) {
+        day.isHOL = true;
+        holidayDates.add(dateKey);
+        originalNonWorkingStatusByDate.set(dateKey, 'HOL');
+      } else if (parsed.firstHOL || parsed.secondHOL) {
+        day.rosterFirstHalfHOL = parsed.firstHOL;
+        day.rosterSecondHalfHOL = parsed.secondHOL;
+        let halfHol = 0;
+        if (parsed.firstHOL) halfHol += 0.5;
+        if (parsed.secondHOL) halfHol += 0.5;
+        halfHolidayCreditTotal += halfHol;
       }
     }
 
@@ -733,13 +750,27 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     }
 
     summary.totalWeeklyOffs = weekOffDates.size;
-    summary.totalHolidays = holidayDates.size;
+    summary.totalHolidays = holidayDates.size + halfHolidayCreditTotal;
     contributingDates.weeklyOffs = Array.from(weekOffDates)
       .filter((date) => !isOutsideEmploymentBound(date))
       .map((date) => ({ date, value: 1, label: 'WO' }));
-    contributingDates.holidays = Array.from(holidayDates)
-      .filter((date) => !isOutsideEmploymentBound(date))
-      .map((date) => ({ date, value: 1, label: 'HOL' }));
+    contributingDates.holidays = [
+      ...Array.from(holidayDates)
+        .filter((date) => !isOutsideEmploymentBound(date))
+        .map((date) => ({ date, value: 1, label: 'HOL' })),
+      ...allDates
+        .filter((date) => !isOutsideEmploymentBound(date))
+        .map((date) => {
+          const day = dailyStatsMap.get(date);
+          if (!day || day.isHOL) return null;
+          let h = 0;
+          if (day.rosterFirstHalfHOL) h += 0.5;
+          if (day.rosterSecondHalfHOL) h += 0.5;
+          if (h <= 0) return null;
+          return { date, value: h, label: h >= 1 ? 'HOL' : 'HOL-½' };
+        })
+        .filter(Boolean),
+    ];
 
     const payRegisterDaySnapshots = [];
     const partialPolicyMetaByDate = new Map();

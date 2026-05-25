@@ -522,6 +522,10 @@ const startWorkers = () => {
                     continue;
                 }
 
+                const hasHalfRoster =
+                    entry.firstHalfStatus === 'WO' || entry.firstHalfStatus === 'HOL' ||
+                    entry.secondHalfStatus === 'WO' || entry.secondHalfStatus === 'HOL';
+
                 if (entry.status === 'WO' || entry.status === 'HOL') {
                     // Create or update AttendanceDaily for this WO/HOL day (only for saved roster entries)
                     let dailyRecord = await AttendanceDaily.findOne({
@@ -573,8 +577,8 @@ const startWorkers = () => {
 
                     await dailyRecord.save();
                     syncedCount++;
-                } else if (entry.shiftId) {
-                    // It's a shift. Check if currently WO/HOL and remove if so
+                } else if (entry.shiftId || hasHalfRoster) {
+                    // Shift and/or half WO/HOL: reprocess attendance (half-holiday rules run in pre-save)
                     // We only remove if source is roster-sync or status is plainly WO/HOL without punches
                     const existing = await AttendanceDaily.findOne({
                         employeeNumber: empNo,

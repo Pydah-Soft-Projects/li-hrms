@@ -31,7 +31,7 @@ const getSoftShiftStyle = (color: string) => ({
 type EditorAnchor = { top: number; left: number; bottom: number; right: number };
 
 type CellEditorState =
-  | { kind: 'cell'; empNo: string; date: string; anchor: EditorAnchor }
+  | { kind: 'cell'; empNo: string; date: string; anchor: EditorAnchor; cell: RosterCell }
   | { kind: 'column'; date: string; anchor: EditorAnchor; employeeCount: number };
 
 const MENU_W = 220;
@@ -83,6 +83,8 @@ const RosterCellComponent = memo(({
   const shift = current && current !== 'WO' && current !== 'HOL' ? shiftById.get(current) : undefined;
   const shiftColor = shift?.color || '#3b82f6';
   const softStyle = shift ? getSoftShiftStyle(shiftColor) : {};
+  const h1 = cell?.firstHalfStatus;
+  const h2 = cell?.secondHalfStatus;
 
   const visualStyle =
     current === 'WO'
@@ -104,7 +106,31 @@ const RosterCellComponent = memo(({
         className={`absolute inset-0 flex items-center justify-center text-[9px] font-black tracking-tight transition-opacity ${current ? 'opacity-100' : 'opacity-0 hover:opacity-30'}`}
         style={visualStyle}
       >
-        {current === 'WO' ? 'WO' : current === 'HOL' ? 'HOL' : (shift ? (shift.code || shift.name) : <Plus size={10} className="text-slate-400" />)}
+        {current === 'WO' ? (
+          'WO'
+        ) : current === 'HOL' ? (
+          'HOL'
+        ) : shift ? (
+          <span className="flex flex-col items-center leading-none gap-0.5">
+            <span>{shift.code || shift.name}</span>
+            {(h1 || h2) && (
+              <span className="flex gap-0.5 text-[7px] font-black">
+                {h1 && (
+                  <span className={h1 === 'HOL' ? 'text-rose-600' : 'text-orange-600'} title={`H1 ${h1}`}>
+                    H1{h1 === 'HOL' ? '★' : '○'}
+                  </span>
+                )}
+                {h2 && (
+                  <span className={h2 === 'HOL' ? 'text-rose-600' : 'text-orange-600'} title={`H2 ${h2}`}>
+                    H2{h2 === 'HOL' ? '★' : '○'}
+                  </span>
+                )}
+              </span>
+            )}
+          </span>
+        ) : (
+          <Plus size={10} className="text-slate-400" />
+        )}
       </div>
       {isDirty && (
         <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-amber-500 ring-1 ring-white dark:ring-slate-900 z-10" title="Unsaved change" />
@@ -200,6 +226,19 @@ const RosterRow = memo(({
 ));
 RosterRow.displayName = 'RosterRow';
 
+function toggleHalf(
+  cell: RosterCell,
+  half: 'firstHalfStatus' | 'secondHalfStatus',
+  value: 'HOL' | 'WO'
+): RosterCell {
+  const next = { ...cell, shiftId: cell.shiftId, status: undefined as undefined };
+  const cur = cell[half];
+  next[half] = cur === value ? undefined : value;
+  const other = half === 'firstHalfStatus' ? 'secondHalfStatus' : 'firstHalfStatus';
+  if (next[half] && next[other] === value) next[other] = undefined;
+  return next;
+}
+
 function CellEditorPopover({
   editor,
   shifts,
@@ -215,6 +254,7 @@ function CellEditorPopover({
   onApplyRestOfWeek: () => void;
   onClose: () => void;
 }) {
+  const cellForHalf = editor.kind === 'cell' ? editor.cell : null;
   const [mounted, setMounted] = useState(false);
   const [pos, setPos] = useState(() => computePopoverPosition(editor.anchor));
 
@@ -276,12 +316,51 @@ function CellEditorPopover({
           key={s._id}
           type="button"
           className="w-full text-left px-3 py-2 text-[10px] font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-start gap-2"
-          onClick={() => onPick({ shiftId: s._id, status: undefined })}
+          onClick={() => onPick({
+            shiftId: s._id,
+            firstHalfStatus: cellForHalf?.firstHalfStatus,
+            secondHalfStatus: cellForHalf?.secondHalfStatus,
+          })}
         >
           <span className="h-2 w-2 rounded-full shrink-0 mt-1" style={{ backgroundColor: s.color || '#3b82f6' }} />
           <span className="leading-tight break-words">{shiftLabel(s)}</span>
         </button>
       ))}
+      {cellForHalf?.shiftId && (
+        <>
+          <div className="border-t border-slate-100 dark:border-slate-800 my-0.5 px-2 pt-1">
+            <span className="text-[7px] font-black uppercase text-slate-400 tracking-widest">Half (with shift)</span>
+          </div>
+          <button
+            type="button"
+            className={`w-full text-left px-3 py-1.5 text-[10px] font-bold ${cellForHalf.firstHalfStatus === 'HOL' ? 'bg-rose-50 text-rose-700' : 'hover:bg-rose-50/50 text-rose-600'}`}
+            onClick={() => onPick(toggleHalf(cellForHalf, 'firstHalfStatus', 'HOL'))}
+          >
+            H1 Holiday {cellForHalf.firstHalfStatus === 'HOL' ? '✓' : ''}
+          </button>
+          <button
+            type="button"
+            className={`w-full text-left px-3 py-1.5 text-[10px] font-bold ${cellForHalf.secondHalfStatus === 'HOL' ? 'bg-rose-50 text-rose-700' : 'hover:bg-rose-50/50 text-rose-600'}`}
+            onClick={() => onPick(toggleHalf(cellForHalf, 'secondHalfStatus', 'HOL'))}
+          >
+            H2 Holiday {cellForHalf.secondHalfStatus === 'HOL' ? '✓' : ''}
+          </button>
+          <button
+            type="button"
+            className={`w-full text-left px-3 py-1.5 text-[10px] font-bold ${cellForHalf.firstHalfStatus === 'WO' ? 'bg-orange-50 text-orange-700' : 'hover:bg-orange-50/50 text-orange-600'}`}
+            onClick={() => onPick(toggleHalf(cellForHalf, 'firstHalfStatus', 'WO'))}
+          >
+            H1 Week off {cellForHalf.firstHalfStatus === 'WO' ? '✓' : ''}
+          </button>
+          <button
+            type="button"
+            className={`w-full text-left px-3 py-1.5 text-[10px] font-bold ${cellForHalf.secondHalfStatus === 'WO' ? 'bg-orange-50 text-orange-700' : 'hover:bg-orange-50/50 text-orange-600'}`}
+            onClick={() => onPick(toggleHalf(cellForHalf, 'secondHalfStatus', 'WO'))}
+          >
+            H2 Week off {cellForHalf.secondHalfStatus === 'WO' ? '✓' : ''}
+          </button>
+        </>
+      )}
     </div>
   </>
   );
@@ -329,8 +408,9 @@ const RosterGrid = memo((props: RosterGridProps) => {
   };
 
   const handleOpenEditor = useCallback((empNo: string, date: string, el: HTMLElement) => {
-    setEditor({ kind: 'cell', empNo, date, anchor: anchorFromEl(el) });
-  }, []);
+    const cell = roster.get(empNo)?.[date] || { shiftId: null };
+    setEditor({ kind: 'cell', empNo, date, anchor: anchorFromEl(el), cell });
+  }, [roster]);
 
   const handleOpenColumnEditor = useCallback((date: string, el: HTMLElement) => {
     setEditor({

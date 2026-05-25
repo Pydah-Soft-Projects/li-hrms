@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { api, Holiday, HolidayGroup, Division, Department, EmployeeGroup } from '@/lib/api';
+import { api, Holiday, HolidayGroup, Division, Department, EmployeeGroup, HolidayHistoryRow } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import {
     canManageHolidayCalendar,
@@ -28,6 +28,11 @@ import {
     parseISO
 } from 'date-fns';
 import { Trash2, Users, Filter, Plus, ChevronLeft, ChevronRight, ChevronDown, Calendar as CalendarIcon, Save, X } from 'lucide-react';
+import {
+    HolidayDivisionMappingEditor,
+    normalizeHolidayMappingFromApi,
+    type HolidayMappingRow,
+} from '@/components/holidays/HolidayDivisionMappingEditor';
 
 type MappingRow = { division: string; departments: string[]; employeeGroups: string[] };
 
@@ -45,6 +50,12 @@ export default function WorkspaceHolidaysPage() {
     const [canManageGlobal, setCanManageGlobal] = useState(false);
     const [canManageGroups, setCanManageGroups] = useState(false);
     const [managedGroupIds, setManagedGroupIds] = useState<string[]>([]);
+    const [hasEmployeeScope, setHasEmployeeScope] = useState(false);
+    const [allowedHolidayMapping, setAllowedHolidayMapping] = useState<HolidayMappingRow[]>([]);
+    const [holidayTargetMode, setHolidayTargetMode] = useState<'ALL_SCOPE' | 'CUSTOM'>('ALL_SCOPE');
+    const [formMapping, setFormMapping] = useState<HolidayMappingRow[]>([]);
+    const [employeeImpactCount, setEmployeeImpactCount] = useState<number | null>(null);
+    const [loadingImpact, setLoadingImpact] = useState(false);
     const [canView, setCanView] = useState(true);
 
     const [showHolidayForm, setShowHolidayForm] = useState(false);
@@ -55,6 +66,9 @@ export default function WorkspaceHolidaysPage() {
     const [applicableTo, setApplicableTo] = useState<'ALL' | 'SPECIFIC_GROUPS'>('ALL');
     const [rosterFillMode, setRosterFillMode] = useState<'HOL' | 'WEEK_OFF'>('HOL');
     const [deleteAction, setDeleteAction] = useState<'RESTORE_PATTERN' | 'WEEK_OFF'>('RESTORE_PATTERN');
+    const [showHolidayActivity, setShowHolidayActivity] = useState(false);
+    const [holidayActivity, setHolidayActivity] = useState<HolidayHistoryRow[]>([]);
+    const [loadingHolidayActivity, setLoadingHolidayActivity] = useState(false);
 
     const [currentMonth, setCurrentMonth] = useState(new Date());
     const selectedYear = currentMonth.getFullYear();
@@ -71,6 +85,21 @@ export default function WorkspaceHolidaysPage() {
         return g?.name || (typeof h?.groupId === 'object' ? h.groupId.name : null) || null;
     }, [groups, getHolidayGroupId]);
 
+    const openHolidayActivity = useCallback(async (h: Holiday) => {
+        try {
+            setShowHolidayActivity(true);
+            setLoadingHolidayActivity(true);
+            const res = await api.getHolidayActivity(h._id, 120);
+            if (res.success) setHolidayActivity(res.data || []);
+            else setHolidayActivity([]);
+        } catch (e) {
+            console.error('Failed to load holiday activity:', e);
+            setHolidayActivity([]);
+        } finally {
+            setLoadingHolidayActivity(false);
+        }
+    }, []);
+
     useEffect(() => {
         const user = auth.getUser() as User | null;
         const canViewByRole = user ? canViewHolidayCalendar(user) : false;
@@ -81,6 +110,11 @@ export default function WorkspaceHolidaysPage() {
         setCanManageGlobal(user ? canManageHolidayCalendarGlobal(user) : false);
         setCanManageGroups(user ? canManageHolidayGroups(user) : false);
         setManagedGroupIds(user?.managedHolidayGroupIds || []);
+        const hm = normalizeHolidayMappingFromApi(user?.holidayDivisionMapping as Holiday['divisionMapping']);
+        if (hm.length > 0) {
+            setHasEmployeeScope(true);
+            setAllowedHolidayMapping(hm);
+        }
     }, []);
 
     const visibleGroups = useMemo(() => {
@@ -100,8 +134,49 @@ export default function WorkspaceHolidaysPage() {
     useEffect(() => {
         if (showHolidayForm) {
             setApplicableTo(editingHoliday?.applicableTo || 'ALL');
+            if (editingHoliday?.scope === 'MAPPING') {
+                const rows = normalizeHolidayMappingFromApi(editingHoliday.divisionMapping);
+                setFormMapping(rows.length > 0 ? rows : allowedHolidayMapping);
+                setHolidayTargetMode(rows.length > 0 ? 'CUSTOM' : 'ALL_SCOPE');
+            } else if (selectedGroupId === 'EMPLOYEE_SCOPE' || (hasEmployeeScope && managedGroupIds.length === 0)) {
+                setFormMapping(allowedHolidayMapping.length > 0 ? [...allowedHolidayMapping] : [{ division: '', departments: [], employeeGroups: [] }]);
+                setHolidayTargetMode('ALL_SCOPE');
+            }
         }
-    }, [showHolidayForm, editingHoliday]);
+    }, [showHolidayForm, editingHoliday, selectedGroupId, allowedHolidayMapping, hasEmployeeScope, managedGroupIds.length]);
+
+    const isEmployeeScopeMode =
+        selectedGroupId === 'EMPLOYEE_SCOPE' || editingHoliday?.scope === 'MAPPING';
+
+    useEffect(() => {
+        if (!showHolidayForm || !canManage) return;
+        const run = async () => {
+            setLoadingImpact(true);
+            try {
+                const divisionMapping =
+                    isEmployeeScopeMode && holidayTargetMode === 'CUSTOM'
+                        ? formMapping.filter((m) => m.division)
+                        : isEmployeeScopeMode
+                            ? []
+                            : undefined;
+                const res = await api.previewHolidayImpact({
+                    scope: isEmployeeScopeMode ? 'MAPPING' : selectedGroupId === 'GLOBAL' ? 'GLOBAL' : 'GROUP',
+                    groupId: selectedGroupId !== 'GLOBAL' && selectedGroupId !== 'EMPLOYEE_SCOPE' ? selectedGroupId : undefined,
+                    applicableTo: applicableTo,
+                    targetGroupIds: applicableTo === 'SPECIFIC_GROUPS' ? managedGroupIds : undefined,
+                    divisionMapping,
+                });
+                if (res.success && res.data) setEmployeeImpactCount(res.data.employeeCount);
+                else setEmployeeImpactCount(null);
+            } catch {
+                setEmployeeImpactCount(null);
+            } finally {
+                setLoadingImpact(false);
+            }
+        };
+        const t = setTimeout(run, 400);
+        return () => clearTimeout(t);
+    }, [showHolidayForm, canManage, isEmployeeScopeMode, holidayTargetMode, formMapping, selectedGroupId, applicableTo, managedGroupIds]);
 
     const loadData = useCallback(async () => {
         try {
@@ -115,6 +190,9 @@ export default function WorkspaceHolidaysPage() {
                     if (response.data.access) {
                         setCanManageGlobal(response.data.access.canManageGlobal);
                         setManagedGroupIds(response.data.access.managedHolidayGroupIds || []);
+                        const scopeRows = normalizeHolidayMappingFromApi(response.data.access.holidayDivisionMapping);
+                        setHasEmployeeScope(!!response.data.access.hasEmployeeScope || scopeRows.length > 0);
+                        setAllowedHolidayMapping(scopeRows);
                     }
                 }
             } else {
@@ -192,8 +270,12 @@ export default function WorkspaceHolidaysPage() {
                     const isOverride = !!h.overridesMasterId;
                     return isIndependent || isModified || isOverride;
                 }
+                if (h.scope === 'MAPPING') return true;
                 return false;
             });
+        }
+        if (selectedGroupId === 'EMPLOYEE_SCOPE') {
+            return allHolidays.filter((h) => h.scope === 'MAPPING');
         }
         return allHolidays.filter((h) =>
             h.scope === 'GROUP' &&
@@ -339,6 +421,9 @@ export default function WorkspaceHolidaysPage() {
                                                         <option value="GLOBAL">
                                                             {canManageGlobal ? 'Global Calendar' : 'All Assigned Groups'}
                                                         </option>
+                                                        {hasEmployeeScope && (
+                                                            <option value="EMPLOYEE_SCOPE">My Employee Scope</option>
+                                                        )}
                                                         {visibleGroups.map((g) => (
                                                             <option key={g._id} value={g._id}>{g.name}</option>
                                                         ))}
@@ -413,7 +498,7 @@ export default function WorkspaceHolidaysPage() {
                                                     key={idx}
                                                     onClick={() => {
                                                         if (!canManage) return;
-                                                        if (selectedGroupId === 'GLOBAL' && !canManageGlobal && managedGroupIds.length === 0) return;
+                                                        if (selectedGroupId === 'GLOBAL' && !canManageGlobal && managedGroupIds.length === 0 && !hasEmployeeScope) return;
                                                         if (holidays.length === 0) {
                                                             setPrefilledDate(format(date, 'yyyy-MM-dd'));
                                                             setEditingHoliday(null);
@@ -550,15 +635,26 @@ export default function WorkspaceHolidaysPage() {
                                             : `For ${visibleGroups.find((g) => g._id === selectedGroupId)?.name}`)}
                                 </p>
                             </div>
-                            <button
-                                onClick={() => {
-                                    setShowHolidayForm(false);
-                                    setPrefilledDate(null);
-                                }}
-                                className="p-2 -mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                {editingHoliday && (
+                                    <button
+                                        type="button"
+                                        onClick={() => openHolidayActivity(editingHoliday)}
+                                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                                    >
+                                        Activity
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => {
+                                        setShowHolidayForm(false);
+                                        setPrefilledDate(null);
+                                    }}
+                                    className="p-2 -mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
 
                         <div className="flex-1 overflow-y-auto">
@@ -568,7 +664,8 @@ export default function WorkspaceHolidaysPage() {
                                     e.preventDefault();
                                     const formData = new FormData(e.currentTarget);
                                     const isGlobalContext = editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL';
-                                    const isCreatingOverride = !isGlobalContext && editingHoliday?.scope === 'GLOBAL';
+                                    const isMappingContext = editingHoliday ? editingHoliday.scope === 'MAPPING' : selectedGroupId === 'EMPLOYEE_SCOPE';
+                                    const isCreatingOverride = !isGlobalContext && !isMappingContext && editingHoliday?.scope === 'GLOBAL';
                                     let selectedApplicableTo = isGlobalContext
                                         ? (formData.get('applicableTo') as 'ALL' | 'SPECIFIC_GROUPS')
                                         : 'SPECIFIC_GROUPS';
@@ -576,25 +673,45 @@ export default function WorkspaceHolidaysPage() {
                                         ? (formData.getAll('targetGroupIds') as string[])
                                         : undefined;
 
-                                    if (isGlobalContext && !canManageGlobal) {
-                                        selectedApplicableTo = 'SPECIFIC_GROUPS';
-                                        targetIds = managedGroupIds.length > 0
-                                            ? managedGroupIds
-                                            : (formData.getAll('targetGroupIds') as string[]).filter((id) => managedGroupIds.includes(id));
+                                    if (isGlobalContext && !canManageGlobal && !isMappingContext) {
+                                        if (hasEmployeeScope && managedGroupIds.length === 0) {
+                                            // handled as MAPPING below
+                                        } else {
+                                            selectedApplicableTo = 'SPECIFIC_GROUPS';
+                                            targetIds = managedGroupIds.length > 0
+                                                ? managedGroupIds
+                                                : (formData.getAll('targetGroupIds') as string[]).filter((id) => managedGroupIds.includes(id));
+                                        }
                                     }
 
                                     try {
-                                        const data: Partial<Holiday> & { isMaster: boolean; scope: string; applicableTo: string; groupId?: string; targetGroupIds?: string[]; endDate?: string; overridesMasterId?: string } = {
+                                        const useMapping =
+                                            isMappingContext
+                                            || (isGlobalContext && !canManageGlobal && hasEmployeeScope && managedGroupIds.length === 0);
+
+                                        const data: Partial<Holiday> & {
+                                            isMaster: boolean;
+                                            scope: string;
+                                            applicableTo?: string;
+                                            groupId?: string;
+                                            targetGroupIds?: string[];
+                                            divisionMapping?: HolidayMappingRow[];
+                                            endDate?: string;
+                                            overridesMasterId?: string;
+                                        } = {
                                             name: formData.get('name') as string,
                                             date: formData.get('date') as string,
                                             endDate: (formData.get('endDate') as string) || undefined,
                                             type: formData.get('type') as Holiday['type'],
                                             description: formData.get('description') as string,
-                                            isMaster: isGlobalContext && canManageGlobal,
-                                            scope: isGlobalContext ? 'GLOBAL' : 'GROUP',
-                                            applicableTo: selectedApplicableTo,
-                                            groupId: isGlobalContext ? undefined : (selectedGroupId !== 'GLOBAL' ? selectedGroupId : (editingHoliday?.groupId as string)),
-                                            targetGroupIds: targetIds,
+                                            isMaster: isGlobalContext && canManageGlobal && !useMapping,
+                                            scope: useMapping ? 'MAPPING' : isGlobalContext ? 'GLOBAL' : 'GROUP',
+                                            applicableTo: useMapping ? undefined : selectedApplicableTo,
+                                            groupId: useMapping || isGlobalContext ? undefined : (selectedGroupId !== 'GLOBAL' && selectedGroupId !== 'EMPLOYEE_SCOPE' ? selectedGroupId : (editingHoliday?.groupId as string)),
+                                            targetGroupIds: useMapping ? undefined : targetIds,
+                                            divisionMapping: useMapping
+                                                ? (holidayTargetMode === 'ALL_SCOPE' ? [] : formMapping.filter((m) => m.division))
+                                                : undefined,
                                         };
 
                                         if (editingHoliday) {
@@ -606,7 +723,12 @@ export default function WorkspaceHolidaysPage() {
                                         } else {
                                             const res = await api.createHoliday({ ...data, rosterFillMode });
                                             if (!res.success) throw new Error(res.message);
-                                            toast.success('Holiday created');
+                                            const affected = (res as { affectedEmployees?: number }).affectedEmployees;
+                                            toast.success(
+                                                affected != null
+                                                    ? `Holiday created — ${affected} employee(s) affected`
+                                                    : 'Holiday created'
+                                            );
                                         }
 
                                         setShowHolidayForm(false);
@@ -690,10 +812,57 @@ export default function WorkspaceHolidaysPage() {
                                         )}
                                     </div>
                                 )}
-                                {(editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL') && !canManageGlobal && (
+                                {(editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL') && !canManageGlobal && managedGroupIds.length > 0 && (
                                     <p className="text-xs text-slate-500 dark:text-slate-400 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
                                         This holiday will be created for all holiday groups assigned to your account ({managedGroupIds.length} group{managedGroupIds.length === 1 ? '' : 's'}).
                                     </p>
+                                )}
+
+                                {(isEmployeeScopeMode || (hasEmployeeScope && managedGroupIds.length === 0 && !canManageGlobal)) && (
+                                    <div className="space-y-4 rounded-xl border border-violet-200 bg-violet-50/50 p-4 dark:border-violet-900/40 dark:bg-violet-950/20">
+                                        <div className="flex items-center gap-2">
+                                            <Users className="h-4 w-4 text-violet-600" />
+                                            <h3 className="text-xs font-bold text-violet-700 dark:text-violet-300 uppercase tracking-wider">Employee scope</h3>
+                                        </div>
+                                        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                                            <input
+                                                type="radio"
+                                                checked={holidayTargetMode === 'ALL_SCOPE'}
+                                                onChange={() => setHolidayTargetMode('ALL_SCOPE')}
+                                            />
+                                            All employees in my assigned scope
+                                        </label>
+                                        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                                            <input
+                                                type="radio"
+                                                checked={holidayTargetMode === 'CUSTOM'}
+                                                onChange={() => setHolidayTargetMode('CUSTOM')}
+                                            />
+                                            Select part of my scope (divisions / departments / groups)
+                                        </label>
+                                        {holidayTargetMode === 'CUSTOM' && (
+                                            <HolidayDivisionMappingEditor
+                                                mapping={formMapping}
+                                                onChange={setFormMapping}
+                                                divisions={divisions}
+                                                departments={departments}
+                                                employeeGroups={employeeGroups}
+                                                customEmployeeGroupingEnabled={customEmployeeGroupingEnabled}
+                                                allowedDivisionIds={allowedHolidayMapping.map((m) => m.division)}
+                                            />
+                                        )}
+                                        <div className="rounded-lg bg-white dark:bg-slate-900 border border-violet-100 dark:border-violet-900/50 px-4 py-3 text-sm">
+                                            {loadingImpact ? (
+                                                <span className="text-slate-500">Calculating affected employees…</span>
+                                            ) : employeeImpactCount != null ? (
+                                                <span className="font-bold text-violet-700 dark:text-violet-300">
+                                                    {employeeImpactCount} employee{employeeImpactCount === 1 ? '' : 's'} will be affected by this holiday
+                                                </span>
+                                            ) : (
+                                                <span className="text-slate-500">Employee count unavailable</span>
+                                            )}
+                                        </div>
+                                    </div>
                                 )}
 
                                 <div className="space-y-4">
@@ -756,6 +925,59 @@ export default function WorkspaceHolidaysPage() {
                                     </button>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showHolidayActivity && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-700 overflow-hidden">
+                        <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-slate-700">
+                            <div>
+                                <div className="text-xs font-black uppercase tracking-widest text-slate-400">Holiday Activity</div>
+                                <div className="text-sm font-bold text-slate-900 dark:text-white">
+                                    {editingHoliday?.name || '—'}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowHolidayActivity(false)}
+                                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="max-h-[70vh] overflow-y-auto p-5 space-y-3">
+                            {loadingHolidayActivity ? (
+                                <div className="flex h-40 items-center justify-center">
+                                    <Spinner />
+                                </div>
+                            ) : holidayActivity.length === 0 ? (
+                                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center text-sm font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">
+                                    No activity recorded yet.
+                                </div>
+                            ) : (
+                                holidayActivity.map((row) => (
+                                    <div key={row._id} className="rounded-2xl border border-slate-100 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="min-w-0">
+                                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white truncate">
+                                                    {row.event}
+                                                </div>
+                                                <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                                    {row.comments || '—'}
+                                                </div>
+                                                <div className="mt-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                                    By {row.performedByName || 'System'} {row.performedByRole ? `(${row.performedByRole})` : ''}
+                                                </div>
+                                            </div>
+                                            <div className="shrink-0 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                                {row.timestamp ? new Date(row.timestamp).toLocaleString() : '—'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </div>
                 </div>

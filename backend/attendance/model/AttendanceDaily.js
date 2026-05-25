@@ -168,6 +168,16 @@ const attendanceDailySchema = new mongoose.Schema(
       enum: ['PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY', 'HOLIDAY', 'WEEK_OFF', 'OD'],
       default: 'ABSENT',
     },
+    rosterFirstHalfNonWorking: {
+      type: String,
+      enum: ['WO', 'HOL', null],
+      default: null,
+    },
+    rosterSecondHalfNonWorking: {
+      type: String,
+      enum: ['WO', 'HOL', null],
+      default: null,
+    },
     isEdited: {
       type: Boolean,
       default: false,
@@ -393,58 +403,19 @@ attendanceDailySchema.index({ shiftId: 1, date: 1 }, { background: true });
 
 // Pre-save hook to calculate aggregates from shifts array + OD enrichment
 attendanceDailySchema.pre('save', async function () {
-  // Fetch roster status once for both shifts-based and legacy logic (HOL/WO, remarks)
-  let rosterStatus = null;
+  let rosterEntry = null;
   try {
     const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
-    const rosterEntry = await PreScheduledShift.findOne({
+    rosterEntry = await PreScheduledShift.findOne({
       employeeNumber: this.employeeNumber,
       date: this.date,
-    });
-    rosterStatus = rosterEntry?.status; // 'WO' or 'HOL'
+    }).lean();
   } catch (err) {
     console.error('[AttendanceDaily Model] Error fetching roster status:', err);
   }
 
-  /**
-   * Determine which half of the shift was worked based on punch times vs shift midpoint.
-   * Used for half-day OD: only count OD in present days when OD is for the opposite half.
-   * @param {Array} shifts - this.shifts with inTime, outTime, shiftStartTime, shiftEndTime
-   * @param {string} dateStr - this.date (YYYY-MM-DD)
-   * @returns {'first_half'|'second_half'|null} - null if both halves worked (full day) or cannot determine
-   */
-  const getWorkedHalfFromShifts = (shifts, dateStr) => {
-    if (!shifts || shifts.length === 0) return null;
-    const shift = shifts.find(s => s.shiftStartTime && s.shiftEndTime && s.inTime);
-    if (!shift) return null;
-    const [startH, startM] = (shift.shiftStartTime || '').split(':').map(Number);
-    const [endH, endM] = (shift.shiftEndTime || '').split(':').map(Number);
-    const shiftStartMins = (startH || 0) * 60 + (startM || 0);
-    let shiftEndMins = (endH || 0) * 60 + (endM || 0);
-    if (shiftEndMins <= shiftStartMins) shiftEndMins += 24 * 60; // overnight
-    const durationMins = shiftEndMins - shiftStartMins;
-    const midOffset = durationMins / 2;
-
-    const inDate = new Date(shift.inTime);
-    const inMins = inDate.getHours() * 60 + inDate.getMinutes();
-    let inOffset = inMins - shiftStartMins;
-    if (inOffset < 0) inOffset += 24 * 60;
-    if (inOffset > durationMins) inOffset -= 24 * 60; // wrap for overnight
-    const outDate = shift.outTime ? new Date(shift.outTime) : null;
-    let outOffset = null;
-    if (outDate) {
-      let outMins = outDate.getHours() * 60 + outDate.getMinutes();
-      if (shiftEndMins > 24 * 60 && outMins < shiftStartMins) outMins += 24 * 60;
-      outOffset = outMins - shiftStartMins;
-      if (outOffset < 0) outOffset += 24 * 60;
-    }
-
-    const workedBeforeMid = inOffset < midOffset;
-    const workedAfterMid = outOffset == null ? false : outOffset >= midOffset;
-    if (workedBeforeMid && workedAfterMid) return null; // full day
-    if (workedBeforeMid) return 'first_half';
-    return 'second_half';
-  };
+  const { getWorkedHalfFromShifts } = require('../../leaves/utils/holwoOdPunchResolver');
+  const { applyRosterHalfNonWorkingToAttendanceDaily } = require('../../shifts/utils/rosterHalfNonWorking');
 
   // OD enrichment: add approved OD contribution to totalWorkingHours, payableShifts, status
   let odPayableContribution = 0;
@@ -678,17 +649,7 @@ attendanceDailySchema.pre('save', async function () {
         this.status = hasPunches ? 'PARTIAL' : 'ABSENT';
       }
     }
-    // Roster overrides: if roster has HOL or WO, day is holiday/week-off only; keep punches and shift details but do not count toward present/payable
-    if (rosterStatus === 'HOL' || rosterStatus === 'WO') {
-      this.status = rosterStatus === 'HOL' ? 'HOLIDAY' : 'WEEK_OFF';
-      this.payableShifts = 0;
-      if (this.totalWorkingHours > 0) {
-        const dayLabel = rosterStatus === 'HOL' ? 'Holiday' : 'Week Off';
-        const remark = `Worked on ${dayLabel}`;
-        if (!this.notes) this.notes = remark;
-        else if (!this.notes.includes(remark)) this.notes = `${this.notes} | ${remark}`;
-      }
-    }
+    applyRosterHalfNonWorkingToAttendanceDaily(this, rosterEntry, getWorkedHalfFromShifts);
   } else {
     // No shifts (OD-only or no punches): use OD contribution; half-day OD -> HALF_DAY, full-day OD -> PRESENT
     if (odPayableContribution > 0 || odHoursContribution > 0) {
@@ -709,22 +670,9 @@ attendanceDailySchema.pre('save', async function () {
       this.status = 'PRESENT'; // Simplified fallback
     } else {
       this.payableShifts = 0;
-      if (rosterStatus === 'HOL') this.status = 'HOLIDAY';
-      else if (rosterStatus === 'WO') this.status = 'WEEK_OFF';
-      else this.status = 'ABSENT';
+      this.status = 'ABSENT';
     }
-    // Roster overrides: holiday/week-off take precedence; do not count toward present/payable
-    if (rosterStatus === 'HOL' || rosterStatus === 'WO') {
-      this.status = rosterStatus === 'HOL' ? 'HOLIDAY' : 'WEEK_OFF';
-      this.payableShifts = 0;
-    }
-    // Special Requirement: If worked on Holiday/Week-Off (have punches on HOL/WO day), add remark
-    if ((rosterStatus === 'HOL' || rosterStatus === 'WO') && (this.totalWorkingHours > 0)) {
-      const dayLabel = rosterStatus === 'HOL' ? 'Holiday' : 'Week Off';
-      const remark = `Worked on ${dayLabel}`;
-      if (!this.notes) this.notes = remark;
-      else if (!this.notes.includes(remark)) this.notes = `${this.notes} | ${remark}`;
-    }
+    applyRosterHalfNonWorkingToAttendanceDaily(this, rosterEntry, getWorkedHalfFromShifts);
   }
 
   // Calculate early-out deduction if totalEarlyOutMinutes exists

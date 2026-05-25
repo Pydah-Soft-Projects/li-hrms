@@ -13,9 +13,18 @@ const {
     canManageGlobal,
     canManageHoliday,
     getManagedGroupIdStrings,
+    getHolidayDivisionMapping,
+    hasHolidayEmployeeScope,
     assertCanManageHolidayRecord,
     normalizeHolidayWritePayload,
+    canViewHolidayRecord,
 } = require('../utils/holidayAccess');
+const {
+    normalizeMappingList,
+    mappingToEmployeeOrConditions,
+    employeeMatchesMappingList,
+    clampMappingToAllowed,
+} = require('../utils/holidayScopeMapping');
 
 // Normalize to YYYY-MM-DD from a Date or date string (avoids timezone shifting calendar day)
 function toDateString(d) {
@@ -26,20 +35,35 @@ function toDateString(d) {
     return `${y}-${m}-${day}`;
 }
 
-async function logHolidayHistory({ holidayId, event, reqUser, details, comments }) {
+function resolveHistoryActor(reqUser, actor) {
+    const userId = actor?._id || reqUser?._id || reqUser?.userId || null;
+    return {
+        performedBy: userId,
+        performedByName: actor?.name || reqUser?.name || null,
+        performedByRole: actor?.role || reqUser?.role || null,
+    };
+}
+
+async function logHolidayHistory({ holidayId, event, reqUser, actor, details, comments }) {
     try {
+        const who = resolveHistoryActor(reqUser, actor);
         await HolidayHistory.create({
             holidayId,
             event,
-            performedBy: reqUser?._id || reqUser?.userId || null,
-            performedByName: reqUser?.name || null,
-            performedByRole: reqUser?.role || null,
+            performedBy: who.performedBy,
+            performedByName: who.performedByName,
+            performedByRole: who.performedByRole,
             details: details || {},
             comments: comments || null,
         });
     } catch (err) {
         console.error('[HolidayHistory] log failed:', err.message);
     }
+}
+
+async function logHolidayHistoryMany(entries) {
+    if (!entries?.length) return;
+    await Promise.all(entries.map((entry) => logHolidayHistory(entry)));
 }
 
 // Helper to sync holiday to shift roster
@@ -128,10 +152,16 @@ function getDateRangeStrings(startInput, endInput) {
     return dates;
 }
 
-async function resolveEmployeesForHolidayScope({ scope, groupId, applicableTo, targetGroupIds }) {
+async function resolveEmployeesForHolidayScope({ scope, groupId, applicableTo, targetGroupIds, divisionMapping }) {
     const baseFilter = (typeof Employee.getCurrentlyActiveFilter === 'function')
         ? Employee.getCurrentlyActiveFilter()
         : { is_active: { $ne: false } };
+    if (scope === 'MAPPING') {
+        const conditions = mappingToEmployeeOrConditions(divisionMapping);
+        if (conditions.length === 0) return [];
+        const emps = await Employee.find({ ...baseFilter, $or: conditions }).select('emp_no').lean();
+        return emps.map(e => String(e.emp_no || '').toUpperCase()).filter(Boolean);
+    }
     if (scope === 'GROUP') {
         const group = await HolidayGroup.findById(groupId).lean();
         if (!group || !group.divisionMapping || group.divisionMapping.length === 0) return [];
@@ -239,6 +269,9 @@ exports.getAllHolidaysAdmin = async (req, res) => {
         let holidays = await Holiday.find(query)
             .populate('targetGroupIds', 'name')
             .populate('groupId', 'name')
+            .populate('divisionMapping.division', 'name code')
+            .populate('divisionMapping.departments', 'name code')
+            .populate('divisionMapping.employeeGroups', 'name code')
             .sort({ date: 1 });
 
         let groups = await HolidayGroup.find({ isActive: true })
@@ -248,14 +281,11 @@ exports.getAllHolidaysAdmin = async (req, res) => {
 
         const isGlobalManager = canManageGlobal(actor);
         const managedIds = getManagedGroupIdStrings(actor);
+        const holidayMappingScope = getHolidayDivisionMapping(actor);
 
         if (!isGlobalManager && canManageHoliday(actor)) {
             groups = groups.filter((g) => managedIds.includes(g._id.toString()));
-            holidays = holidays.filter((h) => {
-                if (h.scope === 'GLOBAL') return true;
-                const gid = h.groupId?._id?.toString() || h.groupId?.toString();
-                return gid && managedIds.includes(gid);
-            });
+            holidays = holidays.filter((h) => canViewHolidayRecord(actor, h));
         }
 
         res.status(200).json({
@@ -266,6 +296,8 @@ exports.getAllHolidaysAdmin = async (req, res) => {
                 access: {
                     canManageGlobal: isGlobalManager,
                     managedHolidayGroupIds: managedIds,
+                    holidayDivisionMapping: holidayMappingScope,
+                    hasEmployeeScope: holidayMappingScope.length > 0,
                 },
             }
         });
@@ -398,6 +430,28 @@ exports.getMyHolidays = async (req, res) => {
         // Add remaining master holidays
         finalHolidays.push(...masterMap.values());
 
+        // 5. Direct employee-scope holidays (MAPPING)
+        const mappingHolidays = await Holiday.find({
+            ...dateQuery,
+            isActive: { $ne: false },
+            scope: 'MAPPING',
+        }).lean();
+
+        const empRecord = await Employee.findOne({
+            $or: [
+                { emp_no: user.employeeId },
+                { _id: user.employeeRef },
+            ],
+        }).select('division_id department_id employee_group_id emp_no').lean();
+
+        if (empRecord) {
+            for (const mh of mappingHolidays) {
+                if (employeeMatchesMappingList(empRecord, mh.divisionMapping)) {
+                    finalHolidays.push(mh);
+                }
+            }
+        }
+
         // Sort by date
         finalHolidays.sort((a, b) => new Date(a.date) - new Date(b.date));
 
@@ -523,12 +577,18 @@ exports.saveHoliday = async (req, res) => {
     try {
         const actor = await loadHolidayActor(req);
         const normalized = normalizeHolidayWritePayload(actor, req.body);
-        const { _id, name, date, endDate, type, isMaster, scope, applicableTo, targetGroupIds, groupId, overridesMasterId, description, rosterFillMode } = normalized;
+        const {
+            _id, name, date, endDate, type, isMaster, scope, applicableTo, targetGroupIds, groupId,
+            overridesMasterId, description, rosterFillMode, divisionMapping,
+        } = normalized;
         let createdMessage = null;
 
         // Validation
         if (scope === 'GROUP' && !groupId) {
             return res.status(400).json({ success: false, message: 'Group ID is required for Group Scope holidays' });
+        }
+        if (scope === 'MAPPING' && (!divisionMapping || divisionMapping.length === 0)) {
+            return res.status(400).json({ success: false, message: 'Employee scope mapping is required for this holiday' });
         }
 
         let holiday;
@@ -564,6 +624,7 @@ exports.saveHoliday = async (req, res) => {
             holiday.applicableTo = applicableTo;
             holiday.targetGroupIds = applicableTo === 'SPECIFIC_GROUPS' ? targetGroupIds : [];
             holiday.groupId = scope === 'GROUP' ? groupId : undefined;
+            holiday.divisionMapping = scope === 'MAPPING' ? divisionMapping : [];
             holiday.overridesMasterId = overridesMasterId;
             holiday.description = description;
 
@@ -578,7 +639,14 @@ exports.saveHoliday = async (req, res) => {
                 holidayId: holiday._id,
                 event: 'holiday_updated',
                 reqUser: req.user,
-                details: { scope: holiday.scope, applicableTo: holiday.applicableTo, groupId: holiday.groupId, targetGroupIds: holiday.targetGroupIds },
+                actor,
+                details: {
+                    scope: holiday.scope,
+                    applicableTo: holiday.applicableTo,
+                    groupId: holiday.groupId,
+                    targetGroupIds: holiday.targetGroupIds,
+                    divisionMapping: holiday.divisionMapping,
+                },
                 comments: 'Holiday updated',
             });
 
@@ -619,6 +687,39 @@ exports.saveHoliday = async (req, res) => {
                 const createdHolidays = await Holiday.insertMany(holidaysToCreate);
                 holiday = createdHolidays[0];
                 createdMessage = `Created ${createdHolidays.length} group holidays`;
+
+                await logHolidayHistoryMany(
+                    createdHolidays.map((h) => ({
+                        holidayId: h._id,
+                        event: 'holiday_created',
+                        reqUser: req.user,
+                        actor,
+                        details: { scope: h.scope, groupId: h.groupId, bulkCreate: true },
+                        comments: 'Holiday created (bulk group apply)',
+                    }))
+                );
+            } else if (scope === 'MAPPING') {
+                holiday = await Holiday.create({
+                    name,
+                    date,
+                    endDate: endDate || null,
+                    type,
+                    isMaster: false,
+                    scope: 'MAPPING',
+                    divisionMapping,
+                    description,
+                    createdBy: req.user.userId,
+                    isSynced: false,
+                });
+
+                await logHolidayHistory({
+                    holidayId: holiday._id,
+                    event: 'holiday_created',
+                    reqUser: req.user,
+                    actor,
+                    details: { scope: holiday.scope, divisionMapping: holiday.divisionMapping },
+                    comments: 'Holiday created (employee scope)',
+                });
             } else {
                 holiday = await Holiday.create({
                     name,
@@ -641,6 +742,7 @@ exports.saveHoliday = async (req, res) => {
                     holidayId: holiday._id,
                     event: 'holiday_created',
                     reqUser: req.user,
+                    actor,
                     details: { scope: holiday.scope, applicableTo: holiday.applicableTo, targetGroupIds: holiday.targetGroupIds, groupId: holiday.groupId },
                     comments: 'Holiday created',
                 });
@@ -681,11 +783,13 @@ exports.saveHoliday = async (req, res) => {
         const effectiveApplicableTo = applicableTo || 'ALL';
         const effectiveGroupId = scope === 'GROUP' ? groupId : undefined;
         const effectiveTargetGroupIds = effectiveApplicableTo === 'SPECIFIC_GROUPS' ? (targetGroupIds || []) : [];
+        const effectiveDivisionMapping = scope === 'MAPPING' ? divisionMapping : [];
         const matchedEmployees = await resolveEmployeesForHolidayScope({
             scope: effectiveScope,
             groupId: effectiveGroupId,
             applicableTo: effectiveApplicableTo,
-            targetGroupIds: effectiveTargetGroupIds
+            targetGroupIds: effectiveTargetGroupIds,
+            divisionMapping: effectiveDivisionMapping,
         });
         const holidayDates = getDateRangeStrings(date, endDate);
         const fillStatus = rosterFillMode === 'WEEK_OFF' ? 'WO' : 'HOL';
@@ -704,6 +808,7 @@ exports.saveHoliday = async (req, res) => {
         res.status(200).json({
             success: true,
             data: holiday,
+            affectedEmployees: matchedEmployees.length,
             ...(createdMessage ? { message: createdMessage } : {})
         });
 
@@ -741,7 +846,8 @@ exports.deleteHoliday = async (req, res) => {
             scope: holiday.scope,
             groupId: holiday.groupId,
             applicableTo: holiday.applicableTo,
-            targetGroupIds: holiday.targetGroupIds
+            targetGroupIds: holiday.targetGroupIds,
+            divisionMapping: holiday.divisionMapping,
         });
 
         // If deactivating a Global Holiday -> deactivate it AND all synced copies
@@ -768,6 +874,7 @@ exports.deleteHoliday = async (req, res) => {
             holidayId: holiday._id,
             event: 'holiday_deactivated',
             reqUser: req.user,
+            actor,
             details: { onDeleteAction, scope: holiday.scope },
             comments: 'Holiday deactivated (soft delete)',
         });
@@ -821,6 +928,74 @@ exports.deleteHolidayGroup = async (req, res) => {
     }
 };
 
+// @desc    Preview how many employees a holiday scope would affect
+// @route   POST /api/holidays/preview-impact
+// @access  Private (Holiday write)
+exports.previewHolidayImpact = async (req, res) => {
+    try {
+        const actor = await loadHolidayActor(req);
+        const { scope, groupId, applicableTo, targetGroupIds, divisionMapping } = req.body || {};
+        let effectiveScope = scope;
+        let effectiveMapping = divisionMapping;
+        let effectiveGroupId = groupId;
+        let effectiveApplicableTo = applicableTo;
+        let effectiveTargetGroupIds = targetGroupIds;
+
+        if (!canManageGlobal(actor)) {
+            if (scope === 'MAPPING' || (divisionMapping && divisionMapping.length > 0)) {
+                effectiveScope = 'MAPPING';
+                effectiveMapping = clampMappingToAllowed(
+                    getHolidayDivisionMapping(actor),
+                    divisionMapping || []
+                );
+                if (effectiveMapping.length === 0) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'No valid employee scope within your assignment',
+                    });
+                }
+            } else if (scope === 'GROUP' && groupId) {
+                const managed = getManagedGroupIdStrings(actor);
+                if (!managed.includes(String(groupId))) {
+                    return res.status(403).json({ success: false, message: 'Group not in your scope' });
+                }
+            } else if (scope === 'GLOBAL') {
+                effectiveScope = hasHolidayEmployeeScope(actor) ? 'MAPPING' : 'GLOBAL';
+                if (effectiveScope === 'MAPPING') {
+                    effectiveMapping = getHolidayDivisionMapping(actor);
+                } else {
+                    effectiveApplicableTo = 'SPECIFIC_GROUPS';
+                    effectiveTargetGroupIds = getManagedGroupIdStrings(actor);
+                }
+            }
+        }
+
+        const empNos = await resolveEmployeesForHolidayScope({
+            scope: effectiveScope,
+            groupId: effectiveGroupId,
+            applicableTo: effectiveApplicableTo,
+            targetGroupIds: effectiveTargetGroupIds,
+            divisionMapping: effectiveMapping,
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                employeeCount: empNos.length,
+                dayCount: 1,
+                scope: effectiveScope,
+                divisionMapping: effectiveScope === 'MAPPING' ? normalizeMappingList(effectiveMapping) : undefined,
+            },
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error previewing holiday impact',
+            error: error.message,
+        });
+    }
+};
+
 // @desc    Get holiday activity log (admin)
 // @route   GET /api/holidays/:id/activity
 // @access  Private (Super Admin, Sub Admin, HR)
@@ -828,7 +1003,7 @@ exports.getHolidayActivity = async (req, res) => {
     try {
         const actor = await loadHolidayActor(req);
         const holidayId = req.params.id;
-        const holiday = await Holiday.findById(holidayId).select('scope groupId isMaster');
+        const holiday = await Holiday.findById(holidayId).select('scope groupId isMaster divisionMapping');
         if (!holiday) return res.status(404).json({ success: false, message: 'Holiday not found' });
         try {
             assertCanManageHolidayRecord(actor, holiday);

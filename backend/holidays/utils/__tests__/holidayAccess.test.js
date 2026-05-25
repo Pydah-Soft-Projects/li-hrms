@@ -99,10 +99,22 @@ describe('holidayAccess', () => {
             expect(out.isMaster).toBe(false);
         });
 
-        test('scoped user with no assigned groups rejected', () => {
+        test('scoped user with no groups or mapping rejected', () => {
             const actor = mockActor({ featureControl: ['HOLIDAY_CALENDAR:write'], managedHolidayGroupIds: [] });
             expect(() => normalizeHolidayWritePayload(actor, { scope: 'GROUP', groupId: groupA }))
-                .toThrow(/No holiday groups assigned/);
+                .toThrow(/No holiday groups or employee scope/);
+        });
+
+        test('scoped user with mapping only creates MAPPING scope', () => {
+            const divId = '507f1f77bcf86cd799439099';
+            const actor = mockActor({
+                featureControl: ['HOLIDAY_CALENDAR:write'],
+                managedHolidayGroupIds: [],
+                holidayDivisionMapping: [{ division: divId, departments: [], employeeGroups: [] }],
+            });
+            const out = normalizeHolidayWritePayload(actor, { scope: 'GLOBAL', applicableTo: 'ALL' });
+            expect(out.scope).toBe('MAPPING');
+            expect(out.divisionMapping).toEqual([{ division: divId, departments: [], employeeGroups: [] }]);
         });
 
         test('scoped GROUP create out of scope rejected', () => {

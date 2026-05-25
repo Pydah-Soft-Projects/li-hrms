@@ -95,6 +95,31 @@ const userSchema = new mongoose.Schema(
         ref: 'HolidayGroup',
       },
     ],
+    /**
+     * Direct employee scope for holiday management (division/dept/employee group).
+     * User may manage holidays for employees matching these rows without a holiday group.
+     */
+    holidayDivisionMapping: [
+      {
+        division: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Division',
+          required: true,
+        },
+        departments: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Department',
+          },
+        ],
+        employeeGroups: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'EmployeeGroup',
+          },
+        ],
+      },
+    ],
     preferences: {
       language: {
         type: String,

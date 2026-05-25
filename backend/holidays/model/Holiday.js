@@ -29,10 +29,10 @@ const holidaySchema = new mongoose.Schema(
             default: false,
         },
 
-        // Scope: GLOBAL (Master) or GROUP (Specific)
+        // Scope: GLOBAL (Master), GROUP (holiday group), MAPPING (direct employee scope)
         scope: {
             type: String,
-            enum: ['GLOBAL', 'GROUP'],
+            enum: ['GLOBAL', 'GROUP', 'MAPPING'],
             default: 'GLOBAL',
         },
 
@@ -58,6 +58,29 @@ const holidaySchema = new mongoose.Schema(
             ref: 'HolidayGroup',
             required: function () { return this.scope === 'GROUP'; },
         },
+
+        // If scope is MAPPING — direct employee targeting (division/dept/employee group)
+        divisionMapping: [
+            {
+                division: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'Division',
+                    required: true,
+                },
+                departments: [
+                    {
+                        type: mongoose.Schema.Types.ObjectId,
+                        ref: 'Department',
+                    },
+                ],
+                employeeGroups: [
+                    {
+                        type: mongoose.Schema.Types.ObjectId,
+                        ref: 'EmployeeGroup',
+                    },
+                ],
+            },
+        ],
 
         // If this is a group override of a master holiday
         overridesMasterId: {

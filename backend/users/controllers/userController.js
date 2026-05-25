@@ -58,6 +58,7 @@ exports.registerUser = async (req, res) => {
       phone_number,
       customRoles,
       managedHolidayGroupIds,
+      holidayDivisionMapping,
     } = req.body;
     const { department, division } = req.body;
 
@@ -138,6 +139,7 @@ exports.registerUser = async (req, res) => {
       phone_number: phone_number || null,
       customRoles: customRoles || [],
       managedHolidayGroupIds: Array.isArray(managedHolidayGroupIds) ? managedHolidayGroupIds : [],
+      holidayDivisionMapping: Array.isArray(holidayDivisionMapping) ? holidayDivisionMapping : [],
     };
 
     // Only add employeeId and employeeRef if they have values (sparse index)
@@ -252,6 +254,7 @@ exports.createUserFromEmployee = async (req, res) => {
       phone_number,
       customRoles,
       managedHolidayGroupIds,
+      holidayDivisionMapping,
     } = req.body;
     const { departments, department, division } = req.body;
 
@@ -385,6 +388,7 @@ exports.createUserFromEmployee = async (req, res) => {
       phone_number: phone_number || employee.phone_number || null,
       customRoles: customRoles || [],
       managedHolidayGroupIds: Array.isArray(managedHolidayGroupIds) ? managedHolidayGroupIds : [],
+      holidayDivisionMapping: Array.isArray(holidayDivisionMapping) ? holidayDivisionMapping : [],
     });
 
     await logUserHistory({
@@ -606,6 +610,7 @@ exports.updateUser = async (req, res) => {
       phone_number,
       customRoles,
       managedHolidayGroupIds,
+      holidayDivisionMapping,
     } = req.body;
     const { department, division } = req.body;
 
@@ -671,6 +676,9 @@ exports.updateUser = async (req, res) => {
     if (customRoles !== undefined) user.customRoles = customRoles;
     if (managedHolidayGroupIds !== undefined) {
       user.managedHolidayGroupIds = Array.isArray(managedHolidayGroupIds) ? managedHolidayGroupIds : [];
+    }
+    if (holidayDivisionMapping !== undefined) {
+      user.holidayDivisionMapping = Array.isArray(holidayDivisionMapping) ? holidayDivisionMapping : [];
     }
 
     await user.save();

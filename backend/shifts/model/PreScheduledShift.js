@@ -23,9 +23,20 @@ const preScheduledShiftSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['WO', 'HOL'], // 'WO' for Week Off, 'HOL' for Holiday, null is allowed
+      enum: ['WO', 'HOL'], // Full-day WO/HOL (legacy); null when using shift + half flags
       default: null,
       index: true,
+    },
+    /** Half-day non-working when shiftId is set (shift still planned for the day). */
+    firstHalfStatus: {
+      type: String,
+      enum: ['WO', 'HOL', null],
+      default: null,
+    },
+    secondHalfStatus: {
+      type: String,
+      enum: ['WO', 'HOL', null],
+      default: null,
     },
     date: {
       type: String, // YYYY-MM-DD format
@@ -67,12 +78,12 @@ const preScheduledShiftSchema = new mongoose.Schema(
 // Note: This allows one entry per employee per date (either shift or week off)
 preScheduledShiftSchema.index({ employeeNumber: 1, date: 1 }, { unique: true });
 
-// Validation: Either shiftId or status must be present
-// Using async pre('save') hook without next callback
+// Validation: shiftId and/or full-day WO/HOL, or shiftId with half WO/HOL
 preScheduledShiftSchema.pre('save', async function () {
-  // Allow if shiftId exists (regular shift) OR status is 'WO' or 'HOL'
   const hasShiftId = this.shiftId != null && this.shiftId.toString().trim() !== '';
   const hasNonWorkingStatus = ['WO', 'HOL'].includes(this.status);
+  const hasHalfNonWorking = ['WO', 'HOL'].includes(this.firstHalfStatus)
+    || ['WO', 'HOL'].includes(this.secondHalfStatus);
 
   if (!hasShiftId && !hasNonWorkingStatus) {
     console.error('[Model Validation] Invalid entry:', {
@@ -82,6 +93,12 @@ preScheduledShiftSchema.pre('save', async function () {
       status: this.status,
     });
     throw new Error('Either shiftId or status (WO/HOL) must be provided');
+  }
+  if (hasHalfNonWorking && !hasShiftId && !hasNonWorkingStatus) {
+    throw new Error('Half-day WO/HOL requires a planned shift (shiftId)');
+  }
+  if (hasNonWorkingStatus && hasShiftId) {
+    this.shiftId = null;
   }
 });
 

@@ -15,6 +15,11 @@ export interface User {
   emp_no?: string;
   featureControl?: string[];
   managedHolidayGroupIds?: string[];
+  holidayDivisionMapping?: {
+    division: string;
+    departments: string[];
+    employeeGroups: string[];
+  }[];
   loginMethod?: string;
 }
 

@@ -648,18 +648,28 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
     setSaving(true);
     setSavingProgress(0);
     try {
-      const entries: { employeeNumber: string; date: string; shiftId: string | null; status: string }[] = [];
+      const entries: {
+        employeeNumber: string;
+        date: string;
+        shiftId: string | null;
+        status?: string;
+        firstHalfStatus?: string;
+        secondHalfStatus?: string;
+      }[] = [];
       dirtyKeys.forEach((key) => {
         const [empNo, date] = key.split('|');
         const row = roster.get(empNo);
         if (!row) return;
         const cell = row[date];
-        if (cell?.shiftId || cell?.status) {
+        const hasHalf = cell?.firstHalfStatus || cell?.secondHalfStatus;
+        if (cell?.shiftId || cell?.status || hasHalf) {
           entries.push({
             employeeNumber: empNo,
             date,
             shiftId: cell.shiftId || null,
-            status: cell.status || 'SHIFT',
+            ...(cell.status ? { status: cell.status } : {}),
+            ...(cell.firstHalfStatus ? { firstHalfStatus: cell.firstHalfStatus } : {}),
+            ...(cell.secondHalfStatus ? { secondHalfStatus: cell.secondHalfStatus } : {}),
           });
         }
       });

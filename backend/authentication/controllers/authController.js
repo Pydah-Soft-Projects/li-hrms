@@ -158,6 +158,7 @@ exports.login = async (req, res) => {
           managedHolidayGroupIds: userType === 'user'
             ? (user.managedHolidayGroupIds || []).map((id) => id.toString())
             : undefined,
+          holidayDivisionMapping: userType === 'user' ? (user.holidayDivisionMapping || []) : undefined,
           phone_number: userType === 'employee' ? user.phone_number : (user.employeeRef ? (await Employee.findById(user.employeeRef)).phone_number : null),
         },
       },
@@ -231,6 +232,7 @@ exports.getMe = async (req, res) => {
           managedHolidayGroupIds: userType === 'user'
             ? (user.managedHolidayGroupIds || []).map((id) => id.toString())
             : undefined,
+          holidayDivisionMapping: userType === 'user' ? (user.holidayDivisionMapping || []) : undefined,
           profilePhoto,
           createdAt: joined,
           lastLogin,
@@ -465,6 +467,7 @@ exports.ssoLogin = async (req, res) => {
           managedHolidayGroupIds: userType === 'user'
             ? (user.managedHolidayGroupIds || []).map((id) => id.toString())
             : undefined,
+          holidayDivisionMapping: userType === 'user' ? (user.holidayDivisionMapping || []) : undefined,
           loginMethod: 'sso',
         },
         workspaces,

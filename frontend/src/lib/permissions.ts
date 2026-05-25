@@ -15,6 +15,7 @@ export interface User {
     featureControl?: string[];
     /** Holiday groups this user may manage (scoped calendar write). */
     managedHolidayGroupIds?: string[];
+    holidayDivisionMapping?: { division: string; departments: string[]; employeeGroups: string[] }[];
 }
 
 // ==========================================
@@ -627,11 +628,58 @@ export function canManageHolidayGroups(user: User): boolean {
     return canManageHolidayCalendarGlobal(user);
 }
 
-/** Whether the user may edit/deactivate this holiday row (scoped managers: group rows only). */
-export function canEditHolidayRecord(user: User, holiday: { scope?: string; groupId?: string | { _id: string } }): boolean {
+function mappingRowsOverlap(
+    holidayRows: { division: string; departments?: string[]; employeeGroups?: string[] }[] | undefined,
+    userRows: { division: string; departments?: string[]; employeeGroups?: string[] }[] | undefined
+): boolean {
+    const norm = (rows?: { division: string; departments?: string[]; employeeGroups?: string[] }[]) =>
+        (rows || []).map((m) => ({
+            division: String(m.division),
+            departments: (m.departments || []).map(String),
+            employeeGroups: (m.employeeGroups || []).map(String),
+        }));
+    const h = norm(holidayRows);
+    const u = norm(userRows);
+    if (!h.length || !u.length) return false;
+    return h.some((hr) =>
+        u.some((ur) => {
+            if (hr.division !== ur.division) return false;
+            const deptOk =
+                hr.departments.length === 0 || ur.departments.length === 0
+                    ? true
+                    : hr.departments.some((d) => ur.departments.includes(d));
+            if (!deptOk) return false;
+            const grpOk =
+                hr.employeeGroups.length === 0 || ur.employeeGroups.length === 0
+                    ? true
+                    : hr.employeeGroups.some((g) => ur.employeeGroups.includes(g));
+            return grpOk;
+        })
+    );
+}
+
+/** Whether the user may edit/deactivate this holiday row (scoped managers: group or mapping rows). */
+export function canEditHolidayRecord(
+    user: User,
+    holiday: {
+        scope?: string;
+        groupId?: string | { _id: string };
+        divisionMapping?: { division: string; departments?: string[]; employeeGroups?: string[] }[];
+    }
+): boolean {
     if (!canManageHolidayCalendar(user)) return false;
     if (canManageHolidayCalendarGlobal(user)) return true;
     if (holiday.scope === 'GLOBAL') return false;
+    if (holiday.scope === 'MAPPING') {
+        return mappingRowsOverlap(
+            (holiday.divisionMapping || []).map((m) => ({
+                division: typeof m.division === 'object' ? (m.division as { _id: string })._id : m.division,
+                departments: (m.departments || []).map((d) => (typeof d === 'object' ? (d as { _id: string })._id : d)),
+                employeeGroups: (m.employeeGroups || []).map((g) => (typeof g === 'object' ? (g as { _id: string })._id : g)),
+            })),
+            user.holidayDivisionMapping
+        );
+    }
     const gid = typeof holiday.groupId === 'object' ? holiday.groupId?._id : holiday.groupId;
     if (!gid) return false;
     const allowed = user.managedHolidayGroupIds || [];

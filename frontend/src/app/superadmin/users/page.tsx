@@ -2,7 +2,12 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { api, Department, Division, User, Employee, DataScope, Role, HolidayGroup, UserHistoryRow } from '@/lib/api';
+import { api, Department, Division, User, Employee, DataScope, Role, HolidayGroup, EmployeeGroup, UserHistoryRow } from '@/lib/api';
+import {
+  HolidayDivisionMappingEditor,
+  normalizeHolidayMappingFromApi,
+  type HolidayMappingRow,
+} from '@/components/holidays/HolidayDivisionMappingEditor';
 import { useAuth } from '@/contexts/AuthContext';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
 import Spinner from '@/components/Spinner';
@@ -114,6 +119,8 @@ export default function UsersPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [holidayGroups, setHolidayGroups] = useState<HolidayGroup[]>([]);
+  const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
+  const [customEmployeeGroupingEnabled, setCustomEmployeeGroupingEnabled] = useState(false);
   const [employeesWithoutAccount, setEmployeesWithoutAccount] = useState<Employee[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
   const { user: currentUser } = useAuth();
@@ -224,7 +231,7 @@ export default function UsersPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [usersRes, deptRes, divRes, statsRes, holGroupsRes] = await Promise.all([
+      const [usersRes, deptRes, divRes, statsRes, holGroupsRes, empGroupsRes, groupingSettingRes] = await Promise.all([
         api.getUsers({
           role: roleFilter || undefined,
           isActive: statusFilter ? statusFilter === 'active' : undefined,
@@ -234,6 +241,8 @@ export default function UsersPage() {
         api.getDivisions(),
         api.getUserStats(),
         api.getHolidayGroupsAdmin(),
+        api.getEmployeeGroups(true),
+        api.getSetting('custom_employee_grouping_enabled'),
       ]);
 
       if (usersRes.success) setUsers(usersRes.data || []);
@@ -241,6 +250,10 @@ export default function UsersPage() {
       if (divRes.success) setDivisions(divRes.data || []);
       if (statsRes.success) setStats(statsRes.data);
       if (holGroupsRes.success) setHolidayGroups(holGroupsRes.data || []);
+      if (empGroupsRes.success) setEmployeeGroups(empGroupsRes.data || []);
+      if (groupingSettingRes.success && groupingSettingRes.data) {
+        setCustomEmployeeGroupingEnabled(!!groupingSettingRes.data.value);
+      }
 
       const [rolesRes, resSettEmp, resSettHOD, resSettHR, resSettMgr] = await Promise.all([
         api.getRoles(),
@@ -443,6 +456,7 @@ export default function UsersPage() {
       // Add feature control (always send to ensure overrides work)
       payload.featureControl = formData.featureControl;
       (payload as any).managedHolidayGroupIds = formData.managedHolidayGroupIds || [];
+      (payload as any).holidayDivisionMapping = (formData.holidayDivisionMapping || []).filter((m: HolidayMappingRow) => m.division);
 
       const res = await api.createUser(payload as any);
 
@@ -533,6 +547,7 @@ export default function UsersPage() {
       // Add feature control (always send to ensure overrides work)
       payload.featureControl = employeeFormData.featureControl;
       (payload as any).managedHolidayGroupIds = employeeFormData.managedHolidayGroupIds || [];
+      (payload as any).holidayDivisionMapping = (employeeFormData.holidayDivisionMapping || []).filter((m: HolidayMappingRow) => m.division);
 
       const res = await api.createUserFromEmployee(payload);
 
@@ -610,6 +625,7 @@ export default function UsersPage() {
       // Add feature control (always send to ensure overrides work)
       payload.featureControl = formData.featureControl;
       (payload as any).managedHolidayGroupIds = formData.managedHolidayGroupIds || [];
+      (payload as any).holidayDivisionMapping = (formData.holidayDivisionMapping || []).filter((m: HolidayMappingRow) => m.division);
 
       const res = await api.updateUser(selectedUser._id, payload);
 
@@ -771,6 +787,7 @@ export default function UsersPage() {
       division: (user.role === 'hod' || user.role === 'manager') && mapping ? mapping.division : '',
       phone_number: user.phone_number || '',
       managedHolidayGroupIds: ((user as any).managedHolidayGroupIds || []).map((g: any) => typeof g === 'string' ? g : g?._id).filter(Boolean),
+      holidayDivisionMapping: normalizeHolidayMappingFromApi((user as any).holidayDivisionMapping),
     });
     // Prevent useEffect from reloading defaults and overwriting user data
     previousRoleRef.current = user.role;
@@ -818,6 +835,7 @@ export default function UsersPage() {
       division: '',
       phone_number: '',
       managedHolidayGroupIds: [],
+      holidayDivisionMapping: [],
     });
     previousRoleRef.current = '';
   };
@@ -837,11 +855,32 @@ export default function UsersPage() {
       division: '',
       phone_number: '',
       managedHolidayGroupIds: [],
+      holidayDivisionMapping: [],
     });
     previousRoleRef.current = '';
   };
 
-
+  const renderHolidayEmployeeScopeSection = (data: UserFormData, setData: (v: UserFormData) => void) => (
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+      <div className="mb-4 flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-500/10">
+          <Users className="h-5 w-5" />
+        </div>
+        <div>
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white">Holiday Employee Scope</h3>
+          <p className="text-xs text-slate-500">Direct division/department scope (without holiday groups)</p>
+        </div>
+      </div>
+      <HolidayDivisionMappingEditor
+        mapping={(data.holidayDivisionMapping as HolidayMappingRow[]) || []}
+        onChange={(rows) => setData({ ...data, holidayDivisionMapping: rows } as UserFormData)}
+        divisions={divisions}
+        departments={departments}
+        employeeGroups={employeeGroups}
+        customEmployeeGroupingEnabled={customEmployeeGroupingEnabled}
+      />
+    </div>
+  );
 
   const toggleDivisionMapping = (divisionId: string, deptId: string | null = null, isEmployee = false) => {
     const setFunc = isEmployee ? setEmployeeFormData : setFormData;
@@ -1818,6 +1857,8 @@ export default function UsersPage() {
                         )}
                       </div>
 
+                      {renderHolidayEmployeeScopeSection(formData, setFormData)}
+
                       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
                         <div className="mb-5 flex items-center justify-between">
                           <div className="flex items-center gap-3">
@@ -2362,6 +2403,8 @@ export default function UsersPage() {
                       )}
                     </div>
 
+                    {renderHolidayEmployeeScopeSection(employeeFormData, setEmployeeFormData)}
+
                     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
                       <div className="mb-5 flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -2797,6 +2840,8 @@ export default function UsersPage() {
                           </div>
                         )}
                       </div>
+
+                      {renderHolidayEmployeeScopeSection(formData, setFormData)}
 
                       {/* Action Buttons */}
                       <div className="flex gap-3 pt-2">

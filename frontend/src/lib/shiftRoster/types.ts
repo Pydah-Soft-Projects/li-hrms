@@ -1,8 +1,12 @@
 import { Shift, Employee } from '@/lib/api';
 
+export type RosterHalfNonWorking = 'WO' | 'HOL';
+
 export type RosterCell = {
   shiftId?: string | null;
-  status?: 'WO' | 'HOL';
+  status?: RosterHalfNonWorking;
+  firstHalfStatus?: RosterHalfNonWorking;
+  secondHalfStatus?: RosterHalfNonWorking;
   notes?: string;
 };
 
