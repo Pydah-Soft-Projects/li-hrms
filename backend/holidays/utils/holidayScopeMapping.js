@@ -108,6 +108,58 @@ function mappingToEmployeeOrConditions(mappingRows) {
     }));
 }
 
+/**
+ * Build Mongo $or conditions for MAPPING holidays — matches employees by division_id and/or
+ * department_id linked to the division (when employees lack division_id on their record).
+ */
+function mappingToEmployeeOrConditionsExpanded(mappingRows, departments = []) {
+    const rows = normalizeMappingList(mappingRows);
+    if (rows.length === 0) return [];
+
+    const deptIdsByDivision = new Map();
+    for (const dept of departments) {
+        const deptId = toId(dept._id);
+        if (!deptId) continue;
+        for (const ref of dept.divisions || []) {
+            const divId = toId(ref);
+            if (!divId) continue;
+            if (!deptIdsByDivision.has(divId)) deptIdsByDivision.set(divId, new Set());
+            deptIdsByDivision.get(divId).add(deptId);
+        }
+    }
+
+    const conditions = [];
+    for (const m of rows) {
+        const groupClause =
+            m.employeeGroups.length > 0 ? { employee_group_id: { $in: m.employeeGroups } } : {};
+
+        if (m.departments.length > 0) {
+            conditions.push({
+                division_id: m.division,
+                department_id: { $in: m.departments },
+                ...groupClause,
+            });
+            const deptOnly = {
+                department_id: { $in: m.departments },
+                ...groupClause,
+            };
+            conditions.push(deptOnly);
+            continue;
+        }
+
+        conditions.push({ division_id: m.division, ...groupClause });
+        const linkedDeptIds = [...(deptIdsByDivision.get(m.division) || [])];
+        if (linkedDeptIds.length > 0) {
+            conditions.push({
+                department_id: { $in: linkedDeptIds },
+                ...groupClause,
+            });
+        }
+    }
+
+    return conditions;
+}
+
 function employeeMatchesMappingRow(employee, row) {
     const empDiv = toId(employee.division_id);
     const empDept = toId(employee.department_id);
@@ -149,6 +201,7 @@ module.exports = {
     isMappingListSubset,
     clampMappingToAllowed,
     mappingToEmployeeOrConditions,
+    mappingToEmployeeOrConditionsExpanded,
     employeeMatchesMappingList,
     mappingsOverlap,
     toId,

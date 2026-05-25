@@ -5,6 +5,7 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { api, type InAppNotification, type WorkspaceDashboardStats } from '@/lib/api';
 import TodayBirthdayTicker from '@/components/employee-birthdays/TodayBirthdayTicker';
+import HolidayCelebrationOverlay from '@/components/dashboard/HolidayCelebrationOverlay';
 import Link from 'next/link';
 import {
   Users,
@@ -303,6 +304,13 @@ export default function DashboardPage() {
           <div className="mb-5">
             <TodayBirthdayTicker items={todayBirthdayItems} />
           </div>
+        )}
+
+        {(stats.isTodayHoliday || stats.isTodayWeekOff) && (
+          <HolidayCelebrationOverlay
+            dayType={stats.isTodayHoliday ? 'HOLIDAY' : 'WEEK_OFF'}
+            holidayName={stats.todayHolidayName}
+          />
         )}
 
         {/* Global Attendance Card (Always relevant for employees/managers) */}

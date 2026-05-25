@@ -12,9 +12,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
 import Spinner from '@/components/Spinner';
 import {
-  buildDivisionToDepartmentIdsMap,
+  buildDivisionMappingFromDepartment,
   findDivisionIdForDepartment,
-  getDepartmentsForDivision,
+  getDepartmentsForDivisionDisplay,
+  mappingIncludesDepartment,
+  normalizeDivisionMapping,
 } from '@/lib/divisionDepartmentUtils';
 import {
   Plus,
@@ -159,11 +161,6 @@ export default function UsersPage() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-
-  const divisionDeptMap = useMemo(
-    () => buildDivisionToDepartmentIdsMap(divisions, departments),
-    [divisions, departments]
-  );
 
   // Dialogs
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -744,22 +741,30 @@ export default function UsersPage() {
     }
   };
 
+  const scopingRolesKeepMapping = (role: string) =>
+    ['hod', 'manager', 'hr', 'sub_admin'].includes(role);
+
+  const defaultDataScopeForRole = (role: string) => {
+    if (['hr', 'sub_admin', 'super_admin'].includes(role)) return 'all';
+    if (role === 'manager') return 'division';
+    if (role === 'hod') return 'department';
+    return 'department';
+  };
+
   // Open edit dialog
   const openEditDialog = (user: User) => {
     setSelectedUser(user);
 
-    // Normalize divisionMapping to IDs
-    const normalizedMapping = (user.divisionMapping || []).map(m => ({
-      division: typeof m.division === 'string' ? m.division : m.division?._id,
-      departments: (m.departments || []).map((d: any) => typeof d === 'string' ? d : d?._id)
-    }));
+    const normalizedMapping = normalizeDivisionMapping(user.divisionMapping);
 
-    // For HOD/Manager, prioritize the managed division and departments from division mapping
     let mapping = normalizedMapping.length > 0 ? normalizedMapping[0] : null;
     let finalMapping = normalizedMapping;
 
-    // HOD fallback: if user has department but no divisionMapping, derive division from department (legacy)
-    const deptId = (user as any).department?._id || (typeof (user as any).department === 'string' ? (user as any).department : '') || (mapping?.departments || [])[0];
+    const deptId =
+      (user as any).department?._id ||
+      (typeof (user as any).department === 'string' ? (user as any).department : '') ||
+      String((mapping?.departments || [])[0] || '');
+
     if (user.role === 'hod' && deptId && (!mapping || !mapping.division)) {
       const divId = findDivisionIdForDepartment(deptId, divisions, departments);
       if (divId) {
@@ -768,23 +773,56 @@ export default function UsersPage() {
       }
     }
 
-    const totalDeptsFromMapping = (finalMapping || []).reduce((sum: number, m: any) => sum + (m.departments || []).length, 0);
+    if (user.role === 'manager' && !mapping?.division) {
+      const allowedDivId = user.allowedDivisions?.[0]
+        ? (typeof user.allowedDivisions[0] === 'string' ? user.allowedDivisions[0] : (user.allowedDivisions[0] as Division)._id)
+        : '';
+      if (allowedDivId) {
+        mapping = { division: String(allowedDivId), departments: mapping?.departments || [] };
+        if (!finalMapping.length) finalMapping = [mapping];
+      }
+    }
+
+    const totalDeptsFromMapping = (finalMapping || []).reduce(
+      (sum: number, m) => sum + (m.departments || []).length,
+      0
+    );
     const isMultiple = (finalMapping || []).length > 1 || totalDeptsFromMapping > 1;
+
+    let resolvedDataScope = user.dataScope || 'all';
+    if (user.role === 'manager') {
+      resolvedDataScope = 'division';
+    } else if (
+      finalMapping.length > 0 &&
+      ['hr', 'sub_admin'].includes(user.role) &&
+      resolvedDataScope === 'all'
+    ) {
+      resolvedDataScope = 'division';
+    }
 
     setFormData({
       email: user.email,
       name: user.name,
       role: user.role,
       departmentType: user.departmentType || (isMultiple ? 'multiple' : 'single'),
-      department: user.role === 'hod' && mapping && mapping.departments?.length > 0 ? mapping.departments[0] : (deptId || (user as any).department?._id || ''),
-      departments: user.role === 'manager' && mapping ? mapping.departments : (finalMapping || []).flatMap((m: any) => m.departments || []),
+      department:
+        user.role === 'hod' && mapping && mapping.departments?.length > 0
+          ? mapping.departments[0]
+          : deptId || (user as any).department?._id || '',
+      departments:
+        user.role === 'manager' && mapping
+          ? mapping.departments
+          : (finalMapping || []).flatMap((m) => m.departments || []),
       password: '',
       autoGeneratePassword: false,
       featureControl: user.featureControl || [],
-      dataScope: user.dataScope || 'all',
-      allowedDivisions: user.allowedDivisions?.map(d => typeof d === 'string' ? d : d?._id) || [],
+      dataScope: resolvedDataScope,
+      allowedDivisions:
+        user.allowedDivisions?.map((d) => (typeof d === 'string' ? d : d?._id)) ||
+        finalMapping.map((m) => m.division),
       divisionMapping: finalMapping,
-      division: (user.role === 'hod' || user.role === 'manager') && mapping ? mapping.division : '',
+      division:
+        (user.role === 'hod' || user.role === 'manager') && mapping ? mapping.division : '',
       phone_number: user.phone_number || '',
       managedHolidayGroupIds: ((user as any).managedHolidayGroupIds || []).map((g: any) => typeof g === 'string' ? g : g?._id).filter(Boolean),
       holidayDivisionMapping: normalizeHolidayMappingFromApi((user as any).holidayDivisionMapping),
@@ -882,243 +920,167 @@ export default function UsersPage() {
     </div>
   );
 
-  const toggleDivisionMapping = (divisionId: string, deptId: string | null = null, isEmployee = false) => {
-    const setFunc = isEmployee ? setEmployeeFormData : setFormData;
-
-    setFunc((prev: any) => {
-      const newMapping = [...(prev.divisionMapping || [])];
-      const existingDivisionIdx = newMapping.findIndex(m => {
+  const toggleDivisionMapping = (divisionId: string, deptId: string | null, setData: React.Dispatch<React.SetStateAction<UserFormData>>, role: string) => {
+    setData((prev) => {
+      let newMapping = [...(prev.divisionMapping || [])];
+      const existingDivisionIdx = newMapping.findIndex((m) => {
         const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
-        return mDivId === divisionId;
+        return String(mDivId) === String(divisionId);
       });
 
       if (deptId === null) {
-        // Toggle Division Header
         if (existingDivisionIdx !== -1) {
-          // If already has specific departments, clicking header makes it "All Departments"
-          if (newMapping[existingDivisionIdx].departments.length > 0) {
+          if ((newMapping[existingDivisionIdx].departments || []).length > 0) {
             newMapping[existingDivisionIdx] = { ...newMapping[existingDivisionIdx], departments: [] };
           } else {
-            // Was already "All Departments", so remove it entirely
             newMapping.splice(existingDivisionIdx, 1);
           }
         } else {
-          // Not selected, add it as "All Departments"
           newMapping.push({ division: divisionId, departments: [] });
         }
+      } else if (existingDivisionIdx === -1) {
+        newMapping.push({ division: divisionId, departments: [String(deptId)] });
       } else {
-        // Toggle Specific Department
-        if (existingDivisionIdx === -1) {
-          newMapping.push({ division: divisionId, departments: [deptId] });
+        const currentDepts = (newMapping[existingDivisionIdx].departments || []).map((d: string | Department) =>
+          typeof d === 'string' ? d : String(d._id)
+        );
+        if (currentDepts.includes(String(deptId))) {
+          newMapping[existingDivisionIdx] = {
+            ...newMapping[existingDivisionIdx],
+            departments: currentDepts.filter((d) => d !== String(deptId)),
+          };
         } else {
-          const currentDepts = [...newMapping[existingDivisionIdx].departments];
-          if (currentDepts.includes(deptId)) {
-            newMapping[existingDivisionIdx] = {
-              ...newMapping[existingDivisionIdx],
-              departments: currentDepts.filter(d => d !== deptId)
-            };
-          } else {
-            newMapping[existingDivisionIdx] = {
-              ...newMapping[existingDivisionIdx],
-              departments: [...currentDepts, deptId]
-            };
-          }
+          newMapping[existingDivisionIdx] = {
+            ...newMapping[existingDivisionIdx],
+            departments: [...currentDepts, String(deptId)],
+          };
         }
       }
 
-      return {
-        ...prev,
-        divisionMapping: newMapping,
-        allowedDivisions: newMapping.map(m => typeof m.division === 'string' ? m.division : m.division?._id)
-      };
+      const allowedDivisions = newMapping.map((m) => (typeof m.division === 'string' ? m.division : m.division?._id)).filter(Boolean);
+      const first = newMapping[0];
+      const next: UserFormData = { ...prev, divisionMapping: newMapping, allowedDivisions };
+      if (role === 'manager') {
+        next.division = first ? (typeof first.division === 'string' ? first.division : first.division?._id) || '' : '';
+        next.departments = (first?.departments || []).map((d: string | Department) => (typeof d === 'string' ? d : String(d._id)));
+        next.dataScope = 'division';
+      } else if (role === 'hod') {
+        next.division = first ? (typeof first.division === 'string' ? first.division : first.division?._id) || '' : '';
+        next.department = (first?.departments || [])[0]
+          ? (typeof (first.departments as (string | Department)[])[0] === 'string'
+            ? (first.departments as string[])[0]
+            : String((first.departments as Department[])[0]?._id))
+          : '';
+        next.dataScope = 'department';
+      }
+      return next;
     });
   };
 
-  const departmentsForDivision = useCallback(
-    (divisionId: string) => getDepartmentsForDivision(divisionId, divisions, departments, divisionDeptMap),
-    [divisions, departments, divisionDeptMap]
-  );
+  const DivisionMappingAccordion = ({
+    data,
+    setData,
+    role,
+    variant = 'blue',
+  }: {
+    data: UserFormData;
+    setData: React.Dispatch<React.SetStateAction<UserFormData>>;
+    role: string;
+    variant?: 'amber' | 'blue';
+  }) => {
+    const selectedBg = variant === 'amber' ? 'bg-amber-50 dark:bg-amber-900/20' : 'bg-blue-50 dark:bg-blue-900/20';
+    const accentText = variant === 'amber' ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400';
+    const checkboxAccent = variant === 'amber' ? 'text-amber-600' : 'text-blue-600';
 
-  const ScopingSelector = ({ data, setData, asEmployee = false }: { data: UserFormData, setData: React.Dispatch<React.SetStateAction<UserFormData>>, asEmployee?: boolean }) => {
-    // Specialized UI for Manager Role (Single Division)
+    return (
+      <div className="space-y-4">
+        {divisions.map((div) => {
+          const isSelected = data.divisionMapping?.some((m) => {
+            const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
+            return String(mDivId) === String(div._id);
+          });
+          const mapping = data.divisionMapping?.find((m) => {
+            const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
+            return String(mDivId) === String(div._id);
+          });
+          const deptsForDiv = getDepartmentsForDivisionDisplay(div._id, divisions, departments, mapping?.departments);
+
+          return (
+            <div key={div._id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">
+              <div
+                className={`flex items-center justify-between p-3 cursor-pointer ${isSelected ? selectedBg : ''}`}
+                onClick={() => toggleDivisionMapping(div._id, null, setData, role)}
+              >
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" checked={!!isSelected} readOnly className={`rounded border-slate-300 ${checkboxAccent}`} />
+                  <span className="text-sm font-medium dark:text-white">{div.name}</span>
+                </div>
+                {isSelected && (
+                  <span className={`text-[10px] font-bold uppercase ${accentText}`}>
+                    {(mapping?.departments || []).length === 0 ? 'All Departments' : `${mapping?.departments?.length} Dept(s)`}
+                  </span>
+                )}
+              </div>
+              {isSelected && (
+                <div className="p-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2">
+                  {deptsForDiv.map((dept) => (
+                    <label key={dept._id} className="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={mappingIncludesDepartment(mapping?.departments, dept._id)}
+                        onChange={() => toggleDivisionMapping(div._id, dept._id, setData, role)}
+                        className={`rounded border-slate-300 ${checkboxAccent} scale-75`}
+                      />
+                      <span className="text-[11px] text-slate-600 dark:text-slate-400 truncate">{dept.name}</span>
+                    </label>
+                  ))}
+                  {deptsForDiv.length === 0 && (
+                    <div className="col-span-2 text-center py-2 text-[10px] text-slate-400">No departments linked to this division</div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const ScopingSelector = ({ data, setData }: { data: UserFormData, setData: React.Dispatch<React.SetStateAction<UserFormData>> }) => {
     if (data.role === 'manager') {
-      const selectedDivisionId = data.division || (data.allowedDivisions?.[0]
-        ? (typeof data.allowedDivisions[0] === 'string' ? data.allowedDivisions[0] : (data.allowedDivisions[0] as Division)._id)
-        : '');
-
-      const handleManagerDivisionChange = (divId: string) => {
-        setData({
-          ...data,
-          division: divId,
-          allowedDivisions: divId ? [divId] : [],
-          divisionMapping: [], // Managers don't need department mapping usually, or implicit all
-          department: '',
-          departments: [],
-          dataScope: 'division'
-        });
-      };
-
       return (
         <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 dark:bg-blue-900/10 dark:border-blue-800">
-            <h3 className="flex items-center gap-2 text-sm font-bold text-blue-800 dark:text-blue-400 mb-4">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800/50">
-                <Building className="h-4 w-4" />
-              </span>
-              Division Manager Assignment
+            <h3 className="flex items-center gap-2 text-sm font-bold text-blue-800 dark:text-blue-400 mb-2">
+              <Building className="h-4 w-4" />
+              Division Manager – Division & Department Assignment
             </h3>
-
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                Select Division *
-              </label>
-              <select
-                value={selectedDivisionId}
-                onChange={(e) => handleManagerDivisionChange(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-              >
-                <option value="">-- Choose Division --</option>
-                {divisions.map(d => (
-                  <option key={d._id} value={d._id}>{d.name}</option>
-                ))}
-              </select>
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                This user will be assigned as the Manager for the selected Division.
-              </p>
-            </div>
-
-            {/* Manager Department Selection */}
-            {selectedDivisionId && (
-              <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-800">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300">
-                    Allowed Departments
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setData({ ...data, departments: [] })}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400"
-                    title="Clear selection to allow access to ALL departments in this division"
-                  >
-                    Select All (Clear Restrictions)
-                  </button>
-                </div>
-
-                <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 bg-white/50 dark:bg-slate-800/50">
-                  {departmentsForDivision(selectedDivisionId).map((dept) => (
-                      <label key={dept._id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-blue-100/50 dark:hover:bg-blue-900/30 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={data.departments?.includes(dept._id)}
-                          onChange={() => {
-                            const currentDepts = data.departments || [];
-                            if (currentDepts.includes(dept._id)) {
-                              setData({ ...data, departments: currentDepts.filter(d => d !== dept._id) });
-                            } else {
-                              setData({ ...data, departments: [...currentDepts, dept._id] });
-                            }
-                          }}
-                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">{dept.name}</span>
-                      </label>
-                    ))}
-                  {departmentsForDivision(selectedDivisionId).length === 0 && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400 p-2">No departments found in this division</p>
-                    )}
-                </div>
-                {(!data.departments || data.departments.length === 0) && (
-                  <p className="mt-2 text-xs text-green-600 dark:text-green-400 font-medium">
-                    ✓ Access granted to ALL departments in this division
-                  </p>
-                )}
-              </div>
-            )}
+            <p className="text-xs text-blue-700 dark:text-blue-500 mb-4">
+              Select division(s) and departments this manager can access (same mapping as HR / Sub Admin).
+            </p>
+            <DivisionMappingAccordion data={data} setData={setData} role="manager" variant="blue" />
           </div>
         </div>
       );
     }
 
-    // HOD: full division mapping (multiple divisions, multiple departments per division)
     if (data.role === 'hod') {
       return (
         <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-4">
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 dark:bg-amber-900/10 dark:border-amber-800">
             <h3 className="flex items-center gap-2 text-sm font-bold text-amber-800 dark:text-amber-400 mb-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-800/50">
-                <Users className="h-4 w-4" />
-              </span>
+              <Users className="h-4 w-4" />
               HOD – Division & Department Assignment
             </h3>
             <p className="text-xs text-amber-700 dark:text-amber-500 mb-4">
-              Select one or more divisions and the departments this HOD will head. One HOD can be assigned to multiple departments.
+              Select one or more divisions and the departments this HOD will head.
             </p>
-
-            <div className="space-y-4">
-              {divisions.map((div) => {
-                const isSelected = data.divisionMapping?.some((m: any) => {
-                  const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
-                  return mDivId === div._id;
-                });
-                const mapping = data.divisionMapping?.find((m: any) => {
-                  const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
-                  return mDivId === div._id;
-                });
-
-                return (
-                  <div key={div._id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">
-                    <div
-                      className={`flex items-center justify-between p-3 cursor-pointer ${isSelected ? 'bg-amber-50 dark:bg-amber-900/20' : ''}`}
-                      onClick={() => toggleDivisionMapping(div._id, null, asEmployee)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          readOnly
-                          className="rounded border-slate-300 text-amber-600"
-                        />
-                        <span className="text-sm font-medium dark:text-white">{div.name}</span>
-                      </div>
-                      {isSelected && (
-                        <span className="text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">
-                          {mapping?.departments?.length === 0 ? 'All Departments' : `${mapping?.departments?.length} Dept(s)`}
-                        </span>
-                      )}
-                    </div>
-
-                    {isSelected && (
-                      <div className="p-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2">
-                        {departmentsForDivision(div._id).map(dept => {
-                          const deptId = dept._id;
-                          const isDeptSelected = (mapping?.departments || []).some((d: any) => (typeof d === 'string' ? d : d?._id) === deptId);
-                          return (
-                            <label key={dept._id} className="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={isDeptSelected}
-                                onChange={() => toggleDivisionMapping(div._id, dept._id, asEmployee)}
-                                className="rounded border-slate-300 text-amber-600 scale-75"
-                              />
-                              <span className="text-[11px] text-slate-600 dark:text-slate-400 truncate">{dept.name}</span>
-                            </label>
-                          );
-                        })}
-                        {departmentsForDivision(div._id).length === 0 && (
-                          <div className="col-span-2 text-center py-2 text-[10px] text-slate-400">No departments linked to this division</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+            <DivisionMappingAccordion data={data} setData={setData} role="hod" variant="amber" />
           </div>
         </div>
       );
     }
 
-    // Default Scoping UI for other roles
     return (
       <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-4">
         <div>
@@ -1130,7 +1092,6 @@ export default function UsersPage() {
           >
             <option value="all">All Data (Across All Divisions)</option>
             <option value="division">Specific Divisions / Departments</option>
-            {/* option value="department" removed for HOD as it's handled above, but kept if needed for others */}
             <option value="own">Self Only</option>
           </select>
         </div>
@@ -1140,62 +1101,7 @@ export default function UsersPage() {
             <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
               Division & Department Access Mapping
             </label>
-
-            <div className="space-y-4">
-              {divisions.map((div) => {
-                const isSelected = data.divisionMapping?.some((m: any) => {
-                  const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
-                  return mDivId === div._id;
-                });
-                const mapping = data.divisionMapping?.find((m: any) => {
-                  const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
-                  return mDivId === div._id;
-                });
-
-                return (
-                  <div key={div._id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">
-                    <div
-                      className={`flex items-center justify-between p-3 cursor-pointer ${isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                      onClick={() => toggleDivisionMapping(div._id, null, asEmployee)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          readOnly
-                          className="rounded border-slate-300 text-blue-600"
-                        />
-                        <span className="text-sm font-medium dark:text-white">{div.name}</span>
-                      </div>
-                      {isSelected && (
-                        <span className="text-[10px] font-bold uppercase text-blue-600 dark:text-blue-400">
-                          {mapping?.departments.length === 0 ? 'All Departments' : `${mapping?.departments.length} Departments`}
-                        </span>
-                      )}
-                    </div>
-
-                    {isSelected && (
-                      <div className="p-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2">
-                        {departmentsForDivision(div._id).map(dept => (
-                          <label key={dept._id} className="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={mapping?.departments.includes(dept._id)}
-                              onChange={() => toggleDivisionMapping(div._id, dept._id, asEmployee)}
-                              className="rounded border-slate-300 text-blue-600 scale-75"
-                            />
-                            <span className="text-[11px] text-slate-600 dark:text-slate-400 truncate">{dept.name}</span>
-                          </label>
-                        ))}
-                        {departmentsForDivision(div._id).length === 0 && (
-                          <div className="col-span-2 text-center py-2 text-[10px] text-slate-400">No departments linked to this division</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+            <DivisionMappingAccordion data={data} setData={setData} role={data.role} variant="blue" />
           </div>
         )}
 
@@ -1670,14 +1576,16 @@ export default function UsersPage() {
                                   const customRole = customRoles.find(r => r._id === roleId);
                                   const newPermissions = customRole ? (customRole.activeModules || []) : formData.featureControl;
 
+                                  const keepMapping = scopingRolesKeepMapping(roleId) && scopingRolesKeepMapping(formData.role);
                                   setFormData({
                                     ...formData,
                                     role: roleId,
                                     featureControl: newPermissions,
-                                    dataScope: ['hr', 'sub_admin', 'super_admin'].includes(roleId) ? 'all' : (roleId === 'hod' ? 'division' : 'department'),
-                                    department: '',
-                                    departments: [],
-                                    divisionMapping: []
+                                    dataScope: defaultDataScopeForRole(roleId),
+                                    department: keepMapping ? formData.department : '',
+                                    departments: keepMapping ? formData.departments : [],
+                                    divisionMapping: keepMapping ? formData.divisionMapping : [],
+                                    division: keepMapping ? formData.division : '',
                                   });
                                 }}
                                 className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
@@ -2160,10 +2068,28 @@ export default function UsersPage() {
                                         key={emp._id}
                                         type="button"
                                         onClick={() => {
+                                          const deptId =
+                                            emp.department_id?._id ||
+                                            (typeof emp.department_id === 'string' ? emp.department_id : '');
+                                          const initialMapping = buildDivisionMappingFromDepartment(
+                                            deptId,
+                                            divisions,
+                                            departments
+                                          );
+                                          const divId = initialMapping[0]?.division || '';
                                           setEmployeeFormData({
                                             ...employeeFormData,
                                             employeeId: emp.emp_no,
                                             email: emp?.email || '',
+                                            divisionMapping: initialMapping,
+                                            division: divId,
+                                            department: deptId,
+                                            allowedDivisions: divId ? [divId] : [],
+                                            dataScope:
+                                              initialMapping.length > 0 &&
+                                              !['hr', 'sub_admin', 'super_admin'].includes(employeeFormData.role)
+                                                ? 'division'
+                                                : employeeFormData.dataScope,
                                           });
                                           setEmployeeSearch(`${emp.emp_no} - ${emp.employee_name}`);
                                           setShowEmployeeDropdown(false);
@@ -2251,13 +2177,15 @@ export default function UsersPage() {
                                 const customRole = customRoles.find(r => r._id === roleId);
                                 const newPermissions = customRole ? (customRole.activeModules || []) : employeeFormData.featureControl;
 
+                                const keepMapping = scopingRolesKeepMapping(roleId) && scopingRolesKeepMapping(employeeFormData.role);
                                 setEmployeeFormData({
                                   ...employeeFormData,
                                   role: roleId,
                                   featureControl: newPermissions,
-                                  dataScope: ['hr', 'sub_admin', 'super_admin'].includes(roleId) ? 'all' : (roleId === 'hod' ? 'division' : 'department'),
-                                  departments: [],
-                                  divisionMapping: []
+                                  dataScope: defaultDataScopeForRole(roleId),
+                                  departments: keepMapping ? employeeFormData.departments : [],
+                                  divisionMapping: keepMapping ? employeeFormData.divisionMapping : [],
+                                  division: keepMapping ? employeeFormData.division : '',
                                 });
                               }}
                               className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 transition-all focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
@@ -2317,7 +2245,7 @@ export default function UsersPage() {
                       </div>
 
                       <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/30">
-                        <ScopingSelector data={employeeFormData} setData={(val) => setEmployeeFormData(val)} asEmployee={true} />
+                        <ScopingSelector data={employeeFormData} setData={setEmployeeFormData} />
                       </div>
                     </div>
 
@@ -2718,12 +2646,15 @@ export default function UsersPage() {
                                   const customRole = customRoles.find(r => r._id === roleId);
                                   const newPermissions = customRole ? (customRole.activeModules || []) : formData.featureControl;
 
+                                  const keepMapping = scopingRolesKeepMapping(roleId) && scopingRolesKeepMapping(formData.role);
                                   setFormData({
                                     ...formData,
                                     role: roleId,
                                     featureControl: newPermissions,
-                                    dataScope: ['hr', 'sub_admin', 'super_admin'].includes(roleId) ? 'all' : (roleId === 'hod' ? 'division' : 'department'),
-                                    divisionMapping: []
+                                    dataScope: defaultDataScopeForRole(roleId),
+                                    divisionMapping: keepMapping ? formData.divisionMapping : [],
+                                    division: keepMapping ? formData.division : '',
+                                    departments: keepMapping ? formData.departments : [],
                                   });
                                 }}
                                 disabled={selectedUser.role === 'super_admin' && currentUser?.role !== 'super_admin'}

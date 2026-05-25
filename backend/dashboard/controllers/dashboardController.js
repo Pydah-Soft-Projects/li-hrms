@@ -16,6 +16,8 @@ const dateCycleService = require('../../leaves/services/dateCycleService');
 const leaveRegisterYearLedgerService = require('../../leaves/services/leaveRegisterYearLedgerService');
 const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
 const { extractISTComponents, createISTDate, getTodayISTDateString } = require('../../shared/utils/dateUtils');
+const { employeeMatchesMappingList } = require('../../holidays/utils/holidayScopeMapping');
+const { sendDayOffGreetingForEmployee } = require('../../shared/services/holidayWeekOffNotificationService');
 
 function addCalendarDaysIST(dateStr, delta) {
   const base = createISTDate(dateStr, '12:00');
@@ -149,8 +151,29 @@ async function fetchMergedHolidaysForEmployee(employee, istYear) {
     finalHolidays.push(gh);
   }
   finalHolidays.push(...masterMap.values());
+
+  const mappingHolidays = await Holiday.find({
+    ...dateQuery,
+    isActive: { $ne: false },
+    scope: 'MAPPING',
+  }).lean();
+
+  if (employee) {
+    for (const mh of mappingHolidays) {
+      if (employeeMatchesMappingList(employee, mh.divisionMapping)) {
+        finalHolidays.push(mh);
+      }
+    }
+  }
+
   finalHolidays.sort((a, b) => new Date(a.date) - new Date(b.date));
   return finalHolidays;
+}
+
+function parseHolidayNameFromRosterNotes(notes) {
+  if (!notes || typeof notes !== 'string') return null;
+  const m = notes.match(/Holiday:\s*(.+)/i);
+  return m ? m[1].trim() : null;
 }
 
 function expandHolidayRangeToDays(h) {
@@ -379,6 +402,10 @@ exports.getDashboardStats = async (req, res) => {
       let nextHolidayName = null;
       let nextHolidayDate = null;
       let rosterNextDays = [];
+      let todayDayType = null;
+      let todayHolidayName = null;
+      let isTodayHoliday = false;
+      let isTodayWeekOff = false;
 
       if (empMongoId) {
         const empDoc = await Employee.findById(empMongoId)
@@ -450,6 +477,7 @@ exports.getDashboardStats = async (req, res) => {
 
         totalPaidLeaveDaysAvailable = Math.round(totalPaidLeaveDaysAvailable * 100) / 100;
 
+        let holidayByDate = new Map();
         try {
           const hol = await fetchMergedHolidaysForEmployee(empDoc, istYear);
           const byDate = new Map();
@@ -477,6 +505,7 @@ exports.getDashboardStats = async (req, res) => {
               byDate.set(ds, { date: ds, name: 'Holiday (attendance)', type: 'ATTENDANCE' });
             }
           }
+          holidayByDate = byDate;
           const merged = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
           const fromToday = merged.filter((h) => h.date >= todayIst);
           upcomingHolidaysCount = fromToday.length;
@@ -507,8 +536,38 @@ exports.getDashboardStats = async (req, res) => {
             rosterStatus: r.status || null,
             notes: r.notes || null,
           }));
+
+          const todayRoster = roster.find((r) => r.date === todayIst);
+          if (todayRoster?.status === 'WO') {
+            todayDayType = 'WEEK_OFF';
+            isTodayWeekOff = true;
+          } else if (todayRoster?.status === 'HOL') {
+            todayDayType = 'HOLIDAY';
+            isTodayHoliday = true;
+            todayHolidayName = parseHolidayNameFromRosterNotes(todayRoster.notes);
+          }
+          const calToday = holidayByDate.get(todayIst);
+          if (calToday && !isTodayWeekOff) {
+            if (!todayDayType) {
+              todayDayType = 'HOLIDAY';
+              isTodayHoliday = true;
+            }
+            if (!todayHolidayName) todayHolidayName = calToday.name;
+          }
         } catch (rsErr) {
           console.error('[Dashboard] roster context failed:', rsErr.message);
+        }
+
+        if ((isTodayHoliday || isTodayWeekOff) && empDoc) {
+          const dayTypeForGreeting = isTodayHoliday ? 'HOLIDAY' : 'WEEK_OFF';
+          setImmediate(() => {
+            sendDayOffGreetingForEmployee(empDoc, {
+              dateStr: todayIst,
+              dayInfo: { dayType: dayTypeForGreeting, holidayName: todayHolidayName },
+            }).catch((gErr) => {
+              console.warn('[Dashboard] day-off greeting skipped:', gErr.message);
+            });
+          });
         }
       }
 
@@ -528,6 +587,10 @@ exports.getDashboardStats = async (req, res) => {
         nextHolidayName,
         nextHolidayDate,
         rosterNextDays,
+        todayDayType,
+        todayHolidayName,
+        isTodayHoliday,
+        isTodayWeekOff,
         compensatoryOffBalance,
         yearlyClCreditDaysPosted,
         yearlyCclCreditDaysPosted,

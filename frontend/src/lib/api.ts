@@ -492,6 +492,10 @@ export interface WorkspaceDashboardStats {
   totalPaidLeaveDaysAvailable?: number;
   leaveBalancesByType?: WorkspaceDashboardLeaveBalanceRow[];
   rosterNextDays?: WorkspaceDashboardRosterDay[];
+  todayDayType?: 'HOLIDAY' | 'WEEK_OFF' | null;
+  todayHolidayName?: string | null;
+  isTodayHoliday?: boolean;
+  isTodayWeekOff?: boolean;
   compensatoryOffBalance?: number | null;
   yearlyClCreditDaysPosted?: number | null;
   yearlyCclCreditDaysPosted?: number | null;
@@ -1210,8 +1214,11 @@ export const api = {
   },
 
   // Holidays
-  getAllHolidaysAdmin: async (year?: number) => {
-    const query = year ? `?year=${year}` : '';
+  getAllHolidaysAdmin: async (year?: number, options?: { includeInactive?: boolean }) => {
+    const params = new URLSearchParams();
+    if (year) params.set('year', String(year));
+    if (options?.includeInactive) params.set('includeInactive', 'true');
+    const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<{
       holidays: Holiday[];
       groups: HolidayGroup[];

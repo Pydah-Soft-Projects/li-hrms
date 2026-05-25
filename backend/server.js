@@ -261,6 +261,14 @@ const startServer = async () => {
       console.warn('⚠️  Birthday wish cron failed to start:', cronErr.message);
     }
 
+    // Holiday / week-off greetings (07:30 IST — in-app + web push)
+    try {
+      const { startHolidayWeekOffGreetingCron } = require('./shared/jobs/holidayWeekOffGreetingCron');
+      startHolidayWeekOffGreetingCron();
+    } catch (cronErr) {
+      console.warn('⚠️  Holiday/week-off greeting cron failed to start:', cronErr.message);
+    }
+
     // Start BullMQ Workers for background job processing
     try {
       const { startWorkers } = require('./shared/jobs/worker');

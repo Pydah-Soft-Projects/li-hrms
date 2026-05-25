@@ -22,6 +22,7 @@ const {
 const {
     normalizeMappingList,
     mappingToEmployeeOrConditions,
+    mappingToEmployeeOrConditionsExpanded,
     employeeMatchesMappingList,
     clampMappingToAllowed,
 } = require('../utils/holidayScopeMapping');
@@ -66,79 +67,6 @@ async function logHolidayHistoryMany(entries) {
     await Promise.all(entries.map((entry) => logHolidayHistory(entry)));
 }
 
-// Helper to sync holiday to shift roster
-async function syncHolidayToRoster(holiday) {
-    try {
-        const { date, endDate, scope, applicableTo, targetGroupIds, groupId, name } = holiday;
-        const startStr = toDateString(date);
-        const endStr = endDate ? toDateString(endDate) : startStr;
-
-        const dates = [];
-        let current = new Date(startStr + 'T12:00:00Z');
-        const stop = new Date(endStr + 'T12:00:00Z');
-        while (current <= stop) {
-            dates.push(toDateString(current));
-            current.setUTCDate(current.getUTCDate() + 1);
-        }
-
-        // 1. Identify Target Employees
-        let empFilter = { is_active: { $ne: false } };
-        if (scope === 'GROUP') {
-            const group = await HolidayGroup.findById(groupId);
-            if (!group) return;
-
-            const mappingConditions = group.divisionMapping.map(m => ({
-                division_id: m.division,
-                ...(m.departments && m.departments.length > 0 ? { department_id: { $in: m.departments } } : {}),
-                ...(m.employeeGroups && m.employeeGroups.length > 0 ? { employee_group_id: { $in: m.employeeGroups } } : {})
-            }));
-            empFilter.$or = mappingConditions;
-        } else if (applicableTo === 'SPECIFIC_GROUPS') {
-            const groups = await HolidayGroup.find({ _id: { $in: targetGroupIds } });
-            const allMappings = [];
-            for (const g of groups) {
-                (g.divisionMapping || []).forEach(m => {
-                    allMappings.push({
-                        division_id: m.division,
-                        ...(m.departments && m.departments.length > 0 ? { department_id: { $in: m.departments } } : {}),
-                        ...(m.employeeGroups && m.employeeGroups.length > 0 ? { employee_group_id: { $in: m.employeeGroups } } : {})
-                    });
-                });
-            }
-            if (allMappings.length > 0) empFilter.$or = allMappings;
-            else return; // No targets
-        }
-
-        const employees = await Employee.find(empFilter).select('emp_no');
-        const empNos = employees.map(e => e.emp_no);
-
-        if (empNos.length === 0) return;
-
-        // 2. Update Roster (Bulk update/upsert)
-        // Note: For large datasets, use bulkWrite for performance
-        for (const day of dates) {
-            for (const empNo of empNos) {
-                await PreScheduledShift.findOneAndUpdate(
-                    { employeeNumber: empNo, date: day },
-                    {
-                        $set: {
-                            status: 'HOL',
-                            shiftId: null,
-                            notes: `Holiday: ${name}`
-                        },
-                        $setOnInsert: { scheduledBy: holiday.createdBy }
-                    },
-                    { upsert: true }
-                );
-            }
-        }
-
-        console.log(`Synced holiday "${name}" to roster for ${empNos.length} employees across ${dates.length} days.`);
-    } catch (err) {
-        console.error('Error syncing holiday to roster:', err);
-    }
-}
-
 function getDateRangeStrings(startInput, endInput) {
     const startStr = toDateString(startInput);
     const endStr = endInput ? toDateString(endInput) : startStr;
@@ -157,21 +85,52 @@ async function resolveEmployeesForHolidayScope({ scope, groupId, applicableTo, t
         ? Employee.getCurrentlyActiveFilter()
         : { is_active: { $ne: false } };
     if (scope === 'MAPPING') {
-        const conditions = mappingToEmployeeOrConditions(divisionMapping);
+        const rows = normalizeMappingList(divisionMapping);
+        if (rows.length === 0) return [];
+        const deptDocs = await Department.find(
+            typeof Department.getCurrentlyActiveFilter === 'function'
+                ? Department.getCurrentlyActiveFilter()
+                : { isActive: { $ne: false } }
+        )
+            .select('divisions')
+            .lean();
+        const conditions = mappingToEmployeeOrConditionsExpanded(rows, deptDocs);
         if (conditions.length === 0) return [];
         const emps = await Employee.find({ ...baseFilter, $or: conditions }).select('emp_no').lean();
-        return emps.map(e => String(e.emp_no || '').toUpperCase()).filter(Boolean);
+        const seen = new Set();
+        const out = [];
+        for (const e of emps) {
+            const no = String(e.emp_no || '').toUpperCase();
+            if (no && !seen.has(no)) {
+                seen.add(no);
+                out.push(no);
+            }
+        }
+        return out;
     }
     if (scope === 'GROUP') {
         const group = await HolidayGroup.findById(groupId).lean();
         if (!group || !group.divisionMapping || group.divisionMapping.length === 0) return [];
-        const mappingConditions = group.divisionMapping.map(m => ({
-            division_id: m.division,
-                ...(m.departments && m.departments.length > 0 ? { department_id: { $in: m.departments } } : {}),
-                ...(m.employeeGroups && m.employeeGroups.length > 0 ? { employee_group_id: { $in: m.employeeGroups } } : {})
-        }));
-        const emps = await Employee.find({ ...baseFilter, $or: mappingConditions }).select('emp_no').lean();
-        return emps.map(e => String(e.emp_no || '').toUpperCase()).filter(Boolean);
+        const deptDocs = await Department.find(
+            typeof Department.getCurrentlyActiveFilter === 'function'
+                ? Department.getCurrentlyActiveFilter()
+                : { isActive: { $ne: false } }
+        )
+            .select('divisions')
+            .lean();
+        const conditions = mappingToEmployeeOrConditionsExpanded(group.divisionMapping, deptDocs);
+        if (conditions.length === 0) return [];
+        const emps = await Employee.find({ ...baseFilter, $or: conditions }).select('emp_no').lean();
+        const seen = new Set();
+        const out = [];
+        for (const e of emps) {
+            const no = String(e.emp_no || '').toUpperCase();
+            if (no && !seen.has(no)) {
+                seen.add(no);
+                out.push(no);
+            }
+        }
+        return out;
     }
 
     if (scope === 'GLOBAL' && applicableTo === 'SPECIFIC_GROUPS') {
@@ -195,6 +154,43 @@ async function resolveEmployeesForHolidayScope({ scope, groupId, applicableTo, t
     return emps.map(e => String(e.emp_no || '').toUpperCase()).filter(Boolean);
 }
 
+/** Roster sync helper — same employee resolution as saveHoliday (supports MAPPING scope). */
+async function syncHolidayToRoster(holiday) {
+    try {
+        const { date, endDate, scope, applicableTo, targetGroupIds, groupId, divisionMapping, name, createdBy } = holiday;
+        const empNos = await resolveEmployeesForHolidayScope({
+            scope,
+            groupId,
+            applicableTo,
+            targetGroupIds,
+            divisionMapping,
+        });
+        if (empNos.length === 0) return;
+
+        const dates = getDateRangeStrings(date, endDate);
+        for (const day of dates) {
+            for (const empNo of empNos) {
+                await PreScheduledShift.findOneAndUpdate(
+                    { employeeNumber: empNo, date: day },
+                    {
+                        $set: {
+                            status: 'HOL',
+                            shiftId: null,
+                            notes: `Holiday: ${name}`,
+                        },
+                        $setOnInsert: { scheduledBy: createdBy },
+                    },
+                    { upsert: true }
+                );
+            }
+        }
+
+        console.log(`Synced holiday "${name}" to roster for ${empNos.length} employees across ${dates.length} days.`);
+    } catch (err) {
+        console.error('Error syncing holiday to roster:', err);
+    }
+}
+
 async function guessShiftFromWeekdayPattern(employeeNumber, dateStr) {
     const targetWeekday = new Date(`${dateStr}T00:00:00Z`).getUTCDay();
     const lookbackStart = new Date(`${dateStr}T00:00:00Z`);
@@ -215,6 +211,38 @@ async function guessShiftFromWeekdayPattern(employeeNumber, dateStr) {
     return null;
 }
 
+function escapeRegex(str) {
+    return String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Employees to update when a holiday is removed — scoped list plus legacy over-applied roster rows. */
+async function collectEmployeeNumbersForHolidayRosterCleanup(holiday, deleteDates) {
+    const fromScope = await resolveEmployeesForHolidayScope({
+        scope: holiday.scope,
+        groupId: holiday.groupId,
+        applicableTo: holiday.applicableTo,
+        targetGroupIds: holiday.targetGroupIds,
+        divisionMapping: holiday.divisionMapping,
+    });
+    const seen = new Set(fromScope.map((n) => String(n).toUpperCase()));
+
+    if (holiday.name) {
+        const legacyRows = await PreScheduledShift.find({
+            date: { $in: deleteDates },
+            status: 'HOL',
+            notes: { $regex: escapeRegex(holiday.name), $options: 'i' },
+        })
+            .select('employeeNumber')
+            .lean();
+        for (const row of legacyRows) {
+            const no = String(row.employeeNumber || '').toUpperCase();
+            if (no) seen.add(no);
+        }
+    }
+
+    return [...seen];
+}
+
 async function applyRosterEntriesAndSync(entries, userId) {
     if (!entries || entries.length === 0) return { affected: 0 };
 
@@ -222,7 +250,9 @@ async function applyRosterEntriesAndSync(entries, userId) {
         const updateDoc = {
             employeeNumber: entry.employeeNumber,
             date: entry.date,
-            notes: entry.status === 'HOL' ? 'Holiday' : (entry.status === 'WO' ? 'Week Off' : null)
+            notes: entry.status === 'HOL'
+                ? (entry.holidayName ? `Holiday: ${entry.holidayName}` : 'Holiday')
+                : (entry.status === 'WO' ? 'Week Off' : null)
         };
         if (entry.status === 'HOL' || entry.status === 'WO') {
             updateDoc.status = entry.status;
@@ -799,7 +829,8 @@ exports.saveHoliday = async (req, res) => {
                 rosterEntries.push({
                     employeeNumber: empNo,
                     date: day,
-                    status: fillStatus
+                    status: fillStatus,
+                    holidayName: name,
                 });
             }
         }
@@ -811,9 +842,6 @@ exports.saveHoliday = async (req, res) => {
             affectedEmployees: matchedEmployees.length,
             ...(createdMessage ? { message: createdMessage } : {})
         });
-
-        // Keep legacy background sync (safe no-op override) for backward compatibility.
-        syncHolidayToRoster(holiday).catch(err => console.error('Roster Sync Error:', err));
 
     } catch (error) {
         res.status(500).json({
@@ -842,13 +870,7 @@ exports.deleteHoliday = async (req, res) => {
         }
 
         const deleteDates = getDateRangeStrings(holiday.date, holiday.endDate);
-        const employeeNumbers = await resolveEmployeesForHolidayScope({
-            scope: holiday.scope,
-            groupId: holiday.groupId,
-            applicableTo: holiday.applicableTo,
-            targetGroupIds: holiday.targetGroupIds,
-            divisionMapping: holiday.divisionMapping,
-        });
+        const employeeNumbers = await collectEmployeeNumbersForHolidayRosterCleanup(holiday, deleteDates);
 
         // If deactivating a Global Holiday -> deactivate it AND all synced copies
         if (holiday.scope === 'GLOBAL') {

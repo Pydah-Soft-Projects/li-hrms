@@ -20,9 +20,10 @@ import {
 } from 'date-fns';
 import { Trash2, Users, Filter, Plus, ChevronLeft, ChevronRight, ChevronDown, Calendar as CalendarIcon, Save, X } from 'lucide-react';
 import { HolidaySkeleton } from './HolidaySkeleton';
+import HolidayRegistryPanel from '@/components/holidays/HolidayRegistryPanel';
 
 export default function HolidayManagementPage() {
-    const [activeTab, setActiveTab] = useState<'master' | 'groups'>('master');
+    const [activeTab, setActiveTab] = useState<'master' | 'groups' | 'registry'>('master');
     const [loading, setLoading] = useState(true);
     const [allHolidays, setAllHolidays] = useState<Holiday[]>([]);
     const [groups, setGroups] = useState<HolidayGroup[]>([]);
@@ -42,6 +43,8 @@ export default function HolidayManagementPage() {
     const [showHolidayActivity, setShowHolidayActivity] = useState(false);
     const [holidayActivity, setHolidayActivity] = useState<HolidayHistoryRow[]>([]);
     const [loadingHolidayActivity, setLoadingHolidayActivity] = useState(false);
+    const [rosterFillMode, setRosterFillMode] = useState<'HOL' | 'WEEK_OFF'>('HOL');
+    const [deleteAction, setDeleteAction] = useState<'RESTORE_PATTERN' | 'WEEK_OFF'>('RESTORE_PATTERN');
 
     useEffect(() => {
         if (showHolidayForm) {
@@ -83,7 +86,7 @@ export default function HolidayManagementPage() {
     const loadData = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.getAllHolidaysAdmin(selectedYear);
+            const response = await api.getAllHolidaysAdmin(selectedYear, { includeInactive: true });
             if (response.success && response.data) {
                 setAllHolidays(response.data.holidays);
                 setGroups(response.data.groups);
@@ -130,7 +133,7 @@ export default function HolidayManagementPage() {
 
         if (!confirm('Are you sure you want to delete this holiday?')) return;
         try {
-            await api.deleteHoliday(id, { onDeleteAction: 'RESTORE_PATTERN' });
+            await api.deleteHoliday(id, { onDeleteAction: deleteAction });
             loadData();
         } catch (err) {
             console.error('Error deleting holiday:', err);
@@ -166,14 +169,19 @@ export default function HolidayManagementPage() {
     const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
     const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
 
+    const activeHolidays = useMemo(
+        () => allHolidays.filter((h) => h.isActive !== false),
+        [allHolidays]
+    );
+
     const currentHolidays = useMemo(() => {
-        // Global calendar should give a single-glance view of:
-        // - All GLOBAL holidays (master definitions)
-        // - Group-specific holidays that are NOT just synced copies of global holidays
-        //   (otherwise the global calendar gets flooded with duplicates).
+        if (selectedGroupId === 'EMPLOYEE_SCOPE') {
+            return activeHolidays.filter((h) => h.scope === 'MAPPING');
+        }
         if (selectedGroupId === 'GLOBAL') {
-            return allHolidays.filter((h) => {
+            return activeHolidays.filter((h) => {
                 if (h.scope === 'GLOBAL') return true;
+                if (h.scope === 'MAPPING') return true;
                 if (h.scope === 'GROUP') {
                     const isIndependent = !h.sourceHolidayId;
                     const isModified = h.isSynced === false;
@@ -183,12 +191,12 @@ export default function HolidayManagementPage() {
                 return false;
             });
         }
-
-        // Group view: show that group's calendar (copies + group-only + overrides)
-        return allHolidays.filter(h =>
-            (h.scope === 'GROUP' && (h.groupId && typeof h.groupId === 'object' ? h.groupId._id : h.groupId) === selectedGroupId)
+        return activeHolidays.filter(
+            (h) =>
+                h.scope === 'GROUP' &&
+                (h.groupId && typeof h.groupId === 'object' ? h.groupId._id : h.groupId) === selectedGroupId
         );
-    }, [allHolidays, selectedGroupId]);
+    }, [activeHolidays, selectedGroupId]);
 
     const getHolidaysForDate = (date: Date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
@@ -238,6 +246,15 @@ export default function HolidayManagementPage() {
                         >
                             Holiday Groups
                         </button>
+                        <button
+                            onClick={() => setActiveTab('registry')}
+                            className={`whitespace-nowrap border-b-2 px-1 pb-4 text-sm font-medium transition-colors ${activeTab === 'registry'
+                                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                                : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                                }`}
+                        >
+                            All Holidays
+                        </button>
                     </nav>
                 </div>
 
@@ -245,7 +262,21 @@ export default function HolidayManagementPage() {
                     <HolidaySkeleton />
                 ) : (
                     <div>
-                        {activeTab === 'master' ? (
+                        {activeTab === 'registry' ? (
+                            <HolidayRegistryPanel
+                                holidays={allHolidays}
+                                groups={groups}
+                                onOpenActivity={openHolidayActivity}
+                                onOpenEdit={(h) => {
+                                    if (h.scope === 'MAPPING') {
+                                        openHolidayActivity(h);
+                                        return;
+                                    }
+                                    setEditingHoliday(h);
+                                    setShowHolidayForm(true);
+                                }}
+                            />
+                        ) : activeTab === 'master' ? (
                             <div className="space-y-6">
                                 {/* Calendar Header Controls */}
                                 <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
@@ -260,6 +291,7 @@ export default function HolidayManagementPage() {
                                                 className="pl-9 pr-10 py-2 bg-slate-50 dark:bg-slate-800 border-none text-sm font-bold text-slate-700 dark:text-slate-200 rounded-xl cursor-pointer focus:ring-2 focus:ring-blue-500/20 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-all appearance-none"
                                             >
                                                 <option value="GLOBAL">Global Calendar</option>
+                                                <option value="EMPLOYEE_SCOPE">Employee scope (MAPPING)</option>
                                                 {groups.map(g => (
                                                     <option key={g._id} value={g._id}>{g.name}</option>
                                                 ))}
@@ -392,6 +424,11 @@ export default function HolidayManagementPage() {
                                                                             Group: {getHolidayGroupName(h) || '—'}
                                                                         </span>
                                                                     </div>
+                                                                )}
+                                                                {h.scope === 'MAPPING' && (
+                                                                    <span className="text-[9px] opacity-80 font-semibold truncate mt-0.5">
+                                                                        Employee scope
+                                                                    </span>
                                                                 )}
                                                             </div>
                                                         ))}
@@ -584,7 +621,7 @@ export default function HolidayManagementPage() {
                                             } else {
                                                 data._id = editingHoliday._id;
                                             }
-                                            const res = await api.updateHoliday({ ...data, rosterFillMode: 'HOL' });
+                                            const res = await api.updateHoliday({ ...data, rosterFillMode });
                                             if (!res.success) throw new Error(res.message);
 
                                             await Swal.fire({
@@ -596,7 +633,7 @@ export default function HolidayManagementPage() {
                                                 customClass: { popup: 'rounded-2xl' }
                                             });
                                         } else {
-                                            const res = await api.createHoliday({ ...data, rosterFillMode: 'HOL' });
+                                            const res = await api.createHoliday({ ...data, rosterFillMode });
                                             if (!res.success) throw new Error(res.message);
 
                                             await Swal.fire({
@@ -799,13 +836,36 @@ export default function HolidayManagementPage() {
                                             )}
                                         </div>
                                     </div>
+
+                                    <div className="space-y-4">
+                                        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Roster sync</h3>
+                                        <label className="block text-sm text-slate-700 dark:text-slate-300">When applying this holiday</label>
+                                        <select
+                                            value={rosterFillMode}
+                                            onChange={(e) => setRosterFillMode(e.target.value as 'HOL' | 'WEEK_OFF')}
+                                            className="w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm py-2.5"
+                                        >
+                                            <option value="HOL">Fill roster as Holiday (HOL)</option>
+                                            <option value="WEEK_OFF">Fill roster as Week Off (WO)</option>
+                                        </select>
+                                    </div>
                                 </form>
                             </div>
 
                             {/* Drawer Footer - Fixed */}
                             <div className="p-6 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
                                 <div className="flex items-center justify-between gap-4">
-                                    <div className="flex gap-2">
+                                    <div className="flex flex-wrap gap-2 items-center">
+                                        {editingHoliday && (
+                                            <select
+                                                value={deleteAction}
+                                                onChange={(e) => setDeleteAction(e.target.value as 'RESTORE_PATTERN' | 'WEEK_OFF')}
+                                                className="rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-xs py-1.5"
+                                            >
+                                                <option value="RESTORE_PATTERN">Deactivate: restore weekday shift</option>
+                                                <option value="WEEK_OFF">Deactivate: set week off</option>
+                                            </select>
+                                        )}
                                         {editingHoliday && (
                                             <button
                                                 type="button"

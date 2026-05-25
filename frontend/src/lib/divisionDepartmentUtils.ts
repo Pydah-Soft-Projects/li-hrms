@@ -42,6 +42,59 @@ export function buildDivisionToDepartmentIdsMap(
     return divToDeptIds;
 }
 
+/**
+ * Departments for a division — same sources as employee filters and holiday mapping:
+ * 1) division.departments on the division record (primary, like filter dropdowns)
+ * 2) department.divisions links
+ * 3) bidirectional link map fallback
+ */
+export function filterDepartmentsForDivision(
+    divisionId: string,
+    divisions: Division[],
+    departments: Department[],
+    map?: Map<string, Set<string>>
+): Department[] {
+    if (!divisionId) return [];
+    const divId = String(divisionId);
+    const seen = new Set<string>();
+    const list: Department[] = [];
+
+    const add = (dept: Department) => {
+        const id = String(dept._id);
+        if (!seen.has(id)) {
+            seen.add(id);
+            list.push(dept);
+        }
+    };
+
+    const div = divisions.find((d) => String(d._id) === divId);
+    for (const ref of div?.departments || []) {
+        const id = departmentRefId(ref);
+        if (isPopulatedDepartment(ref)) {
+            add(ref);
+        } else {
+            const row = departments.find((d) => String(d._id) === id);
+            if (row) add(row);
+        }
+    }
+
+    for (const dept of departments) {
+        for (const ref of dept.divisions || []) {
+            if (divisionRefId(ref) === divId) add(dept);
+        }
+    }
+
+    const linkMap = map ?? buildDivisionToDepartmentIdsMap(divisions, departments);
+    for (const id of linkMap.get(divId) || []) {
+        const row = departments.find((d) => String(d._id) === id);
+        if (row) add(row);
+    }
+
+    return list.sort((a, b) =>
+        (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+    );
+}
+
 /** Departments linked to a division (both link directions + populated division.departments). */
 export function getDepartmentsForDivision(
     divisionId: string,
@@ -73,6 +126,70 @@ export function getDepartmentsForDivision(
     return list.sort((a, b) =>
         (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
     );
+}
+
+/** Normalize divisionMapping entries to string IDs for form state. */
+export function normalizeDivisionMapping(
+    mapping: { division: string | Division; departments?: (string | Department)[] }[] | undefined
+): { division: string; departments: string[] }[] {
+    return (mapping || []).map((m) => ({
+        division: divisionRefId(m.division),
+        departments: (m.departments || []).map((d) => departmentRefId(d)).filter(Boolean),
+    }));
+}
+
+/** Whether a mapping's department list includes a department ID (string or populated). */
+export function mappingIncludesDepartment(
+    departments: (string | Department)[] | undefined,
+    deptId: string
+): boolean {
+    const want = String(deptId);
+    return (departments || []).some((d) => departmentRefId(d) === want);
+}
+
+/**
+ * Departments to show under a division in mapping UIs: linked depts plus any already
+ * assigned on the user (so edit/create reflects saved mapping even when scope-filtered).
+ */
+export function getDepartmentsForDivisionDisplay(
+    divisionId: string,
+    divisions: Division[],
+    departments: Department[],
+    mappedDepartmentRefs?: (string | Department)[],
+    map?: Map<string, Set<string>>
+): Department[] {
+    const list = getDepartmentsForDivision(divisionId, divisions, departments, map);
+    const seen = new Set(list.map((d) => String(d._id)));
+
+    for (const ref of mappedDepartmentRefs || []) {
+        const id = departmentRefId(ref);
+        if (!id || seen.has(id)) continue;
+        const row = departments.find((d) => String(d._id) === id);
+        if (row) {
+            list.push(row);
+            seen.add(id);
+        } else if (isPopulatedDepartment(ref)) {
+            list.push(ref);
+            seen.add(id);
+        }
+    }
+
+    return list.sort((a, b) =>
+        (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+    );
+}
+
+/** Build initial divisionMapping from an employee's department. */
+export function buildDivisionMappingFromDepartment(
+    departmentId: string | undefined,
+    divisions: Division[],
+    departments: Department[]
+): { division: string; departments: string[] }[] {
+    if (!departmentId) return [];
+    const deptId = String(departmentId);
+    const divId = findDivisionIdForDepartment(deptId, divisions, departments);
+    if (!divId) return [];
+    return [{ division: divId, departments: [deptId] }];
 }
 
 /** First division linked to a department (checks both directions). */

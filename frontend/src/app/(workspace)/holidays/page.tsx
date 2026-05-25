@@ -33,11 +33,12 @@ import {
     normalizeHolidayMappingFromApi,
     type HolidayMappingRow,
 } from '@/components/holidays/HolidayDivisionMappingEditor';
+import HolidayRegistryPanel from '@/components/holidays/HolidayRegistryPanel';
 
 type MappingRow = { division: string; departments: string[]; employeeGroups: string[] };
 
 export default function WorkspaceHolidaysPage() {
-    const [activeTab, setActiveTab] = useState<'master' | 'groups'>('master');
+    const [activeTab, setActiveTab] = useState<'master' | 'groups' | 'registry'>('master');
     const [loading, setLoading] = useState(true);
     const [allHolidays, setAllHolidays] = useState<Holiday[]>([]);
     const [groups, setGroups] = useState<HolidayGroup[]>([]);
@@ -183,7 +184,7 @@ export default function WorkspaceHolidaysPage() {
             setLoading(true);
 
             if (canManage) {
-                const response = await api.getAllHolidaysAdmin(selectedYear);
+                const response = await api.getAllHolidaysAdmin(selectedYear, { includeInactive: true });
                 if (response.success && response.data) {
                     setAllHolidays(response.data.holidays || []);
                     setGroups(response.data.groups || []);
@@ -251,14 +252,15 @@ export default function WorkspaceHolidaysPage() {
     const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
     const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
 
+    const activeHolidays = useMemo(
+        () => (canManage ? allHolidays.filter((h) => h.isActive !== false) : allHolidays),
+        [allHolidays, canManage]
+    );
+
     const currentHolidays = useMemo(() => {
         if (!canManage) return allHolidays;
-        // Global calendar should give a single-glance view of:
-        // - All GLOBAL holidays (master definitions)
-        // - Group-specific holidays that are NOT just synced copies of global holidays
-        //   (otherwise the global calendar gets flooded with duplicates).
         if (selectedGroupId === 'GLOBAL') {
-            return allHolidays.filter((h) => {
+            return activeHolidays.filter((h) => {
                 if (h.scope === 'GLOBAL') return true;
                 // include group entries that represent something unique for that group:
                 // - independent group holiday (no sourceHolidayId)
@@ -275,13 +277,14 @@ export default function WorkspaceHolidaysPage() {
             });
         }
         if (selectedGroupId === 'EMPLOYEE_SCOPE') {
-            return allHolidays.filter((h) => h.scope === 'MAPPING');
+            return activeHolidays.filter((h) => h.scope === 'MAPPING');
         }
-        return allHolidays.filter((h) =>
-            h.scope === 'GROUP' &&
-            (h.groupId && (typeof h.groupId === 'object' ? h.groupId._id : h.groupId) === selectedGroupId)
+        return activeHolidays.filter(
+            (h) =>
+                h.scope === 'GROUP' &&
+                (h.groupId && (typeof h.groupId === 'object' ? h.groupId._id : h.groupId) === selectedGroupId)
         );
-    }, [allHolidays, selectedGroupId, canManage]);
+    }, [activeHolidays, allHolidays, selectedGroupId, canManage]);
 
     const getHolidaysForDate = (date: Date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
@@ -393,6 +396,15 @@ export default function WorkspaceHolidaysPage() {
                                     Holiday Groups
                                 </button>
                             )}
+                            <button
+                                onClick={() => setActiveTab('registry')}
+                                className={`whitespace-nowrap border-b-2 px-1 pb-4 text-sm font-medium transition-colors ${activeTab === 'registry'
+                                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                                    : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                                    }`}
+                            >
+                                All Holidays
+                            </button>
                         </nav>
                     </div>
                 )}
@@ -403,7 +415,18 @@ export default function WorkspaceHolidaysPage() {
                     </div>
                 ) : (
                     <div>
-                        {activeTab === 'master' || !canManage ? (
+                        {activeTab === 'registry' && canManage ? (
+                            <HolidayRegistryPanel
+                                holidays={allHolidays}
+                                groups={groups}
+                                onOpenActivity={openHolidayActivity}
+                                onOpenEdit={(h) => {
+                                    setEditingHoliday(h);
+                                    setShowHolidayForm(true);
+                                }}
+                                canEdit={canEditHoliday}
+                            />
+                        ) : activeTab === 'master' || !canManage ? (
                             <div className="space-y-6">
                                 <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
                                     <div className="flex items-center gap-4">
