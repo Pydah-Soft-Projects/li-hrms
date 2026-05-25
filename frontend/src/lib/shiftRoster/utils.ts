@@ -104,6 +104,17 @@ function parseHalfStatus(v?: string | null): RosterCell['firstHalfStatus'] {
   return undefined;
 }
 
+function normalizeRosterDateKey(date: string | Date | undefined): string {
+  if (!date) return '';
+  const s = String(date);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  try {
+    return format(parseISO(s), 'yyyy-MM-dd');
+  } catch {
+    return s.slice(0, 10);
+  }
+}
+
 export function parseRosterEntries(
   entries: {
     employeeNumber: string;
@@ -112,17 +123,21 @@ export function parseRosterEntries(
     status?: string;
     firstHalfStatus?: string;
     secondHalfStatus?: string;
+    notes?: string;
   }[]
 ): RosterState {
   const map = new Map<string, Record<string, RosterCell>>();
   entries.forEach((e) => {
-    if (!e.employeeNumber) return;
-    if (!map.has(e.employeeNumber)) map.set(e.employeeNumber, {});
-    map.get(e.employeeNumber)![e.date] = {
+    const empNo = String(e.employeeNumber || '').toUpperCase();
+    const dateKey = normalizeRosterDateKey(e.date);
+    if (!empNo || !dateKey) return;
+    if (!map.has(empNo)) map.set(empNo, {});
+    map.get(empNo)![dateKey] = {
       shiftId: e.shiftId || null,
       status: e.status === 'WO' ? 'WO' : (e.status === 'HOL' ? 'HOL' : undefined),
       firstHalfStatus: parseHalfStatus(e.firstHalfStatus),
       secondHalfStatus: parseHalfStatus(e.secondHalfStatus),
+      notes: e.notes || undefined,
     };
   });
   return map;

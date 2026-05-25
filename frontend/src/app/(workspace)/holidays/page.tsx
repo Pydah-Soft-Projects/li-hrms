@@ -66,6 +66,10 @@ export default function WorkspaceHolidaysPage() {
     const [prefilledDate, setPrefilledDate] = useState<string | null>(null);
     const [applicableTo, setApplicableTo] = useState<'ALL' | 'SPECIFIC_GROUPS'>('ALL');
     const [rosterFillMode, setRosterFillMode] = useState<'HOL' | 'WEEK_OFF'>('HOL');
+    const [rosterApplyMode, setRosterApplyMode] = useState<'FULL_DAY' | 'HALF_DAY'>('FULL_DAY');
+    const [halfDayType, setHalfDayType] = useState<'first_half' | 'second_half'>('first_half');
+    const [multiShiftScope, setMultiShiftScope] = useState<'FULL_DAY' | 'FIRST_SEGMENT' | 'ALL_SEGMENTS'>('ALL_SEGMENTS');
+    const [attendanceProcessingMode, setAttendanceProcessingMode] = useState<'single_shift' | 'multi_shift'>('multi_shift');
     const [deleteAction, setDeleteAction] = useState<'RESTORE_PATTERN' | 'WEEK_OFF'>('RESTORE_PATTERN');
     const [showHolidayActivity, setShowHolidayActivity] = useState(false);
     const [holidayActivity, setHolidayActivity] = useState<HolidayHistoryRow[]>([]);
@@ -135,6 +139,12 @@ export default function WorkspaceHolidaysPage() {
     useEffect(() => {
         if (showHolidayForm) {
             setApplicableTo(editingHoliday?.applicableTo || 'ALL');
+            setRosterApplyMode(editingHoliday?.rosterApplyMode === 'HALF_DAY' ? 'HALF_DAY' : 'FULL_DAY');
+            setHalfDayType(editingHoliday?.halfDayType === 'second_half' ? 'second_half' : 'first_half');
+            const scope = editingHoliday?.multiShiftScope;
+            setMultiShiftScope(
+                scope === 'FIRST_SEGMENT' ? 'FIRST_SEGMENT' : 'ALL_SEGMENTS'
+            );
             if (editingHoliday?.scope === 'MAPPING') {
                 const rows = normalizeHolidayMappingFromApi(editingHoliday.divisionMapping);
                 setFormMapping(rows.length > 0 ? rows : allowedHolidayMapping);
@@ -194,6 +204,9 @@ export default function WorkspaceHolidaysPage() {
                         const scopeRows = normalizeHolidayMappingFromApi(response.data.access.holidayDivisionMapping);
                         setHasEmployeeScope(!!response.data.access.hasEmployeeScope || scopeRows.length > 0);
                         setAllowedHolidayMapping(scopeRows);
+                        if (response.data.access.attendanceProcessingMode) {
+                            setAttendanceProcessingMode(response.data.access.attendanceProcessingMode);
+                        }
                     }
                 }
             } else {
@@ -740,11 +753,33 @@ export default function WorkspaceHolidaysPage() {
                                         if (editingHoliday) {
                                             if (isCreatingOverride) data.overridesMasterId = editingHoliday._id;
                                             else data._id = editingHoliday._id;
-                                            const res = await api.updateHoliday({ ...data, rosterFillMode });
+                                            const res = await api.updateHoliday({
+                                                ...data,
+                                                rosterFillMode,
+                                                rosterApplyMode,
+                                                halfDayType: rosterApplyMode === 'HALF_DAY' ? halfDayType : undefined,
+                                                multiShiftScope:
+                                                    attendanceProcessingMode === 'multi_shift'
+                                                        ? rosterApplyMode === 'HALF_DAY'
+                                                            ? multiShiftScope
+                                                            : 'FULL_DAY'
+                                                        : 'FULL_DAY',
+                                            });
                                             if (!res.success) throw new Error(res.message);
                                             toast.success(isCreatingOverride ? 'Override created' : 'Holiday updated');
                                         } else {
-                                            const res = await api.createHoliday({ ...data, rosterFillMode });
+                                            const res = await api.createHoliday({
+                                                ...data,
+                                                rosterFillMode,
+                                                rosterApplyMode,
+                                                halfDayType: rosterApplyMode === 'HALF_DAY' ? halfDayType : undefined,
+                                                multiShiftScope:
+                                                    attendanceProcessingMode === 'multi_shift'
+                                                        ? rosterApplyMode === 'HALF_DAY'
+                                                            ? multiShiftScope
+                                                            : 'FULL_DAY'
+                                                        : 'FULL_DAY',
+                                            });
                                             if (!res.success) throw new Error(res.message);
                                             const affected = (res as { affectedEmployees?: number }).affectedEmployees;
                                             toast.success(
@@ -798,6 +833,50 @@ export default function WorkspaceHolidaysPage() {
                                             <input type="date" name="endDate" defaultValue={editingHoliday?.endDate ? format(parseISO(editingHoliday.endDate), 'yyyy-MM-dd') : ''} className="w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm py-2.5" />
                                         </div>
                                     </div>
+
+                                    <div className="space-y-3 rounded-xl border border-amber-200/80 bg-amber-50/40 p-4 dark:border-amber-900/40 dark:bg-amber-950/20">
+                                        <h3 className="text-xs font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider">Day coverage</h3>
+                                        <label className="block text-sm text-slate-700 dark:text-slate-300 mb-1">Full day or half day</label>
+                                        <select
+                                            value={rosterApplyMode}
+                                            onChange={(e) => setRosterApplyMode(e.target.value as 'FULL_DAY' | 'HALF_DAY')}
+                                            className="w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm py-2.5"
+                                        >
+                                            <option value="FULL_DAY">Full day</option>
+                                            <option value="HALF_DAY">Half day</option>
+                                        </select>
+                                        {rosterApplyMode === 'HALF_DAY' && (
+                                            <div className="space-y-3 pl-1 border-l-2 border-amber-400">
+                                                <p className="text-xs text-slate-500">
+                                                    Which half is {rosterFillMode === 'HOL' ? 'holiday' : 'week off'}? Roster stays blank (no shift) unless a weekday pattern exists.
+                                                </p>
+                                                <div className="flex flex-wrap gap-4">
+                                                    <label className="flex items-center gap-2 text-sm">
+                                                        <input type="radio" checked={halfDayType === 'first_half'} onChange={() => setHalfDayType('first_half')} />
+                                                        First half
+                                                    </label>
+                                                    <label className="flex items-center gap-2 text-sm">
+                                                        <input type="radio" checked={halfDayType === 'second_half'} onChange={() => setHalfDayType('second_half')} />
+                                                        Second half
+                                                    </label>
+                                                </div>
+                                                {attendanceProcessingMode === 'multi_shift' && (
+                                                    <div>
+                                                        <label className="block text-sm text-slate-700 dark:text-slate-300 mb-1">Multi-shift segments</label>
+                                                        <select
+                                                            value={multiShiftScope === 'FIRST_SEGMENT' ? 'FIRST_SEGMENT' : 'ALL_SEGMENTS'}
+                                                            onChange={(e) => setMultiShiftScope(e.target.value as 'FIRST_SEGMENT' | 'ALL_SEGMENTS')}
+                                                            className="w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm py-2.5"
+                                                        >
+                                                            <option value="ALL_SEGMENTS">All segments on that half</option>
+                                                            <option value="FIRST_SEGMENT">First segment only (that half)</option>
+                                                        </select>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
                                         <textarea name="description" rows={3} defaultValue={editingHoliday?.description} className="w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm p-3" />
@@ -888,16 +967,16 @@ export default function WorkspaceHolidaysPage() {
                                     </div>
                                 )}
 
-                                <div className="space-y-4">
-                                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Roster Sync Action</h3>
-                                    <label className="block text-sm text-slate-700 dark:text-slate-300">When applying this holiday</label>
+                                <div className="space-y-4 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
+                                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Roster apply</h3>
+                                    <label className="block text-sm text-slate-700 dark:text-slate-300 mb-1">Mark roster as</label>
                                     <select
                                         value={rosterFillMode}
                                         onChange={(e) => setRosterFillMode(e.target.value as 'HOL' | 'WEEK_OFF')}
                                         className="w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm py-2.5"
                                     >
-                                        <option value="HOL">Fill roster as Holiday (HOL)</option>
-                                        <option value="WEEK_OFF">Fill roster as Week Off (WO)</option>
+                                        <option value="HOL">Holiday (HOL)</option>
+                                        <option value="WEEK_OFF">Week off (WO)</option>
                                     </select>
                                 </div>
                             </form>

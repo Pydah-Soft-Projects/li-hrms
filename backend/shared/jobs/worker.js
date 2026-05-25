@@ -507,104 +507,14 @@ const startWorkers = () => {
         console.log(`[Worker] Processing roster sync job: ${job.id} with ${entries.length} entries`);
 
         try {
-            const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
-            const { isEmployeeNumberDateLocked } = require('../../shared/services/payrollPeriodLockService');
+            const { syncRosterEntriesToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+            const stats = await syncRosterEntriesToAttendance(entries);
+            const syncedCount = stats.synced || 0;
+            const removedCount = 0;
 
-            let syncedCount = 0;
-            let removedCount = 0;
-
-            for (const entry of entries) {
-                if (!entry.date) continue;
-
-                const empNo = String(entry.employeeNumber || '').toUpperCase();
-                const locked = await isEmployeeNumberDateLocked(empNo, entry.date);
-                if (locked) {
-                    continue;
-                }
-
-                const hasHalfRoster =
-                    entry.firstHalfStatus === 'WO' || entry.firstHalfStatus === 'HOL' ||
-                    entry.secondHalfStatus === 'WO' || entry.secondHalfStatus === 'HOL';
-
-                if (entry.status === 'WO' || entry.status === 'HOL') {
-                    // Create or update AttendanceDaily for this WO/HOL day (only for saved roster entries)
-                    let dailyRecord = await AttendanceDaily.findOne({
-                        employeeNumber: empNo,
-                        date: entry.date
-                    });
-
-                    // Re-processing for days with existing punches when they are changed to WO/HOL in roster
-                    // This ensures the status correctly becomes WEEK_OFF/HOLIDAY even with raw logs present.
-                    const hasPunches = dailyRecord && (
-                        (dailyRecord.totalWorkingHours > 0) ||
-                        (dailyRecord.shifts && dailyRecord.shifts.length > 0 && dailyRecord.shifts.some(s => s && s.inTime))
-                    );
-
-                    if (hasPunches) {
-                        try {
-                            const { reprocessAttendanceForEmployeeDate } = require('../../attendance/services/attendanceSyncService');
-                            await reprocessAttendanceForEmployeeDate(empNo, entry.date);
-                        } catch (reprocessErr) {
-                            console.error(`[Worker] Failed to reprocess attendance for ${empNo} on ${entry.date} (Off day with punches):`, reprocessErr.message);
-                        }
-                        continue;
-                    }
-
-                    const updateFields = {
-                        status: entry.status === 'WO' ? 'WEEK_OFF' : 'HOLIDAY',
-                        shifts: [], // Clear shifts
-                        totalWorkingHours: 0,
-                        totalOTHours: 0,
-                        notes: entry.status === 'WO' ? 'Week Off' : 'Holiday'
-                    };
-
-                    if (!dailyRecord) {
-                        dailyRecord = new AttendanceDaily({
-                            employeeNumber: empNo,
-                            date: entry.date,
-                            ...updateFields,
-                            source: ['roster-sync']
-                        });
-                    } else {
-                        Object.keys(updateFields).forEach(key => {
-                            dailyRecord[key] = updateFields[key];
-                        });
-                        if (!dailyRecord.source || !dailyRecord.source.includes('roster-sync')) {
-                            dailyRecord.source = dailyRecord.source || [];
-                            if (!dailyRecord.source.includes('roster-sync')) dailyRecord.source.push('roster-sync');
-                        }
-                    }
-
-                    await dailyRecord.save();
-                    syncedCount++;
-                } else if (entry.shiftId || hasHalfRoster) {
-                    // Shift and/or half WO/HOL: reprocess attendance (half-holiday rules run in pre-save)
-                    // We only remove if source is roster-sync or status is plainly WO/HOL without punches
-                    const existing = await AttendanceDaily.findOne({
-                        employeeNumber: empNo,
-                        date: entry.date
-                    });
-
-                    if (existing && (existing.status === 'WEEK_OFF' || existing.status === 'HOLIDAY')) {
-                        // Only remove if it doesn't have punches (totalWorkingHours == 0)
-                        if (!existing.totalWorkingHours || existing.totalWorkingHours === 0) {
-                            await AttendanceDaily.deleteOne({ _id: existing._id });
-                            removedCount++;
-                        }
-                    }
-
-                    // TRIGGER RE-PROCESSING: Re-evaluate this day's attendance against the new rostered shift
-                    // This handles cases where punches already exist but need to be re-run for lateness/early-out etc.
-                    try {
-                        const { reprocessAttendanceForEmployeeDate } = require('../../attendance/services/attendanceSyncService');
-                        await reprocessAttendanceForEmployeeDate(empNo, entry.date);
-                    } catch (reprocessErr) {
-                        console.error(`[Worker] Failed to reprocess attendance for ${empNo} on ${entry.date}:`, reprocessErr.message);
-                    }
-                }
-            }
-
-            console.log(`[Worker] Roster sync complete: ${syncedCount} synced, ${removedCount} removed`);
+            console.log(
+                `[Worker] Roster sync complete: ${syncedCount} synced, ${stats.reprocessed || 0} reprocessed, ${stats.errors || 0} errors`
+            );
 
             // Notify user via socket if available
             try {

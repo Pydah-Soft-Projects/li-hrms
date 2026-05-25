@@ -84,6 +84,13 @@ function buildSplitCellStatus(record) {
       };
       top = toCell(partialRule.firstHalfStatus);
       bottom = toCell(partialRule.secondHalfStatus);
+      const policyLop = Number(partialRule.lopPortion) || 0;
+      if (policyLop >= 0.5 - 1e-6) {
+        const f = String(partialRule.firstHalfStatus || '').toLowerCase();
+        const s = String(partialRule.secondHalfStatus || '').toLowerCase();
+        if (f === 'present' && s === 'absent') bottom = 'L';
+        if (s === 'present' && f === 'absent') top = 'L';
+      }
     } else {
       top = 'PT';
       bottom = 'PT';

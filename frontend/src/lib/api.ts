@@ -1067,6 +1067,9 @@ export interface Holiday {
   createdAt?: string;
   updatedAt?: string;
   rosterFillMode?: 'HOL' | 'WEEK_OFF';
+  rosterApplyMode?: 'FULL_DAY' | 'HALF_DAY' | 'HOURS';
+  halfDayType?: 'first_half' | 'second_half' | null;
+  multiShiftScope?: 'FULL_DAY' | 'FIRST_SEGMENT' | 'ALL_SEGMENTS';
   onDeleteAction?: 'RESTORE_PATTERN' | 'WEEK_OFF';
 }
 
@@ -1227,6 +1230,7 @@ export const api = {
         managedHolidayGroupIds: string[];
         holidayDivisionMapping?: Holiday['divisionMapping'];
         hasEmployeeScope?: boolean;
+        attendanceProcessingMode?: 'single_shift' | 'multi_shift';
       };
     }>(`/holidays/admin${query}`, { method: 'GET' });
   },

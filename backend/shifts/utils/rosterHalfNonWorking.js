@@ -53,6 +53,104 @@ function parseRosterHalfNonWorking(row) {
 }
 
 /**
+ * policyMeta.partialDayRule for a calendar day with half HOL/WO and no punches.
+ */
+function buildPartialDayRuleForHalfRoster(roster) {
+  const firstHalfStatus = roster.firstHOL
+    ? 'holiday'
+    : roster.firstWO
+      ? 'week_off'
+      : null;
+  const secondHalfStatus = roster.secondHOL
+    ? 'holiday'
+    : roster.secondWO
+      ? 'week_off'
+      : null;
+
+  if (!firstHalfStatus && !secondHalfStatus) return null;
+
+  let f = firstHalfStatus;
+  let s = secondHalfStatus;
+  if (!f && s) f = 'absent';
+  if (!s && f) s = 'absent';
+
+  let coveredPortion = 0;
+  if (roster.firstHOL) coveredPortion += 0.5;
+  if (roster.secondHOL) coveredPortion += 0.5;
+  if (roster.firstWO) coveredPortion += 0.5;
+  if (roster.secondWO) coveredPortion += 0.5;
+
+  const parts = [];
+  if (roster.firstHOL) parts.push('first half holiday');
+  else if (roster.firstWO) parts.push('first half week off');
+  if (roster.secondHOL) parts.push('second half holiday');
+  else if (roster.secondWO) parts.push('second half week off');
+
+  return {
+    applied: true,
+    ruleCode: 'ROSTER_HALF_NON_WORKING_V1',
+    firstHalfStatus: f,
+    secondHalfStatus: s,
+    presentPortion: 0,
+    lopPortion: 0,
+    coveredPortion: Math.min(1, Math.round(coveredPortion * 100) / 100),
+    note: parts.length ? `Roster non-working (${parts.join(', ')})` : null,
+  };
+}
+
+/**
+ * AttendanceDaily fields when roster has half HOL/WO and there are no punches yet.
+ */
+function buildAttendanceFieldsForNoPunchHalfRoster(roster, notes) {
+  const holParts = [];
+  if (roster.firstHOL) holParts.push('first half');
+  if (roster.secondHOL) holParts.push('second half');
+  const holidayNote =
+    notes || (holParts.length ? `Roster holiday (${holParts.join(', ')})` : null);
+
+  if (roster.isFullHOL) {
+    return {
+      status: 'HOLIDAY',
+      payableShifts: 0,
+      shifts: [],
+      totalWorkingHours: 0,
+      totalOTHours: 0,
+      rosterFirstHalfNonWorking: 'HOL',
+      rosterSecondHalfNonWorking: 'HOL',
+      notes: holidayNote || 'Holiday',
+      policyMeta: { partialDayRule: { applied: false } },
+    };
+  }
+
+  if (roster.isFullWO) {
+    return {
+      status: 'WEEK_OFF',
+      payableShifts: 0,
+      shifts: [],
+      totalWorkingHours: 0,
+      totalOTHours: 0,
+      rosterFirstHalfNonWorking: 'WO',
+      rosterSecondHalfNonWorking: 'WO',
+      notes: notes || 'Week Off',
+      policyMeta: { partialDayRule: { applied: false } },
+    };
+  }
+
+  const partialDayRule = buildPartialDayRuleForHalfRoster(roster);
+  return {
+    status: 'PARTIAL',
+    payableShifts: 0,
+    shifts: [],
+    totalWorkingHours: 0,
+    totalOTHours: 0,
+    rosterFirstHalfNonWorking: roster.firstHalfStatus,
+    rosterSecondHalfNonWorking: roster.secondHalfStatus,
+    notes: holidayNote,
+    policyMeta: { partialDayRule },
+  };
+}
+
+/**
  * Which roster half is holiday/week-off for pay register.
  */
 function isRosterHalfNonWorking(day, halfKey, type) {
@@ -72,6 +170,21 @@ function isRosterHalfNonWorking(day, halfKey, type) {
  * @param {function} getWorkedHalfFromShifts (shifts, dateStr) => 'first_half'|'second_half'|null
  * @returns {{ workedOnHolidayHalf: boolean, workedOnWorkingHalfWithOtherHalfHoliday: boolean }}
  */
+function getWorkedSegmentIndex(shifts) {
+  if (!shifts?.length) return -1;
+  const ordered = [...shifts].sort(
+    (a, b) => new Date(a.inTime || 0).getTime() - new Date(b.inTime || 0).getTime()
+  );
+  const WORKED = new Set(['PRESENT', 'HALF_DAY', 'PARTIAL', 'COMPLETE']);
+  for (let i = 0; i < ordered.length; i += 1) {
+    const st = String(ordered[i]?.status || '').toUpperCase();
+    if (WORKED.has(st) || ordered[i]?.inTime) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 function applyRosterHalfNonWorkingToAttendanceDaily(doc, rosterRow, getWorkedHalfFromShifts) {
   const roster = parseRosterHalfNonWorking(rosterRow);
   doc.rosterFirstHalfNonWorking = roster.firstHalfStatus;
@@ -81,6 +194,13 @@ function applyRosterHalfNonWorkingToAttendanceDaily(doc, rosterRow, getWorkedHal
     workedOnHolidayHalf: false,
     workedOnWorkingHalfWithOtherHalfHoliday: false,
   };
+
+  if (rosterRow?.holidaySegmentScope === 'FIRST_SEGMENT' && doc.shifts?.length > 1) {
+    const workedIdx = getWorkedSegmentIndex(doc.shifts);
+    if (workedIdx > 0) {
+      return result;
+    }
+  }
 
   if (roster.isFullHOL || roster.isFullWO) {
     const label = roster.isFullHOL ? 'Holiday' : 'Week Off';
@@ -103,10 +223,23 @@ function applyRosterHalfNonWorkingToAttendanceDaily(doc, rosterRow, getWorkedHal
     return result;
   }
 
+  const noShifts = !doc.shifts || doc.shifts.length === 0;
+  const noWork = !doc.totalWorkingHours || doc.totalWorkingHours === 0;
+
   const workedHalf =
     doc.shifts && doc.shifts.length > 0 && typeof getWorkedHalfFromShifts === 'function'
       ? getWorkedHalfFromShifts(doc.shifts, doc.date)
       : null;
+
+  if (noShifts && noWork) {
+    const fields = buildAttendanceFieldsForNoPunchHalfRoster(roster, doc.notes);
+    Object.assign(doc, fields);
+    if (!doc.policyMeta) doc.policyMeta = fields.policyMeta;
+    else if (fields.policyMeta?.partialDayRule) {
+      doc.policyMeta = { ...doc.policyMeta, partialDayRule: fields.policyMeta.partialDayRule };
+    }
+    return result;
+  }
 
   const holidayHalfWorked =
     workedHalf === 'first_half'
@@ -161,6 +294,8 @@ function applyRosterHalfNonWorkingToAttendanceDaily(doc, rosterRow, getWorkedHal
 
 module.exports = {
   parseRosterHalfNonWorking,
+  buildPartialDayRuleForHalfRoster,
+  buildAttendanceFieldsForNoPunchHalfRoster,
   isRosterHalfNonWorking,
   applyRosterHalfNonWorkingToAttendanceDaily,
 };

@@ -57,6 +57,24 @@ test('applyRosterHalfNonWorking — worked working half with 0 punch pay → sti
   assert.equal(doc.payableShifts, 0.5);
 });
 
+test('applyRosterHalfNonWorking — no punches, second half holiday → PARTIAL policy split', () => {
+  const doc = {
+    date: '2026-05-08',
+    shifts: [],
+    totalWorkingHours: 0,
+    status: 'ABSENT',
+    payableShifts: 0,
+    notes: '',
+  };
+  const roster = { shiftId: 'x', firstHalfStatus: null, secondHalfStatus: 'HOL' };
+  applyRosterHalfNonWorkingToAttendanceDaily(doc, roster, getWorkedHalfFromShifts);
+  assert.equal(doc.status, 'PARTIAL');
+  assert.equal(doc.rosterSecondHalfNonWorking, 'HOL');
+  assert.equal(doc.policyMeta?.partialDayRule?.secondHalfStatus, 'holiday');
+  assert.equal(doc.policyMeta?.partialDayRule?.firstHalfStatus, 'absent');
+  assert.equal(doc.payableShifts, 0);
+});
+
 test('applyRosterHalfNonWorking — worked holiday half → HOLIDAY 0 payable', () => {
   const doc = {
     date: '2026-05-01',

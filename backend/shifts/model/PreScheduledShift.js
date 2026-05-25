@@ -53,6 +53,22 @@ const preScheduledShiftSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    /** When set by holiday apply: FULL_DAY | FIRST_SEGMENT | ALL_SEGMENTS (half-day multi-shift). */
+    holidaySegmentScope: {
+      type: String,
+      enum: ['FULL_DAY', 'FIRST_SEGMENT', 'ALL_SEGMENTS', null],
+      default: null,
+    },
+    sourceHolidayId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Holiday',
+      default: null,
+    },
+    holidayHalfDayType: {
+      type: String,
+      enum: ['first_half', 'second_half', null],
+      default: null,
+    },
     // ACTUAL ATTENDANCE TRACKING (Shift Discipline)
     actualShiftId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -85,17 +101,14 @@ preScheduledShiftSchema.pre('save', async function () {
   const hasHalfNonWorking = ['WO', 'HOL'].includes(this.firstHalfStatus)
     || ['WO', 'HOL'].includes(this.secondHalfStatus);
 
-  if (!hasShiftId && !hasNonWorkingStatus) {
+  if (!hasShiftId && !hasNonWorkingStatus && !hasHalfNonWorking) {
     console.error('[Model Validation] Invalid entry:', {
       employeeNumber: this.employeeNumber,
       date: this.date,
       shiftId: this.shiftId,
       status: this.status,
     });
-    throw new Error('Either shiftId or status (WO/HOL) must be provided');
-  }
-  if (hasHalfNonWorking && !hasShiftId && !hasNonWorkingStatus) {
-    throw new Error('Half-day WO/HOL requires a planned shift (shiftId)');
+    throw new Error('Provide shiftId, full-day WO/HOL status, or half WO/HOL flags');
   }
   if (hasNonWorkingStatus && hasShiftId) {
     this.shiftId = null;

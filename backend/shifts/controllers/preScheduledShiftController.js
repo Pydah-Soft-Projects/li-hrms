@@ -323,7 +323,9 @@ exports.getRoster = async (req, res) => {
         strict: meta?.strict || false,
         entries: schedules.map((s) => {
           let status = s.status;
-          if (!status && !s.shiftId) {
+          const hasHalfFlags = !!(s.firstHalfStatus || s.secondHalfStatus);
+          // Do not infer full-day HOL/WO from notes when a half-day roster flag is set
+          if (!status && !s.shiftId && !hasHalfFlags) {
             if (s.notes && s.notes.includes('Week Off')) status = 'WO';
             else if (s.notes && s.notes.includes('Holiday')) status = 'HOL';
           }
@@ -335,6 +337,7 @@ exports.getRoster = async (req, res) => {
             status: status || undefined,
             firstHalfStatus: s.firstHalfStatus || undefined,
             secondHalfStatus: s.secondHalfStatus || undefined,
+            notes: s.notes || undefined,
           };
         }),
       },
@@ -442,12 +445,6 @@ exports.saveRoster = async (req, res) => {
         console.warn(`[Entry ${index}] Skipping: no shiftId and status is not 'WO' or 'HOL':`, e);
         return;
       }
-      if (hasHalfNonWorking && !e.shiftId && e.status !== 'WO' && e.status !== 'HOL') {
-        skippedCount++;
-        console.warn(`[Entry ${index}] Skipping: half WO/HOL requires shiftId:`, e);
-        return;
-      }
-
       const entry = {
         employeeNumber: empNo,
         date: day,
@@ -461,6 +458,13 @@ exports.saveRoster = async (req, res) => {
         entry.secondHalfStatus = null;
         entry.notes = e.status === 'WO' ? 'Week Off' : 'Holiday';
         console.log(`[Entry ${index}] ${e.status} for ${empNo} on ${day}`);
+      } else if (hasHalfNonWorking) {
+        entry.shiftId = e.shiftId || null;
+        entry.status = null;
+        entry.firstHalfStatus = firstHalfStatus;
+        entry.secondHalfStatus = secondHalfStatus;
+        entry.notes = e.notes || null;
+        console.log(`[Entry ${index}] Half WO/HOL for ${empNo} on ${day}`, { firstHalfStatus, secondHalfStatus, shiftId: entry.shiftId });
       } else {
         if (!e.shiftId) {
           skippedCount++;

@@ -26,6 +26,11 @@ const {
     employeeMatchesMappingList,
     clampMappingToAllowed,
 } = require('../utils/holidayScopeMapping');
+const {
+    normalizeRosterApplyOptions,
+    getAttendanceProcessingMode,
+    buildRosterEntriesForHoliday,
+} = require('../utils/holidayRosterApply');
 
 // Normalize to YYYY-MM-DD from a Date or date string (avoids timezone shifting calendar day)
 function toDateString(d) {
@@ -246,33 +251,60 @@ async function collectEmployeeNumbersForHolidayRosterCleanup(holiday, deleteDate
 async function applyRosterEntriesAndSync(entries, userId) {
     if (!entries || entries.length === 0) return { affected: 0 };
 
-    const bulkOps = entries.map(entry => {
+    const bulkOps = entries.map((entry) => {
         const updateDoc = {
             employeeNumber: entry.employeeNumber,
             date: entry.date,
-            notes: entry.status === 'HOL'
-                ? (entry.holidayName ? `Holiday: ${entry.holidayName}` : 'Holiday')
-                : (entry.status === 'WO' ? 'Week Off' : null)
+            notes: entry.notes != null ? entry.notes : (
+                entry.status === 'HOL'
+                    ? (entry.holidayName ? `Holiday: ${entry.holidayName}` : 'Holiday')
+                    : entry.status === 'WO'
+                        ? 'Week Off'
+                        : null
+            ),
         };
+
         if (entry.status === 'HOL' || entry.status === 'WO') {
             updateDoc.status = entry.status;
             updateDoc.shiftId = null;
-        } else if (entry.shiftId) {
-            updateDoc.shiftId = entry.shiftId;
+            updateDoc.firstHalfStatus = null;
+            updateDoc.secondHalfStatus = null;
+            updateDoc.holidaySegmentScope = null;
+            updateDoc.holidayHalfDayType = null;
+            updateDoc.sourceHolidayId = entry.sourceHolidayId || null;
+        } else if (
+            entry.shiftId ||
+            entry.firstHalfStatus ||
+            entry.secondHalfStatus
+        ) {
+            updateDoc.shiftId = entry.shiftId || null;
             updateDoc.status = null;
+            updateDoc.firstHalfStatus = entry.firstHalfStatus || null;
+            updateDoc.secondHalfStatus = entry.secondHalfStatus || null;
+            updateDoc.holidaySegmentScope = entry.holidaySegmentScope || null;
+            updateDoc.holidayHalfDayType = entry.holidayHalfDayType || null;
+            updateDoc.sourceHolidayId = entry.sourceHolidayId || null;
         }
 
         return {
             updateOne: {
                 filter: { employeeNumber: entry.employeeNumber, date: entry.date },
                 update: { $set: updateDoc, $setOnInsert: { scheduledBy: userId } },
-                upsert: true
-            }
+                upsert: true,
+            },
         };
     });
 
     await PreScheduledShift.bulkWrite(bulkOps, { ordered: false });
-    await rosterSyncQueue.add('syncRoster', { entries, userId }).catch(err => console.error('Failed to enqueue roster sync:', err));
+
+    const { syncRosterEntriesToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+    await syncRosterEntriesToAttendance(entries).catch((err) =>
+        console.error('Failed to sync roster to attendance:', err.message)
+    );
+
+    await rosterSyncQueue.add('syncRoster', { entries, userId }).catch((err) =>
+        console.error('Failed to enqueue roster sync:', err)
+    );
     return { affected: entries.length };
 }
 
@@ -312,6 +344,7 @@ exports.getAllHolidaysAdmin = async (req, res) => {
         const isGlobalManager = canManageGlobal(actor);
         const managedIds = getManagedGroupIdStrings(actor);
         const holidayMappingScope = getHolidayDivisionMapping(actor);
+        const attendanceProcessingMode = await getAttendanceProcessingMode();
 
         if (!isGlobalManager && canManageHoliday(actor)) {
             groups = groups.filter((g) => managedIds.includes(g._id.toString()));
@@ -328,6 +361,7 @@ exports.getAllHolidaysAdmin = async (req, res) => {
                     managedHolidayGroupIds: managedIds,
                     holidayDivisionMapping: holidayMappingScope,
                     hasEmployeeScope: holidayMappingScope.length > 0,
+                    attendanceProcessingMode,
                 },
             }
         });
@@ -611,6 +645,27 @@ exports.saveHoliday = async (req, res) => {
             _id, name, date, endDate, type, isMaster, scope, applicableTo, targetGroupIds, groupId,
             overridesMasterId, description, rosterFillMode, divisionMapping,
         } = normalized;
+
+        let rosterApplyMode = 'FULL_DAY';
+        let halfDayType = null;
+        let multiShiftScope = 'FULL_DAY';
+        try {
+            const rosterOpts = normalizeRosterApplyOptions(normalized);
+            rosterApplyMode = rosterOpts.rosterApplyMode;
+            halfDayType = rosterOpts.halfDayType;
+            multiShiftScope = rosterOpts.multiShiftScope;
+        } catch (rosterValErr) {
+            return res.status(rosterValErr.statusCode || 400).json({
+                success: false,
+                message: rosterValErr.message,
+            });
+        }
+
+        const processingMode = await getAttendanceProcessingMode();
+        if (rosterApplyMode === 'HALF_DAY' && processingMode === 'multi_shift' && multiShiftScope === 'FULL_DAY') {
+            multiShiftScope = 'ALL_SEGMENTS';
+        }
+
         let createdMessage = null;
 
         // Validation
@@ -657,6 +712,9 @@ exports.saveHoliday = async (req, res) => {
             holiday.divisionMapping = scope === 'MAPPING' ? divisionMapping : [];
             holiday.overridesMasterId = overridesMasterId;
             holiday.description = description;
+            holiday.rosterApplyMode = rosterApplyMode;
+            holiday.halfDayType = halfDayType;
+            holiday.multiShiftScope = multiShiftScope;
 
             // If updating a Group Copy (that has a source), break the sync
             if (holiday.sourceHolidayId) {
@@ -676,6 +734,9 @@ exports.saveHoliday = async (req, res) => {
                     groupId: holiday.groupId,
                     targetGroupIds: holiday.targetGroupIds,
                     divisionMapping: holiday.divisionMapping,
+                    rosterApplyMode: holiday.rosterApplyMode,
+                    halfDayType: holiday.halfDayType,
+                    multiShiftScope: holiday.multiShiftScope,
                 },
                 comments: 'Holiday updated',
             });
@@ -691,7 +752,10 @@ exports.saveHoliday = async (req, res) => {
                             date,
                             endDate: endDate || null,
                             type,
-                            description
+                            description,
+                            rosterApplyMode,
+                            halfDayType,
+                            multiShiftScope,
                         }
                     }
                 );
@@ -710,6 +774,9 @@ exports.saveHoliday = async (req, res) => {
                     scope: 'GROUP',
                     groupId: gid,
                     description,
+                    rosterApplyMode,
+                    halfDayType,
+                    multiShiftScope,
                     createdBy: req.user.userId,
                     isSynced: false // Independent
                 }));
@@ -738,6 +805,9 @@ exports.saveHoliday = async (req, res) => {
                     scope: 'MAPPING',
                     divisionMapping,
                     description,
+                    rosterApplyMode,
+                    halfDayType,
+                    multiShiftScope,
                     createdBy: req.user.userId,
                     isSynced: false,
                 });
@@ -763,9 +833,11 @@ exports.saveHoliday = async (req, res) => {
                     groupId: scope === 'GROUP' ? groupId : undefined,
                     overridesMasterId,
                     description,
+                    rosterApplyMode,
+                    halfDayType,
+                    multiShiftScope,
                     createdBy: req.user.userId,
-                    // Default new holidays to synced (if they become copies later logic handles it, but here it's main)
-                    isSynced: true
+                    isSynced: true,
                 });
 
                 await logHolidayHistory({
@@ -797,6 +869,9 @@ exports.saveHoliday = async (req, res) => {
                         scope: 'GROUP',
                         groupId: group._id,
                         description,
+                        rosterApplyMode,
+                        halfDayType,
+                        multiShiftScope,
                         createdBy: req.user.userId,
                         sourceHolidayId: holiday._id, // Link to Parent
                         isSynced: true // Synced by default
@@ -822,18 +897,17 @@ exports.saveHoliday = async (req, res) => {
             divisionMapping: effectiveDivisionMapping,
         });
         const holidayDates = getDateRangeStrings(date, endDate);
-        const fillStatus = rosterFillMode === 'WEEK_OFF' ? 'WO' : 'HOL';
-        const rosterEntries = [];
-        for (const empNo of matchedEmployees) {
-            for (const day of holidayDates) {
-                rosterEntries.push({
-                    employeeNumber: empNo,
-                    date: day,
-                    status: fillStatus,
-                    holidayName: name,
-                });
-            }
-        }
+        const rosterEntries = await buildRosterEntriesForHoliday({
+            employeeNumbers: matchedEmployees,
+            dates: holidayDates,
+            holidayName: name,
+            holidayId: holiday._id,
+            rosterFillMode: rosterFillMode || 'HOL',
+            rosterApplyMode,
+            halfDayType,
+            multiShiftScope,
+            guessShiftFromWeekdayPattern,
+        });
         await applyRosterEntriesAndSync(rosterEntries, req.user.userId);
 
         res.status(200).json({
@@ -844,10 +918,13 @@ exports.saveHoliday = async (req, res) => {
         });
 
     } catch (error) {
-        res.status(500).json({
+        const status = error.statusCode && error.statusCode >= 400 && error.statusCode < 600
+            ? error.statusCode
+            : 500;
+        res.status(status).json({
             success: false,
-            message: 'Error saving holiday',
-            error: error.message
+            message: error.message || 'Error saving holiday',
+            error: error.message,
         });
     }
 };
@@ -912,8 +989,22 @@ exports.deleteHoliday = async (req, res) => {
             for (const empNo of employeeNumbers) {
                 for (const day of deleteDates) {
                     const shiftId = await guessShiftFromWeekdayPattern(empNo, day);
-                    if (shiftId) rosterEntries.push({ employeeNumber: empNo, date: day, shiftId });
-                    else rosterEntries.push({ employeeNumber: empNo, date: day, status: 'WO' });
+                    if (shiftId) {
+                        rosterEntries.push({
+                            employeeNumber: empNo,
+                            date: day,
+                            shiftId,
+                            firstHalfStatus: null,
+                            secondHalfStatus: null,
+                            status: null,
+                            holidaySegmentScope: null,
+                            holidayHalfDayType: null,
+                            sourceHolidayId: null,
+                            notes: null,
+                        });
+                    } else {
+                        rosterEntries.push({ employeeNumber: empNo, date: day, status: 'WO' });
+                    }
                 }
             }
         }

@@ -4,6 +4,33 @@
  * Used by monthly Excel export so single-shift exports match the on-screen grid.
  */
 
+export function hasRosterHalfNonWorking(record: any | null): boolean {
+  if (!record) return false;
+  const f = record.rosterFirstHalfNonWorking;
+  const s = record.rosterSecondHalfNonWorking;
+  return f === 'HOL' || f === 'WO' || s === 'HOL' || s === 'WO';
+}
+
+function rosterHalfToCell(flag: string | null | undefined): string | null {
+  if (flag === 'HOL') return 'H';
+  if (flag === 'WO') return 'WO';
+  return null;
+}
+
+function applyRosterHalfToSplit(
+  record: any,
+  top: string,
+  bottom: string
+): { top: string; bottom: string } {
+  const firstNW = record.rosterFirstHalfNonWorking;
+  const secondNW = record.rosterSecondHalfNonWorking;
+  const firstCell = rosterHalfToCell(firstNW);
+  const secondCell = rosterHalfToCell(secondNW);
+  if (firstCell) top = firstCell;
+  if (secondCell) bottom = secondCell;
+  return { top, bottom };
+}
+
 function appendHalfStatus(base: string, marker: string): string {
   if (!marker) return base || '-';
   if (!base || base === '-') return marker;
@@ -59,7 +86,10 @@ export function buildSplitCellStatus(record: any | null): { top: string; bottom:
 
   const partialRule = record.policyMeta?.partialDayRule;
   const hasPartialPolicySplit = record.status === 'PARTIAL' && partialRule?.applied === true;
-  const shouldSplit = !isHoursOD && (record.status === 'HALF_DAY' || hasHalfLeave || hasHalfOD || hasPartialPolicySplit);
+  const hasRosterHalf = hasRosterHalfNonWorking(record);
+  const shouldSplit =
+    !isHoursOD &&
+    (record.status === 'HALF_DAY' || hasHalfLeave || hasHalfOD || hasPartialPolicySplit || hasRosterHalf);
   if (!shouldSplit) return null;
 
   let top = 'A';
@@ -76,10 +106,19 @@ export function buildSplitCellStatus(record: any | null): { top: string; bottom:
         if (s === 'leave') return 'L';
         if (s === 'od') return 'OD';
         if (s === 'absent') return 'A';
+        if (s === 'holiday') return 'H';
+        if (s === 'week_off') return 'WO';
         return 'PT';
       };
       top = toCell(partialRule?.firstHalfStatus);
       bottom = toCell(partialRule?.secondHalfStatus);
+      const policyLop = Number(partialRule?.lopPortion) || 0;
+      if (policyLop >= 0.5 - 1e-6) {
+        const f = String(partialRule?.firstHalfStatus || '').toLowerCase();
+        const s = String(partialRule?.secondHalfStatus || '').toLowerCase();
+        if (f === 'present' && s === 'absent') bottom = 'L';
+        if (s === 'present' && f === 'absent') top = 'L';
+      }
     } else {
       top = 'PT';
       bottom = 'PT';
@@ -135,6 +174,10 @@ export function buildSplitCellStatus(record: any | null): { top: string; bottom:
   } else if (hasHalfOD && odMarker) {
     if (odInfo?.halfDayType === 'second_half') bottom = appendHalfStatus(bottom, odMarker);
     else top = appendHalfStatus(top, odMarker);
+  }
+
+  if (hasRosterHalf) {
+    ({ top, bottom } = applyRosterHalfToSplit(record, top, bottom));
   }
 
   return { top, bottom };

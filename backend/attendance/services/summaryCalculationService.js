@@ -243,37 +243,12 @@ function getHalfPortion(status, targetStatus, leaveNature) {
  * Applies when worked/payable + policy LOP split the day (~0.5 + ~0.5) and there is no approved leave
  * using that capacity (see partialLopPortion, which subtracts leaveContrib before calling this).
  */
-function enforceSingleShiftPartialLopSnapshot(snapshot, usePartialPayable, dayPayable, partialLopPortion) {
-  if (!snapshot || !usePartialPayable) return snapshot;
-  const lop = Math.min(1, Math.max(0, Number(partialLopPortion) || 0));
-  if (lop <= 0.001) return snapshot;
-  const pay = Math.min(1, Math.max(0, Number(dayPayable) || 0));
-  if (pay < 0.5 - 1e-6 || lop < 0.5 - 1e-6 || pay + lop > 1.0001) return snapshot;
-  const presentHalf = {
-    status: 'present',
-    leaveType: null,
-    leaveNature: null,
-    isOD: false,
-    otHours: 0,
-  };
-  const lopHalf = {
-    status: 'leave',
-    leaveType: 'lop',
-    leaveNature: 'lop',
-    isOD: false,
-    otHours: 0,
-  };
-  return {
-    ...snapshot,
-    firstHalf: { ...presentHalf },
-    secondHalf: { ...lopHalf },
-    isSplit: true,
-    status: null,
-    leaveType: null,
-    leaveNature: null,
-    isOD: false,
-  };
-}
+const {
+  dayHasRosterHalfNonWorking,
+  buildRosterHalfPartialPolicyMeta,
+  applyRosterHalfToPayRegisterSnapshot,
+} = require('../utils/partialPolicyRosterHalf');
+const { enforceSingleShiftPartialLopSnapshot } = require('../utils/partialPolicySingleShift');
 
 /**
  * Monthly summary is recalculated in the background when:
@@ -402,7 +377,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         $lte: endDateStr,
       },
     })
-      .select('date status shifts inTime outTime totalWorkingHours extraHours totalLateInMinutes totalEarlyOutMinutes payableShifts earlyOutDeduction')
+      .select('date status shifts inTime outTime totalWorkingHours extraHours totalLateInMinutes totalEarlyOutMinutes payableShifts earlyOutDeduction rosterFirstHalfNonWorking rosterSecondHalfNonWorking policyMeta')
       .populate('shifts.shiftId', 'payableShifts name')
       .lean();
     console.log('[OD-FLOW] calculateMonthlySummary loaded dailies', { emp_no: empNoNorm, period: `${startDateStr}..${endDateStr}`, count: attendanceRecords.length });
@@ -531,9 +506,13 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     // Fill map from attendance (needed before sandwich rule uses ABSENT from dailies)
     for (const rec of attendanceRecords) {
       const dStr = toNormalizedDateStr(rec.date);
-      if (dailyStatsMap.has(dStr)) {
-        dailyStatsMap.get(dStr).attendance = rec;
-      }
+      if (!dailyStatsMap.has(dStr)) continue;
+      const day = dailyStatsMap.get(dStr);
+      day.attendance = rec;
+      if (rec.rosterFirstHalfNonWorking === 'HOL') day.rosterFirstHalfHOL = true;
+      if (rec.rosterSecondHalfNonWorking === 'HOL') day.rosterSecondHalfHOL = true;
+      if (rec.rosterFirstHalfNonWorking === 'WO') day.rosterFirstHalfWO = true;
+      if (rec.rosterSecondHalfNonWorking === 'WO') day.rosterSecondHalfWO = true;
     }
 
     for (const od of approvedODs) {
@@ -980,13 +959,28 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         !day.isWO &&
         !day.isHOL;
 
+      const hasRosterHalfNonWorking = dayHasRosterHalfNonWorking(day);
+
       // PARTIAL + approved full-day leave (e.g. CL 1 day) + incomplete punch: treat as leave-only for
       // payroll/pay register — do not add partial payable or policy LOP; leaveContrib is already 1.0.
       // Half-day / OD cases keep using the existing partial + policy path.
       // Partial-day LOP / pay-register halves / partial totals: single-shift policy only (disabled in multi_shift).
+      // Roster half HOL/WO: do not apply PARTIAL_PRESENT_PLUS_LOP_V1 (holiday/WO half is not policy LOP).
       const usePartialPolicy =
         !processingModeIsMultiShift &&
         isPartialDay &&
+        !hasRosterHalfNonWorking &&
+        !day.isWO &&
+        !day.isHOL &&
+        !hasFullDayOdCoverage &&
+        !hasFullDayEsiLeave &&
+        leaveContrib < 0.999;
+
+      const useRosterHalfPolicy =
+        !processingModeIsMultiShift &&
+        hasRosterHalfNonWorking &&
+        day.attendance &&
+        (day.attendance.status === 'PARTIAL' || day.attendance.status === 'HALF_DAY') &&
         !day.isWO &&
         !day.isHOL &&
         !hasFullDayOdCoverage &&
@@ -1021,15 +1015,20 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       if (!processingModeIsMultiShift) {
         dayPayable = Math.min(dayPayable, 1.0);
       }
-      // Partial-day policy LOP: remainder of the day not covered by (work/OD) + payable credit,
-      // plus *approved* leave (any nature) for full/half. Without leaveContrib we double-count:
-      // e.g. 0.5 partial thumb + 0.5 approved half-day leave must not add 0.5 policy LOP.
-      const partialLopPortion =
-        usePartialPolicy
-          ? Math.round(
-              Math.max(0, 1 - Math.min(1, mergedDailyCredit + dayPayable + leaveContrib)) * 100
-            ) / 100
-          : 0;
+      // Partial-day policy LOP: missing working half only. mergedDailyCredit already includes punch/OD;
+      // do not add dayPayable again (was double-counting IN-only partial → LOP 0). When
+      // partialDaysContributeToPayableShifts is on, explicit 0.5 payable stacks with punch on worked half.
+      const partialLopPortion = (() => {
+        if (!usePartialPolicy) return 0;
+        const punchLeave = Math.min(
+          1,
+          (Number(mergedDailyCredit) || 0) + (Number(leaveContrib) || 0)
+        );
+        if (partialDaysContributeToPayableShifts) {
+          return Math.round(Math.max(0, 1 - Math.max(punchLeave, 0.5)) * 100) / 100;
+        }
+        return Math.round(Math.max(0, 1 - punchLeave) * 100) / 100;
+      })();
 
       if (usePartialPolicy) {
         if (partialLopPortion > 0) {
@@ -1106,8 +1105,24 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       if (!day.isWO && !day.isHOL && dStr <= todayIstStr) {
         // Boundary Check: If date is before joining or after resignation, it's not "Absent"
         if (!(dojStrBound && dStr < dojStrBound) && !(leftDateStrBound && dStr > leftDateStrBound)) {
-          const mergedFirst = Math.max(attFirst, odFirst, leaveFirstAll);
-          const mergedSecond = Math.max(attSecond, odSecond, leaveSecondAll);
+          const rosterHolFirst = day.rosterFirstHalfHOL ? 0.5 : 0;
+          const rosterHolSecond = day.rosterSecondHalfHOL ? 0.5 : 0;
+          const rosterWoFirst = day.rosterFirstHalfWO ? 0.5 : 0;
+          const rosterWoSecond = day.rosterSecondHalfWO ? 0.5 : 0;
+          const mergedFirst = Math.max(
+            attFirst,
+            odFirst,
+            leaveFirstAll,
+            rosterHolFirst,
+            rosterWoFirst
+          );
+          const mergedSecond = Math.max(
+            attSecond,
+            odSecond,
+            leaveSecondAll,
+            rosterHolSecond,
+            rosterWoSecond
+          );
           const dayCovered = Math.min(mergedFirst + mergedSecond, 1.0);
           // PARTIAL days: attendance halves stay 0 (see attFirst/attSecond above) while payableShifts still
           // credits working portion (e.g. 0.5). Absent must not treat the full day as missing — add that
@@ -1140,13 +1155,20 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       });
       daySnapshot = enforceSingleShiftPartialLopSnapshot(
         daySnapshot,
-        partialDaysContributeToPayableShifts,
+        usePartialPolicy,
         dayPayable,
-        partialLopPortion
+        partialLopPortion,
+        attFirst,
+        attSecond
       );
+      if (useRosterHalfPolicy) {
+        daySnapshot = applyRosterHalfToPayRegisterSnapshot(daySnapshot, day, attFirst, attSecond);
+      }
       payRegisterDaySnapshots.push(daySnapshot);
       const latestSnapshot = payRegisterDaySnapshots[payRegisterDaySnapshots.length - 1];
-      if (usePartialPolicy && latestSnapshot) {
+      if (useRosterHalfPolicy) {
+        partialPolicyMetaByDate.set(dStr, buildRosterHalfPartialPolicyMeta(day, attFirst, attSecond));
+      } else if (usePartialPolicy && latestSnapshot) {
         const firstStatus = latestSnapshot.firstHalf?.status || null;
         const secondStatus = latestSnapshot.secondHalf?.status || null;
         const firstLeaveNature = latestSnapshot.firstHalf?.leaveNature || null;
@@ -1154,15 +1176,19 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         const presentPortion =
           getHalfPortion(firstStatus, 'present')
           + getHalfPortion(secondStatus, 'present');
-        const lopPortion =
+        let lopPortion =
           getHalfPortion(firstStatus, 'leave', firstLeaveNature)
           + getHalfPortion(secondStatus, 'leave', secondLeaveNature);
+        if (lopPortion < 0.001 && partialLopPortion > 0) {
+          lopPortion = Math.min(1, Math.max(0, Number(partialLopPortion) || 0));
+        }
         const coveredPortion =
           Math.round(Math.max(0, Math.min(1, mergedDailyCredit)) * 100) / 100;
         const note = lopPortion > 0
           ? 'Derived by summary partial rule: worked/payable half + LOP for uncovered half.'
           : 'Derived by summary partial rule: remaining half covered by OD/leave.';
         partialPolicyMetaByDate.set(dStr, {
+          ruleCode: 'PARTIAL_PRESENT_PLUS_LOP_V1',
           firstHalfStatus: firstStatus,
           secondHalfStatus: secondStatus,
           presentPortion: Math.round(presentPortion * 100) / 100,
@@ -1461,7 +1487,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
               update: {
                 $set: {
                   'policyMeta.partialDayRule.applied': true,
-                  'policyMeta.partialDayRule.ruleCode': 'PARTIAL_PRESENT_PLUS_LOP_V1',
+                  'policyMeta.partialDayRule.ruleCode':
+                    partialMeta.ruleCode || 'PARTIAL_PRESENT_PLUS_LOP_V1',
                   'policyMeta.partialDayRule.firstHalfStatus': partialMeta.firstHalfStatus,
                   'policyMeta.partialDayRule.secondHalfStatus': partialMeta.secondHalfStatus,
                   'policyMeta.partialDayRule.presentPortion': partialMeta.presentPortion,

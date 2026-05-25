@@ -1,0 +1,36 @@
+========================================================================
+PYDAHSOFT PARTIAL POLICY REPORT
+========================================================================
+Division: PYDAHSOFT PVT LTD (PYDAHSOFT) id=6992f9254fb69ffde98364bc
+Payroll month label: 2026-05 (year=2026, monthNumber=5)
+Pay period: 2026-04-26 .. 2026-05-25
+Processing mode: single_shift
+partialDaysContributeToPayableShifts: false
+Recalc before report: NO (RECALC=0)
+Active employees: 4
+
+--- SUMMARY ---
+Total PARTIAL days in period: 10
+  policy applied=true:  10
+  policy applied=false: 0
+  By ruleCode:
+    PARTIAL_PRESENT_PLUS_LOP_V1: 7
+    ROSTER_HALF_NON_WORKING_V1: 3
+
+--- PARTIAL days WITH policy applied ---
+  2144 2026-05-08 pay=0 roster=-/HOL | ROSTER_HALF_NON_WORKING_V1 | absent/holiday | LOP=0
+  2144 2026-05-20 pay=0 roster=-/- | PARTIAL_PRESENT_PLUS_LOP_V1 | present/leave | LOP=0.5
+  2145 2026-05-06 pay=0 roster=-/- | PARTIAL_PRESENT_PLUS_LOP_V1 | present/leave | LOP=0.5
+  2145 2026-05-07 pay=0 roster=-/- | PARTIAL_PRESENT_PLUS_LOP_V1 | present/leave | LOP=0.5
+  2145 2026-05-08 pay=0 roster=-/HOL | ROSTER_HALF_NON_WORKING_V1 | absent/holiday | LOP=0
+  2145 2026-05-20 pay=0 roster=-/- | PARTIAL_PRESENT_PLUS_LOP_V1 | present/leave | LOP=0.5
+  2146 2026-04-29 pay=0 roster=-/- | PARTIAL_PRESENT_PLUS_LOP_V1 | leave/present | LOP=0.5
+  2146 2026-05-02 pay=0 roster=-/- | PARTIAL_PRESENT_PLUS_LOP_V1 | present/leave | LOP=0.5
+  2146 2026-05-20 pay=0 roster=-/- | PARTIAL_PRESENT_PLUS_LOP_V1 | present/leave | LOP=0.5
+  RHALF001 2026-05-08 pay=0 roster=-/HOL | ROSTER_HALF_NON_WORKING_V1 | absent/holiday | LOP=0
+
+--- Per employee (only if has PARTIAL days) ---
+  2144 KAKILETI V. V. DURGA PRASAD: partial=2, policy_applied=2, no_policy=0
+  2145 PENKEY TEJA: partial=4, policy_applied=4, no_policy=0
+  2146 BURAGA RAVI: partial=3, policy_applied=3, no_policy=0
+  RHALF001 Roster Half Holiday Tester: partial=1, policy_applied=1, no_policy=0

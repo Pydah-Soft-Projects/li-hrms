@@ -29,6 +29,8 @@ import {
   getPartialRecordPayableContribution,
 } from '@/lib/attendancePartialContribution';
 
+import { buildSplitCellStatus } from '@/lib/attendanceCompleteDayCellText';
+
 import {
   computePayRegisterAllRowFromMonthlySummary,
   formatPolicyAttendanceDeductionDisplay,
@@ -284,6 +286,10 @@ interface AttendanceRecord {
   }>;
 
   source?: string[];
+
+  rosterFirstHalfNonWorking?: 'HOL' | 'WO' | null;
+  rosterSecondHalfNonWorking?: 'HOL' | 'WO' | null;
+  notes?: string;
 
   policyMeta?: {
     partialDayRule?: {
@@ -580,106 +586,6 @@ export default function AttendancePage() {
     return (h || 0) * 60 + (m || 0);
   };
 
-  const buildSplitCellStatus = (record: AttendanceRecord | null) => {
-    if (!record) return null;
-
-    const leaveInfo = record.leaveInfo;
-    const odInfo = record.odInfo;
-
-    const leaveMarker = leaveInfo ? ((leaveInfo.numberOfDays && leaveInfo.numberOfDays >= 3) ? 'LL' : 'L') : '';
-    const odMarker = odInfo ? 'OD' : '';
-    const hasHalfLeave = !!leaveInfo?.isHalfDay;
-    const isHoursOD = !!(odInfo && odInfo.odType_extended === 'hours');
-    const hasHalfOD = !!(odInfo && odInfo.odType_extended === 'half_day' && odInfo.isHalfDay);
-    const hasFullLeave = !!(leaveInfo && !leaveInfo.isHalfDay);
-    const hasFullOD = !!(odInfo && odInfo.odType_extended === 'full_day');
-
-    const partialRule = record.policyMeta?.partialDayRule;
-    const hasPartialPolicySplit = record.status === 'PARTIAL' && partialRule?.applied === true;
-    const shouldSplit = !isHoursOD && (record.status === 'HALF_DAY' || hasHalfLeave || hasHalfOD || hasPartialPolicySplit);
-    if (!shouldSplit) return null;
-
-    let top = 'A';
-    let bottom = 'A';
-
-    if (record.status === 'PRESENT') {
-      top = 'P';
-      bottom = 'P';
-    } else if (record.status === 'PARTIAL') {
-      if (hasPartialPolicySplit) {
-        const toCell = (status?: string | null) => {
-          const s = String(status || '').toLowerCase();
-          if (s === 'present') return 'PT';
-          if (s === 'leave') return 'L';
-          if (s === 'od') return 'OD';
-          if (s === 'absent') return 'A';
-          return 'PT';
-        };
-        top = toCell(partialRule?.firstHalfStatus);
-        bottom = toCell(partialRule?.secondHalfStatus);
-      } else {
-        top = 'PT';
-        bottom = 'PT';
-      }
-    } else if (record.status === 'HALF_DAY') {
-      const eo = Number(record.earlyOutMinutes) || 0;
-      const li = Number(record.lateInMinutes) || 0;
-      let workedHalf: 'first' | 'second' = (eo > li) ? 'first' : (li > eo) ? 'second' : 'first';
-
-      // NEW: Punch-Gap Fallback (Failsafe for waived penalties)
-      if (eo === li && record.shifts && record.shifts.length > 0) {
-        const s = record.shifts[0];
-        const sStart = s.shiftStartTime || (typeof s.shiftId === 'object' ? s.shiftId?.startTime : null);
-        const sEnd = s.shiftEndTime || (typeof s.shiftId === 'object' ? s.shiftId?.endTime : null);
-        if (s.inTime && sStart && s.outTime && sEnd) {
-          const inDiff = Math.max(0, timeToMins(s.inTime) - timeToMins(sStart));
-          const outDiff = Math.max(0, timeToMins(sEnd) - timeToMins(s.outTime));
-          if (inDiff > outDiff) workedHalf = 'second';
-          else if (outDiff > inDiff) workedHalf = 'first';
-        }
-      }
-
-      // OD Fallback (if still tied)
-      if (eo === li && record.odInfo?.halfDayType) {
-        workedHalf = record.odInfo.halfDayType === 'first_half' ? 'second' : 'first';
-      }
-
-      if (workedHalf === 'first') {
-        top = 'HD';
-        bottom = 'A';
-      } else {
-        top = 'A';
-        bottom = 'HD';
-      }
-    }
-
-    // Half-day OD while daily status is OD (not HALF_DAY): the non-OD half is office time — show HD, not A (matches punch / closeness intent).
-    if (hasHalfOD && record.status === 'OD') {
-      const hasIn = !!(record as any).inTime || (record.shifts?.length && record.shifts.some((s: any) => s.inTime));
-      const hasOut = !!(record as any).outTime || (record.shifts?.length && record.shifts.some((s: any) => s.outTime));
-      if (odInfo?.halfDayType === 'second_half' && hasIn) top = 'HD';
-      else if (odInfo?.halfDayType === 'first_half' && hasOut) bottom = 'HD';
-    }
-
-    if (hasFullLeave && leaveMarker) {
-      top = appendHalfStatus(top, leaveMarker);
-      bottom = appendHalfStatus(bottom, leaveMarker);
-    } else if (hasHalfLeave && leaveMarker) {
-      if (leaveInfo?.halfDayType === 'second_half') bottom = appendHalfStatus(bottom, leaveMarker);
-      else top = appendHalfStatus(top, leaveMarker);
-    }
-
-    if (hasFullOD && odMarker) {
-      top = appendHalfStatus(top, odMarker);
-      bottom = appendHalfStatus(bottom, odMarker);
-    } else if (hasHalfOD && odMarker) {
-      if (odInfo?.halfDayType === 'second_half') bottom = appendHalfStatus(bottom, odMarker);
-      else top = appendHalfStatus(top, odMarker);
-    }
-
-    return { top, bottom };
-  };
-
   const getSplitHalfClass = (value: string) => {
     const v = (value || '').toUpperCase();
     if (v.includes('OD')) return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200';
@@ -687,6 +593,8 @@ export default function AttendancePage() {
     if (v.includes('/L') || v === 'L') return 'bg-orange-100 text-orange-800 dark:bg-orange-900/45 dark:text-orange-200';
     if (v.includes('PT')) return 'bg-purple-100 text-purple-800 dark:bg-purple-900/45 dark:text-purple-200';
     if (v.includes('HD')) return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/45 dark:text-emerald-200';
+    if (v === 'H' || v.startsWith('H/') || v.endsWith('/H')) return 'bg-rose-100 text-rose-800 dark:bg-rose-900/45 dark:text-rose-200';
+    if (v === 'WO' || v.includes('WO')) return 'bg-orange-100 text-orange-800 dark:bg-orange-900/45 dark:text-orange-200';
     if (v === 'P') return 'bg-green-100 text-green-800 dark:bg-green-900/45 dark:text-green-200';
     if (v === 'A') return 'bg-slate-100 text-slate-700 dark:bg-slate-800/80 dark:text-slate-300';
     return 'bg-slate-100 text-slate-800 dark:bg-slate-800/70 dark:text-slate-200';
@@ -6742,6 +6650,31 @@ export default function AttendancePage() {
                       </div>
                     )}
 
+                    {(attendanceDetail.rosterFirstHalfNonWorking || attendanceDetail.rosterSecondHalfNonWorking) && (
+                      <div className="col-span-2 rounded-xl border border-rose-200 bg-rose-50/70 p-4 dark:border-rose-800/60 dark:bg-rose-900/20">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-rose-700/80 dark:text-rose-300/80">
+                          Roster half-day
+                        </label>
+                        <div className="mt-1 text-sm font-semibold text-rose-900 dark:text-rose-100">
+                          First half:{' '}
+                          {attendanceDetail.rosterFirstHalfNonWorking === 'HOL'
+                            ? 'Holiday'
+                            : attendanceDetail.rosterFirstHalfNonWorking === 'WO'
+                              ? 'Week off'
+                              : 'Working'}
+                          {' · '}
+                          Second half:{' '}
+                          {attendanceDetail.rosterSecondHalfNonWorking === 'HOL'
+                            ? 'Holiday'
+                            : attendanceDetail.rosterSecondHalfNonWorking === 'WO'
+                              ? 'Week off'
+                              : 'Working'}
+                        </div>
+                        {attendanceDetail.notes && (
+                          <div className="mt-1 text-xs text-rose-800/90 dark:text-rose-200/90">{attendanceDetail.notes}</div>
+                        )}
+                      </div>
+                    )}
                     {attendanceDetail.policyMeta?.partialDayRule?.applied && (
                       <div className="col-span-2 rounded-xl border border-violet-200 bg-violet-50/70 p-4 dark:border-violet-800/60 dark:bg-violet-900/20">
                         <label className="text-[10px] font-black uppercase tracking-widest text-violet-700/80 dark:text-violet-300/80">

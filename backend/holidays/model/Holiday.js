@@ -110,6 +110,29 @@ const holidaySchema = new mongoose.Schema(
             type: String,
             trim: true,
         },
+
+        /** FULL_DAY | HALF_DAY (HOURS reserved for later) */
+        rosterApplyMode: {
+            type: String,
+            enum: ['FULL_DAY', 'HALF_DAY', 'HOURS'],
+            default: 'FULL_DAY',
+        },
+        /** first_half | second_half when rosterApplyMode is HALF_DAY */
+        halfDayType: {
+            type: String,
+            enum: ['first_half', 'second_half'],
+            default: null,
+        },
+        /**
+         * multi_shift only: FULL_DAY (same as full roster HOL), FIRST_SEGMENT, ALL_SEGMENTS.
+         * With HALF_DAY + ALL_SEGMENTS, every shift segment on that calendar half is holiday.
+         */
+        multiShiftScope: {
+            type: String,
+            enum: ['FULL_DAY', 'FIRST_SEGMENT', 'ALL_SEGMENTS'],
+            default: 'FULL_DAY',
+        },
+
         isActive: {
             type: Boolean,
             default: true,
