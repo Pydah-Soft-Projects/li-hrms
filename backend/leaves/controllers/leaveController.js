@@ -3889,36 +3889,35 @@ exports.exportReportPDF = async (req, res) => {
 
 
 
-// @desc    Export Excel report
+// @desc    Export Excel report (same filters, columns, and summary as PDF export)
 // @route   GET /api/leaves/export/xlsx
 // @access  Private
 exports.exportReportXLSX = async (req, res) => {
   try {
-    const { 
+    const {
       status, fromDate, toDate, leaveType, department, division, designation, search, employeeId,
-      includeLeaves = 'true', includeODs = 'true'
+      includeLeaves = 'true', includeODs = 'true', includeSummary = 'true',
     } = req.query;
 
-    // Reuse filter logic from exportReportPDF
     const scopeFilter = req.scopeFilter || { isActive: true };
     const workflowFilter = buildWorkflowVisibilityFilter(req.user);
     const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
-    
+
     let jurisdictionFilter = scopeFilter;
     let visibilityFilter = workflowFilter;
-    
+
     if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
       jurisdictionFilter = {
         $or: [
           scopeFilter,
-          { employeeId: { $in: scopedEmployeeIds } }
-        ]
+          { employeeId: { $in: scopedEmployeeIds } },
+        ],
       };
       visibilityFilter = {
         $or: [
           workflowFilter,
-          { employeeId: { $in: scopedEmployeeIds } }
-        ]
+          { employeeId: { $in: scopedEmployeeIds } },
+        ],
       };
     }
 
@@ -3926,25 +3925,25 @@ exports.exportReportXLSX = async (req, res) => {
       $and: [
         jurisdictionFilter,
         visibilityFilter,
-        { isActive: true }
-      ]
+        { isActive: true },
+      ],
     };
 
     if (status && !['leaves', 'od', 'all'].includes(status)) baseFilter.status = status;
     if (employeeId && employeeId !== 'all') {
-      const ids = String(employeeId).split(',').filter(id => id && id !== 'all');
+      const ids = String(employeeId).split(',').filter((id) => id && id !== 'all');
       if (ids.length > 0) baseFilter.employeeId = ids.length > 1 ? { $in: ids } : ids[0];
     }
     if (department && department !== 'all') {
-      const ids = String(department).split(',').filter(id => id && id !== 'all');
+      const ids = String(department).split(',').filter((id) => id && id !== 'all');
       if (ids.length > 0) baseFilter.department = ids.length > 1 ? { $in: ids } : ids[0];
     }
     if (division && division !== 'all') {
-      const ids = String(division).split(',').filter(id => id && id !== 'all');
+      const ids = String(division).split(',').filter((id) => id && id !== 'all');
       if (ids.length > 0) baseFilter.division_id = ids.length > 1 ? { $in: ids } : ids[0];
     }
     if (designation && designation !== 'all') {
-      const ids = String(designation).split(',').filter(id => id && id !== 'all');
+      const ids = String(designation).split(',').filter((id) => id && id !== 'all');
       if (ids.length > 0) baseFilter.designation = ids.length > 1 ? { $in: ids } : ids[0];
     }
     if (fromDate) baseFilter.fromDate = { $gte: new Date(fromDate) };
@@ -3958,89 +3957,164 @@ exports.exportReportXLSX = async (req, res) => {
           { emp_no: regex },
           { employee_name: regex },
           { first_name: regex },
-          { last_name: regex }
-        ]
+          { last_name: regex },
+        ],
       }).select('_id').lean();
-      const ids = matchedEmployees.map(e => e._id);
-      if (ids.length > 0) {
-        baseFilter.employeeId = { $in: ids };
-      } else {
-        baseFilter.employeeId = { $in: [] };
-      }
+      const ids = matchedEmployees.map((e) => e._id);
+      baseFilter.employeeId = ids.length > 0 ? { $in: ids } : { $in: [] };
     }
 
     const leaveFilter = { ...baseFilter };
     if (leaveType) leaveFilter.leaveType = leaveType;
+    const odFilter = { ...baseFilter };
+
+    const employeePopulate = {
+      path: 'employeeId',
+      select: 'employee_name emp_no profilePhoto first_name last_name department_id division_id designation_id department',
+      populate: [
+        { path: 'department', select: 'name code' },
+        { path: 'division', select: 'name code' },
+        { path: 'designation', select: 'name code' },
+      ],
+    };
 
     const [leaves, ods] = await Promise.all([
-      includeLeaves === 'true' ? Leave.find(leaveFilter).populate({
-          path: 'employeeId',
-          select: 'employee_name emp_no department_id division_id designation_id',
-          populate: [
-            { path: 'department_id', select: 'name' },
-            { path: 'division_id', select: 'name' },
-            { path: 'designation_id', select: 'name code' },
-          ]
-        }).lean() : [],
-      includeODs === 'true' ? OD.find(baseFilter).populate({
-          path: 'employeeId',
-          select: 'employee_name emp_no department_id division_id designation_id',
-          populate: [
-            { path: 'department_id', select: 'name' },
-            { path: 'division_id', select: 'name' },
-            { path: 'designation_id', select: 'name code' },
-          ]
-        }).lean() : []
+      includeLeaves === 'true'
+        ? Leave.find(leaveFilter).populate(employeePopulate).lean()
+        : [],
+      includeODs === 'true'
+        ? OD.find(odFilter).populate(employeePopulate).lean()
+        : [],
     ]);
 
+    const formatDate = (date) => (date ? dayjs(date).format('DD/MM/YYYY') : '-');
+    const getCleanEmpName = (emp) => {
+      if (!emp) return '-';
+      return emp.employee_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
+    };
+    const getEmpName = (emp) => {
+      if (!emp) return '-';
+      if (emp.employee_name) return emp.employee_name;
+      return `${emp.first_name || ''} ${emp.last_name || ''} (${emp.emp_no || ''})`.trim();
+    };
+
+    const detailHeaders = ['S.No', 'Emp ID', 'Employee Name', 'Division', 'Department', 'Type', 'Dates', 'Days', 'Status'];
     const wb = XLSX.utils.book_new();
 
     if (includeLeaves === 'true' && leaves.length > 0) {
-      const leaveData = leaves.map(l => ({
-        'Emp No': l.employeeId?.emp_no || 'N/A',
-        'Employee Name': l.employeeId?.employee_name || 'N/A',
-        'Division': l.employeeId?.division_id?.name || 'N/A',
-        'Department': l.employeeId?.department_id?.name || 'N/A',
-        'Leave Type': l.leaveType || 'N/A',
-        'From Date': dayjs(l.fromDate).format('DD-MM-YYYY'),
-        'To Date': dayjs(l.toDate).format('DD-MM-YYYY'),
-        'Days': l.numberOfDays || 0,
-        'Status': l.status || 'N/A',
-        'Applied At': dayjs(l.appliedAt).format('DD-MM-YYYY HH:mm')
-      }));
-      const wsLeaves = XLSX.utils.json_to_sheet(leaveData);
-      XLSX.utils.book_append_sheet(wb, wsLeaves, 'Leaves');
+      const leaveRows = leaves.map((l, i) => [
+        i + 1,
+        l.employeeId?.emp_no || '-',
+        getCleanEmpName(l.employeeId),
+        l.employeeId?.division?.name || '-',
+        l.employeeId?.department?.name || '-',
+        l.leaveType,
+        `${formatDate(l.fromDate)}${l.fromDate !== l.toDate ? ` - ${formatDate(l.toDate)}` : ''}`,
+        l.numberOfDays,
+        (l.status || '').toUpperCase(),
+      ]);
+      const wsLeaves = XLSX.utils.aoa_to_sheet([
+        ['LEAVE APPLICATIONS'],
+        [`Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${status || 'All'}`],
+        detailHeaders,
+        ...leaveRows,
+      ]);
+      XLSX.utils.book_append_sheet(wb, wsLeaves, 'Leave Applications');
     }
 
     if (includeODs === 'true' && ods.length > 0) {
-      const odData = ods.map(o => ({
-        'Emp No': o.employeeId?.emp_no || 'N/A',
-        'Employee Name': o.employeeId?.employee_name || 'N/A',
-        'Division': o.employeeId?.division_id?.name || 'N/A',
-        'Department': o.employeeId?.department_id?.name || 'N/A',
-        'OD Type': o.odType || 'N/A',
-        'From Date': dayjs(o.fromDate).format('DD-MM-YYYY'),
-        'To Date': dayjs(o.toDate).format('DD-MM-YYYY'),
-        'Place': o.placeVisited || 'N/A',
-        'Status': o.status || 'N/A',
-        'Applied At': dayjs(o.createdAt).format('DD-MM-YYYY HH:mm')
-      }));
-      const wsODs = XLSX.utils.json_to_sheet(odData);
-      XLSX.utils.book_append_sheet(wb, wsODs, 'On-Duty');
+      const odRows = ods.map((o, i) => [
+        i + 1,
+        o.employeeId?.emp_no || '-',
+        getCleanEmpName(o.employeeId),
+        o.employeeId?.division?.name || '-',
+        o.employeeId?.department?.name || '-',
+        (o.odType || '').replace('_', ' '),
+        `${formatDate(o.fromDate)}${o.fromDate !== o.toDate ? ` - ${formatDate(o.toDate)}` : ''}`,
+        o.numberOfDays,
+        (o.status || '').toUpperCase(),
+      ]);
+      const wsODs = XLSX.utils.aoa_to_sheet([
+        ['ON DUTY (OD) APPLICATIONS'],
+        [`Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${status || 'All'}`],
+        detailHeaders,
+        ...odRows,
+      ]);
+      XLSX.utils.book_append_sheet(wb, wsODs, 'On Duty Applications');
+    }
+
+    if (includeSummary === 'true') {
+      const summaryMap = {};
+      const process = (item, isOD) => {
+        if (item.status !== 'approved' && item.status !== 'split_approved') return;
+        const emp = item.employeeId;
+        const empKey = emp?._id?.toString() || getEmpName(emp);
+        if (!summaryMap[empKey]) {
+          summaryMap[empKey] = {
+            empNo: emp?.emp_no || '-',
+            name: getCleanEmpName(emp),
+            division: emp?.division?.name || '-',
+            department: emp?.department?.name || '-',
+            CL: 0,
+            OTHER: 0,
+            OD: 0,
+          };
+        }
+        const days = item.numberOfDays || 0;
+        if (isOD) summaryMap[empKey].OD += days;
+        else if (item.leaveType === 'CL') summaryMap[empKey].CL += days;
+        else summaryMap[empKey].OTHER += days;
+      };
+
+      if (includeLeaves === 'true') leaves.forEach((l) => process(l, false));
+      if (includeODs === 'true') ods.forEach((o) => process(o, true));
+
+      const summaryHeaders = ['S.No', 'Emp ID', 'Employee Name', 'Division', 'Department'];
+      if (includeLeaves === 'true') summaryHeaders.push('CL', 'Other');
+      if (includeODs === 'true') summaryHeaders.push('OD');
+      summaryHeaders.push('Total');
+
+      const summaryRows = Object.values(summaryMap).map((emp, i) => {
+        const row = [i + 1, emp.empNo, emp.name, emp.division, emp.department];
+        let total = 0;
+        if (includeLeaves === 'true') {
+          row.push(emp.CL, emp.OTHER);
+          total += emp.CL + emp.OTHER;
+        }
+        if (includeODs === 'true') {
+          row.push(emp.OD);
+          total += emp.OD;
+        }
+        row.push(total);
+        return row;
+      });
+
+      const summaryAoA = [
+        ['SUMMARY (APPROVED)'],
+        [`Period: ${fromDate || 'Any'} to ${toDate || 'Any'}`],
+        summaryHeaders,
+        ...(summaryRows.length > 0
+          ? summaryRows
+          : [['No approved requests found for summary.']]),
+      ];
+      const wsSummary = XLSX.utils.aoa_to_sheet(summaryAoA);
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
     }
 
     if (wb.SheetNames.length === 0) {
-      // Create empty sheet if no data
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{ Message: 'No data found for selected filters' }]), 'No Data');
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.json_to_sheet([{ Message: 'No data found for selected filters' }]),
+        'No Data'
+      );
     }
 
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    const filename = `Report_${dayjs().format('YYYY-MM-DD_HHmm')}.xlsx`;
+    const filename = `Leave_OD_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
-
   } catch (error) {
     console.error('Error exporting XLSX:', error);
     res.status(500).json({

@@ -263,7 +263,8 @@ export default function LeaveReportsTab() {
                 designation: designationIds,
                 employeeId: employeeIds,
                 includeLeaves: true,
-                includeODs: false
+                includeODs: false,
+                includeSummary: true,
             });
 
             const url = window.URL.createObjectURL(blob);

@@ -12,7 +12,7 @@ import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import EmployeeSelect from '@/components/EmployeeSelect';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Loader2, Calendar, Briefcase, X, Clock as Clock3, Star, FileText, CheckCircle2, AlertCircle, Plus } from 'lucide-react';
+import { Loader2, Calendar, Briefcase, X, Clock as Clock3, Star, FileText, FileSpreadsheet, CheckCircle2, AlertCircle, Plus, Download } from 'lucide-react';
 import { MultiSelect } from '@/components/MultiSelect';
 import {
   buildDivisionToDepartmentIdsMap,
@@ -1876,6 +1876,45 @@ function LeavesPageContent() {
     }
   };
 
+  const exportToXLSX = async (options = { includeLeaves: true, includeODs: true, includeSummary: true }) => {
+    const filters = getLeavesODFilters();
+    const toastId = toast.loading('Generating Excel report...');
+
+    try {
+      const blob = await api.downloadLeaveODReportXLSX({
+        ...filters,
+        status: activeTab === 'pending' ? 'pending' : undefined,
+        includeLeaves: options.includeLeaves,
+        includeODs: options.includeODs,
+        includeSummary: options.includeSummary,
+      });
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Leave_OD_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.update(toastId, {
+        render: 'Excel Downloaded Successfully!',
+        type: 'success',
+        isLoading: false,
+        autoClose: 2000,
+      });
+    } catch (err: any) {
+      console.error('Excel Export Error:', err);
+      toast.update(toastId, {
+        render: 'Failed to export Excel: ' + (err.message || 'Unknown error'),
+        type: 'error',
+        isLoading: false,
+        autoClose: 5000,
+      });
+    }
+  };
+
   const handleAction = async (id: string, type: 'leave' | 'od', action: 'approve' | 'reject', comments: string = '') => {
     try {
       let response;
@@ -2892,9 +2931,24 @@ function LeavesPageContent() {
             <button
               onClick={openExportPDFDialog}
               className="group flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-[0.98] shrink-0"
+              title="Download PDF for current filters"
             >
               <FileText className="w-4 h-4" />
               <span className="hidden sm:inline">Download PDF</span>
+            </button>
+            <button
+              onClick={() =>
+                exportToXLSX({
+                  includeLeaves: activeTab !== 'od',
+                  includeODs: activeTab !== 'leaves',
+                  includeSummary: true,
+                })
+              }
+              className="group flex items-center gap-2 h-9 px-3 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-xs font-semibold shadow-sm hover:bg-emerald-100/80 dark:hover:bg-emerald-900/40 transition-all active:scale-[0.98] shrink-0"
+              title="Download Excel with the same data as the PDF report"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span className="hidden sm:inline">Download Excel</span>
             </button>
             <button
               onClick={() => openApplyDialog('leave')}
@@ -5925,8 +5979,8 @@ function LeavesPageContent() {
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-blue-500" />
-                  Export PDF Options
+                  <Download className="w-5 h-5 text-blue-500" />
+                  Export Report
                 </h3>
                 <button 
                   onClick={() => setShowExportPDFDialog(false)}
@@ -5983,9 +6037,21 @@ function LeavesPageContent() {
                     setShowExportPDFDialog(false);
                     exportToPDF({ ...exportPDFOptions, includeSummary: true });
                   }}
-                  className="flex-1 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-md shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="flex-1 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-md shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all inline-flex items-center justify-center gap-2"
                 >
-                  Generate PDF
+                  <FileText className="w-4 h-4" />
+                  PDF
+                </button>
+                <button
+                  disabled={!exportPDFOptions.includeLeaves && !exportPDFOptions.includeODs}
+                  onClick={() => {
+                    setShowExportPDFDialog(false);
+                    exportToXLSX({ ...exportPDFOptions, includeSummary: true });
+                  }}
+                  className="flex-1 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 shadow-md shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all inline-flex items-center justify-center gap-2"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  Excel
                 </button>
               </div>
             </div>

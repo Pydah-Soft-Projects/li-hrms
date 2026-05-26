@@ -75,6 +75,7 @@ import {
   Check,
   Circle,
   FileText,
+  FileSpreadsheet,
   Loader2,
   CheckCircle,
   MoreVertical,
@@ -784,6 +785,7 @@ export default function LeavesPage() {
   const [loading, setLoading] = useState(true);
   const [showExportPDFDialog, setShowExportPDFDialog] = useState(false);
   const [exportPDFOptions, setExportPDFOptions] = useState({ includeLeaves: true, includeODs: true });
+  const [exportingExcel, setExportingExcel] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
   // Pay cycle start / end day from settings (aligned with attendance payroll month)
@@ -869,11 +871,23 @@ export default function LeavesPage() {
   const user = auth.getUser();
   const hasViewPermission = user ? canViewLeaves(user as any) : false;
   const hasManagePermission = user ? canApproveLeaves(user as any) : false; // Write permission for ALL actions
-  /** Backend allows PDF export for these roles only (scoped via workspace middleware). */
-  const canExportLeaveODPdf =
+  /** Backend allows PDF/Excel export for these roles only (scoped via workspace middleware). */
+  const canExportLeaveODReport =
     !!user &&
     hasViewPermission &&
     ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(user.role);
+
+  const openExportPDFDialog = () => {
+    setExportPDFOptions({
+      includeLeaves: activeTab !== 'od',
+      includeODs: activeTab !== 'leaves',
+    });
+    setShowExportPDFDialog(true);
+  };
+
+  const runExcelExport = (options = { includeLeaves: true, includeODs: true, includeSummary: true }) => {
+    exportToXLSX(options);
+  };
 
   // Permission states (Workspace based)
   const [canApplyLeaveForSelf, setCanApplyLeaveForSelf] = useState(false);
@@ -3435,6 +3449,67 @@ export default function LeavesPage() {
     }
   };
 
+  const exportToXLSX = async (options = { includeLeaves: true, includeODs: true, includeSummary: true }) => {
+    if (exportingExcel) return;
+    const toastId = toast.loading('Generating Excel report...');
+    setExportingExcel(true);
+
+    try {
+      const baseFilters = getLeavesODFilters();
+      const status =
+        activeTab === 'pending'
+          ? 'pending'
+          : activeTab === 'od'
+            ? (leaveFilters.odStatus || undefined)
+            : activeTab === 'leaves'
+              ? (leaveFilters.leaveStatus || undefined)
+              : undefined;
+      const leaveType =
+        options.includeLeaves && !options.includeODs
+          ? (leaveFilters.leaveType || undefined)
+          : options.includeODs && !options.includeLeaves
+            ? (leaveFilters.odType || undefined)
+            : activeTab === 'od'
+              ? (leaveFilters.odType || undefined)
+              : (leaveFilters.leaveType || undefined);
+
+      const blob = await api.downloadLeaveODReportXLSX({
+        ...baseFilters,
+        status,
+        leaveType,
+        includeLeaves: options.includeLeaves,
+        includeODs: options.includeODs,
+        includeSummary: options.includeSummary,
+      });
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Leave_OD_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.update(toastId, {
+        render: 'Excel Downloaded Successfully!',
+        type: 'success',
+        isLoading: false,
+        autoClose: 2000,
+      });
+    } catch (err: any) {
+      console.error('Excel Export Error:', err);
+      toast.update(toastId, {
+        render: 'Failed to export Excel: ' + (err.message || 'Unknown error'),
+        type: 'error',
+        isLoading: false,
+        autoClose: 5000,
+      });
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
   const canPerformAction = (item: LeaveApplication | ODApplication, source?: 'leave' | 'od') => {
     if (!currentUser) return false;
     if (currentUser.role === 'employee') return false;
@@ -3599,24 +3674,40 @@ export default function LeavesPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              {canExportLeaveODPdf && (
-                <button
-                  onClick={() => {
-                    setExportPDFOptions({
-                      includeLeaves: activeTab !== 'od',
-                      includeODs: activeTab !== 'leaves',
-                    });
-                    setShowExportPDFDialog(true);
-                  }}
-                  className="flex items-center gap-2 h-9 sm:h-11 px-3 sm:px-4 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-[0.98]"
-                  title="Download PDF for current pay period and filters (scoped to your workspace)"
-                >
-                  <FileText className="w-4 h-4" />
-                  <span className="hidden lg:inline">Download PDF</span>
-                </button>
-              )}
-              {hasManagePermission && (canApplyForSelf || canApplyForOthers || currentUser?.role === 'employee' || ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role)) && (
+            {canExportLeaveODReport && (
+              <button
+                type="button"
+                onClick={openExportPDFDialog}
+                className="group flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-[0.98] shrink-0"
+                title="Download PDF for current pay period and filters"
+              >
+                <FileText className="w-4 h-4" />
+                <span className="hidden sm:inline">Download PDF</span>
+              </button>
+            )}
+            {canExportLeaveODReport && (
+              <button
+                type="button"
+                onClick={() =>
+                  runExcelExport({
+                    includeLeaves: activeTab !== 'od',
+                    includeODs: activeTab !== 'leaves',
+                    includeSummary: true,
+                  })
+                }
+                disabled={exportingExcel}
+                className="group flex items-center gap-2 h-9 px-3 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-xs font-semibold shadow-sm hover:bg-emerald-100/80 dark:hover:bg-emerald-900/40 transition-all active:scale-[0.98] shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
+                title="Download Excel with the same data as the PDF report"
+              >
+                {exportingExcel ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">{exportingExcel ? 'Exporting...' : 'Download Excel'}</span>
+              </button>
+            )}
+            {hasManagePermission && (canApplyForSelf || canApplyForOthers || currentUser?.role === 'employee' || ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role)) && (
                 <button
                   onClick={() => openApplyDialog('leave')}
                   className="group h-9 sm:h-11 px-4 sm:px-6 rounded-xl sm:rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10 shrink-0"
@@ -3625,7 +3716,6 @@ export default function LeavesPage() {
                   <span className="hidden sm:inline">Apply Request</span>
                 </button>
               )}
-            </div>
           </div>
         </div>
       </div>
@@ -3676,6 +3766,37 @@ export default function LeavesPage() {
               />
             </div>
           </div>
+          {canExportLeaveODReport && (
+            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={openExportPDFDialog}
+                className="flex items-center justify-center gap-2 h-10 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 text-xs font-semibold shadow-sm"
+              >
+                <FileText className="w-4 h-4" />
+                Download PDF
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  runExcelExport({
+                    includeLeaves: activeTab !== 'od',
+                    includeODs: activeTab !== 'leaves',
+                    includeSummary: true,
+                  })
+                }
+                disabled={exportingExcel}
+                className="flex items-center justify-center gap-2 h-10 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-xs font-semibold shadow-sm disabled:opacity-60"
+              >
+                {exportingExcel ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="w-4 h-4" />
+                )}
+                {exportingExcel ? 'Exporting...' : 'Download Excel'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -7179,8 +7300,8 @@ export default function LeavesPage() {
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-blue-500" />
-                  Export PDF Options
+                  <Download className="w-5 h-5 text-blue-500" />
+                  Export Report
                 </h3>
                 <button 
                   onClick={() => setShowExportPDFDialog(false)}
@@ -7224,23 +7345,37 @@ export default function LeavesPage() {
                 </div>
               </div>
 
-              <div className="mt-8 flex items-center gap-3">
-                <button
-                  onClick={() => setShowExportPDFDialog(false)}
-                  className="flex-1 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  disabled={!exportPDFOptions.includeLeaves && !exportPDFOptions.includeODs}
-                  onClick={() => {
-                    setShowExportPDFDialog(false);
-                    exportToPDF({ ...exportPDFOptions, includeSummary: true });
-                  }}
-                  className="flex-1 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-md shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                >
-                  Generate PDF
-                </button>
+              <div className="mt-8 flex flex-col gap-3">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setShowExportPDFDialog(false)}
+                    className="flex-1 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={!exportPDFOptions.includeLeaves && !exportPDFOptions.includeODs}
+                    onClick={() => {
+                      setShowExportPDFDialog(false);
+                      exportToPDF({ ...exportPDFOptions, includeSummary: true });
+                    }}
+                    className="flex-1 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-md shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all inline-flex items-center justify-center gap-2"
+                  >
+                    <FileText className="w-4 h-4" />
+                    PDF
+                  </button>
+                  <button
+                    disabled={!exportPDFOptions.includeLeaves && !exportPDFOptions.includeODs}
+                    onClick={() => {
+                      setShowExportPDFDialog(false);
+                      exportToXLSX({ ...exportPDFOptions, includeSummary: true });
+                    }}
+                    className="flex-1 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 shadow-md shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all inline-flex items-center justify-center gap-2"
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    Excel
+                  </button>
+                </div>
               </div>
             </div>
           </div>

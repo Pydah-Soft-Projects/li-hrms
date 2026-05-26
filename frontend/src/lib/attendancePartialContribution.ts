@@ -11,6 +11,7 @@ export type PartialContributionDailyRecord = {
 };
 
 export type PartialContributingSummary = {
+  totalPresentDays?: number | null;
   totalPartialDays?: number | null;
   /** PARTIAL days: sum(min(dayPresent, dayPayable)) from monthly summary calc (pay register overlap guard). */
   totalPartialPresentPayableOverlap?: number | null;
@@ -18,6 +19,24 @@ export type PartialContributingSummary = {
     partial?: Array<string | { date?: string; value?: number; label?: string }> | null;
   } | null;
 };
+
+function toPayRegisterSummaryInput(
+  summary: PartialContributingSummary
+): Parameters<typeof mergeSingleShiftPresentForPayRegisterLikeRow>[0] {
+  const partial = summary.contributingDates?.partial;
+  return {
+    totalPresentDays: summary.totalPresentDays ?? undefined,
+    totalPartialDays: summary.totalPartialDays ?? undefined,
+    totalPartialPresentPayableOverlap: summary.totalPartialPresentPayableOverlap ?? undefined,
+    contributingDates: partial
+      ? {
+          partial: partial.map((e) =>
+            typeof e === 'string' ? { date: e } : { date: e.date, value: e.value }
+          ),
+        }
+      : undefined,
+  };
+}
 
 export function getPartialRecordPayableContribution(
   record: PartialContributionDailyRecord | null | undefined
@@ -50,7 +69,7 @@ export function getMergedPresentDaysForSummary(
 ): number | null {
   if (!summary) return null;
   if (processingMode === 'single_shift') {
-    return mergeSingleShiftPresentForPayRegisterLikeRow(summary);
+    return mergeSingleShiftPresentForPayRegisterLikeRow(toPayRegisterSummaryInput(summary));
   }
   const raw = Number(summary.totalPresentDays);
   if (!Number.isFinite(raw)) return null;

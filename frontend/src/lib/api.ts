@@ -2644,6 +2644,7 @@ export const api = {
     search?: string;
     includeLeaves?: boolean;
     includeODs?: boolean;
+    includeSummary?: boolean;
   }) => {
     const params = new URLSearchParams();
     if (filters.status) params.append('status', filters.status);
@@ -2657,6 +2658,7 @@ export const api = {
     if (filters.search) params.append('search', filters.search);
     if (filters.includeLeaves !== undefined) params.append('includeLeaves', String(filters.includeLeaves));
     if (filters.includeODs !== undefined) params.append('includeODs', String(filters.includeODs));
+    if (filters.includeSummary !== undefined) params.append('includeSummary', String(filters.includeSummary));
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const url = `${API_BASE_URL}/leaves/export/xlsx?${params.toString()}`;

@@ -262,7 +262,8 @@ export default function ODReportsTab() {
                 designation: designationIds,
                 employeeId: employeeIds,
                 includeLeaves: false,
-                includeODs: true
+                includeODs: true,
+                includeSummary: true,
             });
 
             const url = window.URL.createObjectURL(blob);
