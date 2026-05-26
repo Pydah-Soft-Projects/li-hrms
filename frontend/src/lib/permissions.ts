@@ -664,7 +664,11 @@ export function canEditHolidayRecord(
     holiday: {
         scope?: string;
         groupId?: string | { _id: string };
-        divisionMapping?: { division: string; departments?: string[]; employeeGroups?: string[] }[];
+        divisionMapping?: {
+            division: string | { _id: string; name?: string; code?: string };
+            departments?: (string | { _id: string; name?: string })[];
+            employeeGroups?: (string | { _id: string; name?: string; code?: string })[];
+        }[];
     }
 ): boolean {
     if (!canManageHolidayCalendar(user)) return false;
