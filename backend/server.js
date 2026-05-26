@@ -22,10 +22,14 @@ app.use(logger); // Log all requestsbn
 const allowedOrigins = [
   "*",
   process.env.FRONTEND_URL,
+  'http://192.168.0.36:3000',
   'http://18.143.242.233:3000',
   'http://192.168.3.147:3000',
   'http://192.168.3.198:3000',
-  'http://localhost:3000'
+  'http://localhost:3000',
+  'http://192.168.16.119:3000',
+  'http://192.168.0.36:3000',
+  'http://192.168.1.102:3000',
 ].filter(Boolean);
 
 app.use(cors({

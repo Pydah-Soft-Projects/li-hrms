@@ -16,18 +16,25 @@ const GeneralSettings = () => {
   const [allowEmployeeBulkProcess, setAllowEmployeeBulkProcess] = useState<boolean>(false);
   const [customEmployeeGroupingEnabled, setCustomEmployeeGroupingEnabled] = useState<boolean>(false);
   const [autoODCreationEnabled, setAutoODCreationEnabled] = useState<boolean>(false);
+  const [leaveAttendanceReconciliationEnabled, setLeaveAttendanceReconciliationEnabled] =
+    useState<boolean>(true);
+  const [skipLeaveAttendanceReconciliation, setSkipLeaveAttendanceReconciliation] =
+    useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const [resLate, resEarly, resBulk, resGrouping, resAutoOD] = await Promise.all([
+      const [resLate, resEarly, resBulk, resGrouping, resAutoOD, resLeaveRecon, resSkipRecon] =
+        await Promise.all([
         api.getSetting('late_in_grace_time'),
         api.getSetting('early_out_grace_time'),
         api.getSetting('allow_employee_bulk_process'),
         api.getSetting('custom_employee_grouping_enabled'),
         api.getSetting('auto_od_creation_enabled'),
+        api.getSetting('leave_attendance_reconciliation_enabled'),
+        api.getSetting('skip_leave_attendance_reconciliation'),
       ]);
 
       if (resLate.success && resLate.data) setLateInGrace(Number(resLate.data.value));
@@ -35,6 +42,12 @@ const GeneralSettings = () => {
       if (resBulk.success && resBulk.data) setAllowEmployeeBulkProcess(!!resBulk.data.value);
       if (resGrouping.success && resGrouping.data) setCustomEmployeeGroupingEnabled(!!resGrouping.data.value);
       if (resAutoOD.success && resAutoOD.data) setAutoODCreationEnabled(!!resAutoOD.data.value);
+      if (resLeaveRecon.success && resLeaveRecon.data) {
+        setLeaveAttendanceReconciliationEnabled(resLeaveRecon.data.value !== false);
+      }
+      if (resSkipRecon.success && resSkipRecon.data) {
+        setSkipLeaveAttendanceReconciliation(!!resSkipRecon.data.value);
+      }
     } catch (err) {
       console.error('Failed to load general settings', err);
       toast.error('Failed to load settings');
@@ -50,7 +63,8 @@ const GeneralSettings = () => {
   const handleSave = async () => {
     try {
       setSaving(true);
-      const [resLate, resEarly, resBulk, resGrouping, resAutoOD] = await Promise.all([
+      const [resLate, resEarly, resBulk, resGrouping, resAutoOD, resLeaveRecon, resSkipRecon] =
+        await Promise.all([
         api.upsertSetting({
           key: 'late_in_grace_time',
           value: lateInGrace,
@@ -80,10 +94,32 @@ const GeneralSettings = () => {
           value: autoODCreationEnabled,
           category: 'general',
           description: 'Enable automatic OD creation for eligible holiday/week-off biometric punches'
-        })
+        }),
+        api.upsertSetting({
+          key: 'leave_attendance_reconciliation_enabled',
+          value: leaveAttendanceReconciliationEnabled,
+          category: 'general',
+          description:
+            'When ON, approved leave/OD is auto-adjusted when punches show physical presence on the same day/half.',
+        }),
+        api.upsertSetting({
+          key: 'skip_leave_attendance_reconciliation',
+          value: skipLeaveAttendanceReconciliation,
+          category: 'general',
+          description:
+            'When ON, pauses leave–attendance reconciliation on attendance updates (same as bulk script SKIP env).',
+        }),
       ]);
 
-      if (resLate.success && resEarly.success && resBulk.success && resGrouping.success && resAutoOD.success) {
+      if (
+        resLate.success &&
+        resEarly.success &&
+        resBulk.success &&
+        resGrouping.success &&
+        resAutoOD.success &&
+        resLeaveRecon.success &&
+        resSkipRecon.success
+      ) {
         toast.success('General settings saved successfully');
       } else {
         toast.error('Failed to save general settings');
@@ -261,6 +297,77 @@ const GeneralSettings = () => {
                   className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${autoODCreationEnabled ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}
                 >
                   <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${autoODCreationEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
+            <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">
+                Leave &amp; attendance reconciliation
+              </h3>
+              <p className="text-[10px] text-gray-400 mt-1">
+                Control whether the system auto-rejects or narrows approved leave/OD when punches show the employee was
+                physically present on the same day or half.
+              </p>
+            </div>
+            <div className="p-8 space-y-8">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <label
+                    htmlFor="leaveAttendanceReconciliationEnabled"
+                    className="block text-sm font-medium text-gray-900 dark:text-white"
+                  >
+                    Enable auto leave–attendance reconciliation
+                  </label>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    When ON, reconciliation runs on punch sync, leave approval, and OD approval before monthly summary
+                    is recalculated. When OFF, approved leaves are never auto-adjusted by attendance.
+                  </p>
+                </div>
+                <button
+                  id="leaveAttendanceReconciliationEnabled"
+                  type="button"
+                  role="switch"
+                  aria-checked={leaveAttendanceReconciliationEnabled}
+                  onClick={() => setLeaveAttendanceReconciliationEnabled((v) => !v)}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${leaveAttendanceReconciliationEnabled ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${leaveAttendanceReconciliationEnabled ? 'translate-x-5' : 'translate-x-1'}`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 border-t border-gray-100 dark:border-gray-800 pt-8">
+                <div>
+                  <label
+                    htmlFor="skipLeaveAttendanceReconciliation"
+                    className="block text-sm font-medium text-gray-900 dark:text-white"
+                  >
+                    Pause reconciliation (testing / bulk-safe)
+                  </label>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    When ON, reconciliation is skipped on all attendance recalculations (same effect as{' '}
+                    <code className="text-[10px] bg-gray-100 dark:bg-gray-800 px-1 rounded">
+                      SKIP_LEAVE_ATTENDANCE_RECONCILIATION=1
+                    </code>{' '}
+                    on backend scripts). Use temporarily while testing payroll; turn OFF for normal operation.
+                  </p>
+                </div>
+                <button
+                  id="skipLeaveAttendanceReconciliation"
+                  type="button"
+                  role="switch"
+                  aria-checked={skipLeaveAttendanceReconciliation}
+                  onClick={() => setSkipLeaveAttendanceReconciliation((v) => !v)}
+                  disabled={!leaveAttendanceReconciliationEnabled}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-40 disabled:cursor-not-allowed ${skipLeaveAttendanceReconciliation ? 'bg-amber-500' : 'bg-gray-200 dark:bg-gray-700'}`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${skipLeaveAttendanceReconciliation ? 'translate-x-5' : 'translate-x-1'}`}
+                  />
                 </button>
               </div>
             </div>

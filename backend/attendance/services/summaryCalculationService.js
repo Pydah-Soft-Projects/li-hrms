@@ -356,6 +356,18 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     // Normalize emp_no so we match AttendanceDaily.employeeNumber (schema uses uppercase)
     const empNoNorm = (emp_no && String(emp_no).trim()) ? String(emp_no).toUpperCase() : emp_no;
 
+    // Leave/OD vs punches: reconcile every daily in this pay period before aggregating.
+    // (recalculateOnAttendanceUpdate does this per punch; bulk recalc must do it here too.)
+    try {
+      const employeeDoc = await Employee.findById(employeeId);
+      if (employeeDoc) {
+        const { reconcileEmployeePayPeriodBeforeSummary } = require('../../leaves/services/leaveAttendanceReconciliationService');
+        await reconcileEmployeePayPeriodBeforeSummary(employeeDoc, startDateStr, endDateStr);
+      }
+    } catch (reconErr) {
+      console.error(`[attendanceRequestReconciliation] pre-summary ${empNoNorm}:`, reconErr);
+    }
+
     // 0. Fetch employee joining/resignation dates to respect boundaries
     const employeeInfoForBoundaries = await Employee.findById(employeeId).select('doj leftDate').lean();
     const dojStrBound = employeeInfoForBoundaries?.doj ? extractISTComponents(employeeInfoForBoundaries.doj).dateStr : null;
@@ -767,6 +779,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     let totalODDays = 0;
     /** Sum of payable-shift contributions on PARTIAL-status days (aligned with Payable column, not day-count). */
     let totalPartialPayableContribution = 0;
+    /** Same calendar date in present + partial buckets: min(dayPresent, partialPayable) per day (pay register merge guard). */
+    let totalPartialPresentPayableOverlap = 0;
 
     for (const [dStr, day] of dailyStatsMap) {
       if (isOutsideEmploymentBound(dStr)) {
@@ -1031,6 +1045,16 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       })();
 
       if (usePartialPolicy) {
+        const odHalfCredit = Math.min(1, (Number(odFirst) || 0) + (Number(odSecond) || 0));
+        // Partial column = punch/worked payable on PARTIAL days; do not stack OD half again (OD is in totalODs).
+        const partialPayableContribution = (() => {
+          const pay = Math.min(1, Math.max(0, Number(dayPayable) || 0));
+          if (dayPresent > 0.001 && odHalfCredit > 0.001) {
+            return Math.round(Math.min(pay, dayPresent) * 100) / 100;
+          }
+          return Math.round(pay * 100) / 100;
+        })();
+
         if (partialLopPortion > 0) {
           totalLeaveDays += partialLopPortion;
           totalLopLeaveDays += partialLopPortion;
@@ -1053,11 +1077,18 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         if (!contributingDates.partial.some(cd => cd.date === dStr)) {
           contributingDates.partial.push({
             date: dStr,
-            value: dayPayable,
-            label: dayPayable > 0 ? `PT (${dayPayable})` : 'PARTIAL',
+            value: partialPayableContribution,
+            label:
+              partialPayableContribution > 0
+                ? `PT (${partialPayableContribution})`
+                : 'PARTIAL',
           });
         }
-        totalPartialPayableContribution += dayPayable;
+        totalPartialPayableContribution += partialPayableContribution;
+        if (dayPresent > 0.001) {
+          totalPartialPresentPayableOverlap +=
+            Math.round(Math.min(dayPresent, partialPayableContribution) * 100) / 100;
+        }
       }
 
       // 1. Handle Present Counts (Physical presence NOT on-duty)
@@ -1249,6 +1280,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
     summary.totalPresentDays = Math.round(totalPresentDays * 100) / 100;
     summary.totalPartialDays = Math.round(totalPartialPayableContribution * 100) / 100;
+    summary.totalPartialPresentPayableOverlap =
+      Math.round(totalPartialPresentPayableOverlap * 100) / 100;
     summary.totalPayableShifts = Math.round(totalPayableShifts * 100) / 100;
     summary.totalLeaves = Math.round(totalLeaveDays * 100) / 100;
     summary.totalPaidLeaves = Math.round(totalPaidLeaveDays * 100) / 100;

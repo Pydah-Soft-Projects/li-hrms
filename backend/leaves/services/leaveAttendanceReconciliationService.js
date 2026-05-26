@@ -47,6 +47,16 @@ async function loadSettingEnabled() {
   }
 }
 
+/** General Settings → pause flag (same effect as SKIP_LEAVE_ATTENDANCE_RECONCILIATION=1 on scripts). */
+async function loadSkipReconciliationFromSettings() {
+  try {
+    const s = await Settings.findOne({ key: 'skip_leave_attendance_reconciliation' }).lean();
+    return s?.value === true;
+  } catch {
+    return false;
+  }
+}
+
 function isSingleCalendarDayLeave(leave) {
   if (!leave?.fromDate || !leave?.toDate) return false;
   const a = extractISTComponents(leave.fromDate).dateStr;
@@ -306,9 +316,12 @@ async function findApprovedOdsForDate(employeeId, dateStr) {
  * @param {import('mongoose').Document} daily - AttendanceDaily
  */
 async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
-  // Bulk re-save scripts set SKIP_LEAVE_ATTENDANCE_RECONCILIATION=1 to avoid mass leave changes
+  // Bulk re-save scripts may set SKIP_LEAVE_ATTENDANCE_RECONCILIATION=1; admins can also pause via General Settings.
   if (process.env.SKIP_LEAVE_ATTENDANCE_RECONCILIATION === '1') {
     return { ran: false, reason: 'skipped_by_env' };
+  }
+  if (await loadSkipReconciliationFromSettings()) {
+    return { ran: false, reason: 'skipped_by_settings' };
   }
   const settingOk = await loadSettingEnabled();
   if (!settingOk) return { ran: false, reason: 'disabled_in_settings' };
@@ -828,8 +841,40 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
   return { ran: true, results };
 }
 
+/**
+ * Run leave/OD reconciliation for each AttendanceDaily in a payroll window.
+ * Used before monthly summary aggregation (bulk recalc, calculateMonthlySummary).
+ * @param {import('mongoose').Document} employee
+ * @param {string} startDateStr YYYY-MM-DD
+ * @param {string} endDateStr YYYY-MM-DD
+ */
+async function reconcileEmployeePayPeriodBeforeSummary(employee, startDateStr, endDateStr) {
+  const empNoNorm =
+    employee?.emp_no && String(employee.emp_no).trim()
+      ? String(employee.emp_no).trim().toUpperCase()
+      : '';
+  if (!empNoNorm || !startDateStr || !endDateStr) return { daysProcessed: 0 };
+
+  const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+  const dailies = await AttendanceDaily.find({
+    employeeNumber: empNoNorm,
+    date: { $gte: startDateStr, $lte: endDateStr },
+  })
+    .sort({ date: 1 })
+    .lean();
+
+  let daysProcessed = 0;
+  for (const daily of dailies) {
+    if (!daily?.date) continue;
+    await runLeaveAttendanceReconciliation(employee, daily.date, daily);
+    daysProcessed += 1;
+  }
+  return { daysProcessed };
+}
+
 module.exports = {
   runLeaveAttendanceReconciliation,
+  reconcileEmployeePayPeriodBeforeSummary,
   computeRawAttendanceHalfCredits,
   /** tests / diagnostics */
   _REMARK_PREFIX: REMARK_PREFIX,

@@ -51,6 +51,8 @@ exports.getSetting = async (req, res) => {
         'allow_employee_bulk_process': false,
         'custom_employee_grouping_enabled': false,
         'auto_od_creation_enabled': false,
+        'leave_attendance_reconciliation_enabled': true,
+        'skip_leave_attendance_reconciliation': false,
         'payroll_cycle_start_day': '1',
         'payroll_cycle_end_day': '31',
         'qualification_statuses': [
@@ -197,6 +199,14 @@ exports.upsertSetting = async (req, res) => {
         });
       }
     }
+    if (key === 'leave_attendance_reconciliation_enabled' || key === 'skip_leave_attendance_reconciliation') {
+      if (typeof value !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: `${key} must be a boolean`,
+        });
+      }
+    }
     if (key === 'enable_second_salary') {
       if (typeof value !== 'boolean') {
         return res.status(400).json({
@@ -232,7 +242,11 @@ exports.upsertSetting = async (req, res) => {
             ? 'payroll'
             : ['allow_employee_bulk_process', 'custom_employee_grouping_enabled'].includes(key)
               ? 'employee'
-              : ['auto_od_creation_enabled'].includes(key)
+              : [
+                  'auto_od_creation_enabled',
+                  'leave_attendance_reconciliation_enabled',
+                  'skip_leave_attendance_reconciliation',
+                ].includes(key)
                 ? 'general'
               : 'general'),
       },

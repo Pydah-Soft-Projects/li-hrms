@@ -26,6 +26,7 @@ import {
 
 import {
   getPartialColumnTotal,
+  getMergedPresentDaysForSummary,
   getPartialRecordPayableContribution,
 } from '@/lib/attendancePartialContribution';
 
@@ -426,13 +427,6 @@ interface MonthlyAttendanceData {
 
   };
 
-}
-
-function getPresentExcludingOD(summary?: MonthlyAttendanceData['summary'] | null): number | null {
-  if (!summary) return null;
-  // Backend now provides totalPresentDays with OD already excluded/separated.
-  // We just return it directly with 2-decimal precision.
-  return Math.max(0, Math.round((Number(summary.totalPresentDays) || 0) * 100) / 100);
 }
 
 function contributingEntryMatchesDate(entry: string | { date?: string }, dStr: string): boolean {
@@ -4011,7 +4005,7 @@ export default function AttendancePage() {
               id: 'present',
               column: 'present',
               label: 'Present',
-              value: getPresentExcludingOD(s) ?? item.presentDays ?? 0,
+              value: getMergedPresentDaysForSummary(s, attendanceProcessingMode) ?? item.presentDays ?? 0,
               color: 'text-slate-900 dark:text-white',
               bcolor: 'bg-slate-50 dark:bg-slate-700/30',
             },
@@ -4763,7 +4757,10 @@ export default function AttendancePage() {
                           </tr>
                         ) : (
                           filteredMonthlyData.map((item, rowIdx) => {
-                            const presentFromSummary = getPresentExcludingOD(item.summary);
+                            const presentFromSummary = getMergedPresentDaysForSummary(
+                              item.summary,
+                              attendanceProcessingMode
+                            );
                             const daysPresent = presentFromSummary != null
                               ? presentFromSummary
                               : item.presentDays !== undefined

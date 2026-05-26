@@ -2,6 +2,8 @@
  * Partial column = sum of payable contributions on PARTIAL-status days (aligned with Payable / monthly summary).
  */
 
+import { mergeSingleShiftPresentForPayRegisterLikeRow } from '@/lib/payRegisterAllSummaryRow';
+
 export type PartialContributionDailyRecord = {
   status?: string | null;
   payableShifts?: number | null;
@@ -37,6 +39,22 @@ export function sumPartialContributionsFromDaily(
   return Math.round(
     Object.values(daily).reduce((s, r) => s + getPartialRecordPayableContribution(r), 0) * 100
   ) / 100;
+}
+
+/**
+ * Present days for UI totals: single-shift merges partial + present − overlap (same as pay register).
+ */
+export function getMergedPresentDaysForSummary(
+  summary: PartialContributingSummary | null | undefined,
+  processingMode?: 'single_shift' | 'multi_shift' | null
+): number | null {
+  if (!summary) return null;
+  if (processingMode === 'single_shift') {
+    return mergeSingleShiftPresentForPayRegisterLikeRow(summary);
+  }
+  const raw = Number(summary.totalPresentDays);
+  if (!Number.isFinite(raw)) return null;
+  return Math.max(0, Math.round(raw * 100) / 100);
 }
 
 export function getPartialColumnTotal(

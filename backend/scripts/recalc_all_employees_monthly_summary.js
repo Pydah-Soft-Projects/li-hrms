@@ -11,6 +11,9 @@
  *
  * MONTH = YYYY-MM (calendar month). Pay period is resolved from payroll settings
  * (e.g. 26th–25th or 1st–31st) so the summary reflects the correct cycle.
+ *
+ * Leave–attendance reconciliation runs inside calculateMonthlySummary for each
+ * AttendanceDaily in the period (respects General Settings enable/skip toggles).
  */
 
 require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
@@ -24,7 +27,7 @@ async function run() {
     await mongoose.connect(process.env.MONGODB_URI);
     console.log('Connected.\n');
 
-    let monthStr = process.env.MONTH || '2026-04';
+    let monthStr = process.env.MONTH || '2026-05';
     if (!monthStr || !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthStr)) {
       const now = new Date();
       monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;

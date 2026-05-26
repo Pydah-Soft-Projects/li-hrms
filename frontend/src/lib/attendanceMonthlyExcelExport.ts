@@ -6,7 +6,7 @@
 import { format, parseISO } from 'date-fns';
 import * as XLSX from 'xlsx-js-style';
 import { formatCompleteDayCellForExcel } from '@/lib/attendanceCompleteDayCellText';
-import { getPartialColumnTotal } from '@/lib/attendancePartialContribution';
+import { getPartialColumnTotal, getMergedPresentDaysForSummary } from '@/lib/attendancePartialContribution';
 import {
   computePayRegisterAllRowFromMonthlySummary,
   formatPolicyAttendanceDeductionDisplay,
@@ -87,9 +87,11 @@ export function getAttendanceExportDayStrings(
   });
 }
 
-function getPresentExcludingODForExport(summary: any): number | null {
-  if (!summary) return null;
-  return Math.max(0, Math.round((Number(summary.totalPresentDays) || 0) * 100) / 100);
+function getPresentExcludingODForExport(
+  summary: any,
+  processingMode?: 'single_shift' | 'multi_shift' | null
+): number | null {
+  return getMergedPresentDaysForSummary(summary, processingMode);
 }
 
 /** Same inputs as the Complete table row when `usePayRegisterAllComplete` is on. */

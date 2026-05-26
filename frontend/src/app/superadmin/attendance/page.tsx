@@ -18,6 +18,7 @@ import {
 } from '@/lib/attendanceCompleteAggregateColumns';
 import {
   getPartialColumnTotal,
+  getMergedPresentDaysForSummary,
   getPartialRecordPayableContribution,
 } from '@/lib/attendancePartialContribution';
 import { buildSplitCellStatus } from '@/lib/attendanceCompleteDayCellText';
@@ -263,13 +264,6 @@ interface Department {
   division?: string | { _id: string; name: string };
   division_id?: string | { _id: string };
   divisions?: (string | { _id: string; name: string })[];
-}
-
-function getPresentExcludingOD(summary?: MonthlyAttendanceData['summary'] | null): number | null {
-  if (!summary) return null;
-  // Backend now provides totalPresentDays with OD already excluded/separated.
-  // We just return it directly with 2-decimal precision.
-  return Math.max(0, Math.round((Number(summary.totalPresentDays) || 0) * 100) / 100);
 }
 
 interface Designation {
@@ -3151,7 +3145,10 @@ export default function AttendancePage() {
 
                   const dailyValues: any[] = safeGetValues(dailyAttendance);
 
-                  const presentFromSummary = getPresentExcludingOD(item.summary);
+                  const presentFromSummary = getMergedPresentDaysForSummary(
+                    item.summary,
+                    attendanceProcessingMode
+                  );
                   const daysPresent = presentFromSummary != null
                     ? presentFromSummary
                     : item.presentDays !== undefined
