@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import dynamic from 'next/dynamic';
@@ -15,6 +15,19 @@ import {
   getLeaveApplyPayrollPeriod,
   earliestIsoDate,
 } from '@/lib/leavePayrollPeriod';
+import {
+  computeCapTrackedEffectiveRemaining,
+  fyBalanceForCapTrackedType,
+  resolvePooledMonthlyRemaining,
+  todayIsoDate,
+} from '@/lib/leaveApplyPeriodContext';
+import {
+  getApplyDateCheckBannerState,
+  getLeaveAttendanceSuggestion,
+  isDayFullyCovered,
+  resolveDayHalfCoverage,
+} from '@/lib/leaveApplyApprovedRecords';
+import LeaveApplyDateCheckBanner from '@/components/leave/LeaveApplyDateCheckBanner';
 import {
   buildStatusLabelMap,
   formatLeaveStatusLabel as fmtLeaveStatus,
@@ -2013,18 +2026,7 @@ export default function LeavesPage() {
               leaveType: selectedLeaveType as 'CL' | 'CCL' | 'EL',
             });
             const ctx = ctxRes?.success ? ctxRes?.data : null;
-            const remaining = ctx?.selectedType?.remaining != null ? Number(ctx.selectedType.remaining) : null;
-            const fyBalanceRaw =
-              selectedLeaveType === 'CL'
-                ? ctx?.balances?.cl
-                : selectedLeaveType === 'CCL'
-                  ? ctx?.balances?.ccl
-                  : ctx?.balances?.el;
-            const fyBalance = fyBalanceRaw != null ? Number(fyBalanceRaw) : null;
-            const effectiveRemaining =
-              remaining != null && fyBalance != null
-                ? Math.min(remaining, fyBalance)
-                : (remaining != null ? remaining : fyBalance);
+            const effectiveRemaining = computeCapTrackedEffectiveRemaining(ctx, selectedLeaveType);
             if (effectiveRemaining != null && effectiveRemaining <= 0) {
               toast.error(`Insufficient ${selectedLeaveType} balance for the selected payroll period`);
               setLoading(false);
@@ -2049,7 +2051,19 @@ export default function LeavesPage() {
         }
       }
 
+      const isSingleDayRequest = formData.fromDate === formData.toDate || !formData.toDate;
+
       // Check for conflicts
+      if (approvedRecordsInfo && isSingleDayRequest) {
+        if (isDayFullyCovered(resolveDayHalfCoverage(approvedRecordsInfo))) {
+          toast.error(
+            'This date is already fully covered (attendance and approved record). No new application is needed.'
+          );
+          setLoading(false);
+          return;
+        }
+      }
+
       if (approvedRecordsInfo) {
         const hasFullDayApproved = (approvedRecordsInfo.hasLeave && !approvedRecordsInfo.leaveInfo?.isHalfDay) ||
           (approvedRecordsInfo.hasOD && !approvedRecordsInfo.odInfo?.isHalfDay);
@@ -2071,7 +2085,6 @@ export default function LeavesPage() {
       }
 
       // Attendance-first safety at apply-time (single-day leave/OD): block same-half/full-day overlap.
-      const isSingleDayRequest = formData.fromDate === formData.toDate || !formData.toDate;
       const isHalfDayOdRequest =
         applyType === 'od' &&
         (formData.odType_extended === 'half_day' || Boolean(formData.isHalfDay));
@@ -2081,27 +2094,17 @@ export default function LeavesPage() {
         isSingleDayRequest &&
         (applyType === 'leave' || (applyType === 'od' && !isHoursOdRequest))
       ) {
-        const a = approvedRecordsInfo.attendanceInfo;
-        const requestLabel = applyType === 'leave' ? 'leave' : 'OD';
         const isHalfDayRequest =
           applyType === 'leave' ? Boolean(formData.isHalfDay) : isHalfDayOdRequest;
-        if (a.fullDayPresent) {
-          toast.error(`Attendance exists for full day on this date. Attendance is preferred over ${requestLabel}.`);
-          setLoading(false);
-          return;
-        }
-        if (isHalfDayRequest && formData.halfDayType === 'first_half' && a.firstHalfPresent) {
-          toast.error(`First-half attendance already present. Attendance is preferred over ${requestLabel} on same half.`);
-          setLoading(false);
-          return;
-        }
-        if (isHalfDayRequest && formData.halfDayType === 'second_half' && a.secondHalfPresent) {
-          toast.error(`Second-half attendance already present. Attendance is preferred over ${requestLabel} on same half.`);
-          setLoading(false);
-          return;
-        }
-        if (!isHalfDayRequest && (a.firstHalfPresent || a.secondHalfPresent)) {
-          toast.error(`Attendance already exists on this date. Attendance is preferred over ${requestLabel}.`);
+        const attendanceGuidance = getLeaveAttendanceSuggestion(approvedRecordsInfo.attendanceInfo, {
+          isHalfDay: isHalfDayRequest,
+          halfDayType: formData.halfDayType || null,
+        });
+        if (attendanceGuidance.blocked) {
+          toast.error(
+            attendanceGuidance.suggestion ||
+              `Attendance conflicts with this ${applyType === 'leave' ? 'leave' : 'OD'} request.`
+          );
           setLoading(false);
           return;
         }
@@ -2660,6 +2663,70 @@ export default function LeavesPage() {
   const selectedLeaveTypeUpper = String(formData.leaveType || '').toUpperCase();
   const isCapTrackedLeave =
     applyType === 'leave' && ['CL', 'CCL', 'EL'].includes(selectedLeaveTypeUpper);
+  const applyPeriodAnchorDate = formData.fromDate || todayIsoDate();
+  const capLeaveDepleted =
+    isCapTrackedLeave &&
+    canFetchCLBalance &&
+    !clBalanceLoading &&
+    clBalanceForMonth !== null &&
+    Number(clBalanceForMonth) <= 0;
+
+  const isSingleDayApply =
+    Boolean(formData.fromDate) &&
+    (formData.fromDate === formData.toDate || !formData.toDate);
+
+  const applyDateCheckState = useMemo(() => {
+    if (!approvedRecordsInfo || !isSingleDayApply) return null;
+    return getApplyDateCheckBannerState(approvedRecordsInfo, {
+      applyType,
+      isHalfDay:
+        applyType === 'leave'
+          ? Boolean(formData.isHalfDay)
+          : formData.odType_extended === 'half_day' || Boolean(formData.isHalfDay),
+      halfDayType: formData.halfDayType || null,
+    });
+  }, [
+    approvedRecordsInfo,
+    isSingleDayApply,
+    applyType,
+    formData.isHalfDay,
+    formData.odType_extended,
+    formData.halfDayType,
+  ]);
+
+  const applyDateBlocked = Boolean(applyDateCheckState?.blocked);
+
+  const halfDayControlsRef = useRef<HTMLDivElement>(null);
+
+  const applyHalfDaySuggestion = useCallback(
+    (half: 'first_half' | 'second_half') => {
+      setFormData((prev) => {
+        if (applyType === 'od') {
+          return {
+            ...prev,
+            odType_extended: 'half_day',
+            isHalfDay: true,
+            halfDayType: half,
+            toDate: prev.fromDate || prev.toDate,
+          };
+        }
+        return {
+          ...prev,
+          isHalfDay: true,
+          halfDayType: half,
+          toDate: prev.fromDate || prev.toDate,
+        };
+      });
+      requestAnimationFrame(() => {
+        halfDayControlsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    },
+    [applyType]
+  );
+
+  const focusHalfDayControls = useCallback(() => {
+    halfDayControlsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
 
   useEffect(() => {
     if (!showApplyDialog) {
@@ -2677,10 +2744,10 @@ export default function LeavesPage() {
   }, [showApplyDialog]);
 
   useEffect(() => {
-    if (!showApplyDialog || applyType !== 'leave' || !isCapTrackedLeave || !formData.fromDate) {
+    if (!showApplyDialog || applyType !== 'leave' || !isCapTrackedLeave) {
       return;
     }
-    if (!canFetchCLBalance) {
+    if (!canFetchCLBalance || !hasValidEmployeeId) {
       setClBalanceForMonth(null);
       setClMonthlyCap(null);
       setPooledLimit(null);
@@ -2696,9 +2763,9 @@ export default function LeavesPage() {
       setClBalanceLoading(true);
       try {
         const res = await api.getLeaveApplyPeriodContext({
-          fromDate: formData.fromDate,
+          fromDate: applyPeriodAnchorDate,
+          employeeId: String(targetEmployeeId),
           leaveType: selectedLeaveTypeUpper,
-          ...(hasValidEmployeeId ? { employeeId: String(targetEmployeeId) } : {}),
         });
         if (cancelled) return;
         if (!res?.success || !res.data) {
@@ -2720,28 +2787,14 @@ export default function LeavesPage() {
           setIsELIncluded(false);
           return;
         }
-        const lt = selectedLeaveTypeUpper;
-        const pooledRem =
-          d.monthlyApplyRemaining != null ? Number(d.monthlyApplyRemaining) : null;
-        const typeRem =
-          d.selectedType?.remaining != null ? Number(d.selectedType.remaining) : null;
-        const pooledApplies =
-          lt === 'CL' || lt === 'CCL' || (lt === 'EL' && !!d.includeELInMonthlyPool);
-        let effectiveRemaining: number | null = null;
-        if (typeRem != null) effectiveRemaining = typeRem;
-        if (pooledApplies && pooledRem != null) {
-          effectiveRemaining =
-            effectiveRemaining != null ? Math.min(effectiveRemaining, pooledRem) : pooledRem;
-        }
-        let fyBal: number | null = null;
-        if (lt === 'CL' && d.balances?.cl != null) fyBal = Number(d.balances.cl);
-        else if (lt === 'CCL' && d.balances?.ccl != null) fyBal = Number(d.balances.ccl);
-        else if (lt === 'EL' && d.balances?.el != null) fyBal = Number(d.balances.el);
-        if (fyBal != null && Number.isFinite(fyBal)) {
-          effectiveRemaining =
-            effectiveRemaining != null ? Math.min(effectiveRemaining, fyBal) : fyBal;
-        }
-        const ceiling = d.monthlyApplyCeiling != null ? Number(d.monthlyApplyCeiling) : null;
+        const effectiveRemaining = computeCapTrackedEffectiveRemaining(d, selectedLeaveTypeUpper);
+        const pooledRem = resolvePooledMonthlyRemaining(d);
+        const ceiling =
+          d.monthlyApplyCeiling != null
+            ? Number(d.monthlyApplyCeiling)
+            : pooledRem != null && d.monthlyApplyConsumed != null
+              ? Number(d.monthlyApplyConsumed) + pooledRem
+              : null;
         setClMonthlyCap(ceiling);
         setPooledLimit(ceiling);
         setClBalanceForMonth(effectiveRemaining);
@@ -2756,7 +2809,10 @@ export default function LeavesPage() {
         );
         setIsCCLIncluded(true);
         setIsELIncluded(!!d.includeELInMonthlyPool);
-        setClAnnualBalance(d.balances?.cl != null ? Number(d.balances.cl) : null);
+        setClAnnualBalance(
+          fyBalanceForCapTrackedType(d, selectedLeaveTypeUpper) ??
+            (d.balances?.cl != null ? Number(d.balances.cl) : null)
+        );
       } catch {
         if (!cancelled) {
           setApplyPeriodContext(null);
@@ -2774,7 +2830,7 @@ export default function LeavesPage() {
     applyType,
     isCapTrackedLeave,
     selectedLeaveTypeUpper,
-    formData.fromDate,
+    applyPeriodAnchorDate,
     canFetchCLBalance,
     hasValidEmployeeId,
     targetEmployeeId,
@@ -5258,11 +5314,11 @@ export default function LeavesPage() {
                     </div>
 
                     <div className="p-4 sm:p-5 space-y-4">
-                      {!formData.fromDate || !canFetchCLBalance ? (
+                      {!canFetchCLBalance || !hasValidEmployeeId ? (
                         <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-4">
                           {currentUser?.role === 'employee'
-                            ? 'Pick a from date to load this period’s limits.'
-                            : 'Pick employee and from date to load limits.'}
+                            ? 'Employee profile is required to load limits.'
+                            : 'Pick an employee to load this period’s limits.'}
                         </p>
                       ) : clBalanceLoading ? (
                         <div className="flex flex-col gap-2 py-2">
@@ -5383,19 +5439,38 @@ export default function LeavesPage() {
 
                             <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-3 space-y-2">
                               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                                Balance (selected type)
+                                This payroll period
                               </p>
                               <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
-                                FY register balance for {selectedLeaveTypeUpper}.
+                                Pool credits left after pending/approved use (CL + CCL
+                                {applyPeriodContext?.includeELInMonthlyPool ? ' + EL' : ''}).
                               </p>
+                              <div className="flex justify-between gap-2 text-xs">
+                                <span className="text-slate-500 dark:text-slate-400">Pool left</span>
+                                <span className="font-bold tabular-nums text-slate-900 dark:text-white">
+                                  {applyPeriodContext
+                                    ? resolvePooledMonthlyRemaining(applyPeriodContext) ?? '—'
+                                    : '—'}
+                                </span>
+                              </div>
                               <div className="flex justify-between gap-2 text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
-                                <span className="text-slate-600 dark:text-slate-300 font-medium">{selectedLeaveTypeUpper} balance</span>
+                                <span className="text-slate-600 dark:text-slate-300 font-medium">
+                                  {selectedLeaveTypeUpper} balance (FY)
+                                </span>
                                 <span className="font-bold tabular-nums">
-                                  {applyPeriodContext?.selectedType?.balance ?? 0}
+                                  {applyPeriodContext?.selectedType?.balance ??
+                                    fyBalanceForCapTrackedType(applyPeriodContext, selectedLeaveTypeUpper) ??
+                                    0}
                                 </span>
                               </div>
                             </div>
                           </div>
+
+                          {!formData.fromDate && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                              Limits shown for today&apos;s payroll period until you choose a from date.
+                            </p>
+                          )}
 
                           {(pendingDaysInCycle ?? 0) > 0 && (
                             <div className="flex items-center justify-between gap-3 rounded-xl border border-orange-200 dark:border-orange-900/40 bg-orange-50/90 dark:bg-orange-950/25 px-3 py-2.5 text-sm text-orange-900 dark:text-orange-100">
@@ -5404,6 +5479,13 @@ export default function LeavesPage() {
                                 Already pending this period
                               </span>
                               <span className="font-black tabular-nums">{pendingDaysInCycle ?? 0} day(s)</span>
+                            </div>
+                          )}
+
+                          {capLeaveDepleted && (
+                            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-800 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
+                              No {selectedLeaveTypeUpper} days left for this payroll period. Change the from date to
+                              another period or pick a different leave type.
                             </div>
                           )}
                         </>
@@ -5540,6 +5622,7 @@ export default function LeavesPage() {
                             min={formData.fromDate || fromMin}
                             max={toMax}
                             value={formData.toDate}
+                            disabled={capLeaveDepleted}
                             onChange={(e) => {
                               let toDate = e.target.value;
                               if (payrollPeriodEnd && toDate > payrollPeriodEnd) {
@@ -5570,7 +5653,7 @@ export default function LeavesPage() {
                               setFormData({ ...formData, toDate });
                             }}
                             required
-                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                           />
                           {isCLFullDay && maxToDateISO && formData.toDate > maxToDateISO && (
                             <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
@@ -5611,21 +5694,23 @@ export default function LeavesPage() {
                   </div>
                 )}
 
-                {/* Attendance/approved-records hint for single-day apply */}
-                {approvedRecordsInfo && (formData.fromDate === formData.toDate || !formData.toDate) && (
-                  <div className="p-3 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-900/20">
-                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
-                      Apply-time check:
-                      {approvedRecordsInfo.attendanceInfo?.label ? ` ${approvedRecordsInfo.attendanceInfo.label}.` : ''}
-                      {approvedRecordsInfo.hasOD
-                        ? ` Approved OD exists (${approvedRecordsInfo.odInfo?.isHalfDay ? (approvedRecordsInfo.odInfo?.halfDayType === 'first_half' ? 'first half' : 'second half') : 'full day'}).`
-                        : ''}
-                      {approvedRecordsInfo.hasLeave
-                        ? ` Approved leave exists (${approvedRecordsInfo.leaveInfo?.isHalfDay ? (approvedRecordsInfo.leaveInfo?.halfDayType === 'first_half' ? 'first half' : 'second half') : 'full day'}).`
-                        : ''}
-                    </p>
-                  </div>
-                )}
+                {(formData.fromDate === formData.toDate || !formData.toDate) &&
+                  (approvedRecordsInfo?.hasLeave ||
+                    approvedRecordsInfo?.hasOD ||
+                    approvedRecordsInfo?.attendanceInfo?.hasAttendance) && (
+                    <LeaveApplyDateCheckBanner
+                      info={approvedRecordsInfo}
+                      applyType={applyType}
+                      isHalfDay={
+                        applyType === 'leave'
+                          ? Boolean(formData.isHalfDay)
+                          : formData.odType_extended === 'half_day' || Boolean(formData.isHalfDay)
+                      }
+                      halfDayType={formData.halfDayType || null}
+                      onApplyHalfDaySuggestion={applyHalfDaySuggestion}
+                      onFocusHalfDayControls={focusHalfDayControls}
+                    />
+                  )}
 
                 {/* Hour-Based OD - Time Pickers */}
                 {applyType === 'od' && formData.odType_extended === 'hours' && (
@@ -5683,12 +5768,17 @@ export default function LeavesPage() {
 
                 {/* Half Day Selection */}
                 {(applyType === 'leave' || (applyType === 'od' && formData.odType_extended === 'half_day')) && (
-                  <div className="flex items-center gap-4">
+                  <div
+                    ref={halfDayControlsRef}
+                    id="leave-apply-half-day-controls"
+                    className="flex flex-wrap items-center gap-4 rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-800/40"
+                  >
                     {applyType === 'leave' && (
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={formData.isHalfDay}
+                          disabled={capLeaveDepleted}
                           onChange={(e) => {
                             if (!e.target.checked) {
                               setFormData({ ...formData, isHalfDay: false, halfDayType: null });
@@ -5697,19 +5787,24 @@ export default function LeavesPage() {
                               setFormData({ ...formData, isHalfDay: true, halfDayType: formData.halfDayType || 'first_half', toDate: formData.fromDate });
                             }
                           }}
-                          className="w-4 h-4 rounded border-slate-300"
+                          className="w-4 h-4 rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
                         />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">Half Day</span>
+                        <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Half day</span>
                       </label>
                     )}
 
                     {(formData.isHalfDay || (applyType === 'od' && formData.odType_extended === 'half_day')) && (
                       <div className="flex items-center gap-2">
-                        {applyType === 'od' && <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Select Half:</span>}
+                        {applyType === 'od' && (
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Select half</span>
+                        )}
+                        {applyType === 'leave' && (
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Which half</span>
+                        )}
                         <select
                           value={formData.halfDayType || 'first_half'}
                           onChange={(e) => setFormData({ ...formData, halfDayType: e.target.value as any })}
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                          className="rounded-lg border-2 border-blue-300 bg-white px-3 py-1.5 text-sm font-semibold dark:border-blue-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                         >
                           <option value="first_half">First Half</option>
                           <option value="second_half">Second Half</option>
@@ -5786,9 +5881,16 @@ export default function LeavesPage() {
                   />
                 </div>
 
-                {applyType === 'leave' && isCapTrackedLeave && clBalanceForMonth !== null && Number(clBalanceForMonth) <= 0 && (
+                {applyDateBlocked && applyDateCheckState?.dateFullyCovered && (
+                  <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200">
+                    This date is already complete for both halves. Pick another date if you need to apply{' '}
+                    {applyType === 'leave' ? 'leave' : 'OD'}.
+                  </div>
+                )}
+                {capLeaveDepleted && (
                   <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-semibold text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
-                    Monthly apply limit reached for this payroll period. You can’t submit a new request for the selected from-date period.
+                    No {selectedLeaveTypeUpper} days left for this payroll period. Change the from date or leave type to
+                    continue.
                   </div>
                 )}
                 </div>
@@ -5806,17 +5908,13 @@ export default function LeavesPage() {
                     disabled={
                       loading ||
                       !isFormValid() ||
-                      (applyType === 'leave' &&
-                        isCapTrackedLeave &&
-                        clBalanceForMonth !== null &&
-                        Number(clBalanceForMonth) <= 0)
+                      capLeaveDepleted ||
+                      applyDateBlocked
                     }
                     className={`flex-1 py-2.5 sm:py-3 text-sm font-bold text-white rounded-xl transition-all ${(loading ||
                       !isFormValid() ||
-                      (applyType === 'leave' &&
-                        isCapTrackedLeave &&
-                        clBalanceForMonth !== null &&
-                        Number(clBalanceForMonth) <= 0))
+                      capLeaveDepleted ||
+                      applyDateBlocked)
                       ? 'opacity-40 cursor-not-allowed grayscale'
                       : 'opacity-100 hover:scale-[1.02] active:scale-95 shadow-lg shadow-blue-500/20'
                       } ${applyType === 'leave' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700 shadow-purple-500/20'}`}
