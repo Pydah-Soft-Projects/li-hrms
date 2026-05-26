@@ -1911,6 +1911,16 @@ exports.processLeaveAction = async (req, res) => {
       }
     }
 
+    // Workflow approval must recalc monthly summary explicitly (post-save isModified('status') is unreliable).
+    if (finalApprove) {
+      try {
+        const { recalculateOnLeaveApproval } = require('../../attendance/services/summaryCalculationService');
+        await recalculateOnLeaveApproval(leave);
+      } catch (summaryErr) {
+        console.error('Failed to recalculate monthly summary after leave approval:', summaryErr);
+      }
+    }
+
     if (finalApprove || finalRejectCanonical) {
       scheduleLeaveRegisterTransferRebuild(leave);
     }

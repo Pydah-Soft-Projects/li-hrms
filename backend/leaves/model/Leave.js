@@ -543,17 +543,27 @@ LeaveSchema.statics.getPendingForRole = async function (role, departmentIds = []
     .sort({ appliedAt: -1 });
 };
 
+// isModified() is always false in post('save'); capture in pre('save') instead.
+// Note: use the no-`next` signature so mongoose treats this as a sync hook.
+LeaveSchema.pre('save', function () {
+  this.$_statusModifiedOnSave = this.isModified('status');
+});
+
+function leaveStatusChangedOnSave(doc) {
+  return doc.$_statusModifiedOnSave === true;
+}
+
 // Post-save hook to update monthly attendance summary and leave records when leave status changes
 LeaveSchema.post('save', async function () {
   try {
     // Update monthly attendance summary when leave is approved
-    if (this.status === 'approved' && this.isModified('status')) {
+    if (this.status === 'approved' && leaveStatusChangedOnSave(this)) {
       const { recalculateOnLeaveApproval } = require('../../attendance/services/summaryCalculationService');
       await recalculateOnLeaveApproval(this);
     }
 
     // Update monthly leave record for any status change (approved, rejected, cancelled)
-    if (this.isModified('status')) {
+    if (leaveStatusChangedOnSave(this)) {
       const { updateMonthlyRecordOnLeaveAction } = require('../services/leaveBalanceService');
       let action = null;
 
@@ -571,13 +581,20 @@ LeaveSchema.post('save', async function () {
     }
 
     // Auto-sync pay register when leave is approved/rejected/cancelled
-    if (this.isModified('status') && (this.status === 'approved' || this.status === 'hr_approved' || this.status === 'hod_approved' || this.status === 'rejected' || this.status === 'cancelled')) {
+    if (
+      leaveStatusChangedOnSave(this) &&
+      (this.status === 'approved' ||
+        this.status === 'hr_approved' ||
+        this.status === 'hod_approved' ||
+        this.status === 'rejected' ||
+        this.status === 'cancelled')
+    ) {
       const { syncPayRegisterFromLeave } = require('../../pay-register/services/autoSyncService');
       await syncPayRegisterFromLeave(this);
     }
 
     // ESI leave OT sync: approved => create/update OT from punches, non-approved => deactivate ESI-converted OT
-    if (this.isModified('status')) {
+    if (leaveStatusChangedOnSave(this)) {
       const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
       if (isEsiLeaveType(this.leaveType)) {
         await syncEsiLeaveOtForLeave(this);
