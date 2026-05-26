@@ -2649,8 +2649,6 @@ export default function LeavesPage() {
     checkHolidayStatus();
   }, [applyType, formData.fromDate, selectedEmployee, currentUser]);
 
-  // Fetch CL balance for the pay-cycle period that contains the selected from date (not calendar month).
-  const isCLSelected = applyType === 'leave' && (formData.leaveType === 'CL' || formData.leaveType?.toUpperCase() === 'CL');
   const targetEmployeeForBalance = selectedEmployee || (employees.length > 0 ? employees[0] : null) ||
     (currentUser?.role === 'employee' ? { _id: (currentUser as any).id, emp_no: (currentUser as any).emp_no || (currentUser as any).employeeId } : null);
   const targetEmployeeId = targetEmployeeForBalance?._id;
@@ -2659,10 +2657,27 @@ export default function LeavesPage() {
   const hasValidEmpNo = targetEmpNo && String(targetEmpNo).trim() !== '' && String(targetEmpNo) !== 'UNKNOWN';
   const canFetchCLBalance = hasValidEmployeeId || hasValidEmpNo;
 
-  // CL monthly-limit validation is enforced on backend during apply.
+  const selectedLeaveTypeUpper = String(formData.leaveType || '').toUpperCase();
+  const isCapTrackedLeave =
+    applyType === 'leave' && ['CL', 'CCL', 'EL'].includes(selectedLeaveTypeUpper);
 
   useEffect(() => {
-    if (!showApplyDialog || applyType !== 'leave' || !isCLSelected || !formData.fromDate) {
+    if (!showApplyDialog) {
+      setClBalanceForMonth(null);
+      setClAnnualBalance(null);
+      setCclBalance(null);
+      setClMonthlyCap(null);
+      setPendingDaysInCycle(null);
+      setIsCCLIncluded(false);
+      setIsELIncluded(false);
+      setElBalance(null);
+      setPooledLimit(null);
+      setApplyPeriodContext(null);
+    }
+  }, [showApplyDialog]);
+
+  useEffect(() => {
+    if (!showApplyDialog || applyType !== 'leave' || !isCapTrackedLeave || !formData.fromDate) {
       return;
     }
     if (!canFetchCLBalance) {
@@ -2682,7 +2697,7 @@ export default function LeavesPage() {
       try {
         const res = await api.getLeaveApplyPeriodContext({
           fromDate: formData.fromDate,
-          leaveType: 'CL',
+          leaveType: selectedLeaveTypeUpper,
           ...(hasValidEmployeeId ? { employeeId: String(targetEmployeeId) } : {}),
         });
         if (cancelled) return;
@@ -2705,21 +2720,30 @@ export default function LeavesPage() {
           setIsELIncluded(false);
           return;
         }
+        const lt = selectedLeaveTypeUpper;
+        const pooledRem =
+          d.monthlyApplyRemaining != null ? Number(d.monthlyApplyRemaining) : null;
         const typeRem =
           d.selectedType?.remaining != null ? Number(d.selectedType.remaining) : null;
+        const pooledApplies =
+          lt === 'CL' || lt === 'CCL' || (lt === 'EL' && !!d.includeELInMonthlyPool);
         let effectiveRemaining: number | null = null;
         if (typeRem != null) effectiveRemaining = typeRem;
-        const fyCl = d.balances?.cl != null ? Number(d.balances.cl) : null;
-        if (fyCl != null && Number.isFinite(fyCl)) {
+        if (pooledApplies && pooledRem != null) {
           effectiveRemaining =
-            effectiveRemaining != null ? Math.min(effectiveRemaining, fyCl) : fyCl;
+            effectiveRemaining != null ? Math.min(effectiveRemaining, pooledRem) : pooledRem;
         }
-        const typeCapUi =
-          d.selectedType?.cap != null && Number(d.selectedType.cap) > 0
-            ? Number(d.selectedType.cap)
-            : null;
-        setClMonthlyCap(typeCapUi);
-        setPooledLimit(d.monthlyApplyCeiling != null ? Number(d.monthlyApplyCeiling) : null);
+        let fyBal: number | null = null;
+        if (lt === 'CL' && d.balances?.cl != null) fyBal = Number(d.balances.cl);
+        else if (lt === 'CCL' && d.balances?.ccl != null) fyBal = Number(d.balances.ccl);
+        else if (lt === 'EL' && d.balances?.el != null) fyBal = Number(d.balances.el);
+        if (fyBal != null && Number.isFinite(fyBal)) {
+          effectiveRemaining =
+            effectiveRemaining != null ? Math.min(effectiveRemaining, fyBal) : fyBal;
+        }
+        const ceiling = d.monthlyApplyCeiling != null ? Number(d.monthlyApplyCeiling) : null;
+        setClMonthlyCap(ceiling);
+        setPooledLimit(ceiling);
         setClBalanceForMonth(effectiveRemaining);
         setPendingDaysInCycle(
           d.monthlyApplyLocked != null ? Number(d.monthlyApplyLocked) : null
@@ -2748,7 +2772,8 @@ export default function LeavesPage() {
   }, [
     showApplyDialog,
     applyType,
-    isCLSelected,
+    isCapTrackedLeave,
+    selectedLeaveTypeUpper,
     formData.fromDate,
     canFetchCLBalance,
     hasValidEmployeeId,
@@ -5214,11 +5239,10 @@ export default function LeavesPage() {
                   )}
                 </div>
 
-                {/* CL summary for month/year – show when Casual Leave selected */}
-                {isCLSelected && (
+                {applyType === 'leave' && isCapTrackedLeave && (
                   <section
                     className="rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-900/40 shadow-sm overflow-hidden"
-                    aria-label="Monthly leave apply limit for casual leave"
+                    aria-label="Monthly leave apply limit for selected leave type"
                   >
                     <div className="px-4 py-3 sm:px-5 sm:py-3.5 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-slate-50 to-blue-50/40 dark:from-slate-800/80 dark:to-slate-900/40 flex justify-between items-start gap-3">
                       <div>
@@ -5226,8 +5250,8 @@ export default function LeavesPage() {
                           Monthly apply limit
                         </h3>
                         <p className="mt-0.5 text-[11px] leading-snug text-slate-500 dark:text-slate-400 max-w-xl">
-                          Days you can still book as CL this payroll period (per-type monthly cap and FY balance). Pending and approved
-                          count toward the cap.
+                          Days still allowed for {selectedLeaveTypeUpper} this payroll period (per-type monthly cap and FY
+                          balance). Pending and approved requests count.
                         </p>
                       </div>
                       {clBalanceLoading && <Loader2 className="w-4 h-4 shrink-0 animate-spin text-blue-500 mt-0.5" />}
@@ -5303,7 +5327,7 @@ export default function LeavesPage() {
                                       aria-valuenow={pct}
                                       aria-valuemin={0}
                                       aria-valuemax={100}
-                                      aria-label="Share of CL per-type monthly cap used"
+                                      aria-label="Share of per-type monthly apply cap used"
                                     >
                                       <div
                                         className={`h-full rounded-full transition-all ${depleted ? 'bg-rose-500' : 'bg-blue-500'} dark:bg-blue-400`}
@@ -5328,67 +5352,47 @@ export default function LeavesPage() {
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/30 p-3 space-y-2">
                               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                                This period’s pool
+                                This period ({selectedLeaveTypeUpper})
                               </p>
                               <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
-                                Scheduled credits for the payroll month (CL + CCL earned here + EL if in cap).
+                                Type-specific scheduled credit and cap for selected leave type.
                               </p>
                               <dl className="space-y-2 text-xs">
                                 <div className="flex justify-between gap-2">
-                                  <dt className="text-slate-500 dark:text-slate-400">Scheduled CL</dt>
+                                  <dt className="text-slate-500 dark:text-slate-400">Scheduled {selectedLeaveTypeUpper}</dt>
                                   <dd className="font-bold tabular-nums text-slate-900 dark:text-white">
-                                    {applyPeriodContext?.scheduledCl ?? '—'}
+                                    {applyPeriodContext?.selectedType?.scheduled ?? '—'}
                                   </dd>
                                 </div>
-                                <div className="flex justify-between gap-2">
-                                  <dt className="text-slate-500 dark:text-slate-400">Scheduled CCL</dt>
-                                  <dd className="font-bold tabular-nums text-slate-900 dark:text-white">
-                                    {applyPeriodContext?.scheduledCcl ?? '—'}
-                                  </dd>
-                                </div>
-                                {applyPeriodContext?.includeELInMonthlyPool && (
-                                  <div className="flex justify-between gap-2">
-                                    <dt className="text-slate-500 dark:text-slate-400">Scheduled EL (in cap)</dt>
-                                    <dd className="font-bold tabular-nums text-slate-900 dark:text-white">
-                                      {applyPeriodContext?.scheduledEl ?? '—'}
-                                    </dd>
-                                  </div>
-                                )}
                                 <div className="flex justify-between gap-2 pt-1 border-t border-slate-200/80 dark:border-slate-700">
                                   <dt className="text-slate-600 dark:text-slate-300 font-semibold">Pool total (credits)</dt>
                                   <dd className="font-black tabular-nums text-slate-900 dark:text-white">
                                     {pooledLimit ?? applyPeriodContext?.monthlyApplyCeiling ?? '—'}
                                   </dd>
                                 </div>
+                                {(applyPeriodContext?.selectedType?.cap ?? 0) > 0 && (
+                                  <div className="flex justify-between gap-2">
+                                    <dt className="text-slate-500 dark:text-slate-400">Per-type policy cap</dt>
+                                    <dd className="font-bold tabular-nums text-slate-900 dark:text-white">
+                                      {applyPeriodContext?.selectedType?.cap}
+                                    </dd>
+                                  </div>
+                                )}
                               </dl>
                             </div>
 
                             <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-3 space-y-2">
                               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                                Balances (substitution)
+                                Balance (selected type)
                               </p>
                               <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
-                                FY running balances. Used when policy substitutes CCL/EL for a CL application.
+                                FY register balance for {selectedLeaveTypeUpper}.
                               </p>
-                              {isCCLIncluded && (
-                                <div className="flex justify-between gap-2 text-xs">
-                                  <span className="text-slate-500 dark:text-slate-400">CCL balance</span>
-                                  <span className="font-bold tabular-nums text-slate-900 dark:text-white">
-                                    {cclBalance ?? 0}
-                                  </span>
-                                </div>
-                              )}
-                              {isELIncluded && (
-                                <div className="flex justify-between gap-2 text-xs">
-                                  <span className="text-slate-500 dark:text-slate-400">EL balance</span>
-                                  <span className="font-bold tabular-nums text-slate-900 dark:text-white">
-                                    {elBalance ?? 0}
-                                  </span>
-                                </div>
-                              )}
                               <div className="flex justify-between gap-2 text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
-                                <span className="text-slate-600 dark:text-slate-300 font-medium">Scheduled pool total</span>
-                                <span className="font-bold tabular-nums">{pooledLimit ?? 0}</span>
+                                <span className="text-slate-600 dark:text-slate-300 font-medium">{selectedLeaveTypeUpper} balance</span>
+                                <span className="font-bold tabular-nums">
+                                  {applyPeriodContext?.selectedType?.balance ?? 0}
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -5402,13 +5406,6 @@ export default function LeavesPage() {
                               <span className="font-black tabular-nums">{pendingDaysInCycle ?? 0} day(s)</span>
                             </div>
                           )}
-
-                          <div className="flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
-                            <span>CL balance (FY register)</span>
-                            <span className="font-semibold tabular-nums text-slate-600 dark:text-slate-300">
-                              {clAnnualBalance ?? 0} day(s)
-                            </span>
-                          </div>
                         </>
                       ) : (
                         <p className="text-sm text-red-600 dark:text-red-400 text-center py-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/40">
@@ -5484,7 +5481,12 @@ export default function LeavesPage() {
                   (() => {
                     const policy = applyType === 'leave' ? leavePolicy : odPolicy;
                     const { minDate: fromMin, maxDate: policyMax } = getPolicyDateBounds(policy);
-                    const isCLFullDay = isCLSelected && !formData.isHalfDay && formData.fromDate && clBalanceForMonth !== null && clBalanceForMonth >= 0;
+                    const isCLFullDay =
+                      isCapTrackedLeave &&
+                      !formData.isHalfDay &&
+                      formData.fromDate &&
+                      clBalanceForMonth !== null &&
+                      clBalanceForMonth >= 0;
                     const maxToDateISO = isCLFullDay && formData.fromDate
                       ? (() => {
                         const d = new Date(formData.fromDate);
@@ -5550,7 +5552,9 @@ export default function LeavesPage() {
                               }
                               if (maxToDateISO && toDate > maxToDateISO) {
                                 toDate = maxToDateISO;
-                                toast.info(`CL allowed for this period: up to ${clBalanceForMonth} days; To date capped.`);
+                                toast.info(
+                                  `${selectedLeaveTypeUpper} allowed for this period: up to ${clBalanceForMonth} days; To date capped.`
+                                );
                               }
                               if (policyMax && toDate > policyMax) toDate = policyMax;
                               const crossErr = buildCrossPayrollPeriodLeaveError(
@@ -5569,7 +5573,9 @@ export default function LeavesPage() {
                             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                           />
                           {isCLFullDay && maxToDateISO && formData.toDate > maxToDateISO && (
-                            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Max {clBalanceForMonth} days for CL in this pay period.</p>
+                            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                              Max {clBalanceForMonth} days for {selectedLeaveTypeUpper} in this pay period.
+                            </p>
                           )}
                         </div>
                       </div>
@@ -5780,7 +5786,7 @@ export default function LeavesPage() {
                   />
                 </div>
 
-                {applyType === 'leave' && isCLSelected && clBalanceForMonth !== null && Number(clBalanceForMonth) <= 0 && (
+                {applyType === 'leave' && isCapTrackedLeave && clBalanceForMonth !== null && Number(clBalanceForMonth) <= 0 && (
                   <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-semibold text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
                     Monthly apply limit reached for this payroll period. You can’t submit a new request for the selected from-date period.
                   </div>
@@ -5801,14 +5807,14 @@ export default function LeavesPage() {
                       loading ||
                       !isFormValid() ||
                       (applyType === 'leave' &&
-                        isCLSelected &&
+                        isCapTrackedLeave &&
                         clBalanceForMonth !== null &&
                         Number(clBalanceForMonth) <= 0)
                     }
                     className={`flex-1 py-2.5 sm:py-3 text-sm font-bold text-white rounded-xl transition-all ${(loading ||
                       !isFormValid() ||
                       (applyType === 'leave' &&
-                        isCLSelected &&
+                        isCapTrackedLeave &&
                         clBalanceForMonth !== null &&
                         Number(clBalanceForMonth) <= 0))
                       ? 'opacity-40 cursor-not-allowed grayscale'
