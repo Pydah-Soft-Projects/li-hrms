@@ -55,6 +55,12 @@ const payrollConfigurationSchema = new mongoose.Schema({
    * If empty, slab uses prorated basic pay (current behavior). Column must appear before statutory columns in order.
    */
   professionTaxSlabEarningsColumnHeader: { type: String, default: '' },
+  /**
+   * Dynamic payroll only: when set, output column header supplies the recovery pool cap.
+   * Advance deducted = min(advance due, pool); EMI deducted = min(emi due, pool − advance deducted).
+   * When empty, dynamic engine receives full scheduled EMI and advance amounts (no cap).
+   */
+  loanAdvancePayableColumnHeader: { type: String, default: '' },
   updatedAt: { type: Date, default: Date.now },
 }, { timestamps: true });
 
@@ -117,6 +123,9 @@ function normalizeConfigPayload(payload = {}) {
   }
   if (payload.professionTaxSlabEarningsColumnHeader !== undefined) {
     update.professionTaxSlabEarningsColumnHeader = String(payload.professionTaxSlabEarningsColumnHeader || '').trim();
+  }
+  if (payload.loanAdvancePayableColumnHeader !== undefined) {
+    update.loanAdvancePayableColumnHeader = String(payload.loanAdvancePayableColumnHeader || '').trim();
   }
   return update;
 }

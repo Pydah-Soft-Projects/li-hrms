@@ -78,6 +78,7 @@ export default function PayrollConfigPage() {
   const [statutoryProratePaidDaysColumnHeader, setStatutoryProratePaidDaysColumnHeader] = useState('');
   const [statutoryProrateTotalDaysColumnHeader, setStatutoryProrateTotalDaysColumnHeader] = useState('');
   const [professionTaxSlabEarningsColumnHeader, setProfessionTaxSlabEarningsColumnHeader] = useState('');
+  const [loanAdvancePayableColumnHeader, setLoanAdvancePayableColumnHeader] = useState('');
 
   const outputFieldOptions = useMemo(() => {
     const extra = config?.employeeSalaryFieldOptions ?? [];
@@ -133,6 +134,7 @@ export default function PayrollConfigPage() {
       setStatutoryProratePaidDaysColumnHeader(data?.statutoryProratePaidDaysColumnHeader ?? '');
       setStatutoryProrateTotalDaysColumnHeader(data?.statutoryProrateTotalDaysColumnHeader ?? '');
       setProfessionTaxSlabEarningsColumnHeader(data?.professionTaxSlabEarningsColumnHeader ?? '');
+      setLoanAdvancePayableColumnHeader(data?.loanAdvancePayableColumnHeader ?? '');
     } catch (e) {
       console.error(e);
       toast.error('Failed to load payroll config');
@@ -171,6 +173,7 @@ export default function PayrollConfigPage() {
         statutoryProratePaidDaysColumnHeader: statutoryProratePaidDaysColumnHeader.trim(),
         statutoryProrateTotalDaysColumnHeader: statutoryProrateTotalDaysColumnHeader.trim(),
         professionTaxSlabEarningsColumnHeader: professionTaxSlabEarningsColumnHeader.trim(),
+        loanAdvancePayableColumnHeader: loanAdvancePayableColumnHeader.trim(),
       };
       await api.putPayrollConfig(payload);
       toast.success('Payroll configuration saved');
@@ -844,6 +847,35 @@ export default function PayrollConfigPage() {
                     const header = (c.header && String(c.header).trim()) || `Column ${(c.order ?? 0) + 1}`;
                     return (
                       <option key={`pt-${header}-${c.order ?? 0}`} value={header}>
+                        {header}
+                      </option>
+                    );
+                  })}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
+                Loan &amp; salary advance — payable cap column (optional)
+              </label>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 max-w-xl">
+                Dynamic payroll only. When <strong>empty</strong>, the engine uses full scheduled salary advance and loan EMI
+                values (no cap) — same as before.
+                When a column is selected, its numeric value is the recovery pool: salary advance is deducted first
+                (up to the pool), then loan EMI from whatever remains. Only the actual deducted amounts appear on the payslip.
+                The column must appear <strong>before</strong> Loan EMI / Salary advance columns in the output list.
+              </p>
+              <select
+                value={loanAdvancePayableColumnHeader}
+                onChange={(e) => setLoanAdvancePayableColumnHeader(e.target.value)}
+                className="w-full max-w-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+              >
+                <option value="">No cap — use full scheduled loan/advance values</option>
+                {[...outputColumns]
+                  .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                  .map((c) => {
+                    const header = (c.header && String(c.header).trim()) || `Column ${(c.order ?? 0) + 1}`;
+                    return (
+                      <option key={`loan-payable-${header}-${c.order ?? 0}`} value={header}>
                         {header}
                       </option>
                     );

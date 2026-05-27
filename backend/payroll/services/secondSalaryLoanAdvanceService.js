@@ -144,23 +144,11 @@ async function processSalaryAdvance(employeeId, payableAmount, payrollMonth = nu
 }
 
 /**
- * Combined helper for 2nd Salary
+ * Combined helper for 2nd Salary — same order as main payroll (advance first, EMI from remainder).
  */
 async function calculateLoanAdvance(employeeId, month, payableAmount = 0) {
-    // IMPORTANT: For many implementations, loans are only deducted from the main salary.
-    // We provide the functionality here to match "full calculation", but it can be
-    // disabled by simply not calling it in calculationService if desired.
-    const loanResult = await calculateTotalEMI(employeeId, month);
-    const advanceResult = await processSalaryAdvance(employeeId, payableAmount, month);
-
-    return {
-        totalEMI: loanResult.totalEMI || 0,
-        emiBreakdown: loanResult.emiBreakdown || [],
-        loanCount: loanResult.loanCount || 0,
-        advanceDeduction: advanceResult.advanceDeduction || 0,
-        advanceBreakdown: advanceResult.advanceBreakdown || [],
-        totalAdvanceBalance: advanceResult.totalAdvanceBalance || 0,
-    };
+    const main = require('./loanAdvanceService');
+    return main.calculateLoanAdvance(employeeId, month, payableAmount);
 }
 
 module.exports = {

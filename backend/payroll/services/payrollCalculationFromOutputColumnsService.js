@@ -456,7 +456,13 @@ async function runRequiredServices(required, record, employee, employeeId, month
     }
 
     if (required.needsLoanAdvance) {
-      await loanAdvanceService.applyDynamicPayrollLoanAdvance(record, employeeId, month, employee);
+      const deferToColumnLoop =
+        config &&
+        typeof config.loanAdvancePayableColumnHeader === 'string' &&
+        config.loanAdvancePayableColumnHeader.trim().length > 0;
+      if (!deferToColumnLoop) {
+        await loanAdvanceService.applyDynamicPayrollLoanAdvance(record, employeeId, month, employee);
+      }
     }
 
     // Recompute "other" from breakdown, excluding components that belong to attendance / statutory / loan / advance / manual
@@ -560,6 +566,33 @@ function getPaidDaysAndTotalDaysFromContext(colContext, payrollConfig) {
   }
   if (totalDaysInMonth == null && colContext) totalDaysInMonth = getFromContextByHeaderNames(colContext, TOTAL_DAYS_HEADER_CANDIDATES);
   return { paidDays, totalDaysInMonth };
+}
+
+/** When payroll config names a column header, return its numeric value as the loan/advance recovery pool cap. */
+function getLoanAdvancePayableFromContext(colContext, payrollConfig) {
+  const h =
+    payrollConfig &&
+    typeof payrollConfig.loanAdvancePayableColumnHeader === 'string' &&
+    payrollConfig.loanAdvancePayableColumnHeader.trim();
+  if (!h || !colContext || typeof colContext !== 'object') return undefined;
+  const primaryKey = headerToKey(h);
+  const candidateKeys = [
+    primaryKey,
+    'earned_salary',
+    'earnedsalary',
+    'earnedSalary',
+    'payable_amount',
+    'payableamount',
+    'net_payable',
+    'netpayable',
+  ].filter(Boolean);
+  for (const key of candidateKeys) {
+    if (!(key in colContext)) continue;
+    const v = colContext[key];
+    const n = typeof v === 'number' && !Number.isNaN(v) ? v : Number(v);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return undefined;
 }
 
 /** When payroll config names a column header, return its numeric value from formula context for Profession Tax slab selection. */
@@ -887,12 +920,16 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
   }
 
   // Already in record (from a previous step)? Coerce only numeric paths.
-  const existing = getValueByPath(record, path);
-  if (existing !== '' && existing !== undefined && existing !== null) {
-    if (typeof existing === 'number' && !Number.isNaN(existing)) return existing;
-    const num = Number(existing);
-    if (!Number.isNaN(num)) return num;
-    return 0;
+  // loanAdvance.* is excluded: getValueByPath returns 0 before apply when deferred to column loop.
+  const isLoanAdvancePath = path.startsWith('loanAdvance.');
+  if (!isLoanAdvancePath) {
+    const existing = getValueByPath(record, path);
+    if (existing !== '' && existing !== undefined && existing !== null) {
+      if (typeof existing === 'number' && !Number.isNaN(existing)) return existing;
+      const num = Number(existing);
+      if (!Number.isNaN(num)) return num;
+      return 0;
+    }
   }
 
   // attendance.* from our built attendance
@@ -1118,10 +1155,23 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
 
   // loanAdvance.totalEMI, advanceDeduction, remainingBalance (cumulative loans remaining after EMI)
   if (path.startsWith('loanAdvance.')) {
-    await loanAdvanceService.applyDynamicPayrollLoanAdvance(record, employeeId, month, employee);
+    const payableHeader =
+      payrollConfig && typeof payrollConfig.loanAdvancePayableColumnHeader === 'string'
+        ? payrollConfig.loanAdvancePayableColumnHeader.trim()
+        : '';
+    let payableFromCol = getLoanAdvancePayableFromContext(colContext, payrollConfig);
+    if (payableFromCol == null && payableHeader) {
+      const earnedFallback = Number(record?.earnings?.payableAmount ?? record?.earnings?.earnedSalary);
+      if (Number.isFinite(earnedFallback) && earnedFallback >= 0) payableFromCol = earnedFallback;
+    }
+    await loanAdvanceService.applyDynamicPayrollLoanAdvance(record, employeeId, month, employee, {
+      payableAmountFromColumn: payableFromCol,
+      payableColumnHeader: payableHeader,
+    });
     if (path === 'loanAdvance.totalEMI') return record.loanAdvance.totalEMI;
     if (path === 'loanAdvance.advanceDeduction') return record.loanAdvance.advanceDeduction;
     if (path === 'loanAdvance.remainingBalance') return record.loanAdvance.remainingBalance;
+    if (path === 'loanAdvance.payableBeforeAdvance') return record.loanAdvance.payableBeforeAdvance;
     return record.loanAdvance.totalEMI || 0;
   }
 
@@ -1531,6 +1581,7 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
             statutoryProratePaidDaysColumnHeader: String(config?.statutoryProratePaidDaysColumnHeader || ''),
             statutoryProrateTotalDaysColumnHeader: String(config?.statutoryProrateTotalDaysColumnHeader || ''),
             professionTaxSlabEarningsColumnHeader: String(config?.professionTaxSlabEarningsColumnHeader || ''),
+            loanAdvancePayableColumnHeader: String(config?.loanAdvancePayableColumnHeader || ''),
             outputColumns: outputColumnsNormalized,
             expandedColumns,
           },
@@ -1612,6 +1663,7 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
           statutoryProratePaidDaysColumnHeader: String(config?.statutoryProratePaidDaysColumnHeader || ''),
           statutoryProrateTotalDaysColumnHeader: String(config?.statutoryProrateTotalDaysColumnHeader || ''),
           professionTaxSlabEarningsColumnHeader: String(config?.professionTaxSlabEarningsColumnHeader || ''),
+          loanAdvancePayableColumnHeader: String(config?.loanAdvancePayableColumnHeader || ''),
           outputColumns: outputColumnsNormalized,
           expandedColumns,
         },

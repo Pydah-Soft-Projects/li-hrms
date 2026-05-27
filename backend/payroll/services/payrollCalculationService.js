@@ -543,44 +543,21 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log(`TOTAL DEDUCTIONS: ${totalDeductions}`);
     console.log('========== DEDUCTIONS CALCULATION END ==========\n');
 
-    // Step 8: Calculate Loan EMI
-    console.log('\n--- Step 8: Loan EMI Calculation ---');
-    const emiResult = await loanAdvanceService.calculateTotalEMI(employeeId, month);
-    console.log('EMI Result:', JSON.stringify(emiResult, null, 2));
-    console.log(`Total EMI: ${emiResult.totalEMI}`);
-    if (emiResult.emiBreakdown && emiResult.emiBreakdown.length > 0) {
-      console.log('EMI Breakdown:');
-      emiResult.emiBreakdown.forEach((emi, idx) => {
-        console.log(`  [${idx + 1}] Loan ID: ${emi.loanId}, EMI: ${emi.emiAmount}`);
-      });
-    }
+    // Step 8–10: Loan/advance — salary advance first from payable pool, then EMI from remainder
+    const payablePool = Math.max(0, grossSalary - totalDeductions);
+    console.log('\n--- Step 8: Payable pool (before loan/advance) ---');
+    console.log(`Payable pool: ${payablePool}`);
 
-    // Step 9: Calculate Payable Amount (Before Advance)
-    const payableAmountBeforeAdvance = grossSalary - totalDeductions - emiResult.totalEMI;
-    console.log(`\n--- Step 9: Payable Amount Before Advance ---`);
-    console.log(`Gross Salary: ${grossSalary}`);
-    console.log(`Total Deductions: ${totalDeductions}`);
-    console.log(`Total EMI: ${emiResult.totalEMI}`);
-    console.log(`Payable Amount Before Advance: ${payableAmountBeforeAdvance}`);
-
-    // Step 10: Process Salary Advance
-    console.log('\n--- Step 10: Salary Advance Processing ---');
-    const advanceResult = await loanAdvanceService.processSalaryAdvance(
-      employeeId,
-      Math.max(0, payableAmountBeforeAdvance),
-      month
-    );
-    console.log('Advance Result:', JSON.stringify(advanceResult, null, 2));
-    console.log(`Advance Deduction: ${advanceResult.advanceDeduction}`);
-    if (advanceResult.advanceBreakdown && advanceResult.advanceBreakdown.length > 0) {
-      console.log('Advance Breakdown:');
-      advanceResult.advanceBreakdown.forEach((adv, idx) => {
-        console.log(`  [${idx + 1}] Advance ID: ${adv.advanceId}, Amount: ${adv.advanceAmount}, Carried Forward: ${adv.carriedForward}`);
-      });
-    }
+    const loanAdvanceResult = await loanAdvanceService.calculateLoanAdvance(employeeId, month, payablePool);
+    console.log('Loan/Advance Result:', JSON.stringify(loanAdvanceResult, null, 2));
+    console.log(`Advance deducted: ${loanAdvanceResult.advanceDeduction}`);
+    console.log(`EMI deducted: ${loanAdvanceResult.totalEMI} (scheduled: ${loanAdvanceResult.scheduledTotalEMI})`);
 
     // Step 11: Calculate Net Salary
-    const baseNet = Math.max(0, payableAmountBeforeAdvance - advanceResult.advanceDeduction);
+    const baseNet = Math.max(
+      0,
+      payablePool - loanAdvanceResult.advanceDeduction - loanAdvanceResult.totalEMI
+    );
 
     // Final Net Salary (Add Incentive Pay here)
     const netSalary = baseNet + basicPayResult.incentive;
@@ -606,12 +583,22 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log(`  Leave Deduction: ${leaveDeductionResult.leaveDeduction}`);
     console.log(`  Other Deductions: ${totalOtherDeductions}`);
     console.log(`  TOTAL DEDUCTIONS: ${totalDeductions}`);
-    console.log(`  Loan EMI: ${emiResult.totalEMI}`);
-    console.log(`  Advance Deduction: ${advanceResult.advanceDeduction}`);
+    console.log(`  Loan EMI deducted: ${loanAdvanceResult.totalEMI}`);
+    console.log(`  Advance deducted: ${loanAdvanceResult.advanceDeduction}`);
     console.log('\nFINAL:');
-    console.log(`  Payable Before Advance: ${payableAmountBeforeAdvance}`);
+    console.log(`  Payable pool: ${payablePool}`);
     console.log(`  NET SALARY: ${netSalary}`);
     console.log('========== PAYROLL CALCULATION END ==========\n');
+
+    const emiResult = {
+      totalEMI: loanAdvanceResult.totalEMI,
+      emiBreakdown: loanAdvanceResult.emiBreakdown,
+    };
+    const advanceResult = {
+      advanceDeduction: loanAdvanceResult.advanceDeduction,
+      advanceBreakdown: loanAdvanceResult.advanceBreakdown,
+    };
+    const payableAmountBeforeAdvance = payablePool;
 
     // Step 12: Get settings snapshot for audit
     const otSettings = await otPayService.getResolvedOTSettings(
@@ -741,9 +728,12 @@ async function calculatePayroll(employeeId, month, userId) {
 
     // Set loan/advance fields using set() with dot notation
     payrollRecord.set('loanAdvance.totalEMI', Number(finalTotalEMI) || 0);
+    payrollRecord.set('loanAdvance.scheduledTotalEMI', Number(loanAdvanceResult.scheduledTotalEMI) || Number(finalTotalEMI) || 0);
     payrollRecord.set('loanAdvance.emiBreakdown', Array.isArray(emiResult.emiBreakdown) ? emiResult.emiBreakdown : []);
     payrollRecord.set('loanAdvance.advanceDeduction', Number(finalAdvanceDeduction) || 0);
     payrollRecord.set('loanAdvance.advanceBreakdown', Array.isArray(advanceResult.advanceBreakdown) ? advanceResult.advanceBreakdown : []);
+    payrollRecord.set('loanAdvance.payablePool', Number(payablePool) || 0);
+    payrollRecord.set('loanAdvance.remainingAfterAdvance', Number(loanAdvanceResult.remainingAfterAdvance) || 0);
 
     // Set calculation metadata
     payrollRecord.set('calculationMetadata', {
@@ -1310,9 +1300,9 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       }
     }
 
-    const loanAdvanceResultRaw = await loanAdvanceService.calculateLoanAdvance(employeeId, month);
-    const loanAdvanceResult = loanAdvanceResultRaw;
-    totalDeductions += (loanAdvanceResult.totalEMI || 0) + (loanAdvanceResult.totalAdvanceDeduction || 0);
+    const payablePool = Math.max(0, grossAmountSalary - totalDeductions);
+    const loanAdvanceResult = await loanAdvanceService.calculateLoanAdvance(employeeId, month, payablePool);
+    totalDeductions += (loanAdvanceResult.totalEMI || 0) + (loanAdvanceResult.advanceDeduction || 0);
 
     // Base Net Salary (Earnings - Deductions - Loans)
     const baseNet = Math.max(0, grossAmountSalary - totalDeductions);
@@ -1338,7 +1328,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     payrollRecord.set('totalPayableShifts', Number(payableShifts) || 0);
     payrollRecord.set('elUsedInPayroll', Number(elUsedInPayroll) || 0);
     payrollRecord.set('netSalary', Number(netSalary) || 0);
-    payrollRecord.set('payableAmountBeforeAdvance', Number(grossAmountSalary) || 0);
+    payrollRecord.set('payableAmountBeforeAdvance', Number(payablePool) || 0);
     payrollRecord.set('division_id', employee.division_id);
     payrollRecord.set('status', 'calculated');
 
@@ -1400,7 +1390,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     payrollRecord.set('deductions.leaveDeduction', 0);
     payrollRecord.set(
       'deductions.totalOtherDeductions',
-      Number(totalDeductions - absentDeductionAmount - (loanAdvanceResult.totalEMI || 0) - (loanAdvanceResult.totalAdvanceDeduction || 0)) || 0
+      Number(totalDeductions - absentDeductionAmount - (loanAdvanceResult.totalEMI || 0) - (loanAdvanceResult.advanceDeduction || 0)) || 0
     );
     payrollRecord.set(
       'deductions.otherDeductions',
@@ -1434,7 +1424,10 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
 
     // Loan/advance
     payrollRecord.set('loanAdvance.totalEMI', Number(loanAdvanceResult.totalEMI || 0) || 0);
-    payrollRecord.set('loanAdvance.advanceDeduction', Number(loanAdvanceResult.totalAdvanceDeduction || 0) || 0);
+    payrollRecord.set('loanAdvance.scheduledTotalEMI', Number(loanAdvanceResult.scheduledTotalEMI || loanAdvanceResult.totalEMI || 0) || 0);
+    payrollRecord.set('loanAdvance.advanceDeduction', Number(loanAdvanceResult.advanceDeduction || 0) || 0);
+    payrollRecord.set('loanAdvance.payablePool', Number(loanAdvanceResult.payablePool ?? payablePool) || 0);
+    payrollRecord.set('loanAdvance.remainingAfterAdvance', Number(loanAdvanceResult.remainingAfterAdvance || 0) || 0);
 
     payrollRecord.markModified('earnings');
     payrollRecord.markModified('deductions');
@@ -1599,7 +1592,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         attendanceDeductionBreakdown: attendanceDeductionResult?.breakdown || {},
         permissionDeduction: 0,
         leaveDeduction: 0,
-        totalOtherDeductions: totalDeductions - (absentDeductionAmount || 0) - (loanAdvanceResult.totalEMI || 0) - (loanAdvanceResult.totalAdvanceDeduction || 0),
+        totalOtherDeductions: totalDeductions - (absentDeductionAmount || 0) - (loanAdvanceResult.totalEMI || 0) - (loanAdvanceResult.advanceDeduction || 0),
         otherDeductions: Array.isArray(deductionBreakdown) ? deductionBreakdown.filter((d) => d.source !== 'statutory').map((d) => ({
           name: d.name,
           amount: d.amount,
@@ -1620,7 +1613,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       },
       loanAdvance: {
         totalEMI: loanAdvanceResult.totalEMI || 0,
-        advanceDeduction: loanAdvanceResult.totalAdvanceDeduction || 0,
+        advanceDeduction: loanAdvanceResult.advanceDeduction || 0,
       },
       arrears: {
         arrearsAmount: payrollRecord.arrearsAmount || 0,

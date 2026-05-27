@@ -40,6 +40,7 @@ exports.upsertPayrollConfig = async (req, res) => {
       statutoryProratePaidDaysColumnHeader,
       statutoryProrateTotalDaysColumnHeader,
       professionTaxSlabEarningsColumnHeader,
+      loanAdvancePayableColumnHeader,
     } = req.body || {};
     const normalizedOutputColumns = Array.isArray(outputColumns)
       ? outputColumns.map((c, i) => {
@@ -64,6 +65,7 @@ exports.upsertPayrollConfig = async (req, res) => {
     if (statutoryProratePaidDaysColumnHeader !== undefined) payload.statutoryProratePaidDaysColumnHeader = statutoryProratePaidDaysColumnHeader;
     if (statutoryProrateTotalDaysColumnHeader !== undefined) payload.statutoryProrateTotalDaysColumnHeader = statutoryProrateTotalDaysColumnHeader;
     if (professionTaxSlabEarningsColumnHeader !== undefined) payload.professionTaxSlabEarningsColumnHeader = professionTaxSlabEarningsColumnHeader;
+    if (loanAdvancePayableColumnHeader !== undefined) payload.loanAdvancePayableColumnHeader = loanAdvancePayableColumnHeader;
     const config = await PayrollConfiguration.upsert(payload);
     return res.status(200).json({ success: true, data: config });
   } catch (error) {

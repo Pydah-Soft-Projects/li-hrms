@@ -1,0 +1,694 @@
+{
+  "month": "2026-04",
+  "prefix": "LA_TEST",
+  "divisionId": "6a16db0d9461fd4f9bd243bd",
+  "departmentId": "6a16db0d9461fd4f9bd243c5",
+  "employees": [
+    {
+      "code": "E01",
+      "empNo": "LA_TEST_E01",
+      "employeeId": "6a16db0d9461fd4f9bd243d3",
+      "gross": 40000,
+      "advanceBalance": 0,
+      "emi": 0
+    },
+    {
+      "code": "E02",
+      "empNo": "LA_TEST_E02",
+      "employeeId": "6a16db0e9461fd4f9bd243dc",
+      "gross": 40000,
+      "advanceBalance": 12000,
+      "emi": 0
+    },
+    {
+      "code": "E03",
+      "empNo": "LA_TEST_E03",
+      "employeeId": "6a16db0e9461fd4f9bd243e7",
+      "gross": 40000,
+      "advanceBalance": 0,
+      "emi": 5000
+    },
+    {
+      "code": "E04",
+      "empNo": "LA_TEST_E04",
+      "employeeId": "6a16db0e9461fd4f9bd243f2",
+      "gross": 50000,
+      "advanceBalance": 8000,
+      "emi": 5000
+    },
+    {
+      "code": "E05",
+      "empNo": "LA_TEST_E05",
+      "employeeId": "6a16db0e9461fd4f9bd243ff",
+      "gross": 20000,
+      "advanceBalance": 25000,
+      "emi": 5000
+    },
+    {
+      "code": "E06",
+      "empNo": "LA_TEST_E06",
+      "employeeId": "6a16db0e9461fd4f9bd2440c",
+      "gross": 22000,
+      "advanceBalance": 18000,
+      "emi": 8000
+    }
+  ],
+  "runs": [
+    {
+      "mode": "uncapped",
+      "results": [
+        {
+          "code": "E01",
+          "empNo": "LA_TEST_E01",
+          "payrollRecordId": "6a16db0f9461fd4f9bd24453",
+          "earned": 38709.68,
+          "advanceDeduction": 0,
+          "loanEMI": 0,
+          "netSalary": 0,
+          "checks": [
+            {
+              "ok": true,
+              "label": "payroll advance",
+              "actual": 0,
+              "expected": 0
+            },
+            {
+              "ok": true,
+              "label": "payroll EMI",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "row": {
+            "Emp No": "LA_TEST_E01",
+            "Name": "LA_TEST Baseline — no loan/advance",
+            "Basic Pay": 40000,
+            "Paid Days": 30,
+            "Earned Salary": 38709.68,
+            "Salary Advance": 0,
+            "Loan EMI": 0,
+            "Net Salary": 0
+          }
+        },
+        {
+          "code": "E02",
+          "empNo": "LA_TEST_E02",
+          "payrollRecordId": "6a16db0f9461fd4f9bd24477",
+          "earned": 38709.68,
+          "advanceDeduction": 12000,
+          "loanEMI": 0,
+          "netSalary": 0,
+          "checks": [
+            {
+              "ok": true,
+              "label": "payroll advance",
+              "actual": 12000,
+              "expected": 12000
+            },
+            {
+              "ok": true,
+              "label": "payroll EMI",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "row": {
+            "Emp No": "LA_TEST_E02",
+            "Name": "LA_TEST Salary advance only",
+            "Basic Pay": 40000,
+            "Paid Days": 30,
+            "Earned Salary": 38709.68,
+            "Salary Advance": 12000,
+            "Loan EMI": 0,
+            "Net Salary": 0
+          }
+        },
+        {
+          "code": "E03",
+          "empNo": "LA_TEST_E03",
+          "payrollRecordId": "6a16db0f9461fd4f9bd24497",
+          "earned": 38709.68,
+          "advanceDeduction": 0,
+          "loanEMI": 5000,
+          "netSalary": 0,
+          "checks": [
+            {
+              "ok": true,
+              "label": "payroll advance",
+              "actual": 0,
+              "expected": 0
+            },
+            {
+              "ok": true,
+              "label": "payroll EMI",
+              "actual": 5000,
+              "expected": 5000
+            }
+          ],
+          "row": {
+            "Emp No": "LA_TEST_E03",
+            "Name": "LA_TEST Loan EMI only",
+            "Basic Pay": 40000,
+            "Paid Days": 30,
+            "Earned Salary": 38709.68,
+            "Salary Advance": 0,
+            "Loan EMI": 5000,
+            "Net Salary": 0
+          }
+        },
+        {
+          "code": "E04",
+          "empNo": "LA_TEST_E04",
+          "payrollRecordId": "6a16db0f9461fd4f9bd244b7",
+          "earned": 48387.1,
+          "advanceDeduction": 8000,
+          "loanEMI": 5000,
+          "netSalary": 0,
+          "checks": [
+            {
+              "ok": true,
+              "label": "payroll advance",
+              "actual": 8000,
+              "expected": 8000
+            },
+            {
+              "ok": true,
+              "label": "payroll EMI",
+              "actual": 5000,
+              "expected": 5000
+            }
+          ],
+          "row": {
+            "Emp No": "LA_TEST_E04",
+            "Name": "LA_TEST Advance + EMI — pool covers both",
+            "Basic Pay": 50000,
+            "Paid Days": 30,
+            "Earned Salary": 48387.1,
+            "Salary Advance": 8000,
+            "Loan EMI": 5000,
+            "Net Salary": 0
+          }
+        },
+        {
+          "code": "E05",
+          "empNo": "LA_TEST_E05",
+          "payrollRecordId": "6a16db109461fd4f9bd244d9",
+          "earned": 19354.84,
+          "advanceDeduction": 25000,
+          "loanEMI": 5000,
+          "netSalary": 0,
+          "checks": [
+            {
+              "ok": true,
+              "label": "payroll advance",
+              "actual": 25000,
+              "expected": 25000
+            },
+            {
+              "ok": true,
+              "label": "payroll EMI",
+              "actual": 5000,
+              "expected": 5000
+            }
+          ],
+          "row": {
+            "Emp No": "LA_TEST_E05",
+            "Name": "LA_TEST Advance exceeds earned (cap trims advance, no EMI)",
+            "Basic Pay": 20000,
+            "Paid Days": 30,
+            "Earned Salary": 19354.84,
+            "Salary Advance": 25000,
+            "Loan EMI": 5000,
+            "Net Salary": 0
+          }
+        },
+        {
+          "code": "E06",
+          "empNo": "LA_TEST_E06",
+          "payrollRecordId": "6a16db109461fd4f9bd244fb",
+          "earned": 21290.32,
+          "advanceDeduction": 18000,
+          "loanEMI": 8000,
+          "netSalary": 0,
+          "checks": [
+            {
+              "ok": true,
+              "label": "payroll advance",
+              "actual": 18000,
+              "expected": 18000
+            },
+            {
+              "ok": true,
+              "label": "payroll EMI",
+              "actual": 8000,
+              "expected": 8000
+            }
+          ],
+          "row": {
+            "Emp No": "LA_TEST_E06",
+            "Name": "LA_TEST Advance + EMI — EMI trimmed by remainder",
+            "Basic Pay": 22000,
+            "Paid Days": 30,
+            "Earned Salary": 21290.32,
+            "Salary Advance": 18000,
+            "Loan EMI": 8000,
+            "Net Salary": 0
+          }
+        }
+      ]
+    },
+    {
+      "mode": "capped",
+      "capColumn": "Earned Salary",
+      "results": [
+        {
+          "code": "E01",
+          "empNo": "LA_TEST_E01",
+          "payrollRecordId": "6a16db0f9461fd4f9bd24453",
+          "earned": 38709.68,
+          "advanceDeduction": 0,
+          "loanEMI": 0,
+          "netSalary": 0,
+          "checks": [
+            {
+              "ok": true,
+              "label": "payroll advance",
+              "actual": 0,
+              "expected": 0
+            },
+            {
+              "ok": true,
+              "label": "payroll EMI",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "row": {
+            "Emp No": "LA_TEST_E01",
+            "Name": "LA_TEST Baseline — no loan/advance",
+            "Basic Pay": 40000,
+            "Paid Days": 30,
+            "Earned Salary": 38709.68,
+            "Salary Advance": 0,
+            "Loan EMI": 0,
+            "Net Salary": 0
+          }
+        },
+        {
+          "code": "E02",
+          "empNo": "LA_TEST_E02",
+          "payrollRecordId": "6a16db0f9461fd4f9bd24477",
+          "earned": 38709.68,
+          "advanceDeduction": 12000,
+          "loanEMI": 0,
+          "netSalary": 0,
+          "checks": [
+            {
+              "ok": true,
+              "label": "payroll advance",
+              "actual": 12000,
+              "expected": 12000
+            },
+            {
+              "ok": true,
+              "label": "payroll EMI",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "row": {
+            "Emp No": "LA_TEST_E02",
+            "Name": "LA_TEST Salary advance only",
+            "Basic Pay": 40000,
+            "Paid Days": 30,
+            "Earned Salary": 38709.68,
+            "Salary Advance": 12000,
+            "Loan EMI": 0,
+            "Net Salary": 0
+          }
+        },
+        {
+          "code": "E03",
+          "empNo": "LA_TEST_E03",
+          "payrollRecordId": "6a16db0f9461fd4f9bd24497",
+          "earned": 38709.68,
+          "advanceDeduction": 0,
+          "loanEMI": 5000,
+          "netSalary": 0,
+          "checks": [
+            {
+              "ok": true,
+              "label": "payroll advance",
+              "actual": 0,
+              "expected": 0
+            },
+            {
+              "ok": true,
+              "label": "payroll EMI",
+              "actual": 5000,
+              "expected": 5000
+            }
+          ],
+          "row": {
+            "Emp No": "LA_TEST_E03",
+            "Name": "LA_TEST Loan EMI only",
+            "Basic Pay": 40000,
+            "Paid Days": 30,
+            "Earned Salary": 38709.68,
+            "Salary Advance": 0,
+            "Loan EMI": 5000,
+            "Net Salary": 0
+          }
+        },
+        {
+          "code": "E04",
+          "empNo": "LA_TEST_E04",
+          "payrollRecordId": "6a16db0f9461fd4f9bd244b7",
+          "earned": 48387.1,
+          "advanceDeduction": 8000,
+          "loanEMI": 5000,
+          "netSalary": 0,
+          "checks": [
+            {
+              "ok": true,
+              "label": "payroll advance",
+              "actual": 8000,
+              "expected": 8000
+            },
+            {
+              "ok": true,
+              "label": "payroll EMI",
+              "actual": 5000,
+              "expected": 5000
+            }
+          ],
+          "row": {
+            "Emp No": "LA_TEST_E04",
+            "Name": "LA_TEST Advance + EMI — pool covers both",
+            "Basic Pay": 50000,
+            "Paid Days": 30,
+            "Earned Salary": 48387.1,
+            "Salary Advance": 8000,
+            "Loan EMI": 5000,
+            "Net Salary": 0
+          }
+        },
+        {
+          "code": "E05",
+          "empNo": "LA_TEST_E05",
+          "payrollRecordId": "6a16db109461fd4f9bd244d9",
+          "earned": 19354.84,
+          "advanceDeduction": 19354.84,
+          "loanEMI": 0,
+          "netSalary": 0,
+          "checks": [
+            {
+              "ok": false,
+              "label": "payroll advance",
+              "actual": 19354.84,
+              "expected": 20000
+            },
+            {
+              "ok": true,
+              "label": "payroll EMI",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "row": {
+            "Emp No": "LA_TEST_E05",
+            "Name": "LA_TEST Advance exceeds earned (cap trims advance, no EMI)",
+            "Basic Pay": 20000,
+            "Paid Days": 30,
+            "Earned Salary": 19354.84,
+            "Salary Advance": 19354.84,
+            "Loan EMI": 0,
+            "Net Salary": 0
+          }
+        },
+        {
+          "code": "E06",
+          "empNo": "LA_TEST_E06",
+          "payrollRecordId": "6a16db109461fd4f9bd244fb",
+          "earned": 21290.32,
+          "advanceDeduction": 18000,
+          "loanEMI": 3290.32,
+          "netSalary": 0,
+          "checks": [
+            {
+              "ok": true,
+              "label": "payroll advance",
+              "actual": 18000,
+              "expected": 18000
+            },
+            {
+              "ok": false,
+              "label": "payroll EMI",
+              "actual": 3290.32,
+              "expected": 4000
+            }
+          ],
+          "row": {
+            "Emp No": "LA_TEST_E06",
+            "Name": "LA_TEST Advance + EMI — EMI trimmed by remainder",
+            "Basic Pay": 22000,
+            "Paid Days": 30,
+            "Earned Salary": 21290.32,
+            "Salary Advance": 18000,
+            "Loan EMI": 3290.32,
+            "Net Salary": 0
+          }
+        }
+      ]
+    }
+  ],
+  "serviceChecks": [
+    {
+      "code": "E01",
+      "checks": [
+        {
+          "ok": true,
+          "label": "uncapped advance",
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "ok": true,
+          "label": "uncapped EMI",
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "ok": true,
+          "label": "capped advance",
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "ok": true,
+          "label": "capped EMI",
+          "actual": 0,
+          "expected": 0
+        }
+      ],
+      "uncapped": {
+        "advance": 0,
+        "emi": 0
+      },
+      "capped": {
+        "advance": 0,
+        "emi": 0
+      }
+    },
+    {
+      "code": "E02",
+      "checks": [
+        {
+          "ok": true,
+          "label": "uncapped advance",
+          "actual": 12000,
+          "expected": 12000
+        },
+        {
+          "ok": true,
+          "label": "uncapped EMI",
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "ok": true,
+          "label": "capped advance",
+          "actual": 12000,
+          "expected": 12000
+        },
+        {
+          "ok": true,
+          "label": "capped EMI",
+          "actual": 0,
+          "expected": 0
+        }
+      ],
+      "uncapped": {
+        "advance": 12000,
+        "emi": 0
+      },
+      "capped": {
+        "advance": 12000,
+        "emi": 0
+      }
+    },
+    {
+      "code": "E03",
+      "checks": [
+        {
+          "ok": true,
+          "label": "uncapped advance",
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "ok": true,
+          "label": "uncapped EMI",
+          "actual": 5000,
+          "expected": 5000
+        },
+        {
+          "ok": true,
+          "label": "capped advance",
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "ok": true,
+          "label": "capped EMI",
+          "actual": 5000,
+          "expected": 5000
+        }
+      ],
+      "uncapped": {
+        "advance": 0,
+        "emi": 5000
+      },
+      "capped": {
+        "advance": 0,
+        "emi": 5000
+      }
+    },
+    {
+      "code": "E04",
+      "checks": [
+        {
+          "ok": true,
+          "label": "uncapped advance",
+          "actual": 8000,
+          "expected": 8000
+        },
+        {
+          "ok": true,
+          "label": "uncapped EMI",
+          "actual": 5000,
+          "expected": 5000
+        },
+        {
+          "ok": true,
+          "label": "capped advance",
+          "actual": 8000,
+          "expected": 8000
+        },
+        {
+          "ok": true,
+          "label": "capped EMI",
+          "actual": 5000,
+          "expected": 5000
+        }
+      ],
+      "uncapped": {
+        "advance": 8000,
+        "emi": 5000
+      },
+      "capped": {
+        "advance": 8000,
+        "emi": 5000
+      }
+    },
+    {
+      "code": "E05",
+      "checks": [
+        {
+          "ok": true,
+          "label": "uncapped advance",
+          "actual": 25000,
+          "expected": 25000
+        },
+        {
+          "ok": true,
+          "label": "uncapped EMI",
+          "actual": 5000,
+          "expected": 5000
+        },
+        {
+          "ok": true,
+          "label": "capped advance",
+          "actual": 20000,
+          "expected": 20000
+        },
+        {
+          "ok": true,
+          "label": "capped EMI",
+          "actual": 0,
+          "expected": 0
+        }
+      ],
+      "uncapped": {
+        "advance": 25000,
+        "emi": 5000
+      },
+      "capped": {
+        "advance": 20000,
+        "emi": 0
+      }
+    },
+    {
+      "code": "E06",
+      "checks": [
+        {
+          "ok": true,
+          "label": "uncapped advance",
+          "actual": 18000,
+          "expected": 18000
+        },
+        {
+          "ok": true,
+          "label": "uncapped EMI",
+          "actual": 8000,
+          "expected": 8000
+        },
+        {
+          "ok": true,
+          "label": "capped advance",
+          "actual": 18000,
+          "expected": 18000
+        },
+        {
+          "ok": true,
+          "label": "capped EMI",
+          "actual": 4000,
+          "expected": 4000
+        }
+      ],
+      "uncapped": {
+        "advance": 18000,
+        "emi": 8000
+      },
+      "capped": {
+        "advance": 18000,
+        "emi": 4000
+      }
+    }
+  ],
+  "summary": {
+    "passed": 46,
+    "failed": 2,
+    "total": 48
+  }
+}

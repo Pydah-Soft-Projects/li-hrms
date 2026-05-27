@@ -305,6 +305,8 @@ export interface PayrollConfig {
   statutoryProrateTotalDaysColumnHeader?: string;
   /** Dynamic payroll: output column header whose value selects the Profession Tax slab (if empty, prorated basic is used). */
   professionTaxSlabEarningsColumnHeader?: string;
+  /** Dynamic payroll: when set, column value caps recovery (advance first, EMI from remainder). Empty = uncapped scheduled values. */
+  loanAdvancePayableColumnHeader?: string;
   updatedAt?: string;
   /** From Employee Application Form "Salaries" group — use as paysheet field paths employee.salaries.<fieldId> */
   employeeSalaryFieldOptions?: { value: string; label: string }[];
@@ -3363,6 +3365,23 @@ export const api = {
     });
   },
 
+  correctLoanRepayment: async (
+    id: string,
+    data: {
+      totalPaid?: number;
+      installmentsPaid?: number;
+      remainingBalance?: number;
+      totalInstallments?: number;
+      remarks?: string;
+      changeReason: string;
+    }
+  ) => {
+    return apiRequest<any>(`/loans/${id}/repayment-correction`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
   // Get pending approvals
   getPendingLoanApprovals: async () => {
     return apiRequest<any>('/loans/pending-approvals', { method: 'GET' });
@@ -4260,6 +4279,7 @@ export const api = {
     statutoryProratePaidDaysColumnHeader?: string;
     statutoryProrateTotalDaysColumnHeader?: string;
     professionTaxSlabEarningsColumnHeader?: string;
+    loanAdvancePayableColumnHeader?: string;
   }) => {
     return apiRequest<{ success: boolean; data: PayrollConfig }>('/payroll/config', { method: 'PUT', body: JSON.stringify(body) });
   },

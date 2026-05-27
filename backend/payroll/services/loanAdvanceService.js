@@ -3,6 +3,7 @@ const {
   setNextPaymentDateFromInstallmentsPaid,
   isRepaymentDueForPayrollMonth,
 } = require('../../loans/services/loanHistoryRepairService');
+const { getDueInstallmentAmount } = require('../../loans/services/loanInstallmentScheduleService');
 
 /**
  * Loan & Advance Processing Service
@@ -78,12 +79,14 @@ async function calculateTotalEMI(employeeId, payrollMonth = null) {
     const emiBreakdown = [];
 
     for (const loan of loans) {
-      const emiAmount = loan.loanConfig?.emiAmount || 0;
+      const emiAmount = getDueInstallmentAmount(loan);
       if (emiAmount > 0) {
         totalEMI += emiAmount;
         emiBreakdown.push({
           loanId: loan._id,
           emiAmount: Math.round(emiAmount * 100) / 100,
+          scheduledEmi: Number(loan.loanConfig?.emiAmount) || emiAmount,
+          installmentNumber: (Number(loan.repayment?.installmentsPaid) || 0) + 1,
         });
       }
     }
@@ -412,20 +415,100 @@ async function updateAdvanceRecordsAfterDeduction(advanceBreakdown, month, userI
 }
 
 /**
- * Combined helper used by payroll: returns both loan EMI and advance deductions.
- * - totalEMI / emiBreakdown from active loans
- * - advanceDeduction / advanceBreakdown from active advances relative to payableAmount
+ * Cap scheduled EMI breakdown to a maximum deductible amount (proportional split).
  */
-async function calculateLoanAdvance(employeeId, month, payableAmount = 0) {
+function capEmiBreakdownToAmount(emiBreakdown, maxAmount) {
+  const list = Array.isArray(emiBreakdown) ? emiBreakdown : [];
+  const cap = Math.max(0, Number(maxAmount) || 0);
+  const scheduledTotal = list.reduce((sum, item) => sum + (Number(item.emiAmount) || 0), 0);
+  if (scheduledTotal <= 0) {
+    return { totalEMI: 0, scheduledTotalEMI: 0, emiBreakdown: [] };
+  }
+  if (scheduledTotal <= cap) {
+    return {
+      totalEMI: Math.round(scheduledTotal * 100) / 100,
+      scheduledTotalEMI: Math.round(scheduledTotal * 100) / 100,
+      emiBreakdown: list.map((item) => ({
+        ...item,
+        scheduledEmi: Number(item.emiAmount) || 0,
+        emiCarriedForward: 0,
+      })),
+    };
+  }
+  const ratio = cap / scheduledTotal;
+  const capped = list.map((item) => {
+    const scheduledEmi = Number(item.emiAmount) || 0;
+    const deducted = Math.round(scheduledEmi * ratio * 100) / 100;
+    return {
+      ...item,
+      emiAmount: deducted,
+      scheduledEmi,
+      emiCarriedForward: Math.round((scheduledEmi - deducted) * 100) / 100,
+    };
+  });
+  let totalEMI = capped.reduce((sum, item) => sum + (Number(item.emiAmount) || 0), 0);
+  const diff = cap - totalEMI;
+  if (Math.abs(diff) > 0.001 && capped.length > 0) {
+    capped[capped.length - 1].emiAmount = Math.round((capped[capped.length - 1].emiAmount + diff) * 100) / 100;
+    capped[capped.length - 1].emiCarriedForward = Math.round(
+      (capped[capped.length - 1].scheduledEmi - capped[capped.length - 1].emiAmount) * 100
+    ) / 100;
+    totalEMI = cap;
+  }
+  return {
+    totalEMI: Math.round(totalEMI * 100) / 100,
+    scheduledTotalEMI: Math.round(scheduledTotal * 100) / 100,
+    emiBreakdown: capped,
+  };
+}
+
+/**
+ * Raw loan/advance amounts for dynamic payroll when no payable cap column is configured.
+ * Returns full scheduled EMI and full advance balance due — no pool capping.
+ */
+async function calculateLoanAdvanceUncapped(employeeId, month) {
   const loanResult = await calculateTotalEMI(employeeId, month);
-  const advanceResult = await processSalaryAdvance(employeeId, payableAmount, month);
+  const advanceResult = await processSalaryAdvance(employeeId, Number.MAX_SAFE_INTEGER, month);
 
   return {
-    totalEMI: loanResult.totalEMI || 0,
+    totalEMI: loanResult.totalEMI,
+    scheduledTotalEMI: loanResult.totalEMI,
     emiBreakdown: loanResult.emiBreakdown || [],
     loanCount: loanResult.loanCount || 0,
     remainingBalance: loanResult.remainingBalance ?? 0,
     advanceDeduction: advanceResult.advanceDeduction || 0,
+    advanceBreakdown: advanceResult.advanceBreakdown || [],
+    totalAdvanceBalance: advanceResult.totalAdvanceBalance || 0,
+  };
+}
+
+/**
+ * Combined helper used by payroll (with payable pool cap).
+ * Order: (1) salary advance from payable pool, (2) loan EMI from remainder (capped).
+ * Salary advance deducted = payable >= advanceDue ? advanceDue : payable
+ * Loan EMI deducted = (payable − advanceDeducted) >= emiDue ? emiDue : (payable − advanceDeducted)
+ */
+async function calculateLoanAdvance(employeeId, month, payableAmount = 0) {
+  const payablePool = Math.max(0, Number(payableAmount) || 0);
+
+  // 1. Salary advance first — deduct only up to payable pool
+  const advanceResult = await processSalaryAdvance(employeeId, payablePool, month);
+  const advanceDeduction = advanceResult.advanceDeduction || 0;
+  const remainingAfterAdvance = Math.max(0, payablePool - advanceDeduction);
+
+  // 2. Loan EMI from whatever remains in the payable pool
+  const loanResult = await calculateTotalEMI(employeeId, month);
+  const capped = capEmiBreakdownToAmount(loanResult.emiBreakdown || [], remainingAfterAdvance);
+
+  return {
+    payablePool: Math.round(payablePool * 100) / 100,
+    remainingAfterAdvance: Math.round(remainingAfterAdvance * 100) / 100,
+    totalEMI: capped.totalEMI,
+    scheduledTotalEMI: capped.scheduledTotalEMI,
+    emiBreakdown: capped.emiBreakdown,
+    loanCount: loanResult.loanCount || 0,
+    remainingBalance: loanResult.remainingBalance ?? 0,
+    advanceDeduction,
     advanceBreakdown: advanceResult.advanceBreakdown || [],
     totalAdvanceBalance: advanceResult.totalAdvanceBalance || 0,
   };
@@ -453,8 +536,9 @@ function sumOtherDeductionsForAdvancePayable(record) {
 }
 
 /**
- * Payable before salary advance from an in-progress payroll record (dynamic output-column engine).
- * gross − attendance − permission − statutory − filtered other − EMI. Falls back to employee gross when needed.
+ * Payable pool for loan/advance recovery from an in-progress payroll record (dynamic engine).
+ * gross − attendance − permission − statutory − filtered other (EMI is NOT subtracted here;
+ * salary advance runs first, then EMI from remainder inside calculateLoanAdvance).
  */
 async function computePayableBeforeAdvanceFromPayrollRecord(record, employeeId, employee) {
   let gross = numPayroll(record?.earnings?.grossSalary);
@@ -467,34 +551,71 @@ async function computePayableBeforeAdvanceFromPayrollRecord(record, employeeId, 
   if (gross <= 0) {
     gross = numPayroll(employee?.gross_salary);
   }
-  const payrollMonth = record?.month != null ? String(record.month).trim() : null;
-  const emiRes = await calculateTotalEMI(employeeId, payrollMonth);
-  const emi = numPayroll(emiRes.totalEMI);
   const att = numPayroll(record?.deductions?.attendanceDeduction);
   const perm = numPayroll(record?.deductions?.permissionDeduction);
   const stat = numPayroll(record?.deductions?.statutoryCumulative);
   const other = sumOtherDeductionsForAdvancePayable(record);
-  return Math.max(0, gross - att - perm - stat - other - emi);
+  return Math.max(0, gross - att - perm - stat - other);
 }
 
-function mergeLoanAdvanceIntoPayrollRecord(record, loanAdvanceResult) {
+function mergeLoanAdvanceIntoPayrollRecord(record, loanAdvanceResult, meta = {}) {
   if (!record || !loanAdvanceResult) return;
   if (!record.loanAdvance) record.loanAdvance = {};
   record.loanAdvance.totalEMI = loanAdvanceResult.totalEMI ?? 0;
+  record.loanAdvance.scheduledTotalEMI = loanAdvanceResult.scheduledTotalEMI ?? loanAdvanceResult.totalEMI ?? 0;
   record.loanAdvance.advanceDeduction = loanAdvanceResult.advanceDeduction ?? 0;
   record.loanAdvance.remainingBalance = loanAdvanceResult.remainingBalance ?? 0;
   record.loanAdvance.emiBreakdown = Array.isArray(loanAdvanceResult.emiBreakdown) ? loanAdvanceResult.emiBreakdown : [];
   record.loanAdvance.advanceBreakdown = Array.isArray(loanAdvanceResult.advanceBreakdown) ? loanAdvanceResult.advanceBreakdown : [];
+  if (loanAdvanceResult.payablePool != null) {
+    record.loanAdvance.payablePool = loanAdvanceResult.payablePool;
+  }
+  if (loanAdvanceResult.remainingAfterAdvance != null) {
+    record.loanAdvance.remainingAfterAdvance = loanAdvanceResult.remainingAfterAdvance;
+  }
+  if (meta.payableBeforeAdvance != null) {
+    record.loanAdvance.payableBeforeAdvance = meta.payableBeforeAdvance;
+  }
+  if (meta.payableSource) {
+    record.loanAdvance.payableSource = meta.payableSource;
+  }
+  if (meta.payableColumnHeader) {
+    record.loanAdvance.payableColumnHeader = meta.payableColumnHeader;
+  }
 }
 
 /**
- * Dynamic payroll: compute loan EMI, advance, balances and breakdowns from DB and write onto payroll record.
- * Callers pass the current payslip-shaped record and employee; payable-before-advance is derived here.
+ * Dynamic payroll: compute loan EMI, advance, balances and write onto payroll record.
+ * - No payable cap column configured → full scheduled EMI and advance (uncapped), as before.
+ * - Column configured → cap pool = column value; advance first, then EMI from remainder.
  */
-async function applyDynamicPayrollLoanAdvance(record, employeeId, month, employee) {
-  const payable = await computePayableBeforeAdvanceFromPayrollRecord(record, employeeId, employee);
-  const result = await calculateLoanAdvance(employeeId, month, payable);
-  mergeLoanAdvanceIntoPayrollRecord(record, result);
+async function applyDynamicPayrollLoanAdvance(record, employeeId, month, employee, options = {}) {
+  const payableColumnHeader =
+    options.payableColumnHeader != null ? String(options.payableColumnHeader).trim() : '';
+  const useColumnCap = payableColumnHeader.length > 0;
+
+  let result;
+  let meta = {};
+
+  if (useColumnCap) {
+    const payable = Math.max(0, Number(options.payableAmountFromColumn) || 0);
+    result = await calculateLoanAdvance(employeeId, month, payable);
+    meta = {
+      payableBeforeAdvance: payable,
+      payableSource: 'config_column',
+      payableColumnHeader,
+    };
+  } else {
+    result = await calculateLoanAdvanceUncapped(employeeId, month);
+    meta = { payableSource: 'uncapped' };
+  }
+
+  mergeLoanAdvanceIntoPayrollRecord(record, result, meta);
+  if (record.loanAdvance) {
+    if (result.payablePool != null) record.loanAdvance.payablePool = result.payablePool;
+    if (result.remainingAfterAdvance != null) record.loanAdvance.remainingAfterAdvance = result.remainingAfterAdvance;
+    record.loanAdvance.scheduledTotalEMI = result.scheduledTotalEMI ?? result.totalEMI ?? 0;
+  }
 }
 
 module.exports = {

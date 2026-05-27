@@ -29,6 +29,7 @@ const payrollPayslipSnapshotSchema = new mongoose.Schema(
       statutoryProratePaidDaysColumnHeader: { type: String, default: '' },
       statutoryProrateTotalDaysColumnHeader: { type: String, default: '' },
       professionTaxSlabEarningsColumnHeader: { type: String, default: '' },
+      loanAdvancePayableColumnHeader: { type: String, default: '' },
       outputColumns: { type: [mongoose.Schema.Types.Mixed], default: [] }, // normalized output columns
       expandedColumns: { type: [mongoose.Schema.Types.Mixed], default: [] }, // with breakdown columns inserted
     },

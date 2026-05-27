@@ -249,6 +249,30 @@ const LoanSchema = new mongoose.Schema(
         type: Number,
         default: 0,
       },
+      /** Standard EMI (regular installments) */
+      finalEmiAmount: {
+        type: Number,
+        default: 0,
+      },
+      requestedDuration: {
+        type: Number,
+        default: 0,
+      },
+      regularInstallmentCount: {
+        type: Number,
+        default: 0,
+      },
+      installmentSchedule: [
+        {
+          installmentNumber: { type: Number },
+          amount: { type: Number },
+          type: {
+            type: String,
+            enum: ['regular', 'final_adjustment', 'extension'],
+            default: 'regular',
+          },
+        },
+      ],
     },
 
     // Salary Advance-specific configuration (only for salary advances)

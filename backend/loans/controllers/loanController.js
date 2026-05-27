@@ -21,7 +21,38 @@ const {
   applyRepaymentScheduleFromPayrollMonth,
   firstPayrollMonthKeyForRepaymentSchedule,
   needsFirstDeductionPayPeriodSelection,
+  repairOpenLoanForHistory,
+  repairOpenSalaryAdvanceForHistory,
 } = require('../services/loanHistoryRepairService');
+
+/** Write calculateEMI schedule fields onto loan document. */
+function applyCalculatedEmiToLoan(loan, emiResult) {
+  if (!loan || !emiResult) return;
+  if (!loan.loanConfig) loan.loanConfig = {};
+  loan.loanConfig.emiAmount = emiResult.emiAmount;
+  loan.loanConfig.finalEmiAmount = emiResult.finalEmiAmount ?? emiResult.emiAmount;
+  loan.loanConfig.installmentSchedule = Array.isArray(emiResult.installmentSchedule) ? emiResult.installmentSchedule : [];
+  loan.loanConfig.regularInstallmentCount = emiResult.regularInstallmentCount ?? 0;
+  loan.loanConfig.requestedDuration = emiResult.requestedDuration ?? loan.duration;
+  loan.loanConfig.totalInterest = emiResult.totalInterest;
+  loan.loanConfig.totalAmount = emiResult.totalAmount;
+  loan.interestAmount = emiResult.totalInterest;
+  if (!loan.repayment) loan.repayment = {};
+  loan.repayment.totalInstallments = emiResult.totalInstallments ?? loan.duration;
+}
+
+function emiResultToLoanConfig(emiResult, extras = {}) {
+  return {
+    emiAmount: emiResult.emiAmount,
+    finalEmiAmount: emiResult.finalEmiAmount ?? emiResult.emiAmount,
+    installmentSchedule: emiResult.installmentSchedule || [],
+    regularInstallmentCount: emiResult.regularInstallmentCount ?? 0,
+    requestedDuration: emiResult.requestedDuration,
+    totalInterest: emiResult.totalInterest,
+    totalAmount: emiResult.totalAmount,
+    ...extras,
+  };
+}
 const { getPresentPayPeriod } = require('../../shared/utils/dateUtils');
 const { EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 const {
@@ -821,22 +852,19 @@ exports.applyLoan = async (req, res) => {
 
     if (requestType === 'loan') {
       const interestRate = settings.interestRate || 0;
-      const { emiAmount, totalInterest: calculatedInterest, totalAmount: calculatedTotal } = calculateEMI(amount, interestRate, duration);
+      const emiResult = calculateEMI(amount, interestRate, duration);
 
-      totalAmount = calculatedTotal;
-      totalInterest = calculatedInterest; // Assign to outer scope variable
+      totalAmount = emiResult.totalAmount;
+      totalInterest = emiResult.totalInterest;
 
-      const anchors = await computeLoanPayrollAnchors(new Date(), duration);
+      const anchors = await computeLoanPayrollAnchors(new Date(), emiResult.totalInstallments || duration);
       firstEmiDueDate = anchors.firstDueDate;
 
-      loanConfig = {
-        emiAmount,
+      loanConfig = emiResultToLoanConfig(emiResult, {
         interestRate,
-        totalInterest,
         startDate: anchors.startDate,
         endDate: anchors.endDate,
-        totalAmount,
-      };
+      });
     } else {
       // Salary advance - calculate per cycle deduction
       const deductionPerCycle = amount / duration;
@@ -869,7 +897,7 @@ exports.applyLoan = async (req, res) => {
         totalPaid: 0,
         remainingBalance: requestType === 'loan' ? totalAmount : amount,
         installmentsPaid: 0,
-        totalInstallments: duration,
+        totalInstallments: requestType === 'loan' ? (loanConfig.installmentSchedule?.length || duration) : duration,
         nextPaymentDate: requestType === 'loan' ? firstEmiDueDate : null,
       },
     };
@@ -1087,6 +1115,41 @@ exports.processGuarantorAction = async (req, res) => {
   }
 };
 
+const LOAN_EDIT_CLOSED_STATUSES = ['completed', 'cancelled', 'rejected'];
+const LOAN_EDIT_FINANCIAL_ACTIVE = ['disbursed', 'active', 'approved'];
+
+function canUserEditLoan(loan, user) {
+  const role = user?.role;
+  const isOwner = loan.appliedBy?.toString() === user?._id?.toString();
+  const isAdmin = ['hr', 'sub_admin', 'super_admin', 'manager'].includes(role);
+  if (LOAN_EDIT_CLOSED_STATUSES.includes(loan.status)) return false;
+  if (isAdmin) return true;
+  if (isOwner && ['draft', 'pending'].includes(loan.status)) return true;
+  return false;
+}
+
+function canUserEditLoanFinancials(loan, user) {
+  const role = user?.role;
+  if (LOAN_EDIT_CLOSED_STATUSES.includes(loan.status)) return false;
+  if (['super_admin', 'hr', 'sub_admin'].includes(role)) return true;
+  if (LOAN_EDIT_FINANCIAL_ACTIVE.includes(loan.status)) return false;
+  return ['draft', 'pending', 'hod_approved', 'manager_approved', 'hr_approved'].includes(loan.status);
+}
+
+function pushLoanChange(loan, changes, field, originalValue, newValue, user, reason) {
+  if (originalValue === newValue) return;
+  changes.push({
+    field,
+    originalValue,
+    newValue,
+    modifiedBy: user._id,
+    modifiedByName: user.name,
+    modifiedByRole: user.role,
+    modifiedAt: new Date(),
+    reason: reason || null,
+  });
+}
+
 // @desc    Update loan/advance application
 // @route   PUT /api/loans/:id
 // @access  Private
@@ -1101,54 +1164,120 @@ exports.updateLoan = async (req, res) => {
       });
     }
 
-    // Check if can edit - Allow editing for pending, hod_approved, hr_approved (not final approved)
-    // Super Admin can edit any status except disbursed/active/completed
-    const isSuperAdmin = req.user.role === 'super_admin';
-    const isFinalApproved = ['approved', 'disbursed', 'active', 'completed'].includes(loan.status);
-
-    if (isFinalApproved && !isSuperAdmin) {
-      return res.status(400).json({
-        success: false,
-        error: 'Final approved/disbursed loan cannot be edited',
-      });
-    }
-
-    // Check ownership or admin permission
-    const isOwner = loan.appliedBy.toString() === req.user._id.toString();
-    const isAdmin = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
-
-    if (!isOwner && !isAdmin) {
+    if (!canUserEditLoan(loan, req.user)) {
       return res.status(403).json({
         success: false,
         error: 'Not authorized to update this loan/advance',
       });
     }
 
-    const allowedUpdates = ['amount', 'reason', 'duration', 'remarks'];
+    const changeReason = req.body.changeReason?.trim() || null;
+    const recalculate = req.body.recalculate === true || req.body.recalculate === 'true';
+    const canEditFinancials = canUserEditLoanFinancials(loan, req.user);
+    const isSuperAdmin = req.user.role === 'super_admin';
+    const changes = [];
 
-    // Super Admin can also change status
+    const scalarFields = ['amount', 'reason', 'duration', 'remarks'];
+    const financialScalars = ['amount', 'duration'];
+
+    for (const field of scalarFields) {
+      if (req.body[field] === undefined) continue;
+      if (financialScalars.includes(field) && !canEditFinancials) {
+        return res.status(403).json({
+          success: false,
+          error: `Not authorized to change ${field} for this loan status`,
+        });
+      }
+      let newValue = req.body[field];
+      if (field === 'amount') newValue = parseFloat(newValue);
+      if (field === 'duration') newValue = parseInt(newValue, 10);
+      if (Number.isNaN(newValue)) {
+        return res.status(400).json({ success: false, error: `Invalid ${field}` });
+      }
+      const originalValue = loan[field];
+      if (originalValue !== newValue) {
+        pushLoanChange(loan, changes, field, originalValue, newValue, req.user, changeReason);
+        loan[field] = newValue;
+      }
+    }
+
+    if (loan.requestType === 'loan' && req.body.interestRate !== undefined) {
+      if (!canEditFinancials) {
+        return res.status(403).json({
+          success: false,
+          error: 'Not authorized to change interest rate for this loan status',
+        });
+      }
+      const newRate = parseFloat(req.body.interestRate);
+      if (Number.isNaN(newRate) || newRate < 0) {
+        return res.status(400).json({ success: false, error: 'Invalid interest rate' });
+      }
+      if (!loan.loanConfig) loan.loanConfig = {};
+      const oldRate = loan.loanConfig.interestRate ?? 0;
+      if (oldRate !== newRate) {
+        pushLoanChange(loan, changes, 'interestRate', oldRate, newRate, req.user, changeReason);
+        loan.loanConfig.interestRate = newRate;
+        loan.markModified('loanConfig');
+      }
+    }
+
+    if (req.body.firstDeductionPayrollMonth !== undefined && loan.requestType === 'loan') {
+      if (!canEditFinancials) {
+        return res.status(403).json({
+          success: false,
+          error: 'Not authorized to change deduction schedule for this loan status',
+        });
+      }
+      const ym = String(req.body.firstDeductionPayrollMonth).trim();
+      if (!/^\d{4}-\d{2}$/.test(ym)) {
+        return res.status(400).json({ success: false, error: 'Invalid first deduction month (use YYYY-MM)' });
+      }
+      if (!loan.approvals) loan.approvals = {};
+      if (!loan.approvals.final) loan.approvals.final = {};
+      const oldYm = loan.approvals.final.firstDeductionPayrollMonth || null;
+      if (oldYm !== ym) {
+        pushLoanChange(loan, changes, 'firstDeductionPayrollMonth', oldYm, ym, req.user, changeReason);
+        loan.approvals.final.firstDeductionPayrollMonth = ym;
+        loan.markModified('approvals');
+      }
+    }
+
+    if (loan.requestType === 'salary_advance' && req.body.deductionStartCycle !== undefined) {
+      if (!canEditFinancials) {
+        return res.status(403).json({
+          success: false,
+          error: 'Not authorized to change deduction start cycle for this advance status',
+        });
+      }
+      const ym = String(req.body.deductionStartCycle).trim();
+      if (!/^\d{4}-\d{2}$/.test(ym)) {
+        return res.status(400).json({ success: false, error: 'Invalid deduction start cycle (use YYYY-MM)' });
+      }
+      if (!loan.advanceConfig) loan.advanceConfig = {};
+      const oldYm = loan.advanceConfig.deductionStartCycle || null;
+      if (oldYm !== ym) {
+        pushLoanChange(loan, changes, 'deductionStartCycle', oldYm, ym, req.user, changeReason);
+        loan.advanceConfig.deductionStartCycle = ym;
+        loan.markModified('advanceConfig');
+      }
+    }
+
     if (isSuperAdmin && req.body.status !== undefined) {
       const oldStatus = loan.status;
       const newStatus = req.body.status;
-
       if (oldStatus !== newStatus) {
-        allowedUpdates.push('status');
-
-        // Add status change to timeline
-        if (!loan.workflow.history) {
-          loan.workflow.history = [];
-        }
+        pushLoanChange(loan, changes, 'status', oldStatus, newStatus, req.user, req.body.statusChangeReason || changeReason);
+        loan.status = newStatus;
+        if (!loan.workflow.history) loan.workflow.history = [];
         loan.workflow.history.push({
           step: 'admin',
           action: 'status_changed',
           actionBy: req.user._id,
           actionByName: req.user.name,
           actionByRole: req.user.role,
-          comments: `Status changed from ${oldStatus} to ${newStatus}${req.body.statusChangeReason ? ': ' + req.body.statusChangeReason : ''} `,
+          comments: `Status changed from ${oldStatus} to ${newStatus}${req.body.statusChangeReason ? ': ' + req.body.statusChangeReason : ''}`,
           timestamp: new Date(),
         });
-
-        // If changing status, also update workflow accordingly
         if (newStatus === 'pending') {
           loan.workflow.currentStep = 'hod';
           loan.workflow.nextApprover = 'hod';
@@ -1165,116 +1294,344 @@ exports.updateLoan = async (req, res) => {
       }
     }
 
-    // Track changes (max 2-3 changes)
-    const changes = [];
-    allowedUpdates.forEach((field) => {
-      if (req.body[field] !== undefined && loan[field] !== req.body[field]) {
-        const originalValue = loan[field];
-        const newValue = req.body[field];
+    const financialFieldChanged = changes.some((c) =>
+      ['amount', 'duration', 'interestRate', 'firstDeductionPayrollMonth', 'deductionStartCycle'].includes(c.field)
+    );
 
-        // Store change
-        changes.push({
-          field: field,
-          originalValue: originalValue,
-          newValue: newValue,
-          modifiedBy: req.user._id,
-          modifiedByName: req.user.name,
-          modifiedByRole: req.user.role,
-          modifiedAt: new Date(),
-          reason: req.body.changeReason || null,
-        });
+    if (financialFieldChanged && !changeReason) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reason for change is required when updating financial fields',
+      });
+    }
 
-        loan[field] = newValue;
-      }
-    });
-
-    // Add changes to history (keep only last 2-3 changes)
     if (changes.length > 0) {
-      if (!loan.changeHistory) {
-        loan.changeHistory = [];
-      }
+      if (!loan.changeHistory) loan.changeHistory = [];
       loan.changeHistory.push(...changes);
-      // Keep only last 3 changes
-      if (loan.changeHistory.length > 3) {
-        loan.changeHistory = loan.changeHistory.slice(-3);
+    }
+
+    const shouldRecalculate =
+      recalculate ||
+      (financialFieldChanged &&
+        !['draft', 'pending'].includes(loan.status) &&
+        LOAN_EDIT_FINANCIAL_ACTIVE.includes(loan.status));
+
+    const firstDeductionChanged = changes.some((c) => c.field === 'firstDeductionPayrollMonth');
+    if (firstDeductionChanged && loan.requestType === 'loan' && loan.approvals?.final?.firstDeductionPayrollMonth) {
+      await applyRepaymentScheduleFromPayrollMonth(loan, loan.approvals.final.firstDeductionPayrollMonth);
+    }
+
+    if (shouldRecalculate && financialFieldChanged) {
+      if (loan.requestType === 'loan') {
+        await repairOpenLoanForHistory(loan);
+      } else {
+        await repairOpenSalaryAdvanceForHistory(loan);
+      }
+    } else if (financialFieldChanged) {
+      const settings = await LoanSettings.findOne({ type: loan.requestType, isActive: true });
+      const amount = Number(loan.amount);
+      const duration = Number(loan.duration);
+      if (settings && amount > 0 && duration > 0) {
+        if (loan.requestType === 'loan') {
+          if (!loan.loanConfig) loan.loanConfig = {};
+          const rate =
+            loan.loanConfig.interestRate !== undefined && loan.loanConfig.interestRate !== null
+              ? Number(loan.loanConfig.interestRate)
+              : settings.interestRate || 0;
+          const emiResult = calculateEMI(amount, rate, duration);
+          const scheduleLocked = Boolean(loan.approvals?.final?.firstDeductionPayrollMonth);
+          applyCalculatedEmiToLoan(loan, emiResult);
+          loan.loanConfig.interestRate = rate;
+          const totalPaid = Number(loan.repayment.totalPaid) || 0;
+          loan.repayment.remainingBalance = Math.max(0, emiResult.totalAmount - totalPaid);
+          if (!scheduleLocked && !['disbursed', 'active'].includes(loan.status)) {
+            const ref = loan.appliedAt || loan.createdAt || new Date();
+            const anchors = await computeLoanPayrollAnchors(ref, emiResult.totalInstallments || duration);
+            loan.loanConfig.startDate = anchors.startDate;
+            loan.loanConfig.endDate = anchors.endDate;
+          }
+          loan.markModified('loanConfig');
+          loan.markModified('repayment');
+        } else {
+          if (!loan.advanceConfig) loan.advanceConfig = {};
+          loan.advanceConfig.deductionCycles = duration;
+          loan.advanceConfig.deductionPerCycle = Math.round(amount / duration);
+          if (!loan.repayment) loan.repayment = {};
+          loan.repayment.totalInstallments = duration;
+          const totalPaid = Number(loan.repayment.totalPaid) || 0;
+          loan.repayment.remainingBalance = Math.max(0, amount - totalPaid);
+          loan.markModified('advanceConfig');
+          loan.markModified('repayment');
+        }
       }
     }
 
-    // Recalculate loan/advance config if amount or duration changed
-    if (req.body.amount !== undefined || req.body.duration !== undefined) {
-      const amount = req.body.amount !== undefined ? req.body.amount : loan.amount;
-      const duration = req.body.duration !== undefined ? req.body.duration : loan.duration;
-
-      // Get settings for recalculation
-      const settings = await LoanSettings.findOne({
-        type: loan.requestType,
-        isActive: true
-      });
-
-      if (settings) {
-        if (loan.requestType === 'loan') {
-          // Use interestRate from request body if provided, otherwise use settings
-          const interestRate = req.body.interestRate !== undefined ? parseFloat(req.body.interestRate) : (settings.interestRate || 0);
-          const { emiAmount, totalInterest, totalAmount } = calculateEMI(amount, interestRate, duration);
-
-          const startDate = new Date();
-          startDate.setMonth(startDate.getMonth() + 1);
-          startDate.setDate(1);
-
-          const endDate = new Date(startDate);
-          endDate.setMonth(endDate.getMonth() + duration);
-
-          loan.loanConfig = {
-            emiAmount,
-            interestRate,
-            totalInterest,
-            startDate,
-            endDate,
-            totalAmount,
-          };
-
-          // Update interest amount
-          loan.interestAmount = totalInterest;
-
-          // Update repayment remaining balance
-          loan.repayment.remainingBalance = totalAmount - (loan.repayment.totalPaid || 0);
-          loan.repayment.totalInstallments = duration;
-        } else {
-          // Salary advance
-          const deductionPerCycle = amount / duration;
-          loan.advanceConfig = {
-            deductionCycles: duration,
-            deductionPerCycle: Math.round(deductionPerCycle),
-          };
-
-          // Update repayment remaining balance
-          loan.repayment.remainingBalance = amount - (loan.repayment.totalPaid || 0);
-          loan.repayment.totalInstallments = duration;
-        }
+    if (recalculate && !financialFieldChanged && ['disbursed', 'active', 'approved'].includes(loan.status)) {
+      if (loan.requestType === 'loan') {
+        await syncLoanMoneyAndPayrollSchedule(loan);
+      } else {
+        await repairOpenSalaryAdvanceForHistory(loan);
       }
     }
 
     await loan.save();
 
-    // Populate for response
-    await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id' },
-      { path: 'department', select: 'name' },
-      { path: 'designation', select: 'name' },
-      { path: 'changeHistory.modifiedBy', select: 'name email role' },
-    ]);
+    try {
+      await loan.populate([
+        { path: 'employeeId', select: 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id' },
+        { path: 'department', select: 'name' },
+        { path: 'designation', select: 'name' },
+        { path: 'changeHistory.modifiedBy', select: 'name email role' },
+      ]);
+    } catch (populateErr) {
+      // Populate failure should not fail the update itself (e.g. missing model registration in isolated scripts).
+      console.warn('Populate failed in updateLoan:', populateErr?.message || populateErr);
+    }
 
     res.status(200).json({
       success: true,
       message: `${loan.requestType === 'loan' ? 'Loan' : 'Salary advance'} updated successfully`,
       data: loan,
-      changes: changes,
+      changes,
+      recalculated: shouldRecalculate || (recalculate && !financialFieldChanged),
     });
   } catch (error) {
     console.error('Error updating loan:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to update loan/advance',
+    });
+  }
+};
+
+const REPAYMENT_CORRECTION_STATUSES = ['disbursed', 'active'];
+
+function canCorrectLoanRepayment(loan, user) {
+  if (LOAN_EDIT_CLOSED_STATUSES.includes(loan.status)) return false;
+  if (!REPAYMENT_CORRECTION_STATUSES.includes(loan.status)) return false;
+  return ['hr', 'sub_admin', 'super_admin', 'manager'].includes(user?.role);
+}
+
+function getLoanTotalRecoverable(loan) {
+  if (loan.requestType === 'loan') {
+    const totalAmount = Number(loan.loanConfig?.totalAmount);
+    if (totalAmount > 0) return totalAmount;
+    return Number(loan.amount) || 0;
+  }
+  return Number(loan.amount) || 0;
+}
+
+// @desc    Correct repayment totals after disbursement (opening balance / migration)
+// @route   PUT /api/loans/:id/repayment-correction
+// @access  Private (HR/Admin)
+exports.correctLoanRepayment = async (req, res) => {
+  try {
+    const loan = await Loan.findById(req.params.id);
+    if (!loan) {
+      return res.status(404).json({ success: false, error: 'Loan/Advance application not found' });
+    }
+    if (!canCorrectLoanRepayment(loan, req.user)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Repayment correction is only allowed for disbursed/active loans by HR/Admin',
+      });
+    }
+
+    const changeReason = req.body.changeReason?.trim();
+    if (!changeReason) {
+      return res.status(400).json({
+        success: false,
+        error: 'Remarks / reason for correction is required',
+      });
+    }
+
+    const hasTotalPaid = req.body.totalPaid !== undefined && req.body.totalPaid !== '';
+    const hasInstallmentsPaid = req.body.installmentsPaid !== undefined && req.body.installmentsPaid !== '';
+    const hasRemaining = req.body.remainingBalance !== undefined && req.body.remainingBalance !== '';
+    const hasTotalInstallments = req.body.totalInstallments !== undefined && req.body.totalInstallments !== '';
+
+    if (!hasTotalPaid && !hasInstallmentsPaid && !hasRemaining && !hasTotalInstallments) {
+      return res.status(400).json({
+        success: false,
+        error: 'Provide at least one of: totalPaid, installmentsPaid, remainingBalance, totalInstallments',
+      });
+    }
+
+    if (!loan.repayment) loan.repayment = {};
+    const changes = [];
+    const totalRecoverable = getLoanTotalRecoverable(loan);
+
+    if (hasTotalInstallments) {
+      const totalInstallments = parseInt(req.body.totalInstallments, 10);
+      if (Number.isNaN(totalInstallments) || totalInstallments < 1) {
+        return res.status(400).json({ success: false, error: 'Invalid total installments' });
+      }
+      const old = loan.repayment.totalInstallments ?? loan.duration;
+      if (old !== totalInstallments) {
+        pushLoanChange(loan, changes, 'repayment.totalInstallments', old, totalInstallments, req.user, changeReason);
+        loan.repayment.totalInstallments = totalInstallments;
+        loan.duration = totalInstallments;
+        if (loan.requestType === 'salary_advance' && loan.advanceConfig) {
+          loan.advanceConfig.deductionCycles = totalInstallments;
+          loan.advanceConfig.deductionPerCycle = Math.round(Number(loan.amount) / totalInstallments);
+          loan.markModified('advanceConfig');
+        }
+      }
+    } else if (!loan.repayment.totalInstallments) {
+      loan.repayment.totalInstallments = Number(loan.duration) || 1;
+    }
+
+    if (hasInstallmentsPaid) {
+      const installmentsPaid = parseInt(req.body.installmentsPaid, 10);
+      if (Number.isNaN(installmentsPaid) || installmentsPaid < 0) {
+        return res.status(400).json({ success: false, error: 'Invalid installments paid' });
+      }
+      const totalInst = Number(loan.repayment.totalInstallments) || Number(loan.duration) || 1;
+      if (installmentsPaid > totalInst) {
+        return res.status(400).json({
+          success: false,
+          error: `Installments paid cannot exceed total installments (${totalInst})`,
+        });
+      }
+      const old = Number(loan.repayment.installmentsPaid) || 0;
+      if (old !== installmentsPaid) {
+        pushLoanChange(loan, changes, 'repayment.installmentsPaid', old, installmentsPaid, req.user, changeReason);
+        loan.repayment.installmentsPaid = installmentsPaid;
+      }
+    }
+
+    if (hasTotalPaid) {
+      const totalPaid = parseFloat(req.body.totalPaid);
+      if (Number.isNaN(totalPaid) || totalPaid < 0) {
+        return res.status(400).json({ success: false, error: 'Invalid total paid amount' });
+      }
+      if (totalRecoverable > 0 && totalPaid > totalRecoverable) {
+        return res.status(400).json({
+          success: false,
+          error: `Total paid cannot exceed total recoverable (₹${totalRecoverable})`,
+        });
+      }
+      const old = Number(loan.repayment.totalPaid) || 0;
+      if (old !== totalPaid) {
+        pushLoanChange(loan, changes, 'repayment.totalPaid', old, totalPaid, req.user, changeReason);
+        loan.repayment.totalPaid = totalPaid;
+      }
+    }
+
+    if (hasRemaining) {
+      const remainingBalance = parseFloat(req.body.remainingBalance);
+      if (Number.isNaN(remainingBalance) || remainingBalance < 0) {
+        return res.status(400).json({ success: false, error: 'Invalid remaining balance' });
+      }
+      if (totalRecoverable > 0 && remainingBalance > totalRecoverable) {
+        return res.status(400).json({
+          success: false,
+          error: `Remaining balance cannot exceed total recoverable (₹${totalRecoverable})`,
+        });
+      }
+      const old = Number(loan.repayment.remainingBalance) || 0;
+      if (old !== remainingBalance) {
+        pushLoanChange(loan, changes, 'repayment.remainingBalance', old, remainingBalance, req.user, changeReason);
+        loan.repayment.remainingBalance = remainingBalance;
+      }
+    } else if (hasTotalPaid && totalRecoverable > 0) {
+      const totalPaid = Number(loan.repayment.totalPaid) || 0;
+      const remainingBalance = Math.max(0, totalRecoverable - totalPaid);
+      const old = Number(loan.repayment.remainingBalance) || 0;
+      if (old !== remainingBalance) {
+        pushLoanChange(loan, changes, 'repayment.remainingBalance', old, remainingBalance, req.user, changeReason);
+        loan.repayment.remainingBalance = remainingBalance;
+      }
+    }
+
+    if (req.body.remarks !== undefined) {
+      const newRemarks = String(req.body.remarks).trim();
+      if (loan.remarks !== newRemarks) {
+        pushLoanChange(loan, changes, 'remarks', loan.remarks, newRemarks, req.user, changeReason);
+        loan.remarks = newRemarks;
+      }
+    } else {
+      const stamp = `[Repayment correction ${new Date().toISOString().slice(0, 10)}] ${changeReason}`;
+      loan.remarks = loan.remarks ? `${loan.remarks}\n${stamp}` : stamp;
+    }
+
+    if (changes.length > 0) {
+      if (!loan.changeHistory) loan.changeHistory = [];
+      loan.changeHistory.push(...changes);
+
+      if (!loan.transactions) loan.transactions = [];
+      loan.transactions.push({
+        transactionType: 'adjustment',
+        amount: 0,
+        transactionDate: new Date(),
+        processedBy: req.user._id,
+        remarks: changeReason,
+      });
+    }
+
+    const remaining = Number(loan.repayment.remainingBalance) || 0;
+    if (remaining <= 0) {
+      loan.repayment.remainingBalance = 0;
+      loan.repayment.nextPaymentDate = null;
+      if (loan.status !== 'completed') {
+        pushLoanChange(loan, changes, 'status', loan.status, 'completed', req.user, changeReason);
+        loan.status = 'completed';
+        if (!loan.workflow.history) loan.workflow.history = [];
+        loan.workflow.history.push({
+          step: 'admin',
+          action: 'status_changed',
+          actionBy: req.user._id,
+          actionByName: req.user.name,
+          actionByRole: req.user.role,
+          comments: `Marked completed after repayment correction: ${changeReason}`,
+          timestamp: new Date(),
+        });
+      }
+    } else if (loan.status === 'completed') {
+      loan.status = 'active';
+    } else {
+      try {
+        await setNextPaymentDateFromInstallmentsPaid(loan);
+      } catch (scheduleErr) {
+        console.warn('setNextPaymentDateFromInstallmentsPaid failed:', scheduleErr?.message || scheduleErr);
+      }
+    }
+
+    loan.markModified('repayment');
+    await loan.save();
+
+    try {
+      await loan.populate([
+        { path: 'employeeId', select: 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id' },
+        { path: 'department', select: 'name' },
+        { path: 'designation', select: 'name' },
+      ]);
+    } catch (populateErr) {
+      console.warn('Populate failed in correctLoanRepayment:', populateErr?.message || populateErr);
+    }
+
+    const totalInst = Number(loan.repayment.totalInstallments) || Number(loan.duration) || 0;
+    const paidInst = Number(loan.repayment.installmentsPaid) || 0;
+
+    res.status(200).json({
+      success: true,
+      message: 'Repayment status updated successfully',
+      data: loan,
+      changes,
+      summary: {
+        totalRecoverable,
+        totalPaid: loan.repayment.totalPaid,
+        remainingBalance: loan.repayment.remainingBalance,
+        installmentsPaid: paidInst,
+        installmentsRemaining: Math.max(0, totalInst - paidInst),
+        totalInstallments: totalInst,
+      },
+    });
+  } catch (error) {
+    console.error('Error correcting loan repayment:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to correct repayment',
     });
   }
 };
@@ -1479,13 +1836,8 @@ exports.processLoanAction = async (req, res) => {
           const currentAmount = loan.amount;
           const currentRate = loan.loanConfig.interestRate || 0;
           const duration = loan.duration;
-          const { emiAmount, totalInterest, totalAmount } = calculateEMI(currentAmount, currentRate, duration);
-
-          loan.loanConfig.emiAmount = emiAmount;
-          loan.loanConfig.totalInterest = totalInterest;
-          loan.loanConfig.totalAmount = totalAmount;
-          loan.interestAmount = totalInterest;
-          loan.repayment.totalInstallments = duration;
+          const emiResult = calculateEMI(currentAmount, currentRate, duration);
+          applyCalculatedEmiToLoan(loan, emiResult);
         } else {
           // Salary advance - recalculate per cycle deduction
           loan.advanceConfig.deductionPerCycle = Math.round(loan.amount / loan.duration);
