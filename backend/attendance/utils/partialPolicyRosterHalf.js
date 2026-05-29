@@ -12,6 +12,30 @@ function dayHasRosterHalfNonWorking(day) {
   );
 }
 
+/** Exactly one calendar half marked HOL on roster (not both). */
+function hasExactlyOneRosterHalfHol(day) {
+  if (!day) return false;
+  const f = !!day.rosterFirstHalfHOL;
+  const s = !!day.rosterSecondHalfHOL;
+  return (f && !s) || (!f && s);
+}
+
+/**
+ * Cap attendance half-credits on single half-holiday days (single-shift summary).
+ */
+function capAttendanceHalvesForSingleHalfHoliday(day, attFirst, attSecond) {
+  if (!hasExactlyOneRosterHalfHol(day)) {
+    return { attFirst, attSecond };
+  }
+  let a1 = attFirst;
+  let a2 = attSecond;
+  if (day.rosterFirstHalfHOL) a1 = 0;
+  if (day.rosterSecondHalfHOL) a2 = 0;
+  if (day.rosterFirstHalfHOL && a2 > 0.5) a2 = 0.5;
+  if (day.rosterSecondHalfHOL && a1 > 0.5) a1 = 0.5;
+  return { attFirst: a1, attSecond: a2 };
+}
+
 /**
  * @param {object} day - dailyStatsMap entry
  * @param {number} attFirst - 0 or 0.5
@@ -99,6 +123,8 @@ function applyRosterHalfToPayRegisterSnapshot(snapshot, day, attFirst, attSecond
 
 module.exports = {
   dayHasRosterHalfNonWorking,
+  hasExactlyOneRosterHalfHol,
+  capAttendanceHalvesForSingleHalfHoliday,
   buildRosterHalfPartialPolicyMeta,
   applyRosterHalfToPayRegisterSnapshot,
 };

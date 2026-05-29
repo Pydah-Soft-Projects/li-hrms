@@ -851,6 +851,32 @@ exports.applyLeave = async (req, res) => {
       }
     }
 
+    let resolvedIsHalfDay = Boolean(isHalfDay);
+    let resolvedHalfDayType = isHalfDay ? halfDayType : null;
+    let resolvedNumberOfDays = numberOfDays;
+    let halfHolidayLeaveRemark = null;
+
+    if (isSameIstDay(from, to)) {
+      const { resolveLeaveApplyAgainstHalfHoliday } = require('../services/odHalfHolidayRosterService');
+      const halfHolRes = await resolveLeaveApplyAgainstHalfHoliday(employee.emp_no, extractISTComponents(from).dateStr, {
+        isHalfDay: resolvedIsHalfDay,
+        halfDayType: resolvedHalfDayType,
+        numberOfDays: resolvedNumberOfDays,
+      });
+      if (!halfHolRes.ok) {
+        return res.status(400).json({
+          success: false,
+          error: halfHolRes.error || 'Leave conflicts with roster half holiday',
+        });
+      }
+      if (halfHolRes.narrowed) {
+        resolvedIsHalfDay = true;
+        resolvedHalfDayType = halfHolRes.halfDayType;
+        resolvedNumberOfDays = 0.5;
+        halfHolidayLeaveRemark = halfHolRes.remark || null;
+      }
+    }
+
     // Store warnings to include in success response
     const warnings = [...(validation.warnings || []), ...limitWarnings];
 
@@ -925,6 +951,8 @@ exports.applyLeave = async (req, res) => {
       ],
     };
 
+    const leaveRemarks = [remarks, halfHolidayLeaveRemark].filter(Boolean).join('\n').trim() || remarks;
+
     // Create leave application
     const leave = new Leave({
       employeeId: employee._id,
@@ -932,9 +960,9 @@ exports.applyLeave = async (req, res) => {
       leaveType,
       fromDate: from,
       toDate: to,
-      numberOfDays,
-      isHalfDay: isHalfDay || false,
-      halfDayType: isHalfDay ? halfDayType : null,
+      numberOfDays: resolvedNumberOfDays,
+      isHalfDay: resolvedIsHalfDay,
+      halfDayType: resolvedIsHalfDay ? resolvedHalfDayType : null,
       purpose,
       contactNumber,
       emergencyContact,
@@ -947,7 +975,7 @@ exports.applyLeave = async (req, res) => {
       appliedBy: req.user._id,
       appliedAt: new Date(),
       status: 'pending',
-      remarks,
+      remarks: leaveRemarks,
       workflow: workflowData
     });
 

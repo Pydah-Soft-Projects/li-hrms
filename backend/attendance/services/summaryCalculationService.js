@@ -245,6 +245,8 @@ function getHalfPortion(status, targetStatus, leaveNature) {
  */
 const {
   dayHasRosterHalfNonWorking,
+  hasExactlyOneRosterHalfHol,
+  capAttendanceHalvesForSingleHalfHoliday,
   buildRosterHalfPartialPolicyMeta,
   applyRosterHalfToPayRegisterSnapshot,
 } = require('../utils/partialPolicyRosterHalf');
@@ -931,6 +933,20 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         attSecond = 0;
       }
 
+      // Single-shift half roster holiday: no credit on holiday half; cap full-day-looking present to 0.5.
+      if (
+        processingModeIsSingleShift &&
+        !day.isWO &&
+        !day.isHOL &&
+        hasExactlyOneRosterHalfHol(day)
+      ) {
+        if (day.rosterFirstHalfHOL) odFirst = 0;
+        if (day.rosterSecondHalfHOL) odSecond = 0;
+        const capped = capAttendanceHalvesForSingleHalfHoliday(day, attFirst, attSecond);
+        attFirst = capped.attFirst;
+        attSecond = capped.attSecond;
+      }
+
       // Half-day ESI with user-declared OT:
       // remaining worked hours (punch - OT) should decide half/full/none attendance contribution.
       if (hasHalfDayEsiLeave && day.attendance && !day.isWO && !day.isHOL && esiOtHoursByDate.has(dStr)) {
@@ -960,8 +976,15 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         attSecond = 0;
       }
 
-      // dayPresent: physical presence (PARTIAL status does not add to present; partial payable is tracked separately)
-      const dayPresent = Math.min(Math.max(0, attFirst - odFirst) + Math.max(0, attSecond - odSecond), 1.0);
+      // dayPresent: punch half-credits minus OD; PARTIAL caps at 0.5 (never both halves from confused IN+OUT)
+      let dayPresent = Math.min(Math.max(0, attFirst - odFirst) + Math.max(0, attSecond - odSecond), 1.0);
+      if (
+        processingModeIsSingleShift &&
+        day.attendance &&
+        String(day.attendance.status || '').toUpperCase() === 'PARTIAL'
+      ) {
+        dayPresent = Math.min(dayPresent, 0.5);
+      }
 
       const dayFirst = Math.max(attFirst, odFirst);
       const daySecond = Math.max(attSecond, odSecond);
@@ -990,11 +1013,15 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         !hasFullDayEsiLeave &&
         leaveContrib < 0.999;
 
+      const attStatusUpper = String(day.attendance?.status || '').toUpperCase();
       const useRosterHalfPolicy =
         !processingModeIsMultiShift &&
         hasRosterHalfNonWorking &&
         day.attendance &&
-        (day.attendance.status === 'PARTIAL' || day.attendance.status === 'HALF_DAY') &&
+        (attStatusUpper === 'PARTIAL' ||
+          attStatusUpper === 'HALF_DAY' ||
+          attStatusUpper === 'PRESENT' ||
+          attStatusUpper === 'OD') &&
         !day.isWO &&
         !day.isHOL &&
         !hasFullDayOdCoverage &&
@@ -1028,6 +1055,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       // Per-day payable credit: capped at 1 in single-shift world; multi_shift can exceed 1 (multiple shift payables).
       if (!processingModeIsMultiShift) {
         dayPayable = Math.min(dayPayable, 1.0);
+        if (hasExactlyOneRosterHalfHol(day) && !day.isWO && !day.isHOL) {
+          dayPayable = Math.min(dayPayable, 0.5);
+        }
       }
       // Partial-day policy LOP: missing working half only. mergedDailyCredit already includes punch/OD;
       // do not add dayPayable again (was double-counting IN-only partial → LOP 0). When

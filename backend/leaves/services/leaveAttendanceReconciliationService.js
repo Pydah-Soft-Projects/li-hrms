@@ -20,8 +20,35 @@ const AttendanceSettings = require('../../attendance/model/AttendanceSettings');
 const {
   computeRawAttendanceHalfCredits,
 } = require('../../attendance/utils/attendanceHalfPresence');
+const {
+  getRosterHalfHolidayForEmployeeDate,
+  isFullDayOdRequest,
+  isHalfDayOdRequest,
+  halfDayTypeFromOd,
+  applyNarrowFieldsToOdDoc,
+  NARROW_REMARK,
+  REJECT_SAME_HALF_REMARK,
+  isFullDayLeaveRequest,
+  isHalfDayLeaveRequest,
+  halfDayTypeFromLeave,
+  applyNarrowFieldsToLeaveDoc,
+  LEAVE_NARROW_REMARK,
+  LEAVE_REJECT_SAME_HALF_REMARK,
+} = require('./odHalfHolidayRosterService');
 
 const REMARK_PREFIX = '[Auto attendance reconciliation]';
+const HALF_HOL_OD_TAG = '[Half-holiday OD reconcile]';
+const HALF_HOL_LEAVE_TAG = '[Half-holiday leave reconcile]';
+
+const LEAVE_ACTIVE_STATUSES = [
+  'pending',
+  'reporting_manager_approved',
+  'hod_approved',
+  'manager_approved',
+  'hr_approved',
+  'principal_approved',
+  'approved',
+];
 
 function daysInclusive(fromDate, toDate) {
   const fromStr = extractISTComponents(fromDate).dateStr;
@@ -315,6 +342,267 @@ async function findApprovedOdsForDate(employeeId, dateStr) {
  * @param {string} dateStr YYYY-MM-DD
  * @param {import('mongoose').Document} daily - AttendanceDaily
  */
+async function reconcileHalfHolidayOdsForDate(employee, dateStr, syncPayRegisterFromOD, results) {
+  const ctx = await getRosterHalfHolidayForEmployeeDate(employee.emp_no, dateStr);
+  if (!ctx.hasHalfHoliday) return;
+
+  const dayStart = createISTDate(dateStr, '00:00');
+  const dayEnd = createISTDate(dateStr, '23:59');
+  const ods = await OD.find({
+    employeeId: employee._id,
+    status: {
+      $in: [
+        'pending',
+        'reporting_manager_approved',
+        'hod_approved',
+        'manager_approved',
+        'hr_approved',
+        'principal_approved',
+        'approved',
+      ],
+    },
+    isActive: { $ne: false },
+    fromDate: { $lte: dayEnd },
+    toDate: { $gte: dayStart },
+  })
+    .select('fromDate toDate isHalfDay halfDayType numberOfDays odType odType_extended status remarks workflow')
+    .lean();
+
+  for (const o of ods) {
+    if (String(o.remarks || '').includes(HALF_HOL_OD_TAG)) {
+      results.push({ odId: o._id, action: 'skip', reason: 'half_hol_already_reconciled' });
+      continue;
+    }
+    if (String(o.odType_extended || '') === 'hours') continue;
+
+    const fromStr = extractISTComponents(o.fromDate).dateStr;
+    const toStr = extractISTComponents(o.toDate).dateStr;
+    if (fromStr !== dateStr || toStr !== dateStr) continue;
+
+    const od = await OD.findById(o._id);
+    if (!od || ['rejected', 'cancelled', 'draft'].includes(String(od.status || ''))) continue;
+
+    const payload = {
+      isHalfDay: od.isHalfDay,
+      halfDayType: od.halfDayType,
+      odType_extended: od.odType_extended,
+      numberOfDays: od.numberOfDays,
+    };
+
+    if (isHalfDayOdRequest(payload) && halfDayTypeFromOd(od) === ctx.holidayHalf) {
+      const detail = REJECT_SAME_HALF_REMARK;
+      if (String(od.status || '') !== 'approved') {
+        results.push({ odId: od._id, action: 'skip', reason: 'half_hol_reject_only_when_approved' });
+        continue;
+      }
+      od.status = 'rejected';
+      if (od.workflow) {
+        od.workflow.isCompleted = true;
+        od.workflow.currentStepRole = null;
+        od.workflow.nextApprover = null;
+        od.workflow.nextApproverRole = null;
+        addWorkflowHistory(
+          od,
+          'rejected',
+          `${HALF_HOL_OD_TAG} System rejected — ${detail}`
+        );
+      }
+      appendOdRemark(od, `${HALF_HOL_OD_TAG} ${dateStr}: ${detail}`);
+      await od.save();
+      try {
+        await syncPayRegisterFromOD(od);
+      } catch (e) {
+        console.warn('[leaveAttendanceReconciliation] half-hol OD reject sync', e?.message);
+      }
+      results.push({ odId: od._id, action: 'rejected_od_half_holiday' });
+      continue;
+    }
+
+    if (isFullDayOdRequest(payload)) {
+      const detail = NARROW_REMARK;
+      applyNarrowFieldsToOdDoc(od, ctx.workingHalf, `${HALF_HOL_OD_TAG} ${dateStr}: ${detail}`);
+      if (od.workflow) {
+        addWorkflowHistory(
+          od,
+          'status_changed',
+          `${HALF_HOL_OD_TAG} System updated — ${detail}`
+        );
+      }
+      await od.save();
+      try {
+        await syncPayRegisterFromOD(od);
+      } catch (e) {
+        console.warn('[leaveAttendanceReconciliation] half-hol OD narrow sync', e?.message);
+      }
+      results.push({ odId: od._id, action: 'narrowed_od_half_holiday' });
+    }
+  }
+}
+
+async function reconcileHalfHolidayLeavesForDate(employee, dateStr, syncPayRegisterFromLeave, results) {
+  const ctx = await getRosterHalfHolidayForEmployeeDate(employee.emp_no, dateStr);
+  if (!ctx.hasHalfHoliday) return;
+
+  const dayStart = createISTDate(dateStr, '00:00');
+  const dayEnd = createISTDate(dateStr, '23:59');
+  const leaves = await Leave.find({
+    employeeId: employee._id,
+    status: { $in: LEAVE_ACTIVE_STATUSES },
+    isActive: { $ne: false },
+    fromDate: { $lte: dayEnd },
+    toDate: { $gte: dayStart },
+  })
+    .select('fromDate toDate isHalfDay halfDayType numberOfDays leaveType leaveNature status splitStatus remarks workflow')
+    .lean();
+
+  const narrowMode = ctx.workingHalf === 'second_half' ? 'narrow_second' : 'narrow_first';
+
+  for (const l of leaves) {
+    if (String(l.splitStatus || '') === 'split_approved') {
+      results.push({ leaveId: l._id, action: 'skip', reason: 'split_approved' });
+      continue;
+    }
+    if (isEsiLeaveType(l.leaveType)) continue;
+    if (String(l.remarks || '').includes(HALF_HOL_LEAVE_TAG)) {
+      results.push({ leaveId: l._id, action: 'skip', reason: 'half_hol_leave_already_reconciled' });
+      continue;
+    }
+
+    const fromStr = extractISTComponents(l.fromDate).dateStr;
+    const toStr = extractISTComponents(l.toDate).dateStr;
+    if (fromStr !== dateStr || toStr !== dateStr) continue;
+
+    const leave = await Leave.findById(l._id);
+    if (!leave || ['rejected', 'cancelled', 'draft'].includes(String(leave.status || ''))) continue;
+
+    const payload = {
+      isHalfDay: leave.isHalfDay,
+      halfDayType: leave.halfDayType,
+      numberOfDays: leave.numberOfDays,
+    };
+
+    if (isHalfDayLeaveRequest(payload) && halfDayTypeFromLeave(leave) === ctx.holidayHalf) {
+      const detail = LEAVE_REJECT_SAME_HALF_REMARK;
+      if (String(leave.status || '') !== 'approved') {
+        results.push({ leaveId: l._id, action: 'skip', reason: 'half_hol_leave_reject_only_when_approved' });
+        continue;
+      }
+      try {
+        await leaveRegisterService.reverseLeaveDebit(leave, null);
+      } catch (e) {
+        console.error('[leaveAttendanceReconciliation] half-hol leave reverse failed', e);
+        results.push({ leaveId: l._id, action: 'error', error: e.message });
+        continue;
+      }
+      leave.status = 'rejected';
+      if (leave.workflow) {
+        leave.workflow.isCompleted = true;
+        leave.workflow.currentStepRole = null;
+        leave.workflow.nextApprover = null;
+        leave.workflow.nextApproverRole = null;
+        addWorkflowHistory(
+          leave,
+          'rejected',
+          `${HALF_HOL_LEAVE_TAG} System rejected — ${detail}`
+        );
+      }
+      appendRemark(leave, `${HALF_HOL_LEAVE_TAG} ${dateStr}: ${detail}`);
+      await leave.save();
+      try {
+        await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(
+          leave.employeeId,
+          leave.fromDate
+        );
+      } catch (e) {
+        console.warn('[leaveAttendanceReconciliation] monthlyApply sync', e?.message);
+      }
+      try {
+        await syncPayRegisterFromLeave(leave);
+      } catch (e) {
+        console.warn('[leaveAttendanceReconciliation] half-hol leave reject sync', e?.message);
+      }
+      results.push({ leaveId: l._id, action: 'rejected_leave_half_holiday' });
+      continue;
+    }
+
+    if (!isFullDayLeaveRequest(payload)) continue;
+
+    const detail = LEAVE_NARROW_REMARK;
+    const isSingle = isSingleCalendarDayLeave(leave);
+    if (!isSingle) {
+      const splitRes = await splitAndAdjustMultiDayLeave({
+        leave,
+        dateStr,
+        mode: narrowMode,
+        detail: `${HALF_HOL_LEAVE_TAG} ${dateStr}: ${detail}`,
+        syncPayRegisterFromLeave,
+      });
+      if (!splitRes.ok) {
+        results.push({ leaveId: l._id, action: 'error', error: splitRes.reason });
+      } else {
+        results.push({ leaveId: l._id, action: 'split_narrowed_leave_half_holiday' });
+      }
+      continue;
+    }
+
+    const prevState = {
+      isHalfDay: leave.isHalfDay,
+      halfDayType: leave.halfDayType,
+      numberOfDays: leave.numberOfDays,
+    };
+    const wasApproved = String(leave.status || '') === 'approved';
+    if (wasApproved) {
+      try {
+        await leaveRegisterService.reverseLeaveDebit(leave, null);
+      } catch (e) {
+        console.error('[leaveAttendanceReconciliation] half-hol leave narrow reverse failed', e);
+        results.push({ leaveId: l._id, action: 'error', error: e.message });
+        continue;
+      }
+    }
+    applyNarrowFieldsToLeaveDoc(leave, ctx.workingHalf, `${HALF_HOL_LEAVE_TAG} ${dateStr}: ${detail}`);
+    if (leave.workflow) {
+      addWorkflowHistory(
+        leave,
+        'status_changed',
+        `${HALF_HOL_LEAVE_TAG} System updated — ${detail}`
+      );
+    }
+    await leave.save();
+    if (wasApproved) {
+      try {
+        await leaveRegisterService.addLeaveDebit(leave, null);
+      } catch (e) {
+        console.error('[leaveAttendanceReconciliation] half-hol leave narrow re-debit failed', e);
+        leave.isHalfDay = prevState.isHalfDay;
+        leave.halfDayType = prevState.halfDayType;
+        leave.numberOfDays = prevState.numberOfDays;
+        try {
+          await leaveRegisterService.addLeaveDebit(leave, null);
+        } catch (e2) {
+          console.error('[leaveAttendanceReconciliation] half-hol leave narrow rollback failed', e2);
+        }
+        results.push({ leaveId: l._id, action: 'error', error: e.message });
+        continue;
+      }
+    }
+    try {
+      await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(
+        leave.employeeId,
+        leave.fromDate
+      );
+    } catch (e) {
+      console.warn('[leaveAttendanceReconciliation] monthlyApply sync', e?.message);
+    }
+    try {
+      await syncPayRegisterFromLeave(leave);
+    } catch (e) {
+      console.warn('[leaveAttendanceReconciliation] half-hol leave narrow sync', e?.message);
+    }
+    results.push({ leaveId: l._id, action: 'narrowed_leave_half_holiday' });
+  }
+}
+
 async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
   // Bulk re-save scripts may set SKIP_LEAVE_ATTENDANCE_RECONCILIATION=1; admins can also pause via General Settings.
   if (process.env.SKIP_LEAVE_ATTENDANCE_RECONCILIATION === '1') {
@@ -335,6 +623,12 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
   if (!daily || !dateStr) return { ran: false, reason: 'no_daily' };
 
   const ods = await findApprovedOdsForDate(employee._id, dateStr);
+  const { syncPayRegisterFromLeave, syncPayRegisterFromOD } = require('../../pay-register/services/autoSyncService');
+  const results = [];
+
+  await reconcileHalfHolidayOdsForDate(employee, dateStr, syncPayRegisterFromOD, results);
+  await reconcileHalfHolidayLeavesForDate(employee, dateStr, syncPayRegisterFromLeave, results);
+
   const attSettingsDoc = await AttendanceSettings.getSettings();
   const processingMode = AttendanceSettings.getProcessingMode(attSettingsDoc).mode;
   const { attFirst, attSecond } = await computeRawAttendanceHalfCredits(daily, ods, {
@@ -344,7 +638,7 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
   const { p1, p2 } = physicalMask(attFirst, attSecond);
   const physTotal = p1 + p2;
   if (physTotal < 0.5 - 1e-6) {
-    return { ran: true, reason: 'no_physical_coverage' };
+    return { ran: true, reason: 'no_physical_coverage', results };
   }
 
   const dayStart = createISTDate(dateStr, '00:00');
@@ -358,9 +652,6 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
   })
     .select('fromDate toDate isHalfDay halfDayType numberOfDays leaveType leaveNature status splitStatus remarks')
     .lean();
-
-  const { syncPayRegisterFromLeave, syncPayRegisterFromOD } = require('../../pay-register/services/autoSyncService');
-  const results = [];
 
   for (const l of leaves) {
     if (String(l.splitStatus || '') === 'split_approved') {

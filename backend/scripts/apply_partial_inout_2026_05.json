@@ -1,0 +1,283 @@
+{
+  "payPeriod": {
+    "startStr": "2026-04-26",
+    "endStr": "2026-05-25",
+    "month": "2026-05"
+  },
+  "dryRun": false,
+  "examinedCount": 6474,
+  "changed": [
+    {
+      "empNo": "111120",
+      "date": "2026-05-11",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "ABSENT",
+        "payableShifts": 0
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "1434",
+      "date": "2026-05-15",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "OD",
+        "payableShifts": 0.5
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "1715",
+      "date": "2026-05-09",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "ABSENT",
+        "payableShifts": 0
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "1717",
+      "date": "2026-05-02",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "ABSENT",
+        "payableShifts": 0
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "1951",
+      "date": "2026-04-28",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "ABSENT",
+        "payableShifts": 0
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "1951",
+      "date": "2026-05-12",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "ABSENT",
+        "payableShifts": 0
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "1951",
+      "date": "2026-05-24",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "ABSENT",
+        "payableShifts": 0
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "2075",
+      "date": "2026-04-27",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "ABSENT",
+        "payableShifts": 0
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "2159",
+      "date": "2026-05-05",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "ABSENT",
+        "payableShifts": 0
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "2159",
+      "date": "2026-05-10",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "ABSENT",
+        "payableShifts": 0
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "2249",
+      "date": "2026-05-18",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "ABSENT",
+        "payableShifts": 0
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "2249",
+      "date": "2026-05-24",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "ABSENT",
+        "payableShifts": 0
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "2266",
+      "date": "2026-05-15",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "ABSENT",
+        "payableShifts": 0
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "2268",
+      "date": "2026-05-04",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "ABSENT",
+        "payableShifts": 0
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "5006",
+      "date": "2026-05-15",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "OD",
+        "payableShifts": 0.5
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    },
+    {
+      "empNo": "51",
+      "date": "2026-05-16",
+      "before": {
+        "status": "PARTIAL",
+        "payableShifts": 0
+      },
+      "after": {
+        "status": "ABSENT",
+        "payableShifts": 0
+      },
+      "halfDayMet": false,
+      "credits": {
+        "attFirst": 0,
+        "attSecond": 0
+      }
+    }
+  ]
+}

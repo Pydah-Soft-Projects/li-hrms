@@ -6,6 +6,7 @@
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const { extractISTComponents } = require('../../shared/utils/dateUtils');
+const { parseRosterHalfNonWorking } = require('../../shifts/utils/rosterHalfNonWorking');
 const {
   getPunchBasedOdSuggestionForRecord,
   getAutoOdEligibilityFromRecord,
@@ -33,9 +34,13 @@ async function isHolidayOrWeekOff(employeeNumber, dateInput) {
   const ps = await PreScheduledShift.findOne({
     employeeNumber: { $in: empNos },
     date: dateStr,
-    status: { $in: ['WO', 'HOL'] },
-  });
-  return !!ps;
+  })
+    .select('status firstHalfStatus secondHalfStatus shiftId')
+    .lean();
+  if (!ps) return false;
+  if (ps.status === 'WO' || ps.status === 'HOL') return true;
+  const parsed = parseRosterHalfNonWorking(ps);
+  return !!(parsed.firstHOL || parsed.secondHOL || parsed.firstWO || parsed.secondWO);
 }
 
 /**

@@ -892,6 +892,13 @@ function LeavesPageContent() {
   const [splitWarnings, setSplitWarnings] = useState<string[]>([]);
   const [splitErrors, setSplitErrors] = useState<string[]>([]);
   const [splitSaving, setSplitSaving] = useState(false);
+  const [actionProcessing, setActionProcessing] = useState<{ type: 'leave' | 'od'; id: string } | null>(null);
+
+  const isRequestActionBusy = (type: 'leave' | 'od', id: string) =>
+    actionProcessing?.type === type && actionProcessing?.id === id;
+
+  const isDetailActionBusy = () =>
+    selectedItem != null && isRequestActionBusy(detailType, selectedItem._id);
 
   // Leave types and OD types
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
@@ -1888,6 +1895,8 @@ function LeavesPageContent() {
   };
 
   const handleAction = async (id: string, type: 'leave' | 'od', action: 'approve' | 'reject', comments: string = '') => {
+    if (isRequestActionBusy(type, id)) return;
+    setActionProcessing({ type, id });
     try {
       let response;
       if (type === 'leave') {
@@ -1920,6 +1929,8 @@ function LeavesPageContent() {
         title: 'Error',
         text: err.message || 'Action failed',
       });
+    } finally {
+      setActionProcessing(null);
     }
   };
 
@@ -2730,13 +2741,14 @@ function LeavesPageContent() {
 
   const handleDetailAction = async (action: 'approve' | 'reject' | 'cancel') => {
     if (!selectedItem) return;
+    if (isRequestActionBusy(detailType, selectedItem._id)) return;
 
+    setActionProcessing({ type: detailType, id: selectedItem._id });
     try {
       if (detailType === 'leave' && action === 'approve' && splitMode) {
         setSplitSaving(true);
         const saved = await saveSplits();
         if (!saved) {
-          setSplitSaving(false);
           return;
         }
       }
@@ -2793,6 +2805,7 @@ function LeavesPageContent() {
       });
     } finally {
       setSplitSaving(false);
+      setActionProcessing(null);
     }
   };
 
@@ -3575,23 +3588,25 @@ function LeavesPageContent() {
                         <td className="px-4 py-3 text-right">
                           <button
                             type="button"
+                            disabled={isRequestActionBusy('leave', leave._id)}
                             onClick={(e) => {
                               e.stopPropagation();
                               handleAction(leave._id, 'leave', 'approve');
                             }}
-                            className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200 mr-1"
+                            className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200 mr-1 disabled:opacity-50 disabled:pointer-events-none"
                           >
-                            Approve
+                            {isRequestActionBusy('leave', leave._id) ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Approve'}
                           </button>
                           <button
                             type="button"
+                            disabled={isRequestActionBusy('leave', leave._id)}
                             onClick={(e) => {
                               e.stopPropagation();
                               handleAction(leave._id, 'leave', 'reject');
                             }}
-                            className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded hover:bg-red-200"
+                            className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded hover:bg-red-200 disabled:opacity-50 disabled:pointer-events-none"
                           >
-                            Reject
+                            {isRequestActionBusy('leave', leave._id) ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Reject'}
                           </button>
                         </td>
                       </tr>
@@ -3649,17 +3664,19 @@ function LeavesPageContent() {
                       <div className="flex flex-col gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
+                          disabled={isRequestActionBusy('leave', leave._id)}
                           onClick={() => handleAction(leave._id, 'leave', 'approve')}
-                          className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded"
+                          className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded disabled:opacity-50 disabled:pointer-events-none"
                         >
-                          Approve
+                          {isRequestActionBusy('leave', leave._id) ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Approve'}
                         </button>
                         <button
                           type="button"
+                          disabled={isRequestActionBusy('leave', leave._id)}
                           onClick={() => handleAction(leave._id, 'leave', 'reject')}
-                          className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded"
+                          className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded disabled:opacity-50 disabled:pointer-events-none"
                         >
-                          Reject
+                          {isRequestActionBusy('leave', leave._id) ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Reject'}
                         </button>
                       </div>
                     </div>
@@ -3745,23 +3762,25 @@ function LeavesPageContent() {
                         <td className="px-4 py-3 text-right">
                           <button
                             type="button"
+                            disabled={isRequestActionBusy('od', od._id)}
                             onClick={(e) => {
                               e.stopPropagation();
                               handleAction(od._id, 'od', 'approve');
                             }}
-                            className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200 mr-1"
+                            className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200 mr-1 disabled:opacity-50 disabled:pointer-events-none"
                           >
-                            Approve
+                            {isRequestActionBusy('od', od._id) ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Approve'}
                           </button>
                           <button
                             type="button"
+                            disabled={isRequestActionBusy('od', od._id)}
                             onClick={(e) => {
                               e.stopPropagation();
                               handleAction(od._id, 'od', 'reject');
                             }}
-                            className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded hover:bg-red-200"
+                            className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded hover:bg-red-200 disabled:opacity-50 disabled:pointer-events-none"
                           >
-                            Reject
+                            {isRequestActionBusy('od', od._id) ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Reject'}
                           </button>
                         </td>
                       </tr>
@@ -3809,17 +3828,19 @@ function LeavesPageContent() {
                       <div className="flex flex-col gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
+                          disabled={isRequestActionBusy('od', od._id)}
                           onClick={() => handleAction(od._id, 'od', 'approve')}
-                          className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded"
+                          className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded disabled:opacity-50 disabled:pointer-events-none"
                         >
-                          Approve
+                          {isRequestActionBusy('od', od._id) ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Approve'}
                         </button>
                         <button
                           type="button"
+                          disabled={isRequestActionBusy('od', od._id)}
                           onClick={() => handleAction(od._id, 'od', 'reject')}
-                          className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded"
+                          className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded disabled:opacity-50 disabled:pointer-events-none"
                         >
-                          Reject
+                          {isRequestActionBusy('od', od._id) ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Reject'}
                         </button>
                       </div>
                     </div>
@@ -5519,16 +5540,20 @@ function LeavesPageContent() {
                     {/* Action Buttons */}
                     <div className="flex flex-wrap gap-2">
                       <button
+                        type="button"
+                        disabled={isDetailActionBusy()}
                         onClick={() => handleDetailAction('approve')}
-                        className="px-4 py-2.5 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2"
+                        className="px-4 py-2.5 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
                       >
-                        <CheckIcon /> Approve
+                        {isDetailActionBusy() ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckIcon />} Approve
                       </button>
                       <button
+                        type="button"
+                        disabled={isDetailActionBusy()}
                         onClick={() => handleDetailAction('reject')}
-                        className="px-4 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2"
+                        className="px-4 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
                       >
-                        <XIcon /> Reject
+                        {isDetailActionBusy() ? <Loader2 className="w-4 h-4 animate-spin" /> : <XIcon />} Reject
                       </button>
                     </div>
                   </>

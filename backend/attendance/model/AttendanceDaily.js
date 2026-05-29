@@ -650,6 +650,23 @@ attendanceDailySchema.pre('save', async function () {
       }
     }
     applyRosterHalfNonWorkingToAttendanceDaily(this, rosterEntry, getWorkedHalfFromShifts);
+
+    // Single-shift PARTIAL + IN+OUT: below half-day threshold → ABSENT (no present credit)
+    try {
+      const AttendanceSettings = require('./AttendanceSettings');
+      const settings = await AttendanceSettings.getSettings();
+      const pm = AttendanceSettings.getProcessingMode(settings);
+      if (pm.mode === 'single_shift') {
+        const { reconcilePartialDayStatus } = require('../utils/attendanceHalfPresence');
+        const override = reconcilePartialDayStatus(this);
+        if (override === 'ABSENT') {
+          this.status = 'ABSENT';
+          this.payableShifts = 0;
+        }
+      }
+    } catch (partialStatusErr) {
+      console.warn('[AttendanceDaily] partial status reconcile:', partialStatusErr?.message);
+    }
   } else {
     // No shifts (OD-only or no punches): use OD contribution; half-day OD -> HALF_DAY, full-day OD -> PRESENT
     if (odPayableContribution > 0 || odHoursContribution > 0) {

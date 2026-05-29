@@ -22,9 +22,12 @@ const { emitOdTrailUpdate } = require('../../shared/services/socketService');
 const { isHolidayOrWeekOff, getHolidayWeekOffOdApplyContext } = require('../services/odHolidayApplyContextService');
 const { extractISTComponents, getAllDatesInRange, createISTDate } = require('../../shared/utils/dateUtils');
 
-/** Holiday / week-off for CO: roster row, or attendance status, or OD flagged CO-eligible on that calendar day (apply-time). */
+/** Holiday / week-off for CO: roster row, half roster HOL, attendance status, or OD flagged CO-eligible on that calendar day (apply-time). */
 async function dayQualifiesForHolidayWeekOffCo(od, attendanceDateYmd) {
   if (await isHolidayOrWeekOff(od.emp_no, attendanceDateYmd)) return true;
+  const { getRosterHalfHolidayForEmployeeDate } = require('../services/odHalfHolidayRosterService');
+  const halfCtx = await getRosterHalfHolidayForEmployeeDate(od.emp_no, attendanceDateYmd);
+  if (halfCtx.hasHalfHoliday) return true;
   const raw = String(od.emp_no || '').trim();
   const variants = [...new Set([raw.toUpperCase(), raw].filter(Boolean))];
   const att = await AttendanceDaily.findOne({
@@ -956,8 +959,41 @@ exports.applyOD = async (req, res) => {
     const fromStr = extractISTComponents(from).dateStr;
     const toStr = extractISTComponents(to).dateStr;
     const isSingleDayOd = fromStr === toStr;
+
+    let resolvedIsHalfDay = Boolean(isHalfDay);
+    let resolvedHalfDayType = isHalfDay ? halfDayType : null;
+    let resolvedOdTypeExtended =
+      odType_extended || (resolvedIsHalfDay ? 'half_day' : 'full_day');
+    let resolvedNumberOfDays = numberOfDays;
+    let halfHolidayOdRemark = null;
+
+    if (isSingleDayOd && resolvedOdTypeExtended !== 'hours') {
+      const { resolveOdApplyAgainstHalfHoliday } = require('../services/odHalfHolidayRosterService');
+      const halfHolRes = await resolveOdApplyAgainstHalfHoliday(employee.emp_no, fromStr, {
+        isHalfDay: resolvedIsHalfDay,
+        halfDayType: resolvedHalfDayType,
+        odType_extended: resolvedOdTypeExtended,
+        numberOfDays: resolvedNumberOfDays,
+      });
+      if (!halfHolRes.ok) {
+        return res.status(400).json({
+          success: false,
+          error: halfHolRes.error || 'OD conflicts with roster half holiday',
+        });
+      }
+      if (halfHolRes.narrowed) {
+        resolvedIsHalfDay = true;
+        resolvedHalfDayType = halfHolRes.halfDayType;
+        resolvedNumberOfDays = 0.5;
+        resolvedOdTypeExtended = 'half_day';
+        halfHolidayOdRemark = halfHolRes.remark || null;
+      }
+    }
+
     const isHalfDayOd =
-      isHalfDay || odType_extended === 'half_day' || (numberOfDays > 0 && numberOfDays < 1);
+      resolvedIsHalfDay ||
+      resolvedOdTypeExtended === 'half_day' ||
+      (resolvedNumberOfDays > 0 && resolvedNumberOfDays < 1);
     if (isSingleDayOd && odType_extended !== 'hours') {
       try {
         const daily = await AttendanceDaily.findOne({
@@ -1066,9 +1102,14 @@ exports.applyOD = async (req, res) => {
       ],
     };
 
-    // NEW: Check if this OD is on a holiday/week-off for CO eligibility
+    // NEW: Check if this OD is on a holiday/week-off for CO eligibility (full or half roster HOL)
     const fromDateStr = extractISTComponents(from).dateStr;
-    const isHolWo = await isHolidayOrWeekOff(employee.emp_no, fromDateStr);
+    const { getRosterHalfHolidayForEmployeeDate } = require('../services/odHalfHolidayRosterService');
+    const halfHolRosterCtx = await getRosterHalfHolidayForEmployeeDate(employee.emp_no, fromDateStr);
+    const isHolWo =
+      (await isHolidayOrWeekOff(employee.emp_no, fromDateStr)) || halfHolRosterCtx.hasHalfHoliday;
+
+    const odRemarks = [remarks, halfHolidayOdRemark].filter(Boolean).join('\n').trim() || remarks;
 
     // Create OD application
     const od = new OD({
@@ -1077,9 +1118,9 @@ exports.applyOD = async (req, res) => {
       odType,
       fromDate: from,
       toDate: to,
-      numberOfDays,
-      isHalfDay: isHalfDay || false,
-      halfDayType: isHalfDay ? halfDayType : null,
+      numberOfDays: resolvedNumberOfDays,
+      isHalfDay: resolvedIsHalfDay,
+      halfDayType: resolvedIsHalfDay ? resolvedHalfDayType : null,
       purpose,
       placeVisited,
       placesVisited,
@@ -1095,12 +1136,12 @@ exports.applyOD = async (req, res) => {
       appliedBy: req.user._id,
       appliedAt: new Date(),
       status: 'draft',
-      remarks,
+      remarks: odRemarks,
       isAssigned: isAssigned || (employeeId && employeeId !== req.user.employeeRef?.toString()),
       assignedBy: isAssigned ? req.user._id : null,
       assignedByName: isAssigned ? req.user.name : null,
       // NEW: Hour-based OD fields
-      odType_extended: odType_extended || (isHalfDay ? 'half_day' : 'full_day'),
+      odType_extended: resolvedOdTypeExtended,
       odStartTime: odStartTime || null,
       odEndTime: odEndTime || null,
       durationHours: durationHours,

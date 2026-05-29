@@ -3,6 +3,9 @@ const {
   computeRawAttendanceHalfCreditsSync,
   getWorkedHalfFromLegacyPenalties,
   getWorkedHalfFromShiftSegments,
+  getWorkedHalfFromInThumbOnly,
+  resolvePartialWorkedHalfKey,
+  reconcilePartialDayStatus,
   resolveHalfDayWorkedHalfKey,
 } = require('../attendanceHalfPresence');
 
@@ -24,30 +27,144 @@ describe('attendanceHalfPresence', () => {
       expect(partialSingleShiftHalfCredits(daily)).toEqual({ attFirst: 0, attSecond: 0.5 });
     });
 
-    it('uses legacy early-out for PARTIAL with IN+OUT when penalties differ', () => {
+    it('IN+OUT meeting half-day threshold credits one half from IN thumb only (not both)', () => {
       const daily = {
         status: 'PARTIAL',
-        totalEarlyOutMinutes: 30,
-        totalLateInMinutes: 0,
+        payableShifts: 0.5,
         shifts: [
           {
             shiftStartTime: '09:00',
             shiftEndTime: '18:00',
             inTime: new Date('2026-04-01T09:00:00+05:30'),
-            outTime: new Date('2026-04-01T13:00:00+05:30'),
+            outTime: new Date('2026-04-01T17:00:00+05:30'),
+            punchHours: 4,
+            expectedHours: 8,
+            payableShift: 0.5,
           },
         ],
       };
       expect(partialSingleShiftHalfCredits(daily)).toEqual({ attFirst: 0.5, attSecond: 0 });
+      expect(resolvePartialWorkedHalfKey(daily)).toBe('first_half');
     });
 
-    it('uses shift segments when stored on shift row', () => {
+    it('IN+OUT afternoon IN credits second half when half-day threshold met', () => {
       const daily = {
         status: 'PARTIAL',
+        payableShifts: 0.5,
+        shifts: [
+          {
+            shiftStartTime: '09:00',
+            shiftEndTime: '18:00',
+            inTime: new Date('2026-04-01T14:00:00+05:30'),
+            outTime: new Date('2026-04-01T17:00:00+05:30'),
+            punchHours: 4,
+            expectedHours: 8,
+            payableShift: 0.5,
+          },
+        ],
+      };
+      expect(partialSingleShiftHalfCredits(daily)).toEqual({ attFirst: 0, attSecond: 0.5 });
+    });
+
+    it('IN+OUT below half-day threshold is absent (no partial present credit)', () => {
+      const daily = {
+        status: 'PARTIAL',
+        payableShifts: 0.1,
+        shifts: [
+          {
+            shiftStartTime: '09:00',
+            shiftEndTime: '18:00',
+            inTime: new Date('2026-04-01T09:00:00+05:30'),
+            outTime: new Date('2026-04-01T10:00:00+05:30'),
+            punchHours: 0.7,
+            expectedHours: 8,
+            payableShift: 0.1,
+          },
+        ],
+      };
+      expect(partialSingleShiftHalfCredits(daily)).toEqual({ attFirst: 0, attSecond: 0 });
+      expect(reconcilePartialDayStatus(daily)).toBe('ABSENT');
+    });
+
+    it('IN+OUT without shift bounds falls back to first half when half-day threshold met', () => {
+      const daily = {
+        status: 'PARTIAL',
+        date: '2026-04-01',
+        payableShifts: 0.5,
+        shifts: [
+          {
+            inTime: new Date('2026-04-01T09:00:00+05:30'),
+            outTime: new Date('2026-04-01T13:00:00+05:30'),
+            punchHours: 4,
+            payableShift: 0.5,
+          },
+        ],
+      };
+      expect(partialSingleShiftHalfCredits(daily)).toEqual({ attFirst: 0.5, attSecond: 0 });
+      expect(reconcilePartialDayStatus(daily)).toBeNull();
+    });
+
+    it('uses shift master firstHalf/secondHalf when populated on shiftId', () => {
+      const daily = {
+        status: 'PARTIAL',
+        date: '2026-04-01',
+        payableShifts: 0.5,
+        shifts: [
+          {
+            inTime: new Date('2026-04-01T14:30:00+05:30'),
+            outTime: new Date('2026-04-01T17:00:00+05:30'),
+            punchHours: 4,
+            expectedHours: 8,
+            payableShift: 0.5,
+            shiftId: {
+              startTime: '09:00',
+              endTime: '18:00',
+              payableShifts: 1,
+              firstHalf: { startTime: '09:00', endTime: '13:30', payableShifts: 0.5 },
+              secondHalf: { startTime: '13:30', endTime: '18:00', payableShifts: 0.5 },
+            },
+          },
+        ],
+      };
+      expect(partialSingleShiftHalfCredits(daily)).toEqual({ attFirst: 0, attSecond: 0.5 });
+    });
+
+    it('segment both-present on PARTIAL uses IN thumb when half-day met, not both halves', () => {
+      const daily = {
+        status: 'PARTIAL',
+        payableShifts: 0.5,
+        shifts: [
+          {
+            shiftStartTime: '09:00',
+            shiftEndTime: '18:00',
+            inTime: new Date('2026-04-01T09:00:00+05:30'),
+            outTime: new Date('2026-04-01T17:00:00+05:30'),
+            punchHours: 4,
+            expectedHours: 8,
+            payableShift: 0.5,
+            shiftSegments: [
+              { segmentName: 'firstHalf', present: true },
+              { segmentName: 'secondHalf', present: true },
+            ],
+          },
+        ],
+      };
+      expect(getWorkedHalfFromShiftSegments(daily.shifts[0])).toBe('both');
+      expect(getWorkedHalfFromInThumbOnly(daily.shifts[0])).toBe('first_half');
+      expect(partialSingleShiftHalfCredits(daily)).toEqual({ attFirst: 0.5, attSecond: 0 });
+    });
+
+    it('uses shift segments when stored on shift row and half-day threshold met', () => {
+      const daily = {
+        status: 'PARTIAL',
+        payableShifts: 0.5,
         shifts: [
           {
             inTime: new Date('2026-04-01T14:00:00+05:30'),
             outTime: new Date('2026-04-01T18:00:00+05:30'),
+            punchHours: 4,
+            expectedHours: 8,
+            payableShift: 0.5,
             shiftSegments: [
               { segmentName: 'firstHalf', present: false },
               { segmentName: 'secondHalf', present: true },

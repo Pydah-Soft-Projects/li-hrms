@@ -926,6 +926,13 @@ export default function LeavesPage() {
   const [splitWarnings, setSplitWarnings] = useState<string[]>([]);
   const [splitErrors, setSplitErrors] = useState<string[]>([]);
   const [splitSaving, setSplitSaving] = useState(false);
+  const [actionProcessing, setActionProcessing] = useState<{ type: 'leave' | 'od'; id: string } | null>(null);
+
+  const isRequestActionBusy = (type: 'leave' | 'od', id: string) =>
+    actionProcessing?.type === type && actionProcessing?.id === id;
+
+  const isDetailActionBusy = () =>
+    selectedItem != null && isRequestActionBusy(detailType, selectedItem._id);
 
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editFormData, setEditFormData] = useState<any>({});
@@ -2260,6 +2267,8 @@ export default function LeavesPage() {
   };
 
   const handleAction = async (id: string, type: 'leave' | 'od', action: 'approve' | 'reject', comments: string = '') => {
+    if (isRequestActionBusy(type, id)) return;
+    setActionProcessing({ type, id });
     try {
       let response;
       if (type === 'leave') {
@@ -2290,6 +2299,8 @@ export default function LeavesPage() {
         title: 'Error',
         text: err.message || 'Action failed',
       });
+    } finally {
+      setActionProcessing(null);
     }
   };
 
@@ -3051,13 +3062,14 @@ export default function LeavesPage() {
 
   const handleDetailAction = async (action: 'approve' | 'reject' | 'cancel') => {
     if (!selectedItem) return;
+    if (isRequestActionBusy(detailType, selectedItem._id)) return;
 
+    setActionProcessing({ type: detailType, id: selectedItem._id });
     try {
       if (detailType === 'leave' && action === 'approve' && splitMode) {
         setSplitSaving(true);
         const saved = await saveSplits();
         if (!saved) {
-          setSplitSaving(false);
           return;
         }
       }
@@ -3114,6 +3126,7 @@ export default function LeavesPage() {
       });
     } finally {
       setSplitSaving(false);
+      setActionProcessing(null);
     }
   };
 
@@ -4746,11 +4759,11 @@ export default function LeavesPage() {
                               <td className="px-6 py-3.5 text-right">
                                 {canPerformAction(leave, 'leave') && hasManagePermission && (
                                   <div className="flex items-center justify-end gap-1">
-                                    <button onClick={(e) => { e.stopPropagation(); handleAction(leave._id, 'leave', 'approve'); }} className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-all" title="Approve">
-                                      <Check className="w-4 h-4" />
+                                    <button type="button" disabled={isRequestActionBusy('leave', leave._id)} onClick={(e) => { e.stopPropagation(); handleAction(leave._id, 'leave', 'approve'); }} className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-all disabled:opacity-50 disabled:pointer-events-none" title="Approve">
+                                      {isRequestActionBusy('leave', leave._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                                     </button>
-                                    <button onClick={(e) => { e.stopPropagation(); handleAction(leave._id, 'leave', 'reject'); }} className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all" title="Reject">
-                                      <X className="w-4 h-4" />
+                                    <button type="button" disabled={isRequestActionBusy('leave', leave._id)} onClick={(e) => { e.stopPropagation(); handleAction(leave._id, 'leave', 'reject'); }} className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all disabled:opacity-50 disabled:pointer-events-none" title="Reject">
+                                      {isRequestActionBusy('leave', leave._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
                                     </button>
                                   </div>
                                 )}
@@ -4840,27 +4853,29 @@ export default function LeavesPage() {
                               {hasManagePermission && (
                                 <button
                                   type="button"
+                                  disabled={isRequestActionBusy('leave', leave._id)}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleAction(leave._id, 'leave', 'approve');
                                   }}
-                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
+                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white disabled:opacity-50 disabled:pointer-events-none"
                                   title="Approve Leave"
                                 >
-                                  <Check /> Approve
+                                  {isRequestActionBusy('leave', leave._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check />} Approve
                                 </button>
                               )}
                               {hasManagePermission && (
                                 <button
                                   type="button"
+                                  disabled={isRequestActionBusy('leave', leave._id)}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleAction(leave._id, 'leave', 'reject');
                                   }}
-                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
+                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white disabled:opacity-50 disabled:pointer-events-none"
                                   title="Reject Leave"
                                 >
-                                  <X /> Reject
+                                  {isRequestActionBusy('leave', leave._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <X />} Reject
                                 </button>
                               )}
                             </div>
@@ -4916,11 +4931,11 @@ export default function LeavesPage() {
                               <td className="px-6 py-3.5 text-right">
                                 {canPerformAction(od, 'od') && hasManagePermission && (
                                   <div className="flex items-center justify-end gap-1">
-                                    <button onClick={(e) => { e.stopPropagation(); handleAction(od._id, 'od', 'approve'); }} className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-all" title="Approve">
-                                      <Check className="w-4 h-4" />
+                                    <button type="button" disabled={isRequestActionBusy('od', od._id)} onClick={(e) => { e.stopPropagation(); handleAction(od._id, 'od', 'approve'); }} className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-all disabled:opacity-50 disabled:pointer-events-none" title="Approve">
+                                      {isRequestActionBusy('od', od._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                                     </button>
-                                    <button onClick={(e) => { e.stopPropagation(); handleAction(od._id, 'od', 'reject'); }} className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all" title="Reject">
-                                      <X className="w-4 h-4" />
+                                    <button type="button" disabled={isRequestActionBusy('od', od._id)} onClick={(e) => { e.stopPropagation(); handleAction(od._id, 'od', 'reject'); }} className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all disabled:opacity-50 disabled:pointer-events-none" title="Reject">
+                                      {isRequestActionBusy('od', od._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
                                     </button>
                                   </div>
                                 )}
@@ -5007,27 +5022,29 @@ export default function LeavesPage() {
                               {hasManagePermission && (
                                 <button
                                   type="button"
+                                  disabled={isRequestActionBusy('od', od._id)}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleAction(od._id, 'od', 'approve');
                                   }}
-                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
+                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white disabled:opacity-50 disabled:pointer-events-none"
                                   title="Approve OD"
                                 >
-                                  <Check /> Approve
+                                  {isRequestActionBusy('od', od._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check />} Approve
                                 </button>
                               )}
                               {hasManagePermission && (
                                 <button
                                   type="button"
+                                  disabled={isRequestActionBusy('od', od._id)}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleAction(od._id, 'od', 'reject');
                                   }}
-                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
+                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white disabled:opacity-50 disabled:pointer-events-none"
                                   title="Reject OD"
                                 >
-                                  <X /> Reject
+                                  {isRequestActionBusy('od', od._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <X />} Reject
                                 </button>
                               )}
                             </div>
@@ -6771,8 +6788,14 @@ export default function LeavesPage() {
                       />
                       {['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && (
                         <div className="flex gap-2">
-                          <button onClick={() => handleDetailAction('approve')} className="flex-1 sm:flex-none px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors">Approve</button>
-                          <button onClick={() => handleDetailAction('reject')} className="flex-1 sm:flex-none px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors">Reject</button>
+                          <button type="button" disabled={isDetailActionBusy()} onClick={() => handleDetailAction('approve')} className="flex flex-1 sm:flex-none items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors disabled:opacity-50 disabled:pointer-events-none">
+                            {isDetailActionBusy() ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                            Approve
+                          </button>
+                          <button type="button" disabled={isDetailActionBusy()} onClick={() => handleDetailAction('reject')} className="flex flex-1 sm:flex-none items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors disabled:opacity-50 disabled:pointer-events-none">
+                            {isDetailActionBusy() ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                            Reject
+                          </button>
                         </div>
                       )}
                     </>

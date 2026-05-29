@@ -280,6 +280,25 @@ function applyRosterHalfNonWorkingToAttendanceDaily(doc, rosterRow, getWorkedHal
     else if (!doc.notes.includes('Roster holiday')) doc.notes = `${doc.notes} | ${remark}`;
   }
 
+  // Full-day-looking punches on a single half-holiday roster day → cap to working half only (single-shift).
+  if (
+    hasHalfHol &&
+    !roster.isFullHOL &&
+    !workedHalf &&
+    doc.totalWorkingHours > 0 &&
+    (Number(doc.payableShifts) > 0.5 + 1e-6 ||
+      String(doc.status || '').toUpperCase() === 'PRESENT')
+  ) {
+    const workingHalfKey = roster.firstHOL && !roster.secondHOL ? 'second_half' : 'first_half';
+    const holidayLabel = roster.firstHOL ? 'first half' : 'second half';
+    result.workedOnWorkingHalfWithOtherHalfHoliday = true;
+    doc.status = 'HALF_DAY';
+    doc.payableShifts = Math.round(Math.min(Number(doc.payableShifts) || 1, 0.5) * 100) / 100;
+    const remark = `Roster half holiday (${holidayLabel}); full-day punch capped to working ${workingHalfKey.replace('_', ' ')} (0.5 payable)`;
+    if (!doc.notes) doc.notes = remark;
+    else if (!doc.notes.includes('full-day punch capped')) doc.notes = `${doc.notes} | ${remark}`;
+  }
+
   if (hasHalfWo && !hasHalfHol) {
     // Half week-off: mirror holiday logic with WEEK_OFF on non-worked half in summary via roster flags
     if (workedHalf) {
