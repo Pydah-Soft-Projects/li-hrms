@@ -16,6 +16,13 @@ const {
     finalizePendingLockedDisplayByPool,
     getConfiguredMonthlyTypeCap,
 } = require('./monthlyApplicationCapService');
+const { compareEmpNo } = require('../../shared/utils/employeeSort');
+
+function compareRegisterEntryEmpNo(a, b) {
+    const ea = a?.employee?.empNo ?? a?.employee?.emp_no;
+    const eb = b?.employee?.empNo ?? b?.employee?.emp_no;
+    return compareEmpNo(ea, eb);
+}
 
 /**
  * Mongo / legacy rows sometimes omit nested leave buckets; avoid "cannot read casualLeave of undefined".
@@ -339,6 +346,23 @@ async function buildClUsedLockedAuditForSlot(employeeId, slotStart, slotEnd) {
     used.sort(sortByFrom);
     locked.sort(sortByFrom);
     return { used, locked };
+}
+
+/** Sum contributed days from leave-application audit rows (approved / in-flight). */
+function sumAuditContributedDays(auditItems) {
+    if (!Array.isArray(auditItems)) return 0;
+    return round2(auditItems.reduce((s, a) => s + (Number(a?.contributedDays) || 0), 0));
+}
+
+/**
+ * Used column for register grid: closed months follow transfer reconcile (approved Leave apps);
+ * open months show the higher of ledger debits vs application audit so pending use is visible.
+ */
+function resolveRegisterClUsedDisplay(ledgerUsed, auditUsedItems, periodEnded) {
+    const ledger = round2(Number(ledgerUsed) || 0);
+    const fromApps = sumAuditContributedDays(auditUsedItems);
+    if (periodEnded) return fromApps;
+    return round2(Math.max(ledger, fromApps));
 }
 
 /**
@@ -857,7 +881,7 @@ class LeaveRegisterService {
                     });
                 }
 
-                // Apply list pagination in the same way (sorted by employee name).
+                // Apply list pagination in the same way (sorted by employee number, like attendance).
                 let entriesForHeavyWork = groupedSeed;
                 let listPaginationMeta = null;
                 const canPaginate =
@@ -868,14 +892,12 @@ class LeaveRegisterService {
                 if (canPaginate) {
                     const page = Math.max(1, parseInt(String(listPaginationOpt.page), 10) || 1);
                     const limit = Math.min(100, Math.max(1, parseInt(String(listPaginationOpt.limit), 10) || 25));
-                    const sorted = [...groupedSeed].sort((a, b) => {
-                        const na = String(a.employee?.name || '').toLowerCase();
-                        const nb = String(b.employee?.name || '').toLowerCase();
-                        return na.localeCompare(nb);
-                    });
+                    const sorted = [...groupedSeed].sort(compareRegisterEntryEmpNo);
                     const start = (page - 1) * limit;
                     entriesForHeavyWork = sorted.slice(start, start + limit);
                     listPaginationMeta = { total: sorted.length, page, limit };
+                } else {
+                    entriesForHeavyWork = [...groupedSeed].sort(compareRegisterEntryEmpNo);
                 }
 
                 await this.hydrateRegisterYearView(entriesForHeavyWork, filters.financialYear, {
@@ -1020,7 +1042,7 @@ class LeaveRegisterService {
                 }
             }
 
-            /** Cap + hydrate only this slice for paginated list API (sorted by employee name). */
+            /** Cap + hydrate only this slice for paginated list API (sorted by employee number, like attendance). */
             let entriesForHeavyWork = groupedData;
             let listPaginationMeta = null;
             const canPaginate =
@@ -1031,14 +1053,12 @@ class LeaveRegisterService {
             if (canPaginate) {
                 const page = Math.max(1, parseInt(String(listPaginationOpt.page), 10) || 1);
                 const limit = Math.min(100, Math.max(1, parseInt(String(listPaginationOpt.limit), 10) || 25));
-                const sorted = [...groupedData].sort((a, b) => {
-                    const na = String(a.employee?.name || '').toLowerCase();
-                    const nb = String(b.employee?.name || '').toLowerCase();
-                    return na.localeCompare(nb);
-                });
+                const sorted = [...groupedData].sort(compareRegisterEntryEmpNo);
                 const start = (page - 1) * limit;
                 entriesForHeavyWork = sorted.slice(start, start + limit);
                 listPaginationMeta = { total: sorted.length, page, limit };
+            } else {
+                entriesForHeavyWork = [...groupedData].sort(compareRegisterEntryEmpNo);
             }
 
             // Pending / in-flight leaves by payroll month (FY start → selected month).
@@ -1381,8 +1401,9 @@ class LeaveRegisterService {
 
                     const slotStart = slot.payPeriodStart ? new Date(slot.payPeriodStart) : null;
                     const slotEnd = slot.payPeriodEnd ? new Date(slot.payPeriodEnd) : null;
+                    // Always build CL application audit so "Used" matches transfer math even in list (lite) mode.
                     const clAudit =
-                        !lite && eid && slotStart && slotEnd
+                        eid && slotStart && slotEnd
                             ? await buildClUsedLockedAuditForSlot(eid, slotStart, slotEnd)
                             : { used: [], locked: [] };
                     monthsOut.push({
@@ -1658,7 +1679,11 @@ class LeaveRegisterService {
                     monthEditPolicy: resolveMonthSlotEditFlags(policy, m.payrollMonthIndex),
                     cl: {
                         credited: clCreditedNet,
-                        used: Number(clL.usedThisMonth) || 0,
+                        used: resolveRegisterClUsedDisplay(
+                            clL.usedThisMonth,
+                            m.audit?.clUsed,
+                            periodEndedForRegister
+                        ),
                         locked: sub != null ? clLockedDisplay : periodEndedForRegister ? 0 : policyLock,
                         /** Credits rolled into this payroll month from the prior slot / FY (not policy “Cr”). */
                         transferIn: clTransferIn,
@@ -1667,8 +1692,18 @@ class LeaveRegisterService {
                         typeApplyCap: clTypeOn ? clTypeCap : null,
                         typeApplyConsumed: clTypeOn ? clNativeApp : null,
                         typeApplyRemaining: clTypeOn ? Math.max(0, clTypeCap - clNativeApp) : null,
-                        usedAudit: Array.isArray(m.audit?.clUsed) ? m.audit.clUsed : [],
-                        lockedAudit: Array.isArray(m.audit?.clLocked) ? m.audit.clLocked : [],
+                        usedAudit: (() => {
+                            const rows = Array.isArray(m.audit?.clUsed) ? m.audit.clUsed : [];
+                            if (!lite) return rows;
+                            return rows.map(({ leaveId, appliedFrom, appliedTo, contributedDays, status }) => ({
+                                leaveId,
+                                appliedFrom,
+                                appliedTo,
+                                contributedDays,
+                                status,
+                            }));
+                        })(),
+                        lockedAudit: lite ? [] : Array.isArray(m.audit?.clLocked) ? m.audit.clLocked : [],
                     },
                     ccl: {
                         credited: Math.max(0, (Number(cclL.earned) || 0) - (Number(cclL.reversalCreditThisMonth) || 0)),

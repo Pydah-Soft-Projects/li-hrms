@@ -40,6 +40,10 @@ const outputColumnSchema = new mongoose.Schema({
   field: { type: String, default: '' },
   formula: { type: String, default: '' },
   order: { type: Number, default: 0 },
+  /** When true and allowPaysheetModification is on, paysheet users may request a change for this column. */
+  paysheetEditable: { type: Boolean, default: false },
+  /** Storage path on PayrollRecord (e.g. loanAdvance.totalEMI). Defaults to `field` when source=field. */
+  paysheetEditableFieldPath: { type: String, default: '' },
 }, { _id: false });
 
 const payrollConfigurationSchema = new mongoose.Schema({
@@ -61,6 +65,8 @@ const payrollConfigurationSchema = new mongoose.Schema({
    * When empty, dynamic engine receives full scheduled EMI and advance amounts (no cap).
    */
   loanAdvancePayableColumnHeader: { type: String, default: '' },
+  /** Superadmin toggle: paysheet modification requests are allowed when true. */
+  allowPaysheetModification: { type: Boolean, default: false },
   updatedAt: { type: Date, default: Date.now },
 }, { timestamps: true });
 
@@ -112,8 +118,22 @@ function normalizeConfigPayload(payload = {}) {
       const source = explicitSource || (formulaStr.length > 0 ? 'formula' : 'field');
       const field = source === 'formula' ? '' : (c.field || '');
       const formula = source === 'formula' ? formulaStr : '';
-      return { header, source, field, formula, order };
+      const paysheetEditable = !!c.paysheetEditable;
+      const paysheetEditableFieldPath =
+        c.paysheetEditableFieldPath != null ? String(c.paysheetEditableFieldPath).trim() : '';
+      return {
+        header,
+        source,
+        field,
+        formula,
+        order,
+        paysheetEditable,
+        paysheetEditableFieldPath,
+      };
     });
+  }
+  if (payload.allowPaysheetModification !== undefined) {
+    update.allowPaysheetModification = !!payload.allowPaysheetModification;
   }
   if (payload.statutoryProratePaidDaysColumnHeader !== undefined) {
     update.statutoryProratePaidDaysColumnHeader = String(payload.statutoryProratePaidDaysColumnHeader || '').trim();

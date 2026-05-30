@@ -1,0 +1,1091 @@
+{
+  "database": "mongodb://localhost:27017/hrms-leave-2",
+  "financialYear": "2026",
+  "endedMonthsThrough": 5,
+  "rollFlags": {
+    "CL": true,
+    "CCL": true,
+    "EL": false,
+    "elInPool": false
+  },
+  "scannedEmployees": 439,
+  "employeesWithAnyIssue": 53,
+  "employeesClean": 386,
+  "employeesWithDisplayChainBreak": 0,
+  "employeesWithDisplayVsLedgerUsed": 53,
+  "uniqueEmployeesWithIssues": [
+    "06",
+    "61",
+    "71",
+    "117",
+    "128",
+    "138",
+    "0143",
+    "164",
+    "166",
+    "168",
+    "812",
+    "1005",
+    "1253",
+    "1434",
+    "1496",
+    "1551",
+    "1587",
+    "1606",
+    "1644",
+    "1724",
+    "1823",
+    "1832",
+    "1847",
+    "1890",
+    "1923",
+    "1941",
+    "1954",
+    "1956",
+    "1992",
+    "2009",
+    "2017",
+    "2018",
+    "2067",
+    "2069",
+    "2113",
+    "2131",
+    "2141",
+    "2154",
+    "2163",
+    "2181",
+    "2183",
+    "2185",
+    "2202",
+    "2221",
+    "2226",
+    "2262",
+    "2279",
+    "2297",
+    "5008",
+    "5010",
+    "7015",
+    "7030",
+    "7044"
+  ],
+  "issueCountsByCategory": {
+    "display_vs_ledger_used": 59,
+    "transfer_out_vs_all_debits": 24,
+    "carried_in_vs_prior_ledger_carry": 17
+  },
+  "issuesByMonth": {
+    "5/2026": {
+      "display_chain_break": {
+        "count": 0,
+        "empNos": []
+      },
+      "display_vs_ledger_used": {
+        "count": 23,
+        "empNos": [
+          "138",
+          "0143",
+          "812",
+          "1005",
+          "1253",
+          "1434",
+          "1890",
+          "1954",
+          "1956",
+          "2017",
+          "2067",
+          "2113",
+          "2131",
+          "2141",
+          "2183",
+          "2185",
+          "2202",
+          "2226",
+          "2262",
+          "2297",
+          "5008",
+          "5010",
+          "7030"
+        ]
+      },
+      "carried_in_vs_prior_reconcile_carry": {
+        "count": 0,
+        "empNos": []
+      },
+      "carried_in_vs_prior_ledger_carry": {
+        "count": 9,
+        "empNos": [
+          "61",
+          "138",
+          "1587",
+          "1606",
+          "1832",
+          "1992",
+          "2154",
+          "2181",
+          "7044"
+        ]
+      },
+      "transfer_out_vs_all_debits": {
+        "count": 7,
+        "empNos": [
+          "812",
+          "1890",
+          "1954",
+          "2183",
+          "2202",
+          "2226",
+          "2262"
+        ]
+      },
+      "pool_out_vs_posted_txn": {
+        "count": 0,
+        "empNos": []
+      },
+      "pool_in_vs_posted_txn": {
+        "count": 0,
+        "empNos": []
+      }
+    },
+    "3/2026": {
+      "display_chain_break": {
+        "count": 0,
+        "empNos": []
+      },
+      "display_vs_ledger_used": {
+        "count": 12,
+        "empNos": [
+          "06",
+          "71",
+          "128",
+          "166",
+          "168",
+          "1644",
+          "1724",
+          "1823",
+          "1923",
+          "2067",
+          "2163",
+          "5008"
+        ]
+      },
+      "carried_in_vs_prior_reconcile_carry": {
+        "count": 0,
+        "empNos": []
+      },
+      "carried_in_vs_prior_ledger_carry": {
+        "count": 0,
+        "empNos": []
+      },
+      "transfer_out_vs_all_debits": {
+        "count": 8,
+        "empNos": [
+          "71",
+          "128",
+          "166",
+          "168",
+          "1644",
+          "1724",
+          "1923",
+          "5008"
+        ]
+      },
+      "pool_out_vs_posted_txn": {
+        "count": 0,
+        "empNos": []
+      },
+      "pool_in_vs_posted_txn": {
+        "count": 0,
+        "empNos": []
+      }
+    },
+    "4/2026": {
+      "display_chain_break": {
+        "count": 0,
+        "empNos": []
+      },
+      "display_vs_ledger_used": {
+        "count": 24,
+        "empNos": [
+          "61",
+          "117",
+          "138",
+          "164",
+          "1005",
+          "1496",
+          "1551",
+          "1587",
+          "1606",
+          "1644",
+          "1832",
+          "1847",
+          "1941",
+          "1992",
+          "2009",
+          "2018",
+          "2069",
+          "2154",
+          "2163",
+          "2181",
+          "2221",
+          "2279",
+          "7015",
+          "7044"
+        ]
+      },
+      "carried_in_vs_prior_reconcile_carry": {
+        "count": 0,
+        "empNos": []
+      },
+      "carried_in_vs_prior_ledger_carry": {
+        "count": 8,
+        "empNos": [
+          "71",
+          "128",
+          "166",
+          "168",
+          "1644",
+          "1724",
+          "1923",
+          "5008"
+        ]
+      },
+      "transfer_out_vs_all_debits": {
+        "count": 9,
+        "empNos": [
+          "61",
+          "138",
+          "1587",
+          "1606",
+          "1832",
+          "1992",
+          "2154",
+          "2181",
+          "7044"
+        ]
+      },
+      "pool_out_vs_posted_txn": {
+        "count": 0,
+        "empNos": []
+      },
+      "pool_in_vs_posted_txn": {
+        "count": 0,
+        "empNos": []
+      }
+    }
+  },
+  "sampleIssues": {
+    "display_vs_ledger_used": [
+      {
+        "empNo": "0143",
+        "name": "BUDDIGA BALA SRI VENKATA SAI MANOJ KUMAR",
+        "month": "5/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 0,
+        "displayUsed": 1,
+        "poolOut": 2,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "06",
+        "name": "B.J.U.N.SUNEETHA",
+        "month": "3/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 0,
+        "displayUsed": 1,
+        "poolOut": 2,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1005",
+        "name": "PALIVELA LAXMI SUMA",
+        "month": "4/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 1,
+        "displayUsed": 2,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1005",
+        "name": "PALIVELA LAXMI SUMA",
+        "month": "5/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 1,
+        "displayUsed": 2,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "117",
+        "name": "KALIKI PRANUSHA k",
+        "month": "4/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 2.5,
+        "displayUsed": 3.5,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1253",
+        "name": "K. DURGA DEVI",
+        "month": "5/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 0,
+        "displayUsed": 1,
+        "poolOut": 1.5,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "128",
+        "name": "DANGETI ANURADHA",
+        "month": "3/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 2.5,
+        "displayUsed": 3.5,
+        "poolOut": 0.5,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "138",
+        "name": "D BHAVANI",
+        "month": "4/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 1,
+        "displayUsed": 2,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "138",
+        "name": "D BHAVANI",
+        "month": "5/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CCL",
+        "ledgerUsed": 0,
+        "displayUsed": 1,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1434",
+        "name": "BASHIR HAMADBABU MD",
+        "month": "5/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CCL",
+        "ledgerUsed": 0,
+        "displayUsed": 1,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1496",
+        "name": "Dr. POTHULA V V SATISH",
+        "month": "4/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 0,
+        "displayUsed": 1,
+        "poolOut": 5,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1551",
+        "name": "SADGUNA KUMARI V",
+        "month": "4/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 2,
+        "displayUsed": 3,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1587",
+        "name": "S.V.V.N.SURESH KUMAR",
+        "month": "4/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 2,
+        "displayUsed": 2.5,
+        "poolOut": 3,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1606",
+        "name": "PAPPULA JAYASRI LAKSHMI",
+        "month": "4/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 2,
+        "displayUsed": 3,
+        "poolOut": 2,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "164",
+        "name": "PATNAM SANDEEP",
+        "month": "4/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 0,
+        "displayUsed": 2,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1644",
+        "name": "PUCHAKAYALA SATISH REDDY",
+        "month": "3/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 1.5,
+        "displayUsed": 2,
+        "poolOut": 3,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1644",
+        "name": "PUCHAKAYALA SATISH REDDY",
+        "month": "4/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 0,
+        "displayUsed": 1,
+        "poolOut": 3,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "166",
+        "name": "SATHI RAMYA",
+        "month": "3/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 1.5,
+        "displayUsed": 2,
+        "poolOut": 1,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "168",
+        "name": "I. BHUVANA PRIYA",
+        "month": "3/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 3,
+        "displayUsed": 2,
+        "poolOut": 1,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1724",
+        "name": "RAMAVARAPU RAMALAKSHMI",
+        "month": "3/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 2,
+        "displayUsed": 3,
+        "poolOut": 1,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1823",
+        "name": "MUNEENDRA KANNEDI",
+        "month": "3/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 0,
+        "displayUsed": 0.5,
+        "poolOut": 2.5,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1832",
+        "name": "A V V S N V PRASAD",
+        "month": "4/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CCL",
+        "ledgerUsed": 2,
+        "displayUsed": 3,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1847",
+        "name": "KOTA JANAKI",
+        "month": "4/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 1,
+        "displayUsed": 2,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1890",
+        "name": "K NAGA DURGA RAO",
+        "month": "5/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CCL",
+        "ledgerUsed": 3,
+        "displayUsed": 4,
+        "poolOut": 1,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1923",
+        "name": "PASALAPUDI CHINNA THIMMARAJU",
+        "month": "3/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 0.5,
+        "displayUsed": 1,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1941",
+        "name": "VALLU POORNIMA",
+        "month": "4/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 2,
+        "displayUsed": 3,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1954",
+        "name": "ANGADI SARITHA",
+        "month": "5/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CCL",
+        "ledgerUsed": 2.5,
+        "displayUsed": 3.5,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1956",
+        "name": "BOKKA SUNEETHA",
+        "month": "5/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CCL",
+        "ledgerUsed": 1,
+        "displayUsed": 2,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "1992",
+        "name": "KOTIPALLI LAKSHMI KALA",
+        "month": "4/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 1,
+        "displayUsed": 2,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      },
+      {
+        "empNo": "2009",
+        "name": "TIRUNAGIRI SWAPNA SRI DEVI",
+        "month": "4/2026",
+        "category": "display_vs_ledger_used",
+        "leaveType": "CL",
+        "ledgerUsed": 1,
+        "displayUsed": 2,
+        "poolOut": 0,
+        "note": "Grid Used follows reconcile/approved; transaction list sums all debits"
+      }
+    ],
+    "transfer_out_vs_all_debits": [
+      {
+        "empNo": "128",
+        "name": "DANGETI ANURADHA",
+        "month": "3/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 0.5,
+        "expectedIfAllDebitsCounted": 1.5,
+        "ledgerUsed": 2.5,
+        "credits": 4
+      },
+      {
+        "empNo": "138",
+        "name": "D BHAVANI",
+        "month": "4/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 0,
+        "expectedIfAllDebitsCounted": 1,
+        "ledgerUsed": 1,
+        "credits": 2
+      },
+      {
+        "empNo": "1587",
+        "name": "S.V.V.N.SURESH KUMAR",
+        "month": "4/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 3,
+        "expectedIfAllDebitsCounted": 3.5,
+        "ledgerUsed": 2,
+        "credits": 5.5
+      },
+      {
+        "empNo": "1606",
+        "name": "PAPPULA JAYASRI LAKSHMI",
+        "month": "4/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 2,
+        "expectedIfAllDebitsCounted": 3,
+        "ledgerUsed": 2,
+        "credits": 5
+      },
+      {
+        "empNo": "1644",
+        "name": "PUCHAKAYALA SATISH REDDY",
+        "month": "3/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 3,
+        "expectedIfAllDebitsCounted": 3.5,
+        "ledgerUsed": 1.5,
+        "credits": 5
+      },
+      {
+        "empNo": "166",
+        "name": "SATHI RAMYA",
+        "month": "3/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 1,
+        "expectedIfAllDebitsCounted": 1.5,
+        "ledgerUsed": 1.5,
+        "credits": 3
+      },
+      {
+        "empNo": "168",
+        "name": "I. BHUVANA PRIYA",
+        "month": "3/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 1,
+        "expectedIfAllDebitsCounted": 0,
+        "ledgerUsed": 3,
+        "credits": 3
+      },
+      {
+        "empNo": "1724",
+        "name": "RAMAVARAPU RAMALAKSHMI",
+        "month": "3/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 1,
+        "expectedIfAllDebitsCounted": 2,
+        "ledgerUsed": 2,
+        "credits": 4
+      },
+      {
+        "empNo": "1832",
+        "name": "A V V S N V PRASAD",
+        "month": "4/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CCL",
+        "postedOut": 0,
+        "expectedIfAllDebitsCounted": 1,
+        "ledgerUsed": 2,
+        "credits": 3
+      },
+      {
+        "empNo": "1890",
+        "name": "K NAGA DURGA RAO",
+        "month": "5/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CCL",
+        "postedOut": 1,
+        "expectedIfAllDebitsCounted": 2,
+        "ledgerUsed": 3,
+        "credits": 5
+      },
+      {
+        "empNo": "1923",
+        "name": "PASALAPUDI CHINNA THIMMARAJU",
+        "month": "3/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 0,
+        "expectedIfAllDebitsCounted": 0.5,
+        "ledgerUsed": 0.5,
+        "credits": 1
+      },
+      {
+        "empNo": "1954",
+        "name": "ANGADI SARITHA",
+        "month": "5/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CCL",
+        "postedOut": 0,
+        "expectedIfAllDebitsCounted": 0.5,
+        "ledgerUsed": 2.5,
+        "credits": 3
+      },
+      {
+        "empNo": "1992",
+        "name": "KOTIPALLI LAKSHMI KALA",
+        "month": "4/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 0,
+        "expectedIfAllDebitsCounted": 1,
+        "ledgerUsed": 1,
+        "credits": 2
+      },
+      {
+        "empNo": "2154",
+        "name": "NOOKALA MADHAVILATHA",
+        "month": "4/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 0,
+        "expectedIfAllDebitsCounted": 1,
+        "ledgerUsed": 0.5,
+        "credits": 1.5
+      },
+      {
+        "empNo": "2181",
+        "name": "BARRE TRIVALLIKA",
+        "month": "4/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 0,
+        "expectedIfAllDebitsCounted": 1,
+        "ledgerUsed": 1,
+        "credits": 2
+      },
+      {
+        "empNo": "2183",
+        "name": "YANDAMURI KEERTHANA",
+        "month": "5/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 0,
+        "expectedIfAllDebitsCounted": 0.5,
+        "ledgerUsed": 1,
+        "credits": 1.5
+      },
+      {
+        "empNo": "2202",
+        "name": "ALLA LOVAKUMARI",
+        "month": "5/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 0,
+        "expectedIfAllDebitsCounted": 1,
+        "ledgerUsed": 2,
+        "credits": 3
+      },
+      {
+        "empNo": "2226",
+        "name": "GUTTULA SNEHA LATHA DHANASRI",
+        "month": "5/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 0,
+        "expectedIfAllDebitsCounted": 1,
+        "ledgerUsed": 1,
+        "credits": 2
+      },
+      {
+        "empNo": "2262",
+        "name": "SANGADI MADHUBABU",
+        "month": "5/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 0,
+        "expectedIfAllDebitsCounted": 1,
+        "ledgerUsed": 1,
+        "credits": 2
+      },
+      {
+        "empNo": "5008",
+        "name": "MEDISETTY GOVINDA RAJU",
+        "month": "3/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 0,
+        "expectedIfAllDebitsCounted": 1,
+        "ledgerUsed": 1,
+        "credits": 2
+      },
+      {
+        "empNo": "61",
+        "name": "A  ARUNA KUMARI",
+        "month": "4/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 4.5,
+        "expectedIfAllDebitsCounted": 5.5,
+        "ledgerUsed": 0.5,
+        "credits": 6
+      },
+      {
+        "empNo": "7044",
+        "name": "BONTHU SYAMALA",
+        "month": "4/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 0,
+        "expectedIfAllDebitsCounted": 1,
+        "ledgerUsed": 1,
+        "credits": 2
+      },
+      {
+        "empNo": "71",
+        "name": "KARANAM YAMUNA KUMARI",
+        "month": "3/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 4,
+        "expectedIfAllDebitsCounted": 5.5,
+        "ledgerUsed": 0.5,
+        "credits": 6
+      },
+      {
+        "empNo": "812",
+        "name": "S. VEERA BABU",
+        "month": "5/2026",
+        "category": "transfer_out_vs_all_debits",
+        "leaveType": "CL",
+        "postedOut": 2,
+        "expectedIfAllDebitsCounted": 3,
+        "ledgerUsed": 1,
+        "credits": 4
+      }
+    ],
+    "carried_in_vs_prior_ledger_carry": [
+      {
+        "empNo": "128",
+        "name": "DANGETI ANURADHA",
+        "month": "4/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "3/2026",
+        "carriedIn": 0.5,
+        "priorLedgerCarry": 1.5,
+        "priorLedgerUsed": 2.5,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "138",
+        "name": "D BHAVANI",
+        "month": "5/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "4/2026",
+        "carriedIn": 0,
+        "priorLedgerCarry": 1,
+        "priorLedgerUsed": 1,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "1587",
+        "name": "S.V.V.N.SURESH KUMAR",
+        "month": "5/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "4/2026",
+        "carriedIn": 3,
+        "priorLedgerCarry": 3.5,
+        "priorLedgerUsed": 2,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "1606",
+        "name": "PAPPULA JAYASRI LAKSHMI",
+        "month": "5/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "4/2026",
+        "carriedIn": 2,
+        "priorLedgerCarry": 3,
+        "priorLedgerUsed": 2,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "1644",
+        "name": "PUCHAKAYALA SATISH REDDY",
+        "month": "4/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "3/2026",
+        "carriedIn": 3,
+        "priorLedgerCarry": 3.5,
+        "priorLedgerUsed": 1.5,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "166",
+        "name": "SATHI RAMYA",
+        "month": "4/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "3/2026",
+        "carriedIn": 1,
+        "priorLedgerCarry": 1.5,
+        "priorLedgerUsed": 1.5,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "168",
+        "name": "I. BHUVANA PRIYA",
+        "month": "4/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "3/2026",
+        "carriedIn": 1,
+        "priorLedgerCarry": 0,
+        "priorLedgerUsed": 3,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "1724",
+        "name": "RAMAVARAPU RAMALAKSHMI",
+        "month": "4/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "3/2026",
+        "carriedIn": 1,
+        "priorLedgerCarry": 2,
+        "priorLedgerUsed": 2,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "1832",
+        "name": "A V V S N V PRASAD",
+        "month": "5/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CCL",
+        "fromMonth": "4/2026",
+        "carriedIn": 0,
+        "priorLedgerCarry": 1,
+        "priorLedgerUsed": 2,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "1923",
+        "name": "PASALAPUDI CHINNA THIMMARAJU",
+        "month": "4/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "3/2026",
+        "carriedIn": 0,
+        "priorLedgerCarry": 0.5,
+        "priorLedgerUsed": 0.5,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "1992",
+        "name": "KOTIPALLI LAKSHMI KALA",
+        "month": "5/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "4/2026",
+        "carriedIn": 0,
+        "priorLedgerCarry": 1,
+        "priorLedgerUsed": 1,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "2154",
+        "name": "NOOKALA MADHAVILATHA",
+        "month": "5/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "4/2026",
+        "carriedIn": 0,
+        "priorLedgerCarry": 1,
+        "priorLedgerUsed": 0.5,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "2181",
+        "name": "BARRE TRIVALLIKA",
+        "month": "5/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "4/2026",
+        "carriedIn": 0,
+        "priorLedgerCarry": 1,
+        "priorLedgerUsed": 1,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "5008",
+        "name": "MEDISETTY GOVINDA RAJU",
+        "month": "4/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "3/2026",
+        "carriedIn": 0,
+        "priorLedgerCarry": 1,
+        "priorLedgerUsed": 1,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "61",
+        "name": "A  ARUNA KUMARI",
+        "month": "5/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "4/2026",
+        "carriedIn": 4.5,
+        "priorLedgerCarry": 5.5,
+        "priorLedgerUsed": 0.5,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "7044",
+        "name": "BONTHU SYAMALA",
+        "month": "5/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "4/2026",
+        "carriedIn": 0,
+        "priorLedgerCarry": 1,
+        "priorLedgerUsed": 1,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      },
+      {
+        "empNo": "71",
+        "name": "KARANAM YAMUNA KUMARI",
+        "month": "4/2026",
+        "category": "carried_in_vs_prior_ledger_carry",
+        "leaveType": "CL",
+        "fromMonth": "3/2026",
+        "carriedIn": 4,
+        "priorLedgerCarry": 5.5,
+        "priorLedgerUsed": 0.5,
+        "note": "Only if counting every debit; display/reconcile may differ"
+      }
+    ]
+  },
+  "explanation": {
+    "display_chain_break": "Real bug: prior month Transfer (out) ≠ this month Carried in — screen chain broken.",
+    "display_vs_ledger_used": "Confusing not wrong: grid Used (approved/reconcile) ≠ sum of all debit lines in transactions.",
+    "carried_in_vs_prior_reconcile_carry": "Usually OK after reconcile: Carried in matches reconcile carry, not raw ledger debits.",
+    "carried_in_vs_prior_ledger_carry": "Same as above when prior month has extra/rejected debits still in ledger.",
+    "transfer_out_vs_all_debits": "Transfer out posted for reconcile Used; ledger still has extra debits.",
+    "pool_out_vs_posted_txn": "poolCarryForwardOut field ≠ transfer transaction rows.",
+    "pool_in_vs_posted_txn": "poolCarryForwardIn field ≠ transfer-in transaction rows."
+  }
+}

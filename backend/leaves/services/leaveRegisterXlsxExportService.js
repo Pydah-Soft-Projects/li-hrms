@@ -4,6 +4,7 @@
 
 const XLSX = require('xlsx');
 const { collectPeriodColumns } = require('./leaveRegisterPdfExportService');
+const { compareEmpNo } = require('../../shared/utils/employeeSort');
 
 function findRegisterMonth(entry, period) {
   return (entry.registerMonths || []).find(
@@ -79,11 +80,9 @@ function buildLeaveRegisterXlsxBuffer({
 }) {
   const wb = XLSX.utils.book_new();
   const periods = collectPeriodColumns(entries);
-  const sortedEntries = [...entries].sort((a, b) => {
-    const na = (a.employee?.name || '').toLowerCase();
-    const nb = (b.employee?.name || '').toLowerCase();
-    return na.localeCompare(nb);
-  });
+  const sortedEntries = [...entries].sort((a, b) =>
+    compareEmpNo(a.employee?.empNo ?? a.employee?.emp_no, b.employee?.empNo ?? b.employee?.emp_no)
+  );
 
   const aboutRows = [
     ['Leave register — Excel export'],

@@ -1,7 +1,17 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { api, Department, Division, Designation } from '@/lib/api';
+import {
+  api,
+  Department,
+  Division,
+  Designation,
+  PaysheetModificationSettings,
+  PaysheetCellAdjustmentMeta,
+} from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
+import PaysheetAdjustmentEditModal, { type PaysheetEditContext } from '@/components/paysheet/PaysheetAdjustmentEditModal';
+import PaysheetAdjustmentsApprovalPanel from '@/components/paysheet/PaysheetAdjustmentsApprovalPanel';
 import { sortByEmpNo } from '@/lib/employeeSort';
 import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
 import { toast } from 'react-toastify';
@@ -16,6 +26,8 @@ import {
   RefreshCw,
   Loader2,
   X,
+  Pencil,
+  ClipboardList,
 } from 'lucide-react';
 
 function orderPaysheetRowsByEmpNo(rows: Record<string, unknown>[]) {
@@ -29,6 +41,22 @@ const ROWS_PER_PAGE_ALL = -1;
 const ROWS_PER_PAGE_OPTIONS = [10, 25, 50, 100, 250, 500, ROWS_PER_PAGE_ALL] as const;
 
 const SEARCH_DEBOUNCE_MS = 350;
+
+function getCellAdjustment(row: Record<string, unknown>, header: string): PaysheetCellAdjustmentMeta | undefined {
+  const map = row._cellAdjustments as Record<string, PaysheetCellAdjustmentMeta> | undefined;
+  return map?.[header];
+}
+
+function cellHighlightClass(meta?: PaysheetCellAdjustmentMeta): string {
+  if (!meta) return '';
+  if (meta.status === 'pending') {
+    return 'bg-purple-100 dark:bg-purple-950/50 ring-1 ring-purple-300 dark:ring-purple-700';
+  }
+  if (meta.status === 'approved') {
+    return 'bg-orange-100 dark:bg-orange-950/40 ring-1 ring-orange-300 dark:ring-orange-700';
+  }
+  return '';
+}
 
 function formatCell(value: unknown): string {
   if (value == null) return '—';
@@ -48,6 +76,8 @@ function shiftMonth(ym: string, delta: number): string {
 export type PaysheetLayout = 'workspace' | 'superadmin';
 
 export default function PaysheetPageContent({ layout = 'workspace' }: { layout?: PaysheetLayout }) {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const [loadingExisting, setLoadingExisting] = useState(false);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -74,6 +104,27 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
   const [exportingBundle, setExportingBundle] = useState(false);
   const [bundleExportModalOpen, setBundleExportModalOpen] = useState(false);
   const [bundleExportFormat, setBundleExportFormat] = useState<'combined' | 'by_department'>('combined');
+  const [paysheetModification, setPaysheetModification] = useState<PaysheetModificationSettings | null>(null);
+  const [editContext, setEditContext] = useState<PaysheetEditContext | null>(null);
+  const [approvalPanelOpen, setApprovalPanelOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+
+  const modificationEnabled =
+    paysheetKind === 'regular' &&
+    !!paysheetModification?.allowPaysheetModification &&
+    (paysheetModification?.editableColumns?.length ?? 0) > 0;
+
+  const editableHeaderSet = useMemo(() => {
+    return new Set((paysheetModification?.editableColumns ?? []).map((c) => c.header));
+  }, [paysheetModification]);
+
+  const editableByHeader = useMemo(() => {
+    const m = new Map<string, { fieldPath: string }>();
+    for (const c of paysheetModification?.editableColumns ?? []) {
+      m.set(c.header, { fieldPath: c.fieldPath });
+    }
+    return m;
+  }, [paysheetModification]);
 
   const totalRows = rows.length;
   const effectivePerPage = rowsPerPage === ROWS_PER_PAGE_ALL ? Math.max(totalRows, 1) : rowsPerPage;
@@ -236,7 +287,14 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
       if (res?.success && res?.data) {
         setHeaders(res.data.headers || []);
         setRows(orderPaysheetRowsByEmpNo(res.data.rows || []));
+        setPaysheetModification(res.data.paysheetModification ?? null);
         setDataSource(res.source === 'existing' ? 'existing' : null);
+        const pending = (res.data.rows || []).reduce((acc, row) => {
+          const adj = row._cellAdjustments as Record<string, PaysheetCellAdjustmentMeta> | undefined;
+          if (!adj) return acc;
+          return acc + Object.values(adj).filter((m) => m.status === 'pending').length;
+        }, 0);
+        setPendingCount(pending);
         if ((res.data.rows?.length ?? 0) === 0 && res.message) {
           toast.info(res.message);
         }
@@ -268,6 +326,44 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
     if (!selectedMonth) return;
     loadExisting();
   }, [loadExisting, selectedMonth]);
+
+  const handleSubmitAdjustment = async (proposedValue: number, reason: string) => {
+    if (!editContext) return;
+    const res = await api.createPaysheetAdjustment({
+      payrollRecordId: editContext.payrollRecordId,
+      columnHeader: editContext.columnHeader,
+      fieldPath: editContext.fieldPath,
+      proposedValue,
+      reason,
+    });
+    if (!res?.success) {
+      throw new Error((res as { message?: string })?.message || 'Request failed');
+    }
+    toast.success('Change request submitted — awaiting superadmin approval');
+    await loadExisting();
+  };
+
+  const openCellEdit = (row: Record<string, unknown>, header: string) => {
+    if (!modificationEnabled || !editableHeaderSet.has(header)) return;
+    const col = editableByHeader.get(header);
+    if (!col) return;
+    const payrollRecordId = row._payrollRecordId != null ? String(row._payrollRecordId) : '';
+    if (!payrollRecordId) {
+      toast.warning('Payroll record not found for this row');
+      return;
+    }
+    const adj = getCellAdjustment(row, header);
+    const currentValue = adj?.status === 'pending' ? adj.originalValue : Number(row[header]) || 0;
+    const empCode = row['Employee Code'] ?? row['Emp No'] ?? '';
+    const name = row['Name'] ?? row['Employee Name'] ?? '';
+    setEditContext({
+      payrollRecordId,
+      columnHeader: header,
+      fieldPath: col.fieldPath,
+      currentValue,
+      employeeLabel: [empCode, name].filter(Boolean).join(' — '),
+    });
+  };
 
   const openBundleExportModal = () => {
     if (!selectedMonth) {
@@ -679,6 +775,29 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
                   {activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''}
                 </span>
               )}
+              {modificationEnabled && (
+                <>
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/50 text-purple-800 dark:text-purple-200">
+                    Purple = pending approval
+                  </span>
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/50 text-orange-800 dark:text-orange-200">
+                    Orange = approved change
+                  </span>
+                  {isSuperAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setApprovalPanelOpen(true)}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg bg-violet-600 text-white hover:bg-violet-700"
+                    >
+                      <ClipboardList className="h-3.5 w-3.5" />
+                      Approvals
+                      {pendingCount > 0 && (
+                        <span className="bg-white/20 px-1.5 rounded-full">{pendingCount}</span>
+                      )}
+                    </button>
+                  )}
+                </>
+              )}
             </div>
 
             {paginationBar('top')}
@@ -706,13 +825,41 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
                       {headers.map((header, cIdx) => {
                         const isNameColumn = header.toLowerCase().includes('name');
                         const leftDate = row._leftDate as string | undefined;
+                        const cellAdj = getCellAdjustment(row, header);
+                        const isEditableCol = modificationEnabled && editableHeaderSet.has(header);
+                        const canEdit = isEditableCol && cellAdj?.status !== 'pending';
                         return (
                           <td
                             key={cIdx}
-                            className="px-4 py-2.5 text-slate-700 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800/80 last:border-r-0"
+                            className={`px-4 py-2.5 text-slate-700 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800/80 last:border-r-0 ${cellHighlightClass(cellAdj)}`}
                           >
                             <div className="flex flex-col gap-0.5">
-                              <span>{formatCell(row[header])}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span>{formatCell(row[header])}</span>
+                                {canEdit && (
+                                  <button
+                                    type="button"
+                                    title="Request change"
+                                    onClick={() => openCellEdit(row, header)}
+                                    className="p-0.5 rounded text-violet-600 hover:bg-violet-100 dark:hover:bg-violet-900/40"
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                              {cellAdj?.status === 'pending' && (
+                                <span className="text-[10px] text-purple-700 dark:text-purple-300">
+                                  Pending approval (was{' '}
+                                  {cellAdj.originalValue.toLocaleString('en-IN', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}
+                                  )
+                                </span>
+                              )}
+                              {cellAdj?.status === 'approved' && (
+                                <span className="text-[10px] text-orange-700 dark:text-orange-300">Adjusted</span>
+                              )}
                               {isNameColumn &&
                                 leftDate &&
                                 format(new Date(leftDate as string), 'yyyy-MM') === selectedMonth && (
@@ -834,6 +981,20 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
         <div className="relative z-10 mx-auto max-w-[1920px] w-full p-4 sm:p-6 flex flex-col pb-10">
           {inner}
         </div>
+        <PaysheetAdjustmentEditModal
+          open={!!editContext}
+          context={editContext}
+          onClose={() => setEditContext(null)}
+          onSubmit={handleSubmitAdjustment}
+        />
+        {isSuperAdmin && (
+          <PaysheetAdjustmentsApprovalPanel
+            month={selectedMonth}
+            open={approvalPanelOpen}
+            onClose={() => setApprovalPanelOpen(false)}
+            onReviewed={() => loadExisting()}
+          />
+        )}
       </div>
     );
   }
@@ -843,6 +1004,20 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
       <div className="mx-auto max-w-[1920px] w-full px-4 sm:px-6 py-6 flex flex-col pb-10">
         {inner}
       </div>
+      <PaysheetAdjustmentEditModal
+        open={!!editContext}
+        context={editContext}
+        onClose={() => setEditContext(null)}
+        onSubmit={handleSubmitAdjustment}
+      />
+      {isSuperAdmin && (
+        <PaysheetAdjustmentsApprovalPanel
+          month={selectedMonth}
+          open={approvalPanelOpen}
+          onClose={() => setApprovalPanelOpen(false)}
+          onReviewed={() => loadExisting()}
+        />
+      )}
     </div>
   );
 }

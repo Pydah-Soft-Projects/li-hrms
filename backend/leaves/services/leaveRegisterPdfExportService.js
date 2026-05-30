@@ -4,6 +4,7 @@
  */
 
 const PDFDocument = require('pdfkit');
+const { compareEmpNo } = require('../../shared/utils/employeeSort');
 
 const MARGIN = 28;
 const COL_SN = 22;
@@ -220,11 +221,9 @@ function streamLeaveRegisterPdf({
   const innerW = pageWidth - MARGIN * 2;
 
   const periodCols = collectPeriodColumns(entries);
-  const sortedEntries = [...entries].sort((a, b) => {
-    const na = (a.employee?.name || '').toLowerCase();
-    const nb = (b.employee?.name || '').toLowerCase();
-    return na.localeCompare(nb);
-  });
+  const sortedEntries = [...entries].sort((a, b) =>
+    compareEmpNo(a.employee?.empNo ?? a.employee?.emp_no, b.employee?.empNo ?? b.employee?.emp_no)
+  );
 
   const includedLegendParts = [];
   if (includeCL) includedLegendParts.push('blue shading: casual leave');
