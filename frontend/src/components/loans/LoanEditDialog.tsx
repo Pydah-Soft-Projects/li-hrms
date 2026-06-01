@@ -154,12 +154,12 @@ export default function LoanEditDialog({
       recalculate: isActiveLoan,
       status: loan.status,
     });
-    const totalInst = loan.repayment?.totalInstallments ?? loan.duration ?? '';
+    const totalInst = loan.repayment?.totalInstallments ?? loan.duration;
     setRepaymentForm({
       totalPaid: loan.repayment?.totalPaid != null ? String(loan.repayment.totalPaid) : '',
       installmentsPaid: loan.repayment?.installmentsPaid != null ? String(loan.repayment.installmentsPaid) : '',
       remainingBalance: loan.repayment?.remainingBalance != null ? String(loan.repayment.remainingBalance) : '',
-      totalInstallments: totalInst !== '' ? String(totalInst) : '',
+      totalInstallments: String(totalInst),
       changeReason: '',
       remarks: loan.remarks || '',
     });
@@ -248,12 +248,20 @@ export default function LoanEditDialog({
       if (repaymentForm.totalInstallments !== '') payload.totalInstallments = parseInt(repaymentForm.totalInstallments, 10);
 
       const response = await api.correctLoanRepayment(loan._id, payload);
+      const summary = (response as typeof response & {
+        summary?: {
+          totalPaid?: number;
+          remainingBalance?: number;
+          installmentsPaid?: number;
+          installmentsRemaining?: number;
+        };
+      }).summary;
       if (response.success && response.data) {
         Swal.fire({
           icon: 'success',
           title: 'Repayment updated',
-          html: response.summary
-            ? `<div class="text-sm text-left">Paid: ₹${Number(response.summary.totalPaid).toLocaleString()}<br/>Remaining: ₹${Number(response.summary.remainingBalance).toLocaleString()}<br/>Installments: ${response.summary.installmentsPaid} paid / ${response.summary.installmentsRemaining} left</div>`
+          html: summary
+            ? `<div class="text-sm text-left">Paid: ₹${Number(summary.totalPaid).toLocaleString()}<br/>Remaining: ₹${Number(summary.remainingBalance).toLocaleString()}<br/>Installments: ${summary.installmentsPaid} paid / ${summary.installmentsRemaining} left</div>`
             : 'Opening balance saved.',
           timer: 3000,
           showConfirmButton: false,

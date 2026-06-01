@@ -898,7 +898,7 @@ export default function LeaveRegisterPage({
         }
         const data = res.data;
         setRows(
-          sortByEmpNo(data?.employees || [], (row) => row.employee?.empNo ?? row.employee?.emp_no)
+          sortByEmpNo(data?.employees || [], (row) => row.employee?.empNo)
         );
         if (data?.pagination) {
           setPagination({

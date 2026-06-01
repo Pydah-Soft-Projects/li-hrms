@@ -355,11 +355,25 @@ function sumAuditContributedDays(auditItems) {
 }
 
 /**
+ * Temporary ops flag: register Used column shows ledger CL debits only (no Leave-application audit).
+ * Set LEAVE_REGISTER_USED_LEDGER_DEBITS_ONLY=1 in backend/.env; remove when register ops are done.
+ */
+function isRegisterUsedLedgerDebitsOnlyMode() {
+    const v = process.env.LEAVE_REGISTER_USED_LEDGER_DEBITS_ONLY;
+    if (v == null) return false;
+    const s = String(v).trim().toLowerCase();
+    return ['1', 'true', 'yes', 'y', 'on'].includes(s);
+}
+
+/**
  * Used column for register grid: closed months follow transfer reconcile (approved Leave apps);
  * open months show the higher of ledger debits vs application audit so pending use is visible.
  */
 function resolveRegisterClUsedDisplay(ledgerUsed, auditUsedItems, periodEnded) {
     const ledger = round2(Number(ledgerUsed) || 0);
+    if (isRegisterUsedLedgerDebitsOnlyMode()) {
+        return ledger;
+    }
     const fromApps = sumAuditContributedDays(auditUsedItems);
     if (periodEnded) return fromApps;
     return round2(Math.max(ledger, fromApps));
@@ -1269,6 +1283,7 @@ class LeaveRegisterService {
             policy = {};
         }
         const asOfRegisterXfer = createISTDate(getTodayISTDateString());
+        const debitsOnlyUsedMode = isRegisterUsedLedgerDebitsOnlyMode();
         const fy = financialYear && String(financialYear).trim();
         const LeaveRegisterYear = require('../model/LeaveRegisterYear');
         let byEmp = new Map();
@@ -1403,7 +1418,7 @@ class LeaveRegisterService {
                     const slotEnd = slot.payPeriodEnd ? new Date(slot.payPeriodEnd) : null;
                     // Always build CL application audit so "Used" matches transfer math even in list (lite) mode.
                     const clAudit =
-                        eid && slotStart && slotEnd
+                        !debitsOnlyUsedMode && eid && slotStart && slotEnd
                             ? await buildClUsedLockedAuditForSlot(eid, slotStart, slotEnd)
                             : { used: [], locked: [] };
                     monthsOut.push({
@@ -1576,11 +1591,13 @@ class LeaveRegisterService {
                         asOfRegisterXfer
                     );
                 // Closed payroll months: pool already carried/reconciled — pending apps must not inflate "Used".
-                const clLockedDisplay = periodEndedForRegister
+                const clLockedDisplay = debitsOnlyUsedMode
                     ? 0
-                    : sub != null
-                      ? Number(sub.pendingLockedCL) || 0
-                      : 0;
+                    : periodEndedForRegister
+                      ? 0
+                      : sub != null
+                        ? Number(sub.pendingLockedCL) || 0
+                        : 0;
                 const cclLockedDisplay = periodEndedForRegister
                     ? 0
                     : sub != null

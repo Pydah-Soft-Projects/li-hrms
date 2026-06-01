@@ -1,11 +1,106 @@
 /**
- * Shared query resolution for leave register PDF / Excel exports (same filters & scope as list).
+ * Shared register grid values for PDF / Excel export (matches LeaveRegisterPage grid).
  */
 
 const mongoose = require('mongoose');
 const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
 const leaveRegisterService = require('./leaveRegisterService');
 const Department = require('../../departments/model/Department');
+
+function exportCellNum(v) {
+  if (v === null || v === undefined || v === '') return '';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '';
+  if (Math.abs(n - Math.round(n)) < 0.001) return Math.round(n);
+  return Math.round(n * 100) / 100;
+}
+
+function policyPoolDays(rm, kind) {
+  if (!rm) return '';
+  if (kind === 'cl') {
+    if (rm.policyScheduledCl != null && Number.isFinite(Number(rm.policyScheduledCl))) {
+      return exportCellNum(rm.policyScheduledCl);
+    }
+    const ti = Number(rm.cl?.transferIn) || 0;
+    if (rm.scheduledCl != null && Number.isFinite(Number(rm.scheduledCl))) {
+      return exportCellNum(Math.max(0, Number(rm.scheduledCl) - ti));
+    }
+    return exportCellNum(rm.scheduledCl);
+  }
+  if (kind === 'ccl') {
+    if (rm.policyScheduledCco != null && Number.isFinite(Number(rm.policyScheduledCco))) {
+      return exportCellNum(rm.policyScheduledCco);
+    }
+    const ti = Number(rm.ccl?.transferIn) || 0;
+    if (rm.scheduledCco != null && Number.isFinite(Number(rm.scheduledCco))) {
+      return exportCellNum(Math.max(0, Number(rm.scheduledCco) - ti));
+    }
+    return exportCellNum(rm.scheduledCco);
+  }
+  if (kind === 'el') {
+    if (rm.policyScheduledEl != null && Number.isFinite(Number(rm.policyScheduledEl))) {
+      return exportCellNum(rm.policyScheduledEl);
+    }
+    const ti = Number(rm.el?.transferIn) || 0;
+    if (rm.scheduledEl != null && Number.isFinite(Number(rm.scheduledEl))) {
+      return exportCellNum(Math.max(0, Number(rm.scheduledEl) - ti));
+    }
+    return exportCellNum(rm.scheduledEl);
+  }
+  return '';
+}
+
+function bucket(rm, kind) {
+  if (kind === 'cl') return rm?.cl;
+  if (kind === 'ccl') return rm?.ccl;
+  return rm?.el;
+}
+
+function registerTransferIn(rm, kind) {
+  const b = bucket(rm, kind);
+  if (b?.transferIn != null && Number.isFinite(Number(b.transferIn))) return exportCellNum(b.transferIn);
+  return '';
+}
+
+function registerTransferOut(rm, kind) {
+  const b = bucket(rm, kind);
+  if (b?.transferOut != null && Number.isFinite(Number(b.transferOut))) return exportCellNum(b.transferOut);
+  if (b?.transfer != null && Number.isFinite(Number(b.transfer))) return exportCellNum(b.transfer);
+  return '';
+}
+
+/** Matches UI Used column: approved debits + pending lock. */
+function registerUsedPlusLocked(rm, kind) {
+  const b = bucket(rm, kind);
+  const u = b?.used != null && Number.isFinite(Number(b.used)) ? Number(b.used) : null;
+  const l = b?.locked != null && Number.isFinite(Number(b.locked)) ? Number(b.locked) : null;
+  if (u === null && l === null) return '';
+  return exportCellNum((u ?? 0) + (l ?? 0));
+}
+
+/** Matches UI Bal column: Cr + carried in − (used + locked) − transfer out. */
+function registerMonthEquationBal(rm, kind) {
+  const crRaw = policyPoolDays(rm, kind);
+  const cr = crRaw === '' ? null : Number(crRaw);
+  const b = bucket(rm, kind);
+  const tin = b?.transferIn != null && Number.isFinite(Number(b.transferIn)) ? Number(b.transferIn) : null;
+  const toutRaw = registerTransferOut(rm, kind);
+  const tout = toutRaw === '' ? null : Number(toutRaw);
+  const u = b?.used != null && Number.isFinite(Number(b.used)) ? Number(b.used) : 0;
+  const l = b?.locked != null && Number.isFinite(Number(b.locked)) ? Number(b.locked) : 0;
+  if (cr === null && tin === null && tout === null && b?.used == null && b?.locked == null) return '';
+  return exportCellNum((cr ?? 0) + (tin ?? 0) - u - l - (tout ?? 0));
+}
+
+function registerRowSlice(rm, kind) {
+  return [
+    policyPoolDays(rm, kind),
+    registerTransferIn(rm, kind),
+    registerUsedPlusLocked(rm, kind),
+    registerTransferOut(rm, kind),
+    registerMonthEquationBal(rm, kind),
+  ];
+}
 
 function parseIncludeLeaveTypeFlag(v) {
   if (v === undefined || v === null || String(v).trim() === '') return true;
@@ -148,4 +243,11 @@ async function resolveLeaveRegisterExportRequest(req) {
 module.exports = {
   resolveLeaveRegisterExportRequest,
   parseIncludeLeaveTypeFlag,
+  exportCellNum,
+  policyPoolDays,
+  registerTransferIn,
+  registerTransferOut,
+  registerUsedPlusLocked,
+  registerMonthEquationBal,
+  registerRowSlice,
 };

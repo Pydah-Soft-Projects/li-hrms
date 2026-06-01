@@ -4313,7 +4313,7 @@ export const api = {
     if (params?.status) queryParams.append('status', params.status);
     if (params?.payrollBatchId) queryParams.append('payrollBatchId', params.payrollBatchId);
     const query = queryParams.toString();
-    return apiRequest<{ success: boolean; data: PaysheetAdjustmentRequest[] }>(
+    return apiRequest<PaysheetAdjustmentRequest[]>(
       `/payroll/paysheet-adjustments${query ? `?${query}` : ''}`,
       { method: 'GET' }
     );
@@ -4326,21 +4326,21 @@ export const api = {
     proposedValue: number;
     reason: string;
   }) => {
-    return apiRequest<{ success: boolean; data: PaysheetAdjustmentRequest }>('/payroll/paysheet-adjustments', {
+    return apiRequest<PaysheetAdjustmentRequest>('/payroll/paysheet-adjustments', {
       method: 'POST',
       body: JSON.stringify(body),
     });
   },
 
   approvePaysheetAdjustment: async (id: string, comments?: string) => {
-    return apiRequest<{ success: boolean; data: PaysheetAdjustmentRequest }>(
+    return apiRequest<PaysheetAdjustmentRequest>(
       `/payroll/paysheet-adjustments/${id}/approve`,
       { method: 'POST', body: JSON.stringify({ comments: comments || '' }) }
     );
   },
 
   rejectPaysheetAdjustment: async (id: string, comments?: string) => {
-    return apiRequest<{ success: boolean; data: PaysheetAdjustmentRequest }>(
+    return apiRequest<PaysheetAdjustmentRequest>(
       `/payroll/paysheet-adjustments/${id}/reject`,
       { method: 'POST', body: JSON.stringify({ comments: comments || '' }) }
     );
