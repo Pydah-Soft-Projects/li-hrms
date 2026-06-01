@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
-import type { PaysheetEditableColumn } from '@/lib/api';
+import { toast } from 'react-toastify';
 
 export type PaysheetEditContext = {
   payrollRecordId: string;
@@ -53,6 +53,9 @@ export default function PaysheetAdjustmentEditModal({
     try {
       await onSubmit(parsed, reason.trim());
       onClose();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to submit request';
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }

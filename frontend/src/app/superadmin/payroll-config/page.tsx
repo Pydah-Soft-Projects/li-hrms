@@ -81,11 +81,6 @@ export default function PayrollConfigPage() {
   const [loanAdvancePayableColumnHeader, setLoanAdvancePayableColumnHeader] = useState('');
   const [allowPaysheetModification, setAllowPaysheetModification] = useState(false);
 
-  const PAYSLIP_EDITABLE_FIELD_OPTIONS = [
-    { value: 'loanAdvance.totalEMI', label: 'Loan EMI (loanAdvance.totalEMI)' },
-    { value: 'loanAdvance.advanceDeduction', label: 'Salary advance (loanAdvance.advanceDeduction)' },
-  ];
-
   const outputFieldOptions = useMemo(() => {
     const extra = config?.employeeSalaryFieldOptions ?? [];
     if (extra.length === 0) return OUTPUT_FIELD_OPTIONS;
@@ -99,6 +94,12 @@ export default function PayrollConfigPage() {
     }
     return merged;
   }, [config?.employeeSalaryFieldOptions]);
+
+  /** Numeric payroll-record paths allowed as paysheet adjustment storage (not employee identity fields). */
+  const paysheetStorageFieldOptions = useMemo(
+    () => outputFieldOptions.filter((o) => !o.value.startsWith('employee.')),
+    [outputFieldOptions]
+  );
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
@@ -563,7 +564,7 @@ export default function PayrollConfigPage() {
                   onChange={(e) => setAllowPaysheetModification(e.target.checked)}
                   className="rounded border-slate-300 text-violet-600 focus:ring-violet-500"
                 />
-                Allow paysheet modification requests (loan EMI / salary advance — superadmin approval)
+                Allow paysheet modification requests (any column marked editable below — superadmin approval)
               </label>
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -769,7 +770,7 @@ export default function PayrollConfigPage() {
                                         paysheetEditable: e.target.checked,
                                         paysheetEditableFieldPath: e.target.checked
                                           ? c.paysheetEditableFieldPath ||
-                                            (PAYSLIP_EDITABLE_FIELD_OPTIONS.some((o) => o.value === c.field)
+                                            (c.source === 'field' && c.field && !c.field.startsWith('employee.')
                                               ? c.field
                                               : '')
                                           : '',
@@ -795,7 +796,7 @@ export default function PayrollConfigPage() {
                             className="text-xs rounded-lg border border-violet-200 dark:border-violet-700 bg-white dark:bg-slate-800 px-2 py-1.5"
                           >
                             <option value="">Select storage field…</option>
-                            {PAYSLIP_EDITABLE_FIELD_OPTIONS.map((o) => (
+                            {paysheetStorageFieldOptions.map((o) => (
                               <option key={o.value} value={o.value}>
                                 {o.label}
                               </option>

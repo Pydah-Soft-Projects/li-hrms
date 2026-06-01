@@ -44,13 +44,14 @@ export default function PaysheetAdjustmentsApprovalPanel({ month, open, onClose,
   const review = async (id: string, approve: boolean) => {
     setActingId(id);
     try {
-      if (approve) {
-        await api.approvePaysheetAdjustment(id);
-        toast.success('Adjustment approved');
-      } else {
-        await api.rejectPaysheetAdjustment(id);
-        toast.info('Adjustment rejected');
+      const res = approve
+        ? await api.approvePaysheetAdjustment(id)
+        : await api.rejectPaysheetAdjustment(id);
+      if (!res?.success) {
+        toast.error(res?.message || 'Action failed');
+        return;
       }
+      toast.success(approve ? 'Adjustment approved' : 'Adjustment rejected');
       await load();
       onReviewed();
     } catch (e: unknown) {

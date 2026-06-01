@@ -75,9 +75,17 @@ function shiftMonth(ym: string, delta: number): string {
 
 export type PaysheetLayout = 'workspace' | 'superadmin';
 
+const ROLES_CAN_REQUEST_PAYSLIP_ADJUSTMENT = ['manager', 'super_admin', 'sub_admin', 'hr'] as const;
+
+function userCanRequestPaysheetAdjustment(role?: string | null, roles?: string[] | null): boolean {
+  const list = roles?.length ? roles : role ? [role] : [];
+  return list.some((r) => ROLES_CAN_REQUEST_PAYSLIP_ADJUSTMENT.includes(r as (typeof ROLES_CAN_REQUEST_PAYSLIP_ADJUSTMENT)[number]));
+}
+
 export default function PaysheetPageContent({ layout = 'workspace' }: { layout?: PaysheetLayout }) {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === 'super_admin';
+  const canRequestAdjustment = userCanRequestPaysheetAdjustment(user?.role, user?.roles);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const [loadingExisting, setLoadingExisting] = useState(false);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -289,12 +297,6 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
         setRows(orderPaysheetRowsByEmpNo(res.data.rows || []));
         setPaysheetModification(res.data.paysheetModification ?? null);
         setDataSource(res.source === 'existing' ? 'existing' : null);
-        const pending = (res.data.rows || []).reduce((acc, row) => {
-          const adj = row._cellAdjustments as Record<string, PaysheetCellAdjustmentMeta> | undefined;
-          if (!adj) return acc;
-          return acc + Object.values(adj).filter((m) => m.status === 'pending').length;
-        }, 0);
-        setPendingCount(pending);
         if ((res.data.rows?.length ?? 0) === 0 && res.message) {
           toast.info(res.message);
         }
@@ -327,6 +329,29 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
     loadExisting();
   }, [loadExisting, selectedMonth]);
 
+  const refreshPendingApprovalCount = useCallback(async () => {
+    if (!isSuperAdmin || !selectedMonth || paysheetKind !== 'regular') {
+      setPendingCount(0);
+      return;
+    }
+    if (!paysheetModification?.allowPaysheetModification) {
+      setPendingCount(0);
+      return;
+    }
+    try {
+      const res = await api.listPaysheetAdjustments({ month: selectedMonth, status: 'pending' });
+      if (res?.success && Array.isArray(res.data)) {
+        setPendingCount(res.data.length);
+      }
+    } catch {
+      /* keep previous count */
+    }
+  }, [isSuperAdmin, selectedMonth, paysheetKind, paysheetModification?.allowPaysheetModification]);
+
+  useEffect(() => {
+    void refreshPendingApprovalCount();
+  }, [refreshPendingApprovalCount]);
+
   const handleSubmitAdjustment = async (proposedValue: number, reason: string) => {
     if (!editContext) return;
     const res = await api.createPaysheetAdjustment({
@@ -337,14 +362,15 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
       reason,
     });
     if (!res?.success) {
-      throw new Error((res as { message?: string })?.message || 'Request failed');
+      throw new Error(res?.message || 'Request failed');
     }
     toast.success('Change request submitted — awaiting superadmin approval');
     await loadExisting();
+    await refreshPendingApprovalCount();
   };
 
   const openCellEdit = (row: Record<string, unknown>, header: string) => {
-    if (!modificationEnabled || !editableHeaderSet.has(header)) return;
+    if (!modificationEnabled || !canRequestAdjustment || !editableHeaderSet.has(header)) return;
     const col = editableByHeader.get(header);
     if (!col) return;
     const payrollRecordId = row._payrollRecordId != null ? String(row._payrollRecordId) : '';
@@ -783,6 +809,11 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
                   <span className="text-xs px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/50 text-orange-800 dark:text-orange-200">
                     Orange = approved change
                   </span>
+                  {canRequestAdjustment && (
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                      Click <Pencil className="inline h-3 w-3 -mt-0.5" /> on editable cells to request a change
+                    </span>
+                  )}
                   {isSuperAdmin && (
                     <button
                       type="button"
@@ -806,14 +837,26 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
               <table className="w-max min-w-full border-separate border-spacing-0 text-sm">
                 <thead>
                   <tr>
-                    {headers.map((h, i) => (
-                      <th
-                        key={i}
-                        className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 text-left px-4 py-3 font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap border-b border-slate-200 dark:border-slate-700 border-r border-slate-200 dark:border-slate-700 last:border-r-0 shadow-sm"
-                      >
-                        {h}
-                      </th>
-                    ))}
+                    {headers.map((h, i) => {
+                      const isEditableHeader = modificationEnabled && editableHeaderSet.has(h);
+                      return (
+                        <th
+                          key={i}
+                          className={`sticky top-0 z-20 text-left px-4 py-3 font-semibold whitespace-nowrap border-b border-slate-200 dark:border-slate-700 border-r border-slate-200 dark:border-slate-700 last:border-r-0 shadow-sm ${
+                            isEditableHeader
+                              ? 'bg-violet-50 dark:bg-violet-950/40 text-violet-900 dark:text-violet-100'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
+                          }`}
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            {h}
+                            {isEditableHeader && (
+                              <Pencil className="h-3 w-3 opacity-60" aria-hidden title="Editable (approval required)" />
+                            )}
+                          </span>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
@@ -826,7 +869,8 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
                         const isNameColumn = header.toLowerCase().includes('name');
                         const leftDate = row._leftDate as string | undefined;
                         const cellAdj = getCellAdjustment(row, header);
-                        const isEditableCol = modificationEnabled && editableHeaderSet.has(header);
+                        const isEditableCol =
+                          modificationEnabled && canRequestAdjustment && editableHeaderSet.has(header);
                         const canEdit = isEditableCol && cellAdj?.status !== 'pending';
                         return (
                           <td
@@ -992,7 +1036,10 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
             month={selectedMonth}
             open={approvalPanelOpen}
             onClose={() => setApprovalPanelOpen(false)}
-            onReviewed={() => loadExisting()}
+            onReviewed={() => {
+              void loadExisting();
+              void refreshPendingApprovalCount();
+            }}
           />
         )}
       </div>
@@ -1015,7 +1062,10 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
           month={selectedMonth}
           open={approvalPanelOpen}
           onClose={() => setApprovalPanelOpen(false)}
-          onReviewed={() => loadExisting()}
+          onReviewed={() => {
+            void loadExisting();
+            void refreshPendingApprovalCount();
+          }}
         />
       )}
     </div>

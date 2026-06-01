@@ -3,9 +3,13 @@ const PaysheetAdjustmentRequest = require('../model/PaysheetAdjustmentRequest');
 const PayrollRecord = require('../model/PayrollRecord');
 const PayrollBatch = require('../model/PayrollBatch');
 
-const ALLOWED_FIELD_PATHS = new Set([
-  'loanAdvance.totalEMI',
-  'loanAdvance.advanceDeduction',
+/** Paths that must never be adjusted via paysheet (identity / derived totals). */
+const BLOCKED_FIELD_PATH_PREFIXES = ['employee.'];
+const BLOCKED_FIELD_PATHS = new Set([
+  'netSalary',
+  'payableAmountBeforeAdvance',
+  'status',
+  'loanAdvance.remainingBalance',
 ]);
 
 function roundMoney(n) {
@@ -19,6 +23,50 @@ function resolveEditableFieldPath(column) {
   return '';
 }
 
+function isBlockedPaysheetAdjustmentPath(fieldPath) {
+  const path = String(fieldPath || '').trim();
+  if (!path) return true;
+  if (BLOCKED_FIELD_PATHS.has(path)) return true;
+  if (BLOCKED_FIELD_PATH_PREFIXES.some((p) => path.startsWith(p))) return true;
+  if (/\.(name|email|emp_no|designation|department|division)$/i.test(path)) return true;
+  if (/Count$|Type$|Mode$|eligiblePermission/i.test(path)) return true;
+  return false;
+}
+
+function isDeductionPath(fieldPath) {
+  const path = String(fieldPath || '');
+  if (path.startsWith('deductions.')) return true;
+  if (path.startsWith('manualDeductions')) return true;
+  if (path === 'manualDeductionsAmount') return true;
+  if (path.startsWith('loanAdvance.')) {
+    return path !== 'loanAdvance.remainingBalance';
+  }
+  return false;
+}
+
+function isEarningPath(fieldPath) {
+  const path = String(fieldPath || '');
+  if (path.startsWith('earnings.')) return true;
+  if (path === 'arrearsAmount' || path.startsWith('arrears.')) return true;
+  if (path === 'extraDaysPay') return true;
+  return false;
+}
+
+function computeNetSalaryDelta(fieldPath, originalValue, proposedValue) {
+  const original = roundMoney(originalValue);
+  const proposed = roundMoney(proposedValue);
+  if (fieldPath === 'roundOff') {
+    return roundMoney(proposed - original);
+  }
+  if (isEarningPath(fieldPath)) {
+    return roundMoney(proposed - original);
+  }
+  if (isDeductionPath(fieldPath)) {
+    return roundMoney(original - proposed);
+  }
+  return 0;
+}
+
 function getEditableColumnDefs(config) {
   if (!config?.allowPaysheetModification) return [];
   const cols = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
@@ -27,7 +75,7 @@ function getEditableColumnDefs(config) {
       const doc = c && typeof c.toObject === 'function' ? c.toObject() : { ...c };
       if (!doc.paysheetEditable) return null;
       const fieldPath = resolveEditableFieldPath(doc);
-      if (!fieldPath || !ALLOWED_FIELD_PATHS.has(fieldPath)) return null;
+      if (!fieldPath || isBlockedPaysheetAdjustmentPath(fieldPath)) return null;
       return {
         header: doc.header != null && String(doc.header).trim() ? String(doc.header).trim() : `Column ${i + 1}`,
         fieldPath,
@@ -46,6 +94,42 @@ function getValueByPath(obj, path) {
     cur = cur[p];
   }
   return roundMoney(cur);
+}
+
+function readNumericFieldOnRecord(record, fieldPath) {
+  const plain = record?.toObject ? record.toObject() : record;
+  const val = getValueByPath(plain, fieldPath);
+  if (typeof val !== 'number' || Number.isNaN(val)) {
+    return null;
+  }
+  return val;
+}
+
+function setValueOnRecord(record, fieldPath, value) {
+  const proposed = roundMoney(value);
+  record.set(fieldPath, proposed);
+  const top = String(fieldPath).split('.')[0];
+  if (top && String(fieldPath).includes('.')) {
+    record.markModified(top);
+  }
+  syncRootFieldAliases(record, fieldPath, proposed);
+}
+
+/** Keep root/nested payroll fields aligned when config uses either path. */
+function syncRootFieldAliases(record, fieldPath, value) {
+  const v = roundMoney(value);
+  if (fieldPath === 'arrears.arrearsAmount' || fieldPath === 'arrearsAmount') {
+    record.set('arrearsAmount', v);
+    if (!record.arrears) record.set('arrears', { arrearsAmount: 0 });
+    record.set('arrears.arrearsAmount', v);
+    record.markModified('arrears');
+  }
+  if (fieldPath === 'manualDeductions.manualDeductionsAmount' || fieldPath === 'manualDeductionsAmount') {
+    record.set('manualDeductionsAmount', v);
+    if (!record.manualDeductions) record.set('manualDeductions', { manualDeductionsAmount: 0 });
+    record.set('manualDeductions.manualDeductionsAmount', v);
+    record.markModified('manualDeductions');
+  }
 }
 
 function scaleBreakdownAmounts(breakdown, oldTotal, newTotal) {
@@ -103,15 +187,16 @@ async function createAdjustmentRequest({
     throw err;
   }
 
+  const normalizedPath = String(fieldPath || '').trim();
   const editable = getEditableColumnDefs(config);
-  const colDef = editable.find((c) => c.header === columnHeader && c.fieldPath === fieldPath);
+  const colDef = editable.find((c) => c.header === columnHeader && c.fieldPath === normalizedPath);
   if (!colDef) {
     const err = new Error('This column is not configured as editable on the paysheet');
     err.code = 'COLUMN_NOT_EDITABLE';
     throw err;
   }
 
-  if (!ALLOWED_FIELD_PATHS.has(fieldPath)) {
+  if (isBlockedPaysheetAdjustmentPath(normalizedPath)) {
     const err = new Error('This field cannot be adjusted via paysheet');
     err.code = 'FIELD_NOT_ALLOWED';
     throw err;
@@ -126,7 +211,14 @@ async function createAdjustmentRequest({
 
   await assertBatchAllowsModification(record.payrollBatchId);
 
-  const originalValue = getValueByPath(record.toObject ? record.toObject() : record, fieldPath);
+  const originalNumeric = readNumericFieldOnRecord(record, normalizedPath);
+  if (originalNumeric == null) {
+    const err = new Error('This field does not have a numeric value on the payroll record for this employee');
+    err.code = 'FIELD_NOT_NUMERIC';
+    throw err;
+  }
+
+  const originalValue = originalNumeric;
   const proposed = roundMoney(proposedValue);
 
   if (proposed > originalValue) {
@@ -149,7 +241,7 @@ async function createAdjustmentRequest({
   }
 
   await PaysheetAdjustmentRequest.updateMany(
-    { payrollRecordId: record._id, fieldPath, status: 'pending' },
+    { payrollRecordId: record._id, fieldPath: normalizedPath, status: 'pending' },
     {
       $set: { status: 'cancelled' },
       $push: {
@@ -170,7 +262,7 @@ async function createAdjustmentRequest({
     payrollBatchId: record.payrollBatchId || null,
     month: record.month,
     columnHeader,
-    fieldPath,
+    fieldPath: normalizedPath,
     originalValue,
     proposedValue: proposed,
     reason: trimmedReason,
@@ -193,29 +285,28 @@ async function createAdjustmentRequest({
 async function applyAdjustmentToRecord(record, fieldPath, newValue, originalValue) {
   const proposed = roundMoney(newValue);
   const original = roundMoney(originalValue);
-  const delta = roundMoney(original - proposed);
+
+  setValueOnRecord(record, fieldPath, proposed);
 
   if (fieldPath === 'loanAdvance.totalEMI') {
     const breakdown = record.loanAdvance?.emiBreakdown || [];
-    record.set('loanAdvance.totalEMI', proposed);
     if (breakdown.length > 0) {
       record.set('loanAdvance.emiBreakdown', scaleBreakdownAmounts(breakdown, original, proposed));
     }
+    record.markModified('loanAdvance');
   } else if (fieldPath === 'loanAdvance.advanceDeduction') {
     const breakdown = record.loanAdvance?.advanceBreakdown || [];
-    record.set('loanAdvance.advanceDeduction', proposed);
     if (breakdown.length > 0) {
       record.set('loanAdvance.advanceBreakdown', scaleBreakdownAmounts(breakdown, original, proposed));
     }
-  } else {
-    const err = new Error(`Unsupported field path: ${fieldPath}`);
-    err.code = 'FIELD_NOT_ALLOWED';
-    throw err;
+    record.markModified('loanAdvance');
   }
 
-  const currentNet = roundMoney(record.netSalary);
-  record.set('netSalary', Math.max(0, roundMoney(currentNet + delta)));
-  record.markModified('loanAdvance');
+  const netDelta = computeNetSalaryDelta(fieldPath, original, proposed);
+  if (Math.abs(netDelta) >= 0.005) {
+    const currentNet = roundMoney(record.netSalary);
+    record.set('netSalary', Math.max(0, roundMoney(currentNet + netDelta)));
+  }
 }
 
 async function reviewAdjustmentRequest(requestId, { approve, comments, userId }) {
@@ -379,7 +470,9 @@ async function autoRejectPendingPaysheetAdjustmentsForBatch(batch, userId, reaso
 }
 
 module.exports = {
-  ALLOWED_FIELD_PATHS,
+  isBlockedPaysheetAdjustmentPath,
+  isDeductionPath,
+  isEarningPath,
   getEditableColumnDefs,
   resolveEditableFieldPath,
   createAdjustmentRequest,
@@ -389,4 +482,5 @@ module.exports = {
   applyOverlayToRows,
   autoRejectPendingPaysheetAdjustmentsForBatch,
   getValueByPath,
+  computeNetSalaryDelta,
 };

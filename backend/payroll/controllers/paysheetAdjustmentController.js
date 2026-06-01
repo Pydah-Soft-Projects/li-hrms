@@ -42,6 +42,7 @@ exports.createRequest = async (req, res) => {
       code === 'PROPOSED_EXCEEDS_ORIGINAL' ||
       code === 'NO_CHANGE' ||
       code === 'REASON_REQUIRED' ||
+      code === 'FIELD_NOT_NUMERIC' ||
       code === 'BATCH_LOCKED'
         ? 400
         : code === 'RECORD_NOT_FOUND'
