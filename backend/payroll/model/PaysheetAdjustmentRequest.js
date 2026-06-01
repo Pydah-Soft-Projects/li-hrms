@@ -35,7 +35,10 @@ const paysheetAdjustmentRequestSchema = new mongoose.Schema(
     month: { type: String, required: true, index: true },
     columnHeader: { type: String, required: true, trim: true },
     fieldPath: { type: String, required: true, trim: true },
+    /** Amount shown on paysheet / used as cap for proposed value. */
     originalValue: { type: Number, required: true, min: 0 },
+    /** Value on PayrollRecord at fieldPath when request was created (for stale checks on approve). */
+    recordValueAtRequest: { type: Number, default: null },
     proposedValue: { type: Number, required: true, min: 0 },
     reason: { type: String, required: true, trim: true },
     status: {

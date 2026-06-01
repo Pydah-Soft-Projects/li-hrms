@@ -174,6 +174,18 @@ export default function PayrollConfigPage() {
         const header = (c.header != null && String(c.header).trim()) ? String(c.header).trim() : `Column ${i + 1}`;
         return { ...c, header, order: i };
       });
+      const missingStorage = normalizedColumns.filter(
+        (c) =>
+          c.paysheetEditable &&
+          !(c.paysheetEditableFieldPath?.trim() || (c.source === 'field' && c.field && !c.field.startsWith('employee.')))
+      );
+      if (allowPaysheetModification && missingStorage.length > 0) {
+        toast.error(
+          `Select a storage field for editable columns: ${missingStorage.map((c) => c.header).join(', ')}`
+        );
+        setSaving(false);
+        return;
+      }
       const payload = {
         enabled,
         steps: steps.map((s, i) => ({ ...s, order: i })),
@@ -564,8 +576,14 @@ export default function PayrollConfigPage() {
                   onChange={(e) => setAllowPaysheetModification(e.target.checked)}
                   className="rounded border-slate-300 text-violet-600 focus:ring-violet-500"
                 />
-                Allow paysheet modification requests (any column marked editable below — superadmin approval)
+                Allow paysheet modification requests (mark columns below — field or formula — superadmin approval)
               </label>
+              {allowPaysheetModification && (
+                <p className="mt-1 text-[11px] text-violet-700/90 dark:text-violet-300/90 max-w-3xl">
+                  For each paysheet column you want to edit, check &quot;Editable on paysheet&quot; and choose the payroll
+                  record field to store the change. Formula columns need a storage field explicitly; then save this page.
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               {loading ? (
@@ -755,7 +773,7 @@ export default function PayrollConfigPage() {
                         )}
                       </div>
                     </div>
-                    {allowPaysheetModification && col.source === 'field' && (
+                    {allowPaysheetModification && (
                       <div className="sm:col-span-3 mt-1 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-violet-200 dark:border-violet-800/60 bg-violet-50/40 dark:bg-violet-950/20 px-3 py-2">
                         <label className="inline-flex items-center gap-2 text-xs font-medium text-violet-800 dark:text-violet-200 cursor-pointer">
                           <input
@@ -784,24 +802,31 @@ export default function PayrollConfigPage() {
                           Editable on paysheet (requires approval)
                         </label>
                         {col.paysheetEditable && (
-                          <select
-                            value={col.paysheetEditableFieldPath || col.field || ''}
-                            onChange={(e) =>
-                              setOutputColumns((prev) =>
-                                prev.map((c, i) =>
-                                  i === index ? { ...c, paysheetEditableFieldPath: e.target.value } : c
+                          <>
+                            <select
+                              value={col.paysheetEditableFieldPath || col.field || ''}
+                              onChange={(e) =>
+                                setOutputColumns((prev) =>
+                                  prev.map((c, i) =>
+                                    i === index ? { ...c, paysheetEditableFieldPath: e.target.value } : c
+                                  )
                                 )
-                              )
-                            }
-                            className="text-xs rounded-lg border border-violet-200 dark:border-violet-700 bg-white dark:bg-slate-800 px-2 py-1.5"
-                          >
-                            <option value="">Select storage field…</option>
-                            {paysheetStorageFieldOptions.map((o) => (
-                              <option key={o.value} value={o.value}>
-                                {o.label}
-                              </option>
-                            ))}
-                          </select>
+                              }
+                              className="text-xs rounded-lg border border-violet-200 dark:border-violet-700 bg-white dark:bg-slate-800 px-2 py-1.5 min-w-[12rem]"
+                            >
+                              <option value="">Select storage field…</option>
+                              {paysheetStorageFieldOptions.map((o) => (
+                                <option key={o.value} value={o.value}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                            {col.source === 'formula' && (
+                              <span className="text-[10px] text-violet-700/90 dark:text-violet-300/90">
+                                Formula column: choose the payroll record field to update when approved.
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
                     )}

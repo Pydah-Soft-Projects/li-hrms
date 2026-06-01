@@ -2,6 +2,8 @@ const PayrollConfiguration = require('../model/PayrollConfiguration');
 const PaysheetAdjustmentRequest = require('../model/PaysheetAdjustmentRequest');
 const PayrollRecord = require('../model/PayrollRecord');
 const PayrollBatch = require('../model/PayrollBatch');
+const { payrollRecordToPayslipShape } = require('../utils/paysheetBundleExport');
+const outputColumnService = require('./outputColumnService');
 
 /** Paths that must never be adjusted via paysheet (identity / derived totals). */
 const BLOCKED_FIELD_PATH_PREFIXES = ['employee.'];
@@ -103,6 +105,76 @@ function readNumericFieldOnRecord(record, fieldPath) {
     return null;
   }
   return val;
+}
+
+function normalizeColumnHeader(header) {
+  return String(header || '').trim().toLowerCase();
+}
+
+function normalizeOutputColumnsForBuild(config) {
+  const cols = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
+  return cols.map((c, i) => {
+    const doc = c && typeof c.toObject === 'function' ? c.toObject() : { ...c };
+    const formulaStr = doc.formula != null ? String(doc.formula).trim() : '';
+    const explicitSource = doc.source === 'formula' ? 'formula' : doc.source === 'field' ? 'field' : null;
+    const source = explicitSource || (formulaStr.length > 0 ? 'formula' : 'field');
+    return {
+      header: doc.header != null && String(doc.header).trim() ? String(doc.header).trim() : `Column ${i + 1}`,
+      source,
+      field: source === 'formula' ? '' : doc.field || '',
+      formula: source === 'formula' ? formulaStr : '',
+      order: typeof doc.order === 'number' ? doc.order : i,
+    };
+  });
+}
+
+/**
+ * Same value logic as paysheet row build (formulas + field columns in config order).
+ */
+function computePaysheetCellValue(record, columnHeader, config) {
+  const targetNorm = normalizeColumnHeader(columnHeader);
+  if (!targetNorm) return null;
+  const outputColumns = normalizeOutputColumnsForBuild(config);
+  if (outputColumns.length === 0) return null;
+
+  const payslip = payrollRecordToPayslipShape(record?.toObject ? record.toObject() : record);
+  const row = outputColumnService.buildRowFromOutputColumns(payslip, outputColumns);
+
+  for (const col of outputColumns) {
+    if (normalizeColumnHeader(col.header) === targetNorm) {
+      const val = row[col.header];
+      if (typeof val === 'number' && !Number.isNaN(val)) return roundMoney(val);
+      const n = Number(val);
+      return Number.isFinite(n) ? roundMoney(n) : null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Paysheet display value is authoritative for "calculated amount"; record field is for apply + stale check.
+ */
+function resolveAdjustmentOriginalValues(record, columnHeader, fieldPath, config) {
+  const recordValueAtRequest = readNumericFieldOnRecord(record, fieldPath) ?? 0;
+  const displayValue = computePaysheetCellValue(record, columnHeader, config);
+  const originalValue =
+    displayValue != null && Number.isFinite(displayValue) ? displayValue : recordValueAtRequest;
+  return { originalValue, recordValueAtRequest, displayValue };
+}
+
+function buildEditableFieldValuesForRecord(record, config, editableColumns) {
+  const values = {};
+  for (const col of editableColumns) {
+    const display = computePaysheetCellValue(record, col.header, config);
+    const fromRecord = readNumericFieldOnRecord(record, col.fieldPath);
+    values[col.header] =
+      display != null && Number.isFinite(display)
+        ? display
+        : fromRecord != null
+          ? fromRecord
+          : 0;
+  }
+  return values;
 }
 
 function setValueOnRecord(record, fieldPath, value) {
@@ -211,18 +283,25 @@ async function createAdjustmentRequest({
 
   await assertBatchAllowsModification(record.payrollBatchId);
 
-  const originalNumeric = readNumericFieldOnRecord(record, normalizedPath);
-  if (originalNumeric == null) {
+  const recordNumeric = readNumericFieldOnRecord(record, normalizedPath);
+  if (recordNumeric == null && computePaysheetCellValue(record, columnHeader, config) == null) {
     const err = new Error('This field does not have a numeric value on the payroll record for this employee');
     err.code = 'FIELD_NOT_NUMERIC';
     throw err;
   }
 
-  const originalValue = originalNumeric;
+  const { originalValue, recordValueAtRequest } = resolveAdjustmentOriginalValues(
+    record,
+    columnHeader,
+    normalizedPath,
+    config
+  );
   const proposed = roundMoney(proposedValue);
 
-  if (proposed > originalValue) {
-    const err = new Error('Proposed amount cannot exceed the calculated amount for this month');
+  if (proposed > originalValue + 0.005) {
+    const err = new Error(
+      `Proposed amount (${proposed}) cannot exceed the paysheet calculated amount (${originalValue}) for this month`
+    );
     err.code = 'PROPOSED_EXCEEDS_ORIGINAL';
     throw err;
   }
@@ -264,6 +343,7 @@ async function createAdjustmentRequest({
     columnHeader,
     fieldPath: normalizedPath,
     originalValue,
+    recordValueAtRequest,
     proposedValue: proposed,
     reason: trimmedReason,
     status: 'pending',
@@ -282,27 +362,30 @@ async function createAdjustmentRequest({
   return request;
 }
 
-async function applyAdjustmentToRecord(record, fieldPath, newValue, originalValue) {
+async function applyAdjustmentToRecord(record, fieldPath, newValue, recordValueBefore, paysheetValueBefore) {
   const proposed = roundMoney(newValue);
-  const original = roundMoney(originalValue);
+  const recordBefore = roundMoney(recordValueBefore);
+  const paysheetBefore = roundMoney(
+    paysheetValueBefore != null && Number.isFinite(paysheetValueBefore) ? paysheetValueBefore : recordBefore
+  );
 
   setValueOnRecord(record, fieldPath, proposed);
 
   if (fieldPath === 'loanAdvance.totalEMI') {
     const breakdown = record.loanAdvance?.emiBreakdown || [];
     if (breakdown.length > 0) {
-      record.set('loanAdvance.emiBreakdown', scaleBreakdownAmounts(breakdown, original, proposed));
+      record.set('loanAdvance.emiBreakdown', scaleBreakdownAmounts(breakdown, recordBefore, proposed));
     }
     record.markModified('loanAdvance');
   } else if (fieldPath === 'loanAdvance.advanceDeduction') {
     const breakdown = record.loanAdvance?.advanceBreakdown || [];
     if (breakdown.length > 0) {
-      record.set('loanAdvance.advanceBreakdown', scaleBreakdownAmounts(breakdown, original, proposed));
+      record.set('loanAdvance.advanceBreakdown', scaleBreakdownAmounts(breakdown, recordBefore, proposed));
     }
     record.markModified('loanAdvance');
   }
 
-  const netDelta = computeNetSalaryDelta(fieldPath, original, proposed);
+  const netDelta = computeNetSalaryDelta(fieldPath, paysheetBefore, proposed);
   if (Math.abs(netDelta) >= 0.005) {
     const currentNet = roundMoney(record.netSalary);
     record.set('netSalary', Math.max(0, roundMoney(currentNet + netDelta)));
@@ -346,14 +429,22 @@ async function reviewAdjustmentRequest(requestId, { approve, comments, userId })
       throw err;
     }
     const currentValue = getValueByPath(record.toObject ? record.toObject() : record, request.fieldPath);
-    if (Math.abs(currentValue - request.originalValue) > 0.02) {
+    const baselineRecordValue =
+      request.recordValueAtRequest != null ? roundMoney(request.recordValueAtRequest) : request.originalValue;
+    if (Math.abs(currentValue - baselineRecordValue) > 0.02) {
       const err = new Error(
         'Payroll record was recalculated since this request was created. Please cancel and submit a new request.'
       );
       err.code = 'STALE_REQUEST';
       throw err;
     }
-    await applyAdjustmentToRecord(record, request.fieldPath, request.proposedValue, request.originalValue);
+    await applyAdjustmentToRecord(
+      record,
+      request.fieldPath,
+      request.proposedValue,
+      baselineRecordValue,
+      request.originalValue
+    );
     await record.save();
     request.appliedAt = new Date();
   }
@@ -418,8 +509,42 @@ async function buildAdjustmentOverlay(month, employeeIds = []) {
   return overlay;
 }
 
+function findRowHeaderKey(row, columnHeader) {
+  if (row[columnHeader] !== undefined) return columnHeader;
+  const norm = normalizeColumnHeader(columnHeader);
+  const match = Object.keys(row).find(
+    (k) => !k.startsWith('_') && normalizeColumnHeader(k) === norm
+  );
+  return match || columnHeader;
+}
+
+/**
+ * Rebuild paysheet cells from current PayrollRecord so formulas use adjusted field values.
+ */
+function rebuildRowsFromPayrollRecords(rows, records, outputColumns) {
+  if (!Array.isArray(outputColumns) || outputColumns.length === 0 || !Array.isArray(records)) {
+    return rows;
+  }
+  return rows.map((row, index) => {
+    const rec = records[index];
+    if (!rec) return row;
+    const serial = row['S.No'] != null ? row['S.No'] : index + 1;
+    const payslip = payrollRecordToPayslipShape(rec?.toObject ? rec.toObject() : rec);
+    const built = outputColumnService.buildRowFromOutputColumns(payslip, outputColumns, serial);
+    return {
+      ...row,
+      ...built,
+      'S.No': serial,
+      _employeeId: row._employeeId,
+      _payrollRecordId: row._payrollRecordId,
+      _leftDate: row._leftDate,
+    };
+  });
+}
+
 function applyOverlayToRows(rows, overlay, editableColumns) {
   const editableHeaderSet = new Set(editableColumns.map((c) => c.header));
+  const editableNormSet = new Set(editableColumns.map((c) => normalizeColumnHeader(c.header)));
   return rows.map((row) => {
     const empId = row._employeeId != null ? String(row._employeeId) : null;
     if (!empId || !overlay.has(empId)) {
@@ -428,10 +553,12 @@ function applyOverlayToRows(rows, overlay, editableColumns) {
     const byHeader = overlay.get(empId);
     const cellAdjustments = { ...(row._cellAdjustments || {}) };
     for (const [header, meta] of byHeader.entries()) {
-      if (!editableHeaderSet.has(header)) continue;
-      cellAdjustments[header] = meta;
-      if (meta.status === 'pending') {
-        row = { ...row, [header]: meta.proposedValue };
+      const headerNorm = normalizeColumnHeader(header);
+      if (!editableHeaderSet.has(header) && !editableNormSet.has(headerNorm)) continue;
+      const rowKey = findRowHeaderKey(row, header);
+      cellAdjustments[rowKey] = meta;
+      if (meta.status === 'pending' || meta.status === 'approved') {
+        row = { ...row, [rowKey]: meta.proposedValue };
       }
     }
     return { ...row, _cellAdjustments: cellAdjustments };
@@ -469,17 +596,33 @@ async function autoRejectPendingPaysheetAdjustmentsForBatch(batch, userId, reaso
   return { rejected };
 }
 
+function attachEditableFieldValuesToRows(rows, records, config, editableColumns) {
+  if (!editableColumns.length) return rows;
+  return rows.map((row, index) => {
+    const rec = Array.isArray(records) ? records[index] : null;
+    if (!rec) return row;
+    return {
+      ...row,
+      _editableFieldValues: buildEditableFieldValuesForRecord(rec, config, editableColumns),
+    };
+  });
+}
+
 module.exports = {
   isBlockedPaysheetAdjustmentPath,
   isDeductionPath,
   isEarningPath,
   getEditableColumnDefs,
   resolveEditableFieldPath,
+  computePaysheetCellValue,
+  resolveAdjustmentOriginalValues,
   createAdjustmentRequest,
   reviewAdjustmentRequest,
   listAdjustmentRequests,
   buildAdjustmentOverlay,
   applyOverlayToRows,
+  attachEditableFieldValuesToRows,
+  rebuildRowsFromPayrollRecords,
   autoRejectPendingPaysheetAdjustmentsForBatch,
   getValueByPath,
   computeNetSalaryDelta,

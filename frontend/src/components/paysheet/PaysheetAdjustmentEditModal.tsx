@@ -15,7 +15,6 @@ export type PaysheetEditContext = {
 type Props = {
   open: boolean;
   context: PaysheetEditContext | null;
-  editableColumn?: PaysheetEditableColumn;
   onClose: () => void;
   onSubmit: (proposedValue: number, reason: string) => Promise<void>;
 };

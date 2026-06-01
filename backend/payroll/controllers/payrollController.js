@@ -35,8 +35,9 @@ const ArrearsPayrollIntegrationService = require('../../arrears/services/arrears
 const PayrollPayslipSnapshot = require('../model/PayrollPayslipSnapshot');
 const DeductionPayrollIntegrationService = require('../../manual-deductions/services/deductionPayrollIntegrationService');
 const paysheetAdjustmentService = require('../services/paysheetAdjustmentService');
+const PaysheetAdjustmentRequest = require('../model/PaysheetAdjustmentRequest');
 
-async function attachPaysheetAdjustmentMeta(rows, records, month) {
+async function attachPaysheetAdjustmentMeta(rows, records, month, outputColumnsForRebuild = null) {
   if (!Array.isArray(rows) || rows.length === 0) {
     const config = await PayrollConfiguration.get();
     return {
@@ -60,9 +61,38 @@ async function attachPaysheetAdjustmentMeta(rows, records, month) {
     };
   });
   const employeeIds = enrichedRows.map((r) => r._employeeId).filter(Boolean);
+  let rowsForOverlay = enrichedRows;
+  const paysheetAdjustmentsForRows =
+    config?.allowPaysheetModification &&
+    employeeIds.length > 0 &&
+    (await PaysheetAdjustmentRequest.exists({
+      month,
+      employeeId: { $in: employeeIds },
+      status: { $in: ['pending', 'approved'] },
+    }));
+  if (
+    paysheetAdjustmentsForRows &&
+    Array.isArray(outputColumnsForRebuild) &&
+    outputColumnsForRebuild.length > 0 &&
+    Array.isArray(records) &&
+    records.length > 0
+  ) {
+    rowsForOverlay = paysheetAdjustmentService.rebuildRowsFromPayrollRecords(
+      enrichedRows,
+      records,
+      outputColumnsForRebuild
+    );
+  }
   const overlay = await paysheetAdjustmentService.buildAdjustmentOverlay(month, employeeIds);
+  let rowsWithOverlay = paysheetAdjustmentService.applyOverlayToRows(rowsForOverlay, overlay, editableColumns);
+  rowsWithOverlay = paysheetAdjustmentService.attachEditableFieldValuesToRows(
+    rowsWithOverlay,
+    records,
+    config,
+    editableColumns
+  );
   return {
-    rows: paysheetAdjustmentService.applyOverlayToRows(enrichedRows, overlay, editableColumns),
+    rows: rowsWithOverlay,
     paysheetModification: {
       allowPaysheetModification: !!config?.allowPaysheetModification,
       editableColumns,
@@ -1330,10 +1360,14 @@ exports.getPaysheetData = async (req, res) => {
       if (filtered.length > 0) {
         try {
           const orderedEmpIds = filtered.map((r) => (r.employeeId?._id || r.employeeId)?.toString()).filter(Boolean);
+          const paysheetAdjustmentsActive = await PaysheetAdjustmentRequest.exists({
+            month,
+            status: { $in: ['pending', 'approved'] },
+          });
           const snaps = await PayrollPayslipSnapshot.find({ month, kind: 'regular', employeeId: { $in: orderedEmpIds } }).lean();
           const snapMap = new Map(snaps.map((s) => [String(s.employeeId), s]));
           const allPresent = orderedEmpIds.length > 0 && orderedEmpIds.every((id) => snapMap.has(String(id)));
-          if (allPresent) {
+          if (allPresent && !paysheetAdjustmentsActive) {
             const sample = snapMap.get(String(orderedEmpIds[0]));
             const hdrs = Array.isArray(sample?.headers) ? sample.headers : [];
             const payslipsSnap = filtered.map((r) => recordToPayslip(r));
@@ -1391,7 +1425,7 @@ exports.getPaysheetData = async (req, res) => {
         if (payslip.employee?.leftDate) row._leftDate = payslip.employee.leftDate;
         return row;
       });
-      const adjMeta = await attachPaysheetAdjustmentMeta(rows, filtered, month);
+      const adjMeta = await attachPaysheetAdjustmentMeta(rows, filtered, month, expandedColumns);
       rows = adjMeta.rows;
       const displayKeys = rows.length > 0
         ? Object.keys(rows[0]).filter((k) => !k.startsWith('_'))

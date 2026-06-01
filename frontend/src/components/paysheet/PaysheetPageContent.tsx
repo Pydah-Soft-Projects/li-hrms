@@ -42,9 +42,16 @@ const ROWS_PER_PAGE_OPTIONS = [10, 25, 50, 100, 250, 500, ROWS_PER_PAGE_ALL] as 
 
 const SEARCH_DEBOUNCE_MS = 350;
 
+function normalizePaysheetHeader(header: string): string {
+  return String(header || '').trim().toLowerCase();
+}
+
 function getCellAdjustment(row: Record<string, unknown>, header: string): PaysheetCellAdjustmentMeta | undefined {
   const map = row._cellAdjustments as Record<string, PaysheetCellAdjustmentMeta> | undefined;
-  return map?.[header];
+  if (!map) return undefined;
+  if (map[header]) return map[header];
+  const key = Object.keys(map).find((k) => normalizePaysheetHeader(k) === normalizePaysheetHeader(header));
+  return key ? map[key] : undefined;
 }
 
 function cellHighlightClass(meta?: PaysheetCellAdjustmentMeta): string {
@@ -65,6 +72,17 @@ function formatCell(value: unknown): string {
     return value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   return String(value);
+}
+
+function paysheetCellDisplayValue(
+  row: Record<string, unknown>,
+  header: string,
+  cellAdj?: PaysheetCellAdjustmentMeta
+): unknown {
+  if (cellAdj && (cellAdj.status === 'pending' || cellAdj.status === 'approved')) {
+    return cellAdj.proposedValue;
+  }
+  return row[header];
 }
 
 function shiftMonth(ym: string, delta: number): string {
@@ -122,17 +140,23 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
     !!paysheetModification?.allowPaysheetModification &&
     (paysheetModification?.editableColumns?.length ?? 0) > 0;
 
-  const editableHeaderSet = useMemo(() => {
-    return new Set((paysheetModification?.editableColumns ?? []).map((c) => c.header));
-  }, [paysheetModification]);
-
-  const editableByHeader = useMemo(() => {
-    const m = new Map<string, { fieldPath: string }>();
+  const editableByNormalizedHeader = useMemo(() => {
+    const m = new Map<string, { fieldPath: string; header: string }>();
     for (const c of paysheetModification?.editableColumns ?? []) {
-      m.set(c.header, { fieldPath: c.fieldPath });
+      m.set(normalizePaysheetHeader(c.header), { fieldPath: c.fieldPath, header: c.header });
     }
     return m;
   }, [paysheetModification]);
+
+  const editableColumnLabels = useMemo(
+    () => (paysheetModification?.editableColumns ?? []).map((c) => c.header),
+    [paysheetModification]
+  );
+
+  const resolveEditableColumn = useCallback(
+    (header: string) => editableByNormalizedHeader.get(normalizePaysheetHeader(header)),
+    [editableByNormalizedHeader]
+  );
 
   const totalRows = rows.length;
   const effectivePerPage = rowsPerPage === ROWS_PER_PAGE_ALL ? Math.max(totalRows, 1) : rowsPerPage;
@@ -370,8 +394,8 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
   };
 
   const openCellEdit = (row: Record<string, unknown>, header: string) => {
-    if (!modificationEnabled || !canRequestAdjustment || !editableHeaderSet.has(header)) return;
-    const col = editableByHeader.get(header);
+    if (!modificationEnabled || !canRequestAdjustment) return;
+    const col = resolveEditableColumn(header);
     if (!col) return;
     const payrollRecordId = row._payrollRecordId != null ? String(row._payrollRecordId) : '';
     if (!payrollRecordId) {
@@ -379,12 +403,20 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
       return;
     }
     const adj = getCellAdjustment(row, header);
-    const currentValue = adj?.status === 'pending' ? adj.originalValue : Number(row[header]) || 0;
+    const fieldValues = row._editableFieldValues as Record<string, number> | undefined;
+    const fromRecord =
+      fieldValues?.[col.header] ??
+      fieldValues?.[header] ??
+      (adj?.status === 'pending' ? adj.originalValue : undefined);
+    const currentValue =
+      fromRecord != null && Number.isFinite(Number(fromRecord))
+        ? Number(fromRecord)
+        : Number(row[header]) || 0;
     const empCode = row['Employee Code'] ?? row['Emp No'] ?? '';
     const name = row['Name'] ?? row['Employee Name'] ?? '';
     setEditContext({
       payrollRecordId,
-      columnHeader: header,
+      columnHeader: col.header,
       fieldPath: col.fieldPath,
       currentValue,
       employeeLabel: [empCode, name].filter(Boolean).join(' — '),
@@ -809,9 +841,14 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
                   <span className="text-xs px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/50 text-orange-800 dark:text-orange-200">
                     Orange = approved change
                   </span>
-                  {canRequestAdjustment && (
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                      Click <Pencil className="inline h-3 w-3 -mt-0.5" /> on editable cells to request a change
+                  {canRequestAdjustment && editableColumnLabels.length > 0 && (
+                    <span className="text-xs text-slate-500 dark:text-slate-400" title={editableColumnLabels.join(', ')}>
+                      Editable: {editableColumnLabels.join(' · ')}
+                    </span>
+                  )}
+                  {canRequestAdjustment && editableColumnLabels.length === 0 && modificationEnabled && (
+                    <span className="text-xs text-amber-700 dark:text-amber-300">
+                      No editable columns in payroll config — mark columns under Payroll configuration and save.
                     </span>
                   )}
                   {isSuperAdmin && (
@@ -838,7 +875,7 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
                 <thead>
                   <tr>
                     {headers.map((h, i) => {
-                      const isEditableHeader = modificationEnabled && editableHeaderSet.has(h);
+                      const isEditableHeader = modificationEnabled && !!resolveEditableColumn(h);
                       return (
                         <th
                           key={i}
@@ -851,7 +888,9 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
                           <span className="inline-flex items-center gap-1">
                             {h}
                             {isEditableHeader && (
-                              <Pencil className="h-3 w-3 opacity-60" aria-hidden title="Editable (approval required)" />
+                              <span title="Editable (approval required)">
+                                <Pencil className="h-3 w-3 opacity-60" aria-hidden />
+                              </span>
                             )}
                           </span>
                         </th>
@@ -870,7 +909,7 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
                         const leftDate = row._leftDate as string | undefined;
                         const cellAdj = getCellAdjustment(row, header);
                         const isEditableCol =
-                          modificationEnabled && canRequestAdjustment && editableHeaderSet.has(header);
+                          modificationEnabled && canRequestAdjustment && !!resolveEditableColumn(header);
                         const canEdit = isEditableCol && cellAdj?.status !== 'pending';
                         return (
                           <td
@@ -879,7 +918,7 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
                           >
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center gap-1.5">
-                                <span>{formatCell(row[header])}</span>
+                                <span>{formatCell(paysheetCellDisplayValue(row, header, cellAdj))}</span>
                                 {canEdit && (
                                   <button
                                     type="button"
@@ -902,7 +941,14 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
                                 </span>
                               )}
                               {cellAdj?.status === 'approved' && (
-                                <span className="text-[10px] text-orange-700 dark:text-orange-300">Adjusted</span>
+                                <span className="text-[10px] text-orange-700 dark:text-orange-300">
+                                  Adjusted (was{' '}
+                                  {cellAdj.originalValue.toLocaleString('en-IN', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}
+                                  )
+                                </span>
                               )}
                               {isNameColumn &&
                                 leftDate &&
