@@ -9,6 +9,9 @@ const loanAdvanceService = require('./loanAdvanceService');
 const ArrearsRequest = require('../../arrears/model/ArrearsRequest');
 const DeductionRequest = require('../../manual-deductions/model/DeductionRequest');
 const { autoRejectPendingRequestsForCompletedBatch } = require('../../shared/services/payrollBatchAutoRejectService');
+const {
+  autoRejectPendingPaysheetAdjustmentsForBatch,
+} = require('./paysheetAdjustmentService');
 const { resolveBatchEmployeePeriods } = require('../../shared/services/payrollRequestLockService');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 
@@ -287,6 +290,18 @@ class PayrollBatchService {
                     batch.autoRejectedRequestsSummary = autoRejectSummary;
                 } catch (err) {
                     console.error('[PayrollBatch] auto rejection of pending requests failed:', err.message);
+                }
+
+                try {
+                    const paysheetRejectReason = `Auto-rejected: payroll batch completed for ${batch.month}`;
+                    const paysheetAdjSummary = await autoRejectPendingPaysheetAdjustmentsForBatch(
+                        batch,
+                        userId,
+                        paysheetRejectReason
+                    );
+                    batch.paysheetAdjustmentsRejectedSummary = paysheetAdjSummary;
+                } catch (err) {
+                    console.error('[PayrollBatch] paysheet adjustment auto-rejection failed:', err.message);
                 }
 
                 // Settle arrears and manual deductions for all payrolls in this batch (idempotent: only not-yet-settled)

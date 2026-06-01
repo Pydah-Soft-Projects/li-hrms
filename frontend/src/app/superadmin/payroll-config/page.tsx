@@ -78,6 +78,13 @@ export default function PayrollConfigPage() {
   const [statutoryProratePaidDaysColumnHeader, setStatutoryProratePaidDaysColumnHeader] = useState('');
   const [statutoryProrateTotalDaysColumnHeader, setStatutoryProrateTotalDaysColumnHeader] = useState('');
   const [professionTaxSlabEarningsColumnHeader, setProfessionTaxSlabEarningsColumnHeader] = useState('');
+  const [loanAdvancePayableColumnHeader, setLoanAdvancePayableColumnHeader] = useState('');
+  const [allowPaysheetModification, setAllowPaysheetModification] = useState(false);
+
+  const PAYSLIP_EDITABLE_FIELD_OPTIONS = [
+    { value: 'loanAdvance.totalEMI', label: 'Loan EMI (loanAdvance.totalEMI)' },
+    { value: 'loanAdvance.advanceDeduction', label: 'Salary advance (loanAdvance.advanceDeduction)' },
+  ];
 
   const outputFieldOptions = useMemo(() => {
     const extra = config?.employeeSalaryFieldOptions ?? [];
@@ -133,6 +140,8 @@ export default function PayrollConfigPage() {
       setStatutoryProratePaidDaysColumnHeader(data?.statutoryProratePaidDaysColumnHeader ?? '');
       setStatutoryProrateTotalDaysColumnHeader(data?.statutoryProrateTotalDaysColumnHeader ?? '');
       setProfessionTaxSlabEarningsColumnHeader(data?.professionTaxSlabEarningsColumnHeader ?? '');
+      setLoanAdvancePayableColumnHeader(data?.loanAdvancePayableColumnHeader ?? '');
+      setAllowPaysheetModification(!!data?.allowPaysheetModification);
     } catch (e) {
       console.error(e);
       toast.error('Failed to load payroll config');
@@ -171,6 +180,8 @@ export default function PayrollConfigPage() {
         statutoryProratePaidDaysColumnHeader: statutoryProratePaidDaysColumnHeader.trim(),
         statutoryProrateTotalDaysColumnHeader: statutoryProrateTotalDaysColumnHeader.trim(),
         professionTaxSlabEarningsColumnHeader: professionTaxSlabEarningsColumnHeader.trim(),
+        loanAdvancePayableColumnHeader: loanAdvancePayableColumnHeader.trim(),
+        allowPaysheetModification,
       };
       await api.putPayrollConfig(payload);
       toast.success('Payroll configuration saved');
@@ -545,6 +556,15 @@ export default function PayrollConfigPage() {
               <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                 This is the actual payroll flow: add columns in order. Field values (OT pay, attendance deduction, basic pay, etc.) come from the dedicated functions in the services and controllers—for the respective employee we get those values from them. Use &quot;Add cumulative from step&quot; to place Allowances cumulative, Deductions cumulative, or Statutory cumulative for that employee. <strong>Include a &quot;Paid Days&quot; or &quot;Present days&quot; column before those cumulatives</strong> so statutory, allowances and deductions use it for proration (see section below).
               </p>
+              <label className="mt-3 inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allowPaysheetModification}
+                  onChange={(e) => setAllowPaysheetModification(e.target.checked)}
+                  className="rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                />
+                Allow paysheet modification requests (loan EMI / salary advance — superadmin approval)
+              </label>
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               {loading ? (
@@ -734,6 +754,56 @@ export default function PayrollConfigPage() {
                         )}
                       </div>
                     </div>
+                    {allowPaysheetModification && col.source === 'field' && (
+                      <div className="sm:col-span-3 mt-1 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-violet-200 dark:border-violet-800/60 bg-violet-50/40 dark:bg-violet-950/20 px-3 py-2">
+                        <label className="inline-flex items-center gap-2 text-xs font-medium text-violet-800 dark:text-violet-200 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!col.paysheetEditable}
+                            onChange={(e) =>
+                              setOutputColumns((prev) =>
+                                prev.map((c, i) =>
+                                  i === index
+                                    ? {
+                                        ...c,
+                                        paysheetEditable: e.target.checked,
+                                        paysheetEditableFieldPath: e.target.checked
+                                          ? c.paysheetEditableFieldPath ||
+                                            (PAYSLIP_EDITABLE_FIELD_OPTIONS.some((o) => o.value === c.field)
+                                              ? c.field
+                                              : '')
+                                          : '',
+                                      }
+                                    : c
+                                )
+                              )
+                            }
+                            className="rounded border-violet-300 text-violet-600 focus:ring-violet-500"
+                          />
+                          Editable on paysheet (requires approval)
+                        </label>
+                        {col.paysheetEditable && (
+                          <select
+                            value={col.paysheetEditableFieldPath || col.field || ''}
+                            onChange={(e) =>
+                              setOutputColumns((prev) =>
+                                prev.map((c, i) =>
+                                  i === index ? { ...c, paysheetEditableFieldPath: e.target.value } : c
+                                )
+                              )
+                            }
+                            className="text-xs rounded-lg border border-violet-200 dark:border-violet-700 bg-white dark:bg-slate-800 px-2 py-1.5"
+                          >
+                            <option value="">Select storage field…</option>
+                            {PAYSLIP_EDITABLE_FIELD_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))
@@ -844,6 +914,35 @@ export default function PayrollConfigPage() {
                     const header = (c.header && String(c.header).trim()) || `Column ${(c.order ?? 0) + 1}`;
                     return (
                       <option key={`pt-${header}-${c.order ?? 0}`} value={header}>
+                        {header}
+                      </option>
+                    );
+                  })}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
+                Loan &amp; salary advance — payable cap column (optional)
+              </label>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 max-w-xl">
+                Dynamic payroll only. When <strong>empty</strong>, the engine uses full scheduled salary advance and loan EMI
+                values (no cap) — same as before.
+                When a column is selected, its numeric value is the recovery pool: salary advance is deducted first
+                (up to the pool), then loan EMI from whatever remains. Only the actual deducted amounts appear on the payslip.
+                The column must appear <strong>before</strong> Loan EMI / Salary advance columns in the output list.
+              </p>
+              <select
+                value={loanAdvancePayableColumnHeader}
+                onChange={(e) => setLoanAdvancePayableColumnHeader(e.target.value)}
+                className="w-full max-w-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+              >
+                <option value="">No cap — use full scheduled loan/advance values</option>
+                {[...outputColumns]
+                  .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                  .map((c) => {
+                    const header = (c.header && String(c.header).trim()) || `Column ${(c.order ?? 0) + 1}`;
+                    return (
+                      <option key={`loan-payable-${header}-${c.order ?? 0}`} value={header}>
                         {header}
                       </option>
                     );

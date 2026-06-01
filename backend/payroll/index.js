@@ -56,6 +56,33 @@ router.get('/paysheet/default-month', applyScopeFilter, payrollController.getPay
 // Get paysheet data (headers + rows) for table – uses config output columns (with scope filtering)
 router.get('/paysheet', applyScopeFilter, payrollController.getPaysheetData);
 
+// Paysheet adjustment requests (loan EMI / salary advance overrides)
+const paysheetAdjustmentController = require('./controllers/paysheetAdjustmentController');
+router.get(
+  '/paysheet-modification/settings',
+  paysheetAdjustmentController.getPaysheetModificationSettings
+);
+router.get(
+  '/paysheet-adjustments',
+  authorize('manager', 'super_admin', 'sub_admin', 'hr'),
+  paysheetAdjustmentController.listRequests
+);
+router.post(
+  '/paysheet-adjustments',
+  authorize('manager', 'super_admin', 'sub_admin', 'hr'),
+  paysheetAdjustmentController.createRequest
+);
+router.post(
+  '/paysheet-adjustments/:id/approve',
+  authorize('super_admin'),
+  paysheetAdjustmentController.approveRequest
+);
+router.post(
+  '/paysheet-adjustments/:id/reject',
+  authorize('super_admin'),
+  paysheetAdjustmentController.rejectRequest
+);
+
 // Approve payroll (Super Admin, Sub Admin, HR)
 router.put('/:payrollRecordId/approve', authorize('manager', 'super_admin', 'sub_admin', 'hr'), payrollController.approvePayroll);
 

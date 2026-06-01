@@ -15,22 +15,35 @@ const {
 
 const CLOSED_STATUSES = ['rejected', 'cancelled', 'completed'];
 
+const {
+  buildLoanInstallmentPlan,
+  applyInstallmentPlanToLoan,
+  getEffectiveInstallmentCount,
+  getDueInstallmentAmount,
+} = require('./loanInstallmentScheduleService');
+
 function calculateEMI(principal, interestRate, duration) {
+  const p = Number(principal) || 0;
+  const d = Math.max(1, Number(duration) || 1);
+  let totalInterest;
+  let totalAmount;
   if (interestRate === 0 || !interestRate) {
-    const emi = principal / duration;
-    return {
-      emiAmount: Math.round(emi),
-      totalInterest: 0,
-      totalAmount: principal,
-    };
+    totalInterest = 0;
+    totalAmount = p;
+  } else {
+    totalInterest = Math.round((p * interestRate * (d / 12)) / 100);
+    totalAmount = Math.round(p + totalInterest);
   }
-  const totalInterest = (principal * interestRate * (duration / 12)) / 100;
-  const totalAmount = principal + totalInterest;
-  const emi = totalAmount / duration;
+  const plan = buildLoanInstallmentPlan(totalAmount, d);
   return {
-    emiAmount: Math.round(emi),
-    totalInterest: Math.round(totalInterest),
-    totalAmount: Math.round(totalAmount),
+    emiAmount: plan.emiAmount,
+    finalEmiAmount: plan.finalEmiAmount,
+    installmentSchedule: plan.installmentSchedule,
+    totalInstallments: plan.totalInstallments,
+    regularInstallmentCount: plan.regularInstallmentCount,
+    requestedDuration: plan.requestedDuration,
+    totalInterest,
+    totalAmount,
   };
 }
 
@@ -127,14 +140,14 @@ async function applyRepaymentScheduleFromPayrollMonth(loan, payrollMonthKey) {
   if (!ym) throw new Error('Invalid first deduction payroll month (expected YYYY-MM)');
 
   if (loan.requestType === 'loan') {
-    const duration = Math.max(1, Number(loan.duration) || 1);
+    const duration = Math.max(1, getEffectiveInstallmentCount(loan) || Number(loan.duration) || 1);
     const anchors = await computeLoanPayrollAnchorsFromMonthKey(ym, duration);
     if (!loan.loanConfig) loan.loanConfig = {};
     loan.loanConfig.startDate = anchors.startDate;
     loan.loanConfig.endDate = anchors.endDate;
     if (!loan.repayment) loan.repayment = {};
     if (!(Number(loan.repayment.totalInstallments) > 0)) {
-      loan.repayment.totalInstallments = duration;
+      loan.repayment.totalInstallments = getEffectiveInstallmentCount(loan) || duration;
     }
     await setNextPaymentDateFromInstallmentsPaid(loan);
     syncRemainingBalanceFromTotals(loan);
@@ -170,7 +183,7 @@ async function isRepaymentDueForPayrollMonth(loan, payrollMonth) {
   if (!(remaining > 0)) return false;
 
   const paid = Number(loan.repayment?.installmentsPaid) || 0;
-  const totalInstallments = Number(loan.repayment?.totalInstallments) || Number(loan.duration) || 0;
+  const totalInstallments = getEffectiveInstallmentCount(loan) || Number(loan.duration) || 0;
   if (totalInstallments > 0 && paid >= totalInstallments) return false;
 
   const firstYm = await firstPayrollMonthKeyForRepaymentSchedule(loan);
@@ -238,12 +251,17 @@ async function syncLoanMoneyAndPayrollSchedule(loan, opts = {}) {
   const principal = Number(loan.amount);
   const duration = Number(loan.duration);
   if (!principal || !duration) return false;
-  const { emiAmount, totalInterest, totalAmount } = calculateEMI(principal, rate, duration);
+  const { emiAmount, totalInterest, totalAmount, installmentSchedule, finalEmiAmount, totalInstallments, regularInstallmentCount, requestedDuration } = calculateEMI(principal, rate, duration);
   if (heal) {
     loan.loanConfig.emiAmount = emiAmount;
+    loan.loanConfig.finalEmiAmount = finalEmiAmount;
+    loan.loanConfig.installmentSchedule = installmentSchedule;
+    loan.loanConfig.regularInstallmentCount = regularInstallmentCount;
+    loan.loanConfig.requestedDuration = requestedDuration;
     loan.loanConfig.totalInterest = totalInterest;
     loan.loanConfig.totalAmount = totalAmount;
     loan.interestAmount = totalInterest;
+    loan.repayment.totalInstallments = totalInstallments;
     if (loan.repayment && !(Number(loan.repayment.totalPaid) > 0)) {
       loan.repayment.remainingBalance = totalAmount;
     } else if (loan.repayment) {
@@ -255,7 +273,7 @@ async function syncLoanMoneyAndPayrollSchedule(loan, opts = {}) {
   const scheduleLockedAtFinal = Boolean(loan.approvals?.final?.firstDeductionPayrollMonth);
   const ref = loan.disbursement?.disbursedAt || loan.appliedAt || loan.createdAt || new Date();
   if ((heal || fromDisburse) && !scheduleLockedAtFinal) {
-    const anchors = await computeLoanPayrollAnchors(ref, duration);
+    const anchors = await computeLoanPayrollAnchors(ref, totalInstallments || duration);
     loan.loanConfig.startDate = anchors.startDate;
     loan.loanConfig.endDate = anchors.endDate;
     loan.markModified('loanConfig');
@@ -296,25 +314,32 @@ async function repairOpenLoanForHistory(loan) {
   const duration = Number(loan.duration);
   if (!principal || !duration) return { changed: false, reason: 'bad_amount_duration' };
 
-  const { emiAmount, totalInterest, totalAmount } = calculateEMI(principal, rate, duration);
+  const emiResult = calculateEMI(principal, rate, duration);
   let changed = false;
 
   if (
-    Number(loan.loanConfig.emiAmount) !== emiAmount
-    || Number(loan.loanConfig.totalInterest) !== totalInterest
-    || Number(loan.loanConfig.totalAmount) !== totalAmount
-    || Number(loan.interestAmount) !== totalInterest
+    Number(loan.loanConfig.emiAmount) !== emiResult.emiAmount
+    || Number(loan.loanConfig.totalInterest) !== emiResult.totalInterest
+    || Number(loan.loanConfig.totalAmount) !== emiResult.totalAmount
+    || Number(loan.interestAmount) !== emiResult.totalInterest
+    || Number(loan.loanConfig.finalEmiAmount) !== emiResult.finalEmiAmount
+    || Number(loan.repayment?.totalInstallments) !== emiResult.totalInstallments
   ) {
-    loan.loanConfig.emiAmount = emiAmount;
-    loan.loanConfig.totalInterest = totalInterest;
-    loan.loanConfig.totalAmount = totalAmount;
-    loan.interestAmount = totalInterest;
+    loan.loanConfig.emiAmount = emiResult.emiAmount;
+    loan.loanConfig.finalEmiAmount = emiResult.finalEmiAmount;
+    loan.loanConfig.installmentSchedule = emiResult.installmentSchedule;
+    loan.loanConfig.regularInstallmentCount = emiResult.regularInstallmentCount;
+    loan.loanConfig.requestedDuration = emiResult.requestedDuration;
+    loan.loanConfig.totalInterest = emiResult.totalInterest;
+    loan.loanConfig.totalAmount = emiResult.totalAmount;
+    loan.interestAmount = emiResult.totalInterest;
+    loan.repayment.totalInstallments = emiResult.totalInstallments;
     changed = true;
   }
 
   if (loan.repayment) {
     const totalPaid = Number(loan.repayment.totalPaid) || 0;
-    const rb = Math.max(0, totalAmount - totalPaid);
+    const rb = Math.max(0, emiResult.totalAmount - totalPaid);
     if (Number(loan.repayment.remainingBalance) !== rb) {
       loan.repayment.remainingBalance = rb;
       changed = true;
@@ -462,6 +487,10 @@ async function repairAllOpenLoansAndAdvances(options = {}) {
 
 module.exports = {
   calculateEMI,
+  buildLoanInstallmentPlan,
+  applyInstallmentPlanToLoan,
+  getEffectiveInstallmentCount,
+  getDueInstallmentAmount,
   inferInterestRateFromRecorded,
   loanConfigNeedsRepair,
   shouldSelfHealLoan,

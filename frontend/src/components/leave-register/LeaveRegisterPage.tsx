@@ -14,6 +14,7 @@ import {
   getUserAllowedEmployeeGroupIds,
 } from '@/lib/employeeGroupScopeUtils';
 import { useWorkspaceSafe } from '@/contexts/WorkspaceContext';
+import { sortByEmpNo } from '@/lib/employeeSort';
 import { toast } from 'react-toastify';
 import {
   Search,
@@ -896,7 +897,9 @@ export default function LeaveRegisterPage({
           return;
         }
         const data = res.data;
-        setRows(data?.employees || []);
+        setRows(
+          sortByEmpNo(data?.employees || [], (row) => row.employee?.empNo)
+        );
         if (data?.pagination) {
           setPagination({
             page: data.pagination.page,

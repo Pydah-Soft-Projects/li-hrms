@@ -34,6 +34,42 @@ const outputColumnService = require('../services/outputColumnService');
 const ArrearsPayrollIntegrationService = require('../../arrears/services/arrearsPayrollIntegrationService');
 const PayrollPayslipSnapshot = require('../model/PayrollPayslipSnapshot');
 const DeductionPayrollIntegrationService = require('../../manual-deductions/services/deductionPayrollIntegrationService');
+const paysheetAdjustmentService = require('../services/paysheetAdjustmentService');
+
+async function attachPaysheetAdjustmentMeta(rows, records, month) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    const config = await PayrollConfiguration.get();
+    return {
+      rows: rows || [],
+      paysheetModification: {
+        allowPaysheetModification: !!config?.allowPaysheetModification,
+        editableColumns: paysheetAdjustmentService.getEditableColumnDefs(config),
+      },
+    };
+  }
+  const config = await PayrollConfiguration.get();
+  const editableColumns = paysheetAdjustmentService.getEditableColumnDefs(config);
+  const enrichedRows = rows.map((row, index) => {
+    const rec = Array.isArray(records) ? records[index] : null;
+    const empId = rec ? String(rec.employeeId?._id || rec.employeeId || '') : '';
+    const recId = rec?._id ? String(rec._id) : '';
+    return {
+      ...row,
+      _employeeId: empId || row._employeeId || undefined,
+      _payrollRecordId: recId || row._payrollRecordId || undefined,
+    };
+  });
+  const employeeIds = enrichedRows.map((r) => r._employeeId).filter(Boolean);
+  const overlay = await paysheetAdjustmentService.buildAdjustmentOverlay(month, employeeIds);
+  return {
+    rows: paysheetAdjustmentService.applyOverlayToRows(enrichedRows, overlay, editableColumns),
+    paysheetModification: {
+      allowPaysheetModification: !!config?.allowPaysheetModification,
+      editableColumns,
+    },
+  };
+}
+
 /**
  * Payroll Controller
  * Handles payroll calculation, retrieval, and processing
@@ -1306,9 +1342,14 @@ exports.getPaysheetData = async (req, res) => {
               return { 'S.No': index + 1, ...(snapMap.get(id)?.row || {}) };
             });
             rowsSnap = refreshEmployeeFieldColumnsOnRows(rowsSnap, payslipsSnap, outputColumns);
+            const snapAdj = await attachPaysheetAdjustmentMeta(rowsSnap, filtered, month);
             return res.status(200).json({
               success: true,
-              data: { headers: ['S.No', ...hdrs], rows: rowsSnap },
+              data: {
+                headers: ['S.No', ...hdrs],
+                rows: snapAdj.rows,
+                paysheetModification: snapAdj.paysheetModification,
+              },
               message: rowsSnap.length === 0 ? 'No existing payroll records for this month. Use "Load paysheet" to calculate.' : undefined,
               source: 'existing',
               snapshot: true,
@@ -1344,19 +1385,24 @@ exports.getPaysheetData = async (req, res) => {
         allDeductionNames,
         allStatutoryCodes
       );
-      const rows = payslips.map((payslip, index) => {
+      let rows = payslips.map((payslip, index) => {
         const rowData = outputColumnService.buildRowFromOutputColumns(payslip, expandedColumns, index + 1);
         const row = { 'S.No': index + 1, ...rowData };
         if (payslip.employee?.leftDate) row._leftDate = payslip.employee.leftDate;
         return row;
       });
+      const adjMeta = await attachPaysheetAdjustmentMeta(rows, filtered, month);
+      rows = adjMeta.rows;
+      const displayKeys = rows.length > 0
+        ? Object.keys(rows[0]).filter((k) => !k.startsWith('_'))
+        : [];
       const headers = rows.length > 0
-        ? ['S.No', ...Object.keys(rows[0]).filter((k) => k !== 'S.No')]
+        ? ['S.No', ...displayKeys.filter((k) => k !== 'S.No')]
         : ['S.No', ...expandedColumns.map((c) => c.header || 'Column')];
 
       return res.status(200).json({
         success: true,
-        data: { headers, rows },
+        data: { headers, rows, paysheetModification: adjMeta.paysheetModification },
         source: 'existing',
       });
     }

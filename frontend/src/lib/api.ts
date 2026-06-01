@@ -292,6 +292,48 @@ export interface PayrollOutputColumn {
   field?: string;
   formula?: string;
   order?: number;
+  /** Paysheet: allow modification requests for this column when global toggle is on. */
+  paysheetEditable?: boolean;
+  paysheetEditableFieldPath?: string;
+}
+
+export interface PaysheetEditableColumn {
+  header: string;
+  fieldPath: string;
+  order?: number;
+}
+
+export interface PaysheetCellAdjustmentMeta {
+  requestId: string;
+  status: 'pending' | 'approved';
+  originalValue: number;
+  proposedValue: number;
+  fieldPath: string;
+  reason?: string;
+}
+
+export interface PaysheetModificationSettings {
+  allowPaysheetModification: boolean;
+  editableColumns: PaysheetEditableColumn[];
+}
+
+export interface PaysheetAdjustmentRequest {
+  _id: string;
+  employeeId: { _id: string; emp_no?: string; employee_name?: string; first_name?: string; last_name?: string };
+  payrollRecordId: string;
+  payrollBatchId?: string;
+  month: string;
+  columnHeader: string;
+  fieldPath: string;
+  originalValue: number;
+  proposedValue: number;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  requestedBy?: { name?: string; email?: string };
+  reviewedBy?: { name?: string; email?: string };
+  reviewedAt?: string;
+  reviewComments?: string;
+  createdAt?: string;
 }
 
 export interface PayrollConfig {
@@ -305,6 +347,9 @@ export interface PayrollConfig {
   statutoryProrateTotalDaysColumnHeader?: string;
   /** Dynamic payroll: output column header whose value selects the Profession Tax slab (if empty, prorated basic is used). */
   professionTaxSlabEarningsColumnHeader?: string;
+  /** Dynamic payroll: when set, column value caps recovery (advance first, EMI from remainder). Empty = uncapped scheduled values. */
+  loanAdvancePayableColumnHeader?: string;
+  allowPaysheetModification?: boolean;
   updatedAt?: string;
   /** From Employee Application Form "Salaries" group — use as paysheet field paths employee.salaries.<fieldId> */
   employeeSalaryFieldOptions?: { value: string; label: string }[];
@@ -3363,6 +3408,23 @@ export const api = {
     });
   },
 
+  correctLoanRepayment: async (
+    id: string,
+    data: {
+      totalPaid?: number;
+      installmentsPaid?: number;
+      remainingBalance?: number;
+      totalInstallments?: number;
+      remarks?: string;
+      changeReason: string;
+    }
+  ) => {
+    return apiRequest<any>(`/loans/${id}/repayment-correction`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
   // Get pending approvals
   getPendingLoanApprovals: async () => {
     return apiRequest<any>('/loans/pending-approvals', { method: 'GET' });
@@ -4231,9 +4293,56 @@ export const api = {
     if (params.source) queryParams.append('source', params.source);
     if (params.secondSalary) queryParams.append('secondSalary', '1');
     const query = queryParams.toString();
-    return apiRequest<{ headers: string[]; rows: Record<string, unknown>[] }>(
-      `/payroll/paysheet${query ? `?${query}` : ''}`,
+    return apiRequest<{
+      headers: string[];
+      rows: Record<string, unknown>[];
+      paysheetModification?: PaysheetModificationSettings;
+    }>(`/payroll/paysheet${query ? `?${query}` : ''}`, { method: 'GET' });
+  },
+
+  getPaysheetModificationSettings: async () => {
+    return apiRequest<{ success: boolean; data: PaysheetModificationSettings }>(
+      '/payroll/paysheet-modification/settings',
       { method: 'GET' }
+    );
+  },
+
+  listPaysheetAdjustments: async (params?: { month?: string; status?: string; payrollBatchId?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.month) queryParams.append('month', params.month);
+    if (params?.status) queryParams.append('status', params.status);
+    if (params?.payrollBatchId) queryParams.append('payrollBatchId', params.payrollBatchId);
+    const query = queryParams.toString();
+    return apiRequest<PaysheetAdjustmentRequest[]>(
+      `/payroll/paysheet-adjustments${query ? `?${query}` : ''}`,
+      { method: 'GET' }
+    );
+  },
+
+  createPaysheetAdjustment: async (body: {
+    payrollRecordId: string;
+    columnHeader: string;
+    fieldPath: string;
+    proposedValue: number;
+    reason: string;
+  }) => {
+    return apiRequest<PaysheetAdjustmentRequest>('/payroll/paysheet-adjustments', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  approvePaysheetAdjustment: async (id: string, comments?: string) => {
+    return apiRequest<PaysheetAdjustmentRequest>(
+      `/payroll/paysheet-adjustments/${id}/approve`,
+      { method: 'POST', body: JSON.stringify({ comments: comments || '' }) }
+    );
+  },
+
+  rejectPaysheetAdjustment: async (id: string, comments?: string) => {
+    return apiRequest<PaysheetAdjustmentRequest>(
+      `/payroll/paysheet-adjustments/${id}/reject`,
+      { method: 'POST', body: JSON.stringify({ comments: comments || '' }) }
     );
   },
 
@@ -4260,6 +4369,8 @@ export const api = {
     statutoryProratePaidDaysColumnHeader?: string;
     statutoryProrateTotalDaysColumnHeader?: string;
     professionTaxSlabEarningsColumnHeader?: string;
+    loanAdvancePayableColumnHeader?: string;
+    allowPaysheetModification?: boolean;
   }) => {
     return apiRequest<{ success: boolean; data: PayrollConfig }>('/payroll/config', { method: 'PUT', body: JSON.stringify(body) });
   },

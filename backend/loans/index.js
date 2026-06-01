@@ -61,6 +61,13 @@ router.get('/:id', loanController.getLoan);
 router.put('/:id/guarantor-action', loanController.processGuarantorAction);
 router.put('/:id', loanController.updateLoan);
 
+// Opening balance / repayment correction after disbursement (migration)
+router.put(
+  '/:id/repayment-correction',
+  authorize('manager', 'hr', 'sub_admin', 'super_admin'),
+  loanController.correctLoanRepayment
+);
+
 // Cancel loan
 router.put('/:id/cancel', loanController.cancelLoan);
 

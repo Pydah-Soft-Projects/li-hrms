@@ -30,6 +30,7 @@ import {
   LOAN_LIST_STATUS_OPTIONS,
 } from '@/lib/loanListUi';
 import { LoanListEmployeeCell } from '@/components/LoanListEmployeeCell';
+import LoanEditDialog, { canShowLoanEditButton } from '@/components/loans/LoanEditDialog';
 import { downloadLoanAdvanceRequestPdf, type LoanAdvancePdfLoan } from '@/lib/loanAdvanceRequestPdf';
 import {
   buildLeaveODPayPeriodOptions,
@@ -230,15 +231,7 @@ export default function LoansPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Edit dialog state
   const [showEditDialog, setShowEditDialog] = useState(false);
-  const [editFormData, setEditFormData] = useState({
-    amount: '',
-    reason: '',
-    duration: '',
-    remarks: '',
-    status: '',
-  });
 
   // Apply dialog state
   const [showApplyDialog, setShowApplyDialog] = useState(false);
@@ -897,70 +890,7 @@ export default function LoansPage() {
 
   const handleEdit = () => {
     if (!selectedLoan) return;
-
-    setEditFormData({
-      amount: selectedLoan.amount.toString(),
-      reason: selectedLoan.reason || '',
-      duration: selectedLoan.duration.toString(),
-      remarks: selectedLoan.remarks || '',
-      status: selectedLoan.status,
-    });
     setShowEditDialog(true);
-  };
-
-  const handleUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedLoan) return;
-
-    try {
-      setSaving(true);
-      const user = auth.getUser();
-      const isSuperAdmin = user?.role === 'super_admin';
-
-      const updateData: any = {
-        amount: parseFloat(editFormData.amount),
-        reason: editFormData.reason,
-        duration: parseInt(editFormData.duration),
-        remarks: editFormData.remarks,
-        changeReason: `Edited by ${user?.name || 'Admin'}`,
-      };
-
-      // If Super Admin is changing status, include statusChangeReason
-      if (isSuperAdmin && editFormData.status && editFormData.status !== selectedLoan.status) {
-        updateData.status = editFormData.status;
-        updateData.statusChangeReason = `Status changed from ${selectedLoan.status} to ${editFormData.status}`;
-      }
-
-      const response = await api.updateLoan(selectedLoan._id, updateData);
-
-      if (response.success) {
-        Swal.fire({
-          icon: 'success',
-          title: 'Success!',
-          text: `${selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary advance'} updated successfully`,
-          timer: 2000,
-          showConfirmButton: false,
-        });
-        setShowEditDialog(false);
-        setShowDetailDialog(false);
-        setSelectedLoan(null);
-        loadData();
-      } else {
-        Swal.fire({
-          icon: 'error',
-          title: 'Failed',
-          text: response.error || 'Failed to update',
-        });
-      }
-    } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: err.message || 'Failed to update',
-      });
-    } finally {
-      setSaving(false);
-    }
   };
 
   const togglePaymentForm = () => {
@@ -2905,19 +2835,15 @@ export default function LoansPage() {
                   </div>
                 )}
 
-                {/* Edit Button (for Super Admin/HR - not final approved/disbursed) */}
-                {(() => {
-                  const canEdit = hasManagePermission && !['approved', 'disbursed', 'active', 'completed'].includes(selectedLoan.status);
-
-                  return canEdit && (
-                    <button
-                      onClick={handleEdit}
-                      className="w-full px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors mb-4"
-                    >
-                      Edit {selectedLoan.requestType === 'loan' ? 'Loan' : 'Advance'}
-                    </button>
-                  );
-                })()}
+                {canShowLoanEditButton(selectedLoan.status, hasManagePermission) && (
+                  <button
+                    type="button"
+                    onClick={handleEdit}
+                    className="w-full px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors mb-4"
+                  >
+                    Edit {selectedLoan.requestType === 'loan' ? 'Loan' : 'Advance'}
+                  </button>
+                )}
 
                 {/* Approval Timeline */}
                 {timelineSteps.length > 0 && (
@@ -3302,228 +3228,20 @@ export default function LoansPage() {
           </div>
         )}
 
-        {/* Edit Dialog */}
-        {showEditDialog && selectedLoan && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowEditDialog(false)} />
-            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
-                Edit {selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'}
-              </h2>
-
-              <form onSubmit={handleUpdate} className="space-y-4">
-                {/* Eligibility Information - For Salary Advance */}
-                {selectedLoan.requestType === 'salary_advance' && eligibilityData && (
-                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-4 rounded-xl border border-blue-200 dark:border-blue-800 mb-4">
-                    <h5 className="font-semibold text-sm mb-3 text-blue-900 dark:text-blue-100">Eligibility Information</h5>
-                    <div className="grid grid-cols-2 gap-3 text-xs">
-                      <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
-                        <div className="text-gray-600 dark:text-gray-400">Attendance</div>
-                        <div className="font-bold text-green-600 dark:text-green-400">{eligibilityData.attendancePercentage}%</div>
-                      </div>
-                      <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
-                        <div className="text-gray-600 dark:text-gray-400">Days Worked</div>
-                        <div className="font-bold text-slate-900 dark:text-white">{eligibilityData.daysWorked} / {eligibilityData.daysElapsedInMonth}</div>
-                      </div>
-                      <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
-                        <div className="text-gray-600 dark:text-gray-400">Prorated</div>
-                        <div className="font-bold text-blue-600 dark:text-blue-400">₹{eligibilityData.proratedAmount.toLocaleString()}</div>
-                      </div>
-                      <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
-                        <div className="text-gray-600 dark:text-gray-400">Eligible</div>
-                        <div className="font-bold text-green-600 dark:text-green-400">₹{eligibilityData.eligibleAmount.toLocaleString()}</div>
-                      </div>
-                      <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
-                        <div className="text-gray-600 dark:text-gray-400">Max Limit</div>
-                        <div className="font-bold text-purple-600 dark:text-purple-400">₹{eligibilityData.finalMaxAllowed.toLocaleString()}</div>
-                      </div>
-                      <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
-                        <div className="text-gray-600 dark:text-gray-400">Basic Pay</div>
-                        <div className="font-bold text-indigo-600 dark:text-indigo-400">₹{selectedLoan.employeeId?.gross_salary?.toLocaleString() || 'N/A'}</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Amount */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Amount (₹) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max={selectedLoan.requestType === 'salary_advance' && selectedLoan.employeeId?.gross_salary ? selectedLoan.employeeId.gross_salary : undefined}
-                    value={editFormData.amount}
-                    onChange={(e) => {
-                      setEditFormData({ ...editFormData, amount: e.target.value });
-                      console.log('[Edit] Amount:', e.target.value, 'Basic Pay:', selectedLoan.employeeId?.gross_salary);
-                    }}
-                    required
-                    className={`w-full rounded-xl border px-4 py-2.5 text-sm dark:bg-slate-800 dark:text-white ${selectedLoan.requestType === 'salary_advance' &&
-                      selectedLoan.employeeId?.gross_salary &&
-                      parseFloat(editFormData.amount) > selectedLoan.employeeId.gross_salary
-                      ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
-                      : 'border-slate-200 dark:border-slate-700'
-                      }`}
-                  />
-                  {selectedLoan.requestType === 'salary_advance' &&
-                    selectedLoan.employeeId?.gross_salary &&
-                    parseFloat(editFormData.amount) > selectedLoan.employeeId.gross_salary && (
-                      <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                        <p className="text-sm text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          Amount exceeds basic pay!
-                        </p>
-                        <p className="text-xs text-red-500 dark:text-red-400 mt-1">
-                          Maximum allowed: ₹{selectedLoan.employeeId.gross_salary.toLocaleString()}
-                        </p>
-                      </div>
-                    )}
-                </div>
-
-                {/* Duration */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Duration ({selectedLoan.requestType === 'loan' ? 'Months' : 'Cycles'}) *
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={editFormData.duration}
-                    onChange={(e) => setEditFormData({ ...editFormData, duration: e.target.value })}
-                    required
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-
-                {/* Reason */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Reason / Purpose *
-                  </label>
-                  <textarea
-                    value={editFormData.reason}
-                    onChange={(e) => setEditFormData({ ...editFormData, reason: e.target.value })}
-                    required
-                    rows={3}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-
-                {/* Remarks */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Remarks
-                  </label>
-                  <textarea
-                    value={editFormData.remarks}
-                    onChange={(e) => setEditFormData({ ...editFormData, remarks: e.target.value })}
-                    rows={2}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-
-                {/* Status (Super Admin only) */}
-                {(() => {
-                  const user = auth.getUser();
-                  const isSuperAdmin = user?.role === 'super_admin';
-                  return isSuperAdmin && (
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                        Status (Super Admin)
-                      </label>
-                      <select
-                        value={editFormData.status || selectedLoan.status}
-                        onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                      >
-                        <option value="pending">Pending</option>
-                        <option value="hod_approved">HOD Approved</option>
-                        <option value="hr_approved">HR Approved</option>
-                        <option value="approved">Approved</option>
-                        <option value="hod_rejected">HOD Rejected</option>
-                        <option value="hr_rejected">HR Rejected</option>
-                        <option value="rejected">Rejected</option>
-                        <option value="cancelled">Cancelled</option>
-                      </select>
-                    </div>
-                  );
-                })()}
-
-                {/* Dynamic Interest Preview for Loans */}
-                {selectedLoan.requestType === 'loan' && editFormData.amount && editFormData.duration && (
-                  (() => {
-                    const principal = parseFloat(editFormData.amount);
-                    const duration = parseInt(editFormData.duration);
-                    if (!principal || !duration) return null;
-
-                    const interestRate = resolvedLoanSettings?.interestRate ?? loanSettings?.settings?.interestRate ?? 0;
-                    const isInterestApplicable = resolvedLoanSettings?.isInterestApplicable ?? loanSettings?.settings?.isInterestApplicable ?? false;
-
-                    if (!isInterestApplicable || interestRate === 0) {
-                      const emiAmount = principal / duration;
-                      return (
-                        <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl space-y-2 border border-blue-100 dark:border-blue-800/50 mb-4 animate-in fade-in duration-300">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-500 dark:text-slate-400">Monthly EMI (est)</span>
-                            <span className="font-bold text-blue-700 dark:text-blue-300">₹{Math.round(emiAmount).toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-xs pt-1 border-t border-blue-100 dark:border-blue-800/50 mt-1">
-                            <span className="text-slate-600 dark:text-slate-300 font-medium">Total Repayment</span>
-                            <span className="font-bold text-slate-900 dark:text-white">₹{Math.round(principal).toLocaleString()}</span>
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    // Simple Interest Calculation: SI = (P * R * T) / 100
-                    const totalInterest = (principal * interestRate * (duration / 12)) / 100;
-                    const totalAmount = principal + totalInterest;
-                    const emiAmount = totalAmount / duration;
-
-                    return (
-                      <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl space-y-2 border border-blue-100 dark:border-blue-800/50 mb-4 animate-in fade-in duration-300">
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-slate-500 dark:text-slate-400">Monthly EMI (est)</span>
-                          <span className="font-bold text-blue-700 dark:text-blue-300">₹{Math.round(emiAmount).toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-slate-500 dark:text-slate-400">Total Interest ({interestRate}%)</span>
-                          <span className="font-semibold text-slate-700 dark:text-slate-300">₹{Math.round(totalInterest).toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-xs pt-1 border-t border-blue-100 dark:border-blue-800/50 mt-1">
-                          <span className="text-slate-600 dark:text-slate-300 font-medium">Total Repayment</span>
-                          <span className="font-bold text-slate-900 dark:text-white">₹{Math.round(totalAmount).toLocaleString()}</span>
-                        </div>
-                      </div>
-                    );
-                  })()
-                )}
-
-                {/* Buttons */}
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowEditDialog(false)}
-                    className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 disabled:opacity-50"
-                  >
-                    {saving ? 'Saving...' : 'Save Changes'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+        {selectedLoan && (
+          <LoanEditDialog
+            loan={selectedLoan}
+            open={showEditDialog}
+            onClose={() => setShowEditDialog(false)}
+            onSaved={(updated) => {
+              setSelectedLoan(updated as typeof selectedLoan);
+              loadData();
+            }}
+            eligibilityData={eligibilityData}
+            defaultInterestRate={resolvedLoanSettings?.interestRate ?? loanSettings?.settings?.interestRate ?? 0}
+            isInterestApplicable={resolvedLoanSettings?.isInterestApplicable ?? loanSettings?.settings?.isInterestApplicable ?? false}
+            payPeriodOptions={finalApprovalPayPeriodOptions}
+          />
         )}
 
         {/* Early Settlement Confirmation Dialog */}

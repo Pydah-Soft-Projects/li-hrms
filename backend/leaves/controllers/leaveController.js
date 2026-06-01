@@ -3155,7 +3155,7 @@ exports.listLeaveRegister = async (req, res) => {
       }
     }
 
-    // Server-side pagination: cap + hydrate only the requested page (sorted by name).
+    // Server-side pagination: cap + hydrate only the requested page (sorted by emp no).
     const useServerPage = !filters.employeeId && !filters.empNo && !filters.balanceAsOf;
     let groupedData;
     let serverPaginationMeta = null;

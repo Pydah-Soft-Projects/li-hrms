@@ -40,6 +40,8 @@ exports.upsertPayrollConfig = async (req, res) => {
       statutoryProratePaidDaysColumnHeader,
       statutoryProrateTotalDaysColumnHeader,
       professionTaxSlabEarningsColumnHeader,
+      loanAdvancePayableColumnHeader,
+      allowPaysheetModification,
     } = req.body || {};
     const normalizedOutputColumns = Array.isArray(outputColumns)
       ? outputColumns.map((c, i) => {
@@ -53,6 +55,9 @@ exports.upsertPayrollConfig = async (req, res) => {
             field: source === 'formula' ? '' : (c.field || ''),
             formula: source === 'formula' ? formulaStr : '',
             order: typeof c.order === 'number' ? c.order : i,
+            paysheetEditable: !!c.paysheetEditable,
+            paysheetEditableFieldPath:
+              c.paysheetEditableFieldPath != null ? String(c.paysheetEditableFieldPath).trim() : '',
           };
         })
       : [];
@@ -61,9 +66,13 @@ exports.upsertPayrollConfig = async (req, res) => {
       steps: Array.isArray(steps) ? steps : [],
       outputColumns: normalizedOutputColumns,
     };
+    if (allowPaysheetModification !== undefined) {
+      payload.allowPaysheetModification = !!allowPaysheetModification;
+    }
     if (statutoryProratePaidDaysColumnHeader !== undefined) payload.statutoryProratePaidDaysColumnHeader = statutoryProratePaidDaysColumnHeader;
     if (statutoryProrateTotalDaysColumnHeader !== undefined) payload.statutoryProrateTotalDaysColumnHeader = statutoryProrateTotalDaysColumnHeader;
     if (professionTaxSlabEarningsColumnHeader !== undefined) payload.professionTaxSlabEarningsColumnHeader = professionTaxSlabEarningsColumnHeader;
+    if (loanAdvancePayableColumnHeader !== undefined) payload.loanAdvancePayableColumnHeader = loanAdvancePayableColumnHeader;
     const config = await PayrollConfiguration.upsert(payload);
     return res.status(200).json({ success: true, data: config });
   } catch (error) {

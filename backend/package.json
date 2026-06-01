@@ -18,6 +18,7 @@
     "test:holiday-access:api": "node scripts/test_holiday_scoped_access_api.js",
     "test:holiday-employee-scope:api": "node scripts/test_holiday_employee_scope_api.js",
     "test:roster-half-holiday": "node scripts/test_roster_half_holiday_integration.js",
+    "test:paysheet-adjustment": "node scripts/test_paysheet_adjustment_integration.js",
     "test:half-day-holiday-api": "node scripts/test_half_day_holiday_api.js",
     "seed:holiday-test-users": "node scripts/seed_holiday_scoped_test_users.js",
     "seed:holiday-mapping-test-user": "node scripts/seed_holiday_mapping_test_user.js",
