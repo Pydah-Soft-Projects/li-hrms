@@ -14,7 +14,7 @@ function dayHasRosterHalfNonWorking(day) {
 
 /** Exactly one calendar half marked HOL on roster (not both). */
 function hasExactlyOneRosterHalfHol(day) {
-  if (!day) return false;
+  if (!day || day.halfHolLeaveOverridesHoliday) return false;
   const f = !!day.rosterFirstHalfHOL;
   const s = !!day.rosterSecondHalfHOL;
   return (f && !s) || (!f && s);

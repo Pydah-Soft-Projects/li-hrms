@@ -1,0 +1,707 @@
+{
+  "changes": [
+    {
+      "emp_no": "930",
+      "leavesOn19": [
+        {
+          "leaveType": "LOP",
+          "isHalfDay": false,
+          "halfDayType": null,
+          "numberOfDays": 8,
+          "from": "2026-05-16",
+          "to": "2026-05-23"
+        }
+      ],
+      "before": {
+        "emp_no": "930",
+        "totalHolidays": 0.5,
+        "totalPayableShifts": 16,
+        "holOn19": {
+          "date": "2026-05-19",
+          "value": 0.5,
+          "label": "HOL-½",
+          "_id": "6a1d20ca7f019cea4991a931"
+        },
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d20ca7f019cea4991a929"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d20ca7f019cea4991a91f"
+          }
+        ],
+        "paidOn19": []
+      },
+      "after": {
+        "emp_no": "930",
+        "totalHolidays": 0,
+        "totalPayableShifts": 16,
+        "holOn19": null,
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2d681cbf580e47ecba45"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2d681cbf580e47ecba3b"
+          }
+        ],
+        "paidOn19": []
+      },
+      "diff": {
+        "totalHolidays": -0.5,
+        "holOn19": {
+          "before": {
+            "date": "2026-05-19",
+            "value": 0.5,
+            "label": "HOL-½",
+            "_id": "6a1d20ca7f019cea4991a931"
+          },
+          "after": null
+        }
+      }
+    },
+    {
+      "emp_no": "7005",
+      "leavesOn19": [
+        {
+          "leaveType": "LOP",
+          "isHalfDay": false,
+          "halfDayType": null,
+          "numberOfDays": 3,
+          "from": "2026-05-18",
+          "to": "2026-05-20"
+        }
+      ],
+      "before": {
+        "emp_no": "7005",
+        "totalHolidays": 0.5,
+        "totalPayableShifts": 17.5,
+        "holOn19": {
+          "date": "2026-05-19",
+          "value": 0.5,
+          "label": "HOL-½",
+          "_id": "6a1d21067f019cea49931bcf"
+        },
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d21067f019cea49931bc0"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d21067f019cea49931bb7"
+          }
+        ],
+        "paidOn19": []
+      },
+      "after": {
+        "emp_no": "7005",
+        "totalHolidays": 0,
+        "totalPayableShifts": 17.5,
+        "holOn19": null,
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2d6a1cbf580e47ecbf3f"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2d6a1cbf580e47ecbf36"
+          }
+        ],
+        "paidOn19": []
+      },
+      "diff": {
+        "totalHolidays": -0.5,
+        "holOn19": {
+          "before": {
+            "date": "2026-05-19",
+            "value": 0.5,
+            "label": "HOL-½",
+            "_id": "6a1d21067f019cea49931bcf"
+          },
+          "after": null
+        }
+      }
+    },
+    {
+      "emp_no": "931",
+      "leavesOn19": [
+        {
+          "leaveType": "LOP",
+          "isHalfDay": false,
+          "halfDayType": null,
+          "numberOfDays": 8,
+          "from": "2026-05-18",
+          "to": "2026-05-25"
+        }
+      ],
+      "before": {
+        "emp_no": "931",
+        "totalHolidays": 0.5,
+        "totalPayableShifts": 4,
+        "holOn19": {
+          "date": "2026-05-19",
+          "value": 0.5,
+          "label": "HOL-½",
+          "_id": "6a1d20ec7f019cea49927401"
+        },
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d20ec7f019cea499273f8"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d20ec7f019cea499273e1"
+          }
+        ],
+        "paidOn19": []
+      },
+      "after": {
+        "emp_no": "931",
+        "totalHolidays": 0,
+        "totalPayableShifts": 4,
+        "holOn19": null,
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2d741cbf580e47ece696"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2d741cbf580e47ece67f"
+          }
+        ],
+        "paidOn19": []
+      },
+      "diff": {
+        "totalHolidays": -0.5,
+        "holOn19": {
+          "before": {
+            "date": "2026-05-19",
+            "value": 0.5,
+            "label": "HOL-½",
+            "_id": "6a1d20ec7f019cea49927401"
+          },
+          "after": null
+        }
+      }
+    },
+    {
+      "emp_no": "925",
+      "leavesOn19": [
+        {
+          "leaveType": "LOP",
+          "isHalfDay": false,
+          "halfDayType": null,
+          "numberOfDays": 8,
+          "from": "2026-05-18",
+          "to": "2026-05-25"
+        }
+      ],
+      "before": {
+        "emp_no": "925",
+        "totalHolidays": 0.5,
+        "totalPayableShifts": 4,
+        "holOn19": {
+          "date": "2026-05-19",
+          "value": 0.5,
+          "label": "HOL-½",
+          "_id": "6a1d20ce7f019cea4991bc5c"
+        },
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d20ce7f019cea4991bc53"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d20ce7f019cea4991bc3c"
+          }
+        ],
+        "paidOn19": []
+      },
+      "after": {
+        "emp_no": "925",
+        "totalHolidays": 0,
+        "totalPayableShifts": 4,
+        "holOn19": null,
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2d761cbf580e47ecf07d"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2d761cbf580e47ecf066"
+          }
+        ],
+        "paidOn19": []
+      },
+      "diff": {
+        "totalHolidays": -0.5,
+        "holOn19": {
+          "before": {
+            "date": "2026-05-19",
+            "value": 0.5,
+            "label": "HOL-½",
+            "_id": "6a1d20ce7f019cea4991bc5c"
+          },
+          "after": null
+        }
+      }
+    },
+    {
+      "emp_no": "2161",
+      "leavesOn19": [
+        {
+          "leaveType": "CL",
+          "isHalfDay": false,
+          "halfDayType": null,
+          "numberOfDays": 6,
+          "from": "2026-05-15",
+          "to": "2026-05-20"
+        }
+      ],
+      "before": {
+        "emp_no": "2161",
+        "totalHolidays": 0.5,
+        "totalPayableShifts": 19.5,
+        "holOn19": {
+          "date": "2026-05-19",
+          "value": 0.5,
+          "label": "HOL-½",
+          "_id": "6a1d20f37f019cea4992a0f9"
+        },
+        "lopOn19": [],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "CL (1)",
+            "_id": "6a1d20f37f019cea4992a0e4"
+          }
+        ],
+        "paidOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "Paid",
+            "_id": "6a1d20f37f019cea4992a0eb"
+          }
+        ]
+      },
+      "after": {
+        "emp_no": "2161",
+        "totalHolidays": 0,
+        "totalPayableShifts": 19.5,
+        "holOn19": null,
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 0.33,
+            "label": "LOP (0.33)",
+            "_id": "6a1d2d911cbf580e47ed6cdb"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "CL (1)",
+            "_id": "6a1d2d911cbf580e47ed6cd1"
+          }
+        ],
+        "paidOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 0.67,
+            "label": "Paid",
+            "_id": "6a1d2d911cbf580e47ed6cd8"
+          }
+        ]
+      },
+      "diff": {
+        "totalHolidays": -0.5,
+        "holOn19": {
+          "before": {
+            "date": "2026-05-19",
+            "value": 0.5,
+            "label": "HOL-½",
+            "_id": "6a1d20f37f019cea4992a0f9"
+          },
+          "after": null
+        },
+        "lopOn19": {
+          "before": [],
+          "after": [
+            {
+              "date": "2026-05-19",
+              "value": 0.33,
+              "label": "LOP (0.33)",
+              "_id": "6a1d2d911cbf580e47ed6cdb"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "emp_no": "2099",
+      "leavesOn19": [
+        {
+          "leaveType": "LOP",
+          "isHalfDay": false,
+          "halfDayType": null,
+          "numberOfDays": 15,
+          "from": "2026-05-11",
+          "to": "2026-05-25"
+        }
+      ],
+      "before": {
+        "emp_no": "2099",
+        "totalHolidays": 0.5,
+        "totalPayableShifts": 10,
+        "holOn19": {
+          "date": "2026-05-19",
+          "value": 0.5,
+          "label": "HOL-½",
+          "_id": "6a1d20c67f019cea49918f48"
+        },
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d20c67f019cea49918f36"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d20c67f019cea49918f24"
+          }
+        ],
+        "paidOn19": []
+      },
+      "after": {
+        "emp_no": "2099",
+        "totalHolidays": 0,
+        "totalPayableShifts": 10,
+        "holOn19": null,
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2d951cbf580e47ed7a0f"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2d951cbf580e47ed79fd"
+          }
+        ],
+        "paidOn19": []
+      },
+      "diff": {
+        "totalHolidays": -0.5,
+        "holOn19": {
+          "before": {
+            "date": "2026-05-19",
+            "value": 0.5,
+            "label": "HOL-½",
+            "_id": "6a1d20c67f019cea49918f48"
+          },
+          "after": null
+        }
+      }
+    },
+    {
+      "emp_no": "1697",
+      "leavesOn19": [
+        {
+          "leaveType": "LOP",
+          "isHalfDay": false,
+          "halfDayType": null,
+          "numberOfDays": 32,
+          "from": "2026-05-18",
+          "to": "2026-06-18"
+        }
+      ],
+      "before": {
+        "emp_no": "1697",
+        "totalHolidays": 0.5,
+        "totalPayableShifts": 13.5,
+        "holOn19": {
+          "date": "2026-05-19",
+          "value": 0.5,
+          "label": "HOL-½",
+          "_id": "6a1d20e07f019cea49922a5d"
+        },
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d20e07f019cea49922a52"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d20e07f019cea49922a47"
+          }
+        ],
+        "paidOn19": []
+      },
+      "after": {
+        "emp_no": "1697",
+        "totalHolidays": 0,
+        "totalPayableShifts": 13.5,
+        "holOn19": null,
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2d9c1cbf580e47ed9cbd"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2d9c1cbf580e47ed9cb2"
+          }
+        ],
+        "paidOn19": []
+      },
+      "diff": {
+        "totalHolidays": -0.5,
+        "holOn19": {
+          "before": {
+            "date": "2026-05-19",
+            "value": 0.5,
+            "label": "HOL-½",
+            "_id": "6a1d20e07f019cea49922a5d"
+          },
+          "after": null
+        }
+      }
+    },
+    {
+      "emp_no": "165",
+      "leavesOn19": [
+        {
+          "leaveType": "LOP",
+          "isHalfDay": false,
+          "halfDayType": null,
+          "numberOfDays": 25,
+          "from": "2026-05-01",
+          "to": "2026-05-25"
+        }
+      ],
+      "before": {
+        "emp_no": "165",
+        "totalHolidays": 0.5,
+        "totalPayableShifts": 0,
+        "holOn19": {
+          "date": "2026-05-19",
+          "value": 0.5,
+          "label": "HOL-½",
+          "_id": "6a1d21047f019cea49930d8c"
+        },
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d21047f019cea49930d85"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d21047f019cea49930d67"
+          }
+        ],
+        "paidOn19": []
+      },
+      "after": {
+        "emp_no": "165",
+        "totalHolidays": 0,
+        "totalPayableShifts": 0,
+        "holOn19": null,
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2db11cbf580e47ee082a"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2db11cbf580e47ee080c"
+          }
+        ],
+        "paidOn19": []
+      },
+      "diff": {
+        "totalHolidays": -0.5,
+        "holOn19": {
+          "before": {
+            "date": "2026-05-19",
+            "value": 0.5,
+            "label": "HOL-½",
+            "_id": "6a1d21047f019cea49930d8c"
+          },
+          "after": null
+        }
+      }
+    },
+    {
+      "emp_no": "151",
+      "leavesOn19": [
+        {
+          "leaveType": "LOP",
+          "isHalfDay": false,
+          "halfDayType": null,
+          "numberOfDays": 15,
+          "from": "2026-05-11",
+          "to": "2026-05-25"
+        }
+      ],
+      "before": {
+        "emp_no": "151",
+        "totalHolidays": 0.5,
+        "totalPayableShifts": 4.5,
+        "holOn19": {
+          "date": "2026-05-19",
+          "value": 0.5,
+          "label": "HOL-½",
+          "_id": "6a1d20ea7f019cea499269d7"
+        },
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d20ea7f019cea499269cd"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d20ea7f019cea499269b5"
+          }
+        ],
+        "paidOn19": []
+      },
+      "after": {
+        "emp_no": "151",
+        "totalHolidays": 0,
+        "totalPayableShifts": 4.5,
+        "holOn19": null,
+        "lopOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2db21cbf580e47ee0cfd"
+          }
+        ],
+        "leaveOn19": [
+          {
+            "date": "2026-05-19",
+            "value": 1,
+            "label": "LOP (1)",
+            "_id": "6a1d2db21cbf580e47ee0ce5"
+          }
+        ],
+        "paidOn19": []
+      },
+      "diff": {
+        "totalHolidays": -0.5,
+        "holOn19": {
+          "before": {
+            "date": "2026-05-19",
+            "value": 0.5,
+            "label": "HOL-½",
+            "_id": "6a1d20ea7f019cea499269d7"
+          },
+          "after": null
+        }
+      }
+    }
+  ],
+  "changeCount": 9
+}

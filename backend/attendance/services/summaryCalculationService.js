@@ -105,12 +105,36 @@ function pickLeaveMetaForHalf(leaves, half) {
   return { leaveTypeKey: nat, leaveNature: nat };
 }
 
+function isPolicySandwichLeave(l) {
+  return !!(l && l._sandwichLop);
+}
+
+function hasHalfHolidaySandwichLopOnHalf(leaves, halfKey) {
+  const halfType = halfKey === 'first' ? 'first_half' : 'second_half';
+  return (leaves || []).some(
+    (l) =>
+      l &&
+      l._sandwichLop &&
+      l._sandwichHalfHol &&
+      String(l.halfDayType || 'first_half').trim() === halfType
+  );
+}
+
 function buildPayRegisterHalfFromCredits(leaveC, odC, attC, day, halfKey, leaves) {
   const { isRosterHalfNonWorking } = require('../../shifts/utils/rosterHalfNonWorking');
-  if (isRosterHalfNonWorking(day, halfKey, 'WO')) {
+  if (isRosterHalfNonWorking(day, halfKey, 'WO') && !day.halfHolLeaveOverridesHoliday) {
     return { status: 'week_off', leaveType: null, leaveNature: null, isOD: false, otHours: 0 };
   }
-  if (isRosterHalfNonWorking(day, halfKey, 'HOL')) {
+  if (hasHalfHolidaySandwichLopOnHalf(leaves, halfKey)) {
+    return {
+      status: 'leave',
+      leaveType: 'lop',
+      leaveNature: 'lop',
+      isOD: false,
+      otHours: 0,
+    };
+  }
+  if (isRosterHalfNonWorking(day, halfKey, 'HOL') && !day.halfHolLeaveOverridesHoliday) {
     return { status: 'holiday', leaveType: null, leaveNature: null, isOD: false, otHours: 0 };
   }
   const lc = Number(leaveC) || 0;
@@ -250,6 +274,10 @@ const {
   buildRosterHalfPartialPolicyMeta,
   applyRosterHalfToPayRegisterSnapshot,
 } = require('../utils/partialPolicyRosterHalf');
+const {
+  applyHalfHolidaySandwichPolicy,
+  applyHalfHolidayLeaveOverride,
+} = require('../utils/halfHolidaySandwichPolicy');
 const { enforceSingleShiftPartialLopSnapshot } = require('../utils/partialPolicySingleShift');
 
 /**
@@ -565,6 +593,18 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       });
     }
 
+    // Half roster holiday + span/full-day leave: leave applies, half holiday credit off (same as full HOL + leave).
+    for (const dStr of allDates) {
+      const day = dailyStatsMap.get(dStr);
+      if (!day) continue;
+      if (applyHalfHolidayLeaveOverride(day)) {
+        halfHolidayCreditTotal = Math.max(
+          0,
+          Math.round((halfHolidayCreditTotal - (day.halfHolCreditRemoved || 0.5)) * 100) / 100
+        );
+      }
+    }
+
     // Leave override on roster non-working days:
     // if approved leave exists on WO/HOL, treat that date as leave/working for this employee.
     for (const dStr of allDates) {
@@ -720,6 +760,25 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       }
     }
 
+    const halfHolSandwichPolicyMetaByDate = new Map();
+    if (processingModeIsSingleShift) {
+      const halfHolSandwich = applyHalfHolidaySandwichPolicy({
+        allDates,
+        dailyStatsMap,
+        processingModeIsSingleShift,
+        classifySandwichNeighbor,
+      });
+      if (halfHolSandwich.creditAdjustment) {
+        halfHolidayCreditTotal = Math.max(
+          0,
+          Math.round((halfHolidayCreditTotal + halfHolSandwich.creditAdjustment) * 100) / 100
+        );
+      }
+      for (const [d, meta] of halfHolSandwich.metaByDate) {
+        halfHolSandwichPolicyMetaByDate.set(d, meta);
+      }
+    }
+
     // Strip all calendar days outside [DOJ, last working day]: treat as blank (no roster WO/HOL, no dailies, no leave/OD).
     for (const dStr of allDates) {
       if (!isOutsideEmploymentBound(dStr)) continue;
@@ -759,6 +818,10 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           let h = 0;
           if (day.rosterFirstHalfHOL) h += 0.5;
           if (day.rosterSecondHalfHOL) h += 0.5;
+          if (day.halfHolidaySandwichCreditDelta) {
+            h = Math.round((h + day.halfHolidaySandwichCreditDelta) * 100) / 100;
+          }
+          if (day.halfHolLeaveOverridesHoliday) return null;
           if (h <= 0) return null;
           return { date, value: h, label: h >= 1 ? 'HOL' : 'HOL-½' };
         })
@@ -795,28 +858,27 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       let leaveContrib = 0;
       // 1. Leaves (Priority - if leave is taken, it counts as leave)
       if (day.leaves.length > 0) {
-        // Sum all leave units on the same date (multiple 0.5 leaves can make 1.0)
-        // and cap to 1.0 day because payroll works per-day (or per-half) capacity.
-        const leaveContribRaw = day.leaves.reduce((sum, l) => {
-          // If it's a multi-day leave, it contributes 1.0 to today.
-          // If it's a half-day leave, it contributes 0.5.
+        const approvedLeaves = day.leaves.filter((l) => !isPolicySandwichLeave(l));
+        const policySandwichLeaves = day.leaves.filter((l) => isPolicySandwichLeave(l));
+
+        // Approved leave only for day cap — half-holiday sandwich LOP is on the other half (not scaled down).
+        const leaveContribRaw = approvedLeaves.reduce((sum, l) => {
           const dailyUnit = l.isHalfDay ? 0.5 : 1;
           return sum + dailyUnit;
         }, 0);
         leaveContrib = Math.min(1, leaveContribRaw);
 
-        // Paid vs LOP for pay register: same per-day cap as leaveContrib (scale if raw units exceed 1, e.g. duplicate rows).
         let paidUnitSum = 0;
         let lopUnitSum = 0;
-        for (const l of day.leaves) {
+        for (const l of approvedLeaves) {
           const unit = l.isHalfDay ? 0.5 : 1;
           const nature = (l.leaveNature || '').toLowerCase();
           if (nature === 'lop' || nature === 'without_pay') lopUnitSum += unit;
-          else paidUnitSum += unit; // explicit 'paid' or unset → paid (CL/EL legacy rows)
+          else paidUnitSum += unit;
         }
         const paidLopRaw = paidUnitSum + lopUnitSum;
         if (paidLopRaw > 0) {
-          const scale = leaveContrib / paidLopRaw;
+          const scale = paidLopRaw > 0 ? leaveContrib / paidLopRaw : 1;
           const paidScaled = Math.round(paidUnitSum * scale * 100) / 100;
           const lopScaled = Math.round(lopUnitSum * scale * 100) / 100;
           totalPaidLeaveDays += paidScaled;
@@ -835,12 +897,28 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           }
         }
 
-        const firstLeave = day.leaves[0];
-        if (!contributingDates.leaves.some(cd => cd.date === dStr)) {
+        for (const sl of policySandwichLeaves) {
+          const unit = sl.isHalfDay ? 0.5 : 1;
+          totalLopLeaveDays += unit;
+          const existingLop = contributingDates.lopLeaves.find((cd) => cd.date === dStr);
+          if (!existingLop) {
+            contributingDates.lopLeaves.push({
+              date: dStr,
+              value: unit,
+              label: `LOP (${unit})`,
+            });
+          } else {
+            existingLop.value = Math.round((Number(existingLop.value) + unit) * 100) / 100;
+            existingLop.label = `LOP (${existingLop.value})`;
+          }
+        }
+
+        const firstLeave = approvedLeaves[0] || day.leaves[0];
+        if (!contributingDates.leaves.some((cd) => cd.date === dStr)) {
           contributingDates.leaves.push({
             date: dStr,
             value: leaveContrib,
-            label: `${firstLeave.leaveType || 'L'} (${leaveContrib})`
+            label: `${firstLeave?.leaveType || 'L'} (${leaveContrib})`,
           });
         }
         totalLeaveDays += leaveContrib;
@@ -1142,6 +1220,12 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       let leaveSecondAll = 0;
       if (!day.isWO && !day.isHOL) {
         for (const l of day.leaves) {
+          if (l._sandwichHalfHol && l._sandwichLop) {
+            if (l.halfDayType === 'second_half') leaveSecondAll = Math.max(leaveSecondAll, 0.5);
+            else leaveFirstAll = Math.max(leaveFirstAll, 0.5);
+            continue;
+          }
+          if (isPolicySandwichLeave(l)) continue;
           if (l.isHalfDay) {
             if (l.halfDayType === 'second_half') leaveSecondAll = Math.max(leaveSecondAll, 0.5);
             else leaveFirstAll = Math.max(leaveFirstAll, 0.5);
