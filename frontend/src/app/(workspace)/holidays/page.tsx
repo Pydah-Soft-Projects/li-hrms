@@ -951,6 +951,7 @@ export default function WorkspaceHolidaysPage() {
                                                 employeeGroups={employeeGroups}
                                                 customEmployeeGroupingEnabled={customEmployeeGroupingEnabled}
                                                 allowedDivisionIds={allowedHolidayMapping.map((m) => m.division)}
+                                                requireDivision
                                             />
                                         )}
                                         <div className="rounded-lg bg-white dark:bg-slate-900 border border-violet-100 dark:border-violet-900/50 px-4 py-3 text-sm">

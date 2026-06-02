@@ -26,6 +26,8 @@ type Props = {
   maxRows?: number;
   /** Section label override */
   sectionLabel?: string;
+  /** When true, division select is HTML-required (holiday create forms). Default false for user admin. */
+  requireDivision?: boolean;
 };
 
 export function HolidayDivisionMappingEditor({
@@ -40,6 +42,7 @@ export function HolidayDivisionMappingEditor({
   showEmployeeGroups = true,
   maxRows,
   sectionLabel = 'Employee scope',
+  requireDivision = false,
 }: Props) {
   const visibleDivisions =
     allowedDivisionIds.length > 0
@@ -64,8 +67,11 @@ export function HolidayDivisionMappingEditor({
   const departmentsForRow = (divisionId: string) =>
     filterDepartmentsForDivision(divisionId, divisions, departments);
 
-  const displayMapping =
-    mapping.length > 0 ? mapping : [{ division: '', departments: [], employeeGroups: [] }];
+  const displayMapping = mapping.length > 0
+    ? mapping
+    : requireDivision
+      ? [{ division: '', departments: [], employeeGroups: [] }]
+      : [];
 
   return (
     <div className="space-y-3">
@@ -90,13 +96,20 @@ export function HolidayDivisionMappingEditor({
           </button>
         )}
       </div>
+      {displayMapping.length === 0 && !readOnly && (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Optional — add a row only if this user should manage holidays for a specific division/department scope.
+        </p>
+      )}
       {displayMapping.map((m, idx) => (
         <div
           key={idx}
           className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 space-y-3"
         >
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Division *</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              Division{requireDivision ? ' *' : ''}
+            </label>
             <select
               value={m.division}
               disabled={readOnly}
@@ -109,7 +122,7 @@ export function HolidayDivisionMappingEditor({
                 next[idx] = { division: e.target.value, departments: [], employeeGroups: [] };
                 onChange(next);
               }}
-              required
+              required={requireDivision}
               className="w-full rounded-lg border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white text-sm py-2"
             >
               <option value="">Select division</option>

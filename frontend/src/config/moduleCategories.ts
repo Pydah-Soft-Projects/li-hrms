@@ -16,7 +16,7 @@ export const MODULE_CATEGORIES = [
             { code: 'EMPLOYEES', label: 'Employees', href: '/employees', verifiable: true, bankable: true, editable: true },
             { code: 'ASSETS_MANAGEMENT', label: 'Assets Management', href: '/assets-management' },
             { code: 'EMPLOYEE_BIRTHDAYS', label: 'Employee Birthdays', href: '/employee-birthdays' },
-            { code: 'RESIGNATION', label: 'Resignations', href: '/resignations' },
+            { code: 'RESIGNATION', label: 'Resignations', href: '/resignations', terminable: true },
             { code: 'PROMOTIONS_TRANSFERS', label: 'Promotions & Transfers', href: '/promotions-transfers' },
             { code: 'PROFILE', label: 'My Profile', href: '/profile' }
         ]
@@ -110,7 +110,8 @@ function hasModulePermission(moduleCode: string, featureControl: string[]): bool
             featureControl.includes(code) ||
             featureControl.includes(`${code}:read`) ||
             featureControl.includes(`${code}:write`) ||
-            featureControl.includes(`${code}:verify`)
+            featureControl.includes(`${code}:verify`) ||
+            featureControl.includes(`${code}:terminate`)
     );
 }
 

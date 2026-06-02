@@ -6,6 +6,14 @@ const {
   getEmployeeIdsInScope,
   buildWorkflowVisibilityFilter
 } = require('../../shared/middleware/dataScopeMiddleware');
+const {
+  assertCanCreateRequest,
+  assertCanViewRequests,
+  assertCanManageRequest,
+  buildRequestTypeFilter,
+  assertEmployeeInScope,
+  loadResignationActor,
+} = require('../utils/resignationAccess');
 
 function formatISTTimestamp(date = new Date()) {
   return date.toLocaleString('en-IN', {
@@ -50,18 +58,15 @@ exports.createResignationRequest = async (req, res) => {
     }
 
     const settings = await ResignationSettings.getActiveSettings();
-    
-    // Check termination permissions
-    if (requestType === 'termination') {
-      const allowedRoles = settings?.workflow?.terminationAllowedRoles || ['super_admin', 'hr'];
-      const isSuperAdmin = userRole === 'super_admin';
-      
-      if (!isSuperAdmin && !allowedRoles.includes(userRole)) {
-        return res.status(403).json({ 
-          success: false, 
-          message: `Your role (${userRole}) is not authorized to initiate terminations based on current policy.` 
-        });
-      }
+    const actor = await loadResignationActor(req);
+
+    try {
+      assertCanCreateRequest(actor || req.user, requestType, settings);
+    } catch (permErr) {
+      return res.status(permErr.statusCode || 403).json({
+        success: false,
+        message: permErr.message || 'Not authorized',
+      });
     }
 
     const noticePeriodDays = Math.max(0, Number(settings?.noticePeriodDays) || 0);
@@ -85,6 +90,15 @@ exports.createResignationRequest = async (req, res) => {
       .populate('division_id', 'name');
     if (!employee) {
       return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    try {
+      await assertEmployeeInScope(actor || req.user, employee, isEmployeeSelf);
+    } catch (scopeErr) {
+      return res.status(scopeErr.statusCode || 403).json({
+        success: false,
+        message: scopeErr.message || 'Employee is outside your scope',
+      });
     }
 
     // Check for existing pending or approved resignation/termination requests
@@ -253,10 +267,15 @@ exports.createResignationRequest = async (req, res) => {
 // @access  Private
 exports.getPendingApprovals = async (req, res) => {
   try {
-    const {
-      buildWorkflowVisibilityFilter,
-      getEmployeeIdsInScope
-    } = require('../../shared/middleware/dataScopeMiddleware');
+    const actor = await loadResignationActor(req);
+    try {
+      assertCanViewRequests(actor || req.user);
+    } catch (permErr) {
+      return res.status(permErr.statusCode || 403).json({
+        success: false,
+        message: permErr.message || 'Not authorized',
+      });
+    }
 
     const userRole = (req.user.role || '').toLowerCase();
     const isSuperOrSubAdmin = ['super_admin', 'sub_admin'].includes(userRole);
@@ -293,6 +312,13 @@ exports.getPendingApprovals = async (req, res) => {
           visibilityFilter
         ]
       };
+    }
+
+    const typeFilter = buildRequestTypeFilter(actor || req.user);
+    if (typeFilter) {
+      filter = filter.$and
+        ? { $and: [...filter.$and, typeFilter] }
+        : { $and: [filter, typeFilter] };
     }
 
     const list = await ResignationRequest.find(filter)
@@ -336,9 +362,19 @@ exports.approveResignationRequest = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Request is no longer pending' });
     }
 
-    // Fetch Resignation Settings to check for 'Allow Higher Authority'
     const ResignationSettings = require('../model/ResignationSettings');
     const settings = await ResignationSettings.getActiveSettings();
+    const actor = await loadResignationActor(req);
+    try {
+      assertCanManageRequest(actor || req.user, resignation.requestType, settings);
+    } catch (permErr) {
+      return res.status(permErr.statusCode || 403).json({
+        success: false,
+        message: permErr.message || 'Not authorized',
+      });
+    }
+
+    // Fetch Resignation Settings to check for 'Allow Higher Authority'
     const allowHigher = settings?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
 
     const chain = resignation.workflow?.approvalChain || [];
@@ -635,11 +671,15 @@ exports.approveResignationRequest = async (req, res) => {
 exports.getResignationRequests = async (req, res) => {
   try {
     const { emp_no } = req.query;
-
-    const {
-      buildWorkflowVisibilityFilter,
-      getEmployeeIdsInScope
-    } = require('../../shared/middleware/dataScopeMiddleware');
+    const actor = await loadResignationActor(req);
+    try {
+      assertCanViewRequests(actor || req.user);
+    } catch (permErr) {
+      return res.status(permErr.statusCode || 403).json({
+        success: false,
+        message: permErr.message || 'Not authorized',
+      });
+    }
 
     const userRole = (req.user.role || '').toLowerCase();
     const isSuperOrSubAdmin = ['super_admin', 'sub_admin'].includes(userRole);
@@ -678,7 +718,18 @@ exports.getResignationRequests = async (req, res) => {
       };
     }
 
-    if (emp_no) filter.emp_no = String(emp_no).toUpperCase();
+    const typeFilter = buildRequestTypeFilter(actor || req.user);
+    if (typeFilter) {
+      filter = filter.$and
+        ? { $and: [...filter.$and, typeFilter] }
+        : { $and: [filter, typeFilter] };
+    }
+
+    if (emp_no) {
+      const empFilter = { emp_no: String(emp_no).toUpperCase() };
+      filter = filter.$and ? { $and: [...filter.$and, empFilter] } : { ...filter, ...empFilter };
+    }
+
     const list = await ResignationRequest.find(filter)
       .populate({
         path: 'employeeId',
@@ -718,6 +769,18 @@ exports.updateLWD = async (req, res) => {
     const resignation = await ResignationRequest.findById(id);
     if (!resignation) {
       return res.status(404).json({ success: false, message: 'Resignation request not found' });
+    }
+
+    const ResignationSettings = require('../model/ResignationSettings');
+    const settings = await ResignationSettings.getActiveSettings();
+    const actor = await loadResignationActor(req);
+    try {
+      assertCanManageRequest(actor || req.user, resignation.requestType, settings);
+    } catch (permErr) {
+      return res.status(permErr.statusCode || 403).json({
+        success: false,
+        message: permErr.message || 'Not authorized',
+      });
     }
 
     const userRole = (req.user.role || '').toLowerCase();
