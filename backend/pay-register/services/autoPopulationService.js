@@ -9,7 +9,7 @@ const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const Shift = require('../../shifts/model/Shift');
 const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
 const summaryCalculationService = require('../../attendance/services/summaryCalculationService');
-const { getPayrollDateRange, getAllDatesInRange, extractISTComponents } = require('../../shared/utils/dateUtils');
+const { getPayrollDateRange, getAllDatesInRange, extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 const Employee = require('../../employees/model/Employee');
 const { extractMultiShiftFromAttendance } = require('./payRegisterShiftUtils');
 
@@ -81,10 +81,9 @@ async function fetchAttendanceData(emp_no, startDate, endDate) {
  * @returns {Object} Map of date -> leave data
  */
 async function fetchLeaveData(employeeId, startDate, endDate, payrollMonth) {
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(endDate);
-  end.setHours(23, 59, 59, 999);
+  // Use IST bounds so range queries match how leaves/OD are stored and how payroll dates are interpreted.
+  const start = createISTDate(startDate, '00:00');
+  const end = createISTDate(endDate, '23:59');
 
   // Fetch approved leaves overlapping the range
   const leaves = await Leave.find({
@@ -112,7 +111,7 @@ async function fetchLeaveData(employeeId, startDate, endDate, payrollMonth) {
 
     let currentDate = new Date(fromDate);
     while (currentDate <= toDate) {
-      const dateStr = currentDate.toISOString().split('T')[0];
+      const dateStr = extractISTComponents(currentDate).dateStr;
 
       // Check if this date is within the target range
       if (dateStr >= startDate && dateStr <= endDate) {
@@ -137,7 +136,7 @@ async function fetchLeaveData(employeeId, startDate, endDate, payrollMonth) {
 
   // Process leave splits (these override full leaves for specific dates)
   for (const split of leaveSplits) {
-    const dateStr = split.date.toISOString().split('T')[0];
+    const dateStr = extractISTComponents(split.date).dateStr;
 
     if (dateStr >= startDate && dateStr <= endDate) {
       if (!leaveMap[dateStr]) {
@@ -170,10 +169,9 @@ async function fetchLeaveData(employeeId, startDate, endDate, payrollMonth) {
  * @returns {Object} Map of date -> OD data
  */
 async function fetchODData(employeeId, startDate, endDate) {
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(endDate);
-  end.setHours(23, 59, 59, 999);
+  // Use IST bounds so range queries match how leaves/OD are stored and how payroll dates are interpreted.
+  const start = createISTDate(startDate, '00:00');
+  const end = createISTDate(endDate, '23:59');
 
   const ods = await OD.find({
     employeeId,
@@ -192,7 +190,7 @@ async function fetchODData(employeeId, startDate, endDate) {
 
     let currentDate = new Date(fromDate);
     while (currentDate <= toDate) {
-      const dateStr = currentDate.toISOString().split('T')[0];
+      const dateStr = extractISTComponents(currentDate).dateStr;
 
       if (dateStr >= startDate && dateStr <= endDate) {
         if (!odMap[dateStr]) {
@@ -306,6 +304,11 @@ async function resolveConflicts(dateData) {
   if (attendance?.rosterFirstHalfNonWorking === 'WO') firstHalf.status = 'week_off';
   if (attendance?.rosterSecondHalfNonWorking === 'WO') secondHalf.status = 'week_off';
 
+  // Defensive: pay register sync should not produce half "blank" cells for in-scope days.
+  // Treat any unexpected blank as absent so OD/leave can correctly apply on the working half.
+  if (firstHalf.status === 'blank') firstHalf.status = 'absent';
+  if (secondHalf.status === 'blank') secondHalf.status = 'absent';
+
   if (leave) {
     const typeCode = (leave.leaveType || leave.originalLeaveType || '').trim() || null;
     let natureSource = leave.leaveNature;
@@ -335,7 +338,7 @@ async function resolveConflicts(dateData) {
     }
   }
 
-  const isNonWorking = (status) => ['absent', 'week_off', 'holiday'].includes(status);
+  const isNonWorking = (status) => ['absent', 'week_off', 'holiday', 'blank'].includes(status);
   const isConvertibleToPresent = (status) => status === 'absent';
 
   if (od && (!leave || (leave.isHalfDay && od.isHalfDay && leave.halfDayType !== od.halfDayType))) {

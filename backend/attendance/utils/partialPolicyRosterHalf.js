@@ -108,16 +108,30 @@ function applyRosterHalfToPayRegisterSnapshot(snapshot, day, attFirst, attSecond
   const meta = buildRosterHalfPartialPolicyMeta(day, attFirst, attSecond);
   const firstHalf = payRegisterHalfFromStatus(meta.firstHalfStatus);
   const secondHalf = payRegisterHalfFromStatus(meta.secondHalfStatus);
-  const isSplit = firstHalf.status !== secondHalf.status;
+
+  // IMPORTANT: roster-half policy should not erase approved Leave/OD that applies to the working half.
+  // The meta builder is attendance-centric; preserve the engine snapshot's richer statuses when meta says "absent".
+  const preserveIfAbsent = (computed, original) => {
+    if (!computed || !original) return computed;
+    if (computed.status !== 'absent') return computed;
+    if (original.status === 'od' || original.status === 'leave' || original.status === 'present') {
+      return { ...original };
+    }
+    return computed;
+  };
+
+  const mergedFirstHalf = preserveIfAbsent(firstHalf, snapshot.firstHalf);
+  const mergedSecondHalf = preserveIfAbsent(secondHalf, snapshot.secondHalf);
+  const isSplit = mergedFirstHalf.status !== mergedSecondHalf.status;
   return {
     ...snapshot,
-    firstHalf,
-    secondHalf,
+    firstHalf: mergedFirstHalf,
+    secondHalf: mergedSecondHalf,
     isSplit,
-    status: isSplit ? null : firstHalf.status,
-    leaveType: null,
-    leaveNature: null,
-    isOD: false,
+    status: isSplit ? null : mergedFirstHalf.status,
+    leaveType: isSplit ? null : mergedFirstHalf.status === 'leave' ? mergedFirstHalf.leaveType : null,
+    leaveNature: isSplit ? null : mergedFirstHalf.status === 'leave' ? mergedFirstHalf.leaveNature : null,
+    isOD: isSplit ? false : Boolean(mergedFirstHalf.isOD),
   };
 }
 
