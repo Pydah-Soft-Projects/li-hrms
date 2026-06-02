@@ -29,6 +29,10 @@ router.post('/upload-summary/:month', payRegisterController.uploadSummaryBulk);
 router.get('/export-summary/:month', payRegisterController.exportSummaryExcel);
 router.get('/export-summary-pdf/:month', payRegisterController.exportSummaryPDF);
 
+// Export manual modifications report
+router.get('/export-modifications/:month', payRegisterController.exportModificationsExcel);
+router.get('/export-modifications-pdf/:month', payRegisterController.exportModificationsPDF);
+
 // All locked summaries for month (for Sync All modal — not limited to current page)
 router.get('/locked-employees/:month', payRegisterController.getLockedSummaryEmployees);
 

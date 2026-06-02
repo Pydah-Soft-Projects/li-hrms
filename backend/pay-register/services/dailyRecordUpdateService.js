@@ -1,5 +1,6 @@
 const LeaveSettings = require('../../leaves/model/LeaveSettings');
 const { getLeaveNature } = require('./autoPopulationService');
+const { applyShiftSelectionToDailyRecord } = require('./payRegisterShiftUtils');
 
 function payRegisterLeaveNatureEnum(raw) {
   if (raw == null || raw === '') return 'paid';
@@ -159,6 +160,9 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
       isSplit: false,
       shiftId: null,
       shiftName: null,
+      shiftIds: [],
+      shiftSelections: [],
+      payableShifts: 1,
       otHours: 0,
       attendanceRecordId: null,
       leaveIds: [],
@@ -176,13 +180,30 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
 
   // Store old values for edit history
   const oldValues = {
-    firstHalf: { ...dailyRecord.firstHalf },
-    secondHalf: { ...dailyRecord.secondHalf },
+    firstHalf: {
+      status: dailyRecord.firstHalf.status,
+      leaveType: dailyRecord.firstHalf.leaveType,
+      leaveNature: dailyRecord.firstHalf.leaveNature,
+    },
+    secondHalf: {
+      status: dailyRecord.secondHalf.status,
+      leaveType: dailyRecord.secondHalf.leaveType,
+      leaveNature: dailyRecord.secondHalf.leaveNature,
+    },
     status: dailyRecord.status,
     leaveType: dailyRecord.leaveType,
     isOD: dailyRecord.isOD,
     otHours: dailyRecord.otHours,
     shiftId: dailyRecord.shiftId,
+    shiftIds: Array.isArray(dailyRecord.shiftIds) ? [...dailyRecord.shiftIds] : [],
+    shiftSelections: Array.isArray(dailyRecord.shiftSelections)
+      ? dailyRecord.shiftSelections.map((s) => ({
+          shiftId: s.shiftId,
+          isHalf: Boolean(s.isHalf),
+          payableUnits: s.payableUnits,
+        }))
+      : [],
+    payableShifts: dailyRecord.payableShifts,
     isLate: dailyRecord.isLate,
     isEarlyOut: dailyRecord.isEarlyOut,
   };
@@ -302,16 +323,6 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
     dailyRecord.otHours = updateData.otHours;
   }
 
-  if (updateData.shiftId !== undefined) {
-    dailyRecord.shiftId = updateData.shiftId;
-    dailyRecord.firstHalf.shiftId = updateData.shiftId;
-    dailyRecord.secondHalf.shiftId = updateData.shiftId;
-  }
-
-  if (updateData.shiftName !== undefined) {
-    dailyRecord.shiftName = updateData.shiftName;
-  }
-
   if (updateData.remarks !== undefined) {
     dailyRecord.remarks = updateData.remarks;
   }
@@ -350,6 +361,28 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
     dailyRecord.otHours = updateData.otHours;
   }
 
+  const hasPresentOrOdHalf =
+    dailyRecord.firstHalf?.status === 'present' ||
+    dailyRecord.firstHalf?.status === 'od' ||
+    dailyRecord.secondHalf?.status === 'present' ||
+    dailyRecord.secondHalf?.status === 'od';
+
+  if (
+    updateData.shiftSelections !== undefined ||
+    updateData.shiftIds !== undefined ||
+    updateData.shiftId !== undefined
+  ) {
+    await applyShiftSelectionToDailyRecord(dailyRecord, updateData);
+  } else if (!hasPresentOrOdHalf) {
+    dailyRecord.shiftIds = [];
+    dailyRecord.shiftSelections = [];
+    dailyRecord.shiftId = null;
+    dailyRecord.shiftName = null;
+    dailyRecord.payableShifts = 1;
+    if (dailyRecord.firstHalf) dailyRecord.firstHalf.shiftId = null;
+    if (dailyRecord.secondHalf) dailyRecord.secondHalf.shiftId = null;
+  }
+
   // Add to edit history
   const changes = [];
 
@@ -369,6 +402,38 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
     });
   }
 
+  if (oldValues.firstHalf.leaveType !== dailyRecord.firstHalf.leaveType) {
+    changes.push({
+      field: 'firstHalf.leaveType',
+      oldValue: oldValues.firstHalf.leaveType,
+      newValue: dailyRecord.firstHalf.leaveType,
+    });
+  }
+
+  if (oldValues.secondHalf.leaveType !== dailyRecord.secondHalf.leaveType) {
+    changes.push({
+      field: 'secondHalf.leaveType',
+      oldValue: oldValues.secondHalf.leaveType,
+      newValue: dailyRecord.secondHalf.leaveType,
+    });
+  }
+
+  if (oldValues.firstHalf.leaveNature !== dailyRecord.firstHalf.leaveNature) {
+    changes.push({
+      field: 'firstHalf.leaveNature',
+      oldValue: oldValues.firstHalf.leaveNature,
+      newValue: dailyRecord.firstHalf.leaveNature,
+    });
+  }
+
+  if (oldValues.secondHalf.leaveNature !== dailyRecord.secondHalf.leaveNature) {
+    changes.push({
+      field: 'secondHalf.leaveNature',
+      oldValue: oldValues.secondHalf.leaveNature,
+      newValue: dailyRecord.secondHalf.leaveNature,
+    });
+  }
+
   if (oldValues.otHours !== dailyRecord.otHours) {
     changes.push({
       field: 'otHours',
@@ -382,6 +447,37 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
       field: 'shiftId',
       oldValue: oldValues.shiftId,
       newValue: dailyRecord.shiftId,
+    });
+  }
+
+  const oldShiftIdsKey = (oldValues.shiftIds || []).map(String).sort().join(',');
+  const newShiftIdsKey = (dailyRecord.shiftIds || []).map(String).sort().join(',');
+  if (oldShiftIdsKey !== newShiftIdsKey) {
+    changes.push({
+      field: 'shiftIds',
+      oldValue: oldValues.shiftIds,
+      newValue: dailyRecord.shiftIds,
+    });
+  }
+
+  const selKey = (arr) =>
+    (arr || [])
+      .map((s) => `${String(s.shiftId)}:${s.isHalf ? 'h' : 'f'}:${s.payableUnits ?? ''}`)
+      .sort()
+      .join('|');
+  if (selKey(oldValues.shiftSelections) !== selKey(dailyRecord.shiftSelections)) {
+    changes.push({
+      field: 'shiftSelections',
+      oldValue: oldValues.shiftSelections,
+      newValue: dailyRecord.shiftSelections,
+    });
+  }
+
+  if (Number(oldValues.payableShifts) !== Number(dailyRecord.payableShifts)) {
+    changes.push({
+      field: 'payableShifts',
+      oldValue: oldValues.payableShifts,
+      newValue: dailyRecord.payableShifts,
     });
   }
 

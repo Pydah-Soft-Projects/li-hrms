@@ -11,6 +11,7 @@ const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendan
 const summaryCalculationService = require('../../attendance/services/summaryCalculationService');
 const { getPayrollDateRange, getAllDatesInRange, extractISTComponents } = require('../../shared/utils/dateUtils');
 const Employee = require('../../employees/model/Employee');
+const { extractMultiShiftFromAttendance } = require('./payRegisterShiftUtils');
 
 /**
  * Auto Population Service
@@ -821,7 +822,19 @@ async function populatePayRegisterFromSources(employeeId, emp_no, year, monthNum
       lateInMinutes,
       earlyOutMinutes,
       remarks: null,
+      shiftIds: [],
     };
+
+    const multiShift = extractMultiShiftFromAttendance(attendance);
+    if (multiShift) {
+      dailyRecord.shiftIds = multiShift.shiftIds;
+      dailyRecord.shiftSelections = multiShift.shiftSelections || [];
+      dailyRecord.payableShifts = multiShift.payableShifts;
+      dailyRecord.shiftId = multiShift.shiftId;
+      dailyRecord.shiftName = multiShift.shiftName;
+      dailyRecord.firstHalf.shiftId = multiShift.shiftId;
+      dailyRecord.secondHalf.shiftId = multiShift.shiftId;
+    }
 
     dailyRecords.push(dailyRecord);
   }

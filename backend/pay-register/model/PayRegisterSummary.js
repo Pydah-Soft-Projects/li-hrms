@@ -203,6 +203,39 @@ const payRegisterSummarySchema = new mongoose.Schema(
           default: null,
         },
 
+        /** Multi-shift mode: up to 3 shifts per present day; payableShifts = sum of shift definitions */
+        shiftIds: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Shift',
+          },
+        ],
+        /** Per-shift full/half (multi-shift); payableShifts = sum of units per selection */
+        shiftSelections: [
+          {
+            shiftId: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: 'Shift',
+              required: true,
+            },
+            isHalf: {
+              type: Boolean,
+              default: false,
+            },
+            /** From attendance segment payableShift when synced; overrides isHalf when set */
+            payableUnits: {
+              type: Number,
+              min: 0,
+              default: null,
+            },
+          },
+        ],
+        payableShifts: {
+          type: Number,
+          default: 1,
+          min: 0,
+        },
+
         // OT (total for the day)
         otHours: {
           type: Number,

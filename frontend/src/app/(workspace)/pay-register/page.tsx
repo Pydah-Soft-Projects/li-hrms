@@ -73,6 +73,12 @@ import {
   resolveLeaveNatureFromLeaveTypeCode,
 } from '@/lib/payRegisterLeaveNature';
 import { paidLopSublabel } from '@/lib/payRegisterAllSummaryRow';
+import PayRegisterShiftField from '@/components/pay-register/PayRegisterShiftField';
+import {
+  initialShiftSelectionsFromRecord,
+  payRegisterDayShowsShiftPicker,
+  type PayRegisterShiftSelection,
+} from '@/lib/payRegisterShifts';
 
 
 
@@ -103,7 +109,10 @@ interface DailyRecord {
   isOD: boolean;
   isSplit: boolean;
   shiftId: string | null;
+  shiftIds?: string[];
+  shiftSelections?: PayRegisterShiftSelection[];
   shiftName: string | null;
+  payableShifts?: number;
   otHours: number;
   remarks: string | null;
   isManuallyEdited?: boolean;
@@ -1177,6 +1186,8 @@ export default function PayRegisterPage() {
     const isSplit = record.isSplit || record.firstHalf.status !== record.secondHalf.status;
     setEditingRecord({ employeeId: typeof employee === 'object' ? employee._id : employee, month: monthStr, date, record, employee });
     setIsHalfDayMode(isSplit);
+    const shiftSelections = initialShiftSelectionsFromRecord(record);
+    const shiftIds = shiftSelections.map((s) => s.shiftId);
     setEditData(
       mergeEditDataLeaveNatureFromTypes(
         {
@@ -1195,8 +1206,11 @@ export default function PayRegisterPage() {
           leaveNature: record.leaveNature || null,
           isOD: record.isOD,
           isSplit: isSplit,
-          shiftId: record.shiftId || null,
+          shiftId: record.shiftId || shiftIds[0] || null,
+          shiftIds,
+          shiftSelections,
           shiftName: record.shiftName || null,
+          payableShifts: record.payableShifts ?? undefined,
           otHours: record.otHours,
           remarks: record.remarks || null,
           isLate: record.isLate || false,
@@ -3864,38 +3878,6 @@ export default function PayRegisterPage() {
                             className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                           />
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Shift
-                          </label>
-                          <select
-                            value={editData.shiftId || ''}
-                            onChange={(e) => {
-                              const shift = shifts.find((s) => s._id === e.target.value);
-                              setEditData({
-                                ...editData,
-                                shiftId: e.target.value || null,
-                                shiftName: shift?.name || null,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  shiftId: e.target.value || null,
-                                },
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  shiftId: e.target.value || null,
-                                },
-                              });
-                            }}
-                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                          >
-                            <option value="">Select Shift</option>
-                            {shifts.map((shift) => (
-                              <option key={shift._id} value={shift._id}>
-                                {shift.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
                       </div>
                     </div>
                   )}
@@ -4112,41 +4094,39 @@ export default function PayRegisterPage() {
                             </div>
                           </>
                         )}
-                        {/* Shift field for full day */}
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Shift
-                          </label>
-                          <select
-                            value={editData.shiftId || ''}
-                            onChange={(e) => {
-                              const shift = shifts.find((s) => s._id === e.target.value);
-                              setEditData({
-                                ...editData,
-                                shiftId: e.target.value || null,
-                                shiftName: shift?.name || null,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  shiftId: e.target.value || null,
-                                },
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  shiftId: e.target.value || null,
-                                },
-                              });
-                            }}
-                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                          >
-                            <option value="">Select Shift</option>
-                            {shifts.map((shift) => (
-                              <option key={shift._id} value={shift._id}>
-                                {shift.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
                       </div>
                     </div>
+                  )}
+
+                  {payRegisterDayShowsShiftPicker(editData, isHalfDayMode) && (
+                    <PayRegisterShiftField
+                      shifts={shifts}
+                      isMultiShiftMode={isMultiShiftMode}
+                      showShiftPicker
+                      value={{
+                        shiftId: editData.shiftId || null,
+                        shiftIds: editData.shiftIds || [],
+                        shiftSelections:
+                          editData.shiftSelections ||
+                          (editData.shiftIds || []).map((id) => ({ shiftId: id, isHalf: false })),
+                        shiftName: editData.shiftName || null,
+                        payableShifts: editData.payableShifts ?? 1,
+                      }}
+                      onChange={(next) =>
+                        setEditData({
+                          ...editData,
+                          ...next,
+                          firstHalf: {
+                            ...editData.firstHalf!,
+                            shiftId: next.shiftId,
+                          },
+                          secondHalf: {
+                            ...editData.secondHalf!,
+                            shiftId: next.shiftId,
+                          },
+                        })
+                      }
+                    />
                   )}
 
                   {/* Full Day OT Hours - Show for OT/Extra Hours tabs or when not in half-day mode */}

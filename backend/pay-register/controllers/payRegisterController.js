@@ -25,6 +25,11 @@ const {
   rebuildContributingDatesFromDailyRecords,
 } = require('../services/contributingDatesService');
 const { recalculatePayRegisterAttendanceDeduction } = require('../services/payRegisterAttendanceDeductionService');
+const { buildPayRegisterEmployeeFilter } = require('../services/payRegisterEmployeeFilter');
+const {
+  buildModificationRows,
+  toExcelRows,
+} = require('../services/modificationsExportService');
 const { assertEmployeeMonthEditable } = require('../../shared/services/payrollPeriodLockService');
 const XLSX = require('xlsx');
 const mongoose = require('mongoose');
@@ -35,72 +40,6 @@ const timezone = require('dayjs/plugin/timezone');
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
-
-/**
- * Mongo filter for Pay Register list / export: pay-period employment scope, optional dept/div, optional text search (server-side).
- * Search matches employee name, emp no, and any of department / division / designation name or code.
- */
-async function buildPayRegisterEmployeeFilter(
-  rangeStart,
-  rangeEnd,
-  { departmentId, divisionId, employeeGroupId, search, scopeFilter } = {}
-) {
-  const toOid = (id) => {
-    if (id === undefined || id === null || id === '') return null;
-    const s = String(id);
-    try {
-      if (mongoose.Types.ObjectId.isValid(s)) return new mongoose.Types.ObjectId(s);
-    } catch (e) {
-      /* ignore */
-    }
-    return id;
-  };
-
-  const employmentScopeOr = [
-    { is_active: { $ne: false } },
-    { is_active: false, leftDate: { $gte: rangeStart, $lte: rangeEnd } },
-  ];
-
-  const conditions = [{ $or: employmentScopeOr }];
-
-  // Apply request-level data scope at endpoint boundary (same model = Employee)
-  if (scopeFilter && typeof scopeFilter === 'object' && Object.keys(scopeFilter).length > 0) {
-    conditions.push(scopeFilter);
-  }
-
-  if (departmentId) {
-    conditions.push({ department_id: toOid(departmentId) });
-  }
-  if (divisionId) {
-    conditions.push({ division_id: toOid(divisionId) });
-  }
-  if (employeeGroupId) {
-    conditions.push({ employee_group_id: toOid(employeeGroupId) });
-  }
-
-  const searchTrim = search && String(search).trim();
-  if (searchTrim) {
-    const esc = searchTrim.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const rx = { $regex: esc, $options: 'i' };
-    const Department = require('../../departments/model/Department');
-    const Division = require('../../departments/model/Division');
-    const Designation = require('../../departments/model/Designation');
-
-    const [deptIds, divIds, desigIds] = await Promise.all([
-      Department.find({ $or: [{ name: rx }, { code: rx }] }).distinct('_id'),
-      Division.find({ $or: [{ name: rx }, { code: rx }] }).distinct('_id'),
-      Designation.find({ $or: [{ name: rx }, { code: rx }] }).distinct('_id'),
-    ]);
-
-    const searchOr = [{ employee_name: rx }, { emp_no: rx }];
-    if (deptIds.length) searchOr.push({ department_id: { $in: deptIds } });
-    if (divIds.length) searchOr.push({ division_id: { $in: divIds } });
-    if (desigIds.length) searchOr.push({ designation_id: { $in: desigIds } });
-    conditions.push({ $or: searchOr });
-  }
-
-  return conditions.length === 1 ? conditions[0] : { $and: conditions };
-}
 
 async function ensureEmployeeInScope(req, res, employeeId) {
   if (!employeeId || !mongoose.Types.ObjectId.isValid(String(employeeId))) {
@@ -1755,6 +1694,155 @@ exports.exportSummaryPDF = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to export summary PDF',
+    });
+  }
+};
+
+// @desc    Export pay register manual modifications as Excel
+// @route   GET /api/pay-register/export-modifications/:month
+exports.exportModificationsExcel = async (req, res) => {
+  try {
+    const { month } = req.params;
+    const { departmentId, divisionId, employeeGroupId, search } = req.query;
+
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ success: false, error: 'Month must be in YYYY-MM format' });
+    }
+
+    const { startDate, endDate, rows } = await buildModificationRows(month, {
+      departmentId,
+      divisionId,
+      employeeGroupId,
+      search,
+      scopeFilter: req.scopeFilter,
+    });
+
+    const excelRows =
+      rows.length > 0
+        ? toExcelRows(rows)
+        : [
+            {
+              'Employee Code': '-',
+              'Employee Name': 'No manual modifications found for selected filters',
+              Division: '-',
+              Department: '-',
+              Designation: '-',
+              Date: '-',
+              Field: '-',
+              'Old Value': '-',
+              'New Value': '-',
+              'Edited By': '-',
+              Role: '-',
+              'Edited At': '-',
+              Remarks: `Period: ${startDate} to ${endDate}`,
+            },
+          ];
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(excelRows);
+    XLSX.utils.book_append_sheet(wb, ws, 'Modifications');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    const filename = `PayRegister_Modifications_${month}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(buf);
+  } catch (error) {
+    console.error('Error exporting modifications Excel:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to export modifications Excel',
+    });
+  }
+};
+
+// @desc    Export pay register manual modifications as PDF
+// @route   GET /api/pay-register/export-modifications-pdf/:month
+exports.exportModificationsPDF = async (req, res) => {
+  try {
+    const { month } = req.params;
+    const { departmentId, divisionId, employeeGroupId, search } = req.query;
+
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ success: false, error: 'Month must be in YYYY-MM format' });
+    }
+
+    const { startDate, endDate, rows, employeeCount, changeCount } = await buildModificationRows(month, {
+      departmentId,
+      divisionId,
+      employeeGroupId,
+      search,
+      scopeFilter: req.scopeFilter,
+    });
+
+    const doc = new PDFDocument({ margin: 25, size: 'A4', layout: 'landscape', bufferPages: true });
+    const filename = `PayRegister_Modifications_${month}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    doc.pipe(res);
+
+    const margin = 25;
+    const headers = [
+      'Emp Code',
+      'Employee',
+      'Dept',
+      'Date',
+      'Field',
+      'Old',
+      'New',
+      'Edited By',
+      'When',
+    ];
+    const colWidths = [52, 110, 72, 58, 68, 52, 52, 78, 88];
+
+    let y = drawPayRegisterPdfHeader(
+      doc,
+      `PAY REGISTER MODIFICATIONS — ${month}`,
+      `Period: ${startDate} to ${endDate} | ${employeeCount} employee(s), ${changeCount} change(s)`
+    );
+
+    if (rows.length === 0) {
+      doc.fontSize(10).fillColor('#64748b').text('No manual modifications found for the selected filters.', margin, y + 12);
+      doc.end();
+      return;
+    }
+
+    const pdfRows = rows.map((r) => [
+      r.empNo,
+      r.employeeName,
+      r.department,
+      r.date,
+      r.fieldLabel,
+      r.oldValue,
+      r.newValue,
+      r.editedByName,
+      r.editedAt,
+    ]);
+
+    drawPayRegisterPdfTable(doc, headers, pdfRows, margin, y, colWidths, {
+      fontSize: 6.5,
+      minRowHeight: 16,
+      onPageAdd: () =>
+        drawPayRegisterPdfHeader(doc, `PAY REGISTER MODIFICATIONS (CONT) — ${month}`, `Period: ${startDate} to ${endDate}`),
+    });
+
+    const pages = doc.bufferedPageRange();
+    for (let i = 0; i < pages.count; i += 1) {
+      doc.switchToPage(i);
+      doc.fontSize(7).fillColor('#94a3b8').text(
+        `Generated by HRMS on ${dayjs().tz('Asia/Kolkata').format('DD MMM YYYY, hh:mm A')} | Page ${i + 1} of ${pages.count}`,
+        0,
+        doc.page.height - 35,
+        { align: 'center', width: doc.page.width }
+      );
+    }
+
+    doc.end();
+  } catch (error) {
+    console.error('Error exporting modifications PDF:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to export modifications PDF',
     });
   }
 };

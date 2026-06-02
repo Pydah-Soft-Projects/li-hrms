@@ -73,6 +73,12 @@ import {
   resolveLeaveNatureFromLeaveTypeCode,
 } from '@/lib/payRegisterLeaveNature';
 import { paidLopSublabel } from '@/lib/payRegisterAllSummaryRow';
+import PayRegisterShiftField from '@/components/pay-register/PayRegisterShiftField';
+import {
+  initialShiftSelectionsFromRecord,
+  payRegisterDayShowsShiftPicker,
+  type PayRegisterShiftSelection,
+} from '@/lib/payRegisterShifts';
 
 
 
@@ -103,7 +109,10 @@ interface DailyRecord {
   isOD: boolean;
   isSplit: boolean;
   shiftId: string | null;
+  shiftIds?: string[];
+  shiftSelections?: PayRegisterShiftSelection[];
   shiftName: string | null;
+  payableShifts?: number;
   otHours: number;
   remarks: string | null;
   isManuallyEdited?: boolean;
@@ -234,6 +243,8 @@ export default function PayRegisterPage() {
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportingModificationsExcel, setExportingModificationsExcel] = useState(false);
+  const [exportingModificationsPdf, setExportingModificationsPdf] = useState(false);
   const [calculatingJobId, setCalculatingJobId] = useState<string | null>(null);
   const [calculationProgress, setCalculationProgress] = useState<any>(null);
   const payrollStrategy = 'dynamic' as const;
@@ -1014,19 +1025,81 @@ export default function PayRegisterPage() {
     }
   };
 
+  const getPayRegisterExportFilters = () => ({
+    month: monthStr,
+    departmentId: selectedDepartment && selectedDepartment !== '' ? selectedDepartment : undefined,
+    divisionId: selectedDivision && selectedDivision !== '' ? selectedDivision : undefined,
+    search: committedSearch || undefined,
+    employeeGroupId:
+      customGroupingEnabled && selectedEmployeeGroup && selectedEmployeeGroup !== ''
+        ? selectedEmployeeGroup
+        : undefined,
+  });
+
+  const handleDownloadModificationsExcel = async () => {
+    try {
+      setExportingModificationsExcel(true);
+      const params = getPayRegisterExportFilters();
+      const blob = await api.exportPayRegisterModifications(params);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `PayRegister_Modifications_${monthStr}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      Swal.fire({
+        icon: 'success',
+        title: 'Success',
+        text: 'Modifications report exported to Excel',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end',
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to export modifications report';
+      Swal.fire({ icon: 'error', title: 'Export Failed', text: message });
+    } finally {
+      setExportingModificationsExcel(false);
+    }
+  };
+
+  const handleDownloadModificationsPdf = async () => {
+    try {
+      setExportingModificationsPdf(true);
+      const params = getPayRegisterExportFilters();
+      const blob = await api.exportPayRegisterModificationsPDF(params);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `PayRegister_Modifications_${monthStr}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      Swal.fire({
+        icon: 'success',
+        title: 'Success',
+        text: 'Modifications report exported to PDF',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end',
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to export modifications PDF';
+      Swal.fire({ icon: 'error', title: 'Export Failed', text: message });
+    } finally {
+      setExportingModificationsPdf(false);
+    }
+  };
+
   const handleDownloadSummaryPdf = async () => {
     try {
       setExportingPdf(true);
-      const params = {
-        month: monthStr,
-        departmentId: selectedDepartment && selectedDepartment !== '' ? selectedDepartment : undefined,
-        divisionId: selectedDivision && selectedDivision !== '' ? selectedDivision : undefined,
-        search: committedSearch || undefined,
-        employeeGroupId:
-          customGroupingEnabled && selectedEmployeeGroup && selectedEmployeeGroup !== ''
-            ? selectedEmployeeGroup
-            : undefined,
-      };
+      const params = getPayRegisterExportFilters();
       const blob = await api.exportPayRegisterSummaryPDF(params);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -1172,6 +1245,8 @@ export default function PayRegisterPage() {
     const isSplit = record.isSplit || record.firstHalf.status !== record.secondHalf.status;
     setEditingRecord({ employeeId: typeof employee === 'object' ? employee._id : employee, month: monthStr, date, record, employee });
     setIsHalfDayMode(isSplit);
+    const shiftSelections = initialShiftSelectionsFromRecord(record);
+    const shiftIds = shiftSelections.map((s) => s.shiftId);
     setEditData(
       mergeEditDataLeaveNatureFromTypes(
         {
@@ -1190,8 +1265,11 @@ export default function PayRegisterPage() {
           leaveNature: record.leaveNature || null,
           isOD: record.isOD,
           isSplit: isSplit,
-          shiftId: record.shiftId || null,
+          shiftId: record.shiftId || shiftIds[0] || null,
+          shiftIds,
+          shiftSelections,
           shiftName: record.shiftName || null,
+          payableShifts: record.payableShifts ?? undefined,
           otHours: record.otHours,
           remarks: record.remarks || null,
           isLate: record.isLate || false,
@@ -2995,6 +3073,38 @@ export default function PayRegisterPage() {
             )}
             {exportingPdf ? 'Exporting...' : 'Export PDF'}
           </button>
+          <button
+            type="button"
+            onClick={handleDownloadModificationsExcel}
+            disabled={exportingModificationsExcel || loading}
+            title="Download report of manual pay register edits (who changed what). Uses current month and filters."
+            className="h-9 flex items-center px-4 rounded-xl border border-amber-200 bg-white text-amber-800 hover:bg-amber-50 hover:border-amber-300 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-amber-900/60 dark:text-amber-300 dark:hover:bg-amber-950/30"
+          >
+            {exportingModificationsExcel ? (
+              <div className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-amber-500 border-t-transparent" />
+            ) : (
+              <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            )}
+            {exportingModificationsExcel ? 'Exporting...' : 'Modifications Excel'}
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadModificationsPdf}
+            disabled={exportingModificationsPdf || loading}
+            title="Download PDF report of manual pay register edits. Uses current month and filters."
+            className="h-9 flex items-center px-4 rounded-xl border border-violet-200 bg-white text-violet-800 hover:bg-violet-50 hover:border-violet-300 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-violet-900/60 dark:text-violet-300 dark:hover:bg-violet-950/30"
+          >
+            {exportingModificationsPdf ? (
+              <div className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
+            ) : (
+              <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            )}
+            {exportingModificationsPdf ? 'Exporting...' : 'Modifications PDF'}
+          </button>
         </div>
       )}
 
@@ -4002,38 +4112,6 @@ export default function PayRegisterPage() {
                             className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                           />
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Shift
-                          </label>
-                          <select
-                            value={editData.shiftId || ''}
-                            onChange={(e) => {
-                              const shift = shifts.find((s) => s._id === e.target.value);
-                              setEditData({
-                                ...editData,
-                                shiftId: e.target.value || null,
-                                shiftName: shift?.name || null,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  shiftId: e.target.value || null,
-                                },
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  shiftId: e.target.value || null,
-                                },
-                              });
-                            }}
-                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                          >
-                            <option value="">Select Shift</option>
-                            {shifts.map((shift) => (
-                              <option key={shift._id} value={shift._id}>
-                                {shift.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
                       </div>
                     </div>
                   )}
@@ -4250,41 +4328,39 @@ export default function PayRegisterPage() {
                             </div>
                           </>
                         )}
-                        {/* Shift field for full day */}
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Shift
-                          </label>
-                          <select
-                            value={editData.shiftId || ''}
-                            onChange={(e) => {
-                              const shift = shifts.find((s) => s._id === e.target.value);
-                              setEditData({
-                                ...editData,
-                                shiftId: e.target.value || null,
-                                shiftName: shift?.name || null,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  shiftId: e.target.value || null,
-                                },
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  shiftId: e.target.value || null,
-                                },
-                              });
-                            }}
-                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                          >
-                            <option value="">Select Shift</option>
-                            {shifts.map((shift) => (
-                              <option key={shift._id} value={shift._id}>
-                                {shift.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
                       </div>
                     </div>
+                  )}
+
+                  {payRegisterDayShowsShiftPicker(editData, isHalfDayMode) && (
+                    <PayRegisterShiftField
+                      shifts={shifts}
+                      isMultiShiftMode={isMultiShiftMode}
+                      showShiftPicker
+                      value={{
+                        shiftId: editData.shiftId || null,
+                        shiftIds: editData.shiftIds || [],
+                        shiftSelections:
+                          editData.shiftSelections ||
+                          (editData.shiftIds || []).map((id) => ({ shiftId: id, isHalf: false })),
+                        shiftName: editData.shiftName || null,
+                        payableShifts: editData.payableShifts ?? 1,
+                      }}
+                      onChange={(next) =>
+                        setEditData({
+                          ...editData,
+                          ...next,
+                          firstHalf: {
+                            ...editData.firstHalf!,
+                            shiftId: next.shiftId,
+                          },
+                          secondHalf: {
+                            ...editData.secondHalf!,
+                            shiftId: next.shiftId,
+                          },
+                        })
+                      }
+                    />
                   )}
 
                   {/* Full Day OT Hours - Show for OT/Extra Hours tabs or when not in half-day mode */}
