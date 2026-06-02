@@ -399,8 +399,8 @@ function calculateTotals(dailyRecords, contributingDates) {
 
   // Calculate totals (full days + half days * 0.5)
   totals.totalODDays = totals.odDays + totals.odHalfDays * 0.5;
-  // Present days = attendance present + OD days. When a day/half is marked OD (e.g. edited from absent), it is included here.
-  totals.totalPresentDays = totals.presentDays + totals.presentHalfDays * 0.5 + totals.totalODDays;
+  // Present days should NOT include OD days (match Attendance page: Present and OD are separate buckets).
+  totals.totalPresentDays = totals.presentDays + totals.presentHalfDays * 0.5;
   totals.totalAbsentDays = totals.absentDays + totals.absentHalfDays * 0.5;
   totals.totalPaidLeaveDays = totals.paidLeaveDays + totals.paidLeaveHalfDays * 0.5;
   totals.totalUnpaidLeaveDays = 0; // No separate unpaid bucket; all non-paid leaves are LOP

@@ -839,10 +839,10 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
       (record.isSplit === true && firstHalfStatus && secondHalfStatus);
 
     if (isActuallySplit) {
-      // Process first half (OD counts as present so totalPresentDays includes days/halves edited from absent to OD)
+      // Process first half (OD is its own bucket; do not include under Present)
       const s1 = record.firstHalf?.status;
       if (s1 && ['present', 'absent', 'leave', 'od'].includes(s1)) {
-        if (s1 === 'present' || s1 === 'od') totals.presentHalfDays++;
+        if (s1 === 'present') totals.presentHalfDays++;
 
         if (s1 === 'absent') totals.absentHalfDays++;
 
@@ -855,10 +855,10 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
         }
       }
 
-      // Process second half (OD counts as present)
+      // Process second half (OD is its own bucket; do not include under Present)
       const s2 = record.secondHalf?.status;
       if (s2 && ['present', 'absent', 'leave', 'od'].includes(s2)) {
-        if (s2 === 'present' || s2 === 'od') totals.presentHalfDays++;
+        if (s2 === 'present') totals.presentHalfDays++;
 
         if (s2 === 'absent') totals.absentHalfDays++;
 
@@ -871,10 +871,10 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
         }
       }
     } else {
-      // Process as full day (OD counts as present; when edited from absent to OD, present days increase)
+      // Process as full day (OD is its own bucket; do not include under Present)
       const s = record.status || firstHalfStatus || secondHalfStatus;
       if (s && ['present', 'absent', 'leave', 'od'].includes(s)) {
-        if (s === 'present' || s === 'od') totals.presentDays++;
+        if (s === 'present') totals.presentDays++;
 
         if (s === 'absent') totals.absentDays++;
 
@@ -898,16 +898,38 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
   totals.totalLeaveDays = totals.totalPaidLeaveDays + totals.totalLopDays;
   totals.totalODDays = totals.odDays + totals.odHalfDays * 0.5;
 
-  // totalPresentDays already includes OD (presentDays/presentHalfDays count both 'present' and 'od')
-  // Payable shifts (for salary) = present (includes OD) + extra days + partial-day payable units
+  // Present and OD are separate buckets (match Attendance page).
+  // Payable shifts (for salary) = sum(day payable units) + extra days + partial-day payable units.
+  // IMPORTANT: In multi-shift mode a present day can contribute > 1 payable unit.
+  let totalPayableShiftsValue = 0;
+  for (const record of this.dailyRecords) {
+    const isBlankDay =
+      record.status === 'blank' ||
+      (record.firstHalf?.status === 'blank' && record.secondHalf?.status === 'blank');
+    if (isBlankDay) continue;
+
+    // First half
+    if (record.firstHalf) {
+      const h1 = record.firstHalf;
+      if (h1.status === 'present' || h1.status === 'od') {
+        totalPayableShiftsValue += (Number(record.payableShifts || 1) / 2);
+      }
+    }
+    // Second half
+    if (record.secondHalf) {
+      const h2 = record.secondHalf;
+      if (h2.status === 'present' || h2.status === 'od') {
+        totalPayableShiftsValue += (Number(record.payableShifts || 1) / 2);
+      }
+    }
+  }
+
   totals.totalPayableShifts = Math.round(
-    (totals.totalPresentDays +
+    (totalPayableShiftsValue +
       (totals.extraDays || 0) +
       sumPartialPayableFromDailyRecords(this.dailyRecords)) *
       100
   ) / 100;
-  // This is where we will also use the shift-based payable units if implemented here
-  // But for now, let's keep it consistent with the service fix I just did
 
   totals.leaveTypeBreakdown = computeLeaveTypeBreakdownFromDailyRecords(
     this.dailyRecords || [],

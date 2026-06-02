@@ -299,6 +299,13 @@ async function resolveConflicts(dateData) {
   let firstHalf = { status: defaultStatus, leaveType: null, leaveNature: null, isOD: false };
   let secondHalf = { status: defaultStatus, leaveType: null, leaveNature: null, isOD: false };
 
+  // Half-day roster non-working (half holiday / half week-off) comes from AttendanceDaily.
+  // Pay register shiftMap only supports full-day WO/HOL.
+  if (attendance?.rosterFirstHalfNonWorking === 'HOL') firstHalf.status = 'holiday';
+  if (attendance?.rosterSecondHalfNonWorking === 'HOL') secondHalf.status = 'holiday';
+  if (attendance?.rosterFirstHalfNonWorking === 'WO') firstHalf.status = 'week_off';
+  if (attendance?.rosterSecondHalfNonWorking === 'WO') secondHalf.status = 'week_off';
+
   if (leave) {
     const typeCode = (leave.leaveType || leave.originalLeaveType || '').trim() || null;
     let natureSource = leave.leaveNature;
@@ -329,6 +336,7 @@ async function resolveConflicts(dateData) {
   }
 
   const isNonWorking = (status) => ['absent', 'week_off', 'holiday'].includes(status);
+  const isConvertibleToPresent = (status) => status === 'absent';
 
   if (od && (!leave || (leave.isHalfDay && od.isHalfDay && leave.halfDayType !== od.halfDayType))) {
     if (od.isHalfDay) {
@@ -358,17 +366,17 @@ async function resolveConflicts(dateData) {
       const li = Number(lateInMinutes) || 0;
 
       if (eo > 120) {
-        if (isNonWorking(firstHalf.status)) firstHalf.status = 'present';
+        if (isConvertibleToPresent(firstHalf.status)) firstHalf.status = 'present';
       } else if (li > 120) {
-        if (isNonWorking(secondHalf.status)) secondHalf.status = 'present';
+        if (isConvertibleToPresent(secondHalf.status)) secondHalf.status = 'present';
       } else {
-        if (isNonWorking(firstHalf.status)) firstHalf.status = 'present'; // Default
+        if (isConvertibleToPresent(firstHalf.status)) firstHalf.status = 'present'; // Default
       }
     } else {
-      if (isNonWorking(firstHalf.status)) {
+      if (isConvertibleToPresent(firstHalf.status)) {
         firstHalf.status = 'present';
       }
-      if (isNonWorking(secondHalf.status)) {
+      if (isConvertibleToPresent(secondHalf.status)) {
         secondHalf.status = 'present';
       }
     }
