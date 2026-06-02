@@ -906,7 +906,7 @@ export default function UsersPage() {
         </div>
         <div>
           <h3 className="text-sm font-bold text-slate-900 dark:text-white">Holiday Employee Scope</h3>
-          <p className="text-xs text-slate-500">Direct division/department scope (without holiday groups)</p>
+          <p className="text-xs text-slate-500">Optional — direct division/department scope for holiday management</p>
         </div>
       </div>
       <HolidayDivisionMappingEditor
@@ -1868,7 +1868,7 @@ export default function UsersPage() {
                                       className="flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-white dark:hover:bg-slate-700/50"
                                     >
                                       <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{module.label}</span>
-                                      <div className="flex gap-2">
+                                      <div className="flex flex-wrap gap-2 justify-end max-w-[70%]">
                                         {/* Read Toggle */}
                                         <button
                                           type="button"
@@ -1891,6 +1891,27 @@ export default function UsersPage() {
                                         >
                                           Write
                                         </button>
+                                        {(module as any).terminable && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const currentFeatures = formData.featureControl || [];
+                                              const terminatePerm = `${module.code}:terminate`;
+                                              const hasTerminate = currentFeatures.includes(terminatePerm);
+                                              const newFeatures = hasTerminate
+                                                ? currentFeatures.filter(f => f !== terminatePerm)
+                                                : [...currentFeatures, terminatePerm];
+                                              setFormData({ ...formData, featureControl: newFeatures });
+                                            }}
+                                            title="Terminate: grants access to initiate and manage employee terminations within scope. Independent of Read/Write."
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:terminate`)
+                                              ? 'bg-orange-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            Terminate
+                                          </button>
+                                        )}
                                         {/* Verify Toggle — only for verifiable modules (e.g. EMPLOYEES) */}
                                         {(module as any).verifiable && (
                                           <button
@@ -2434,7 +2455,7 @@ export default function UsersPage() {
                                     className="flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-white dark:hover:bg-slate-700/50"
                                   >
                                     <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{module.label}</span>
-                                    <div className="flex gap-2">
+                                    <div className="flex flex-wrap gap-2 justify-end max-w-[70%]">
                                       <button
                                         type="button"
                                         onClick={toggleRead}
@@ -2455,6 +2476,27 @@ export default function UsersPage() {
                                       >
                                         Write
                                       </button>
+                                      {(module as any).terminable && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const currentFeatures = employeeFormData.featureControl || [];
+                                            const terminatePerm = `${module.code}:terminate`;
+                                            const hasTerminate = currentFeatures.includes(terminatePerm);
+                                            const newFeatures = hasTerminate
+                                              ? currentFeatures.filter(f => f !== terminatePerm)
+                                              : [...currentFeatures, terminatePerm];
+                                            setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
+                                          }}
+                                          title="Terminate: grants access to initiate and manage employee terminations within scope. Independent of Read/Write."
+                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${employeeFormData.featureControl?.includes(`${module.code}:terminate`)
+                                            ? 'bg-orange-500 text-white shadow-sm'
+                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                            }`}
+                                        >
+                                          Terminate
+                                        </button>
+                                      )}
                                       {/* Verify Toggle — only for verifiable modules (e.g. EMPLOYEES) */}
                                       {(module as any).verifiable && (
                                         <button
@@ -2899,7 +2941,7 @@ export default function UsersPage() {
                                       className="flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-white dark:hover:bg-slate-700/50"
                                     >
                                       <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{module.label}</span>
-                                      <div className="flex gap-2">
+                                      <div className="flex flex-wrap gap-2 justify-end max-w-[70%]">
                                         <button
                                           type="button"
                                           onClick={toggleRead}
@@ -2920,6 +2962,27 @@ export default function UsersPage() {
                                         >
                                           Write
                                         </button>
+                                        {(module as any).terminable && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const currentFeatures = formData.featureControl || [];
+                                              const terminatePerm = `${module.code}:terminate`;
+                                              const hasTerminate = currentFeatures.includes(terminatePerm);
+                                              const newFeatures = hasTerminate
+                                                ? currentFeatures.filter(f => f !== terminatePerm)
+                                                : [...currentFeatures, terminatePerm];
+                                              setFormData({ ...formData, featureControl: newFeatures });
+                                            }}
+                                            title="Terminate: grants access to initiate and manage employee terminations within scope. Independent of Read/Write."
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:terminate`)
+                                              ? 'bg-orange-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            Terminate
+                                          </button>
+                                        )}
                                         {/* Verify Toggle — only for verifiable modules (e.g. EMPLOYEES) */}
                                         {(module as any).verifiable && (
                                           <button
@@ -3363,8 +3426,9 @@ export default function UsersPage() {
                                     ...m,
                                     hasRead: selectedViewUser.featureControl?.includes(`${m.code}:read`) || false,
                                     hasWrite: selectedViewUser.featureControl?.includes(`${m.code}:write`) || false,
-                                    hasVerify: (m as any).verifiable ? (selectedViewUser.featureControl?.includes(`${m.code}:verify`) || false) : false
-                                  })).filter(m => m.hasRead || m.hasWrite || m.hasVerify);
+                                    hasVerify: (m as any).verifiable ? (selectedViewUser.featureControl?.includes(`${m.code}:verify`) || false) : false,
+                                    hasTerminate: (m as any).terminable ? (selectedViewUser.featureControl?.includes(`${m.code}:terminate`) || false) : false,
+                                  })).filter(m => m.hasRead || m.hasWrite || m.hasVerify || m.hasTerminate);
 
                                   if (modulesWithPerms.length === 0) return null;
 
@@ -3390,6 +3454,11 @@ export default function UsersPage() {
                                                   <span className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 text-[9px] font-black text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20">
                                                     <Edit className="h-3 w-3" />
                                                     WRITE
+                                                  </span>
+                                                )}
+                                                {(m as any).hasTerminate && (
+                                                  <span className="flex items-center gap-1.5 rounded-lg bg-orange-50 px-2 py-1 text-[9px] font-black text-orange-600 dark:bg-orange-500/10 dark:text-orange-400 border border-orange-100 dark:border-orange-500/20">
+                                                    TERMINATE
                                                   </span>
                                                 )}
                                                 {selectedViewUser.featureControl?.includes(`${m.code}:bank`) && (

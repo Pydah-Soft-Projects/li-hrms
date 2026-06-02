@@ -12,7 +12,7 @@ import {
   getUserAllowedEmployeeGroupIds,
 } from '@/lib/employeeGroupScopeUtils';
 import { auth } from '@/lib/auth';
-import { canViewResignation, canApplyResignation, canApproveResignation } from '@/lib/permissions';
+import { canViewResignation, canViewTerminationRequests, canApplyResignation, canTerminateEmployee, canAccessResignationsPage, canManageResignationRequest } from '@/lib/permissions';
 import { toast, ToastContainer } from 'react-toastify';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
@@ -314,13 +314,12 @@ const getAgreementDatesFromEmployee = (emp: any): { startDate?: string; endDate?
 
 const isEmployeeRole = (user: any) => String(user?.role || '').toLowerCase() === 'employee';
 
-const canInitiateTermination = (user: any, settings: any) => {
+const matchesRequestTypeAccess = (req: ResignationRequest, user: any, settings: any) => {
   if (!user) return false;
-  const role = String(user.role || '').toLowerCase();
-  if (role === 'super_admin') return true;
-  
-  const allowedRoles = settings?.workflow?.terminationAllowedRoles || ['super_admin', 'hr'];
-  return allowedRoles.includes(role);
+  if (req.requestType === 'termination') {
+    return canViewTerminationRequests(user, settings);
+  }
+  return canViewResignation(user);
 };
 
 export default function ResignationsPage() {
@@ -817,7 +816,7 @@ export default function ResignationsPage() {
     !!selectedRequest &&
     selectedRequest.status === 'pending' &&
     canPerformAction(selectedRequest) &&
-    canApproveResignation(currentUser as any);
+    canManageResignationRequest(currentUser as any, selectedRequest.requestType, resignationSettings);
 
   const handleSaveLWD = async () => {
     if (!selectedRequest || !editableLWD) return;
@@ -913,6 +912,7 @@ export default function ResignationsPage() {
 
   const filteredAll = useMemo(() => {
     return allRequests.filter(r => {
+      if (!matchesRequestTypeAccess(r, currentUser, resignationSettings)) return false;
       const matchSearch = !filters.search || 
         getEmployeeName(r).toLowerCase().includes(filters.search.toLowerCase()) ||
         (r.emp_no || '').toLowerCase().includes(filters.search.toLowerCase());
@@ -921,10 +921,11 @@ export default function ResignationsPage() {
       const matchGroup = !filters.employee_group_id || r.employeeId?.employee_group_id?._id === filters.employee_group_id;
       return matchSearch && matchDivision && matchDepartment && matchGroup;
     });
-  }, [allRequests, filters]);
+  }, [allRequests, filters, currentUser, resignationSettings]);
 
   const filteredPendingList = useMemo(() => {
     return pendingRequests.filter(r => {
+      if (!matchesRequestTypeAccess(r, currentUser, resignationSettings)) return false;
       const matchSearch = !filters.search || 
         getEmployeeName(r).toLowerCase().includes(filters.search.toLowerCase()) ||
         (r.emp_no || '').toLowerCase().includes(filters.search.toLowerCase());
@@ -933,7 +934,7 @@ export default function ResignationsPage() {
       const matchGroup = !filters.employee_group_id || r.employeeId?.employee_group_id?._id === filters.employee_group_id;
       return matchSearch && matchDivision && matchDepartment && matchGroup;
     });
-  }, [pendingRequests, filters]);
+  }, [pendingRequests, filters, currentUser, resignationSettings]);
 
   const stats = useMemo(
     () => ({
@@ -958,17 +959,23 @@ export default function ResignationsPage() {
     });
   }, [filteredAll, filteredPendingList, filters.status, activeTab]);
 
-  if (currentUser && !canViewResignation(currentUser as any)) {
+  if (currentUser && !canAccessResignationsPage(currentUser as any)) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-4">
         <div className="text-center max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-8 shadow-lg">
           <LogOut className="w-12 h-12 mx-auto text-slate-400 dark:text-slate-500 mb-4" />
           <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Access restricted</h2>
-          <p className="text-sm text-slate-600 dark:text-slate-400">You do not have permission to view the Resignations page. Contact your administrator if you need access.</p>
+          <p className="text-sm text-slate-600 dark:text-slate-400">You do not have permission to view resignations or terminations. Contact your administrator if you need access.</p>
         </div>
       </div>
     );
   }
+
+  const pageTitle = canViewResignation(currentUser as any) && canViewTerminationRequests(currentUser as any, resignationSettings)
+    ? 'Resignations & Terminations'
+    : canViewTerminationRequests(currentUser as any, resignationSettings)
+      ? 'Terminations'
+      : 'Resignations';
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 pb-10 pt-1">
@@ -980,15 +987,16 @@ export default function ResignationsPage() {
             </div>
             <div>
               <h1 className="text-base md:text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 uppercase tracking-tight whitespace-nowrap">
-                Resignations
+                {pageTitle}
               </h1>
               <p className="hidden md:flex text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] items-center gap-2">
-                Workspace <span className="h-1 w-1 rounded-full bg-slate-300" /> Requested resignations & approvals
+                Workspace <span className="h-1 w-1 rounded-full bg-slate-300" /> Requested resignations, terminations & approvals
               </p>
             </div>
           </div>
-          {canApplyResignation(currentUser as any) && (
+          {(canApplyResignation(currentUser as any) || canTerminateEmployee(currentUser as any, resignationSettings)) && (
             <div className="flex items-center gap-2">
+              {canApplyResignation(currentUser as any) && (
               <button
                 type="button"
                 onClick={() => openApplyModal(isEmployeeRole(currentUser), 'resignation')}
@@ -998,7 +1006,8 @@ export default function ResignationsPage() {
                 <span className="hidden sm:inline">{isEmployeeRole(currentUser) ? 'Submit resignation' : 'Apply for Resignation'}</span>
                 <span className="sm:hidden">{isEmployeeRole(currentUser) ? 'Submit' : 'New'}</span>
               </button>
-              {canInitiateTermination(currentUser, resignationSettings) && (
+              )}
+              {canTerminateEmployee(currentUser as any, resignationSettings) && !isEmployeeRole(currentUser) && (
                 <button
                   type="button"
                   onClick={() => openApplyModal(false, 'termination')}
@@ -1325,7 +1334,7 @@ export default function ResignationsPage() {
                           <Eye className="w-3.5 h-3.5" />
                           <span>View</span>
                         </button>
-                        {activeTab === 'pending' && canPerformAction(req) && canApproveResignation(currentUser as any) && (
+                        {activeTab === 'pending' && canPerformAction(req) && canManageResignationRequest(currentUser as any, req.requestType, resignationSettings) && (
                           <div className="flex gap-1">
                             <button
                               type="button"
@@ -1426,7 +1435,7 @@ export default function ResignationsPage() {
                       <Eye className="w-3.5 h-3.5" />
                       View
                     </button>
-                    {activeTab === 'pending' && canPerformAction(req) && canApproveResignation(currentUser as any) && (
+                    {activeTab === 'pending' && canPerformAction(req) && canManageResignationRequest(currentUser as any, req.requestType, resignationSettings) && (
                       <>
                         <button
                           type="button"
@@ -1516,10 +1525,11 @@ export default function ResignationsPage() {
                 </div>
                 )}
 
-                {canInitiateTermination(currentUser, resignationSettings) && !applySelfOnly && (
+                {(canApplyResignation(currentUser as any) || canTerminateEmployee(currentUser as any, resignationSettings)) && !applySelfOnly && (
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Request Type</label>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className={`grid gap-3 ${canApplyResignation(currentUser as any) && canTerminateEmployee(currentUser as any, resignationSettings) ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                    {canApplyResignation(currentUser as any) && (
                     <button
                       type="button"
                       onClick={() => handleApplyTypeChange('resignation')}
@@ -1532,6 +1542,8 @@ export default function ResignationsPage() {
                       <LogOut className="w-4 h-4" />
                       Resignation
                     </button>
+                    )}
+                    {canTerminateEmployee(currentUser as any, resignationSettings) && (
                     <button
                       type="button"
                       onClick={() => handleApplyTypeChange('termination')}
@@ -1544,6 +1556,7 @@ export default function ResignationsPage() {
                       <X className="w-4 h-4" />
                       Termination
                     </button>
+                    )}
                   </div>
                 </div>
                 )}

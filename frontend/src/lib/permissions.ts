@@ -353,6 +353,49 @@ export function canApproveResignation(user: User): boolean {
     return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager']) && canManageFeature(user, 'RESIGNATION');
 }
 
+/**
+ * Terminate permission — independent of read/write. Must be explicitly granted via RESIGNATION:terminate.
+ * When featureControl is empty, falls back to resignation settings terminationAllowedRoles.
+ */
+export function canTerminateEmployee(
+    user: User,
+    settings?: { workflow?: { terminationAllowedRoles?: string[] } }
+): boolean {
+    if (!user) return false;
+    if (user.role === 'super_admin') return true;
+    if (!hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager'])) return false;
+
+    if (!user.featureControl || user.featureControl.length === 0) {
+        const role = String(user.role || '').toLowerCase();
+        const allowedRoles = settings?.workflow?.terminationAllowedRoles || ['super_admin', 'hr'];
+        return allowedRoles.includes(role);
+    }
+
+    return user.featureControl.includes('RESIGNATION:terminate');
+}
+
+export function canViewTerminationRequests(
+    user: User,
+    settings?: { workflow?: { terminationAllowedRoles?: string[] } }
+): boolean {
+    return canTerminateEmployee(user, settings);
+}
+
+export function canAccessResignationsPage(user: User): boolean {
+    return canViewResignation(user) || canViewTerminationRequests(user);
+}
+
+export function canManageResignationRequest(
+    user: User,
+    requestType?: string,
+    settings?: { workflow?: { terminationAllowedRoles?: string[] } }
+): boolean {
+    if (requestType === 'termination') {
+        return canTerminateEmployee(user, settings);
+    }
+    return canApproveResignation(user);
+}
+
 // ==========================================
 // PROMOTIONS & TRANSFERS
 // ==========================================
