@@ -7,7 +7,7 @@ const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Employee = require('../../employees/model/Employee');
 const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const Settings = require('../../settings/model/Settings');
-const { getAutoOdEligibilityFromRecord } = require('../utils/holwoOdPunchResolver');
+const { getAutoOdEligibilityFromRecord, extractPunchTimingsFromRecord } = require('../utils/holwoOdPunchResolver');
 
 /**
  * Scan AttendanceDaily for holiday/week-off punches and create OD requests
@@ -83,28 +83,19 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record, options
 
         // 2. Extract punch details FIRST (needed for updates and create when eligible)
         let punchDetails = '';
-        let startT = null;
-        let endT = null;
+        const { odStartTime: startT, odEndTime: endT } = extractPunchTimingsFromRecord(record);
 
-        if (record.shifts && record.shifts.length > 0) {
+        if (record.shifts && record.shifts.length > 0 && (startT || endT)) {
             const segmentTime = (s) => new Date(s.inTime || s.outTime || 0);
             const sortedShifts = [...record.shifts].sort((a, b) => segmentTime(a) - segmentTime(b));
             const firstIn = sortedShifts.find((s) => s.inTime)?.inTime ?? null;
             const lastOut = [...sortedShifts].reverse().find((s) => s.outTime)?.outTime ?? null;
-
-            const formatTime = (date) => {
-                if (!date) return null;
-                const d = new Date(date);
-                return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
-            };
 
             const formatTimeDisplay = (date) => {
                 if (!date) return 'N/A';
                 return new Date(date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
             };
 
-            startT = formatTime(firstIn);
-            endT = formatTime(lastOut);
             punchDetails = ` [IN: ${formatTimeDisplay(firstIn)}, OUT: ${formatTimeDisplay(lastOut)}, Duration: ${record.totalWorkingHours} hrs]`;
         }
 

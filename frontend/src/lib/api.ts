@@ -432,6 +432,9 @@ export interface ApiResponse<T> {
   suggestedOdTypeExtended?: 'half_day' | 'full_day' | null;
   totalWorkingHours?: number | null;
   punchContextDetail?: string | null;
+  odStartTime?: string | null;
+  odEndTime?: string | null;
+  durationHours?: number | null;
   unreadCount?: number;
   updated?: number;
   /** Flat JSON from some endpoints (e.g. push helpers), not only nested under `data`. */
@@ -485,6 +488,9 @@ export interface ODHolidayCheckResponse {
   suggestedOdTypeExtended?: 'half_day' | 'full_day' | null;
   totalWorkingHours?: number | null;
   punchContextDetail?: string | null;
+  odStartTime?: string | null;
+  odEndTime?: string | null;
+  durationHours?: number | null;
 }
 
 /** Row in GET /dashboard/stats `leaveBalancesByType` (employee register view). */

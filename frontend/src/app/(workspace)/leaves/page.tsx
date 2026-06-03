@@ -5,6 +5,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import dynamic from 'next/dynamic';
 import { api } from '@/lib/api';
+import { formatOdPunchTimeHHMM, getOdDisplayPunchTimings, isCoEligibleOdForPunchDisplay } from '@/lib/odPunchTimings';
 import {
   buildLeaveODPayPeriodOptions,
   matchLeaveODPayPeriodSelectValue,
@@ -436,6 +437,16 @@ interface ODApplication {
   odStartTime?: string;
   odEndTime?: string;
   durationHours?: number;
+  isCOEligible?: boolean;
+  attendancePunchTimings?: {
+    date?: string;
+    odStartTime?: string | null;
+    odEndTime?: string | null;
+    durationHours?: number | null;
+    fromAttendance?: boolean;
+  };
+  attendanceNotLoggedForDay?: boolean;
+  attendanceNotLoggedDate?: string;
   fromDate: string;
   toDate: string;
   numberOfDays: number;
@@ -1131,6 +1142,9 @@ export default function LeavesPage() {
     hasPunches?: boolean;
     suggestedOdTypeExtended?: 'half_day' | 'full_day' | null;
     totalWorkingHours?: number | null;
+    odStartTime?: string | null;
+    odEndTime?: string | null;
+    durationHours?: number | null;
   } | null>(null);
   const [checkingHoliday, setCheckingHoliday] = useState(false);
 
@@ -2194,6 +2208,9 @@ export default function LeavesPage() {
         if (formData.odType_extended === 'hours') {
           payload.odStartTime = formData.odStartTime;
           payload.odEndTime = formData.odEndTime;
+        } else if (formData.odStartTime && formData.odEndTime) {
+          payload.odStartTime = formData.odStartTime;
+          payload.odEndTime = formData.odEndTime;
         }
       }
 
@@ -2622,6 +2639,9 @@ export default function LeavesPage() {
             hasPunches: response.hasPunches,
             suggestedOdTypeExtended: response.suggestedOdTypeExtended,
             totalWorkingHours: response.totalWorkingHours,
+            odStartTime: response.odStartTime ?? null,
+            odEndTime: response.odEndTime ?? null,
+            durationHours: response.durationHours ?? null,
           });
           const d = formData.fromDate;
           if (
@@ -2631,9 +2651,14 @@ export default function LeavesPage() {
           ) {
             setFormData((prev) => {
               if (applyType !== 'od' || prev.fromDate !== d) return prev;
+              const punchTimes =
+                response.odStartTime && response.odEndTime
+                  ? { odStartTime: response.odStartTime, odEndTime: response.odEndTime }
+                  : {};
               if (response.suggestedOdTypeExtended === 'half_day') {
                 return {
                   ...prev,
+                  ...punchTimes,
                   odType_extended: 'half_day',
                   isHalfDay: true,
                   halfDayType: (prev.halfDayType as any) || 'first_half',
@@ -2642,6 +2667,7 @@ export default function LeavesPage() {
               }
               return {
                 ...prev,
+                ...punchTimes,
                 odType_extended: 'full_day',
                 isHalfDay: false,
                 halfDayType: null,
@@ -5711,6 +5737,50 @@ export default function LeavesPage() {
                   </div>
                 )}
 
+                {/* Biometric punch timings (manual HOL/WO apply — same as auto-OD detail) */}
+                {applyType === 'od' &&
+                  holidayInfo?.hasPunches &&
+                  holidayInfo.odStartTime &&
+                  holidayInfo.odEndTime &&
+                  formData.odType_extended !== 'hours' && (
+                  <div className="grid grid-cols-3 gap-4 bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800/50">
+                    <div className="space-y-1">
+                      <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work In</p>
+                      <p className="text-sm font-black text-purple-700 dark:text-purple-300">
+                        {(() => {
+                          const [h, m] = (holidayInfo.odStartTime || '').split(':');
+                          if (!h) return 'N/A';
+                          const date = new Date();
+                          date.setHours(parseInt(h, 10), parseInt(m, 10));
+                          return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                        })()}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work Out</p>
+                      <p className="text-sm font-black text-purple-700 dark:text-purple-300">
+                        {(() => {
+                          const [h, m] = (holidayInfo.odEndTime || '').split(':');
+                          if (!h) return 'N/A';
+                          const date = new Date();
+                          date.setHours(parseInt(h, 10), parseInt(m, 10));
+                          return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                        })()}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Total Duration</p>
+                      <p className="text-sm font-black text-purple-700 dark:text-purple-300">
+                        {holidayInfo.durationHours != null
+                          ? `${Number(holidayInfo.durationHours).toFixed(1)} hrs`
+                          : holidayInfo.totalWorkingHours != null
+                            ? `${Number(holidayInfo.totalWorkingHours).toFixed(1)} hrs`
+                            : '—'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {(formData.fromDate === formData.toDate || !formData.toDate) &&
                   (approvedRecordsInfo?.hasLeave ||
                     approvedRecordsInfo?.hasOD ||
@@ -6136,41 +6206,49 @@ export default function LeavesPage() {
                   </div>
                   )}
 
-                  {/* Punch Transparency / Time Details (Visible if populated) */}
-                  {detailType === 'od' && (selectedItem as ODApplication).odStartTime && (
-                    <div className="grid grid-cols-3 gap-4 bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800/50">
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work In</p>
-                        <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                          {(() => {
-                            const [h, m] = ((selectedItem as ODApplication).odStartTime || '').split(':');
-                            if (!h) return 'N/A';
-                            const date = new Date();
-                            date.setHours(parseInt(h), parseInt(m));
-                            return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-                          })()}
+                  {/* Punch timings / attendance disclaimer — CO-eligible ODs only */}
+                  {detailType === 'od' && (() => {
+                    const odItem = selectedItem as ODApplication;
+                    if (!isCoEligibleOdForPunchDisplay(odItem)) return null;
+                    const punch = getOdDisplayPunchTimings(odItem);
+                    if (punch.start && punch.end) {
+                      return (
+                        <div className="grid grid-cols-3 gap-4 bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800/50">
+                          {punch.fromAttendance && (
+                            <p className="col-span-3 text-[10px] font-semibold text-purple-600/80 dark:text-purple-300/80">
+                              Biometric timings from attendance for this day
+                            </p>
+                          )}
+                          <div className="space-y-1">
+                            <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work In</p>
+                            <p className="text-sm font-black text-purple-700 dark:text-purple-300">
+                              {formatOdPunchTimeHHMM(punch.start)}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work Out</p>
+                            <p className="text-sm font-black text-purple-700 dark:text-purple-300">
+                              {formatOdPunchTimeHHMM(punch.end)}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Total Duration</p>
+                            <p className="text-sm font-black text-purple-700 dark:text-purple-300">
+                              {punch.duration != null ? `${Number(punch.duration).toFixed(1)} hrs` : '—'}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+                    if (odItem.attendanceNotLoggedForDay) {
+                      return (
+                        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-900 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-200">
+                          Attendance is not logged for this day.
                         </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work Out</p>
-                        <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                          {(() => {
-                            const [h, m] = ((selectedItem as ODApplication).odEndTime || '').split(':');
-                            if (!h) return 'N/A';
-                            const date = new Date();
-                            date.setHours(parseInt(h), parseInt(m));
-                            return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-                          })()}
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Total Duration</p>
-                        <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                          {(selectedItem as ODApplication).durationHours || 0} hrs
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                      );
+                    }
+                    return null;
+                  })()}
 
                   <div className="space-y-6">
                     {detailType === 'leave' && (

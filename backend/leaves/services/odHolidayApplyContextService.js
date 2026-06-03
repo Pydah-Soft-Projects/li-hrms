@@ -10,6 +10,7 @@ const { parseRosterHalfNonWorking } = require('../../shifts/utils/rosterHalfNonW
 const {
   getPunchBasedOdSuggestionForRecord,
   getAutoOdEligibilityFromRecord,
+  extractPunchTimingsFromRecord,
   resolveHolWoPunchOdShape,
   MIN_HOURS_FOR_PUNCH_CONTEXT,
   FULL_DAY_HOURS_THRESHOLD,
@@ -67,21 +68,94 @@ async function getHolidayWeekOffOdApplyContext(empNo, dateInput) {
   }).lean();
 
   const s = getPunchBasedOdSuggestionForRecord(record);
+  const timings = s.hasPunches ? extractPunchTimingsFromRecord(record) : {
+    odStartTime: null,
+    odEndTime: null,
+    durationHours: null,
+  };
   return {
     isHolidayOrWeekOff: true,
     hasPunches: s.hasPunches,
     suggestedOdTypeExtended: s.suggestedOdTypeExtended,
     totalWorkingHours: s.totalWorkingHours,
     punchContextDetail: s.punchContextDetail,
+    odStartTime: timings.odStartTime,
+    odEndTime: timings.odEndTime,
+    durationHours: timings.durationHours,
   };
+}
+
+/**
+ * Punch IN/OUT for a calendar day from AttendanceDaily (legacy CO OD detail when OD row has no timings).
+ */
+async function getAttendancePunchTimingsForEmployeeDate(empNo, dateInput) {
+  const dateStr = normalizeIstDateStr(dateInput);
+  const empNos = employeeNumberVariants(empNo);
+  const preferredEmp = empNos[0] || String(empNo || '').trim().toUpperCase();
+  const record = await AttendanceDaily.findOne({
+    employeeNumber: { $in: empNos.length ? empNos : [preferredEmp] },
+    date: dateStr,
+  }).lean();
+  if (!record) return null;
+  const timings = extractPunchTimingsFromRecord(record);
+  if (!timings.odStartTime || !timings.odEndTime) return null;
+  return { date: dateStr, ...timings, fromAttendance: true };
+}
+
+/** Same CO scope as OD detail: roster HOL/WO, half HOL, attendance HOL/WO status, or apply-time CO flag. */
+async function odQualifiesForCoPunchDisplay(empNo, fromStr, isCOEligible) {
+  if (isCOEligible === true) return true;
+  if (await isHolidayOrWeekOff(empNo, fromStr)) return true;
+  const { getRosterHalfHolidayForEmployeeDate } = require('./odHalfHolidayRosterService');
+  const halfCtx = await getRosterHalfHolidayForEmployeeDate(empNo, fromStr);
+  if (halfCtx.hasHalfHoliday) return true;
+  const empNos = employeeNumberVariants(empNo);
+  const preferredEmp = empNos[0] || String(empNo || '').trim().toUpperCase();
+  const att = await AttendanceDaily.findOne({
+    date: fromStr,
+    employeeNumber: { $in: empNos.length ? empNos : [preferredEmp] },
+  })
+    .select('status')
+    .lean();
+  const st = String(att?.status || '').toUpperCase();
+  return st === 'HOLIDAY' || st === 'WEEK_OFF';
+}
+
+/**
+ * CO-contributing OD (holiday/week-off) missing stored punch times — attach that day's attendance timings.
+ */
+async function enrichCoOdWithAttendancePunchTimings(odPlain) {
+  const result = typeof odPlain === 'object' && odPlain !== null ? { ...odPlain } : odPlain;
+  if (!result || typeof result !== 'object') return result;
+  if (result.odStartTime && result.odEndTime) return result;
+
+  const empNo = result.emp_no || result.employeeId?.emp_no;
+  if (!empNo || !result.fromDate) return result;
+
+  const fromStr = normalizeIstDateStr(result.fromDate);
+  const qualifies = await odQualifiesForCoPunchDisplay(empNo, fromStr, result.isCOEligible);
+  if (!qualifies) return result;
+
+  const timings = await getAttendancePunchTimingsForEmployeeDate(empNo, fromStr);
+  if (timings) {
+    result.attendancePunchTimings = timings;
+  } else {
+    result.attendanceNotLoggedForDay = true;
+    result.attendanceNotLoggedDate = fromStr;
+  }
+  return result;
 }
 
 module.exports = {
   isHolidayOrWeekOff,
   getPunchBasedOdSuggestionForRecord,
   getAutoOdEligibilityFromRecord,
+  extractPunchTimingsFromRecord,
   resolveHolWoPunchOdShape,
   getHolidayWeekOffOdApplyContext,
+  getAttendancePunchTimingsForEmployeeDate,
+  odQualifiesForCoPunchDisplay,
+  enrichCoOdWithAttendancePunchTimings,
   MIN_HOURS_FOR_PUNCH_CONTEXT,
   FULL_DAY_HOURS_THRESHOLD,
 };

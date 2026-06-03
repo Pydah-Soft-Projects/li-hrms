@@ -78,3 +78,28 @@ describe('odHolidayApplyContextService.getPunchBasedOdSuggestionForRecord', () =
     expect(r.punchContextDetail).toBe('hours_between_min_and_full_threshold');
   });
 });
+
+describe('extractPunchTimingsFromRecord', () => {
+  const { extractPunchTimingsFromRecord } = require('../../utils/holwoOdPunchResolver');
+
+  it('returns null timings when record has no shifts', () => {
+    expect(extractPunchTimingsFromRecord({ totalWorkingHours: 5, shifts: [] })).toEqual({
+      odStartTime: null,
+      odEndTime: null,
+      durationHours: null,
+    });
+  });
+
+  it('extracts first IN and last OUT in HH:MM IST', () => {
+    const r = extractPunchTimingsFromRecord({
+      totalWorkingHours: 5.5,
+      shifts: [
+        { inTime: new Date('2026-01-15T09:15:00+05:30'), outTime: new Date('2026-01-15T13:00:00+05:30') },
+        { inTime: new Date('2026-01-15T14:00:00+05:30'), outTime: new Date('2026-01-15T17:45:00+05:30') },
+      ],
+    });
+    expect(r.odStartTime).toBe('09:15');
+    expect(r.odEndTime).toBe('17:45');
+    expect(r.durationHours).toBe(5.5);
+  });
+});

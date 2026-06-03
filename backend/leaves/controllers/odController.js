@@ -19,7 +19,13 @@ const { assertEmployeeRangeRequestsEditable } = require('../../shared/services/p
 const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const { appendOdTrailPoints } = require('../services/odTrailService');
 const { emitOdTrailUpdate } = require('../../shared/services/socketService');
-const { isHolidayOrWeekOff, getHolidayWeekOffOdApplyContext } = require('../services/odHolidayApplyContextService');
+const {
+  isHolidayOrWeekOff,
+  getHolidayWeekOffOdApplyContext,
+  extractPunchTimingsFromRecord,
+  getPunchBasedOdSuggestionForRecord,
+  enrichCoOdWithAttendancePunchTimings,
+} = require('../services/odHolidayApplyContextService');
 const { extractISTComponents, getAllDatesInRange, createISTDate } = require('../../shared/utils/dateUtils');
 
 /** Holiday / week-off for CO: roster row, half roster HOL, attendance status, or OD flagged CO-eligible on that calendar day (apply-time). */
@@ -276,6 +282,9 @@ exports.checkHoliday = async (req, res) => {
       suggestedOdTypeExtended: ctx.suggestedOdTypeExtended,
       totalWorkingHours: ctx.totalWorkingHours,
       punchContextDetail: ctx.punchContextDetail,
+      odStartTime: ctx.odStartTime ?? null,
+      odEndTime: ctx.odEndTime ?? null,
+      durationHours: ctx.durationHours ?? null,
     });
   } catch (error) {
     console.error('Error in checkHoliday:', error);
@@ -515,9 +524,11 @@ exports.getOD = async (req, res) => {
       });
     }
 
+    const data = await enrichCoOdWithAttendancePunchTimings(od.toObject());
+
     res.status(200).json({
       success: true,
-      data: od,
+      data,
     });
   } catch (error) {
     console.error('Error fetching OD:', error);
@@ -1109,6 +1120,31 @@ exports.applyOD = async (req, res) => {
     const isHolWo =
       (await isHolidayOrWeekOff(employee.emp_no, fromDateStr)) || halfHolRosterCtx.hasHalfHoliday;
 
+    let resolvedOdStartTime = odStartTime || null;
+    let resolvedOdEndTime = odEndTime || null;
+    let resolvedDurationHours = durationHours;
+
+    // Manual HOL/WO apply (auto-OD off): populate punch timings like auto-OD when not hour-based OD
+    if (isHolWo && isSingleDayOd && resolvedOdTypeExtended !== 'hours') {
+      try {
+        const holWoRecord = await AttendanceDaily.findOne({
+          employeeNumber: String(employee.emp_no || '').toUpperCase(),
+          date: fromDateStr,
+        }).lean();
+        const suggestion = holWoRecord ? getPunchBasedOdSuggestionForRecord(holWoRecord) : null;
+        if (suggestion?.hasPunches && holWoRecord) {
+          const timings = extractPunchTimingsFromRecord(holWoRecord);
+          if (!resolvedOdStartTime && timings.odStartTime) resolvedOdStartTime = timings.odStartTime;
+          if (!resolvedOdEndTime && timings.odEndTime) resolvedOdEndTime = timings.odEndTime;
+          if (resolvedDurationHours == null && timings.durationHours != null) {
+            resolvedDurationHours = timings.durationHours;
+          }
+        }
+      } catch (punchErr) {
+        console.error('OD manual apply punch timing resolution failed:', punchErr);
+      }
+    }
+
     const odRemarks = [remarks, halfHolidayOdRemark].filter(Boolean).join('\n').trim() || remarks;
 
     // Create OD application
@@ -1142,9 +1178,9 @@ exports.applyOD = async (req, res) => {
       assignedByName: isAssigned ? req.user.name : null,
       // NEW: Hour-based OD fields
       odType_extended: resolvedOdTypeExtended,
-      odStartTime: odStartTime || null,
-      odEndTime: odEndTime || null,
-      durationHours: durationHours,
+      odStartTime: resolvedOdStartTime,
+      odEndTime: resolvedOdEndTime,
+      durationHours: resolvedDurationHours,
       workflow: workflowData,
       startEvidence: {
         photoEvidence: startEvidencePayload.photoEvidence,

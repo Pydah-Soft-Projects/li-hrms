@@ -167,6 +167,37 @@ function getPunchBasedOdSuggestionForRecord(record) {
 }
 
 /**
+ * First IN / last OUT from shift segments (HH:MM, IST) — same logic as auto-OD.
+ * @returns {{ odStartTime: string|null, odEndTime: string|null, durationHours: number|null }}
+ */
+function extractPunchTimingsFromRecord(record) {
+  if (!record?.shifts?.length) {
+    return { odStartTime: null, odEndTime: null, durationHours: null };
+  }
+  const segmentTime = (s) => new Date(s.inTime || s.outTime || 0);
+  const sortedShifts = [...record.shifts].sort((a, b) => segmentTime(a) - segmentTime(b));
+  const firstIn = sortedShifts.find((s) => s.inTime)?.inTime ?? null;
+  const lastOut = [...sortedShifts].reverse().find((s) => s.outTime)?.outTime ?? null;
+
+  const formatTime = (date) => {
+    if (!date) return null;
+    return new Date(date).toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Asia/Kolkata',
+    });
+  };
+
+  const th = Number(record.totalWorkingHours);
+  return {
+    odStartTime: formatTime(firstIn),
+    odEndTime: formatTime(lastOut),
+    durationHours: Number.isFinite(th) && th > 0 ? th : null,
+  };
+}
+
+/**
  * Auto-OD gate: do not create when only ABSENT segments; half vs full from shift rows; halfDayType when half.
  */
 function getAutoOdEligibilityFromRecord(record) {
@@ -200,6 +231,7 @@ module.exports = {
   resolveHolWoPunchOdShape,
   getPunchBasedOdSuggestionForRecord,
   getAutoOdEligibilityFromRecord,
+  extractPunchTimingsFromRecord,
   getWorkedHalfFromShifts,
   inferHalfDayTypeFromShiftSegments,
   MIN_HOURS_FOR_PUNCH_CONTEXT,
