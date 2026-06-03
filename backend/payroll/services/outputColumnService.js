@@ -227,6 +227,10 @@ function getValueByPath(obj, path) {
     const n = Number(obj?.loanAdvance?.totalEMI);
     return Number.isFinite(n) ? n : 0;
   }
+  if (trimmed === 'loanAdvance.remainingBalance') {
+    const n = Number(obj?.loanAdvance?.remainingBalance);
+    return Number.isFinite(n) ? n : 0;
+  }
   if (trimmed === 'manualDeductions.manualDeductionsAmount') {
     const n = Number(obj?.manualDeductions?.manualDeductionsAmount ?? obj?.manualDeductionsAmount);
     return Number.isFinite(n) ? n : 0;

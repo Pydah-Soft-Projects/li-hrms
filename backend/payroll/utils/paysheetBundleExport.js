@@ -36,10 +36,15 @@ function normalizeLoanAdvanceForPayslip(raw) {
         ? raw.toObject()
         : { ...raw }
       : {};
+  const remainingRaw = o.remainingBalance;
   return {
     ...o,
     totalEMI: Number(o.totalEMI) || 0,
     advanceDeduction: Number(o.advanceDeduction) || 0,
+    remainingBalance:
+      remainingRaw != null && remainingRaw !== ''
+        ? Number(remainingRaw) || 0
+        : undefined,
   };
 }
 
@@ -207,7 +212,7 @@ function emptyPayslipFromRegular(regPayslip) {
       permissionDeduction: 0,
       leaveDeduction: 0,
     },
-    loanAdvance: { totalEMI: 0, advanceDeduction: 0 },
+    loanAdvance: { totalEMI: 0, advanceDeduction: 0, remainingBalance: 0 },
     arrears: { arrearsAmount: 0 },
     manualDeductions: { manualDeductionsAmount: 0 },
     manualDeductionsAmount: 0,
@@ -1000,6 +1005,84 @@ function refreshEmployeeFieldColumnsOnRows(rows, payslips, outputColumnsNormaliz
   });
 }
 
+/**
+ * Load frozen regular paysheet rows from PayrollPayslipSnapshot when complete for all employees
+ * (same rule as GET /paysheet — skips when paysheet adjustments are pending/approved).
+ * @returns {Promise<Record<string, unknown>[]|null>}
+ */
+async function tryBuildRegularRowsFromSnapshots(payrollRecords, month, outputColumnsNormalized) {
+  if (!Array.isArray(payrollRecords) || payrollRecords.length === 0) return null;
+  try {
+    const PaysheetAdjustmentRequest = require('../model/PaysheetAdjustmentRequest');
+    const PayrollPayslipSnapshot = require('../model/PayrollPayslipSnapshot');
+    const paysheetAdjustmentsActive = await PaysheetAdjustmentRequest.exists({
+      month,
+      status: { $in: ['pending', 'approved'] },
+    });
+    if (paysheetAdjustmentsActive) return null;
+
+    const orderedEmpIds = payrollRecords
+      .map((r) => (r.employeeId?._id || r.employeeId)?.toString())
+      .filter(Boolean);
+    if (!orderedEmpIds.length) return null;
+
+    const snaps = await PayrollPayslipSnapshot.find({
+      month,
+      kind: 'regular',
+      employeeId: { $in: orderedEmpIds },
+    }).lean();
+    const snapMap = new Map(snaps.map((s) => [String(s.employeeId), s]));
+    const allPresent = orderedEmpIds.every((id) => snapMap.has(String(id)));
+    if (!allPresent) return null;
+
+    const payslips = payrollRecords.map((r) => payrollRecordToPayslipShape(r));
+    let rows = payrollRecords.map((r, index) => {
+      const id = String(r.employeeId?._id || r.employeeId);
+      return { 'S.No': index + 1, ...(snapMap.get(id)?.row || {}) };
+    });
+    rows = refreshEmployeeFieldColumnsOnRows(rows, payslips, outputColumnsNormalized);
+    return rows;
+  } catch (e) {
+    console.warn('[paysheetBundleExport] snapshot read failed:', e.message);
+    return null;
+  }
+}
+
+/**
+ * Fill loanAdvance.remainingBalance on payslip shapes when absent on PayrollRecord
+ * (older records calculated before the field was persisted).
+ */
+async function enrichPayslipsLoanRemainingBalance(payslips, payrollRecords) {
+  if (!Array.isArray(payslips) || !Array.isArray(payrollRecords) || payslips.length === 0) return;
+
+  const missingEmpIds = [];
+  payslips.forEach((p, i) => {
+    const record = payrollRecords[i];
+    const raw = record?.loanAdvance?.remainingBalance;
+    if (raw !== undefined && raw !== null && raw !== '') {
+      if (!p.loanAdvance) p.loanAdvance = {};
+      p.loanAdvance.remainingBalance = Number(raw) || 0;
+      return;
+    }
+    const empId = String(record?.employeeId?._id || record?.employeeId || '');
+    if (empId) missingEmpIds.push(empId);
+  });
+  if (!missingEmpIds.length) return;
+
+  const loanAdvanceService = require('../services/loanAdvanceService');
+  const balanceMap = await loanAdvanceService.fetchLoanRemainingBalanceByEmployeeIds(missingEmpIds);
+
+  payslips.forEach((p, i) => {
+    const record = payrollRecords[i];
+    const raw = record?.loanAdvance?.remainingBalance;
+    if (raw !== undefined && raw !== null && raw !== '') return;
+    const empId = String(record?.employeeId?._id || record?.employeeId || '');
+    if (!empId) return;
+    if (!p.loanAdvance) p.loanAdvance = {};
+    p.loanAdvance.remainingBalance = balanceMap.get(empId) ?? 0;
+  });
+}
+
 function buildSecondSalaryPaysheetFromOutputColumns(records, outputColumnsNormalized, extraStatutoryCodes = []) {
   if (!Array.isArray(records) || records.length === 0 || !outputColumnsNormalized.length) {
     return { headers: [], rows: [] };
@@ -1041,5 +1124,7 @@ module.exports = {
   resolvePaysheetExportMeta,
   enrichExportRowsWithOrg,
   refreshEmployeeFieldColumnsOnRows,
+  tryBuildRegularRowsFromSnapshots,
+  enrichPayslipsLoanRemainingBalance,
   netDiffFromRowsDefault,
 };

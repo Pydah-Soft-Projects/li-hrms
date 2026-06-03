@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Loan = require('../../loans/model/Loan');
 const {
   setNextPaymentDateFromInstallmentsPaid,
@@ -618,6 +619,42 @@ async function applyDynamicPayrollLoanAdvance(record, employeeId, month, employe
   }
 }
 
+/**
+ * Batch sum of active loan remaining balances per employee (for paysheet export when not stored on PayrollRecord).
+ * @param {string[]} employeeIds
+ * @returns {Promise<Map<string, number>>}
+ */
+async function fetchLoanRemainingBalanceByEmployeeIds(employeeIds) {
+  if (!Array.isArray(employeeIds) || employeeIds.length === 0) return new Map();
+  const ids = employeeIds
+    .map((id) => {
+      try {
+        return mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+  if (!ids.length) return new Map();
+
+  const loans = await Loan.find({
+    employeeId: { $in: ids },
+    requestType: 'loan',
+    status: { $in: ['active', 'disbursed'] },
+    isActive: true,
+  })
+    .select('employeeId repayment.remainingBalance')
+    .lean();
+
+  const map = new Map();
+  for (const loan of loans) {
+    const eid = String(loan.employeeId);
+    const bal = Number(loan.repayment?.remainingBalance) || 0;
+    map.set(eid, Math.round(((map.get(eid) || 0) + bal) * 100) / 100);
+  }
+  return map;
+}
+
 module.exports = {
   getActiveLoans,
   getActiveAdvances,
@@ -627,5 +664,6 @@ module.exports = {
   updateLoanRecordsAfterEMI,
   updateAdvanceRecordsAfterDeduction,
   applyDynamicPayrollLoanAdvance,
+  fetchLoanRemainingBalanceByEmployeeIds,
 };
 
