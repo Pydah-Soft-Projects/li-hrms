@@ -78,8 +78,11 @@ function registerUsedPlusLocked(rm, kind) {
   return exportCellNum((u ?? 0) + (l ?? 0));
 }
 
-/** Matches UI Bal column: Cr + carried in − (used + locked) − transfer out. */
+/** Matches UI Bal column: Cr + carried in − (used + locked) − transfer out; CCL prefers register closing balance. */
 function registerMonthEquationBal(rm, kind) {
+  if (kind === 'ccl' && rm?.cclBalance != null && Number.isFinite(Number(rm.cclBalance))) {
+    return exportCellNum(rm.cclBalance);
+  }
   const crRaw = policyPoolDays(rm, kind);
   const cr = crRaw === '' ? null : Number(crRaw);
   const b = bucket(rm, kind);

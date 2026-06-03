@@ -27,13 +27,17 @@ function compareRegisterEntryEmpNo(a, b) {
 /**
  * Mongo / legacy rows sometimes omit nested leave buckets; avoid "cannot read casualLeave of undefined".
  */
-/** Last closingBalance on LeaveRegisterYear slot for a leave type (chronological order in array). */
+/** Last closingBalance on LeaveRegisterYear slot for a leave type (CCL: ledger recalc order within month). */
 function lastLedgerClosingBalanceInSlot(slot, leaveType) {
-    const want = String(leaveType || '').toUpperCase();
+    const lt = String(leaveType || '').toUpperCase();
+    if (lt === 'CCL') {
+        const leaveRegisterYearLedgerService = require('./leaveRegisterYearLedgerService');
+        return leaveRegisterYearLedgerService.lastClosingBalanceInSlot(slot, 'CCL');
+    }
     const txs = slot?.transactions || [];
     let last = null;
     for (const tx of txs) {
-        if (String(tx.leaveType || '').toUpperCase() !== want) continue;
+        if (String(tx.leaveType || '').toUpperCase() !== lt) continue;
         const c = Number(tx.closingBalance);
         if (Number.isFinite(c)) last = c;
     }
@@ -236,6 +240,30 @@ function reconcileMonthlyTransfersForLeaveChange(leaveRecord, options = {}) {
     }
 }
 
+/** CCL/CL register: transfers + ledger recalc from anchor date (same engine as leave approve/cancel). */
+function reconcileRegisterForEmployeeDate(employeeId, fromDate, options = {}) {
+    try {
+        const monthlyTransferReconciliationService = require('./monthlyTransferReconciliationService');
+        monthlyTransferReconciliationService.scheduleRegisterReconciliationFromDate(
+            employeeId,
+            fromDate,
+            options
+        );
+        return { ok: true, scheduled: true };
+    } catch (error) {
+        console.error('[LeaveRegister] Register reconciliation schedule failed:', {
+            employeeId: employeeId ? String(employeeId) : null,
+            error: error?.message || String(error),
+        });
+        return {
+            ok: false,
+            skipped: true,
+            reason: 'register_reconciliation_failed',
+            error: error?.message || String(error),
+        };
+    }
+}
+
 function istDateKey(d) {
     return extractISTComponents(d).dateStr;
 }
@@ -259,15 +287,17 @@ function normalizedDays(n, isHalfDay = false) {
     return isHalfDay ? 0.5 : 1;
 }
 
-async function buildClUsedLockedAuditForSlot(employeeId, slotStart, slotEnd) {
+async function buildLeaveTypeUsedLockedAuditForSlot(employeeId, slotStart, slotEnd, leaveType) {
     if (!employeeId || !slotStart || !slotEnd) {
         return { used: [], locked: [] };
     }
+    const lt = String(leaveType || 'CL').trim().toUpperCase();
+    const ltRegex = new RegExp(`^${lt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
     const intermediateStatuses = (CAP_COUNT_STATUSES || []).filter((s) => s !== 'approved');
     const leaves = await Leave.find({
         employeeId,
         isActive: { $ne: false },
-        leaveType: /^CL$/i,
+        leaveType: ltRegex,
         status: { $in: CAP_COUNT_STATUSES || [] },
         fromDate: { $lte: slotEnd },
         toDate: { $gte: slotStart },
@@ -283,7 +313,7 @@ async function buildClUsedLockedAuditForSlot(employeeId, slotStart, slotEnd) {
         ? await LeaveSplit.find({
               leaveId: { $in: splitLeaveIds },
               status: 'approved',
-              leaveType: /^CL$/i,
+              leaveType: ltRegex,
               date: { $gte: slotStart, $lte: slotEnd },
           })
               .select('leaveId date numberOfDays isHalfDay')
@@ -329,7 +359,7 @@ async function buildClUsedLockedAuditForSlot(employeeId, slotStart, slotEnd) {
 
         const item = {
             leaveId: String(lv._id),
-            leaveType: String(lv.leaveType || 'CL').toUpperCase(),
+            leaveType: String(lv.leaveType || lt).toUpperCase(),
             status: st,
             appliedFrom: lv.fromDate,
             appliedTo: lv.toDate,
@@ -348,10 +378,22 @@ async function buildClUsedLockedAuditForSlot(employeeId, slotStart, slotEnd) {
     return { used, locked };
 }
 
+async function buildClUsedLockedAuditForSlot(employeeId, slotStart, slotEnd) {
+    return buildLeaveTypeUsedLockedAuditForSlot(employeeId, slotStart, slotEnd, 'CL');
+}
+
 /** Sum contributed days from leave-application audit rows (approved / in-flight). */
 function sumAuditContributedDays(auditItems) {
     if (!Array.isArray(auditItems)) return 0;
     return round2(auditItems.reduce((s, a) => s + (Number(a?.contributedDays) || 0), 0));
+}
+
+/** Cancel/revoke CREDIT rows — must not count as month pool credits (CCL) or net-used (CCL uses debits only). */
+function isLeaveApplicationReversalCredit(tx) {
+    return (
+        String(tx?.transactionType || '').toUpperCase() === 'CREDIT' &&
+        String(tx?.reason || '').includes('Leave Application Cancelled/Reversed')
+    );
 }
 
 /**
@@ -369,7 +411,7 @@ function isRegisterUsedLedgerDebitsOnlyMode() {
  * Used column for register grid: closed months follow transfer reconcile (approved Leave apps);
  * open months show the higher of ledger debits vs application audit so pending use is visible.
  */
-function resolveRegisterClUsedDisplay(ledgerUsed, auditUsedItems, periodEnded) {
+function resolveRegisterUsedDisplay(ledgerUsed, auditUsedItems, periodEnded) {
     const ledger = round2(Number(ledgerUsed) || 0);
     if (isRegisterUsedLedgerDebitsOnlyMode()) {
         return ledger;
@@ -377,6 +419,10 @@ function resolveRegisterClUsedDisplay(ledgerUsed, auditUsedItems, periodEnded) {
     const fromApps = sumAuditContributedDays(auditUsedItems);
     if (periodEnded) return fromApps;
     return round2(Math.max(ledger, fromApps));
+}
+
+function resolveRegisterClUsedDisplay(ledgerUsed, auditUsedItems, periodEnded) {
+    return resolveRegisterUsedDisplay(ledgerUsed, auditUsedItems, periodEnded);
 }
 
 /**
@@ -583,18 +629,37 @@ class LeaveRegisterService {
                     }
                 }
 
+                const poolReductionBySlot = new Map();
                 for (const slot of yearDoc.months) {
                     const before = Array.isArray(slot.transactions) ? slot.transactions.length : 0;
-                    slot.transactions = (slot.transactions || []).filter((tx) => !(
-                        tx?.applicationId &&
-                        String(tx.applicationId) === appId &&
-                        String(tx.transactionType || '').toUpperCase() === 'DEBIT'
-                    ));
+                    let removedReversalPool = 0;
+                    slot.transactions = (slot.transactions || []).filter((tx) => {
+                        if (!tx?.applicationId || String(tx.applicationId) !== appId) return true;
+                        if (String(tx.transactionType || '').toUpperCase() === 'DEBIT') return false;
+                        if (
+                            String(tx.leaveType || '').toUpperCase() === 'CCL' &&
+                            isLeaveApplicationReversalCredit(tx)
+                        ) {
+                            removedReversalPool += Math.max(0, Number(tx.days) || 0);
+                            return false;
+                        }
+                        return true;
+                    });
                     const after = Array.isArray(slot.transactions) ? slot.transactions.length : 0;
                     removedCount += Math.max(0, before - after);
+                    if (removedReversalPool > 0) {
+                        const key = `${slot.payrollCycleYear}-${slot.payrollCycleMonth}`;
+                        poolReductionBySlot.set(
+                            key,
+                            round2((poolReductionBySlot.get(key) || 0) + removedReversalPool)
+                        );
+                        slot.compensatoryOffs = round2(
+                            Math.max(0, (Number(slot.compensatoryOffs) || 0) - removedReversalPool)
+                        );
+                    }
                 }
 
-                if (removedCount > 0) {
+                if (removedCount > 0 || poolReductionBySlot.size > 0) {
                     yearDoc.markModified('months');
                     await yearDoc.save();
 
@@ -619,6 +684,26 @@ class LeaveRegisterService {
             }
 
             const leaveType = leaveRecord.leaveType === 'LOP' ? 'LOP' : (leaveRecord.leaveType || 'CL');
+            const lt = String(leaveType).toUpperCase();
+            /** CCL: never post reversal CREDIT (restores balance via debit removal + recalc only). */
+            if (lt === 'CCL') {
+                const anchor = leaveRecord.fromDate ? new Date(leaveRecord.fromDate) : new Date();
+                await leaveRegisterYearLedgerService.recalculateRegisterBalances(
+                    leaveRecord.employeeId,
+                    'CCL',
+                    anchor
+                );
+                const monthlyTransferReconciliation = await reconcileMonthlyTransfersForLeaveChange(
+                    leaveRecord
+                );
+                return {
+                    success: true,
+                    mode: 'ccl_no_reversal_credit',
+                    removedCount: 0,
+                    leaveId: String(leaveRecord._id),
+                    monthlyTransferReconciliation,
+                };
+            }
             const result = await this.addTransaction({
                 ...base,
                 leaveType,
@@ -1421,6 +1506,10 @@ class LeaveRegisterService {
                         !debitsOnlyUsedMode && eid && slotStart && slotEnd
                             ? await buildClUsedLockedAuditForSlot(eid, slotStart, slotEnd)
                             : { used: [], locked: [] };
+                    const cclAudit =
+                        !debitsOnlyUsedMode && eid && slotStart && slotEnd
+                            ? await buildLeaveTypeUsedLockedAuditForSlot(eid, slotStart, slotEnd, 'CCL')
+                            : { used: [], locked: [] };
                     monthsOut.push({
                         payrollMonthIndex: policyMonthIndex,
                         label: slot.label || `Period ${policyMonthIndex}`,
@@ -1464,6 +1553,8 @@ class LeaveRegisterService {
                         audit: {
                             clUsed: clAudit.used,
                             clLocked: clAudit.locked,
+                            cclUsed: cclAudit.used,
+                            cclLocked: cclAudit.locked,
                         },
                     });
                 }
@@ -1513,6 +1604,8 @@ class LeaveRegisterService {
                         audit: {
                             clUsed: [],
                             clLocked: [],
+                            cclUsed: [],
+                            cclLocked: [],
                         },
                     };
                 });
@@ -1723,14 +1816,26 @@ class LeaveRegisterService {
                         lockedAudit: lite ? [] : Array.isArray(m.audit?.clLocked) ? m.audit.clLocked : [],
                     },
                     ccl: {
-                        credited: Math.max(0, (Number(cclL.earned) || 0) - (Number(cclL.reversalCreditThisMonth) || 0)),
-                        used: Number(cclL.used) || 0,
+                        credited: Math.max(0, Number(cclL.earned) || 0),
+                        used: round2(Number(cclL.used) || 0),
                         locked: cclLockedDisplay,
                         transferIn: cclTransferIn,
                         transferOut: xferOut.ccl,
                         typeApplyCap: cclTypeOn ? cclTypeCap : null,
                         typeApplyConsumed: cclTypeOn ? cclNativeApp : null,
                         typeApplyRemaining: cclTypeOn ? Math.max(0, cclTypeCap - cclNativeApp) : null,
+                        usedAudit: (() => {
+                            const rows = Array.isArray(m.audit?.cclUsed) ? m.audit.cclUsed : [];
+                            if (!lite) return rows;
+                            return rows.map(({ leaveId, appliedFrom, appliedTo, contributedDays, status }) => ({
+                                leaveId,
+                                appliedFrom,
+                                appliedTo,
+                                contributedDays,
+                                status,
+                            }));
+                        })(),
+                        lockedAudit: lite ? [] : Array.isArray(m.audit?.cclLocked) ? m.audit.cclLocked : [],
                     },
                     el: {
                         credited: Math.max(0, (Number(elL.accruedThisMonth) || 0) - (Number(elL.reversalCreditThisMonth) || 0)),
@@ -2063,8 +2168,7 @@ class LeaveRegisterService {
                 const ccl = monthData.compensatoryOff;
                 ccl.balance = transaction.closingBalance;
                 if (type === 'CREDIT') {
-                    ccl.earned += days;
-                    if (isReversalCredit) ccl.reversalCreditThisMonth += days;
+                    if (!isReversalCredit) ccl.earned += days;
                 } else if (type === 'DEBIT' && isMonthlyPoolTransferOut) {
                     ccl.poolTransferOutRaw = (Number(ccl.poolTransferOutRaw) || 0) + days;
                 } else if (type === 'DEBIT' && !isMonthlyPoolTransferOut) ccl.usedRaw += days;
@@ -2155,8 +2259,7 @@ class LeaveRegisterService {
                         m.earnedLeave.usedThisMonth = Math.max(0, elUsedRaw - elReversal);
 
                         const cclUsedRaw = Number(m.compensatoryOff.usedRaw) || 0;
-                        const cclReversal = Number(m.compensatoryOff.reversalCreditThisMonth) || 0;
-                        m.compensatoryOff.used = Math.max(0, cclUsedRaw - cclReversal);
+                        m.compensatoryOff.used = Math.max(0, cclUsedRaw);
 
                         const clPoolOut = Number(m.casualLeave.poolTransferOutRaw) || 0;
                         const elPoolOut = Number(m.earnedLeave.poolTransferOutRaw) || 0;

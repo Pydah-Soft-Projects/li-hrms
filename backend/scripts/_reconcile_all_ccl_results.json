@@ -1,0 +1,5873 @@
+{
+  "ranAt": "2026-06-03T08:47:04.101Z",
+  "dryRun": false,
+  "fyFilter": "2026",
+  "stripSummary": {
+    "docsChanged": 8,
+    "reversalRowsRemoved": 8,
+    "poolDaysReduced": 7
+  },
+  "totalJobs": 113,
+  "ok": 113,
+  "skipped": 0,
+  "failed": 0,
+  "failures": [],
+  "employees": [
+    {
+      "empNo": "0159",
+      "employeeName": "B.S.K.MAHA LAKSHMI",
+      "employeeId": "69aeadbb7ed47927ce2b1363",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 0,
+        "removedTransferRows": 0
+      }
+    },
+    {
+      "empNo": "06",
+      "employeeName": "B.J.U.N.SUNEETHA",
+      "employeeId": "69aeadcc7ed47927ce2b1434",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 2,
+      "yearDocCompensatoryOffBalance": 2,
+      "ledgerBalanceNow": 2,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 1,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 2,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 12
+      }
+    },
+    {
+      "empNo": "1090",
+      "employeeName": "SAMADHULA GOLLABABU",
+      "employeeId": "695b8c3b9fa26faa3ecdce5d",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "111112",
+      "employeeName": "ELIPE POORNASUNDAR",
+      "employeeId": "69f315c665e2d44b13bd049e",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "111114",
+      "employeeName": "YESURI DEVI",
+      "employeeId": "69f441995b39c25118d9d2d8",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 3,
+          "debitsRaw": 3,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "117",
+      "employeeName": "KALIKI PRANUSHA k",
+      "employeeId": "6996c212897fd73c06761e53",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "1174",
+      "employeeName": "SAMADHULA KAMALAMMA",
+      "employeeId": "695b8c3a9fa26faa3ecdce58",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "1198",
+      "employeeName": "KOMMU VIJAYA PRASAD",
+      "employeeId": "695b8c369fa26faa3ecdce33",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "1254",
+      "employeeName": "KOPPISETTI VEERA VENKATA RAMANA",
+      "employeeId": "695b8c379fa26faa3ecdce3d",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1.5,
+      "yearDocCompensatoryOffBalance": 1.5,
+      "ledgerBalanceNow": 1.5,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 0.5,
+          "transferIn": 0,
+          "transferOut": 0.5,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 0.5,
+          "transferIn": 0.5,
+          "transferOut": 0.5,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1.5,
+          "transferIn": 0.5,
+          "transferOut": 1.5,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1.5,
+          "transferIn": 1.5,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1.5,
+          "balanceLastInArray": 1.5,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 12
+      }
+    },
+    {
+      "empNo": "13",
+      "employeeName": "K RAMESH BABU",
+      "employeeId": "695b8c499fa26faa3ecdcec5",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 2,
+          "payrollCycleYear": 2026,
+          "label": "Feb 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "2/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 4,
+        "removedTransferRows": 14
+      }
+    },
+    {
+      "empNo": "138",
+      "employeeName": "D BHAVANI",
+      "employeeId": "695b8b4e9fa26faa3ecdc7d7",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "1434",
+      "employeeName": "BASHIR HAMADBABU MD",
+      "employeeId": "695b8c389fa26faa3ecdce44",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 2,
+          "payrollCycleYear": 2026,
+          "label": "Feb 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "2/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 4,
+        "removedTransferRows": 14
+      }
+    },
+    {
+      "empNo": "151",
+      "employeeName": "kadimisetty bhanu prakash",
+      "employeeId": "69aead207ed47927ce2b0ee5",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "1537",
+      "employeeName": "LOLLA BHAVANI",
+      "employeeId": "695b8c339fa26faa3ecdce1d",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "155",
+      "employeeName": "MOHAMMAD AYESHA",
+      "employeeId": "69aeae607ed47927ce2b1a67",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "1559",
+      "employeeName": "BALA SARASWATHI THOTAKURA",
+      "employeeId": "695b8c339fa26faa3ecdce18",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "1564",
+      "employeeName": "GUMMIDI VEERAVENI",
+      "employeeId": "695b8c329fa26faa3ecdce13",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0.5,
+      "yearDocCompensatoryOffBalance": 0.5,
+      "ledgerBalanceNow": 0.5,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1.5,
+          "transferIn": 0,
+          "transferOut": 0.5,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 0.5,
+          "transferIn": 0.5,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0.5,
+          "balanceLastInArray": 0.5,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "1565",
+      "employeeName": "DANDUPROLU YASWANTH ANIL",
+      "employeeId": "695b8c319fa26faa3ecdce08",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "158",
+      "employeeName": "NAGAM JYOTHI",
+      "employeeId": "699a36e2ba89022fcd35ee05",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 2,
+      "yearDocCompensatoryOffBalance": 2,
+      "ledgerBalanceNow": 2,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 1,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 2,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 12
+      }
+    },
+    {
+      "empNo": "1592",
+      "employeeName": "PINAPOTHU GANESH KUMAR",
+      "employeeId": "695b8c2c9fa26faa3ecdcde9",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 5,
+      "yearDocCompensatoryOffBalance": 5,
+      "ledgerBalanceNow": 7,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 1,
+          "payrollCycleYear": 2026,
+          "label": "Jan 2026",
+          "pool": 1.5,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1.5,
+          "debitsRaw": 1.5,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1.5,
+          "balanceWouldHaveBeenWrong": true
+        },
+        {
+          "payrollCycleMonth": 2,
+          "payrollCycleYear": 2026,
+          "label": "Feb 2026",
+          "pool": 5,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 5,
+          "debitsRaw": 5,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 5,
+          "balanceWouldHaveBeenWrong": true
+        },
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 7,
+          "transferIn": 2,
+          "transferOut": 7,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 2,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 7,
+          "transferIn": 7,
+          "transferOut": 5,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 2,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 5,
+          "transferIn": 5,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 7,
+          "balanceLastInArray": 7,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 7,
+          "payrollCycleYear": 2026,
+          "label": "Jul 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 5,
+          "balanceLastInArray": 5,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "1/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 4,
+        "removedTransferRows": 14
+      }
+    },
+    {
+      "empNo": "1613",
+      "employeeName": "NOOKELLA VEERA DURGA",
+      "employeeId": "695b8c2f9fa26faa3ecdcdfd",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "164",
+      "employeeName": "PATNAM SANDEEP",
+      "employeeId": "69aeaf397ed47927ce2b2318",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 2,
+      "yearDocCompensatoryOffBalance": 2,
+      "ledgerBalanceNow": 2,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 1,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 2,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "1730",
+      "employeeName": "KOMMIREDDY VEERABABU",
+      "employeeId": "695b8c269fa26faa3ecdcdc1",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "1818",
+      "employeeName": "SALADI SUBBARAO",
+      "employeeId": "695b8c1e9fa26faa3ecdcd8a",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "1823",
+      "employeeName": "MUNEENDRA KANNEDI",
+      "employeeId": "695b8c1d9fa26faa3ecdcd80",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "1832",
+      "employeeName": "A V V S N V PRASAD",
+      "employeeId": "695b8c1c9fa26faa3ecdcd79",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1.5,
+      "yearDocCompensatoryOffBalance": 1.5,
+      "ledgerBalanceNow": 1.5,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 2,
+          "payrollCycleYear": 2026,
+          "label": "Feb 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        },
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 3,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 4.5,
+          "transferIn": 1,
+          "transferOut": 1.5,
+          "used": 3,
+          "debitsRaw": 3,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1.5,
+          "transferIn": 1.5,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1.5,
+          "balanceLastInArray": 1.5,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "2/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 4,
+        "removedTransferRows": 12
+      }
+    },
+    {
+      "empNo": "1869",
+      "employeeName": "NARALA VENKATA LAKSHMI",
+      "employeeId": "695b8c1a9fa26faa3ecdcd65",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 0,
+        "removedTransferRows": 0
+      }
+    },
+    {
+      "empNo": "1882",
+      "employeeName": "MANEPALLI PADMAVATHI",
+      "employeeId": "695b8c179fa26faa3ecdcd4f",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 1,
+          "payrollCycleYear": 2026,
+          "label": "Jan 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 2,
+          "payrollCycleYear": 2026,
+          "label": "Feb 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "1/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 5,
+        "removedTransferRows": 10
+      }
+    },
+    {
+      "empNo": "1890",
+      "employeeName": "K NAGA DURGA RAO",
+      "employeeId": "695b8b869fa26faa3ecdc953",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 4,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 4,
+          "debitsRaw": 4,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "1908",
+      "employeeName": "DADALA SUNEETHA",
+      "employeeId": "695b8c159fa26faa3ecdcd39",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 12
+      }
+    },
+    {
+      "empNo": "1923",
+      "employeeName": "PASALAPUDI CHINNA THIMMARAJU",
+      "employeeId": "695b8c0f9fa26faa3ecdcd08",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0.5,
+      "yearDocCompensatoryOffBalance": 0.5,
+      "ledgerBalanceNow": 0.5,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1.5,
+          "transferIn": 0,
+          "transferOut": 0.5,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 0.5,
+          "transferIn": 0.5,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0.5,
+          "balanceLastInArray": 0.5,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "1935",
+      "employeeName": "MACHA SAROJINI DEVI",
+      "employeeId": "695b8c0e9fa26faa3ecdccfe",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 0,
+        "removedTransferRows": 0
+      }
+    },
+    {
+      "empNo": "1941",
+      "employeeName": "VALLU POORNIMA",
+      "employeeId": "695b8c0d9fa26faa3ecdccf9",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 0,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "1954",
+      "employeeName": "ANGADI SARITHA",
+      "employeeId": "695b8c0a9fa26faa3ecdcce5",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 0,
+          "used": 4,
+          "debitsRaw": 4,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "1956",
+      "employeeName": "BOKKA SUNEETHA",
+      "employeeId": "695b8c0b9fa26faa3ecdccea",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "1961",
+      "employeeName": "KOTHA SUNEELU",
+      "employeeId": "695b8c089fa26faa3ecdccd6",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "1981",
+      "employeeName": "KETHA SUBHAKAR",
+      "employeeId": "695b8c059fa26faa3ecdccc7",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "2003",
+      "employeeName": "KAMIREDDY MANOHAR",
+      "employeeId": "695b8bff9fa26faa3ecdcc9f",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "2014",
+      "employeeName": "KOYYA OMKAR",
+      "employeeId": "695b8c019fa26faa3ecdcca9",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1.5,
+      "yearDocCompensatoryOffBalance": 1.5,
+      "ledgerBalanceNow": 1.5,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 0.5,
+          "transferIn": 0,
+          "transferOut": 0.5,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2.5,
+          "transferIn": 0.5,
+          "transferOut": 1.5,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1.5,
+          "transferIn": 1.5,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1.5,
+          "balanceLastInArray": 1.5,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "2017",
+      "employeeName": "VASIREDDY SURYAKALA",
+      "employeeId": "695b8c049fa26faa3ecdccbd",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2023",
+      "employeeName": "S V KRISHNA PATTAPAGALA",
+      "employeeId": "695b8bf69fa26faa3ecdcc63",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 3,
+          "debitsRaw": 3,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2028",
+      "employeeName": "REDDY VENKATA LAKSHMI",
+      "employeeId": "695b8bf59fa26faa3ecdcc59",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2035",
+      "employeeName": "KESABOINA NOOKA RAJU",
+      "employeeId": "695b8bf49fa26faa3ecdcc54",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0.5,
+      "yearDocCompensatoryOffBalance": 0.5,
+      "ledgerBalanceNow": 0.5,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 0.5,
+          "transferIn": 0,
+          "transferOut": 0.5,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 0.5,
+          "transferIn": 0.5,
+          "transferOut": 0.5,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 0.5,
+          "transferIn": 0.5,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0.5,
+          "balanceLastInArray": 0.5,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2049",
+      "employeeName": "PALANKI VENKATA SUBRAMANYA MURALIDHAR",
+      "employeeId": "695b8bfa9fa26faa3ecdcc7c",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 3,
+          "transferIn": 2,
+          "transferOut": 1,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 12
+      }
+    },
+    {
+      "empNo": "2064",
+      "employeeName": "NARALA NAGAMANI",
+      "employeeId": "695b8bf29fa26faa3ecdcc45",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "2067",
+      "employeeName": "NALAM PYDI VENKATA SURYA SUBBARAO",
+      "employeeId": "695b8bf09fa26faa3ecdcc36",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2068",
+      "employeeName": "GONIPATI HARSHA VARDHAN",
+      "employeeId": "695b8bef9fa26faa3ecdcc31",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2075",
+      "employeeName": "SABBI SATEESH",
+      "employeeId": "695b8bed9fa26faa3ecdcc22",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 4,
+      "yearDocCompensatoryOffBalance": 4,
+      "ledgerBalanceNow": 4,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 4,
+          "transferIn": 0,
+          "transferOut": 4,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 8,
+          "transferIn": 4,
+          "transferOut": 4,
+          "used": 4,
+          "debitsRaw": 4,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 4,
+          "transferIn": 4,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 4,
+          "balanceLastInArray": 4,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2076",
+      "employeeName": "VIJAYA PALAPARTHI",
+      "employeeId": "695b8bec9fa26faa3ecdcc1d",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 4,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 3,
+          "debitsRaw": 3,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "2088",
+      "employeeName": "CHILAKAMARTHI VSRV SIVA KUMAR",
+      "employeeId": "695b8be19fa26faa3ecdcbd7",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 2,
+      "yearDocCompensatoryOffBalance": 2,
+      "ledgerBalanceNow": 2,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 2,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "2093",
+      "employeeName": "KODI KANAKALAKSHMI",
+      "employeeId": "695b8be79fa26faa3ecdcbfa",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "2099",
+      "employeeName": "RAJ KUMAR VISINIGIRI",
+      "employeeId": "695b8be59fa26faa3ecdcbf0",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 3,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "2105",
+      "employeeName": "PADMAVATI CHIKKALA",
+      "employeeId": "695b8be49fa26faa3ecdcbeb",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2111",
+      "employeeName": "SINGULURI SAI RAJ",
+      "employeeId": "695b8be69fa26faa3ecdcbf5",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2123",
+      "employeeName": "LOVAKUMAR MENDA",
+      "employeeId": "695b8bd89fa26faa3ecdcb9b",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2128",
+      "employeeName": "KUDIPUDI LAKSHMI DURGA",
+      "employeeId": "695b8bda9fa26faa3ecdcba5",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 3,
+          "debitsRaw": 3,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 3,
+          "debitsRaw": 3,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2131",
+      "employeeName": "NEMMATHI SANTAKUMARI",
+      "employeeId": "695b8bda9fa26faa3ecdcbaa",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2137",
+      "employeeName": "SETTI VIJAYAKUMARI",
+      "employeeId": "695b8bdd9fa26faa3ecdcbb9",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2138",
+      "employeeName": "BODDU PAVAN",
+      "employeeId": "695b8bdd9fa26faa3ecdcbbe",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 1,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 12
+      }
+    },
+    {
+      "empNo": "2141",
+      "employeeName": "BANGARU MANASA",
+      "employeeId": "695b8be09fa26faa3ecdcbcd",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "2144",
+      "employeeName": "KAKILETI V. V. DURGA PRASAD",
+      "employeeId": "699406bd4fb69ffde985fb76",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "2145",
+      "employeeName": "PENKEY TEJA",
+      "employeeId": "699406bd4fb69ffde985fb2a",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 0.5,
+          "transferIn": 0,
+          "transferOut": 0.5,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 0.5,
+          "transferIn": 0.5,
+          "transferOut": 0,
+          "used": 0.5,
+          "debitsRaw": 0.5,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0.5,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2146",
+      "employeeName": "BURAGA RAVI",
+      "employeeId": "699406bc4fb69ffde985fad5",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "21516",
+      "employeeName": "CONIKULA JYOTHIKA",
+      "employeeId": "69d88557bb64a381c06f4d4e",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "21522",
+      "employeeName": "CHINTALAPUDI  ASWINI",
+      "employeeId": "69e71a9bfa5170909779cf40",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 3.5,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 2.5,
+          "debitsRaw": 2.5,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2153",
+      "employeeName": "PUTTA  RAJESH",
+      "employeeId": "695b8bd09fa26faa3ecdcb69",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 3,
+          "debitsRaw": 3,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "21537",
+      "employeeName": "PUGAKU KALYANESWARI",
+      "employeeId": "69f079192614f39377bcdd14",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "21539",
+      "employeeName": "YARLAGADDA NARAYANAMURTHY",
+      "employeeId": "69f19e6665e2d44b13415d7a",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 0,
+        "removedTransferRows": 0
+      }
+    },
+    {
+      "empNo": "2164",
+      "employeeName": "MANDAPALLI RAMA LAXMI",
+      "employeeId": "695b8bcd9fa26faa3ecdcb55",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2183",
+      "employeeName": "YANDAMURI KEERTHANA",
+      "employeeId": "695b8bc39fa26faa3ecdcb08",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 3,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "2197",
+      "employeeName": "VIYYURI VEERA MANIKANTA",
+      "employeeId": "695b8bba9fa26faa3ecdcac3",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2208",
+      "employeeName": "MOHAMMAD FARHAD JAHAN",
+      "employeeId": "695b8baf9fa26faa3ecdca63",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "2212",
+      "employeeName": "TANALA VEERA VENKATA SATYANNARAYANA",
+      "employeeId": "695b8bb19fa26faa3ecdca79",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 4,
+      "yearDocCompensatoryOffBalance": 4,
+      "ledgerBalanceNow": 4,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 6,
+          "transferIn": 1,
+          "transferOut": 5,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 2,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 5,
+          "transferIn": 5,
+          "transferOut": 3,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 2,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 3,
+          "transferIn": 3,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 4,
+          "balanceLastInArray": 5,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "2213",
+      "employeeName": "GEDDAM CHALAPATHI",
+      "employeeId": "695b8bb39fa26faa3ecdca83",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 4,
+      "yearDocCompensatoryOffBalance": 4,
+      "ledgerBalanceNow": 4,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 6,
+          "transferIn": 1,
+          "transferOut": 5,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 5,
+          "transferIn": 5,
+          "transferOut": 4,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 4,
+          "transferIn": 4,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 4,
+          "balanceLastInArray": 4,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "2217",
+      "employeeName": "TEKUMUDI PRASAD",
+      "employeeId": "695b8bb29fa26faa3ecdca7e",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 4.5,
+      "yearDocCompensatoryOffBalance": 4.5,
+      "ledgerBalanceNow": 4.5,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 2.5,
+          "transferIn": 0,
+          "transferOut": 2.5,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 6.5,
+          "transferIn": 2.5,
+          "transferOut": 5.5,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 5.5,
+          "transferIn": 5.5,
+          "transferOut": 3.5,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 3.5,
+          "transferIn": 3.5,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 4.5,
+          "balanceLastInArray": 4.5,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 12
+      }
+    },
+    {
+      "empNo": "2228",
+      "employeeName": "BAVIRISETTY AVINASH",
+      "employeeId": "695b8ba89fa26faa3ecdca36",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 2,
+      "yearDocCompensatoryOffBalance": 2,
+      "ledgerBalanceNow": 2,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 2,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 10
+      }
+    },
+    {
+      "empNo": "2231",
+      "employeeName": "YEDIDA SIVA PRASADA RAO",
+      "employeeId": "695b8b559fa26faa3ecdc804",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 2,
+      "yearDocCompensatoryOffBalance": 2,
+      "ledgerBalanceNow": 2,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 1,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 2,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "2240",
+      "employeeName": "GONDESI GOPALA KRISHNA REDDY",
+      "employeeId": "695b8ba49fa26faa3ecdca16",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "2263",
+      "employeeName": "PINIPE MANGA DEVI",
+      "employeeId": "695b8b969fa26faa3ecdc9c1",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "2269",
+      "employeeName": "SAHERA BEGAM",
+      "employeeId": "697c2f9e134ffaa9e3c74583",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "2279",
+      "employeeName": "RAMADI BUJJI",
+      "employeeId": "698f0f294fb69ffde9817778",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 2,
+      "yearDocCompensatoryOffBalance": 2,
+      "ledgerBalanceNow": 2,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 2,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "2280",
+      "employeeName": "DUNNA LALITHA TIRUMALA",
+      "employeeId": "698f0f294fb69ffde9817770",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 3.5,
+          "debitsRaw": 3.5,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "2281",
+      "employeeName": "KALA MAHA LAKSHMI",
+      "employeeId": "698f0f284fb69ffde9817768",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2282",
+      "employeeName": "RAYUDU SATYAVATHI",
+      "employeeId": "698f0f274fb69ffde9817760",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2283",
+      "employeeName": "GUTHULA DEVI",
+      "employeeId": "698f0f274fb69ffde9817758",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2288",
+      "employeeName": "KOMALI DEVI SRI DEVI",
+      "employeeId": "698f0f234fb69ffde9817730",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 0,
+          "used": 4,
+          "debitsRaw": 4,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2290",
+      "employeeName": "MEDISETTY NAGENDRA KUMAR",
+      "employeeId": "698f0f224fb69ffde9817720",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "2292",
+      "employeeName": "V M SATISH KUMAR DANGETI",
+      "employeeId": "6992f5b14fb69ffde9834882",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "2295",
+      "employeeName": "KAKARAPARTHI DEVI NIKITHA",
+      "employeeId": "69a1180c9f4e52e5b20777ea",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 3,
+          "debitsRaw": 3,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "2297",
+      "employeeName": "NAMMI NAVA DURGA KUSUMA",
+      "employeeId": "699d2d84ef55b82da43ec33e",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "2298",
+      "employeeName": "MATTA RAMA TULASI",
+      "employeeId": "69b79f54b04c8adb35082772",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 3,
+          "debitsRaw": 3,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2299",
+      "employeeName": "CHINTA KARUNA",
+      "employeeId": "69b79ee2b04c8adb35082553",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 0,
+        "removedTransferRows": 0
+      }
+    },
+    {
+      "empNo": "2300",
+      "employeeName": "YANNALA VARA LAKSHMI",
+      "employeeId": "69b8dd1db04c8adb351452c3",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 3,
+          "debitsRaw": 3,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "2304",
+      "employeeName": "ILLA TRIMURTHULU",
+      "employeeId": "69c779c9606fe772cde57f9d",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1.5,
+          "debitsRaw": 1.5,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2307",
+      "employeeName": "GADA CHITTESWARI DEVI",
+      "employeeId": "69cde730b3763b4431e2b4e6",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 2,
+      "yearDocCompensatoryOffBalance": 2,
+      "ledgerBalanceNow": 2,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 6,
+          "transferIn": 2,
+          "transferOut": 2,
+          "used": 4,
+          "debitsRaw": 4,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 2,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "2312",
+      "employeeName": "AKUMARTHI RAJU",
+      "employeeId": "69f18655c33dd90e63b6abf1",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "272",
+      "employeeName": "S KARIMULLA TANESHA",
+      "employeeId": "695b8c469fa26faa3ecdceaa",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 1,
+          "payrollCycleYear": 2026,
+          "label": "Jan 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 2,
+          "payrollCycleYear": 2026,
+          "label": "Feb 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "1/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 5,
+        "removedTransferRows": 20
+      }
+    },
+    {
+      "empNo": "5002",
+      "employeeName": "KAALAA DURGA",
+      "employeeId": "695b8c2d9fa26faa3ecdcdee",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "5005",
+      "employeeName": "DEGALA RAVI PRAKASH",
+      "employeeId": "695b8b539fa26faa3ecdc7f5",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "5008",
+      "employeeName": "MEDISETTY GOVINDA RAJU",
+      "employeeId": "695b8b549fa26faa3ecdc7ff",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "5010",
+      "employeeName": "GUTHURTHI CHANDRA SEKHAR",
+      "employeeId": "695b8b519fa26faa3ecdc7e6",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "608",
+      "employeeName": "D.VENKATA RAO",
+      "employeeId": "695b8c409fa26faa3ecdce7b",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 2,
+      "yearDocCompensatoryOffBalance": 2,
+      "ledgerBalanceNow": 2,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 2,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 2,
+          "transferIn": 2,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 2,
+          "balanceLastInArray": 2,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 8
+      }
+    },
+    {
+      "empNo": "61",
+      "employeeName": "A  ARUNA KUMARI",
+      "employeeId": "69aead3b7ed47927ce2b0f82",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 0.5,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0.5,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "7001",
+      "employeeName": "TIRUMADI SIVA RAMA KRISHNA",
+      "employeeId": "695b8bb89fa26faa3ecdcaad",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 10
+      }
+    },
+    {
+      "empNo": "7025",
+      "employeeName": "G SURYA GOPALAM",
+      "employeeId": "695b8b859fa26faa3ecdc94e",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "7035",
+      "employeeName": "DUKKA PRANAV REDDY",
+      "employeeId": "695b8b799fa26faa3ecdc8f4",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "7036",
+      "employeeName": "KURAMDASU VIJAYA SARADHI",
+      "employeeId": "695b8b7a9fa26faa3ecdc8f9",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 3,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 2,
+          "debitsRaw": 2,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "7041",
+      "employeeName": "M S M VENKATESWARA RAO",
+      "employeeId": "695b8b819fa26faa3ecdc935",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 3,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "7046",
+      "employeeName": "MULAPARTHI  VIJAY KRISHNA",
+      "employeeId": "699404114fb69ffde9855072",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 2,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "804",
+      "employeeName": "KOPPISETTI KANAKA DURGA",
+      "employeeId": "695b8b709fa26faa3ecdc8b8",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "5/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 1,
+        "removedTransferRows": 2
+      }
+    },
+    {
+      "empNo": "820",
+      "employeeName": "K. JANAKI",
+      "employeeId": "695b8c429fa26faa3ecdce8a",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    },
+    {
+      "empNo": "95",
+      "employeeName": "NARALASETTY CHANDRASEKHAR",
+      "employeeId": "69971d1c897fd73c067688e4",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 1,
+      "yearDocCompensatoryOffBalance": 1,
+      "ledgerBalanceNow": 1,
+      "anyBalanceDisplayFix": true,
+      "months": [
+        {
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "label": "Mar 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": true
+        },
+        {
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "label": "May 2026",
+          "pool": 1,
+          "transferIn": 0,
+          "transferOut": 1,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        },
+        {
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "label": "Jun 2026",
+          "pool": 1,
+          "transferIn": 1,
+          "transferOut": 0,
+          "used": 0,
+          "debitsRaw": 0,
+          "balanceDisplay": 1,
+          "balanceLastInArray": 1,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "3/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 6
+      }
+    },
+    {
+      "empNo": "990",
+      "employeeName": "GUBBALA SRIVIDYA",
+      "employeeId": "695b8b609fa26faa3ecdc84f",
+      "financialYear": "2026",
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalanceNow": 0,
+      "anyBalanceDisplayFix": false,
+      "months": [
+        {
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "label": "Apr 2026",
+          "pool": 0,
+          "transferIn": 0,
+          "transferOut": 0,
+          "used": 1,
+          "debitsRaw": 1,
+          "balanceDisplay": 0,
+          "balanceLastInArray": 0,
+          "balanceWouldHaveBeenWrong": false
+        }
+      ],
+      "reconcileStatus": "ok",
+      "reconcile": {
+        "source": "4/2026",
+        "target": "6/2026",
+        "rebuiltEdges": 2,
+        "removedTransferRows": 4
+      }
+    }
+  ],
+  "summary": {
+    "employeesInFile": 113,
+    "withMonthBalanceDisplayMismatch": 35
+  }
+}

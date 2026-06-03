@@ -87,6 +87,9 @@ function netUsedDaysForType(slot, leaveType) {
     if (txType === 'DEBIT') debits += days;
     if (isReversalCredit(tx)) reversalCredits += days;
   }
+  if (lt === 'CCL') {
+    return roundHalf(Math.max(0, debits));
+  }
   return roundHalf(Math.max(0, debits - reversalCredits));
 }
 
@@ -437,6 +440,21 @@ async function reconcileForLeaveChange(leaveRecord, options = {}) {
   });
 }
 
+/**
+ * Schedule full register reconciliation (monthly pool transfers + CL/CCL/EL ledger recalc)
+ * from a payroll anchor date — for CCL credits, OD CO, admin slot edits, etc. (no Leave doc required).
+ */
+function scheduleRegisterReconciliationFromDate(employeeId, fromDate, options = {}) {
+  const id = employeeId ? String(employeeId) : '';
+  const anchor = coerceDate(fromDate);
+  if (!id || !anchor) return;
+  const toDate = coerceDate(options.toDate) || anchor;
+  scheduleTransferRebuildForLeaveChange(
+    { employeeId: id, fromDate: anchor, toDate },
+    options
+  );
+}
+
 function scheduleTransferRebuildForLeaveChange(leaveRecord, options = {}) {
   const employeeId = leaveRecord?.employeeId ? String(leaveRecord.employeeId) : '';
   const anchorDate = earliestPayrollAnchorDate(leaveRecord, options) || coerceDate(leaveRecord?.fromDate);
@@ -492,6 +510,7 @@ module.exports = {
   reconcileForLeaveChange,
   reconcileEmployeeFromDate,
   scheduleTransferRebuildForLeaveChange,
+  scheduleRegisterReconciliationFromDate,
   earliestPayrollAnchorDate,
   resolveRollFlags,
   netUsedDaysForType,

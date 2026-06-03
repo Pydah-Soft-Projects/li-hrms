@@ -23,8 +23,15 @@
  *   --untilMonth/--untilYear  Target pay period (default: current system pay period)
  *   --skip-reset         Skip phase 1 (register already cleaned to scheduled-only)
  *   --limit N
+ *   --fy 2026          Alias for --financialYear
+ *
+ * Outputs (when run completes):
+ *   scripts/_reconcile_all_cl_results.json
+ *   scripts/_reconcile_all_cl_employees.json
+ *   scripts/_reconcile_all_cl_employees.csv
  */
 const path = require('path');
+const fs = require('fs');
 const mongoose = require('mongoose');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
@@ -312,11 +319,17 @@ async function main() {
 
   await mongoose.connect(process.env.MONGODB_URI);
 
+  console.log(
+    `[reconcile_all_cl] mode=${apply ? 'APPLY' : 'DRY-RUN'} phases: 1)reset/cleanup CL slots 2)post approved CL debits 3)rebuild transfers 4)recalc`
+  );
+
   const todayPeriod = await dateCycleService.getPeriodInfo(new Date());
   const untilMonth = Number(parseArg('untilMonth') || parseArg('month') || todayPeriod.payrollCycle.month);
   const untilYear = Number(parseArg('untilYear') || parseArg('year') || todayPeriod.payrollCycle.year);
+  const fyArg = parseArg('fy');
   const financialYear =
     parseArg('financialYear') ||
+    fyArg ||
     (await dateCycleService.getFinancialYearForDate(new Date())).name;
 
   const summary = {
@@ -373,7 +386,9 @@ async function main() {
     .lean();
   const empById = new Map(employees.map((e) => [String(e._id), e]));
 
+  let n = 0;
   for (const doc of docs) {
+    n += 1;
     const employee = empById.get(String(doc.employeeId));
     if (!employee) {
       summary.skipped++;
@@ -394,6 +409,11 @@ async function main() {
     }
 
     try {
+      if (n % 50 === 0 || n === docs.length) {
+        console.log(
+          `[progress] ${n}/${docs.length} processed=${summary.processed} failed=${summary.failed} dryRun=${!apply}`
+        );
+      }
       const row = await reconcileOneEmployee({
         doc,
         employee,
@@ -422,8 +442,66 @@ async function main() {
     ? 'Applied CL register reconciliation (reset + approved debits + transfers).'
     : 'Dry run. Re-run with --apply to persist.';
 
-  console.log(JSON.stringify(summary, null, 2));
+  const scriptDir = path.join(__dirname);
+  const resultsPath = path.join(scriptDir, '_reconcile_all_cl_results.json');
+  const employeesJsonPath = path.join(scriptDir, '_reconcile_all_cl_employees.json');
+  const employeesCsvPath = path.join(scriptDir, '_reconcile_all_cl_employees.csv');
+
+  fs.writeFileSync(resultsPath, JSON.stringify(summary, null, 2));
+  fs.writeFileSync(employeesJsonPath, JSON.stringify(summary.rows, null, 2));
+  fs.writeFileSync(
+    employeesCsvPath,
+    [
+      [
+        'empNo',
+        'employeeName',
+        'targetPayroll',
+        'clTxRemoved',
+        'slotsTouched',
+        'approvedLeavesFound',
+        'debitsToPost',
+        'debitsPosted',
+        'debitsSkippedExisting',
+        'status',
+      ].join(','),
+      ...summary.rows.map((r) =>
+        [
+          r.empNo,
+          `"${String(r.employeeName || '').replace(/"/g, '""')}"`,
+          r.targetPayroll,
+          r.reset?.clTxRemoved ?? '',
+          r.reset?.slotsTouched ?? '',
+          r.approvedLeavesFound ?? '',
+          r.debitsToPost ?? '',
+          r.debitsPosted ?? '',
+          r.debitsSkippedExisting ?? '',
+          r.ok ? 'ok' : 'skipped',
+        ].join(',')
+      ),
+      ...summary.errors.map((e) =>
+        [
+          e.empNo,
+          '',
+          e.target || '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          `error:${e.error}`,
+        ].join(',')
+      ),
+    ].join('\n')
+  );
+
+  console.log(JSON.stringify({ ...summary, rows: `[${summary.rows.length} rows]` }, null, 2));
+  console.log('Summary JSON:', resultsPath);
+  console.log('Per-employee JSON:', employeesJsonPath);
+  console.log('Per-employee CSV:', employeesCsvPath);
+
   await mongoose.disconnect();
+  process.exit(summary.failed > 0 ? 1 : 0);
 }
 
 main().catch(async (error) => {

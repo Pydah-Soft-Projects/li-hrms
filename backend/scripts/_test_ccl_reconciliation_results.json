@@ -1,0 +1,189 @@
+{
+  "ranAt": "2026-06-03T07:21:20.892Z",
+  "financialYear": "2026",
+  "unitTestsNote": "Run: npm test -- leaves/services/__tests__/leaveRegisterYearLedger.cclReconciliation.test.js",
+  "apiChecks": {
+    "scheduleRegisterReconciliationFromDate": true,
+    "netUsedDaysForTypeCclIgnoresReversal": true
+  },
+  "audit": {
+    "docsScanned": 439,
+    "cclMonthsWithReversalAndDebits": 0,
+    "employeesWithCclMonthPoolClosingMismatch": 57,
+    "mismatchSamples": [
+      {
+        "empNo": "5005",
+        "month": "4/2026",
+        "pool": 0,
+        "debits": 1,
+        "xferOut": 0,
+        "closing": 0,
+        "impliedBal": -1
+      },
+      {
+        "empNo": "5010",
+        "month": "4/2026",
+        "pool": 0,
+        "debits": 1,
+        "xferOut": 0,
+        "closing": 0,
+        "impliedBal": -1
+      },
+      {
+        "empNo": "5010",
+        "month": "5/2026",
+        "pool": 0,
+        "debits": 2,
+        "xferOut": 0,
+        "closing": 0,
+        "impliedBal": -2
+      },
+      {
+        "empNo": "5008",
+        "month": "5/2026",
+        "pool": 0,
+        "debits": 1,
+        "xferOut": 0,
+        "closing": 0,
+        "impliedBal": -1
+      },
+      {
+        "empNo": "990",
+        "month": "4/2026",
+        "pool": 0,
+        "debits": 1,
+        "xferOut": 0,
+        "closing": 0,
+        "impliedBal": -1
+      }
+    ]
+  },
+  "employees": [
+    {
+      "empNo": "1890",
+      "ok": true,
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalance": 0,
+      "mayDb": {
+        "pool": 4,
+        "usedDebits": 4,
+        "netUsed": 4,
+        "xferOut": 0,
+        "closing": 0,
+        "reversalCredits": 0
+      },
+      "mayApi": null,
+      "afterRecalc": {
+        "empNo": "1890",
+        "ok": true,
+        "employeeCompensatoryOffs": 0,
+        "yearDocCompensatoryOffBalance": 0,
+        "ledgerBalance": 0,
+        "mayDb": {
+          "pool": 4,
+          "usedDebits": 4,
+          "netUsed": 4,
+          "xferOut": 0,
+          "closing": 0,
+          "reversalCredits": 0
+        },
+        "mayApi": null
+      }
+    },
+    {
+      "empNo": "5008",
+      "ok": true,
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalance": 0,
+      "mayDb": {
+        "pool": 0,
+        "usedDebits": 1,
+        "netUsed": 1,
+        "xferOut": 0,
+        "closing": 0,
+        "reversalCredits": 0
+      },
+      "mayApi": null
+    },
+    {
+      "empNo": "2017",
+      "ok": true,
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalance": 0,
+      "mayDb": {
+        "pool": 1,
+        "usedDebits": 1,
+        "netUsed": 1,
+        "xferOut": 0,
+        "closing": 1,
+        "reversalCredits": 0
+      },
+      "mayApi": null
+    },
+    {
+      "empNo": "1954",
+      "ok": true,
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalance": 0,
+      "mayDb": {
+        "pool": 2,
+        "usedDebits": 4,
+        "netUsed": 4,
+        "xferOut": 0,
+        "closing": 2,
+        "reversalCredits": 0
+      },
+      "mayApi": null
+    },
+    {
+      "empNo": "2295",
+      "ok": true,
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalance": 0,
+      "mayDb": {
+        "pool": 1,
+        "usedDebits": 3,
+        "netUsed": 3,
+        "xferOut": 0,
+        "closing": 1,
+        "reversalCredits": 0
+      },
+      "mayApi": null
+    },
+    {
+      "empNo": "155",
+      "ok": true,
+      "employeeCompensatoryOffs": 0,
+      "yearDocCompensatoryOffBalance": 0,
+      "ledgerBalance": 0,
+      "mayDb": {
+        "pool": 0,
+        "usedDebits": 0,
+        "netUsed": 0,
+        "xferOut": 0,
+        "closing": null,
+        "reversalCredits": 0
+      },
+      "mayApi": null
+    }
+  ],
+  "reconcileDryRun": {
+    "ok": true,
+    "skipped": false,
+    "employeeId": "695b8b869fa26faa3ecdc953",
+    "financialYear": "2026",
+    "source": "4/2026",
+    "target": "6/2026",
+    "apply": false,
+    "removedTransferRows": 0,
+    "revertedCarryInSlots": 0,
+    "scheduledClFixedSlots": 0,
+    "rebuiltEdges": 0,
+    "lockedClClearedSlots": 0
+  }
+}
