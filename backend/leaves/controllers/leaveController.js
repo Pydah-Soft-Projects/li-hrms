@@ -417,6 +417,10 @@ exports.applyLeave = async (req, res) => {
       addressDuringLeave,
       isHalfDay,
       halfDayType,
+      fromIsHalfDay,
+      fromHalfDayType,
+      toIsHalfDay,
+      toHalfDayType,
       remarks,
       empNo, // Primary - emp_no for applying on behalf
       employeeId, // Legacy - for backward compatibility
@@ -692,14 +696,31 @@ exports.applyLeave = async (req, res) => {
         error: 'Invalid from/to date.',
       });
     }
-    let numberOfDays;
+    const {
+      normalizeLeaveBoundaries,
+      calculateLeaveNumberOfDays,
+      isSameIstCalendarDay: leaveSameDay,
+      expandLeaveToDailySegments,
+    } = require('../../shared/utils/leaveDayRangeUtils');
 
-    if (isHalfDay) {
-      numberOfDays = 0.5;
-    } else {
-      const diffTime = Math.abs(to.getTime() - from.getTime());
-      numberOfDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    const boundaryNorm = normalizeLeaveBoundaries({
+      fromDate: from,
+      toDate: to,
+      isHalfDay,
+      halfDayType,
+      fromIsHalfDay,
+      fromHalfDayType,
+      toIsHalfDay,
+      toHalfDayType,
+    });
+    if (!boundaryNorm.ok) {
+      return res.status(400).json({
+        success: false,
+        error: boundaryNorm.error || 'Invalid leave day boundaries',
+      });
     }
+
+    let numberOfDays = calculateLeaveNumberOfDays(from, to, boundaryNorm);
 
     const leavePayrollPeriodValidationService = require('../services/leavePayrollPeriodValidationService');
     const periodCheck = await leavePayrollPeriodValidationService.assertSinglePayrollPeriodForLeaveRange(
@@ -794,9 +815,11 @@ exports.applyLeave = async (req, res) => {
       employee.emp_no,
       from,
       to,
-      isHalfDay || false,
-      isHalfDay ? halfDayType : null,
-      true // approvedOnly = true for creation
+      boundaryNorm.isHalfDay || false,
+      boundaryNorm.isHalfDay ? boundaryNorm.halfDayType : null,
+      true, // approvedOnly = true for creation
+      null,
+      boundaryNorm
     );
 
     // Block if there are errors (approved conflicts), but allow if only warnings (non-approved conflicts)
@@ -810,70 +833,123 @@ exports.applyLeave = async (req, res) => {
       });
     }
 
-    // Attendance-first guard for single-day leave apply:
-    // if same-half/full-day attendance already exists, do not create leave that would be auto-rejected.
-    if (isSameIstDay(from, to)) {
-      try {
-        const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
-        const dateStr = extractISTComponents(from).dateStr;
+    // Attendance-first guard: check each leave segment day (boundary halves on multi-day).
+    try {
+      const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+      const AttendanceSettings = require('../../attendance/model/AttendanceSettings');
+      const { attendanceHalfPresenceFlags } = require('../../attendance/utils/attendanceHalfPresence');
+      const attSettingsDoc = await AttendanceSettings.getSettings();
+      const processingMode = AttendanceSettings.getProcessingMode(attSettingsDoc).mode;
+      const segments = expandLeaveToDailySegments({
+        fromDate: from,
+        toDate: to,
+        ...boundaryNorm,
+      });
+
+      for (const seg of segments) {
         const daily = await AttendanceDaily.findOne({
           employeeNumber: String(employee.emp_no || '').toUpperCase(),
-          date: dateStr,
+          date: seg.dateStr,
         }).select('status totalEarlyOutMinutes totalLateInMinutes shifts inTime outTime');
-        if (daily) {
-          const AttendanceSettings = require('../../attendance/model/AttendanceSettings');
-          const { attendanceHalfPresenceFlags } = require('../../attendance/utils/attendanceHalfPresence');
-          const attSettingsDoc = await AttendanceSettings.getSettings();
-          const processingMode = AttendanceSettings.getProcessingMode(attSettingsDoc).mode;
-          const { attFirst, attSecond } = attendanceHalfPresenceFlags(daily, processingMode);
-
-          if (!isHalfDay && (attFirst || attSecond)) {
-            return res.status(400).json({
-              success: false,
-              error: 'Attendance already exists on this date. Attendance is preferred over leave.',
-            });
-          }
-          if (isHalfDay && halfDayType === 'first_half' && attFirst) {
-            return res.status(400).json({
-              success: false,
-              error: 'First-half attendance already present. Attendance is preferred over leave on same half.',
-            });
-          }
-          if (isHalfDay && halfDayType === 'second_half' && attSecond) {
-            return res.status(400).json({
-              success: false,
-              error: 'Second-half attendance already present. Attendance is preferred over leave on same half.',
-            });
-          }
+        if (!daily) continue;
+        const { attFirst, attSecond } = attendanceHalfPresenceFlags(daily, processingMode);
+        if (!seg.isHalfDay && (attFirst || attSecond)) {
+          return res.status(400).json({
+            success: false,
+            error: `Attendance already exists on ${seg.dateStr}. Attendance is preferred over leave.`,
+          });
         }
-      } catch (attErr) {
-        console.error('Attendance apply-time guard failed:', attErr);
+        if (seg.isHalfDay && seg.halfDayType === 'first_half' && attFirst) {
+          return res.status(400).json({
+            success: false,
+            error: `First-half attendance already present on ${seg.dateStr}. Attendance is preferred over leave on same half.`,
+          });
+        }
+        if (seg.isHalfDay && seg.halfDayType === 'second_half' && attSecond) {
+          return res.status(400).json({
+            success: false,
+            error: `Second-half attendance already present on ${seg.dateStr}. Attendance is preferred over leave on same half.`,
+          });
+        }
       }
+    } catch (attErr) {
+      console.error('Attendance apply-time guard failed:', attErr);
     }
 
-    let resolvedIsHalfDay = Boolean(isHalfDay);
-    let resolvedHalfDayType = isHalfDay ? halfDayType : null;
+    let resolvedIsHalfDay = boundaryNorm.isHalfDay;
+    let resolvedHalfDayType = boundaryNorm.halfDayType;
+    let resolvedFromIsHalfDay = boundaryNorm.fromIsHalfDay;
+    let resolvedFromHalfDayType = boundaryNorm.fromHalfDayType;
+    let resolvedToIsHalfDay = boundaryNorm.toIsHalfDay;
+    let resolvedToHalfDayType = boundaryNorm.toHalfDayType;
     let resolvedNumberOfDays = numberOfDays;
     let halfHolidayLeaveRemark = null;
 
-    if (isSameIstDay(from, to)) {
+    {
       const { resolveLeaveApplyAgainstHalfHoliday } = require('../services/odHalfHolidayRosterService');
-      const halfHolRes = await resolveLeaveApplyAgainstHalfHoliday(employee.emp_no, extractISTComponents(from).dateStr, {
+      const allSegments = expandLeaveToDailySegments({
+        fromDate: from,
+        toDate: to,
+        ...boundaryNorm,
+      });
+      const boundarySegments =
+        allSegments.length <= 1
+          ? allSegments
+          : [allSegments[0], allSegments[allSegments.length - 1]];
+      const holidayRemarks = [];
+
+      for (const seg of boundarySegments) {
+        const halfHolRes = await resolveLeaveApplyAgainstHalfHoliday(employee.emp_no, seg.dateStr, {
+          isHalfDay: seg.isHalfDay,
+          halfDayType: seg.halfDayType,
+          numberOfDays: seg.numberOfDays,
+        });
+        if (!halfHolRes.ok) {
+          return res.status(400).json({
+            success: false,
+            error: halfHolRes.error || 'Leave conflicts with roster half holiday',
+          });
+        }
+        if (halfHolRes.narrowed) {
+          const fromStr = extractISTComponents(from).dateStr;
+          const toStr = extractISTComponents(to).dateStr;
+          if (seg.dateStr === fromStr) {
+            resolvedFromIsHalfDay = true;
+            resolvedFromHalfDayType = halfHolRes.halfDayType;
+            if (leaveSameDay(from, to)) {
+              resolvedIsHalfDay = true;
+              resolvedHalfDayType = halfHolRes.halfDayType;
+            }
+          }
+          if (seg.dateStr === toStr && !leaveSameDay(from, to)) {
+            resolvedToIsHalfDay = true;
+            resolvedToHalfDayType = halfHolRes.halfDayType;
+          }
+          if (halfHolRes.remark) holidayRemarks.push(halfHolRes.remark);
+        }
+      }
+
+      const reNorm = normalizeLeaveBoundaries({
+        fromDate: from,
+        toDate: to,
+        fromIsHalfDay: resolvedFromIsHalfDay,
+        fromHalfDayType: resolvedFromHalfDayType,
+        toIsHalfDay: resolvedToIsHalfDay,
+        toHalfDayType: resolvedToHalfDayType,
         isHalfDay: resolvedIsHalfDay,
         halfDayType: resolvedHalfDayType,
-        numberOfDays: resolvedNumberOfDays,
       });
-      if (!halfHolRes.ok) {
-        return res.status(400).json({
-          success: false,
-          error: halfHolRes.error || 'Leave conflicts with roster half holiday',
-        });
+      if (reNorm.ok) {
+        resolvedNumberOfDays = calculateLeaveNumberOfDays(from, to, reNorm);
+        resolvedIsHalfDay = reNorm.isHalfDay;
+        resolvedHalfDayType = reNorm.halfDayType;
+        resolvedFromIsHalfDay = reNorm.fromIsHalfDay;
+        resolvedFromHalfDayType = reNorm.fromHalfDayType;
+        resolvedToIsHalfDay = reNorm.toIsHalfDay;
+        resolvedToHalfDayType = reNorm.toHalfDayType;
       }
-      if (halfHolRes.narrowed) {
-        resolvedIsHalfDay = true;
-        resolvedHalfDayType = halfHolRes.halfDayType;
-        resolvedNumberOfDays = 0.5;
-        halfHolidayLeaveRemark = halfHolRes.remark || null;
+      if (holidayRemarks.length) {
+        halfHolidayLeaveRemark = [...new Set(holidayRemarks)].join('\n');
       }
     }
 
@@ -963,6 +1039,10 @@ exports.applyLeave = async (req, res) => {
       numberOfDays: resolvedNumberOfDays,
       isHalfDay: resolvedIsHalfDay,
       halfDayType: resolvedIsHalfDay ? resolvedHalfDayType : null,
+      fromIsHalfDay: resolvedFromIsHalfDay,
+      fromHalfDayType: resolvedFromIsHalfDay ? resolvedFromHalfDayType : null,
+      toIsHalfDay: resolvedToIsHalfDay,
+      toHalfDayType: resolvedToIsHalfDay ? resolvedToHalfDayType : null,
       purpose,
       contactNumber,
       emergencyContact,
@@ -1100,7 +1180,8 @@ exports.updateLeave = async (req, res) => {
 
     const allowedUpdates = [
       'leaveType', 'fromDate', 'toDate', 'purpose', 'contactNumber',
-      'emergencyContact', 'addressDuringLeave', 'isHalfDay', 'halfDayType', 'remarks'
+      'emergencyContact', 'addressDuringLeave', 'isHalfDay', 'halfDayType',
+      'fromIsHalfDay', 'fromHalfDayType', 'toIsHalfDay', 'toHalfDayType', 'remarks'
     ];
 
     // Super Admin can also change status
@@ -1207,13 +1288,30 @@ exports.updateLeave = async (req, res) => {
       }
     }
 
-    // Recalculate days if dates changed
-    if (req.body.fromDate || req.body.toDate || req.body.isHalfDay !== undefined) {
-      if (leave.isHalfDay) {
-        leave.numberOfDays = 0.5;
-      } else {
-        const diffTime = Math.abs(leave.toDate - leave.fromDate);
-        leave.numberOfDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    // Recalculate days if dates or boundary halves changed (pre-save hook also runs)
+    const dayBoundaryTouched =
+      req.body.fromDate ||
+      req.body.toDate ||
+      req.body.isHalfDay !== undefined ||
+      req.body.halfDayType !== undefined ||
+      req.body.fromIsHalfDay !== undefined ||
+      req.body.fromHalfDayType !== undefined ||
+      req.body.toIsHalfDay !== undefined ||
+      req.body.toHalfDayType !== undefined;
+    if (dayBoundaryTouched) {
+      const { normalizeLeaveBoundaries, calculateLeaveNumberOfDays } = require('../../shared/utils/leaveDayRangeUtils');
+      const norm = normalizeLeaveBoundaries({
+        fromDate: leave.fromDate,
+        toDate: leave.toDate,
+        isHalfDay: leave.isHalfDay,
+        halfDayType: leave.halfDayType,
+        fromIsHalfDay: leave.fromIsHalfDay,
+        fromHalfDayType: leave.fromHalfDayType,
+        toIsHalfDay: leave.toIsHalfDay,
+        toHalfDayType: leave.toHalfDayType,
+      });
+      if (norm.ok) {
+        leave.numberOfDays = calculateLeaveNumberOfDays(leave.fromDate, leave.toDate, norm);
       }
     }
 

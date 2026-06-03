@@ -58,6 +58,26 @@ const LeaveSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Multi-day boundary halves (start → second half only; end → first half only)
+    fromIsHalfDay: {
+      type: Boolean,
+      default: false,
+    },
+    fromHalfDayType: {
+      type: String,
+      enum: ['first_half', 'second_half', null],
+      default: null,
+    },
+    toIsHalfDay: {
+      type: Boolean,
+      default: false,
+    },
+    toHalfDayType: {
+      type: String,
+      enum: ['first_half', 'second_half', null],
+      default: null,
+    },
+
     // Purpose/Reason for leave
     purpose: {
       type: String,
@@ -440,22 +460,36 @@ LeaveSchema.index({ appliedAt: -1 });
 
 // Calculate number of days before save and derive leaveNature
 LeaveSchema.pre('save', async function () {
-  if (this.isModified('fromDate') || this.isModified('toDate')) {
-    if (this.fromDate && this.toDate) {
-      const from = extractISTComponents(this.fromDate);
-      const to = extractISTComponents(this.toDate);
+  const dayFieldsTouched =
+    this.isModified('fromDate') ||
+    this.isModified('toDate') ||
+    this.isModified('isHalfDay') ||
+    this.isModified('halfDayType') ||
+    this.isModified('fromIsHalfDay') ||
+    this.isModified('fromHalfDayType') ||
+    this.isModified('toIsHalfDay') ||
+    this.isModified('toHalfDayType');
 
-      const d1 = createISTDate(from.dateStr);
-      const d2 = createISTDate(to.dateStr);
-
-      const diffTime = Math.abs(d2.getTime() - d1.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-
-      if (this.isHalfDay) {
-        this.numberOfDays = 0.5;
-      } else {
-        this.numberOfDays = diffDays;
-      }
+  if (dayFieldsTouched && this.fromDate && this.toDate) {
+    const { normalizeLeaveBoundaries, calculateLeaveNumberOfDays } = require('../../shared/utils/leaveDayRangeUtils');
+    const normalized = normalizeLeaveBoundaries({
+      fromDate: this.fromDate,
+      toDate: this.toDate,
+      isHalfDay: this.isHalfDay,
+      halfDayType: this.halfDayType,
+      fromIsHalfDay: this.fromIsHalfDay,
+      fromHalfDayType: this.fromHalfDayType,
+      toIsHalfDay: this.toIsHalfDay,
+      toHalfDayType: this.toHalfDayType,
+    });
+    if (normalized.ok) {
+      this.fromIsHalfDay = normalized.fromIsHalfDay;
+      this.fromHalfDayType = normalized.fromHalfDayType;
+      this.toIsHalfDay = normalized.toIsHalfDay;
+      this.toHalfDayType = normalized.toHalfDayType;
+      this.isHalfDay = normalized.isHalfDay;
+      this.halfDayType = normalized.halfDayType;
+      this.numberOfDays = calculateLeaveNumberOfDays(this.fromDate, this.toDate, normalized);
     }
   }
 

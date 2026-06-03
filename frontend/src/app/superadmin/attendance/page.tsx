@@ -22,6 +22,8 @@ import {
   getPartialRecordPayableContribution,
 } from '@/lib/attendancePartialContribution';
 import { buildSplitCellStatus } from '@/lib/attendanceCompleteDayCellText';
+import { AttendanceLeaveInfoSection } from '@/components/attendance/AttendanceLeaveInfoSection';
+import { sumLeaveCreditFromDailyRecords } from '@/lib/leaveDayRange';
 import {
   computePayRegisterAllRowFromMonthlySummary,
   formatPolicyAttendanceDeductionDisplay,
@@ -75,6 +77,11 @@ interface AttendanceRecord {
     leaveType: string;
     isHalfDay: boolean;
     halfDayType?: string;
+    fromIsHalfDay?: boolean;
+    fromHalfDayType?: string;
+    toIsHalfDay?: boolean;
+    toHalfDayType?: string;
+    segmentDaysOnDate?: number;
     purpose?: string;
     fromDate?: string;
     toDate?: string;
@@ -3171,7 +3178,9 @@ export default function AttendancePage() {
                   }, 0);
                   const monthAbsent = getAbsentCountForRow(item, dailyValues);
                   const leaveRecords = dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave);
-                  const totalLeaves = item.summary?.totalLeaves ?? leaveRecords.length;
+                  const totalLeaves =
+                    item.summary?.totalLeaves ??
+                    sumLeaveCreditFromDailyRecords(item.dailyAttendance);
                   const weekOffsCount = item.summary?.totalWeeklyOffs ?? dailyValues.filter((r: any) => r?.status === 'WEEK_OFF').length;
                   const holidaysCount = item.summary?.totalHolidays ?? dailyValues.filter((r: any) => r?.status === 'HOLIDAY').length;
                   const lopCount = leaveRecords.filter((r: any) => {
@@ -5011,24 +5020,10 @@ export default function AttendancePage() {
                 </div>
               )}
 
-              {/* Leave Information */}
               {attendanceDetail.hasLeave && attendanceDetail.leaveInfo && (
-                <div className="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-900/20">
-                  <h4 className="mb-3 text-base font-semibold text-orange-900 dark:text-orange-200">Leave Information</h4>
-
-                  {/* Purpose/Reason */}
-                  {attendanceDetail.leaveInfo.purpose ? (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Purpose/Reason</label>
-                      <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.purpose}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {/* Remarks / Notes */}
-                  {attendanceDetail.notes && (
-                    <div className="col-span-2 rounded-xl bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/50 p-4 mt-2">
+                <>
+                  {attendanceDetail.notes ? (
+                    <div className="col-span-2 rounded-xl bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/50 p-4 mt-4">
                       <div className="flex items-start gap-3">
                         <div className="mt-0.5 text-blue-600 dark:text-blue-400">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -5043,91 +5038,12 @@ export default function AttendancePage() {
                         </div>
                       </div>
                     </div>
-                  )}
-                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                    <div>
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Leave Type</label>
-                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.leaveType || 'N/A'}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Half Day</label>
-                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.isHalfDay ? 'Yes' : 'No'}
-                        {attendanceDetail.leaveInfo.isHalfDay && attendanceDetail.leaveInfo.halfDayType && (
-                          <span className="ml-1 text-xs">({attendanceDetail.leaveInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Date Range */}
-                  {attendanceDetail.leaveInfo.fromDate && attendanceDetail.leaveInfo.toDate && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Date Range</label>
-                      <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
-                        {new Date(attendanceDetail.leaveInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' })} - {new Date(attendanceDetail.leaveInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Number of Days and Day in Leave */}
-                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                    <div>
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Total Days</label>
-                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.numberOfDays !== undefined && attendanceDetail.leaveInfo.numberOfDays !== null
-                          ? `${attendanceDetail.leaveInfo.numberOfDays} ${attendanceDetail.leaveInfo.numberOfDays === 1 ? 'day' : 'days'}`
-                          : 'N/A'}
-                      </div>
-                    </div>
-                    {attendanceDetail.leaveInfo.dayInLeave !== undefined && attendanceDetail.leaveInfo.dayInLeave !== null && (
-                      <div>
-                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Day in Leave</label>
-                        <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                          {attendanceDetail.leaveInfo.dayInLeave === 1 ? '1st day' : attendanceDetail.leaveInfo.dayInLeave === 2 ? '2nd day' : attendanceDetail.leaveInfo.dayInLeave === 3 ? '3rd day' : `${attendanceDetail.leaveInfo.dayInLeave}th day`}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Applied Date */}
-                  {attendanceDetail.leaveInfo.appliedAt && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Applied On</label>
-                      <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
-                        {new Date(attendanceDetail.leaveInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Approved By and When */}
-                  {attendanceDetail.leaveInfo.approvedBy && (
-                    <div className="mb-3 grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved By</label>
-                        <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
-                          {attendanceDetail.leaveInfo.approvedBy.name || attendanceDetail.leaveInfo.approvedBy.email || 'N/A'}
-                        </div>
-                      </div>
-                      {attendanceDetail.leaveInfo.approvedAt && (
-                        <div>
-                          <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved On</label>
-                          <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
-                            {new Date(attendanceDetail.leaveInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {attendanceDetail.isConflict && (
-                    <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
-                      ⚠️ Conflict: Leave approved but attendance logged for this date
-                    </div>
-                  )}
-                </div>
+                  ) : null}
+                  <AttendanceLeaveInfoSection
+                    leaveInfo={attendanceDetail.leaveInfo}
+                    isConflict={attendanceDetail.isConflict}
+                  />
+                </>
               )}
 
               {/* OD Information */}

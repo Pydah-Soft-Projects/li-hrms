@@ -9,6 +9,12 @@ const OT = require('../../overtime/model/OT');
 const Permission = require('../../permissions/model/Permission');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const { extractISTComponents, createISTDate } = require('../utils/dateUtils');
+const {
+  expandLeaveToDailySegments,
+  getLeaveCoverageOnDate,
+  checkDayHalfCoverageConflict,
+  eachDateStrInRange,
+} = require('../utils/leaveDayRangeUtils');
 
 /**
  * Inclusive calendar overlap in Asia/Kolkata (string compare on YYYY-MM-DD).
@@ -400,15 +406,36 @@ const validatePermissionRequest = async (employeeId, employeeNumber, date, optio
  * @param {Boolean} approvedOnly - If true, only check approved records (for creation). If false, check all (for approval)
  * @returns {Object} - Validation result
  */
-const validateLeaveRequest = async (employeeId, employeeNumber, fromDate, toDate, isHalfDay = false, halfDayType = null, approvedOnly = true, excludeId = null) => {
+const validateLeaveRequest = async (
+  employeeId,
+  employeeNumber,
+  fromDate,
+  toDate,
+  isHalfDay = false,
+  halfDayType = null,
+  approvedOnly = true,
+  excludeId = null,
+  boundaryNorm = null
+) => {
   const errors = [];
   const warnings = [];
+
+  const requestedSegments = expandLeaveToDailySegments({
+    fromDate,
+    toDate: toDate || fromDate,
+    isHalfDay,
+    halfDayType,
+    ...(boundaryNorm || {}),
+  });
 
   // IST instants for Mongo pre-filter; calendar overlap is verified in IST
   const { start, end } = getIstQueryBounds(fromDate, toDate);
 
   // Resolve status list: for creation, block both pending AND approved records
   const statusFilter = ['pending', 'reporting_manager_approved', 'hod_approved', 'manager_approved', 'hr_approved', 'principal_approved', 'approved'];
+
+  const formatHalfLabel = (isHalf, half) =>
+    isHalf ? (half === 'second_half' ? 'Second Half' : 'First Half') : 'Full Day';
 
   // 1. Validate against OD conflicts
   const ods = await OD.find({
@@ -425,32 +452,39 @@ const validateLeaveRequest = async (employeeId, employeeNumber, fromDate, toDate
 
   const conflictingODs = [];
 
-  // Check each OD for conflicts
+  // Check each OD for conflicts (per overlapping calendar day)
   for (const od of ods) {
     if (!istYmdRangeOverlaps(fromDate, toDate, od.fromDate, od.toDate)) continue;
-    if (isSameDay(fromDate, toDate) && isHalfDay) {
-      if (isSameDay(fromDate, od.fromDate) && isSameDay(fromDate, od.toDate)) {
-        if (checkHalfDayConflict(isHalfDay, halfDayType, od.isHalfDay, od.halfDayType)) {
-          conflictingODs.push(od);
-          const statusText = od.status === 'approved' ? 'approved' : 'pending';
-          errors.push(`Employee has a ${statusText} OD on ${formatIstErrorDate(od.fromDate)} that conflicts with this leave (${isHalfDay ? (halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'} vs ${od.isHalfDay ? (od.halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'})`);
-        }
+
+    const overlapDates = eachDateStrInRange(fromDate, toDate).filter((d) =>
+      eachDateStrInRange(od.fromDate, od.toDate).includes(d)
+    );
+
+    for (const dateStr of overlapDates) {
+      const reqSeg = requestedSegments.find((s) => s.dateStr === dateStr);
+      if (!reqSeg) continue;
+      const reqCov = {
+        isHalfDay: reqSeg.isHalfDay,
+        halfDayType: reqSeg.halfDayType,
+      };
+      let odCov;
+      if (isSameDay(od.fromDate, od.toDate)) {
+        odCov = { isHalfDay: Boolean(od.isHalfDay), halfDayType: od.halfDayType };
+      } else if (dateStr === extractISTComponents(od.fromDate).dateStr && od.fromIsHalfDay) {
+        odCov = { isHalfDay: true, halfDayType: od.fromHalfDayType || 'second_half' };
+      } else if (dateStr === extractISTComponents(od.toDate).dateStr && od.toIsHalfDay) {
+        odCov = { isHalfDay: true, halfDayType: od.toHalfDayType || 'first_half' };
       } else {
-        conflictingODs.push(od);
-        const statusText = od.status === 'approved' ? 'approved' : 'pending';
-        errors.push(`Employee has a ${statusText} OD from ${formatIstErrorDate(od.fromDate)} to ${formatIstErrorDate(od.toDate)} that conflicts with this leave period`);
+        odCov = { isHalfDay: false, halfDayType: null };
       }
-    } else {
-      if (isSameDay(fromDate, toDate) && !isHalfDay) {
-        if (isSameDay(fromDate, od.fromDate) && isSameDay(fromDate, od.toDate)) {
-          conflictingODs.push(od);
-          const statusText = od.status === 'approved' ? 'approved' : 'pending';
-          errors.push(`Employee has a ${statusText} OD on ${formatIstErrorDate(od.fromDate)} that conflicts with this full-day leave`);
-        }
-      } else {
+
+      if (checkDayHalfCoverageConflict(reqCov, odCov)) {
         conflictingODs.push(od);
         const statusText = od.status === 'approved' ? 'approved' : 'pending';
-        errors.push(`Employee has a ${statusText} OD from ${formatIstErrorDate(od.fromDate)} to ${formatIstErrorDate(od.toDate)} that conflicts with this leave period`);
+        errors.push(
+          `Employee has a ${statusText} OD on ${formatIstErrorDate(createISTDate(dateStr, '00:00'))} that conflicts with this leave (${formatHalfLabel(reqCov.isHalfDay, reqCov.halfDayType)} vs ${formatHalfLabel(odCov.isHalfDay, odCov.halfDayType)})`
+        );
+        break;
       }
     }
   }
@@ -471,20 +505,26 @@ const validateLeaveRequest = async (employeeId, employeeNumber, fromDate, toDate
   const conflictingLeaves = [];
 
   for (const leave of leaves) {
-    // Skip if it's the current application being updated
     if (excludeId && String(leave._id) === String(excludeId)) continue;
-
     if (!istYmdRangeOverlaps(fromDate, toDate, leave.fromDate, leave.toDate)) continue;
-    if (isSameDay(fromDate, toDate) && leave.isHalfDay && isHalfDay) {
-      if (checkHalfDayConflict(isHalfDay, halfDayType, leave.isHalfDay, leave.halfDayType)) {
+
+    const overlapDates = eachDateStrInRange(fromDate, toDate).filter((d) =>
+      eachDateStrInRange(leave.fromDate, leave.toDate).includes(d)
+    );
+
+    for (const dateStr of overlapDates) {
+      const reqSeg = requestedSegments.find((s) => s.dateStr === dateStr);
+      const existCov = getLeaveCoverageOnDate(leave, dateStr);
+      if (!reqSeg || !existCov) continue;
+      const reqCov = { isHalfDay: reqSeg.isHalfDay, halfDayType: reqSeg.halfDayType };
+      if (checkDayHalfCoverageConflict(reqCov, existCov)) {
         conflictingLeaves.push(leave);
         const statusText = leave.status === 'approved' ? 'approved' : 'pending';
-        errors.push(`Employee has a ${statusText} leave on ${formatIstErrorDate(leave.fromDate)} that conflicts with this request (${isHalfDay ? (halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'} vs ${leave.isHalfDay ? (leave.halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'})`);
+        errors.push(
+          `Employee has a ${statusText} leave on ${formatIstErrorDate(createISTDate(dateStr, '00:00'))} that conflicts with this request (${formatHalfLabel(reqCov.isHalfDay, reqCov.halfDayType)} vs ${formatHalfLabel(existCov.isHalfDay, existCov.halfDayType)})`
+        );
+        break;
       }
-    } else {
-      conflictingLeaves.push(leave);
-      const statusText = leave.status === 'approved' ? 'approved' : 'pending';
-      errors.push(`Employee has a ${statusText} leave from ${formatIstErrorDate(leave.fromDate)} to ${formatIstErrorDate(leave.toDate)} that conflicts with this request period`);
     }
   }
 

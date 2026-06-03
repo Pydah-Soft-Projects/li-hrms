@@ -12,6 +12,10 @@ const Employee = require('../../employees/model/Employee');
 const OT = require('../../overtime/model/OT');
 const deductionService = require('../../payroll/services/deductionService');
 const { getAbsentDeductionSettings } = require('../../payroll/services/allowanceDeductionResolverService');
+const {
+  buildAttendanceLeaveInfoForDate,
+  leaveDailyCreditUnit,
+} = require('../../shared/utils/leaveDayRangeUtils');
 
 function defaultAttendancePolicyDeductionBreakdown() {
   return {
@@ -501,7 +505,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       isActive: true,
       fromDate: { $lte: endDate },
       toDate: { $gte: startDate },
-    }).select('fromDate toDate isHalfDay halfDayType leaveType leaveNature numberOfDays').lean();
+    }).select('fromDate toDate isHalfDay halfDayType fromIsHalfDay fromHalfDayType toIsHalfDay toHalfDayType leaveType leaveNature numberOfDays').lean();
 
     // 5. Get approved ODs for this month (Using .lean() and projections)
     const approvedODs = await OD.find({
@@ -576,7 +580,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       for (const dStr of range) {
         if (!dailyStatsMap.has(dStr)) continue;
         if (lvId && leaveSplitCoverageKeys.has(`${lvId}_${dStr}`)) continue;
-        dailyStatsMap.get(dStr).leaves.push(lv);
+        const dayLeave = buildAttendanceLeaveInfoForDate(lv, dStr);
+        if (dayLeave) dailyStatsMap.get(dStr).leaves.push(dayLeave);
       }
     }
 
@@ -650,12 +655,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       if (d.attendance && !isAbsentStatus(d.attendance.status)) return 'PRESENT';
       // Sandwich should consider LEAVE neighbor only when leave coverage is full-day.
       // Half-day leave on a side (e.g. HD + L) should not force WO/HOL conversion.
-      const leaveCoverage = (d.leaves || []).reduce((sum, l) => {
-        if (!l) return sum;
-        if (l.isHalfDay) return sum + 0.5;
-        if (typeof l.numberOfDays === 'number' && l.numberOfDays > 0 && l.numberOfDays < 1) return sum + 0.5;
-        return sum + 1;
-      }, 0);
+      const leaveCoverage = (d.leaves || []).reduce((sum, l) => sum + leaveDailyCreditUnit(l), 0);
       if (Math.min(1, leaveCoverage) >= 1) return 'LEAVE';
       const hasDayOd = d.ods.length > 0;
       // Align sandwich classification with summary absent logic:
@@ -862,16 +862,16 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         const policySandwichLeaves = day.leaves.filter((l) => isPolicySandwichLeave(l));
 
         // Approved leave only for day cap — half-holiday sandwich LOP is on the other half (not scaled down).
-        const leaveContribRaw = approvedLeaves.reduce((sum, l) => {
-          const dailyUnit = l.isHalfDay ? 0.5 : 1;
-          return sum + dailyUnit;
-        }, 0);
+        const leaveContribRaw = approvedLeaves.reduce(
+          (sum, l) => sum + leaveDailyCreditUnit(l),
+          0
+        );
         leaveContrib = Math.min(1, leaveContribRaw);
 
         let paidUnitSum = 0;
         let lopUnitSum = 0;
         for (const l of approvedLeaves) {
-          const unit = l.isHalfDay ? 0.5 : 1;
+          const unit = leaveDailyCreditUnit(l);
           const nature = (l.leaveNature || '').toLowerCase();
           if (nature === 'lop' || nature === 'without_pay') lopUnitSum += unit;
           else paidUnitSum += unit;
@@ -898,7 +898,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         }
 
         for (const sl of policySandwichLeaves) {
-          const unit = sl.isHalfDay ? 0.5 : 1;
+          const unit = leaveDailyCreditUnit(sl);
           totalLopLeaveDays += unit;
           const existingLop = contributingDates.lopLeaves.find((cd) => cd.date === dStr);
           if (!existingLop) {
@@ -1226,16 +1226,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
             continue;
           }
           if (isPolicySandwichLeave(l)) continue;
-          if (l.isHalfDay) {
-            if (l.halfDayType === 'second_half') leaveSecondAll = Math.max(leaveSecondAll, 0.5);
-            else leaveFirstAll = Math.max(leaveFirstAll, 0.5);
-            continue;
-          }
-          const nd = typeof l.numberOfDays === 'number' ? l.numberOfDays : null;
-          if (nd != null && nd >= 1) {
-            leaveFirstAll = 0.5;
-            leaveSecondAll = 0.5;
-          } else if (nd != null && nd > 0 && nd < 1) {
+          const dayUnit = leaveDailyCreditUnit(l);
+          if (dayUnit < 1 - 1e-6) {
             if (l.halfDayType === 'second_half') leaveSecondAll = Math.max(leaveSecondAll, 0.5);
             else leaveFirstAll = Math.max(leaveFirstAll, 0.5);
           } else {

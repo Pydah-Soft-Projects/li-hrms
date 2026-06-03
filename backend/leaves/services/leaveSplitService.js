@@ -4,50 +4,24 @@ const leaveRegisterYearMonthlyApplyService = require('./leaveRegisterYearMonthly
 const LeaveSettings = require('../model/LeaveSettings');
 const Employee = require('../../employees/model/Employee');
 const { getFinancialYear, getLeaveNature } = require('./leaveBalanceService');
+const { expandLeaveToDailySegments } = require('../../shared/utils/leaveDayRangeUtils');
 
 /**
- * Get all dates between fromDate and toDate (inclusive)
- * @param {Date} fromDate - Start date
- * @param {Date} toDate - End date
- * @param {Boolean} isHalfDay - Is the original leave a half-day?
- * @param {String} halfDayType - 'first_half' or 'second_half' (if isHalfDay is true)
- * @returns {Array} Array of date objects with day info
+ * Get all dates between fromDate and toDate (inclusive), with per-day half boundaries.
  */
-function getDateRange(fromDate, toDate, isHalfDay = false, halfDayType = null) {
-  const dates = [];
-  const start = new Date(fromDate);
-  const end = new Date(toDate);
-  
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
-
-  let currentDate = new Date(start);
-  
-  while (currentDate <= end) {
-    const dateCopy = new Date(currentDate);
-    
-    // If it's a single half-day leave
-    if (isHalfDay && start.getTime() === end.getTime()) {
-      dates.push({
-        date: dateCopy,
-        isHalfDay: true,
-        halfDayType: halfDayType || 'first_half',
-        numberOfDays: 0.5,
-      });
-    } else {
-      // Full day
-      dates.push({
-        date: dateCopy,
-        isHalfDay: false,
-        halfDayType: null,
-        numberOfDays: 1,
-      });
-    }
-    
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
-
-  return dates;
+function getDateRange(fromDate, toDate, isHalfDay = false, halfDayType = null, leaveDoc = null) {
+  const source = leaveDoc || {
+    fromDate,
+    toDate: toDate || fromDate,
+    isHalfDay,
+    halfDayType,
+  };
+  return expandLeaveToDailySegments(source).map((seg) => ({
+    date: seg.date,
+    isHalfDay: seg.isHalfDay,
+    halfDayType: seg.halfDayType,
+    numberOfDays: seg.numberOfDays,
+  }));
 }
 
 /**
@@ -68,7 +42,7 @@ async function validateSplits(leaveId, splits) {
     }
 
     // Get date range for original leave
-    const originalDates = getDateRange(leave.fromDate, leave.toDate, leave.isHalfDay, leave.halfDayType);
+    const originalDates = getDateRange(leave.fromDate, leave.toDate, leave.isHalfDay, leave.halfDayType, leave);
     const originalTotalDays = leave.numberOfDays;
 
     // Validate splits
