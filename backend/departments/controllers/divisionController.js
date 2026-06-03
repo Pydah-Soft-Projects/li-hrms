@@ -10,6 +10,60 @@ const {
 } = require('../../shared/utils/customEmployeeGrouping');
 const { flattenShiftConfigsWithGroups } = require('../../shared/utils/shiftAssignmentConfig');
 
+const normalizeHalfSegment = (segment) => {
+    if (segment === undefined) return undefined;
+    if (!segment || typeof segment !== 'object') return null;
+    return {
+        startTime: segment.startTime || null,
+        endTime: segment.endTime || null,
+        duration: segment.duration !== undefined && segment.duration !== null && segment.duration !== '' ? Number(segment.duration) : null,
+        minDuration: segment.minDuration !== undefined && segment.minDuration !== null && segment.minDuration !== '' ? Number(segment.minDuration) : null,
+        gracePeriod: segment.gracePeriod !== undefined && segment.gracePeriod !== null && segment.gracePeriod !== '' ? Number(segment.gracePeriod) : null,
+        payableShifts: segment.payableShifts !== undefined && segment.payableShifts !== null && segment.payableShifts !== '' ? Number(segment.payableShifts) : null,
+    };
+};
+
+const normalizeBreakSegment = (segment) => {
+    if (segment === undefined) return undefined;
+    if (!segment || typeof segment !== 'object') return null;
+    return {
+        startTime: segment.startTime || null,
+        endTime: segment.endTime || null,
+    };
+};
+
+const validateDivisionShiftSegments = (cfg) => {
+    const fh = cfg.firstHalf || null;
+    const br = cfg.break || null;
+    const sh = cfg.secondHalf || null;
+
+    const requirePair = (seg, label) => {
+        if (!seg) return null;
+        if (seg.startTime && !seg.endTime) return `${label} endTime is required when startTime is provided`;
+        if (seg.endTime && !seg.startTime) return `${label} startTime is required when endTime is provided`;
+        return null;
+    };
+
+    const errA = requirePair(fh, 'First half');
+    if (errA) return errA;
+    const errB = requirePair(sh, 'Second half');
+    if (errB) return errB;
+    if (br) {
+        if (br.startTime && !br.endTime) return 'Break endTime is required when break startTime is provided';
+        if (br.endTime && !br.startTime) return 'Break startTime is required when break endTime is provided';
+    }
+
+    // Continuity validations when all three segments are provided with times.
+    if (fh?.endTime && br?.startTime && fh.endTime !== br.startTime) {
+        return 'First half endTime must match break startTime';
+    }
+    if (br?.endTime && sh?.startTime && br.endTime !== sh.startTime) {
+        return 'Break endTime must match second half startTime';
+    }
+
+    return null;
+};
+
 const formatAndValidateShiftConfigs = async (shifts, groupingEnabled) => {
     if (!Array.isArray(shifts)) {
         return { error: 'shifts must be an array' };
@@ -33,7 +87,15 @@ const formatAndValidateShiftConfigs = async (shifts, groupingEnabled) => {
             shiftId: raw.shiftId,
             gender: raw.gender || 'All',
             employee_group_id: raw.employee_group_id || null,
+            firstHalf: normalizeHalfSegment(raw.firstHalf),
+            break: normalizeBreakSegment(raw.break),
+            secondHalf: normalizeHalfSegment(raw.secondHalf),
         };
+
+        const segErr = validateDivisionShiftSegments(config);
+        if (segErr) {
+            return { error: segErr };
+        }
 
         const groupValidation = await validateEmployeeGroupIfEnabled(config.employee_group_id);
         if (groupValidation?.error) {

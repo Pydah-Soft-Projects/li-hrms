@@ -199,6 +199,7 @@ exports.createShift = async (req, res) => {
       firstHalf,
       break: breakSegment,
       secondHalf,
+      segmentOverrides,
     } = req.body;
 
     const parseTimeToMinutes = (time) => {
@@ -244,6 +245,19 @@ exports.createShift = async (req, res) => {
       };
     };
 
+    const normalizeSegmentOverrides = (overrides) => {
+      if (overrides === undefined) return undefined;
+      if (!Array.isArray(overrides)) return [];
+      return overrides
+        .filter((o) => o && o.division)
+        .map((o) => ({
+          division: o.division,
+          firstHalf: normalizeHalfSegment(o.firstHalf),
+          break: normalizeBreakSegment(o.break),
+          secondHalf: normalizeHalfSegment(o.secondHalf),
+        }));
+    };
+
     // Validate required fields
     if (!name) {
       return res.status(400).json({
@@ -270,6 +284,7 @@ exports.createShift = async (req, res) => {
     const firstHalfData = normalizeHalfSegment(firstHalf);
     const secondHalfData = normalizeHalfSegment(secondHalf);
     const breakData = normalizeBreakSegment(breakSegment);
+    const overrideData = normalizeSegmentOverrides(segmentOverrides);
 
     if (!finalStartTime || !finalEndTime || !finalDuration) {
       return res.status(400).json({
@@ -345,6 +360,7 @@ exports.createShift = async (req, res) => {
       firstHalf: firstHalfData,
       break: breakData,
       secondHalf: secondHalfData,
+      segmentOverrides: overrideData,
     };
 
     const shift = await Shift.create(shiftPayload);
@@ -406,7 +422,7 @@ exports.createShift = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.updateShift = async (req, res) => {
   try {
-    const { name, startTime, endTime, duration, payableShifts, isActive, color, gracePeriod, firstHalf, break: breakSegment, secondHalf } = req.body;
+    const { name, startTime, endTime, duration, payableShifts, isActive, color, gracePeriod, firstHalf, break: breakSegment, secondHalf, segmentOverrides } = req.body;
 
     const parseTimeToMinutes = (time) => {
       if (!time) return null;
@@ -453,6 +469,19 @@ exports.updateShift = async (req, res) => {
       };
     };
 
+    const normalizeSegmentOverrides = (overrides) => {
+      if (overrides === undefined) return undefined;
+      if (!Array.isArray(overrides)) return [];
+      return overrides
+        .filter((o) => o && o.division)
+        .map((o) => ({
+          division: o.division,
+          firstHalf: normalizeHalfSegment(o.firstHalf),
+          break: normalizeBreakSegment(o.break),
+          secondHalf: normalizeHalfSegment(o.secondHalf),
+        }));
+    };
+
     const shift = await Shift.findById(req.params.id);
     if (!shift) {
       return res.status(404).json({
@@ -469,6 +498,9 @@ exports.updateShift = async (req, res) => {
     }
     if (secondHalf !== undefined) {
       shift.secondHalf = normalizeHalfSegment(secondHalf);
+    }
+    if (segmentOverrides !== undefined) {
+      shift.segmentOverrides = normalizeSegmentOverrides(segmentOverrides);
     }
 
     const finalFirstHalf = shift.firstHalf;

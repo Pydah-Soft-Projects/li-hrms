@@ -809,7 +809,7 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             for (let si = 0; si < processedShifts.length; si++) {
                 const row = processedShifts[si];
                 const plain = typeof row.toObject === 'function' ? row.toObject() : { ...row };
-                processedShifts[si] = await enrichShiftRecordWithSegments(plain, date, graceSeg);
+                processedShifts[si] = await enrichShiftRecordWithSegments(plain, date, graceSeg, { employeeNumber });
             }
         } catch (segErr) {
             console.warn('[MultiShift] enrichShiftRecordWithSegments:', segErr.message);

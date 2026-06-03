@@ -3,7 +3,7 @@
  * one stored config per group (same storage shape as a single group today).
  *
  * @param {Array<string|object>} shifts
- * @returns {Array<{ shiftId: unknown, gender: string, employee_group_id: unknown|null }>}
+ * @returns {Array<{ shiftId: unknown, gender: string, employee_group_id: unknown|null, firstHalf?: any, break?: any, secondHalf?: any }>}
  */
 function flattenShiftConfigsWithGroups(shifts) {
     const out = [];
@@ -18,6 +18,9 @@ function flattenShiftConfigsWithGroups(shifts) {
         if (!s || !s.shiftId) continue;
         const shiftId = s.shiftId;
         const gender = s.gender || 'All';
+        const firstHalf = s.firstHalf ?? null;
+        const breakSegment = s.break ?? null;
+        const secondHalf = s.secondHalf ?? null;
         const ids = Array.isArray(s.employee_group_ids) ? s.employee_group_ids : null;
 
         if (ids && ids.some((id) => id !== undefined && id !== null && id !== '')) {
@@ -27,14 +30,28 @@ function flattenShiftConfigsWithGroups(shifts) {
                 const str = String(id);
                 if (seen.has(str)) continue;
                 seen.add(str);
-                out.push({ shiftId, gender, employee_group_id: str });
+                out.push({
+                    shiftId,
+                    gender,
+                    employee_group_id: str,
+                    firstHalf,
+                    break: breakSegment,
+                    secondHalf,
+                });
             }
         } else {
             const single =
                 s.employee_group_id === undefined || s.employee_group_id === null || s.employee_group_id === ''
                     ? null
                     : s.employee_group_id;
-            out.push({ shiftId, gender, employee_group_id: single });
+            out.push({
+                shiftId,
+                gender,
+                employee_group_id: single,
+                firstHalf,
+                break: breakSegment,
+                secondHalf,
+            });
         }
     }
     return out;

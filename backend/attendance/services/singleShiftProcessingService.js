@@ -730,7 +730,7 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
 
       try {
         const { enrichShiftRecordWithSegments, resolveGraceFromSettings } = require('./shiftSegmentAttendanceService');
-        await enrichShiftRecordWithSegments(pShift, date, await resolveGraceFromSettings());
+        await enrichShiftRecordWithSegments(pShift, date, await resolveGraceFromSettings(), { employeeNumber });
       } catch (segErr) {
         console.warn('[SingleShift] enrichShiftRecordWithSegments:', segErr.message);
       }

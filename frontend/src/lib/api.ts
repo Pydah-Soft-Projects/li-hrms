@@ -700,6 +700,12 @@ export interface Shift {
   firstHalf?: ShiftHalf | null;
   break?: ShiftBreak | null;
   secondHalf?: ShiftHalf | null;
+  segmentOverrides?: {
+    division: string;
+    firstHalf?: ShiftHalf | null;
+    break?: ShiftBreak | null;
+    secondHalf?: ShiftHalf | null;
+  }[];
   isActive?: boolean;
   color?: string;
   createdAt?: string;
@@ -1368,6 +1374,12 @@ export const api = {
     firstHalf?: ShiftHalf;
     break?: ShiftBreak;
     secondHalf?: ShiftHalf;
+    segmentOverrides?: {
+      division: string;
+      firstHalf?: ShiftHalf | null;
+      break?: ShiftBreak | null;
+      secondHalf?: ShiftHalf | null;
+    }[];
   }) => {
     return apiRequest<Shift>('/shifts', {
       method: 'POST',
@@ -1677,7 +1689,7 @@ export const api = {
     });
   },
 
-  assignShiftsToDivision: async (id: string, data: { shifts: (string | { shiftId: string; gender: string; employee_group_id?: string | null; employee_group_ids?: string[] })[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
+  assignShiftsToDivision: async (id: string, data: { shifts: (string | { shiftId: string; gender: string; employee_group_id?: string | null; employee_group_ids?: string[]; firstHalf?: any; break?: any; secondHalf?: any })[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
     return apiRequest<any>(`/divisions/${id}/shifts`, {
       method: 'POST',
       body: JSON.stringify(data),

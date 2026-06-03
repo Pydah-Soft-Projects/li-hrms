@@ -134,6 +134,7 @@ export default function DivisionsPage() {
     const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
     const [customGroupingEnabled, setCustomGroupingEnabled] = useState(false);
     const [shiftSearch, setShiftSearch] = useState('');
+    const [segmentShiftId, setSegmentShiftId] = useState<string>('');
 
     const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
@@ -195,7 +196,7 @@ export default function DivisionsPage() {
         if (!showShiftDialog) return;
 
         const loadExistingShifts = async () => {
-            let existingShifts: { shiftId: string; gender: string; employee_group_id?: string | null }[] = [];
+            let existingShifts: { shiftId: string; gender: string; employee_group_id?: string | null; firstHalf?: any; break?: any; secondHalf?: any }[] = [];
             const divisionId = showShiftDialog._id;
 
             // Helper to parse Mixed backend response (string ID or Object with shiftId/gender)
@@ -210,6 +211,9 @@ export default function DivisionsPage() {
                         employee_group_id: s.employee_group_id
                             ? (typeof s.employee_group_id === 'string' ? s.employee_group_id : s.employee_group_id._id)
                             : null,
+                        firstHalf: s.firstHalf ?? null,
+                        break: s.break ?? null,
+                        secondHalf: s.secondHalf ?? null,
                     };
                     // Fallback for old object structure (direct Shift object)
                     return { shiftId: s._id, gender: 'All' };
@@ -424,6 +428,7 @@ export default function DivisionsPage() {
         setTargetDesigId('');
         setSelectedShifts([]);
         setError('');
+        setSegmentShiftId('');
     };
 
     const openShiftDialog = (div: Division) => {
@@ -1026,6 +1031,166 @@ export default function DivisionsPage() {
                                         );
                                     })}
                                 </div>
+
+                                {/* Segment editor (division-specific halves/break) */}
+                                {selectedShifts.length > 0 && (
+                                    <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div>
+                                                <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Half-day segments (Division-specific)</div>
+                                                <div className="text-[11px] text-slate-500">
+                                                    These times are saved on this Division’s shift assignment (not on the Shift master).
+                                                </div>
+                                            </div>
+                                            <select
+                                                value={segmentShiftId || selectedShifts[0].shiftId}
+                                                onChange={(e) => setSegmentShiftId(e.target.value)}
+                                                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                                            >
+                                                {selectedShifts.map((s) => {
+                                                    const def = shifts.find((x) => x._id === s.shiftId);
+                                                    return (
+                                                        <option key={s.shiftId} value={s.shiftId}>
+                                                            {def?.name || s.shiftId}
+                                                        </option>
+                                                    );
+                                                })}
+                                            </select>
+                                        </div>
+
+                                        {(() => {
+                                            const activeId = segmentShiftId || selectedShifts[0].shiftId;
+                                            const row = selectedShifts.find((s) => s.shiftId === activeId);
+                                            if (!row) return null;
+
+                                            const setRow = (patch: Partial<typeof row>) => {
+                                                setSelectedShifts((prev) =>
+                                                    prev.map((s) => (s.shiftId === activeId ? { ...s, ...patch } : s))
+                                                );
+                                            };
+
+                                            const segOn = !!(row.firstHalf || row.break || row.secondHalf);
+
+                                            return (
+                                                <div className="space-y-4">
+                                                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                                            checked={segOn}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setRow({
+                                                                        firstHalf: { startTime: '', endTime: '', duration: null, minDuration: null, gracePeriod: null, payableShifts: null },
+                                                                        break: { startTime: '', endTime: '' },
+                                                                        secondHalf: { startTime: '', endTime: '', duration: null, minDuration: null, gracePeriod: null, payableShifts: null },
+                                                                    });
+                                                                } else {
+                                                                    setRow({ firstHalf: null, break: null, secondHalf: null });
+                                                                }
+                                                            }}
+                                                        />
+                                                        Enable division-specific segments for this shift
+                                                    </label>
+
+                                                    {segOn && (
+                                                        <div className="grid grid-cols-1 gap-4">
+                                                            <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+                                                                <div className="mb-2 text-xs font-bold text-slate-800 dark:text-slate-100">First half</div>
+                                                                <div className="grid grid-cols-2 gap-3">
+                                                                    <input
+                                                                        type="time"
+                                                                        value={row.firstHalf?.startTime || ''}
+                                                                        onChange={(e) => setRow({ firstHalf: { ...(row.firstHalf || {}), startTime: e.target.value } })}
+                                                                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                                                                    />
+                                                                    <input
+                                                                        type="time"
+                                                                        value={row.firstHalf?.endTime || ''}
+                                                                        onChange={(e) => setRow({ firstHalf: { ...(row.firstHalf || {}), endTime: e.target.value } })}
+                                                                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                                                                    />
+                                                                </div>
+                                                                <div className="mt-3 grid grid-cols-2 gap-3">
+                                                                    <input
+                                                                        type="number"
+                                                                        inputMode="decimal"
+                                                                        value={row.firstHalf?.gracePeriod ?? ''}
+                                                                        onChange={(e) => setRow({ firstHalf: { ...(row.firstHalf || {}), gracePeriod: e.target.value === '' ? null : Number(e.target.value) } })}
+                                                                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                                                                        placeholder="Grace (mins)"
+                                                                    />
+                                                                    <input
+                                                                        type="number"
+                                                                        inputMode="decimal"
+                                                                        value={row.firstHalf?.payableShifts ?? ''}
+                                                                        onChange={(e) => setRow({ firstHalf: { ...(row.firstHalf || {}), payableShifts: e.target.value === '' ? null : Number(e.target.value) } })}
+                                                                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                                                                        placeholder="Payable (e.g. 0.5)"
+                                                                    />
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+                                                                <div className="mb-2 text-xs font-bold text-slate-800 dark:text-slate-100">Break</div>
+                                                                <div className="grid grid-cols-2 gap-3">
+                                                                    <input
+                                                                        type="time"
+                                                                        value={row.break?.startTime || ''}
+                                                                        onChange={(e) => setRow({ break: { ...(row.break || {}), startTime: e.target.value } })}
+                                                                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                                                                    />
+                                                                    <input
+                                                                        type="time"
+                                                                        value={row.break?.endTime || ''}
+                                                                        onChange={(e) => setRow({ break: { ...(row.break || {}), endTime: e.target.value } })}
+                                                                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                                                                    />
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+                                                                <div className="mb-2 text-xs font-bold text-slate-800 dark:text-slate-100">Second half</div>
+                                                                <div className="grid grid-cols-2 gap-3">
+                                                                    <input
+                                                                        type="time"
+                                                                        value={row.secondHalf?.startTime || ''}
+                                                                        onChange={(e) => setRow({ secondHalf: { ...(row.secondHalf || {}), startTime: e.target.value } })}
+                                                                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                                                                    />
+                                                                    <input
+                                                                        type="time"
+                                                                        value={row.secondHalf?.endTime || ''}
+                                                                        onChange={(e) => setRow({ secondHalf: { ...(row.secondHalf || {}), endTime: e.target.value } })}
+                                                                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                                                                    />
+                                                                </div>
+                                                                <div className="mt-3 grid grid-cols-2 gap-3">
+                                                                    <input
+                                                                        type="number"
+                                                                        inputMode="decimal"
+                                                                        value={row.secondHalf?.gracePeriod ?? ''}
+                                                                        onChange={(e) => setRow({ secondHalf: { ...(row.secondHalf || {}), gracePeriod: e.target.value === '' ? null : Number(e.target.value) } })}
+                                                                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                                                                        placeholder="Grace (mins)"
+                                                                    />
+                                                                    <input
+                                                                        type="number"
+                                                                        inputMode="decimal"
+                                                                        value={row.secondHalf?.payableShifts ?? ''}
+                                                                        onChange={(e) => setRow({ secondHalf: { ...(row.secondHalf || {}), payableShifts: e.target.value === '' ? null : Number(e.target.value) } })}
+                                                                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                                                                        placeholder="Payable (e.g. 0.5)"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
+                                )}
 
                                 {error && <p className="text-sm text-red-500">{error}</p>}
 

@@ -11,6 +11,7 @@
     "test:api": "jest tests/api",
     "test:health": "jest tests/api/health.test.js",
     "test:pay-register-features": "node scripts/run_pay_register_features_test_report.js",
+    "test:pay-register-multishift-payable": "node scripts/run_pay_register_multishift_payable_test.js",
     "test:attendance": "node tests/attendance-dual-mode-comprehensive.test.js",
     "test:punch-pipeline": "node attendance/test/simulateDedupeAndRedundancyScenarios.js && node attendance/test/redundancyFilterTest.js",
     "test:post-verify-backfill": "jest attendance/services/__tests__/postVerifyBiometricBackfillService.test.js --no-coverage",

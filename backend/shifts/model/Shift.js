@@ -53,6 +53,30 @@ const shiftBreakSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const shiftSegmentOverrideSchema = new mongoose.Schema(
+  {
+    division: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+      required: true,
+      index: true,
+    },
+    firstHalf: {
+      type: shiftHalfSchema,
+      default: null,
+    },
+    break: {
+      type: shiftBreakSchema,
+      default: null,
+    },
+    secondHalf: {
+      type: shiftHalfSchema,
+      default: null,
+    },
+  },
+  { _id: false }
+);
+
 const shiftSchema = new mongoose.Schema(
   {
     name: {
@@ -97,6 +121,14 @@ const shiftSchema = new mongoose.Schema(
     secondHalf: {
       type: shiftHalfSchema,
       default: null,
+    },
+    /**
+     * Division-specific overrides for shift segments.
+     * When a matching division override exists, its halves/break are used instead of the base shift segments.
+     */
+    segmentOverrides: {
+      type: [shiftSegmentOverrideSchema],
+      default: [],
     },
     description: {
       type: String,

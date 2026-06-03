@@ -1,5 +1,65 @@
 const mongoose = require('mongoose');
 
+const timeValidator = {
+    validator: function (v) {
+        if (v === null || v === undefined) return true;
+        return /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/.test(v);
+    },
+    message: 'Time must be in HH:mm format (e.g., 09:00)',
+};
+
+const divisionShiftHalfSchema = new mongoose.Schema(
+    {
+        startTime: {
+            type: String,
+            validate: timeValidator,
+            default: null,
+        },
+        endTime: {
+            type: String,
+            validate: timeValidator,
+            default: null,
+        },
+        duration: {
+            type: Number,
+            min: [0, 'Duration must be positive'],
+            default: null,
+        },
+        minDuration: {
+            type: Number,
+            min: [0, 'Minimum duration must be positive'],
+            default: null,
+        },
+        gracePeriod: {
+            type: Number,
+            min: [0, 'Grace period must be positive'],
+            default: null,
+        },
+        payableShifts: {
+            type: Number,
+            min: [0, 'Payable shifts must be positive'],
+            default: null,
+        },
+    },
+    { _id: false }
+);
+
+const divisionShiftBreakSchema = new mongoose.Schema(
+    {
+        startTime: {
+            type: String,
+            validate: timeValidator,
+            default: null,
+        },
+        endTime: {
+            type: String,
+            validate: timeValidator,
+            default: null,
+        },
+    },
+    { _id: false }
+);
+
 const DivisionSchema = new mongoose.Schema({
     name: {
         type: String,
@@ -40,7 +100,21 @@ const DivisionSchema = new mongoose.Schema({
             type: mongoose.Schema.ObjectId,
             ref: 'EmployeeGroup',
             default: null
-        }
+        },
+        // Division-specific half/break config for this shift assignment.
+        // Shift master should not be treated as the source of truth for halves.
+        firstHalf: {
+            type: divisionShiftHalfSchema,
+            default: null,
+        },
+        break: {
+            type: divisionShiftBreakSchema,
+            default: null,
+        },
+        secondHalf: {
+            type: divisionShiftHalfSchema,
+            default: null,
+        },
     }],
     isActive: {
         type: Boolean,

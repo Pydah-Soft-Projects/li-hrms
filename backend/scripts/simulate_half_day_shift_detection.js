@@ -8,8 +8,10 @@ const Employee = require('../employees/model/Employee');
 const Shift = require('../shifts/model/Shift');
 const Settings = require('../settings/model/Settings');
 const AttendanceRawLog = require('../attendance/model/AttendanceRawLog');
+const AttendanceDaily = require('../attendance/model/AttendanceDaily');
 const { processMultiShiftAttendance } = require('../attendance/services/multiShiftProcessingService');
 const { createISTDate } = require('../shared/utils/dateUtils');
+const { partialSingleShiftHalfCreditsAsync } = require('../attendance/utils/attendanceHalfPresence');
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/hrms';
 
@@ -28,6 +30,17 @@ async function ensureTestData() {
       name: 'SIMULATION DIVISION',
       code: 'SIM_DIV',
       description: 'Auto-created division for half-day shift detection smoke test',
+      isActive: true,
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  const division2 = await Division.findOneAndUpdate(
+    { code: 'SIM_DIV2' },
+    {
+      name: 'SIMULATION DIVISION 2',
+      code: 'SIM_DIV2',
+      description: 'Auto-created division for per-division segment override test',
       isActive: true,
     },
     { upsert: true, new: true, setDefaultsOnInsert: true }
@@ -53,26 +66,53 @@ async function ensureTestData() {
       duration: 8,
       payableShifts: 1,
       gracePeriod: 10,
-      firstHalf: {
-        startTime: '09:00',
-        endTime: '13:00',
-        duration: 4,
-        gracePeriod: 10,
-        payableShifts: 0.5,
-      },
-      break: {
-        startTime: '13:00',
-        endTime: '14:00',
-      },
-      secondHalf: {
-        startTime: '14:00',
-        endTime: '18:00',
-        duration: 4,
-        gracePeriod: 8,
-        payableShifts: 0.5,
-      },
       description: 'Shift with first and second halves for half-day segment detection',
       isActive: true,
+      segmentOverrides: [
+        {
+          division: division._id,
+          firstHalf: {
+            startTime: '09:00',
+            endTime: '13:00',
+            duration: 4,
+            gracePeriod: 10,
+            payableShifts: 0.5,
+          },
+          break: {
+            startTime: '13:00',
+            endTime: '14:00',
+          },
+          secondHalf: {
+            startTime: '14:00',
+            endTime: '18:00',
+            duration: 4,
+            gracePeriod: 8,
+            payableShifts: 0.5,
+          },
+        },
+        // Same shift, different division override timings (split shifted by 30 mins)
+        {
+          division: division2._id,
+          firstHalf: {
+            startTime: '09:00',
+            endTime: '13:30',
+            duration: 4.5,
+            gracePeriod: 10,
+            payableShifts: 0.5,
+          },
+          break: {
+            startTime: '13:30',
+            endTime: '14:30',
+          },
+          secondHalf: {
+            startTime: '14:30',
+            endTime: '18:00',
+            duration: 3.5,
+            gracePeriod: 8,
+            payableShifts: 0.5,
+          },
+        },
+      ],
     },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
@@ -87,6 +127,16 @@ async function ensureTestData() {
       divisionDefaults: [
         {
           division: division._id,
+          shifts: [
+            {
+              shiftId: shift._id,
+              gender: 'All',
+              employee_group_id: employeeGroup._id,
+            },
+          ],
+        },
+        {
+          division: division2._id,
           shifts: [
             {
               shiftId: shift._id,
@@ -114,6 +164,20 @@ async function ensureTestData() {
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 
+  const employee2 = await Employee.findOneAndUpdate(
+    { emp_no: 'SIM002' },
+    {
+      emp_no: 'SIM002',
+      employee_name: 'Simulated Half-Day Test User 2',
+      division_id: division2._id,
+      department_id: department._id,
+      employee_group_id: employeeGroup._id,
+      doj: createISTDate('2025-01-01'),
+      is_active: true,
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
   await upsertSetting(
     'custom_employee_grouping_enabled',
     true,
@@ -121,7 +185,7 @@ async function ensureTestData() {
     'feature_control'
   );
 
-  return { division, department, employeeGroup, employee, shift };
+  return { division, division2, department, employeeGroup, employee, employee2, shift };
 }
 
 function buildISTDate(dateStr, timeStr) {
@@ -141,6 +205,11 @@ function formatResult(result) {
     shiftSegments: result?.shiftSegments || result?.shiftAssignments || [],
     attendanceDaily: result?.attendanceDaily || null,
   };
+}
+
+function pickPrimaryShift(daily) {
+  const shifts = Array.isArray(daily?.shifts) ? daily.shifts : [];
+  return shifts.find((s) => s && s.inTime && s.outTime) || shifts.find((s) => s && (s.inTime || s.outTime)) || shifts[0] || null;
 }
 
 async function createRawLogsForScenario(employeeNumber, date, inTime, outTime) {
@@ -179,13 +248,15 @@ async function main() {
   await mongoose.connect(MONGODB_URI);
   console.log(`Connected to MongoDB: ${MONGODB_URI}`);
 
-  const { division, department, employeeGroup, employee, shift } = await ensureTestData();
+  const { division, division2, department, employeeGroup, employee, employee2, shift } = await ensureTestData();
 
   console.log('\n=== Test Data Created ===');
   console.log(`Division: ${division.name} (${division.code})`);
+  console.log(`Division 2: ${division2.name} (${division2.code})`);
   console.log(`Department: ${department.name} (${department.code})`);
   console.log(`Employee Group: ${employeeGroup.name} (${employeeGroup.code})`);
   console.log(`Employee: ${employee.employee_name} (${employee.emp_no})`);
+  console.log(`Employee 2: ${employee2.employee_name} (${employee2.emp_no})`);
   console.log(`Shift: ${shift.name} ${shift.startTime}-${shift.endTime}`);
 
   const globalConfig = {
@@ -235,24 +306,45 @@ async function main() {
 
   console.log('\n=== Running Attendance Processing Scenarios ===');
 
-  for (const scenario of scenarios) {
-    const inTime = buildISTDate(scenario.date, scenario.in);
-    const outTime = buildISTDate(scenario.date, scenario.out);
+  const runForEmployee = async (empNo, label) => {
+    for (const scenario of scenarios) {
+      const inTime = buildISTDate(scenario.date, scenario.in);
+      const outTime = buildISTDate(scenario.date, scenario.out);
 
-    await createRawLogsForScenario(employee.emp_no, scenario.date, inTime, outTime);
+      await createRawLogsForScenario(empNo, scenario.date, inTime, outTime);
 
-    const rawLogs = await AttendanceRawLog.find({ employeeNumber: employee.emp_no, date: scenario.date, source: 'biometric-realtime' })
-      .sort({ timestamp: 1 })
-      .lean();
+      const rawLogs = await AttendanceRawLog.find({ employeeNumber: empNo, date: scenario.date, source: 'biometric-realtime' })
+        .sort({ timestamp: 1 })
+        .lean();
 
-    const result = await processMultiShiftAttendance(employee.emp_no, scenario.date, rawLogs, globalConfig);
+      const result = await processMultiShiftAttendance(empNo, scenario.date, rawLogs, globalConfig);
+      const daily = await AttendanceDaily.findOne({ employeeNumber: empNo, date: scenario.date }).lean();
+      const primary = pickPrimaryShift(daily);
+      const credits = daily ? await partialSingleShiftHalfCreditsAsync(daily, scenario.date) : null;
 
-    console.log('\n---');
-    console.log(`${scenario.description} | Date: ${scenario.date}`);
-    console.log(`IN  : ${scenario.in}`);
-    console.log(`OUT : ${scenario.out}`);
-    console.log(JSON.stringify(formatResult(result), null, 2));
-  }
+      console.log('\n---');
+      console.log(`${label} | ${scenario.description} | Date: ${scenario.date}`);
+      console.log(`IN  : ${scenario.in}`);
+      console.log(`OUT : ${scenario.out}`);
+      console.log(JSON.stringify({
+        dailyStatus: daily?.status || null,
+        dailyPayable: daily?.payableShifts ?? null,
+        halfCredits: credits || null,
+        primaryShift: primary ? {
+          shiftId: primary.shiftId || null,
+          shiftName: primary.shiftName || null,
+          payableShift: primary.payableShift ?? null,
+          shiftSegments: primary.shiftSegments || [],
+          segmentTotalPayableShifts: primary.segmentTotalPayableShifts ?? null,
+          segmentContinuityWarnings: primary.segmentContinuityWarnings || [],
+        } : null,
+        engineResult: formatResult(result),
+      }, null, 2));
+    }
+  };
+
+  await runForEmployee(employee.emp_no, `${division.code}/${employee.emp_no}`);
+  await runForEmployee(employee2.emp_no, `${division2.code}/${employee2.emp_no}`);
 
   await mongoose.disconnect();
   console.log('\nSimulation completed.');

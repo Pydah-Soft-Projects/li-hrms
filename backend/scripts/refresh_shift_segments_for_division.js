@@ -25,6 +25,7 @@ const Settings = require('../settings/model/Settings');
 const { getPayrollDateRange } = require('../shared/utils/dateUtils');
 const { getShiftSegmentAssignment } = require('../shifts/services/shiftHalfSegmentService');
 const { refreshAttendanceShiftSegments } = require('../attendance/services/shiftSegmentAttendanceService');
+const { pickDivisionShiftConfig, applyDivisionSegmentsToShift } = require('../shared/utils/divisionShiftSegments');
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -66,7 +67,7 @@ async function run() {
       { name: new RegExp('^' + escapeRegex(divisionInput) + '$', 'i') },
       { code: divisionInput.toUpperCase() },
     ],
-  }).select('_id name code').lean();
+  }).select('_id name code shifts').lean();
 
   if (!division) {
     console.error('Division not found:', divisionInput);
@@ -151,32 +152,48 @@ async function run() {
       let shiftDef = null;
       if (shiftId) shiftDef = await Shift.findById(shiftId).lean();
 
-      const hasSegmentDef = !!(shiftDef && (shiftDef.firstHalf || shiftDef.secondHalf));
       const inTime = shift.inTime ? new Date(shift.inTime) : null;
       const outTime = shift.outTime ? new Date(shift.outTime) : null;
       const rowPayable = typeof shift.payableShift === 'number' ? shift.payableShift : 0;
       const rowStatus = shift.status || '-';
 
-      if (!shiftDef || !hasSegmentDef || !inTime) {
+      // Division is source of truth for segment definitions. Compute "effective shift" using division config.
+      let effectiveShiftDef = shiftDef;
+      if (shiftDef && division) {
+        const employee = await Employee.findOne({ emp_no: daily.employeeNumber }).select('gender employee_group_id').lean();
+        const row = await pickDivisionShiftConfig({
+          division,
+          shiftId: shiftDef._id,
+          employeeGender: employee?.gender || null,
+          employeeGroupId: employee?.employee_group_id || null,
+        });
+        effectiveShiftDef = applyDivisionSegmentsToShift(shiftDef, row);
+      } else if (shiftDef) {
+        effectiveShiftDef = applyDivisionSegmentsToShift(shiftDef, null);
+      }
+
+      const hasSegmentDef = !!(effectiveShiftDef && (effectiveShiftDef.firstHalf || effectiveShiftDef.secondHalf));
+
+      if (!effectiveShiftDef || !hasSegmentDef || !inTime) {
         console.log(
           `[${processed.toString().padStart(4, ' ')}] ${daily.employeeNumber} ${daily.date} S${shift.shiftNumber || 1} | ${rowStatus.padEnd(8, ' ')} | ` +
-          `${shift.shiftName || shiftDef?.name || 'NO-SHIFT-DEF'} | ` +
+          `${shift.shiftName || effectiveShiftDef?.name || 'NO-SHIFT-DEF'} | ` +
           `IN=${fmtTime(inTime)} OUT=${fmtTime(outTime)} | ` +
           `rowPayable=${rowPayable} dailyPayable=${dailyPayable} | ` +
-          `segment detection: SKIPPED (${!shiftDef ? 'no shift def' : !hasSegmentDef ? 'no first/second half on shift' : 'no in-time'})`
+          `segment detection: SKIPPED (${!effectiveShiftDef ? 'no shift def' : !hasSegmentDef ? 'no division first/second half config' : 'no in-time'})`
         );
         withoutSegments += 1;
         continue;
       }
 
-      const seg = getShiftSegmentAssignment(shiftDef, daily.date, inTime, outTime, graceOpts);
+      const seg = getShiftSegmentAssignment(effectiveShiftDef, daily.date, inTime, outTime, graceOpts);
       const segNames = (seg.shiftSegments || []).map(
         (s) => `${s.segmentName}:${s.present ? 'P' : 'A'}(pay=${s.payableShifts ?? 0})`
       );
 
       withSegments += 1;
       console.log(
-        `[${processed.toString().padStart(4, ' ')}] ${daily.employeeNumber} ${daily.date} S${shift.shiftNumber || 1} | ${rowStatus.padEnd(8, ' ')} | ${shiftDef.name} ${shiftDef.startTime}-${shiftDef.endTime} | ` +
+        `[${processed.toString().padStart(4, ' ')}] ${daily.employeeNumber} ${daily.date} S${shift.shiftNumber || 1} | ${rowStatus.padEnd(8, ' ')} | ${effectiveShiftDef.name} ${effectiveShiftDef.startTime}-${effectiveShiftDef.endTime} | ` +
         `IN=${fmtTime(inTime)} OUT=${fmtTime(outTime)} | ` +
         `rowPayable=${rowPayable} dailyPayable=${dailyPayable} | ` +
         `segments=[${segNames.join(', ')}] segTotalPayable=${seg.totalPayableShifts} ` +

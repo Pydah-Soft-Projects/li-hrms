@@ -1,0 +1,157 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700">
+    <defs>
+        <linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#d4fc79"/>
+            <stop offset="100%" stop-color="#96e6a1"/>
+        </linearGradient>
+
+        <linearGradient id="hill1" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#43a047"/>
+            <stop offset="100%" stop-color="#2e7d32"/>
+        </linearGradient>
+
+        <linearGradient id="hill2" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#66bb6a"/>
+            <stop offset="100%" stop-color="#388e3c"/>
+        </linearGradient>
+
+        <filter id="shadow">
+            <feDropShadow dx="0" dy="8" stdDeviation="8" flood-opacity="0.25"/>
+        </filter>
+    </defs>
+
+    <!-- Sky -->
+    <rect width="1200" height="700" fill="url(#sky)"/>
+
+    <!-- Sun -->
+    <circle cx="980" cy="120" r="60" fill="#fff59d">
+        <animate attributeName="r"
+                 values="60;65;60"
+                 dur="4s"
+                 repeatCount="indefinite"/>
+    </circle>
+
+    <!-- Clouds -->
+    <g opacity="0.9">
+        <g>
+            <ellipse cx="150" cy="120" rx="50" ry="25" fill="white"/>
+            <ellipse cx="190" cy="120" rx="60" ry="35" fill="white"/>
+            <ellipse cx="240" cy="120" rx="45" ry="25" fill="white"/>
+            <animateTransform
+                attributeName="transform"
+                type="translate"
+                values="-50 0;1250 0"
+                dur="40s"
+                repeatCount="indefinite"/>
+        </g>
+
+        <g>
+            <ellipse cx="800" cy="180" rx="40" ry="20" fill="white"/>
+            <ellipse cx="840" cy="180" rx="50" ry="30" fill="white"/>
+            <ellipse cx="885" cy="180" rx="40" ry="20" fill="white"/>
+            <animateTransform
+                attributeName="transform"
+                type="translate"
+                values="-100 0;1200 0"
+                dur="50s"
+                repeatCount="indefinite"/>
+        </g>
+    </g>
+
+    <!-- Birds -->
+    <g fill="none" stroke="#2e7d32" stroke-width="3">
+        <path d="M0 0 Q10 -10 20 0 Q30 -10 40 0">
+            <animateMotion dur="18s" repeatCount="indefinite"
+                path="M-50 150 Q600 50 1250 180"/>
+        </path>
+    </g>
+
+    <!-- Back Hill -->
+    <path d="M0 450 Q250 300 500 420 T1200 400 V700 H0 Z"
+          fill="url(#hill2)"/>
+
+    <!-- Front Hill -->
+    <path d="M0 520 Q250 350 600 500 T1200 450 V700 H0 Z"
+          fill="url(#hill1)"/>
+
+    <!-- Trees -->
+    <g>
+        <!-- Tree 1 -->
+        <g transform="translate(180,430)">
+            <rect x="-8" y="50" width="16" height="70" fill="#6d4c41"/>
+            <circle cx="0" cy="25" r="40" fill="#2e7d32"/>
+            <animateTransform
+                attributeName="transform"
+                type="rotate"
+                values="-2 0 80;2 0 80;-2 0 80"
+                dur="4s"
+                repeatCount="indefinite"/>
+        </g>
+
+        <!-- Tree 2 -->
+        <g transform="translate(950,420)">
+            <rect x="-8" y="50" width="16" height="70" fill="#6d4c41"/>
+            <circle cx="0" cy="25" r="45" fill="#388e3c"/>
+            <animateTransform
+                attributeName="transform"
+                type="rotate"
+                values="2 0 80;-2 0 80;2 0 80"
+                dur="5s"
+                repeatCount="indefinite"/>
+        </g>
+    </g>
+
+    <!-- 404 Text -->
+    <g filter="url(#shadow)">
+        <text x="600"
+              y="320"
+              text-anchor="middle"
+              font-size="180"
+              font-family="Poppins, Arial, sans-serif"
+              font-weight="900"
+              fill="white">
+            404
+
+            <animateTransform
+                attributeName="transform"
+                type="translate"
+                values="0 0;0 -8;0 0"
+                dur="3s"
+                repeatCount="indefinite"/>
+        </text>
+    </g>
+
+    <!-- Message -->
+    <text x="600"
+          y="390"
+          text-anchor="middle"
+          font-size="34"
+          font-family="Poppins, Arial, sans-serif"
+          fill="#1b5e20"
+          font-weight="600">
+        Oops! Lost in Nature
+    </text>
+
+    <text x="600"
+          y="430"
+          text-anchor="middle"
+          font-size="20"
+          font-family="Poppins, Arial, sans-serif"
+          fill="#2e7d32">
+        The page you're looking for doesn't exist.
+    </text>
+
+    <!-- Floating Leaves -->
+    <g fill="#81c784">
+        <ellipse cx="100" cy="500" rx="10" ry="5">
+            <animateMotion dur="8s" repeatCount="indefinite"
+                path="M0 0 Q200 -150 400 -50"/>
+        </ellipse>
+
+        <ellipse cx="1000" cy="550" rx="10" ry="5">
+            <animateMotion dur="10s" repeatCount="indefinite"
+                path="M0 0 Q-250 -200 -500 -50"/>
+        </ellipse>
+    </g>
+</svg>
+
