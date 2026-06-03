@@ -896,7 +896,7 @@ export default function ShiftsPage() {
         {/* Create/Edit Shift Dialog */}
         {showForm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-            <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white my-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+            <div className="w-full max-w-7xl rounded-2xl border border-slate-200 bg-white my-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
               <div className="sticky top-0 mb-3 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900 rounded-t-2xl">
                 <div>
                   <h2 className="text-sm font-bold text-slate-900 dark:text-white">
@@ -1079,163 +1079,6 @@ export default function ShiftsPage() {
 
                   {/* COLUMN 2: Shift Segments */}
                   <div className="space-y-6">
-                    {/* Division Segment Overrides */}
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-                      <div className="mb-3 flex items-start justify-between gap-3">
-                        <div>
-                          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Division-specific segment overrides</h3>
-                          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                            Overrides are stored on this Shift. If a division override exists, it will be used for half-day detection and payable halves.
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const firstDiv = scopedDivisions?.[0]?._id;
-                            if (!firstDiv) return;
-                            setSegmentOverrides((prev) => [
-                              ...prev,
-                              {
-                                division: firstDiv,
-                                firstHalf: { startTime: '', endTime: '', gracePeriod: '', payableShifts: '' },
-                                break: { startTime: '', endTime: '' },
-                                secondHalf: { startTime: '', endTime: '', gracePeriod: '', payableShifts: '' },
-                              },
-                            ]);
-                          }}
-                          className="shrink-0 rounded-xl bg-blue-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700"
-                        >
-                          + Add
-                        </button>
-                      </div>
-
-                      {segmentOverrides.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-slate-200 p-3 text-center text-[12px] text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                          No division overrides yet.
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {segmentOverrides.map((ovr, idx) => (
-                            <div key={`${ovr.division}-${idx}`} className="rounded-2xl border border-slate-200 p-3 dark:border-slate-700">
-                              <div className="mb-2 flex items-center justify-between gap-2">
-                                <select
-                                  value={ovr.division}
-                                  onChange={(e) => {
-                                    const next = e.target.value;
-                                    setSegmentOverrides((prev) =>
-                                      prev.map((x, i) => (i === idx ? { ...x, division: next } : x))
-                                    );
-                                  }}
-                                  className="w-full max-w-sm rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] font-medium dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                                >
-                                  {scopedDivisions.map((d) => (
-                                    <option key={d._id} value={d._id}>
-                                      {d.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                <button
-                                  type="button"
-                                  onClick={() => setSegmentOverrides((prev) => prev.filter((_, i) => i !== idx))}
-                                  className="rounded-xl border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-semibold text-red-700 hover:bg-red-100 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
-                                >
-                                  Remove
-                                </button>
-                              </div>
-
-                              <div className="grid gap-2 lg:grid-cols-3">
-                                <div className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/50">
-                                  <div className="mb-2 text-xs font-bold text-slate-800 dark:text-slate-100">First half</div>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <input
-                                      type="time"
-                                      value={ovr.firstHalf.startTime}
-                                      onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, firstHalf: { ...x.firstHalf, startTime: e.target.value } } : x))}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                                    />
-                                    <input
-                                      type="time"
-                                      value={ovr.firstHalf.endTime}
-                                      onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, firstHalf: { ...x.firstHalf, endTime: e.target.value } } : x))}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                                    />
-                                  </div>
-                                  <div className="mt-2 grid grid-cols-2 gap-2">
-                                    <input
-                                      type="number"
-                                      value={ovr.firstHalf.gracePeriod}
-                                      onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, firstHalf: { ...x.firstHalf, gracePeriod: e.target.value === '' ? '' : Number(e.target.value) } } : x))}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                                      placeholder="Grace"
-                                    />
-                                    <input
-                                      type="number"
-                                      value={ovr.firstHalf.payableShifts}
-                                      onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, firstHalf: { ...x.firstHalf, payableShifts: e.target.value === '' ? '' : Number(e.target.value) } } : x))}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                                      placeholder="Payable"
-                                    />
-                                  </div>
-                                </div>
-
-                                <div className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/50">
-                                  <div className="mb-2 text-xs font-bold text-slate-800 dark:text-slate-100">Break</div>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <input
-                                      type="time"
-                                      value={ovr.break.startTime}
-                                      onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, break: { ...x.break, startTime: e.target.value } } : x))}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                                    />
-                                    <input
-                                      type="time"
-                                      value={ovr.break.endTime}
-                                      onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, break: { ...x.break, endTime: e.target.value } } : x))}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                                    />
-                                  </div>
-                                </div>
-
-                                <div className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/50">
-                                  <div className="mb-2 text-xs font-bold text-slate-800 dark:text-slate-100">Second half</div>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <input
-                                      type="time"
-                                      value={ovr.secondHalf.startTime}
-                                      onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, secondHalf: { ...x.secondHalf, startTime: e.target.value } } : x))}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                                    />
-                                    <input
-                                      type="time"
-                                      value={ovr.secondHalf.endTime}
-                                      onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, secondHalf: { ...x.secondHalf, endTime: e.target.value } } : x))}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                                    />
-                                  </div>
-                                  <div className="mt-2 grid grid-cols-2 gap-2">
-                                    <input
-                                      type="number"
-                                      value={ovr.secondHalf.gracePeriod}
-                                      onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, secondHalf: { ...x.secondHalf, gracePeriod: e.target.value === '' ? '' : Number(e.target.value) } } : x))}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                                      placeholder="Grace"
-                                    />
-                                    <input
-                                      type="number"
-                                      value={ovr.secondHalf.payableShifts}
-                                      onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, secondHalf: { ...x.secondHalf, payableShifts: e.target.value === '' ? '' : Number(e.target.value) } } : x))}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                                      placeholder="Payable"
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
                     {/* First Half */}
                     <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
                       <h3 className="mb-3 text-[12px] font-semibold text-slate-900 dark:text-white flex items-center gap-2">
@@ -1416,6 +1259,181 @@ export default function ShiftsPage() {
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Division Segment Overrides — full width so time inputs remain readable */}
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Division-specific segment overrides</h3>
+                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                        Overrides are stored on this Shift. If a division override exists, it will be used for half-day detection and payable halves.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const firstDiv = scopedDivisions?.[0]?._id;
+                        if (!firstDiv) return;
+                        setSegmentOverrides((prev) => [
+                          ...prev,
+                          {
+                            division: firstDiv,
+                            firstHalf: { startTime: '', endTime: '', gracePeriod: '', payableShifts: '' },
+                            break: { startTime: '', endTime: '' },
+                            secondHalf: { startTime: '', endTime: '', gracePeriod: '', payableShifts: '' },
+                          },
+                        ]);
+                      }}
+                      className="shrink-0 rounded-xl bg-blue-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700"
+                    >
+                      + Add
+                    </button>
+                  </div>
+
+                  {segmentOverrides.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-200 p-3 text-center text-[12px] text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                      No division overrides yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {segmentOverrides.map((ovr, idx) => (
+                        <div key={`${ovr.division}-${idx}`} className="rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <select
+                              value={ovr.division}
+                              onChange={(e) => {
+                                const next = e.target.value;
+                                setSegmentOverrides((prev) =>
+                                  prev.map((x, i) => (i === idx ? { ...x, division: next } : x))
+                                );
+                              }}
+                              className="w-full max-w-md rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] font-medium dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            >
+                              {scopedDivisions.map((d) => (
+                                <option key={d._id} value={d._id}>
+                                  {d.name}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => setSegmentOverrides((prev) => prev.filter((_, i) => i !== idx))}
+                              className="shrink-0 rounded-xl border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-semibold text-red-700 hover:bg-red-100 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
+                            >
+                              Remove
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                            <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                              <div className="mb-2 text-xs font-bold text-slate-800 dark:text-slate-100">First half</div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Start</label>
+                                  <input
+                                    type="time"
+                                    value={ovr.firstHalf.startTime}
+                                    onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, firstHalf: { ...x.firstHalf, startTime: e.target.value } } : x))}
+                                    className="w-full min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-300">End</label>
+                                  <input
+                                    type="time"
+                                    value={ovr.firstHalf.endTime}
+                                    onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, firstHalf: { ...x.firstHalf, endTime: e.target.value } } : x))}
+                                    className="w-full min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  />
+                                </div>
+                              </div>
+                              <div className="mt-3 grid grid-cols-2 gap-3">
+                                <input
+                                  type="number"
+                                  value={ovr.firstHalf.gracePeriod}
+                                  onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, firstHalf: { ...x.firstHalf, gracePeriod: e.target.value === '' ? '' : Number(e.target.value) } } : x))}
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  placeholder="Grace"
+                                />
+                                <input
+                                  type="number"
+                                  value={ovr.firstHalf.payableShifts}
+                                  onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, firstHalf: { ...x.firstHalf, payableShifts: e.target.value === '' ? '' : Number(e.target.value) } } : x))}
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  placeholder="Payable"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                              <div className="mb-2 text-xs font-bold text-slate-800 dark:text-slate-100">Break</div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Start</label>
+                                  <input
+                                    type="time"
+                                    value={ovr.break.startTime}
+                                    onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, break: { ...x.break, startTime: e.target.value } } : x))}
+                                    className="w-full min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-300">End</label>
+                                  <input
+                                    type="time"
+                                    value={ovr.break.endTime}
+                                    onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, break: { ...x.break, endTime: e.target.value } } : x))}
+                                    className="w-full min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                              <div className="mb-2 text-xs font-bold text-slate-800 dark:text-slate-100">Second half</div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Start</label>
+                                  <input
+                                    type="time"
+                                    value={ovr.secondHalf.startTime}
+                                    onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, secondHalf: { ...x.secondHalf, startTime: e.target.value } } : x))}
+                                    className="w-full min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-300">End</label>
+                                  <input
+                                    type="time"
+                                    value={ovr.secondHalf.endTime}
+                                    onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, secondHalf: { ...x.secondHalf, endTime: e.target.value } } : x))}
+                                    className="w-full min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  />
+                                </div>
+                              </div>
+                              <div className="mt-3 grid grid-cols-2 gap-3">
+                                <input
+                                  type="number"
+                                  value={ovr.secondHalf.gracePeriod}
+                                  onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, secondHalf: { ...x.secondHalf, gracePeriod: e.target.value === '' ? '' : Number(e.target.value) } } : x))}
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  placeholder="Grace"
+                                />
+                                <input
+                                  type="number"
+                                  value={ovr.secondHalf.payableShifts}
+                                  onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, secondHalf: { ...x.secondHalf, payableShifts: e.target.value === '' ? '' : Number(e.target.value) } } : x))}
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  placeholder="Payable"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-8 space-y-4">
