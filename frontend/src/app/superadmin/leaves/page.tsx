@@ -2185,6 +2185,8 @@ function LeavesPageContent() {
       placeVisited: '',
       isHalfDay: false,
       halfDayType: null,
+      fromIsHalfDay: false,
+      toIsHalfDay: false,
       remarks: '',
     });
     setSelectedEmployee(null);
@@ -2552,6 +2554,8 @@ function LeavesPageContent() {
       placeVisited: '',
       isHalfDay: false,
       halfDayType: null,
+      fromIsHalfDay: false,
+      toIsHalfDay: false,
       remarks: '',
     });
     setSelectedEmployee(null);

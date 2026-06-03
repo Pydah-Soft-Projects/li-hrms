@@ -5613,7 +5613,7 @@ export default function LeavesPage() {
                 {applyType === 'od' ? (
                   /* Single Date Input for Half Day / Specific Hours / Any OD */
                   (() => {
-                    const policy = applyType === 'leave' ? leavePolicy : odPolicy;
+                    const policy = odPolicy;
                     const { minDate: singleMin, maxDate: singleMax } = getPolicyDateBounds(policy);
                     return (
                       <div>

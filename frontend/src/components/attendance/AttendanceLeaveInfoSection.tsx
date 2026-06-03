@@ -51,8 +51,8 @@ type Props = {
 
 export function AttendanceLeaveInfoSection({ leaveInfo, isConflict }: Props) {
   const spanDisplay = getLeaveDetailDisplay({
-    fromDate: leaveInfo.fromDate ?? '',
-    toDate: leaveInfo.toDate ?? leaveInfo.fromDate ?? '',
+    fromDate: toCalendarDateStr(leaveInfo.fromDate),
+    toDate: toCalendarDateStr(leaveInfo.toDate || leaveInfo.fromDate),
     numberOfDays: leaveInfo.numberOfDays,
     isHalfDay: leaveInfo.isHalfDay,
     halfDayType: leaveInfo.halfDayType as HalfDayType | null,
