@@ -4630,6 +4630,7 @@ function LeavesPageContent() {
                 <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50">
                   <LocationPhotoCapture
                     required
+                    cameraOnly
                     label="Live Photo Evidence"
                     onCapture={(loc, photo) => {
                       setOdInEvidenceFile(photo.file);
@@ -5676,6 +5677,7 @@ function LeavesPageContent() {
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-6 py-4">
               <LocationPhotoCapture
                 required
+                cameraOnly
                 label="OD OUT Photo Evidence"
                 onCapture={(loc, photo) => {
                   setOdOutEvidenceFile(photo.file);

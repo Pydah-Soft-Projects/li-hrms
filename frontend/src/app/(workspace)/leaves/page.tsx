@@ -5931,6 +5931,7 @@ export default function LeavesPage() {
 
                     <LocationPhotoCapture
                       required
+                      cameraOnly
                       label="Photo Evidence"
                       onCapture={(loc, photo) => {
                         setOdInEvidenceFile(photo.file);
@@ -6941,6 +6942,7 @@ export default function LeavesPage() {
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-4 sm:px-8 sm:py-5">
                 <LocationPhotoCapture
                   required
+                  cameraOnly
                   label="OD OUT Photo Evidence"
                   onCapture={(loc, photo) => {
                     setOdOutEvidenceFile(photo.file);
