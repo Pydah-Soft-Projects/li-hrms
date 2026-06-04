@@ -579,6 +579,14 @@ exports.syncPayRegister = async (req, res) => {
     });
   } catch (error) {
     console.error('Error syncing pay register:', error);
+    if (error.code === 'PAY_REGISTER_SCOPE') {
+      return res.status(400).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+        message: error.message,
+      });
+    }
     if (isPayrollCompletedLockError(error)) {
       return res.status(409).json({
         success: false,

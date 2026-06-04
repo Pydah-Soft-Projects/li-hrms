@@ -807,7 +807,10 @@ exports.calculatePayroll = async (req, res) => {
  */
 exports.exportPayrollExcel = async (req, res) => {
   try {
-    const { month, departmentId, divisionId, status, search, employeeIds, strategy } = req.query;
+    const { month, departmentId, divisionId, status, search, employeeIds, strategy, designationId, employee_group_id } =
+      req.query;
+    const desFilt = designationId && designationId !== 'all' ? String(designationId) : undefined;
+    const groupFilt = employee_group_id && employee_group_id !== 'all' ? String(employee_group_id) : undefined;
 
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
@@ -823,24 +826,24 @@ exports.exportPayrollExcel = async (req, res) => {
         .map((id) => id.trim())
         .filter(Boolean);
     } else {
-      // Build Employee Query based on filters
-      const employeeQuery = { ...req.scopeFilter };
-      if (departmentId) employeeQuery.department_id = departmentId;
-      if (divisionId) employeeQuery.division_id = divisionId;
-
-      if (status === 'active') {
-        employeeQuery.is_active = true;
-      } else if (status === 'inactive') {
-        employeeQuery.is_active = false;
-      }
-
-      if (search) {
-        employeeQuery.$or = [
-          { employee_name: { $regex: search, $options: 'i' } },
-          { emp_no: { $regex: search, $options: 'i' } }
-        ];
-      }
-
+      const { buildPaysheetEmployeeFilter } = require('../services/payrollEmployeeQueryHelper');
+      const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+      const [y, m] = month.split('-').map(Number);
+      const { startDate: startStr, endDate: endStr } = await getPayrollDateRange(y, m);
+      const rangeStart = new Date(`${startStr}T00:00:00.000Z`);
+      const rangeEnd = new Date(`${endStr}T23:59:59.999Z`);
+      const scope =
+        req.scopeFilter && typeof req.scopeFilter === 'object' && Object.keys(req.scopeFilter).length > 0
+          ? req.scopeFilter
+          : null;
+      const divF = divisionId && divisionId !== 'all' ? divisionId : undefined;
+      const depF = departmentId && departmentId !== 'all' ? departmentId : undefined;
+      const employeeQuery = await buildPaysheetEmployeeFilter(scope, divF, depF, rangeStart, rangeEnd, {
+        status: status || undefined,
+        search: search || undefined,
+        designationId: desFilt,
+        employeeGroupId: groupFilt,
+      });
       const emps = await Employee.find(employeeQuery).select('_id');
       targetEmployeeIds = emps.map((e) => e._id.toString());
     }
@@ -861,12 +864,19 @@ exports.exportPayrollExcel = async (req, res) => {
       }
       
       // Step 1: Try to fetch existing PayrollRecords first
+      const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+      const { filterPayrollRecordsByPayPeriodScope } = require('../services/payrollEmployeeQueryHelper');
+      const [yExp, mExp] = month.split('-').map(Number);
+      const { startDate: expStartStr, endDate: expEndStr } = await getPayrollDateRange(yExp, mExp);
+      const expRangeStart = new Date(`${expStartStr}T00:00:00.000Z`);
+      const expRangeEnd = new Date(`${expEndStr}T23:59:59.999Z`);
+
       const storedQuery = { month, employeeId: { $in: targetEmployeeIds } };
-      const storedRecords = await PayrollRecord.find(storedQuery)
+      let storedRecords = await PayrollRecord.find(storedQuery)
         .populate({
           path: 'employeeId',
           select:
-            'employee_name emp_no department_id division_id designation_id gross_salary location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number',
+            'employee_name emp_no department_id division_id designation_id gross_salary location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate',
           populate: [
             { path: 'department_id', select: 'name' },
             { path: 'division_id', select: 'name' },
@@ -874,6 +884,7 @@ exports.exportPayrollExcel = async (req, res) => {
           ],
         })
         .lean();
+      storedRecords = filterPayrollRecordsByPayPeriodScope(storedRecords, expRangeStart, expRangeEnd);
 
       // Extract which employees already have stored payslips
       const storedEmpIds = new Set(storedRecords.map(r => r.employeeId._id.toString()));
@@ -971,11 +982,11 @@ exports.exportPayrollExcel = async (req, res) => {
       query.employeeId = { $in: targetEmployeeIds };
     }
 
-    const payrollRecords = await PayrollRecord.find(query)
+    let payrollRecords = await PayrollRecord.find(query)
       .populate({
         path: 'employeeId',
         select:
-          'employee_name emp_no department_id division_id designation_id gross_salary location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number',
+          'employee_name emp_no department_id division_id designation_id gross_salary location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate',
         populate: [
           { path: 'department_id', select: 'name' },
           { path: 'division_id', select: 'name' },
@@ -983,6 +994,14 @@ exports.exportPayrollExcel = async (req, res) => {
         ],
       })
       .lean();
+
+    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+    const { filterPayrollRecordsByPayPeriodScope } = require('../services/payrollEmployeeQueryHelper');
+    const [yLeg, mLeg] = month.split('-').map(Number);
+    const { startDate: legStartStr, endDate: legEndStr } = await getPayrollDateRange(yLeg, mLeg);
+    const legRangeStart = new Date(`${legStartStr}T00:00:00.000Z`);
+    const legRangeEnd = new Date(`${legEndStr}T23:59:59.999Z`);
+    payrollRecords = filterPayrollRecordsByPayPeriodScope(payrollRecords, legRangeStart, legRangeEnd);
 
     if (!payrollRecords || payrollRecords.length === 0) {
       return res.status(404).json({
@@ -1150,7 +1169,7 @@ exports.getPaysheetData = async (req, res) => {
             : null;
         const divF = divisionId && divisionId !== 'all' ? divisionId : undefined;
         const depF = departmentId && departmentId !== 'all' ? departmentId : undefined;
-        const employeeQuery = buildPaysheetEmployeeFilter(scope, divF, depF, rangeStart, rangeEnd, {
+        const employeeQuery = await buildPaysheetEmployeeFilter(scope, divF, depF, rangeStart, rangeEnd, {
           status: status || undefined,
           search: search || undefined,
           designationId: desFilt,
@@ -1206,14 +1225,8 @@ exports.getPaysheetData = async (req, res) => {
       const payrollRangeStart = new Date(`${rangeStartStr}T00:00:00.000Z`);
       const payrollRangeEnd = new Date(`${rangeEndStr}T23:59:59.999Z`);
 
-      const filtered = records.filter((r) => {
-        const emp = r.employeeId;
-        if (!emp) return false;
-        const left = emp.leftDate;
-        if (!left) return true;
-        const leftDate = left instanceof Date ? left : new Date(left);
-        return leftDate >= payrollRangeStart && leftDate <= payrollRangeEnd;
-      });
+      const { filterPayrollRecordsByPayPeriodScope } = require('../services/payrollEmployeeQueryHelper');
+      const filtered = filterPayrollRecordsByPayPeriodScope(records, payrollRangeStart, payrollRangeEnd);
 
       const config2 = await PayrollConfiguration.get();
       const outputCols2nd = normalizeOutputColumns(config2?.outputColumns);
@@ -1298,7 +1311,7 @@ exports.getPaysheetData = async (req, res) => {
 
     if (useExisting && outputColumns.length > 0) {
       // Return existing PayrollRecords only – no calculation. Filters applied on records.
-      // Respect resignation: same as pay register – include only active employees or those who left in this payroll month.
+      // Respect resignation: same as pay register – active, left in period, or leaving after period end.
       const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
       const [yearNum, monthNum] = month.split('-').map(Number);
       const { startDate: rangeStartStr, endDate: rangeEndStr } = await getPayrollDateRange(yearNum, monthNum);
@@ -1312,7 +1325,7 @@ exports.getPaysheetData = async (req, res) => {
           : null;
       const divF = divisionId && divisionId !== 'all' ? divisionId : undefined;
       const depF = departmentId && departmentId !== 'all' ? departmentId : undefined;
-      const empMatch = buildPaysheetEmployeeFilter(scope, divF, depF, payrollRangeStart, payrollRangeEnd, {
+      const empMatch = await buildPaysheetEmployeeFilter(scope, divF, depF, payrollRangeStart, payrollRangeEnd, {
         status: status || undefined,
         search: search || undefined,
         designationId: desFilt,
@@ -1345,16 +1358,8 @@ exports.getPaysheetData = async (req, res) => {
         .collation(EMP_NO_COLLATION)
         .lean();
 
-      let filtered = records;
-      // Respect resignation: exclude employees who left before this payroll month
-      filtered = filtered.filter((r) => {
-        const emp = r.employeeId;
-        if (!emp) return false;
-        const left = emp.leftDate;
-        if (!left) return true;
-        const leftDate = left instanceof Date ? left : new Date(left);
-        return leftDate >= payrollRangeStart && leftDate <= payrollRangeEnd;
-      });
+      const { filterPayrollRecordsByPayPeriodScope } = require('../services/payrollEmployeeQueryHelper');
+      let filtered = filterPayrollRecordsByPayPeriodScope(records, payrollRangeStart, payrollRangeEnd);
 
       // Prefer frozen snapshots for historical stability (if available for all rows)
       if (filtered.length > 0) {
@@ -1461,7 +1466,7 @@ exports.getPaysheetData = async (req, res) => {
           : null;
       const divF = divisionId && divisionId !== 'all' ? divisionId : undefined;
       const depF = departmentId && departmentId !== 'all' ? departmentId : undefined;
-      const employeeQuery = buildPaysheetEmployeeFilter(scope, divF, depF, rangeStart, rangeEnd, {
+      const employeeQuery = await buildPaysheetEmployeeFilter(scope, divF, depF, rangeStart, rangeEnd, {
         status: status || undefined,
         search: search || undefined,
         designationId: desFilt,
@@ -1615,7 +1620,7 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
           : null;
       const divF = divisionId && divisionId !== 'all' ? divisionId : undefined;
       const depF = departmentId && departmentId !== 'all' ? departmentId : undefined;
-      const employeeQuery = buildPaysheetEmployeeFilter(scope, divF, depF, rangeStart, rangeEnd, {
+      const employeeQuery = await buildPaysheetEmployeeFilter(scope, divF, depF, rangeStart, rangeEnd, {
         status: status || undefined,
         search: search || undefined,
         designationId: desFilt,
@@ -1654,14 +1659,8 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
     const payrollRangeStart = new Date(`${rangeStartStr}T00:00:00.000Z`);
     const payrollRangeEnd = new Date(`${rangeEndStr}T23:59:59.999Z`);
 
-    payrollRecords = payrollRecords.filter((r) => {
-      const emp = r.employeeId;
-      if (!emp) return false;
-      const left = emp.leftDate;
-      if (!left) return true;
-      const leftDate = left instanceof Date ? left : new Date(left);
-      return leftDate >= payrollRangeStart && leftDate <= payrollRangeEnd;
-    });
+    const { filterPayrollRecordsByPayPeriodScope } = require('../services/payrollEmployeeQueryHelper');
+    payrollRecords = filterPayrollRecordsByPayPeriodScope(payrollRecords, payrollRangeStart, payrollRangeEnd);
 
     const orderIndex = new Map(targetEmployeeIds.map((id, i) => [id, i]));
     payrollRecords.sort((a, b) => {
@@ -2532,7 +2531,7 @@ exports.getPayrollTransactionsWithAnalytics = async (req, res) => {
  */
 exports.calculatePayrollBulk = async (req, res) => {
   try {
-    const { month, divisionId, departmentId, strategy, arrears, deductions } = req.body;
+    const { month, divisionId, departmentId, strategy, arrears, deductions, search, employeeGroupId } = req.body;
 
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
@@ -2549,21 +2548,29 @@ exports.calculatePayrollBulk = async (req, res) => {
     const leftStart = new Date(startDate + 'T00:00:00.000Z');
     const leftEnd = new Date(endDate + 'T23:59:59.999Z');
 
-    const { buildPayrollBulkEmployeeQuery } = require('../services/payrollEmployeeQueryHelper');
+    const { buildPayRegisterEmployeeFilter } = require('../../pay-register/services/payRegisterEmployeeFilter');
     const { EJSON } = require('bson');
 
     const divF = divisionId && divisionId !== 'all' ? divisionId : undefined;
     const depF = departmentId && departmentId !== 'all' ? departmentId : undefined;
+    const groupF = employeeGroupId && employeeGroupId !== 'all' ? employeeGroupId : undefined;
+    const searchTrim = search && String(search).trim() ? String(search).trim() : undefined;
 
     const scopeFilter =
       req.scopeFilter && typeof req.scopeFilter === 'object' && Object.keys(req.scopeFilter).length > 0
         ? req.scopeFilter
         : null;
 
-    const query = buildPayrollBulkEmployeeQuery(scopeFilter, divF, depF, leftStart, leftEnd);
+    const query = await buildPayRegisterEmployeeFilter(leftStart, leftEnd, {
+      departmentId: depF,
+      divisionId: divF,
+      employeeGroupId: groupF,
+      search: searchTrim,
+      scopeFilter,
+    });
 
     console.log('[Bulk Payroll] Req.scopeFilter keys:', req.scopeFilter ? Object.keys(req.scopeFilter).length : 0);
-    console.log('[Bulk Payroll] Filters - Division:', divF, 'Department:', depF, 'Month:', month);
+    console.log('[Bulk Payroll] Filters - Division:', divF, 'Department:', depF, 'Month:', month, 'Search:', searchTrim || '(none)', 'Group:', groupF || '(none)');
 
     const employees = await Employee.find(query).select('_id');
 
@@ -2583,6 +2590,8 @@ exports.calculatePayrollBulk = async (req, res) => {
       month,
       divisionId: divF,
       departmentId: depF,
+      employeeGroupId: groupF,
+      search: searchTrim,
       strategy,
       userId: req.user._id,
       scopeFilter: scopeFilterForJob,

@@ -1813,13 +1813,16 @@ export default function PayRegisterPage() {
     let failCount = 0;
     const batchIds = new Set<string>(); // Store unique batch IDs
 
+    const searchApplied = (committedSearch || '').trim();
     setBulkCalculating(true);
     Swal.fire({
       icon: 'info',
       title: 'Calculating',
       text:
         paginationTotal > 0
-          ? `Queuing payroll for all ${paginationTotal} employee(s) matching these filters (not only this page).`
+          ? searchApplied
+            ? `Queuing payroll for ${paginationTotal} employee(s) matching search "${searchApplied}" (not only this page).`
+            : `Queuing payroll for all ${paginationTotal} employee(s) matching these filters (not only this page).`
           : 'Queuing payroll for all employees matching these filters...',
       timer: 2500,
       showConfirmButton: false,
@@ -1831,6 +1834,11 @@ export default function PayRegisterPage() {
         month: monthStr,
         divisionId: selectedDivision === 'all' ? undefined : selectedDivision,
         departmentId: selectedDepartment === 'all' ? undefined : selectedDepartment,
+        search: searchApplied || undefined,
+        employeeGroupId:
+          customGroupingEnabled && selectedEmployeeGroup && selectedEmployeeGroup !== ''
+            ? selectedEmployeeGroup
+            : undefined,
         strategy: payrollStrategy,
         arrears: selectedArrears
           .filter((a) => a.employeeId != null)

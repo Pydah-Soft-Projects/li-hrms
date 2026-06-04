@@ -889,7 +889,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     let attendanceSummary = null;
 
     if (source === 'payregister') {
-      payRegisterSummary = await PayRegisterSummary.findOne({ employeeId, month });
+      const { ensurePayRegisterForPayroll } = require('../../pay-register/services/autoSyncService');
+      payRegisterSummary = await ensurePayRegisterForPayroll(employeeId, month);
       if (!payRegisterSummary) throw new Error('Pay register not found for this month');
       attendanceSummary = {
         totalPayableShifts: payRegisterSummary.totals.totalPayableShifts || 0,

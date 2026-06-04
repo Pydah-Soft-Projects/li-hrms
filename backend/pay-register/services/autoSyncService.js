@@ -374,6 +374,8 @@ async function syncPayRegisterFromOT(ot) {
 async function manualSyncPayRegister(employeeId, month, options = {}) {
   try {
     const force = options && options.force === true;
+    const { assertEmployeeInPayRegisterDisplayScope } = require('./payRegisterEmployeeFilter');
+    await assertEmployeeInPayRegisterDisplayScope(employeeId, month);
     await assertEmployeeMonthEditable(employeeId, month, employeeId);
 
     let payRegister = await PayRegisterSummary.findOne({
@@ -480,11 +482,29 @@ async function manualSyncPayRegister(employeeId, month, options = {}) {
   }
 }
 
+/**
+ * Ensure a persisted pay register exists with daily data before payroll calculation.
+ * Pay Register UI can show in-memory stubs for employees without a DB row; calculate requires a real summary.
+ */
+async function ensurePayRegisterForPayroll(employeeId, month) {
+  const existing = await PayRegisterSummary.findOne({ employeeId, month });
+  const hasGrid =
+    existing &&
+    Array.isArray(existing.dailyRecords) &&
+    existing.dailyRecords.length > 0;
+  if (hasGrid) {
+    // Must return full summary (including totals) — payroll reads totalPayableShifts / present days from totals.
+    return existing;
+  }
+  return manualSyncPayRegister(employeeId, month, { force: false });
+}
+
 module.exports = {
   syncPayRegisterFromLeave,
   syncPayRegisterFromOD,
   syncPayRegisterFromOT,
   manualSyncPayRegister,
+  ensurePayRegisterForPayroll,
   checkIfManuallyEdited,
 };
 

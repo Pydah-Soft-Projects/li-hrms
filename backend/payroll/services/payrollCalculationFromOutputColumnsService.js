@@ -1397,7 +1397,8 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
   const employee = await Employee.findById(employeeId).populate('department_id designation_id division_id');
   if (!employee) throw new Error('Employee not found');
 
-  const payRegisterSummary = await PayRegisterSummary.findOne({ employeeId, month });
+  const { ensurePayRegisterForPayroll } = require('../../pay-register/services/autoSyncService');
+  const payRegisterSummary = await ensurePayRegisterForPayroll(employeeId, month);
   if (!payRegisterSummary) throw new Error('Pay register not found for this month');
 
   const secondSalaryBasis = !!options.secondSalaryBasis;

@@ -41,7 +41,8 @@ class SecondSalaryService {
             if (departmentId && departmentId !== 'all') query.department_id = departmentId;
             if (leftStart && leftEnd) {
                 query.$or = [
-                    { is_active: true, leftDate: null },
+                    { is_active: { $ne: false }, leftDate: null },
+                    { is_active: { $ne: false }, leftDate: { $gt: leftEnd } },
                     { leftDate: { $gte: leftStart, $lte: leftEnd } },
                 ];
             } else {

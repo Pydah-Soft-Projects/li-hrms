@@ -304,13 +304,23 @@ payrollBatchSchema.methods.consumeRecalculationPermission = function () {
 payrollBatchSchema.methods.validateBatch = async function () {
     const Employee = mongoose.model('Employee');
     const PayrollRecord = mongoose.model('PayrollRecord');
+    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+    const { buildPayrollPeriodEmployeeQuery } = require('../services/payrollEmployeeQueryHelper');
 
-    // Get all active employees in department AND division (Strict Scoping)
-    const allEmployees = await Employee.find({
-        department_id: this.department,
-        division_id: this.division, // VALIDATION UPGRADE: Enforce Division Scope
-        is_active: true
-    }).select('_id');
+    const [year, monthNum] = String(this.month || '').split('-').map(Number);
+    const { startDate, endDate } = await getPayrollDateRange(year, monthNum);
+    const rangeStart = new Date(startDate + 'T00:00:00.000Z');
+    const rangeEnd = new Date(endDate + 'T23:59:59.999Z');
+
+    // Same scope as pay register / bulk payroll: active or left in period, DOJ/leftDate bounds
+    const empQuery = buildPayrollPeriodEmployeeQuery(
+        this.division,
+        this.department,
+        rangeStart,
+        rangeEnd
+    );
+
+    const allEmployees = await Employee.find(empQuery).select('_id');
 
     const allEmployeeIds = allEmployees.map(e => e._id.toString());
 

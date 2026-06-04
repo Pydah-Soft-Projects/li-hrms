@@ -4188,6 +4188,9 @@ export const api = {
     month: string;
     divisionId?: string;
     departmentId?: string;
+    /** Same search as Pay Register list (Enter in search box); limits bulk calculate to matching emp_no/name/dept/etc. */
+    search?: string;
+    employeeGroupId?: string;
     strategy?: string;
     /** Per-employee arrears (employeeId required); same semantics as single calculate body.arrears */
     arrears?: Array<{ arrearId: string; amount: number; employeeId: string }>;
@@ -4204,6 +4207,8 @@ export const api = {
     month: string;
     departmentId?: string;
     divisionId?: string;
+    designationId?: string;
+    employee_group_id?: string;
     status?: string;
     search?: string;
     employeeIds?: string[];
@@ -4213,6 +4218,8 @@ export const api = {
     query.append('month', params.month);
     if (params.departmentId) query.append('departmentId', params.departmentId);
     if (params.divisionId) query.append('divisionId', params.divisionId);
+    if (params.designationId) query.append('designationId', params.designationId);
+    if (params.employee_group_id) query.append('employee_group_id', params.employee_group_id);
     if (params.status) query.append('status', params.status);
     if (params.search) query.append('search', params.search);
     if (params.employeeIds && params.employeeIds.length > 0) {

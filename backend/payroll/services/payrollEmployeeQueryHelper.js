@@ -3,7 +3,8 @@
  * Used by: shared/jobs/worker.js (bulk regular + second salary), secondSalaryService.js,
  * payrollController bulk calculate, and scripts that need the same employee lists.
  *
- * When leftDateRange is provided, includes: active employees OR employees who left in that month.
+ * When leftDateRange is provided, includes: active employees (no left date, or leaving after this period),
+ * OR employees who left during this pay period.
  */
 
 const mongoose = require('mongoose');
@@ -33,7 +34,11 @@ function toObjectIdIfValid(id) {
 function buildPayrollBulkEmployeeQuery(scopeFilter, divisionId, departmentId, rangeStart, rangeEnd, designationId, employeeGroupId) {
   const employmentOr = {
     $or: [
-      { is_active: true, leftDate: null },
+      // Active (or legacy null is_active): still employed through the period
+      { is_active: { $ne: false }, leftDate: null },
+      // Active with a future exit: still employed for this entire pay period (left after period end)
+      { is_active: { $ne: false }, leftDate: { $gt: rangeEnd } },
+      // Left during this pay period (leftDate within cycle start–end)
       { leftDate: { $gte: rangeStart, $lte: rangeEnd } },
     ],
   };
@@ -59,76 +64,48 @@ function buildPayrollBulkEmployeeQuery(scopeFilter, divisionId, departmentId, ra
 }
 
 /**
- * Employee filter for paysheet + export-bundle: same scoping as bulk payroll (scope + dept/div + employment rule).
- * Avoids overwriting req.scopeFilter.$or when merging resignation rules.
- *
- * @param {Object|null|undefined} scopeFilter
- * @param {string|null|undefined} divisionId
- * @param {string|null|undefined} departmentId
- * @param {Date} rangeStart
- * @param {Date} rangeEnd
- * @param {{ status?: string, search?: string, designationId?: string, employeeGroupId?: string }} [options]
+ * Employee filter for paysheet table + export-bundle + payroll Excel export.
+ * Same pay-period scope and search as Pay Register (buildPayrollPeriodEmployeeQuery + dept/div/designation search).
  */
-function buildPaysheetEmployeeFilter(scopeFilter, divisionId, departmentId, rangeStart, rangeEnd, options = {}) {
+async function buildPaysheetEmployeeFilter(scopeFilter, divisionId, departmentId, rangeStart, rangeEnd, options = {}) {
   const { status, search, designationId, employeeGroupId } = options;
-  const divF = toObjectIdIfValid(divisionId);
-  const depF = toObjectIdIfValid(departmentId);
-  const desF = toObjectIdIfValid(designationId);
-  const grpF = toObjectIdIfValid(employeeGroupId);
-
-  if (status === 'inactive') {
-    const parts = [];
-    if (scopeFilter && typeof scopeFilter === 'object' && Object.keys(scopeFilter).length > 0) {
-      parts.push(scopeFilter);
-    }
-    const deptDiv = {};
-    if (depF) deptDiv.department_id = depF;
-    if (divF) deptDiv.division_id = divF;
-    if (Object.keys(deptDiv).length > 0) parts.push(deptDiv);
-    if (desF) parts.push({ designation_id: desF });
-    if (grpF) parts.push({ employee_group_id: grpF });
-    parts.push({ is_active: false });
-    if (search && String(search).trim()) {
-      const term = String(search).trim();
-      parts.push({
-        $or: [
-          { employee_name: { $regex: term, $options: 'i' } },
-          { emp_no: { $regex: term, $options: 'i' } },
-        ],
-      });
-    }
-    if (parts.length === 1) return parts[0];
-    return { $and: parts };
-  }
+  const { appendEmployeeSearchCondition } = require('../../pay-register/services/payRegisterEmployeeFilter');
+  const divArg = divisionId && divisionId !== 'all' ? divisionId : undefined;
+  const depArg = departmentId && departmentId !== 'all' ? departmentId : undefined;
+  const desF = toObjectIdIfValid(designationId && designationId !== 'all' ? designationId : null);
+  const grpF = toObjectIdIfValid(employeeGroupId && employeeGroupId !== 'all' ? employeeGroupId : null);
 
   const scope =
     scopeFilter && typeof scopeFilter === 'object' && Object.keys(scopeFilter).length > 0 ? scopeFilter : null;
-  const divArg = divisionId && divisionId !== 'all' ? divisionId : undefined;
-  const depArg = departmentId && departmentId !== 'all' ? departmentId : undefined;
-  const desArg = designationId && designationId !== 'all' ? designationId : undefined;
-  const groupArg = employeeGroupId && employeeGroupId !== 'all' ? employeeGroupId : undefined;
-  let q = buildPayrollBulkEmployeeQuery(scope, divArg, depArg, rangeStart, rangeEnd, desArg, groupArg);
 
-  if (status === 'active') {
-    q = { $and: [q, { is_active: true }] };
+  if (status === 'inactive') {
+    const parts = [];
+    if (scope) parts.push(scope);
+    parts.push(buildPayrollPeriodEmployeeQuery(divArg, depArg, rangeStart, rangeEnd, null));
+    if (desF) parts.push({ designation_id: desF });
+    if (grpF) parts.push({ employee_group_id: grpF });
+    parts.push({ is_active: false });
+    await appendEmployeeSearchCondition(parts, search);
+    return parts.length === 1 ? parts[0] : { $and: parts };
   }
 
-  if (search && String(search).trim()) {
-    const term = String(search).trim();
-    q = {
-      $and: [
-        q,
-        {
-          $or: [
-            { employee_name: { $regex: term, $options: 'i' } },
-            { emp_no: { $regex: term, $options: 'i' } },
-          ],
-        },
-      ],
-    };
-  }
+  const conditions = [buildPayrollPeriodEmployeeQuery(divArg, depArg, rangeStart, rangeEnd, scope)];
+  if (desF) conditions.push({ designation_id: desF });
+  if (grpF) conditions.push({ employee_group_id: grpF });
+  if (status === 'active') conditions.push({ is_active: true });
+  await appendEmployeeSearchCondition(conditions, search);
+  return conditions.length === 1 ? conditions[0] : { $and: conditions };
+}
 
-  return q;
+/**
+ * After loading PayrollRecords, drop rows whose leftDate is before the pay period (keep future exit dates).
+ */
+function filterPayrollRecordsByPayPeriodScope(records, rangeStart, rangeEnd) {
+  return records.filter((r) => {
+    const emp = r.employeeId;
+    if (!emp) return false;
+    return isEmployeeLeftDateInPayrollPeriodScope(emp.leftDate, rangeStart, rangeEnd);
+  });
 }
 
 /**
@@ -148,7 +125,8 @@ function getRegularPayrollEmployeeQuery(opts = {}) {
     const start = new Date(startStr + 'T00:00:00.000Z');
     const end = new Date(endStr + 'T23:59:59.999Z');
     query.$or = [
-      { is_active: true, leftDate: null },
+      { is_active: { $ne: false }, leftDate: null },
+      { is_active: { $ne: false }, leftDate: { $gt: end } },
       { leftDate: { $gte: start, $lte: end } },
     ];
   } else {
@@ -170,9 +148,39 @@ function getSecondSalaryEmployeeQuery(opts = {}) {
   return getRegularPayrollEmployeeQuery(opts);
 }
 
+/**
+ * Employees in scope for a payroll month (batch validation, pay register list, bulk calculate).
+ * Active with no left date, active with exit after period end, OR left during the pay period;
+ * joined on/before period end; not left before period start.
+ */
+/**
+ * JS-side check for paysheet/export: include if no left date, or left on/after pay period start
+ * (still employed through the month, or left during/after the period). Excludes left before period start.
+ */
+function isEmployeeLeftDateInPayrollPeriodScope(leftDate, rangeStart) {
+  if (leftDate == null || leftDate === '') return true;
+  const left = leftDate instanceof Date ? leftDate : new Date(leftDate);
+  if (Number.isNaN(left.getTime())) return true;
+  return left >= rangeStart;
+}
+
+function buildPayrollPeriodEmployeeQuery(divisionId, departmentId, rangeStart, rangeEnd, scopeFilter = null) {
+  const employment = buildPayrollBulkEmployeeQuery(scopeFilter, divisionId, departmentId, rangeStart, rangeEnd);
+  const periodBounds = {
+    $and: [
+      { $or: [{ doj: null }, { doj: { $lte: rangeEnd } }] },
+      { $or: [{ leftDate: null }, { leftDate: { $gte: rangeStart } }] },
+    ],
+  };
+  return { $and: [employment, periodBounds] };
+}
+
 module.exports = {
   buildPayrollBulkEmployeeQuery,
   buildPaysheetEmployeeFilter,
   getRegularPayrollEmployeeQuery,
   getSecondSalaryEmployeeQuery,
+  buildPayrollPeriodEmployeeQuery,
+  isEmployeeLeftDateInPayrollPeriodScope,
+  filterPayrollRecordsByPayPeriodScope,
 };

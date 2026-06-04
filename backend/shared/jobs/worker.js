@@ -109,7 +109,8 @@ const startWorkers = () => {
                 const Department = require('../../departments/model/Department');
                 const allowanceDeductionResolverService = require('../../payroll/services/allowanceDeductionResolverService');
                 const PayrollBatchService = require('../../payroll/services/payrollBatchService');
-                const { buildPayrollBulkEmployeeQuery } = require('../../payroll/services/payrollEmployeeQueryHelper');
+                const { buildPayRegisterEmployeeFilter } = require('../../pay-register/services/payRegisterEmployeeFilter');
+                const { ensurePayRegisterForPayroll } = require('../../pay-register/services/autoSyncService');
                 const { EJSON } = require('bson');
                 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 
@@ -125,15 +126,23 @@ const startWorkers = () => {
                 if (!legacyEmployeeIds && leftStart && leftEnd) {
                     const scopeDeserialized =
                         job.data.scopeFilter != null ? EJSON.deserialize(job.data.scopeFilter) : null;
-                    const empQuery = buildPayrollBulkEmployeeQuery(
-                        scopeDeserialized,
-                        divisionId,
+                    const searchTrim =
+                        job.data.search && String(job.data.search).trim() ? String(job.data.search).trim() : undefined;
+                    const groupF =
+                        job.data.employeeGroupId && job.data.employeeGroupId !== 'all'
+                            ? job.data.employeeGroupId
+                            : undefined;
+                    const empQuery = await buildPayRegisterEmployeeFilter(leftStart, leftEnd, {
                         departmentId,
-                        leftStart,
-                        leftEnd
-                    );
+                        divisionId,
+                        employeeGroupId: groupF,
+                        search: searchTrim,
+                        scopeFilter: scopeDeserialized,
+                    });
                     employees = await Employee.find(empQuery);
-                    console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees (bulk employee query)`);
+                    console.log(
+                        `[Worker] Bulk calculating payroll for ${employees.length} employees (pay register filters${searchTrim ? `, search="${searchTrim}"` : ''})`
+                    );
                 } else if (legacyEmployeeIds) {
                     employees = await Employee.find({ _id: { $in: job.data.employeeIds } });
                     console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees (legacy job: employeeIds)`);
@@ -177,6 +186,9 @@ const startWorkers = () => {
                 for (let i = 0; i < employees.length; i++) {
                     const employee = employees[i];
                     try {
+                        if (opts.source === 'payregister' || !useLegacy) {
+                            await ensurePayRegisterForPayroll(employee._id.toString(), month);
+                        }
                         const { arrearsSettlements, deductionSettlements } = settlementsForEmployee(
                             employee._id,
                             bulkArrears,
