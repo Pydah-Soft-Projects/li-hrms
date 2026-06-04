@@ -11,6 +11,14 @@ import {
   batchesEligibleForAction,
   type DivisionGroup,
 } from "@/components/payments/payrollBatchUtils";
+import MissingPayrollWarningDialog from "@/components/payments/MissingPayrollWarningDialog";
+import {
+  collectApproveValidationIssues,
+  issuesFromBulkApproveErrors,
+  isMissingPayrollError,
+  type BatchPayrollValidationIssue,
+  type BulkApproveErrorEntry,
+} from "@/lib/payrollBatchValidation";
 
 const statusColors: Record<PayrollBatchStatus, string> = {
   pending:
@@ -32,6 +40,7 @@ const statusLabels: Record<PayrollBatchStatus, string> = {
 
 export type PayrollBatchesHubProps = {
   detailBasePath: string;
+  payRegisterBasePath: string;
   showDivisionFilter?: boolean;
 };
 
@@ -64,7 +73,11 @@ async function fetchAllPayrollBatchesPage(
   return { batches: all, total };
 }
 
-export default function PayrollBatchesHub({ detailBasePath, showDivisionFilter = false }: PayrollBatchesHubProps) {
+export default function PayrollBatchesHub({
+  detailBasePath,
+  payRegisterBasePath,
+  showDivisionFilter = false,
+}: PayrollBatchesHubProps) {
   const router = useRouter();
 
   const [viewMode, setViewMode] = useState<"table" | "by-division">("by-division");
@@ -92,6 +105,13 @@ export default function PayrollBatchesHub({ detailBasePath, showDivisionFilter =
   const [selectedBatch, setSelectedBatch] = useState<PayrollBatch | null>(null);
   const [actionReason, setActionReason] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+
+  const [missingPayrollWarningOpen, setMissingPayrollWarningOpen] = useState(false);
+  const [missingPayrollIssues, setMissingPayrollIssues] = useState<BatchPayrollValidationIssue[]>([]);
+  const [missingPayrollSummary, setMissingPayrollSummary] = useState<string | undefined>();
+  /** Full batch set to approve on "Proceed anyway" (not only batches listed in the warning). */
+  const [pendingApproveBatchIds, setPendingApproveBatchIds] = useState<string[]>([]);
+  const [proceedAnywayLoading, setProceedAnywayLoading] = useState(false);
 
   const actionLabels = {
     approve: "Approved",
@@ -286,11 +306,57 @@ export default function PayrollBatchesHub({ detailBasePath, showDivisionFilter =
     setOpenDialog(true);
   };
 
+  const batchesById = useMemo(() => {
+    const map = new Map<string, PayrollBatch>();
+    for (const b of [...batches, ...groupedBatchesRaw]) {
+      map.set(String(b._id), b);
+    }
+    return map;
+  }, [batches, groupedBatchesRaw]);
+
+  const showMissingPayrollWarning = (
+    issues: BatchPayrollValidationIssue[],
+    summary?: string,
+    batchIdsForProceed?: string[],
+  ) => {
+    if (!issues.length) return false;
+    setMissingPayrollIssues(issues);
+    setMissingPayrollSummary(summary);
+    setPendingApproveBatchIds(
+      batchIdsForProceed?.length
+        ? batchIdsForProceed
+        : issues.map((i) => i.batchId),
+    );
+    setMissingPayrollWarningOpen(true);
+    setOpenDialog(false);
+    return true;
+  };
+
   const handleActionConfirm = async () => {
     if (!actionType) return;
 
     try {
       setActionLoading(true);
+
+      if (actionType === "approve") {
+        const approveTargets =
+          dialogMode === "single" && selectedBatch
+            ? [selectedBatch]
+            : batchesEligibleForAction(selectedBatchObjects, "approve");
+
+        const precheckIssues = await collectApproveValidationIssues(approveTargets);
+        if (precheckIssues.length) {
+          const totalSelected = approveTargets.length;
+          const withIssues = precheckIssues.length;
+          showMissingPayrollWarning(
+            precheckIssues,
+            `${withIssues} of ${totalSelected} selected batch(es) have employees without payroll. Proceed anyway will approve all ${totalSelected} selected batch(es) (ready employees included; missing payroll excluded per batch).`,
+            approveTargets.map((b) => String(b._id)),
+          );
+          return;
+        }
+      }
+
       if (dialogMode === "single") {
         if (!selectedBatch) return;
         let response;
@@ -309,6 +375,35 @@ export default function PayrollBatchesHub({ detailBasePath, showDivisionFilter =
           toast.success(`Batch ${actionLabels[actionType]} successfully`);
           setOpenDialog(false);
           refresh();
+        } else if (
+          actionType === "approve" &&
+          (response?.missingEmployees?.length || isMissingPayrollError(response?.message))
+        ) {
+          const missing =
+            response.missingEmployees ||
+            [];
+          showMissingPayrollWarning(
+            [
+              {
+                batchId: String(selectedBatch._id),
+                batchLabel: selectedBatch.department?.name || selectedBatch.batchNumber,
+                month: selectedBatch.month,
+                departmentId:
+                  typeof selectedBatch.department === "object"
+                    ? selectedBatch.department._id
+                    : undefined,
+                divisionId:
+                  typeof selectedBatch.division === "object"
+                    ? selectedBatch.division._id
+                    : typeof selectedBatch.division === "string"
+                      ? selectedBatch.division
+                      : undefined,
+                missingEmployees: missing,
+              },
+            ],
+            undefined,
+            [String(selectedBatch._id)],
+          );
         } else {
           toast.error(response?.message || "Action failed");
         }
@@ -330,10 +425,28 @@ export default function PayrollBatchesHub({ detailBasePath, showDivisionFilter =
           break;
       }
       if (response?.success) {
-        toast.success(response.message || `Bulk ${actionLabels[actionType].toLowerCase()}`);
-        const errs = response.errors as { batchId: string; error: string }[] | undefined;
-        if (errs?.length) {
-          toast.error(`${errs.length} batch(es) failed. First: ${errs[0].error}`);
+        const errs = (response.errors || []) as BulkApproveErrorEntry[];
+        const payrollIssues =
+          actionType === "approve" ? issuesFromBulkApproveErrors(errs, batchesById) : [];
+
+        if (payrollIssues.length) {
+          const succeeded = Array.isArray(response.data) ? response.data.length : 0;
+          const failedIds = errs.map((e) => String(e.batchId));
+          showMissingPayrollWarning(
+            payrollIssues,
+            succeeded > 0
+              ? `${succeeded} batch(es) approved. ${errs.length} remaining batch(es) have employees without payroll — proceed anyway to approve those with ready payroll.`
+              : `${errs.length} batch(es) have employees without payroll. Proceed anyway to approve employees who are ready.`,
+            failedIds,
+          );
+          if (succeeded > 0) {
+            toast.info(response.message || `Approved ${succeeded} batch(es)`);
+          }
+        } else {
+          toast.success(response.message || `Bulk ${actionLabels[actionType].toLowerCase()}`);
+          if (errs.length) {
+            toast.error(`${errs.length} batch(es) failed. First: ${errs[0].error || "Unknown error"}`);
+          }
         }
         setOpenDialog(false);
         setSelectedIds([]);
@@ -346,6 +459,79 @@ export default function PayrollBatchesHub({ detailBasePath, showDivisionFilter =
       toast.error(error.message || "Action failed");
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleProceedAnywayApprove = async () => {
+    const batchIds =
+      pendingApproveBatchIds.length > 0
+        ? pendingApproveBatchIds
+        : missingPayrollIssues.map((i) => i.batchId);
+    if (!batchIds.length) return;
+
+    const toApprove = batchIds.filter((id) => {
+      const b = batchesById.get(id);
+      return !b || b.status === "pending";
+    });
+
+    if (!toApprove.length) {
+      toast.info("Selected batches are already approved.");
+      setMissingPayrollWarningOpen(false);
+      setPendingApproveBatchIds([]);
+      return;
+    }
+
+    try {
+      setProceedAnywayLoading(true);
+      let response: any;
+
+      if (toApprove.length === 1) {
+        response = await api.approveBatch(toApprove[0], actionReason, { proceedAnyway: true });
+      } else {
+        response = await api.bulkApproveBatches(toApprove, actionReason, { proceedAnyway: true });
+      }
+
+      if (response?.success) {
+        const errs = (response.errors || []) as BulkApproveErrorEntry[];
+        const succeeded = Array.isArray(response.data) ? response.data.length : toApprove.length;
+
+        if (errs.length > 0) {
+          const payrollIssues = issuesFromBulkApproveErrors(errs, batchesById);
+          if (payrollIssues.length) {
+            showMissingPayrollWarning(
+              payrollIssues,
+              `${succeeded} of ${toApprove.length} batch(es) approved. ${errs.length} still need attention (e.g. no payroll calculated yet).`,
+              errs.map((e) => String(e.batchId)),
+            );
+          } else {
+            toast.error(`${errs.length} batch(es) failed. First: ${errs[0]?.error || "Unknown error"}`);
+            setMissingPayrollWarningOpen(false);
+            setPendingApproveBatchIds([]);
+          }
+          if (succeeded > 0) {
+            toast.success(`Approved ${succeeded} batch(es)`);
+          }
+        } else {
+          toast.success(
+            response.message ||
+              (toApprove.length === 1
+                ? "Batch approved (excluded employees without payroll where applicable)"
+                : `Approved ${succeeded} batch(es)`),
+          );
+          setMissingPayrollWarningOpen(false);
+          setPendingApproveBatchIds([]);
+          setOpenDialog(false);
+          setSelectedIds([]);
+        }
+        refresh();
+      } else {
+        toast.error(response?.message || "Approval failed");
+      }
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || "Approval failed");
+    } finally {
+      setProceedAnywayLoading(false);
     }
   };
 
@@ -868,6 +1054,19 @@ export default function PayrollBatchesHub({ detailBasePath, showDivisionFilter =
           </div>
         </div>
       )}
+
+      <MissingPayrollWarningDialog
+        open={missingPayrollWarningOpen}
+        onClose={() => {
+          setMissingPayrollWarningOpen(false);
+          setPendingApproveBatchIds([]);
+        }}
+        issues={missingPayrollIssues}
+        payRegisterBasePath={payRegisterBasePath}
+        summary={missingPayrollSummary}
+        onProceedAnyway={handleProceedAnywayApprove}
+        proceedAnywayLoading={proceedAnywayLoading}
+      />
 
       {openDialog && actionType && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">

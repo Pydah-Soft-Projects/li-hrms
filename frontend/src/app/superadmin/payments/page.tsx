@@ -3,5 +3,11 @@
 import PayrollBatchesHub from "@/components/payments/PayrollBatchesHub";
 
 export default function PaymentsPage() {
-  return <PayrollBatchesHub detailBasePath="/superadmin/payments" showDivisionFilter />;
+  return (
+    <PayrollBatchesHub
+      detailBasePath="/superadmin/payments"
+      payRegisterBasePath="/superadmin/pay-register"
+      showDivisionFilter
+    />
+  );
 }

@@ -73,6 +73,19 @@ const recalculationHistorySchema = new mongoose.Schema({
     changes: [recalculationChangeSchema]
 }, { timestamps: true });
 
+// Missing employee snapshot for validation UI / approval errors
+const missingEmployeeDetailSchema = new mongoose.Schema({
+    employeeId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Employee'
+    },
+    emp_no: String,
+    employee_name: String,
+    department_name: String,
+    designation_name: String,
+    doj: String,
+}, { _id: false });
+
 // Validation Status Schema
 const validationStatusSchema = new mongoose.Schema({
     allEmployeesCalculated: {
@@ -83,6 +96,13 @@ const validationStatusSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Employee'
     }],
+    missingEmployeeDetails: [missingEmployeeDetailSchema],
+    approvedWithExclusions: {
+        type: Boolean,
+        default: false
+    },
+    excludedEmployeeCount: Number,
+    excludedEmployeeDetails: [missingEmployeeDetailSchema],
     lastValidatedAt: Date
 }, { _id: false });
 
@@ -306,9 +326,15 @@ payrollBatchSchema.methods.validateBatch = async function () {
     // Find missing employees
     const missingEmployeeIds = allEmployeeIds.filter(id => !payrollEmployeeIds.includes(id));
 
+    const {
+        resolveMissingEmployeeDetails,
+    } = require('../utils/payrollBatchValidationMessages');
+    const missingEmployeeDetails = await resolveMissingEmployeeDetails(missingEmployeeIds);
+
     this.validationStatus = {
         allEmployeesCalculated: missingEmployeeIds.length === 0,
         missingEmployees: missingEmployeeIds,
+        missingEmployeeDetails,
         lastValidatedAt: new Date()
     };
 

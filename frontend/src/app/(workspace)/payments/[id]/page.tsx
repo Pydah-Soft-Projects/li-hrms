@@ -4,6 +4,17 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import { api, PayrollBatch } from "@/lib/api";
+import { MissingPayrollEmployeesAlert } from "@/components/payments/MissingPayrollEmployeesAlert";
+import MissingPayrollWarningDialog from "@/components/payments/MissingPayrollWarningDialog";
+import Link from "next/link";
+import {
+    collectApproveValidationIssues,
+    isMissingPayrollError,
+    payRegisterPathFromIssues,
+    type BatchPayrollValidationIssue,
+} from "@/lib/payrollBatchValidation";
+
+const PAY_REGISTER_BASE = "/pay-register";
 
 const statusColors: Record<string, string> = {
     pending: "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700",
@@ -26,6 +37,9 @@ export default function BatchDetailsPage() {
     const [actionReason, setActionReason] = useState("");
     const [actionLoading, setActionLoading] = useState(false);
     const [permissionActionLoading, setPermissionActionLoading] = useState(false);
+    const [missingPayrollWarningOpen, setMissingPayrollWarningOpen] = useState(false);
+    const [missingPayrollIssues, setMissingPayrollIssues] = useState<BatchPayrollValidationIssue[]>([]);
+    const [proceedAnywayLoading, setProceedAnywayLoading] = useState(false);
 
     const actionLabels: Record<string, string> = {
         approve: "Approved",
@@ -70,16 +84,53 @@ export default function BatchDetailsPage() {
         setActionReason("");
     };
 
+    const showMissingPayrollWarning = (issues: BatchPayrollValidationIssue[]) => {
+        if (!issues.length) return false;
+        setMissingPayrollIssues(issues);
+        setMissingPayrollWarningOpen(true);
+        setOpenDialog(false);
+        return true;
+    };
+
+    const handleProceedAnywayApprove = async () => {
+        if (!batch || !missingPayrollIssues.length) return;
+        try {
+            setProceedAnywayLoading(true);
+            const response = await api.approveBatch(batch._id, actionReason, { proceedAnyway: true });
+            if (response?.success) {
+                toast.success(response.message || "Batch approved (excluded employees without payroll)");
+                setMissingPayrollWarningOpen(false);
+                setOpenDialog(false);
+                fetchBatchDetails();
+            } else {
+                toast.error(response?.message || "Approval failed");
+            }
+        } catch (error: any) {
+            console.error(error);
+            toast.error(error.message || "Approval failed");
+        } finally {
+            setProceedAnywayLoading(false);
+        }
+    };
+
     const handleActionConfirm = async () => {
         if (!batch || !actionType) return;
 
         try {
             setActionLoading(true);
+
+            if (actionType === 'approve' || actionType === 'unfreeze') {
+                const precheck = await collectApproveValidationIssues([batch]);
+                if (precheck.length && showMissingPayrollWarning(precheck)) {
+                    return;
+                }
+            }
+
             let response;
 
             switch (actionType) {
                 case 'approve':
-                case 'unfreeze': // Unfreeze uses the same approval endpoint/logic
+                case 'unfreeze':
                     response = await api.approveBatch(batch._id, actionReason);
                     break;
                 case 'freeze':
@@ -93,7 +144,23 @@ export default function BatchDetailsPage() {
             if (response && response.success) {
                 toast.success(`Batch ${actionLabels[actionType]} successfully`);
                 setOpenDialog(false);
-                fetchBatchDetails(); // Refresh details
+                fetchBatchDetails();
+            } else if (
+                (actionType === 'approve' || actionType === 'unfreeze') &&
+                ((response as any)?.missingEmployees?.length || isMissingPayrollError(response?.message))
+            ) {
+                const missing = (response as any).missingEmployees || [];
+                showMissingPayrollWarning([
+                    {
+                        batchId: String(batch._id),
+                        batchLabel: batch.department?.name || batch.batchNumber,
+                        month: batch.month,
+                        departmentId: batch.department?._id,
+                        divisionId:
+                            typeof batch.division === 'object' ? batch.division?._id : batch.division,
+                        missingEmployees: missing,
+                    },
+                ]);
             } else {
                 toast.error(response?.message || 'Action failed');
             }
@@ -325,8 +392,29 @@ export default function BatchDetailsPage() {
                                 </div>
                             </div>
 
+                            {batch.validationStatus?.approvedWithExclusions &&
+                                (batch.validationStatus.excludedEmployeeDetails?.length ?? 0) > 0 && (
+                                <div className="bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-400 dark:border-blue-500 p-4 rounded-r-lg">
+                                    <h3 className="text-sm font-medium text-blue-800 dark:text-blue-300">
+                                        Approved with exclusions
+                                    </h3>
+                                    <p className="mt-1 text-sm text-blue-700 dark:text-blue-400">
+                                        {batch.validationStatus.excludedEmployeeCount} employee(s) were left out
+                                        because payroll was not calculated. The batch includes{" "}
+                                        {batch.totalEmployees} employee(s) with payroll.
+                                    </p>
+                                    <div className="mt-3">
+                                        <MissingPayrollEmployeesAlert
+                                            details={batch.validationStatus.excludedEmployeeDetails}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Validation Status */}
-                            {batch.validationStatus && !batch.validationStatus.allEmployeesCalculated && (
+                            {batch.validationStatus &&
+                                !batch.validationStatus.allEmployeesCalculated &&
+                                batch.status === "pending" && (
                                 <div className="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 dark:border-yellow-500 p-4 rounded-r-lg">
                                     <div className="flex">
                                         <div className="flex-shrink-0">
@@ -335,12 +423,31 @@ export default function BatchDetailsPage() {
                                         <div className="ml-3">
                                             <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-300">Validation Warning</h3>
                                             <div className="mt-2 text-sm text-yellow-700 dark:text-yellow-400">
-                                                <p>Not all employees in this department have payroll calculated for this month.</p>
-                                                {batch.validationStatus?.missingEmployees && batch.validationStatus.missingEmployees.length > 0 && (
-                                                    <p className="mt-1 font-medium">
-                                                        Missing: {batch.validationStatus.missingEmployees.length} employees
-                                                    </p>
-                                                )}
+                                                <MissingPayrollEmployeesAlert
+                                                    details={batch.validationStatus?.missingEmployeeDetails}
+                                                    missingEmployeeIds={batch.validationStatus?.missingEmployees}
+                                                />
+                                                <div className="mt-3">
+                                                    <Link
+                                                        href={payRegisterPathFromIssues(PAY_REGISTER_BASE, [
+                                                            {
+                                                                batchId: String(batch._id),
+                                                                batchLabel: batch.department?.name || batch.batchNumber,
+                                                                month: batch.month,
+                                                                departmentId: batch.department?._id,
+                                                                divisionId:
+                                                                    typeof batch.division === "object"
+                                                                        ? batch.division?._id
+                                                                        : batch.division,
+                                                                missingEmployees:
+                                                                    batch.validationStatus?.missingEmployeeDetails || [],
+                                                            },
+                                                        ])}
+                                                        className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold uppercase bg-amber-600 hover:bg-amber-700 text-white"
+                                                    >
+                                                        Go to Pay Register
+                                                    </Link>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -558,6 +665,15 @@ export default function BatchDetailsPage() {
                     </div>
                 </div>
             )}
+            <MissingPayrollWarningDialog
+                open={missingPayrollWarningOpen}
+                onClose={() => setMissingPayrollWarningOpen(false)}
+                issues={missingPayrollIssues}
+                payRegisterBasePath={PAY_REGISTER_BASE}
+                onProceedAnyway={handleProceedAnywayApprove}
+                proceedAnywayLoading={proceedAnywayLoading}
+            />
+
             {/* Action Dialog - Fixed to avoid grey screen */}
             {
                 openDialog && actionType && (

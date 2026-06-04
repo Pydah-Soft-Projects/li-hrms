@@ -14,6 +14,10 @@ const {
 } = require('./paysheetAdjustmentService');
 const { resolveBatchEmployeePeriods } = require('../../shared/services/payrollRequestLockService');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+const {
+    resolveMissingEmployeeDetails,
+    createMissingPayrollApprovalError,
+} = require('../utils/payrollBatchValidationMessages');
 
 /**
  * PayrollBatch Service
@@ -210,8 +214,9 @@ class PayrollBatchService {
     /**
      * Change batch status
      */
-    static async changeStatus(batchId, newStatus, userId, reason = '') {
+    static async changeStatus(batchId, newStatus, userId, reason = '', options = {}) {
         try {
+            const proceedAnyway = Boolean(options.proceedAnyway);
             const batch = await PayrollBatch.findById(batchId);
             if (!batch) {
                 throw new Error('Batch not found');
@@ -229,12 +234,41 @@ class PayrollBatchService {
                 throw new Error(`Cannot transition from ${batch.status} to ${newStatus}`);
             }
 
+            let approvalExclusionNote = '';
+
             // Additional validation for specific transitions
             if (newStatus === 'approved') {
-                // Validate all employees have payroll
                 await batch.validate();
                 if (!batch.validationStatus.allEmployeesCalculated) {
-                    throw new Error('Cannot approve: Not all employees have payroll calculated');
+                    let details = batch.validationStatus.missingEmployeeDetails || [];
+                    if (!details.length && batch.validationStatus.missingEmployees?.length) {
+                        details = await resolveMissingEmployeeDetails(
+                            batch.validationStatus.missingEmployees
+                        );
+                        batch.validationStatus.missingEmployeeDetails = details;
+                    }
+
+                    if (proceedAnyway) {
+                        const payrollCount = Array.isArray(batch.employeePayrolls)
+                            ? batch.employeePayrolls.length
+                            : 0;
+                        if (payrollCount === 0) {
+                            throw new Error(
+                                'Cannot approve: batch has no payroll records. Calculate payroll for at least one employee first.'
+                            );
+                        }
+                        const excludedCount = details.length;
+                        batch.validationStatus.approvedWithExclusions = true;
+                        batch.validationStatus.excludedEmployeeCount = excludedCount;
+                        batch.validationStatus.excludedEmployeeDetails = details;
+                        approvalExclusionNote = ` (excluded ${excludedCount} employee(s) without payroll)`;
+                    } else {
+                        throw createMissingPayrollApprovalError(details);
+                    }
+                } else {
+                    batch.validationStatus.approvedWithExclusions = false;
+                    batch.validationStatus.excludedEmployeeCount = 0;
+                    batch.validationStatus.excludedEmployeeDetails = [];
                 }
             }
 
@@ -242,12 +276,18 @@ class PayrollBatchService {
             const oldStatus = batch.status;
             batch.status = newStatus;
 
+            const historyReason =
+                (reason || '').trim() ||
+                (newStatus === 'approved' && approvalExclusionNote
+                    ? `Approved with exclusions${approvalExclusionNote}`
+                    : '');
+
             // Add to history
             batch.statusHistory.push({
                 status: newStatus,
                 changedBy: userId,
                 changedAt: new Date(),
-                reason
+                reason: historyReason || reason
             });
 
             // Update specific fields based on status
@@ -535,6 +575,23 @@ class PayrollBatchService {
     /**
      * Get batch with all details
      */
+    static async enrichValidationStatusForResponse(batch) {
+        if (!batch?.validationStatus || batch.validationStatus.allEmployeesCalculated) {
+            return batch;
+        }
+        if (batch.validationStatus.missingEmployeeDetails?.length) {
+            return batch;
+        }
+        if (!batch.validationStatus.missingEmployees?.length) {
+            return batch;
+        }
+        const details = await resolveMissingEmployeeDetails(
+            batch.validationStatus.missingEmployees
+        );
+        batch.validationStatus.missingEmployeeDetails = details;
+        return batch;
+    }
+
     static async getBatchDetails(batchId) {
         try {
             const batch = await PayrollBatch.findById(batchId)
@@ -548,6 +605,8 @@ class PayrollBatchService {
                 .populate('recalculationPermission.grantedBy', 'name email')
                 .populate('recalculationPermission.requestedBy', 'name email')
                 .populate('recalculationHistory.recalculatedBy', 'name email');
+
+            await PayrollBatchService.enrichValidationStatusForResponse(batch);
 
             return batch;
         } catch (error) {

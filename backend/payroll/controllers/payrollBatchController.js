@@ -231,27 +231,38 @@ exports.getBatchEmployeePayrolls = async (req, res) => {
  */
 exports.approveBatch = async (req, res) => {
     try {
-        const { reason } = req.body;
+        const { reason, proceedAnyway } = req.body;
         const userId = req.user._id || req.user.userId || req.user.id;
 
         const batch = await PayrollBatchService.changeStatus(
             req.params.id,
             'approved',
             userId,
-            reason
+            reason,
+            { proceedAnyway: Boolean(proceedAnyway) }
         );
+
+        const excluded = batch?.validationStatus?.excludedEmployeeCount || 0;
+        const message =
+            excluded > 0
+                ? `Batch approved for ${batch.totalEmployees} employee(s). ${excluded} employee(s) excluded (payroll not calculated).`
+                : 'Payroll batch approved successfully';
 
         res.status(200).json({
             success: true,
-            message: 'Payroll batch approved successfully',
+            message,
             data: batch
         });
     } catch (error) {
         console.error('Error approving batch:', error);
-        res.status(400).json({
+        const payload = {
             success: false,
-            message: error.message || 'Error approving batch'
-        });
+            message: error.message || 'Error approving batch',
+        };
+        if (error.code === 'MISSING_PAYROLL' && error.missingEmployees) {
+            payload.missingEmployees = error.missingEmployees;
+        }
+        res.status(400).json(payload);
     }
 };
 
@@ -426,8 +437,9 @@ exports.validateBatch = async (req, res) => {
 
 /** Loop batch IDs through PayrollBatchService.changeStatus; shared by bulk approve/freeze/complete */
 const bulkChangeBatchStatus = async (req, res, targetStatus, verbLabel) => {
-    const { batchIds, reason } = req.body;
+    const { batchIds, reason, proceedAnyway } = req.body;
     const userId = req.user._id || req.user.userId || req.user.id;
+    const statusOptions = { proceedAnyway: Boolean(proceedAnyway) };
 
     if (!batchIds || !Array.isArray(batchIds) || batchIds.length === 0) {
         return res.status(400).json({
@@ -441,10 +453,19 @@ const bulkChangeBatchStatus = async (req, res, targetStatus, verbLabel) => {
 
     for (const batchId of batchIds) {
         try {
-            const batch = await PayrollBatchService.changeStatus(batchId, targetStatus, userId, reason);
+            const batch = await PayrollBatchService.changeStatus(
+                batchId,
+                targetStatus,
+                userId,
+                reason,
+                statusOptions
+            );
             results.push(batch);
         } catch (error) {
-            errors.push({ batchId, error: error.message });
+            const entry = { batchId, error: error.message };
+            if (error.code) entry.code = error.code;
+            if (error.missingEmployees) entry.missingEmployees = error.missingEmployees;
+            errors.push(entry);
         }
     }
 

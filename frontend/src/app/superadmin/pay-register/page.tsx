@@ -51,6 +51,7 @@ function PayRegisterEmployeeBlock({
 }
 import { api, apiRequest, Employee, Division, EmployeeGroup } from '@/lib/api';
 import { sortByEmpNo } from '@/lib/employeeSort';
+import { usePayRegisterDeepLink } from '@/hooks/usePayRegisterDeepLink';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 import DeductionsPayrollSection from '@/components/ManualDeductions/DeductionsPayrollSection';
 import * as XLSX from 'xlsx';
@@ -293,6 +294,12 @@ export default function PayRegisterPage() {
   const [attendanceProcessingMode, setAttendanceProcessingMode] = useState<'single_shift' | 'multi_shift' | null>(null);
   const isMultiShiftMode = attendanceProcessingMode === 'multi_shift';
   const payRegisterTableScrollRef = useRef<HTMLDivElement | null>(null);
+
+  usePayRegisterDeepLink({
+    setCurrentDate,
+    setSelectedDepartment,
+    setSelectedDivision,
+  });
 
   const scrollPayRegisterTableHorizontally = (direction: 'left' | 'right') => {
     if (!payRegisterTableScrollRef.current) return;

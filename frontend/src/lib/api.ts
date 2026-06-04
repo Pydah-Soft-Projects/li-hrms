@@ -182,6 +182,24 @@ export interface PayrollBatch {
   validationStatus?: {
     allEmployeesCalculated: boolean;
     missingEmployees: string[];
+    missingEmployeeDetails?: {
+      employeeId?: string;
+      emp_no?: string;
+      employee_name?: string;
+      department_name?: string;
+      designation_name?: string;
+      doj?: string;
+    }[];
+    approvedWithExclusions?: boolean;
+    excludedEmployeeCount?: number;
+    excludedEmployeeDetails?: {
+      employeeId?: string;
+      emp_no?: string;
+      employee_name?: string;
+      department_name?: string;
+      designation_name?: string;
+      doj?: string;
+    }[];
     lastValidatedAt: string;
   };
 
@@ -462,6 +480,15 @@ export interface ApiResponse<T> {
     lastDate: string;
     totalDays?: number;
   };
+  /** Payroll batch approve failure (400, code MISSING_PAYROLL) */
+  missingEmployees?: {
+    employeeId?: string;
+    emp_no?: string;
+    employee_name?: string;
+    department_name?: string;
+    designation_name?: string;
+    doj?: string;
+  }[];
 }
 
 export interface InAppNotification {
@@ -4414,6 +4441,22 @@ export const api = {
     return apiRequest<any>(`/payroll-batch/${id}`, { method: 'GET' });
   },
 
+  validatePayrollBatch: async (id: string) => {
+    return apiRequest<{
+      allEmployeesCalculated: boolean;
+      missingEmployees?: string[];
+      missingEmployeeDetails?: {
+        employeeId?: string;
+        emp_no?: string;
+        employee_name?: string;
+        department_name?: string;
+        designation_name?: string;
+        doj?: string;
+      }[];
+      lastValidatedAt?: string;
+    }>(`/payroll-batch/${id}/validation`, { method: 'GET' });
+  },
+
   calculatePayrollBatch: async (data: { departmentId?: string; divisionId?: string; month: string; calculateAll?: boolean }) => {
     return apiRequest<any>(`/payroll-batch/calculate`, {
       method: 'POST',
@@ -4421,10 +4464,17 @@ export const api = {
     });
   },
 
-  approveBatch: async (id: string, reason?: string) => {
+  approveBatch: async (
+    id: string,
+    reason?: string,
+    options?: { proceedAnyway?: boolean },
+  ) => {
     return apiRequest<any>(`/payroll-batch/${id}/approve`, {
       method: 'PUT',
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({
+        reason,
+        proceedAnyway: Boolean(options?.proceedAnyway),
+      }),
     });
   },
 
@@ -4456,10 +4506,18 @@ export const api = {
     });
   },
 
-  bulkApproveBatches: async (batchIds: string[], reason?: string) => {
+  bulkApproveBatches: async (
+    batchIds: string[],
+    reason?: string,
+    options?: { proceedAnyway?: boolean },
+  ) => {
     return apiRequest<any>(`/payroll-batch/bulk-approve`, {
       method: 'POST',
-      body: JSON.stringify({ batchIds, reason }),
+      body: JSON.stringify({
+        batchIds,
+        reason,
+        proceedAnyway: Boolean(options?.proceedAnyway),
+      }),
     });
   },
 
