@@ -1731,6 +1731,7 @@ export default function UsersPage() {
                                   const hasTerminate = (module as any).terminable ? (formData.featureControl?.includes(`${module.code}:terminate`) || false) : false;
 
                                   const hasBank = (module as any).bankable ? (formData.featureControl?.includes(`${module.code}:bank`) || false) : false;
+                                  const hasFile = (module as any).fileUploadable ? (formData.featureControl?.includes(`${module.code}:file`) || false) : false;
 
                                   const toggleRead = () => {
                                     const currentFeatures = formData.featureControl || [];
@@ -1788,6 +1789,15 @@ export default function UsersPage() {
                                     const newFeatures = hasBank
                                       ? currentFeatures.filter(f => f !== bankPerm)
                                       : [...currentFeatures, bankPerm];
+                                    setFormData({ ...formData, featureControl: newFeatures });
+                                  };
+
+                                  const toggleFile = () => {
+                                    const currentFeatures = formData.featureControl || [];
+                                    const filePerm = `${module.code}:file`;
+                                    const newFeatures = hasFile
+                                      ? currentFeatures.filter(f => f !== filePerm)
+                                      : [...currentFeatures, filePerm];
                                     setFormData({ ...formData, featureControl: newFeatures });
                                   };
 
@@ -1858,6 +1868,19 @@ export default function UsersPage() {
                                               }`}
                                           >
                                             Bank
+                                          </button>
+                                        )}
+                                        {(module as any).fileUploadable && (
+                                          <button
+                                            type="button"
+                                            onClick={toggleFile}
+                                            title="File: allows OD evidence from device gallery or file picker (camera still available without this)."
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasFile
+                                              ? 'bg-sky-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            File
                                           </button>
                                         )}
                                         {(module as any).editable && (
@@ -2227,6 +2250,7 @@ export default function UsersPage() {
                                 const hasVerify = (module as any).verifiable ? (employeeFormData.featureControl?.includes(`${module.code}:verify`) || false) : false;
                                 const hasTerminate = (module as any).terminable ? (employeeFormData.featureControl?.includes(`${module.code}:terminate`) || false) : false;
                                 const hasBank = (module as any).bankable ? (employeeFormData.featureControl?.includes(`${module.code}:bank`) || false) : false;
+                                const hasFile = (module as any).fileUploadable ? (employeeFormData.featureControl?.includes(`${module.code}:file`) || false) : false;
 
                                 const toggleRead = () => {
                                   const currentFeatures = employeeFormData.featureControl || [];
@@ -2287,6 +2311,15 @@ export default function UsersPage() {
                                   setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
                                 };
 
+                                const toggleFile = () => {
+                                  const currentFeatures = employeeFormData.featureControl || [];
+                                  const filePerm = `${module.code}:file`;
+                                  const newFeatures = hasFile
+                                    ? currentFeatures.filter(f => f !== filePerm)
+                                    : [...currentFeatures, filePerm];
+                                  setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
+                                };
+
                                 return (
                                   <div
                                     key={module.code}
@@ -2325,6 +2358,19 @@ export default function UsersPage() {
                                             }`}
                                         >
                                           Terminate
+                                        </button>
+                                      )}
+                                      {(module as any).fileUploadable && (
+                                        <button
+                                          type="button"
+                                          onClick={toggleFile}
+                                          title="File: allows OD evidence from device gallery or file picker (camera still available without this)."
+                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasFile
+                                            ? 'bg-sky-500 text-white shadow-sm'
+                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                            }`}
+                                        >
+                                          File
                                         </button>
                                       )}
                                     </div>
@@ -2574,6 +2620,7 @@ export default function UsersPage() {
                                   const hasVerify = (module as any).verifiable ? (formData.featureControl?.includes(`${module.code}:verify`) || false) : false;
                                   const hasTerminate = (module as any).terminable ? (formData.featureControl?.includes(`${module.code}:terminate`) || false) : false;
                                   const hasBank = (module as any).bankable ? (formData.featureControl?.includes(`${module.code}:bank`) || false) : false;
+                                  const hasFile = (module as any).fileUploadable ? (formData.featureControl?.includes(`${module.code}:file`) || false) : false;
 
                                   const toggleRead = () => {
                                     const currentFeatures = formData.featureControl || [];
@@ -2631,6 +2678,15 @@ export default function UsersPage() {
                                     const newFeatures = hasBank
                                       ? currentFeatures.filter(f => f !== bankPerm)
                                       : [...currentFeatures, bankPerm];
+                                    setFormData({ ...formData, featureControl: newFeatures });
+                                  };
+
+                                  const toggleFile = () => {
+                                    const currentFeatures = formData.featureControl || [];
+                                    const filePerm = `${module.code}:file`;
+                                    const newFeatures = hasFile
+                                      ? currentFeatures.filter(f => f !== filePerm)
+                                      : [...currentFeatures, filePerm];
                                     setFormData({ ...formData, featureControl: newFeatures });
                                   };
 
@@ -2698,6 +2754,19 @@ export default function UsersPage() {
                                               }`}
                                           >
                                             Bank
+                                          </button>
+                                        )}
+                                        {(module as any).fileUploadable && (
+                                          <button
+                                            type="button"
+                                            onClick={toggleFile}
+                                            title="File: allows OD evidence from device gallery or file picker (camera still available without this)."
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasFile
+                                              ? 'bg-sky-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            File
                                           </button>
                                         )}
                                         {(module as any).editable && (

@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'rea
 import { useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { api, Department, Division, Designation } from '@/lib/api';
-import { formatOdPunchTimeHHMM, getOdDisplayPunchTimings, isCoEligibleOdForPunchDisplay } from '@/lib/odPunchTimings';
 import { auth } from '@/lib/auth';
 import { toast } from 'react-toastify';
 import Swal from 'sweetalert2';
@@ -29,6 +28,7 @@ import {
   getLeaveApplyPayrollPeriod,
   earliestIsoDate,
 } from '@/lib/leavePayrollPeriod';
+import { canOdUploadFromDevice } from '@/lib/permissions';
 import {
   computeCapTrackedEffectiveRemaining,
   fyBalanceForCapTrackedType,
@@ -486,16 +486,6 @@ interface ODApplication {
   odStartTime?: string;
   odEndTime?: string;
   durationHours?: number;
-  isCOEligible?: boolean;
-  attendancePunchTimings?: {
-    date?: string;
-    odStartTime?: string | null;
-    odEndTime?: string | null;
-    durationHours?: number | null;
-    fromAttendance?: boolean;
-  };
-  attendanceNotLoggedForDay?: boolean;
-  attendanceNotLoggedDate?: string;
   fromDate: string;
   toDate: string;
   numberOfDays: number;
@@ -942,9 +932,6 @@ function LeavesPageContent() {
     hasPunches?: boolean;
     suggestedOdTypeExtended?: 'half_day' | 'full_day' | null;
     totalWorkingHours?: number | null;
-    odStartTime?: string | null;
-    odEndTime?: string | null;
-    durationHours?: number | null;
   } | null>(null);
 
   const [clBalanceForMonth, setClBalanceForMonth] = useState<number | null>(null);
@@ -1051,6 +1038,8 @@ function LeavesPageContent() {
   // OD OUT Evidence (Draft -> Pending)
   const [showOutEvidenceDialog, setShowOutEvidenceDialog] = useState(false);
   const [odOutEvidenceFile, setOdOutEvidenceFile] = useState<File | null>(null);
+  const [odInPhotoFromDeviceFile, setOdInPhotoFromDeviceFile] = useState(false);
+  const [odOutPhotoFromDeviceFile, setOdOutPhotoFromDeviceFile] = useState(false);
   const [odOutLocationData, setOdOutLocationData] = useState<{
     latitude: number;
     longitude: number;
@@ -1774,14 +1763,8 @@ function LeavesPageContent() {
           empNo: selectedEmployee.emp_no, // Use emp_no as primary identifier
           odType: formData.odType,
           odType_extended: formData.odType_extended,
-          odStartTime:
-            formData.odType_extended === 'hours' || (formData.odStartTime && formData.odEndTime)
-              ? formData.odStartTime
-              : null,
-          odEndTime:
-            formData.odType_extended === 'hours' || (formData.odStartTime && formData.odEndTime)
-              ? formData.odEndTime
-              : null,
+          odStartTime: formData.odType_extended === 'hours' ? formData.odStartTime : null,
+          odEndTime: formData.odType_extended === 'hours' ? formData.odEndTime : null,
           fromDate: formData.fromDate,
           toDate: formData.toDate,
           purpose: formData.purpose,
@@ -1795,6 +1778,7 @@ function LeavesPageContent() {
             photoEvidence: uploadedEvidence,
             geoLocation: geoData,
             submittedAt: new Date().toISOString(),
+            photoFromDeviceFile: odInPhotoFromDeviceFile,
           },
           // backward compatibility
           photoEvidence: uploadedEvidence,
@@ -1998,6 +1982,7 @@ function LeavesPageContent() {
           ...(g.accuracy != null ? { accuracy: g.accuracy } : {}),
         },
         submittedAt: new Date().toISOString(),
+        photoFromDeviceFile: odOutPhotoFromDeviceFile,
       };
 
       const response = await api.updateOD(selectedItem._id, { endEvidence });
@@ -2006,6 +1991,7 @@ function LeavesPageContent() {
         setShowOutEvidenceDialog(false);
         setOdOutEvidenceFile(null);
         setOdOutLocationData(null);
+        setOdOutPhotoFromDeviceFile(false);
         setShowDetailDialog(false);
         setSelectedItem(null);
         await loadData();
@@ -2179,8 +2165,10 @@ function LeavesPageContent() {
     setOdInEvidenceFile(null);
     setLoadingMessage('');
     setOdInLocationData(null);
+    setOdInPhotoFromDeviceFile(false);
     setOdOutEvidenceFile(null);
     setOdOutLocationData(null);
+    setOdOutPhotoFromDeviceFile(false);
     setClBalanceForMonth(null);
     setClAnnualBalance(null);
     setCclBalance(null);
@@ -2480,9 +2468,6 @@ function LeavesPageContent() {
             hasPunches: response.hasPunches,
             suggestedOdTypeExtended: response.suggestedOdTypeExtended,
             totalWorkingHours: response.totalWorkingHours,
-            odStartTime: response.odStartTime ?? null,
-            odEndTime: response.odEndTime ?? null,
-            durationHours: response.durationHours ?? null,
           });
           const d = formData.fromDate;
           if (
@@ -2492,14 +2477,9 @@ function LeavesPageContent() {
           ) {
             setFormData((prev) => {
               if (applyType !== 'od' || prev.fromDate !== d) return prev;
-              const punchTimes =
-                response.odStartTime && response.odEndTime
-                  ? { odStartTime: response.odStartTime, odEndTime: response.odEndTime }
-                  : {};
               if (response.suggestedOdTypeExtended === 'half_day') {
                 return {
                   ...prev,
-                  ...punchTimes,
                   odType_extended: 'half_day',
                   isHalfDay: true,
                   halfDayType: (prev.halfDayType as any) || 'first_half',
@@ -2508,7 +2488,6 @@ function LeavesPageContent() {
               }
               return {
                 ...prev,
-                ...punchTimes,
                 odType_extended: 'full_day',
                 isHalfDay: false,
                 halfDayType: null,
@@ -4471,50 +4450,6 @@ function LeavesPageContent() {
                 </div>
               )}
 
-              {/* Biometric punch timings (manual HOL/WO apply — same as auto-OD detail) */}
-              {applyType === 'od' &&
-                holidayInfo?.hasPunches &&
-                holidayInfo.odStartTime &&
-                holidayInfo.odEndTime &&
-                formData.odType_extended !== 'hours' && (
-                <div className="grid grid-cols-3 gap-4 bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800/50 mb-4">
-                  <div className="space-y-1">
-                    <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work In</p>
-                    <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                      {(() => {
-                        const [h, m] = (holidayInfo.odStartTime || '').split(':');
-                        if (!h) return 'N/A';
-                        const date = new Date();
-                        date.setHours(parseInt(h, 10), parseInt(m, 10));
-                        return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-                      })()}
-                    </p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work Out</p>
-                    <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                      {(() => {
-                        const [h, m] = (holidayInfo.odEndTime || '').split(':');
-                        if (!h) return 'N/A';
-                        const date = new Date();
-                        date.setHours(parseInt(h, 10), parseInt(m, 10));
-                        return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-                      })()}
-                    </p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Total Duration</p>
-                    <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                      {holidayInfo.durationHours != null
-                        ? `${Number(holidayInfo.durationHours).toFixed(1)} hrs`
-                        : holidayInfo.totalWorkingHours != null
-                          ? `${Number(holidayInfo.totalWorkingHours).toFixed(1)} hrs`
-                          : '—'}
-                    </p>
-                  </div>
-                </div>
-              )}
-
               {/* Half Day Selection */}
               {(applyType === 'leave' || (applyType === 'od' && formData.odType_extended === 'half_day')) && (
                 <div
@@ -4630,16 +4565,18 @@ function LeavesPageContent() {
                 <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50">
                   <LocationPhotoCapture
                     required
-                    cameraOnly
                     label="Live Photo Evidence"
+                    allowDeviceFileUpload={canOdUploadFromDevice(auth.getUser() as any)}
                     onCapture={(loc, photo) => {
                       setOdInEvidenceFile(photo.file);
                       setOdInLocationData(loc);
+                      setOdInPhotoFromDeviceFile(!!photo.photoFromDeviceFile);
                       (photo.file as any).exifLocation = photo.exifLocation;
                     }}
                     onClear={() => {
                       setOdInEvidenceFile(null);
                       setOdInLocationData(null);
+                      setOdInPhotoFromDeviceFile(false);
                     }}
                   />
                 </div>
@@ -4902,49 +4839,39 @@ function LeavesPageContent() {
                 )}
               </div>
 
-              {/* Punch timings / attendance disclaimer — CO-eligible ODs only */}
-              {detailType === 'od' && (() => {
-                const odItem = selectedItem as ODApplication;
-                if (!isCoEligibleOdForPunchDisplay(odItem)) return null;
-                const punch = getOdDisplayPunchTimings(odItem);
-                if (punch.start && punch.end) {
-                  return (
-                    <div className="grid grid-cols-3 gap-4 bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800/50">
-                      {punch.fromAttendance && (
-                        <p className="col-span-3 text-[10px] font-semibold text-purple-600/80 dark:text-purple-300/80">
-                          Biometric timings from attendance for this day
-                        </p>
-                      )}
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work In</p>
-                        <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                          {formatOdPunchTimeHHMM(punch.start)}
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work Out</p>
-                        <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                          {formatOdPunchTimeHHMM(punch.end)}
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Total Duration</p>
-                        <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                          {punch.duration != null ? `${Number(punch.duration).toFixed(1)} hrs` : '—'}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                }
-                if (odItem.attendanceNotLoggedForDay) {
-                  return (
-                    <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-900 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-200">
-                      Attendance is not logged for this day.
+              {/* Punch Transparency / Time Details */}
+              {detailType === 'od' && (selectedItem as any).odStartTime && (
+                <div className="grid grid-cols-3 gap-4 bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800/50">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work In</p>
+                    <p className="text-sm font-black text-purple-700 dark:text-purple-300">
+                      {(() => {
+                        const [h, m] = ((selectedItem as any).odStartTime || '').split(':');
+                        if (!h) return 'N/A';
+                        const d = new Date(); d.setHours(parseInt(h), parseInt(m));
+                        return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                      })()}
                     </p>
-                  );
-                }
-                return null;
-              })()}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work Out</p>
+                    <p className="text-sm font-black text-purple-700 dark:text-purple-300">
+                      {(() => {
+                        const [h, m] = ((selectedItem as any).odEndTime || '').split(':');
+                        if (!h) return 'N/A';
+                        const d = new Date(); d.setHours(parseInt(h), parseInt(m));
+                        return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                      })()}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Total Duration</p>
+                    <p className="text-sm font-black text-purple-700 dark:text-purple-300">
+                      {(selectedItem as any).durationHours || 0} hrs
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Photo Evidence & Location */}
               {detailType === 'od' && (
@@ -5677,16 +5604,18 @@ function LeavesPageContent() {
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-6 py-4">
               <LocationPhotoCapture
                 required
-                cameraOnly
                 label="OD OUT Photo Evidence"
+                allowDeviceFileUpload={canOdUploadFromDevice(auth.getUser() as any)}
                 onCapture={(loc, photo) => {
                   setOdOutEvidenceFile(photo.file);
                   setOdOutLocationData(loc);
+                  setOdOutPhotoFromDeviceFile(!!photo.photoFromDeviceFile);
                   (photo.file as any).exifLocation = photo.exifLocation;
                 }}
                 onClear={() => {
                   setOdOutEvidenceFile(null);
                   setOdOutLocationData(null);
+                  setOdOutPhotoFromDeviceFile(false);
                 }}
               />
             </div>

@@ -23,6 +23,8 @@ interface PhotoEvidenceData {
     };
     locationVerificationStatus?: 'verified' | 'mismatch' | 'unknown'; // Result of comparison
     distanceToDevice?: number; // in meters
+    /** True when chosen via gallery / file picker (not live camera). */
+    photoFromDeviceFile?: boolean;
 }
 
 interface LocationPhotoCaptureProps {
@@ -30,8 +32,8 @@ interface LocationPhotoCaptureProps {
     onClear: () => void;
     label?: string;
     required?: boolean;
-    /** When true, only live camera capture is allowed (no gallery/file upload). */
-    cameraOnly?: boolean;
+    /** When false, only camera capture is offered (OD default unless LEAVE_OD:file is granted). */
+    allowDeviceFileUpload?: boolean;
 }
 
 // Haversine formula to calculate distance between two points in meters
@@ -55,7 +57,7 @@ export default function LocationPhotoCapture({
     onClear,
     label = "Photo Evidence",
     required = false,
-    cameraOnly = false,
+    allowDeviceFileUpload = true,
 }: LocationPhotoCaptureProps) {
     const [loading, setLoading] = useState(false);
     const [loadingStep, setLoadingStep] = useState<string>('');
@@ -65,6 +67,7 @@ export default function LocationPhotoCapture({
     const [permissionDeniedAtFetch, setPermissionDeniedAtFetch] = useState(false);
     const [locationUnavailableAtFetch, setLocationUnavailableAtFetch] = useState(false);
     const [pendingFile, setPendingFile] = useState<File | null>(null);
+    const [pendingPhotoFromDeviceFile, setPendingPhotoFromDeviceFile] = useState(false);
 
     // Separate refs for different capture modes
     const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -156,12 +159,13 @@ export default function LocationPhotoCapture({
         return 'prompt';
     };
 
-    const handleFileProcessing = async (file: File) => {
+    const handleFileProcessing = async (file: File, photoFromDeviceFile = false) => {
         if (!file) return;
 
         const permission = await checkPermissionStatus();
         if (permission === 'prompt') {
             setPendingFile(file);
+            setPendingPhotoFromDeviceFile(photoFromDeviceFile);
             setShowPermissionPrompt(true);
             return;
         }
@@ -172,10 +176,10 @@ export default function LocationPhotoCapture({
             return;
         }
 
-        await proceedWithProcessing(file);
+        await proceedWithProcessing(file, photoFromDeviceFile);
     };
 
-    const proceedWithProcessing = async (file: File) => {
+    const proceedWithProcessing = async (file: File, photoFromDeviceFile = false) => {
         setLoading(true);
         setError(null);
         setLoadingStep('Initializing...');
@@ -277,7 +281,8 @@ export default function LocationPhotoCapture({
                     previewUrl: result,
                     exifLocation: extractedExifLoc,
                     locationVerificationStatus: status,
-                    distanceToDevice: dist
+                    distanceToDevice: dist,
+                    photoFromDeviceFile,
                 });
                 setLoading(false);
                 setLoadingStep('');
@@ -362,7 +367,7 @@ export default function LocationPhotoCapture({
                 canvas.toBlob((blob) => {
                     if (blob) {
                         const file = new File([blob], `capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
-                        handleFileProcessing(file);
+                        handleFileProcessing(file, false);
                         stopCamera();
                     }
                 }, 'image/jpeg', 0.9);
@@ -372,12 +377,12 @@ export default function LocationPhotoCapture({
 
     const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) handleFileProcessing(file);
+        if (file) handleFileProcessing(file, false);
     };
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) handleFileProcessing(file);
+        if (file) handleFileProcessing(file, true);
     };
 
     const handleClear = () => {
@@ -424,27 +429,24 @@ export default function LocationPhotoCapture({
             {!preview ? (
                 <div className="relative">
                     {/* Hidden Inputs */}
-                    {!cameraOnly && (
-                        <input
-                            ref={cameraInputRef}
-                            type="file"
-                            accept="image/*"
-                            capture="environment"
-                            onChange={handleCameraCapture}
-                            className="hidden"
-                            id="camera-input"
-                        />
-                    )}
-                    {!cameraOnly && (
-                        <input
-                            ref={uploadInputRef}
-                            type="file"
-                            accept="image/*"
-                            onChange={handleFileUpload}
-                            className="hidden"
-                            id="upload-input"
-                        />
-                    )}
+                    <input
+                        ref={cameraInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment" // Forces camera on mobile
+                        onChange={handleCameraCapture}
+                        className="hidden"
+                        id="camera-input"
+                    />
+                    <input
+                        ref={uploadInputRef}
+                        type="file"
+                        accept="image/*"
+                        // No capture attribute - opens file picker
+                        onChange={handleFileUpload}
+                        className="hidden"
+                        id="upload-input"
+                    />
 
                     {loading ? (
                         <div className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50/50 dark:border-blue-900/10 transition-all">
@@ -460,7 +462,7 @@ export default function LocationPhotoCapture({
                         </div>
                     ) : (
                         <div className={`flex flex-col gap-4 transition-all duration-500 ${showCamera ? 'min-h-[420px]' : ''}`}>
-                            {!cameraOnly && (
+                            {allowDeviceFileUpload ? (
                                 <>
                                     <label
                                         htmlFor="upload-input"
@@ -480,39 +482,28 @@ export default function LocationPhotoCapture({
                                             </span>
                                         </div>
                                     </label>
-
                                     <div className="flex items-center justify-center">
                                         <span className="text-[10px] sm:text-xs text-slate-400 uppercase font-medium px-3">OR</span>
                                     </div>
                                 </>
+                            ) : (
+                                <p className="text-center text-xs text-slate-500 dark:text-slate-400 px-2">
+                                    Use your device camera to capture OD evidence (gallery upload is not enabled for your account).
+                                </p>
                             )}
 
                             <button
                                 type="button"
                                 onClick={() => startCamera()}
-                                className={`flex items-center justify-center gap-2 rounded-xl border shadow-sm transition-all active:scale-95 ${
-                                    cameraOnly
-                                        ? 'p-4 sm:p-8 min-h-[100px] sm:min-h-[160px] flex-col rounded-2xl sm:rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 hover:border-blue-400 dark:border-slate-700 dark:bg-slate-900/50 dark:hover:bg-slate-800 dark:hover:border-blue-600'
-                                        : 'p-2.5 sm:p-3 bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700'
-                                }`}
+                                className="flex items-center justify-center gap-2 p-2.5 sm:p-3 rounded-xl bg-white border border-slate-200 shadow-sm hover:bg-slate-50 hover:border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700 transition-all active:scale-95"
                             >
-                                {cameraOnly && (
-                                    <div className="mb-2 sm:mb-4 p-3 sm:p-4 rounded-full bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
-                                        <Camera className="h-6 w-6 sm:h-8 sm:w-8 text-blue-500" />
-                                    </div>
-                                )}
-                                <svg className={`${cameraOnly ? 'hidden' : 'h-4 w-4 sm:h-5 sm:w-5'} text-slate-600 dark:text-slate-300`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <svg className="h-4 w-4 sm:h-5 sm:w-5 text-slate-600 dark:text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                                 </svg>
-                                <span className={`font-semibold text-slate-700 dark:text-slate-200 ${cameraOnly ? 'text-sm sm:text-base text-center' : 'text-xs sm:text-sm'}`}>
+                                <span className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200">
                                     Take Photo with Camera
                                 </span>
-                                {cameraOnly && (
-                                    <span className="mt-0.5 sm:mt-1 block text-[10px] sm:text-sm text-slate-500 dark:text-slate-400 text-center">
-                                        Live capture only — gallery upload is not allowed
-                                    </span>
-                                )}
                             </button>
 
                             {error && (
@@ -771,7 +762,7 @@ export default function LocationPhotoCapture({
                                             onClick={async () => {
                                                 setShowPermissionPrompt(false);
                                                 if (pendingFile) {
-                                                    await proceedWithProcessing(pendingFile);
+                                                    await proceedWithProcessing(pendingFile, pendingPhotoFromDeviceFile);
                                                     setPendingFile(null);
                                                 }
                                             }}

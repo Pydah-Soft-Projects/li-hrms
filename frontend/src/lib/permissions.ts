@@ -585,6 +585,14 @@ export function canBankUpdateFeature(user: User, featureCode: string): boolean {
         user.featureControl.includes(`${featureCode}:bank`);
 }
 
+/** OD evidence from device gallery / file picker (not live camera). Must be explicitly granted with LEAVE_OD:file. */
+export function canOdUploadFromDevice(user: User | null | undefined): boolean {
+    if (!user) return false;
+    if (user.role === 'super_admin') return true;
+    if (!user.featureControl || user.featureControl.length === 0) return false;
+    return user.featureControl.includes('LEAVE_OD:file');
+}
+
 /**
  * Specifically for bank details update workflow
  */

@@ -1948,6 +1948,27 @@ export default function UsersPage() {
                                             Bank
                                           </button>
                                         )}
+                                        {(module as any).fileUploadable && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const currentFeatures = formData.featureControl || [];
+                                              const filePerm = `${module.code}:file`;
+                                              const hasFile = currentFeatures.includes(filePerm);
+                                              const newFeatures = hasFile
+                                                ? currentFeatures.filter(f => f !== filePerm)
+                                                : [...currentFeatures, filePerm];
+                                              setFormData({ ...formData, featureControl: newFeatures });
+                                            }}
+                                            title="File: allows OD evidence from device gallery or file picker (camera still available without this)."
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:file`)
+                                              ? 'bg-sky-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            File
+                                          </button>
+                                        )}
                                         {/* Edit Toggle — only for editable modules (e.g. EMPLOYEES): auto-approves profile requests */}
                                         {(module as any).editable && (
                                           <button
@@ -2533,6 +2554,27 @@ export default function UsersPage() {
                                           Bank
                                         </button>
                                       )}
+                                      {(module as any).fileUploadable && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const currentFeatures = employeeFormData.featureControl || [];
+                                            const filePerm = `${module.code}:file`;
+                                            const hasFile = currentFeatures.includes(filePerm);
+                                            const newFeatures = hasFile
+                                              ? currentFeatures.filter(f => f !== filePerm)
+                                              : [...currentFeatures, filePerm];
+                                            setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
+                                          }}
+                                          title="File: allows OD evidence from device gallery or file picker (camera still available without this)."
+                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${employeeFormData.featureControl?.includes(`${module.code}:file`)
+                                            ? 'bg-sky-500 text-white shadow-sm'
+                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                            }`}
+                                        >
+                                          File
+                                        </button>
+                                      )}
                                       {/* Edit Toggle — auto-approves profile requests */}
                                       {(module as any).editable && (
                                         <button
@@ -3017,6 +3059,27 @@ export default function UsersPage() {
                                               }`}
                                           >
                                             Bank
+                                          </button>
+                                        )}
+                                        {(module as any).fileUploadable && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const currentFeatures = formData.featureControl || [];
+                                              const filePerm = `${module.code}:file`;
+                                              const hasFile = currentFeatures.includes(filePerm);
+                                              const newFeatures = hasFile
+                                                ? currentFeatures.filter(f => f !== filePerm)
+                                                : [...currentFeatures, filePerm];
+                                              setFormData({ ...formData, featureControl: newFeatures });
+                                            }}
+                                            title="File: allows OD evidence from device gallery or file picker (camera still available without this)."
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:file`)
+                                              ? 'bg-sky-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            File
                                           </button>
                                         )}
                                         {/* Edit Toggle — auto-approves profile requests */}
