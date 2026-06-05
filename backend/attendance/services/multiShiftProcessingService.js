@@ -16,6 +16,10 @@ const OD = require('../../leaves/model/OD');
 const {
     autoCreateEdgePermissionsForAttendance,
 } = require('../../permissions/services/autoEdgePermissionCreationService');
+const {
+    normalizeManualOverrides,
+    findOverrideOutTime,
+} = require('./attendanceManualEditService');
 
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
@@ -182,6 +186,162 @@ function dedupePunchesForMultiShift(punches) {
 }
 
 /**
+ * Recompute duration, assignment, status, and penalties for one processed shift row.
+ */
+async function recalculateShiftMetrics(pShift, employeeNumber, date, approvedODs, configWithMode) {
+    const punchIn = pShift.inTime ? new Date(pShift.inTime) : null;
+    const punchOut = pShift.outTime ? new Date(pShift.outTime) : null;
+    const durationMs = punchIn && punchOut ? punchOut - punchIn : 0;
+
+    pShift.duration = Math.round(durationMs / 60000);
+    pShift.punchHours = Math.round((durationMs / 3600000) * 100) / 100;
+    pShift.workingHours = pShift.punchHours;
+    pShift.odHours = 0;
+    pShift.extraHours = 0;
+    pShift.status = punchOut ? 'complete' : 'incomplete';
+    pShift.payableShift = 0;
+
+    let shiftAssignment = null;
+    let assignedShiftDef = null;
+
+    try {
+        shiftAssignment = await detectAndAssignShift(
+            employeeNumber,
+            date,
+            pShift.inTime,
+            pShift.outTime,
+            configWithMode
+        );
+
+        if (shiftAssignment?.assignedShift) {
+            const Shift = require('../../shifts/model/Shift');
+            assignedShiftDef = await Shift.findById(shiftAssignment.assignedShift).select('payableShifts duration');
+        }
+    } catch (e) {
+        console.error('[MultiShift] recalculateShiftMetrics assignment error', e);
+        return pShift;
+    }
+
+    if (!shiftAssignment?.success) return pShift;
+
+    pShift.shiftId = shiftAssignment.assignedShift;
+    pShift.shiftName = shiftAssignment.shiftName;
+    pShift.shiftStartTime = shiftAssignment.shiftStartTime;
+    pShift.shiftEndTime = shiftAssignment.shiftEndTime;
+    pShift.lateInMinutes = shiftAssignment.lateInMinutes;
+    pShift.earlyOutMinutes = shiftAssignment.earlyOutMinutes;
+    pShift.isLateIn = shiftAssignment.isLateIn;
+    pShift.isEarlyOut = shiftAssignment.isEarlyOut;
+
+    if (assignedShiftDef?.duration && pShift.workingHours > assignedShiftDef.duration) {
+        pShift.extraHours = Math.round((pShift.workingHours - assignedShiftDef.duration) * 100) / 100;
+    }
+
+    const shiftStart = timeStringToDate(shiftAssignment.shiftStartTime, date);
+    const shiftEnd = timeStringToDate(
+        shiftAssignment.shiftEndTime,
+        date,
+        shiftAssignment.shiftEndTime < shiftAssignment.shiftStartTime
+    );
+
+    if (approvedODs?.length) {
+        let addedOdMinutes = 0;
+        for (const od of approvedODs) {
+            if (od.odType_extended === 'hours' && od.odStartTime && od.odEndTime) {
+                const odStart = timeStringToDate(od.odStartTime, date);
+                const odEnd = timeStringToDate(od.odEndTime, date, od.odEndTime < od.odStartTime);
+                const odInShiftOverlap = getOverlapMinutes(shiftStart, shiftEnd, odStart, odEnd);
+                let odInPunchOverlap = 0;
+                if (punchIn && punchOut) {
+                    odInPunchOverlap = getOverlapMinutes(punchIn, punchOut, odStart, odEnd);
+                }
+                addedOdMinutes += Math.max(0, odInShiftOverlap - odInPunchOverlap);
+
+                if (pShift.isLateIn && odStart <= shiftStart && odEnd >= punchIn) {
+                    pShift.isLateIn = false;
+                    pShift.lateInMinutes = 0;
+                }
+                if (pShift.isEarlyOut && punchOut && odStart <= punchOut && odEnd >= shiftEnd) {
+                    pShift.isEarlyOut = false;
+                    pShift.earlyOutMinutes = 0;
+                }
+            }
+        }
+        const addedOdHours = Math.round((addedOdMinutes / 60) * 100) / 100;
+        pShift.odHours = addedOdHours;
+        pShift.workingHours = Math.round((pShift.punchHours + addedOdHours) * 100) / 100;
+    }
+
+    const expectedDuration = shiftAssignment.expectedHours || 8;
+    let statusDuration = 0;
+    if (punchIn && punchOut && shiftStart) {
+        const effectiveIn = new Date(Math.max(punchIn.getTime(), shiftStart.getTime()));
+        statusDuration = Math.max(0, (punchOut - effectiveIn) / 3600000);
+    } else if (punchIn && punchOut) {
+        statusDuration = pShift.workingHours;
+    }
+    statusDuration += pShift.odHours || 0;
+    pShift.expectedHours = expectedDuration;
+
+    const basePayable =
+        assignedShiftDef?.payableShifts !== undefined ? assignedShiftDef.payableShifts : 1;
+    pShift.basePayable = basePayable;
+
+    const refDuration = assignedShiftDef?.duration || 8;
+    if (pShift.workingHours > refDuration) {
+        pShift.extraHours = Math.round((pShift.workingHours - refDuration) * 100) / 100;
+    }
+
+    if (statusDuration >= expectedDuration * 0.9) {
+        pShift.status = 'PRESENT';
+        pShift.payableShift = basePayable;
+    } else if (statusDuration >= expectedDuration * 0.4) {
+        pShift.status = 'HALF_DAY';
+        pShift.payableShift = basePayable * 0.5;
+        pShift.earlyOutMinutes = null;
+        pShift.isEarlyOut = false;
+    } else {
+        pShift.status = 'ABSENT';
+        pShift.payableShift = 0;
+    }
+
+    return pShift;
+}
+
+/**
+ * Apply manual segment edit after pairing when override keys did not match split segments.
+ */
+async function applySegmentTimeEditPatch(processedShifts, segmentEdit, employeeNumber, date, approvedODs, configWithMode) {
+    if (!segmentEdit || !processedShifts?.length) return processedShifts;
+
+    const sorted = [...processedShifts].sort((a, b) => {
+        const numDiff = (a.shiftNumber || 0) - (b.shiftNumber || 0);
+        if (numDiff !== 0) return numDiff;
+        return new Date(a.inTime || 0) - new Date(b.inTime || 0);
+    });
+
+    let idx = segmentEdit.segmentIndex;
+    if (idx < 0 || idx >= sorted.length) {
+        if (segmentEdit.editType === 'OUT' && sorted.length > 0) {
+            idx = sorted.length - 1;
+        } else {
+            return processedShifts;
+        }
+    }
+
+    const shift = sorted[idx];
+    if (segmentEdit.editType === 'OUT' && segmentEdit.newOutTime) {
+        shift.outTime = new Date(segmentEdit.newOutTime);
+    }
+    if (segmentEdit.editType === 'IN' && segmentEdit.newInTime) {
+        shift.inTime = new Date(segmentEdit.newInTime);
+    }
+
+    await recalculateShiftMetrics(shift, employeeNumber, date, approvedODs, configWithMode);
+    return sorted;
+}
+
+/**
  * Process multi-shift attendance for a single employee on a single date
  * @param {String} employeeNumber - Employee number
  * @param {String} date - Date in YYYY-MM-DD format
@@ -190,7 +350,8 @@ function dedupePunchesForMultiShift(punches) {
  * @returns {Promise<Object>} Processing result
  */
 async function processMultiShiftAttendance(employeeNumber, date, rawLogs, generalConfig, options = {}) {
-    const { pairedOutIds = new Set(), manualOverrides = {} } = options;
+    const { pairedOutIds = new Set() } = options;
+    const manualOpts = normalizeManualOverrides(options.manualOverrides);
 
     try {
         // Resolve processing mode and apply punch filtering (strictCheckInOutOnly)
@@ -252,6 +413,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         }
 
         const configWithMode = { ...generalConfig, processingMode };
+        const globalLateInGrace = generalConfig?.late_in_grace_time ?? null;
+        const globalEarlyOutGrace = generalConfig?.early_out_grace_time ?? null;
 
         // Step 2: Get employee ID & ODs (Moved up for context)
         const employee = await Employee.findOne({ emp_no: employeeNumber.toUpperCase() }).select('_id department_id division_id');
@@ -323,9 +486,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             // spans up to 36h from first IN. This must match the spec requirement.
             const MAX_WINDOW_MS = getMaxPunchWindowMs();
             
-            // NEW: Direct Manual Override Check
-            // If the controller passed a specific override for this In-Time, use it immediately
-            const overrideOutTime = manualOverrides[currentInTime.toISOString()];
+            // Manual override: exact ISO, fuzzy match, or segment pair (multi-shift edits)
+            const overrideOutTime = findOverrideOutTime(currentInTime, manualOpts);
             let nextOut = null;
 
             if (overrideOutTime) {
@@ -460,7 +622,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                             }
 
                             const basePayablePerShift = (s) => (s.payableShifts !== undefined && s.payableShifts != null ? Number(s.payableShifts) : 1);
-                            for (const split of splitSegments) {
+                            for (let splitIdx = 0; splitIdx < splitSegments.length; splitIdx++) {
+                                const split = splitSegments[splitIdx];
                                 if (shiftCounter >= MAX_SHIFTS) break;
                                 shiftCounter++;
                                 const sIn = new Date(split.inTime);
@@ -495,11 +658,32 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                     segPayable = 0;
                                 }
 
-                                const lateInMs = sIn < shiftStart ? 0 : (sIn.getTime() - shiftStart.getTime());
-                                const earlyOutMs = (sOut && sOut < shiftEnd) ? (shiftEnd.getTime() - sOut.getTime()) : 0;
-                                // Half-day loss is the penalty; do not also count early-out (avoid double penalty)
-                                const segEarlyOutMs = segStatus === 'HALF_DAY' ? 0 : earlyOutMs;
-                                const segEarlyOutMinutes = segStatus === 'HALF_DAY' ? 0 : Math.round(earlyOutMs / 60000);
+                                // Late/early with configured grace (global settings > shift grace > default 15)
+                                const segDateStr = formatDate(sIn);
+                                const shiftGrace = split.assignedShift.gracePeriod ?? 15;
+                                let lateInMinutes = 0;
+                                // Only first split segment has a real punch IN; later segments start at shift boundary
+                                if (splitIdx === 0) {
+                                    lateInMinutes = calculateLateIn(
+                                        sIn,
+                                        split.assignedShift.startTime,
+                                        shiftGrace,
+                                        segDateStr,
+                                        globalLateInGrace
+                                    ) || 0;
+                                }
+                                let earlyOutMinutes = 0;
+                                if (segStatus !== 'HALF_DAY' && sOut) {
+                                    const calcEarly = calculateEarlyOut(
+                                        sOut,
+                                        split.assignedShift.endTime,
+                                        split.assignedShift.startTime,
+                                        segDateStr,
+                                        globalEarlyOutGrace,
+                                        shiftGrace
+                                    );
+                                    earlyOutMinutes = calcEarly != null && calcEarly > 0 ? calcEarly : 0;
+                                }
 
                                 const pSplitShift = {
                                     shiftNumber: shiftCounter,
@@ -520,10 +704,10 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                     shiftStartTime: split.assignedShift.startTime,
                                     shiftEndTime: split.assignedShift.endTime,
                                     expectedHours: expectedH,
-                                    isLateIn: lateInMs > 0,
-                                    lateInMinutes: Math.round(lateInMs / 60000),
-                                    isEarlyOut: segEarlyOutMs > 0,
-                                    earlyOutMinutes: segEarlyOutMinutes,
+                                    isLateIn: lateInMinutes > 0,
+                                    lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
+                                    isEarlyOut: earlyOutMinutes > 0,
+                                    earlyOutMinutes: earlyOutMinutes > 0 ? earlyOutMinutes : null,
                                     basePayable: basePayablePerShift(split.assignedShift),
                                     payableShift: segPayable,
                                 };
@@ -801,6 +985,19 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             }
 
             processedShifts.push(pShift);
+        }
+
+        if (manualOpts.segmentEdit) {
+            const patched = await applySegmentTimeEditPatch(
+                processedShifts,
+                manualOpts.segmentEdit,
+                employeeNumber,
+                date,
+                approvedODs,
+                configWithMode
+            );
+            processedShifts.length = 0;
+            processedShifts.push(...patched);
         }
 
         try {
