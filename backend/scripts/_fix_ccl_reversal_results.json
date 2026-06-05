@@ -1,0 +1,66 @@
+{
+  "summary": {
+    "dryRun": false,
+    "financialYearFilter": "2026",
+    "leaveRegisterYearDocsScanned": 439,
+    "employeesUpdated": 6,
+    "cclReversalCreditRowsRemoved": 6,
+    "compensatoryOffsPoolDaysReduced": 5.5
+  },
+  "employees": [
+    {
+      "empNo": "5008",
+      "employeeName": "MEDISETTY GOVINDA RAJU",
+      "financialYear": "2026",
+      "reversalCreditsRemoved": 1,
+      "poolDaysReduced": 1,
+      "compensatoryOffBalanceBefore": 1,
+      "compensatoryOffBalanceAfter": 0
+    },
+    {
+      "empNo": "1890",
+      "employeeName": "K NAGA DURGA RAO",
+      "financialYear": "2026",
+      "reversalCreditsRemoved": 1,
+      "poolDaysReduced": 1,
+      "compensatoryOffBalanceBefore": 2,
+      "compensatoryOffBalanceAfter": 2
+    },
+    {
+      "empNo": "2017",
+      "employeeName": "VASIREDDY SURYAKALA",
+      "financialYear": "2026",
+      "reversalCreditsRemoved": 1,
+      "poolDaysReduced": 1,
+      "compensatoryOffBalanceBefore": 2,
+      "compensatoryOffBalanceAfter": 2
+    },
+    {
+      "empNo": "1954",
+      "employeeName": "ANGADI SARITHA",
+      "financialYear": "2026",
+      "reversalCreditsRemoved": 1,
+      "poolDaysReduced": 1,
+      "compensatoryOffBalanceBefore": 0,
+      "compensatoryOffBalanceAfter": 0
+    },
+    {
+      "empNo": "2295",
+      "employeeName": "KAKARAPARTHI DEVI NIKITHA",
+      "financialYear": "2026",
+      "reversalCreditsRemoved": 1,
+      "poolDaysReduced": 1,
+      "compensatoryOffBalanceBefore": 1,
+      "compensatoryOffBalanceAfter": 0
+    },
+    {
+      "empNo": "155",
+      "employeeName": "MOHAMMAD AYESHA",
+      "financialYear": "2026",
+      "reversalCreditsRemoved": 1,
+      "poolDaysReduced": 0.5,
+      "compensatoryOffBalanceBefore": 0.5,
+      "compensatoryOffBalanceAfter": 0
+    }
+  ]
+}

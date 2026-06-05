@@ -944,6 +944,17 @@ async function patchMonthSlotScheduledCredits({
     employeeId,
     anchorDate
   );
+  if (
+    nextCco !== undefined ||
+    numOrUndef(usedCcl) !== undefined ||
+    sumUsedDaysForType(slot, 'CCL') > 0
+  ) {
+    const monthlyTransferReconciliationService = require('./monthlyTransferReconciliationService');
+    monthlyTransferReconciliationService.scheduleRegisterReconciliationFromDate(
+      employeeId,
+      anchorDate
+    );
+  }
 
   const fresh = await LeaveRegisterYear.findOne({ employeeId, financialYear: fy }).lean();
   const slotOut =
@@ -1487,6 +1498,16 @@ async function patchBulkMonthSlotsScheduledCredits({
   await leaveRegisterYearLedgerService.recalculateRegisterBalances(employeeId, 'CL', anchorStart);
   await leaveRegisterYearLedgerService.recalculateRegisterBalances(employeeId, 'CCL', anchorStart);
   await leaveRegisterYearLedgerService.recalculateRegisterBalances(employeeId, 'EL', anchorStart);
+  const touchedCcl = slotsAudit.some(
+    (s) => Number(s?.after?.compensatoryOffs) !== Number(s?.before?.compensatoryOffs)
+  );
+  if (touchedCcl) {
+    const monthlyTransferReconciliationService = require('./monthlyTransferReconciliationService');
+    monthlyTransferReconciliationService.scheduleRegisterReconciliationFromDate(
+      employeeId,
+      anchorStart
+    );
+  }
 
   const orderedMonths = [...doc.months].sort(
     (a, b) =>

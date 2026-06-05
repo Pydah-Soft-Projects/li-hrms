@@ -104,33 +104,30 @@ async function fetchLeaveData(employeeId, startDate, endDate, payrollMonth) {
 
   const leaveMap = {};
 
-  // Process full leaves
+  const { expandLeaveToDailySegments } = require('../../shared/utils/leaveDayRangeUtils');
+
+  // Process full leaves (per-day boundary halves)
   for (const leave of leaves) {
-    const fromDate = new Date(leave.fromDate);
-    const toDate = new Date(leave.toDate);
+    const segments = expandLeaveToDailySegments(leave);
+    for (const seg of segments) {
+      const dateStr = seg.dateStr;
+      if (dateStr < startDate || dateStr > endDate) continue;
 
-    let currentDate = new Date(fromDate);
-    while (currentDate <= toDate) {
-      const dateStr = extractISTComponents(currentDate).dateStr;
-
-      // Check if this date is within the target range
-      if (dateStr >= startDate && dateStr <= endDate) {
-        if (!leaveMap[dateStr]) {
-          leaveMap[dateStr] = {
-            leaveIds: [],
-            leaveSplitIds: [],
-            isHalfDay: leave.isHalfDay,
-            halfDayType: leave.halfDayType,
-            leaveType: leave.leaveType,
-            originalLeaveType: leave.originalLeaveType || leave.leaveType,
-            leaveNature: leave.leaveNature,
-          };
-        }
-
-        leaveMap[dateStr].leaveIds.push(leave._id);
+      if (!leaveMap[dateStr]) {
+        leaveMap[dateStr] = {
+          leaveIds: [],
+          leaveSplitIds: [],
+          isHalfDay: seg.isHalfDay,
+          halfDayType: seg.halfDayType,
+          leaveType: leave.leaveType,
+          originalLeaveType: leave.originalLeaveType || leave.leaveType,
+          leaveNature: leave.leaveNature,
+        };
       }
 
-      currentDate.setDate(currentDate.getDate() + 1);
+      leaveMap[dateStr].leaveIds.push(leave._id);
+      leaveMap[dateStr].isHalfDay = seg.isHalfDay;
+      leaveMap[dateStr].halfDayType = seg.halfDayType;
     }
   }
 

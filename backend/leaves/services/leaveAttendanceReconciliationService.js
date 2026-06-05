@@ -21,6 +21,13 @@ const {
   computeRawAttendanceHalfCredits,
 } = require('../../attendance/utils/attendanceHalfPresence');
 const {
+  leaveHalfMaskForDate,
+  buildLeaveDocumentFieldsForSpan,
+} = require('../../shared/utils/leaveDayRangeUtils');
+
+const LEAVE_BOUNDARY_SELECT =
+  'fromDate toDate isHalfDay halfDayType fromIsHalfDay fromHalfDayType toIsHalfDay toHalfDayType numberOfDays leaveType leaveNature status splitStatus remarks workflow';
+const {
   getRosterHalfHolidayForEmployeeDate,
   isFullDayOdRequest,
   isHalfDayOdRequest,
@@ -160,9 +167,6 @@ async function splitAndAdjustMultiDayLeave({
   delete base.createdAt;
   delete base.updatedAt;
 
-  const keepHalfType = mode === 'narrow_second' ? 'second_half' : mode === 'narrow_first' ? 'first_half' : null;
-  const keepNumber = mode === 'reject' ? 0 : 0.5;
-
   const toSync = [];
   if (mode === 'reject') {
     leave.status = 'rejected';
@@ -176,11 +180,9 @@ async function splitAndAdjustMultiDayLeave({
     await leave.save();
     toSync.push(leave);
   } else {
-    leave.fromDate = createISTDate(dateStr, '00:00');
-    leave.toDate = createISTDate(dateStr, '23:59');
-    leave.isHalfDay = true;
-    leave.halfDayType = keepHalfType;
-    leave.numberOfDays = keepNumber;
+    const narrowMode = mode === 'narrow_second' ? 'narrow_second' : 'narrow_first';
+    const spanFields = buildLeaveDocumentFieldsForSpan(leave, dateStr, dateStr, narrowMode);
+    Object.assign(leave, spanFields);
     addWorkflowHistory(leave, 'status_changed', `${REMARK_PREFIX} System updated — ${detail}`);
     appendRemark(leave, `${dateStr}: ${detail}`);
     await leave.save();
@@ -189,13 +191,10 @@ async function splitAndAdjustMultiDayLeave({
   }
 
   if (hasBefore) {
+    const spanFields = buildLeaveDocumentFieldsForSpan(leave, beforeFrom, beforeTo);
     const b = new Leave({
       ...base,
-      fromDate: createISTDate(beforeFrom, '00:00'),
-      toDate: createISTDate(beforeTo, '23:59'),
-      isHalfDay: false,
-      halfDayType: null,
-      numberOfDays: daysInclusive(createISTDate(beforeFrom), createISTDate(beforeTo)),
+      ...spanFields,
       splitStatus: null,
       remarks: `${String(base.remarks || '').trim()}${base.remarks ? '\n' : ''}${REMARK_PREFIX} ${dateStr}: System split preserved prior days (${beforeFrom}..${beforeTo}).`,
     });
@@ -205,13 +204,10 @@ async function splitAndAdjustMultiDayLeave({
   }
 
   if (hasAfter) {
+    const spanFields = buildLeaveDocumentFieldsForSpan(leave, afterFrom, afterTo);
     const a = new Leave({
       ...base,
-      fromDate: createISTDate(afterFrom, '00:00'),
-      toDate: createISTDate(afterTo, '23:59'),
-      isHalfDay: false,
-      halfDayType: null,
-      numberOfDays: daysInclusive(createISTDate(afterFrom), createISTDate(afterTo)),
+      ...spanFields,
       splitStatus: null,
       remarks: `${String(base.remarks || '').trim()}${base.remarks ? '\n' : ''}${REMARK_PREFIX} ${dateStr}: System split preserved later days (${afterFrom}..${afterTo}).`,
     });
@@ -452,7 +448,7 @@ async function reconcileHalfHolidayLeavesForDate(employee, dateStr, syncPayRegis
     fromDate: { $lte: dayEnd },
     toDate: { $gte: dayStart },
   })
-    .select('fromDate toDate isHalfDay halfDayType numberOfDays leaveType leaveNature status splitStatus remarks workflow')
+    .select(LEAVE_BOUNDARY_SELECT)
     .lean();
 
   const narrowMode = ctx.workingHalf === 'second_half' ? 'narrow_second' : 'narrow_first';
@@ -650,7 +646,7 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
     fromDate: { $lte: dayEnd },
     toDate: { $gte: dayStart },
   })
-    .select('fromDate toDate isHalfDay halfDayType numberOfDays leaveType leaveNature status splitStatus remarks')
+    .select(LEAVE_BOUNDARY_SELECT)
     .lean();
 
   for (const l of leaves) {
@@ -669,9 +665,11 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
       continue;
     }
 
-    const { l1, l2 } = leaveHalfMask(l);
+    const { l1, l2 } = leaveHalfMaskForDate(l, dateStr);
+    const isFullDayLeaveOnDate = l1 >= 0.5 - 1e-6 && l2 >= 0.5 - 1e-6;
+    const isHalfDayOnDate = !isFullDayLeaveOnDate && (l1 > 0 || l2 > 0);
 
-    if (l.isHalfDay) {
+    if (isHalfDayOnDate) {
       const onFirst = l1 > 0;
       const physConflicts = (onFirst && p1 >= 0.5) || (!onFirst && p2 >= 0.5);
       if (!physConflicts) {
@@ -735,7 +733,7 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
       continue;
     }
 
-    if (!l.isHalfDay && Number(l.numberOfDays) >= 1 - 1e-6) {
+    if (isFullDayLeaveOnDate) {
       if (p1 >= 0.5 && p2 >= 0.5) {
         const leave = await Leave.findById(l._id);
         if (!leave || leave.status !== 'approved') continue;

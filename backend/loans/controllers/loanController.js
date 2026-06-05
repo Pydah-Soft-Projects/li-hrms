@@ -21,6 +21,7 @@ const {
   applyRepaymentScheduleFromPayrollMonth,
   firstPayrollMonthKeyForRepaymentSchedule,
   needsFirstDeductionPayPeriodSelection,
+  normalizePayrollMonthKey,
   repairOpenLoanForHistory,
   repairOpenSalaryAdvanceForHistory,
 } = require('../services/loanHistoryRepairService');
@@ -1228,8 +1229,8 @@ exports.updateLoan = async (req, res) => {
           error: 'Not authorized to change deduction schedule for this loan status',
         });
       }
-      const ym = String(req.body.firstDeductionPayrollMonth).trim();
-      if (!/^\d{4}-\d{2}$/.test(ym)) {
+      const ym = normalizePayrollMonthKey(req.body.firstDeductionPayrollMonth);
+      if (!ym) {
         return res.status(400).json({ success: false, error: 'Invalid first deduction month (use YYYY-MM)' });
       }
       if (!loan.approvals) loan.approvals = {};
@@ -1249,8 +1250,8 @@ exports.updateLoan = async (req, res) => {
           error: 'Not authorized to change deduction start cycle for this advance status',
         });
       }
-      const ym = String(req.body.deductionStartCycle).trim();
-      if (!/^\d{4}-\d{2}$/.test(ym)) {
+      const ym = normalizePayrollMonthKey(req.body.deductionStartCycle);
+      if (!ym) {
         return res.status(400).json({ success: false, error: 'Invalid deduction start cycle (use YYYY-MM)' });
       }
       if (!loan.advanceConfig) loan.advanceConfig = {};

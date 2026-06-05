@@ -16,6 +16,8 @@ const {
   resolvePaysheetExportMeta,
   enrichExportRowsWithOrg,
   refreshEmployeeFieldColumnsOnRows,
+  tryBuildRegularRowsFromSnapshots,
+  enrichPayslipsLoanRemainingBalance,
 } = require('../utils/paysheetBundleExport');
 const User = require('../../users/model/User');
 const Settings = require('../../settings/model/Settings');
@@ -1408,6 +1410,8 @@ exports.getPaysheetData = async (req, res) => {
         });
       }
 
+      await enrichPayslipsLoanRemainingBalance(payslips, filtered);
+
       const allAllowanceNames = new Set();
       const allDeductionNames = new Set();
       const allStatutoryCodes = new Set();
@@ -1713,8 +1717,14 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
         const sr = secondByEmp.get(id);
         return sr ? secondSalaryRecordToPayslipShape(sr) : null;
       });
+      regularRows = await tryBuildRegularRowsFromSnapshots(
+        payrollRecords,
+        month,
+        outputColumnsNormalized
+      );
+      await enrichPayslipsLoanRemainingBalance(payslipsReg, payrollRecords);
       const built = buildOutputColumnRows(payslipsReg, payslipsSec, outputColumnsNormalized, statutoryCodesForBundle);
-      regularRows = built.regularRows;
+      if (!regularRows) regularRows = built.regularRows;
       secondRows = built.secondRows;
       netsReg = payslipsReg.map((p) => Number(p.netSalary) || 0);
       netsSec = payslipsSec.map((p) => (p ? Number(p.netSalary) || 0 : 0));

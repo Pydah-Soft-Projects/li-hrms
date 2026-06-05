@@ -8,6 +8,7 @@ const {
   applyPaysheetWorksheetStyles,
   finalizeWorksheet,
   writeStyledWorkbook,
+  isTextColumnHeader,
 } = require('./paysheetExcelSheetStyle');
 const mongoose = require('mongoose');
 const { compareEmpNo } = require('../../shared/utils/employeeSort');
@@ -36,10 +37,15 @@ function normalizeLoanAdvanceForPayslip(raw) {
         ? raw.toObject()
         : { ...raw }
       : {};
+  const remainingRaw = o.remainingBalance;
   return {
     ...o,
     totalEMI: Number(o.totalEMI) || 0,
     advanceDeduction: Number(o.advanceDeduction) || 0,
+    remainingBalance:
+      remainingRaw != null && remainingRaw !== ''
+        ? Number(remainingRaw) || 0
+        : undefined,
   };
 }
 
@@ -91,21 +97,21 @@ function payrollRecordToPayslipShape(record) {
   const mdNorm = normalizeManualDeductionsFromPayrollRecord(record);
   return {
     employee: {
-      emp_no: record.emp_no || empObj?.emp_no || '',
+      emp_no: String(record.emp_no || empObj?.emp_no || ''),
       name: empObj?.employee_name || [empObj?.first_name, empObj?.last_name].filter(Boolean).join(' ') || 'N/A',
       designation: empObj?.designation_id?.name || empObj?.designation_id || '',
       department: empObj?.department_id?.name || empObj?.department_id || 'N/A',
       division: empObj?.division_id?.name || empObj?.division_id || 'N/A',
       location: empObj?.location || '',
-      bank_account_no: empObj?.bank_account_no || '',
+      bank_account_no: empObj?.bank_account_no != null && empObj?.bank_account_no !== '' ? String(empObj.bank_account_no) : '',
       bank_name: empObj?.bank_name || '',
       bank_place: empObj?.bank_place || '',
       ifsc_code: empObj?.ifsc_code || '',
       payment_mode: empObj?.salary_mode || '',
       salary_mode: empObj?.salary_mode || '',
       date_of_joining: empObj?.doj || '',
-      pf_number: empObj?.pf_number || '',
-      esi_number: empObj?.esi_number || '',
+      pf_number: empObj?.pf_number != null && empObj?.pf_number !== '' ? String(empObj.pf_number) : '',
+      esi_number: empObj?.esi_number != null && empObj?.esi_number !== '' ? String(empObj.esi_number) : '',
       leftDate: empObj?.leftDate,
       salaries:
         empObj?.salaries && typeof empObj.salaries === 'object' && !Array.isArray(empObj.salaries)
@@ -145,21 +151,21 @@ function secondSalaryRecordToPayslipShape(record) {
   const elUsedInPayroll = Number(rawAtt.elUsedInPayroll) || 0;
   return {
     employee: {
-      emp_no: record.emp_no || empObj?.emp_no || '',
+      emp_no: String(record.emp_no || empObj?.emp_no || ''),
       name: empObj?.employee_name || [empObj?.first_name, empObj?.last_name].filter(Boolean).join(' ') || 'N/A',
       designation: empObj?.designation_id?.name || empObj?.designation_id || '',
       department: empObj?.department_id?.name || empObj?.department_id || 'N/A',
       division: divName,
       location: empObj?.location || '',
-      bank_account_no: empObj?.bank_account_no || '',
+      bank_account_no: empObj?.bank_account_no != null && empObj?.bank_account_no !== '' ? String(empObj.bank_account_no) : '',
       bank_name: empObj?.bank_name || '',
       bank_place: empObj?.bank_place || '',
       ifsc_code: empObj?.ifsc_code || '',
       payment_mode: empObj?.salary_mode || '',
       salary_mode: empObj?.salary_mode || '',
       date_of_joining: empObj?.doj || '',
-      pf_number: empObj?.pf_number || '',
-      esi_number: empObj?.esi_number || '',
+      pf_number: empObj?.pf_number != null && empObj?.pf_number !== '' ? String(empObj.pf_number) : '',
+      esi_number: empObj?.esi_number != null && empObj?.esi_number !== '' ? String(empObj.esi_number) : '',
       salaries:
         empObj?.salaries && typeof empObj.salaries === 'object' && !Array.isArray(empObj.salaries)
           ? { ...empObj.salaries }
@@ -207,7 +213,7 @@ function emptyPayslipFromRegular(regPayslip) {
       permissionDeduction: 0,
       leaveDeduction: 0,
     },
-    loanAdvance: { totalEMI: 0, advanceDeduction: 0 },
+    loanAdvance: { totalEMI: 0, advanceDeduction: 0, remainingBalance: 0 },
     arrears: { arrearsAmount: 0 },
     manualDeductions: { manualDeductionsAmount: 0 },
     manualDeductionsAmount: 0,
@@ -580,7 +586,7 @@ function buildBankCandidateRows(regularRows, secondRows, netDiffResolver, second
 
     const row = {
       'S.No': idx + 1,
-      'Employee Number': empNo,
+      'Employee Number': String(empNo),
       Name: pickRowName(reg),
       Designation: pickRowDesignation(reg),
       Division: rowDivisionName(reg),
@@ -738,6 +744,30 @@ function extractScopedDepartmentIds(scopeFilter) {
   return ids.size ? [...ids] : null;
 }
 
+function coerceExportCellValue(header, value, row) {
+  if (isTextColumnHeader(header)) {
+    const key = String(header || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+    if (
+      row &&
+      row._exportEmpNo &&
+      (key === 'employeecode' ||
+        key === 'employeenumber' ||
+        key === 'employeeno' ||
+        key === 'empno' ||
+        key === 'eno')
+    ) {
+      return String(row._exportEmpNo);
+    }
+    if (value == null || value === '') return '';
+    return String(value);
+  }
+  if (value == null || value === '') return '';
+  return value;
+}
+
 function objectRowsToTable(rows, options = {}) {
   const hideOrgColumns = options.hideOrgColumns === true;
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -753,7 +783,12 @@ function objectRowsToTable(rows, options = {}) {
   );
   const rest = [...keySet].filter((k) => k !== 'S.No');
   const headers = keySet.has('S.No') ? ['S.No', ...rest] : [...rest];
-  const dataRows = rows.map((r) => headers.map((h) => (r[h] != null ? r[h] : '')));
+  const dataRows = rows.map((r) =>
+    headers.map((h) => {
+      const raw = r[h] != null ? r[h] : '';
+      return coerceExportCellValue(h, raw, r);
+    })
+  );
   return { headers, dataRows };
 }
 
@@ -1000,6 +1035,84 @@ function refreshEmployeeFieldColumnsOnRows(rows, payslips, outputColumnsNormaliz
   });
 }
 
+/**
+ * Load frozen regular paysheet rows from PayrollPayslipSnapshot when complete for all employees
+ * (same rule as GET /paysheet — skips when paysheet adjustments are pending/approved).
+ * @returns {Promise<Record<string, unknown>[]|null>}
+ */
+async function tryBuildRegularRowsFromSnapshots(payrollRecords, month, outputColumnsNormalized) {
+  if (!Array.isArray(payrollRecords) || payrollRecords.length === 0) return null;
+  try {
+    const PaysheetAdjustmentRequest = require('../model/PaysheetAdjustmentRequest');
+    const PayrollPayslipSnapshot = require('../model/PayrollPayslipSnapshot');
+    const paysheetAdjustmentsActive = await PaysheetAdjustmentRequest.exists({
+      month,
+      status: { $in: ['pending', 'approved'] },
+    });
+    if (paysheetAdjustmentsActive) return null;
+
+    const orderedEmpIds = payrollRecords
+      .map((r) => (r.employeeId?._id || r.employeeId)?.toString())
+      .filter(Boolean);
+    if (!orderedEmpIds.length) return null;
+
+    const snaps = await PayrollPayslipSnapshot.find({
+      month,
+      kind: 'regular',
+      employeeId: { $in: orderedEmpIds },
+    }).lean();
+    const snapMap = new Map(snaps.map((s) => [String(s.employeeId), s]));
+    const allPresent = orderedEmpIds.every((id) => snapMap.has(String(id)));
+    if (!allPresent) return null;
+
+    const payslips = payrollRecords.map((r) => payrollRecordToPayslipShape(r));
+    let rows = payrollRecords.map((r, index) => {
+      const id = String(r.employeeId?._id || r.employeeId);
+      return { 'S.No': index + 1, ...(snapMap.get(id)?.row || {}) };
+    });
+    rows = refreshEmployeeFieldColumnsOnRows(rows, payslips, outputColumnsNormalized);
+    return rows;
+  } catch (e) {
+    console.warn('[paysheetBundleExport] snapshot read failed:', e.message);
+    return null;
+  }
+}
+
+/**
+ * Fill loanAdvance.remainingBalance on payslip shapes when absent on PayrollRecord
+ * (older records calculated before the field was persisted).
+ */
+async function enrichPayslipsLoanRemainingBalance(payslips, payrollRecords) {
+  if (!Array.isArray(payslips) || !Array.isArray(payrollRecords) || payslips.length === 0) return;
+
+  const missingEmpIds = [];
+  payslips.forEach((p, i) => {
+    const record = payrollRecords[i];
+    const raw = record?.loanAdvance?.remainingBalance;
+    if (raw !== undefined && raw !== null && raw !== '') {
+      if (!p.loanAdvance) p.loanAdvance = {};
+      p.loanAdvance.remainingBalance = Number(raw) || 0;
+      return;
+    }
+    const empId = String(record?.employeeId?._id || record?.employeeId || '');
+    if (empId) missingEmpIds.push(empId);
+  });
+  if (!missingEmpIds.length) return;
+
+  const loanAdvanceService = require('../services/loanAdvanceService');
+  const balanceMap = await loanAdvanceService.fetchLoanRemainingBalanceByEmployeeIds(missingEmpIds);
+
+  payslips.forEach((p, i) => {
+    const record = payrollRecords[i];
+    const raw = record?.loanAdvance?.remainingBalance;
+    if (raw !== undefined && raw !== null && raw !== '') return;
+    const empId = String(record?.employeeId?._id || record?.employeeId || '');
+    if (!empId) return;
+    if (!p.loanAdvance) p.loanAdvance = {};
+    p.loanAdvance.remainingBalance = balanceMap.get(empId) ?? 0;
+  });
+}
+
 function buildSecondSalaryPaysheetFromOutputColumns(records, outputColumnsNormalized, extraStatutoryCodes = []) {
   if (!Array.isArray(records) || records.length === 0 || !outputColumnsNormalized.length) {
     return { headers: [], rows: [] };
@@ -1041,5 +1154,7 @@ module.exports = {
   resolvePaysheetExportMeta,
   enrichExportRowsWithOrg,
   refreshEmployeeFieldColumnsOnRows,
+  tryBuildRegularRowsFromSnapshots,
+  enrichPayslipsLoanRemainingBalance,
   netDiffFromRowsDefault,
 };

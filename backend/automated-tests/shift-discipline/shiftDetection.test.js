@@ -20,6 +20,40 @@ jest.mock('../../shifts/model/ConfusedShift');
 jest.mock('../../settings/model/Settings');
 jest.mock('../../shared/utils/customEmployeeGrouping');
 
+// Some environments mock mongoose models as callable functions without static methods.
+// Ensure we always have jest.fn() stubs for the statics used by the service.
+function ensureMockStatic(model, method) {
+    if (!model[method] || typeof model[method] !== 'function' || !model[method].mock) {
+        model[method] = jest.fn();
+    }
+}
+
+function makeThenableQuery(result) {
+    const query = {
+        populate: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(result),
+        exec: jest.fn().mockResolvedValue(result),
+        then: (resolve, reject) => Promise.resolve(result).then(resolve, reject),
+    };
+    // Make it awaitable even when code uses `.populate().populate().populate()`:
+    // `await query.populate(...).populate(...)` will await the returned object, so it must be thenable.
+    query.populate = jest.fn().mockReturnValue(query);
+    return query;
+}
+
+function makeThenableQueryWithPopulates(result, populateCount = 1) {
+    const base = makeThenableQuery(result);
+    if (populateCount <= 1) return base;
+    let call = 0;
+    base.populate = jest.fn().mockImplementation(() => {
+        call += 1;
+        if (call < populateCount) return base; // keep chaining
+        return base; // final populate still returns a thenable query
+    });
+    return base;
+}
+
 describe('Shift Detection Unit Tests - Discipline Tracking', () => {
     const mockEmployeeId = new mongoose.Types.ObjectId();
     const mockShiftId1 = new mongoose.Types.ObjectId();
@@ -60,6 +94,10 @@ describe('Shift Detection Unit Tests - Discipline Tracking', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
+        ensureMockStatic(Employee, 'findOne');
+        ensureMockStatic(Shift, 'find');
+        ensureMockStatic(Shift, 'findOne');
+        ensureMockStatic(PreScheduledShift, 'findOne');
         Settings.getSettingsByCategory = jest.fn().mockResolvedValue({
             late_in_grace_time: 15,
             early_out_grace_time: 15,
@@ -71,10 +109,7 @@ describe('Shift Detection Unit Tests - Discipline Tracking', () => {
     describe('getShiftsForEmployee', () => {
         test('should return combined shifts from roster, designation, and department', async () => {
             // Mock employee lookup with proper chaining
-            const mockPopulate = jest.fn().mockReturnThis();
-            Employee.findOne.mockReturnValue({
-                populate: mockPopulate
-            });
+            Employee.findOne.mockReturnValue(makeThenableQuery(mockEmployee));
 
             // Mock rostered shift
             const mockRosterId = new mongoose.Types.ObjectId();
@@ -94,13 +129,11 @@ describe('Shift Detection Unit Tests - Discipline Tracking', () => {
                     shiftId: mockRosteredShift,
                     actualShiftId: null
                 }),
-                then: function(callback) {
-                    return callback({
-                        _id: mockRosterId,
-                        shiftId: mockRosteredShift,
-                        actualShiftId: null
-                    });
-                }
+                then: (resolve, reject) => Promise.resolve({
+                    _id: mockRosterId,
+                    shiftId: mockRosteredShift,
+                    actualShiftId: null
+                }).then(resolve, reject),
             }));
 
             // Mock shift lookups
@@ -135,18 +168,11 @@ describe('Shift Detection Unit Tests - Discipline Tracking', () => {
                 designation_id: { shifts: [desigShiftId] }
             };
 
-            Employee.findOne.mockReturnValue({
-                populate: jest.fn().mockReturnValue({
-                    populate: jest.fn().mockReturnValue({
-                        populate: jest.fn().mockResolvedValue(mockEmpWithDesig)
-                    })
-                })
-            });
-            PreScheduledShift.findOne.mockReturnValue({
-                populate: jest.fn().mockReturnValue({
-                    populate: jest.fn().mockResolvedValue({ _id: new mongoose.Types.ObjectId(), shiftId: rosterShift })
-                })
-            });
+            // getShiftsForEmployee needs 3 populates; detectAndAssignShift needs 1 populate (division only)
+            Employee.findOne
+                .mockReturnValueOnce(makeThenableQueryWithPopulates(mockEmpWithDesig, 3))
+                .mockReturnValueOnce(makeThenableQueryWithPopulates(mockEmpWithDesig, 1));
+            PreScheduledShift.findOne.mockReturnValue(makeThenableQueryWithPopulates({ _id: new mongoose.Types.ObjectId(), shiftId: rosterShift }, 2));
 
             Shift.find.mockResolvedValue([desigShift]);
 
@@ -161,17 +187,11 @@ describe('Shift Detection Unit Tests - Discipline Tracking', () => {
             const rosterShiftId = new mongoose.Types.ObjectId();
             const rosterShift = { _id: rosterShiftId, startTime: '09:00', endTime: '18:00', name: 'Roster 9-6', duration: 9, gracePeriod: 15 };
 
-            Employee.findOne.mockImplementation(() => ({
-                populate: jest.fn().mockReturnThis(),
-                exec: jest.fn().mockResolvedValue(mockEmployee),
-                then: function(callback) { return callback(mockEmployee); }
-            }));
+            Employee.findOne
+                .mockReturnValueOnce(makeThenableQueryWithPopulates(mockEmployee, 3))
+                .mockReturnValueOnce(makeThenableQueryWithPopulates(mockEmployee, 1));
 
-            PreScheduledShift.findOne.mockReturnValue({
-                populate: jest.fn().mockReturnValue({
-                    populate: jest.fn().mockResolvedValue({ _id: new mongoose.Types.ObjectId(), shiftId: rosterShift })
-                })
-            });
+            PreScheduledShift.findOne.mockReturnValue(makeThenableQueryWithPopulates({ _id: new mongoose.Types.ObjectId(), shiftId: rosterShift }, 2));
 
             Shift.find.mockResolvedValue([]); // No desig/dept shifts for simplicity
 
@@ -208,24 +228,17 @@ describe('Shift Detection Unit Tests - Discipline Tracking', () => {
                 isActive: true,
             };
 
-            Employee.findOne.mockReturnValue({
-                populate: jest.fn().mockReturnValue({
-                    populate: jest.fn().mockReturnValue({
-                        populate: jest.fn().mockResolvedValue({
-                            ...mockEmployee,
-                            division_id: null,
-                            department_id: null,
-                            designation_id: { _id: new mongoose.Types.ObjectId(), shifts: [shiftId] },
-                        })
-                    })
-                })
-            });
+            const emp = {
+                    ...mockEmployee,
+                    division_id: null,
+                    department_id: null,
+                    designation_id: { _id: new mongoose.Types.ObjectId(), shifts: [shiftId] },
+            };
+            Employee.findOne
+                .mockReturnValueOnce(makeThenableQueryWithPopulates(emp, 3))
+                .mockReturnValueOnce(makeThenableQueryWithPopulates(emp, 1));
 
-            PreScheduledShift.findOne.mockReturnValue({
-                populate: jest.fn().mockReturnValue({
-                    populate: jest.fn().mockResolvedValue(null)
-                })
-            });
+            PreScheduledShift.findOne.mockReturnValue(makeThenableQueryWithPopulates(null, 2));
 
             Shift.find.mockResolvedValue([halfDayShift]);
 

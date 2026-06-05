@@ -30,6 +30,39 @@ async function loadAllYearDocs(employeeId) {
   return LeaveRegisterYear.find({ employeeId }).sort({ financialYearStart: 1 }).exec();
 }
 
+function slotPayPeriodTime(doc, mi) {
+  const slot = doc.months?.[mi];
+  return new Date(slot?.payPeriodStart || slot?.payPeriodEnd || 0).getTime();
+}
+
+/** CL/EL/LOP: global chronological order by startDate. */
+function compareTxnRefsDefault(a, b) {
+  const da = new Date(a.tx.startDate).getTime() - new Date(b.tx.startDate).getTime();
+  if (da !== 0) return da;
+  const pa = transactionSortPriority(a.tx) - transactionSortPriority(b.tx);
+  if (pa !== 0) return pa;
+  const aa = a.tx.at ? new Date(a.tx.at).getTime() : 0;
+  const ab = b.tx.at ? new Date(b.tx.at).getTime() : 0;
+  return aa - ab;
+}
+
+/**
+ * CCL: within each payroll month slot, apply pool credits (OD/transfer-in) before leave debits
+ * so running balance matches Cr/Used when credits and debits share the same period.
+ */
+function compareTxnRefsCcl(a, b) {
+  const sa = slotPayPeriodTime(a.doc, a.mi);
+  const sb = slotPayPeriodTime(b.doc, b.mi);
+  if (sa !== sb) return sa - sb;
+  const pa = transactionSortPriority(a.tx) - transactionSortPriority(b.tx);
+  if (pa !== 0) return pa;
+  const da = new Date(a.tx.startDate).getTime() - new Date(b.tx.startDate).getTime();
+  if (da !== 0) return da;
+  const aa = a.tx.at ? new Date(a.tx.at).getTime() : 0;
+  const ab = b.tx.at ? new Date(b.tx.at).getTime() : 0;
+  return aa - ab;
+}
+
 function collectTxnRefsForLeaveType(docs, leaveType) {
   const refs = [];
   for (const doc of docs) {
@@ -44,18 +77,35 @@ function collectTxnRefsForLeaveType(docs, leaveType) {
       }
     }
   }
-  refs.sort((a, b) => {
-    const da = new Date(a.tx.startDate).getTime();
-    const db = new Date(b.tx.startDate).getTime();
-    if (da !== db) return da - db;
-    const pa = transactionSortPriority(a.tx);
-    const pb = transactionSortPriority(b.tx);
-    if (pa !== pb) return pa - pb;
-    const aa = a.tx.at ? new Date(a.tx.at).getTime() : 0;
-    const ab = b.tx.at ? new Date(b.tx.at).getTime() : 0;
-    return aa - ab;
-  });
+  const cmp = leaveType === 'CCL' ? compareTxnRefsCcl : compareTxnRefsDefault;
+  refs.sort(cmp);
   return refs;
+}
+
+/**
+ * Month-end CCL balance for register UI: use last txn in ledger recalc order within the slot,
+ * not last row in Mongo array (transfer-in after leave debit can show closing 1 while true end is 0).
+ */
+function lastClosingBalanceInSlot(slot, leaveType) {
+  const want = String(leaveType || '').toUpperCase();
+  const txs = (slot?.transactions || []).filter(
+    (t) => String(t?.leaveType || '').toUpperCase() === want
+  );
+  if (!txs.length) return null;
+  if (want === 'CCL') {
+    txs.sort((a, b) => {
+      const pa = transactionSortPriority(a) - transactionSortPriority(b);
+      if (pa !== 0) return pa;
+      const da = new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+      if (da !== 0) return da;
+      const aa = a.at ? new Date(a.at).getTime() : 0;
+      const ab = b.at ? new Date(b.at).getTime() : 0;
+      return aa - ab;
+    });
+  }
+  const last = txs[txs.length - 1];
+  const c = Number(last?.closingBalance);
+  return Number.isFinite(c) ? c : null;
 }
 
 function transactionSortPriority(tx) {
@@ -247,11 +297,21 @@ async function addTransaction(transactionData) {
   const skipCclSlotBumpForMonthlyPoolTransferIn =
     leaveTypeUpper === 'CCL' && autoGenType === 'MONTHLY_POOL_TRANSFER_IN_CCL';
 
+  const isLeaveApplicationReversalCredit =
+    txTypeUpper === 'CREDIT' &&
+    String(transactionData.reason || '').includes('Leave Application Cancelled/Reversed');
+  const skipCclSlotBumpForLeaveReversal =
+    leaveTypeUpper === 'CCL' && isLeaveApplicationReversalCredit;
+
   if (txTypeUpper === 'CREDIT' && creditDays > 0) {
     if (leaveTypeUpper === 'CL') {
       doc.yearlyClCreditDaysPosted = roundHalf((Number(doc.yearlyClCreditDaysPosted) || 0) + creditDays);
     }
-    if (leaveTypeUpper === 'CCL' && !skipCclSlotBumpForMonthlyPoolTransferIn) {
+    if (
+      leaveTypeUpper === 'CCL' &&
+      !skipCclSlotBumpForMonthlyPoolTransferIn &&
+      !skipCclSlotBumpForLeaveReversal
+    ) {
       doc.yearlyCclCreditDaysPosted = roundHalf((Number(doc.yearlyCclCreditDaysPosted) || 0) + creditDays);
       const curPool = roundHalf(Number(doc.months[mi].compensatoryOffs) || 0);
       doc.months[mi].compensatoryOffs = roundHalf(curPool + creditDays);
@@ -315,6 +375,19 @@ async function addTransaction(transactionData) {
       transactionData.employeeId,
       transactionData.startDate
     );
+  }
+
+  if (leaveTypeUpper === 'CCL') {
+    try {
+      const monthlyTransferReconciliationService = require('./monthlyTransferReconciliationService');
+      monthlyTransferReconciliationService.scheduleRegisterReconciliationFromDate(
+        transactionData.employeeId,
+        transactionData.startDate,
+        { toDate: transactionData.endDate || transactionData.startDate }
+      );
+    } catch (e) {
+      console.warn('[LeaveRegisterYearLedger] CCL register reconciliation schedule failed:', e?.message || e);
+    }
   }
 
   const reloaded = await LeaveRegisterYear.findById(doc._id);
@@ -666,4 +739,7 @@ module.exports = {
   findExistingPayrollElDebit,
   findExistingPayrollElDebitForPayrollMonth,
   calculateClosingBalance,
+  collectTxnRefsForLeaveType,
+  lastClosingBalanceInSlot,
+  transactionSortPriority,
 };

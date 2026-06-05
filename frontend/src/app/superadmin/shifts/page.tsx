@@ -58,6 +58,12 @@ export default function ShiftsPage() {
   const [color, setColor] = useState('#3b82f6');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [shiftDisplayScope, setShiftDisplayScope] = useState<'all' | 'classified'>('all');
+  const [segmentOverrides, setSegmentOverrides] = useState<Array<{
+    division: string;
+    firstHalf: { startTime: string; endTime: string; gracePeriod: number | ''; payableShifts: number | '' };
+    break: { startTime: string; endTime: string };
+    secondHalf: { startTime: string; endTime: string; gracePeriod: number | ''; payableShifts: number | '' };
+  }>>([]);
 
   useEffect(() => {
     loadShifts();
@@ -408,6 +414,25 @@ export default function ShiftsPage() {
         firstHalf: firstHalfData,
         break: breakData,
         secondHalf: secondHalfData,
+        segmentOverrides: segmentOverrides.map((o) => ({
+          division: o.division,
+          firstHalf: o.firstHalf?.startTime || o.firstHalf?.endTime ? {
+            startTime: o.firstHalf.startTime || null,
+            endTime: o.firstHalf.endTime || null,
+            gracePeriod: o.firstHalf.gracePeriod === '' ? null : Number(o.firstHalf.gracePeriod),
+            payableShifts: o.firstHalf.payableShifts === '' ? null : Number(o.firstHalf.payableShifts),
+          } : null,
+          break: o.break?.startTime || o.break?.endTime ? {
+            startTime: o.break.startTime || null,
+            endTime: o.break.endTime || null,
+          } : null,
+          secondHalf: o.secondHalf?.startTime || o.secondHalf?.endTime ? {
+            startTime: o.secondHalf.startTime || null,
+            endTime: o.secondHalf.endTime || null,
+            gracePeriod: o.secondHalf.gracePeriod === '' ? null : Number(o.secondHalf.gracePeriod),
+            payableShifts: o.secondHalf.payableShifts === '' ? null : Number(o.secondHalf.payableShifts),
+          } : null,
+        })),
       };
 
       let response;
@@ -462,6 +487,27 @@ export default function ShiftsPage() {
 
     }
     setColor(shift.color || '#3b82f6');
+    setSegmentOverrides(
+      (shift.segmentOverrides || []).map((o) => ({
+        division: o.division,
+        firstHalf: {
+          startTime: o.firstHalf?.startTime || '',
+          endTime: o.firstHalf?.endTime || '',
+          gracePeriod: o.firstHalf?.gracePeriod ?? '',
+          payableShifts: o.firstHalf?.payableShifts ?? '',
+        },
+        break: {
+          startTime: o.break?.startTime || '',
+          endTime: o.break?.endTime || '',
+        },
+        secondHalf: {
+          startTime: o.secondHalf?.startTime || '',
+          endTime: o.secondHalf?.endTime || '',
+          gracePeriod: o.secondHalf?.gracePeriod ?? '',
+          payableShifts: o.secondHalf?.payableShifts ?? '',
+        },
+      }))
+    );
     setLastChanged(null);
     setIllegalTimingWarning('');
     setShowForm(true);
@@ -850,13 +896,13 @@ export default function ShiftsPage() {
         {/* Create/Edit Shift Dialog */}
         {showForm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-            <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white my-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-              <div className="sticky top-0 mb-5 flex items-center justify-between border-b border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900 rounded-t-2xl">
+            <div className="w-full max-w-7xl rounded-2xl border border-slate-200 bg-white my-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+              <div className="sticky top-0 mb-3 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900 rounded-t-2xl">
                 <div>
-                  <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">
                     {editingShift ? 'Edit Shift' : 'Create New Shift'}
                   </h2>
-                  <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
+                  <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-400">
                     {editingShift ? 'Update shift information' : 'Add a new shift to the system'}
                   </p>
                 </div>
@@ -869,19 +915,19 @@ export default function ShiftsPage() {
                   </svg>
                 </button>
               </div>
-              <form onSubmit={handleSubmit} className="overflow-y-auto px-6 pb-6" style={{ maxHeight: 'calc(100vh - 10rem)' }}>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-4">
+              <form onSubmit={handleSubmit} className="overflow-y-auto px-4 pb-4" style={{ maxHeight: 'calc(100vh - 8rem)' }}>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3">
                   {/* COLUMN 1: Shift Configuration */}
-                  <div className="space-y-6">
+                  <div className="space-y-4">
                     {/* Shift Identity */}
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
-                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-3 text-[12px] font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                         <div className="h-4 w-1 rounded-full bg-blue-500" />
                         Shift Identity
                       </h3>
-                      <div className="space-y-4">
+                      <div className="space-y-3">
                         <div>
-                          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                          <label className="mb-1 block text-[11px] font-medium text-slate-700 dark:text-slate-300">
                             Shift Name *
                           </label>
                           <input
@@ -889,7 +935,7 @@ export default function ShiftsPage() {
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             required
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                             placeholder="e.g., Morning Shift"
                           />
                         </div>
@@ -918,14 +964,14 @@ export default function ShiftsPage() {
                     </div>
 
                     {/* Work Schedule */}
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
-                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-3 text-[12px] font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                         <div className="h-4 w-1 rounded-full bg-indigo-500" />
                         Work Schedule
                       </h3>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                          <label className="mb-1 block text-[11px] font-medium text-slate-700 dark:text-slate-300">
                             Start Time *
                           </label>
                           <input
@@ -933,11 +979,11 @@ export default function ShiftsPage() {
                             value={startTime}
                             onChange={(e) => handleStartTimeChange(e.target.value)}
                             required
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                           />
                         </div>
                         <div>
-                          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                          <label className="mb-1 block text-[11px] font-medium text-slate-700 dark:text-slate-300">
                             End Time *
                           </label>
                           <input
@@ -945,19 +991,19 @@ export default function ShiftsPage() {
                             value={endTime}
                             onChange={(e) => handleEndTimeChange(e.target.value)}
                             required
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                           />
                         </div>
                       </div>
-                      <div className="mt-4">
-                        <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                      <div className="mt-3">
+                        <label className="mb-1 block text-[11px] font-medium text-slate-700 dark:text-slate-300">
                           Duration (hours) *
                         </label>
                         <select
                           value={duration}
                           onChange={(e) => handleDurationChange(e.target.value ? Number(e.target.value) : '')}
                           required
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         >
                           <option value="">Select duration</option>
                           {allowedDurations.map((dur) => (
@@ -980,14 +1026,14 @@ export default function ShiftsPage() {
                     </div>
 
                     {/* Payroll & Grace Rules */}
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
-                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-3 text-[12px] font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                         <div className="h-4 w-1 rounded-full bg-emerald-500" />
                         Payroll & Grace Rules
                       </h3>
-                      <div className="space-y-4">
+                      <div className="space-y-3">
                         <div>
-                          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                          <label className="mb-1 block text-[11px] font-medium text-slate-700 dark:text-slate-300">
                             Payable Shifts *
                           </label>
                           {suggestedPayableShifts !== null && suggestedPayableShifts !== payableShifts && (
@@ -1002,7 +1048,7 @@ export default function ShiftsPage() {
                             min="0"
                             step="0.01"
                             required
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                             placeholder="1"
                           />
                           <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
@@ -1011,7 +1057,7 @@ export default function ShiftsPage() {
                         </div>
 
                         <div>
-                          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                          <label className="mb-1 block text-[11px] font-medium text-slate-700 dark:text-slate-300">
                             Shift Grace Period (minutes)
                           </label>
                           <input
@@ -1020,7 +1066,7 @@ export default function ShiftsPage() {
                             onChange={(e) => setGracePeriod(Number(e.target.value) || 0)}
                             min="0"
                             step="1"
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                             placeholder="15"
                           />
                           <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
@@ -1034,28 +1080,28 @@ export default function ShiftsPage() {
                   {/* COLUMN 2: Shift Segments */}
                   <div className="space-y-6">
                     {/* First Half */}
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
-                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-3 text-[12px] font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                         <div className="h-4 w-1 rounded-full bg-orange-500" />
                         First Half
                       </h3>
-                      <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-3 sm:grid-cols-2">
                         <div>
-                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Start Time</label>
+                          <label className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Start</label>
                           <input
                             type="time"
                             value={firstHalfStartTime}
                             onChange={(e) => handleFirstHalfStartChange(e.target.value)}
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                           />
                         </div>
                         <div>
-                          <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">End Time</label>
+                          <label className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-300">End</label>
                           <input
                             type="time"
                             value={firstHalfEndTime}
                             onChange={(e) => handleFirstHalfEndChange(e.target.value)}
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                           />
                         </div>
                         <div>
@@ -1066,7 +1112,7 @@ export default function ShiftsPage() {
                             onChange={(e) => setFirstHalfDuration(e.target.value ? Number(e.target.value) : '')}
                             min="0"
                             step="0.25"
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                             placeholder="Auto or enter"
                           />
                         </div>
@@ -1078,7 +1124,7 @@ export default function ShiftsPage() {
                             onChange={(e) => setFirstHalfMinDuration(e.target.value ? Number(e.target.value) : '')}
                             min="0"
                             step="0.25"
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                             placeholder="e.g. 4"
                           />
                         </div>
@@ -1090,7 +1136,7 @@ export default function ShiftsPage() {
                             onChange={(e) => setFirstHalfGracePeriod(Number(e.target.value) || 0)}
                             min="0"
                             step="1"
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                             placeholder="15"
                           />
                         </div>
@@ -1102,7 +1148,7 @@ export default function ShiftsPage() {
                             onChange={(e) => setFirstHalfPayableShifts(Number(e.target.value) || 0)}
                             min="0"
                             step="0.01"
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                             placeholder="0"
                           />
                         </div>
@@ -1110,19 +1156,19 @@ export default function ShiftsPage() {
                     </div>
 
                     {/* Break */}
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
-                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-3 text-[12px] font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                         <div className="h-4 w-1 rounded-full bg-slate-500" />
                         Meal Break
                       </h3>
-                      <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-3 sm:grid-cols-2">
                         <div>
                           <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Break Start</label>
                           <input
                             type="time"
                             value={breakStartTime}
                             onChange={(e) => handleBreakStartTimeChange(e.target.value)}
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                           />
                         </div>
                         <div>
@@ -1131,26 +1177,26 @@ export default function ShiftsPage() {
                             type="time"
                             value={breakEndTime}
                             onChange={(e) => handleBreakEndTimeChange(e.target.value)}
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                           />
                         </div>
                       </div>
                     </div>
 
                     {/* Second Half */}
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
-                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-3 text-[12px] font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                         <div className="h-4 w-1 rounded-full bg-purple-500" />
                         Second Half
                       </h3>
-                      <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-3 sm:grid-cols-2">
                         <div>
                           <label className="mb-1.5 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Start Time</label>
                           <input
                             type="time"
                             value={secondHalfStartTime}
                             onChange={(e) => handleSecondHalfStartChange(e.target.value)}
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                           />
                         </div>
                         <div>
@@ -1159,7 +1205,7 @@ export default function ShiftsPage() {
                             type="time"
                             value={secondHalfEndTime}
                             onChange={(e) => handleSecondHalfEndChange(e.target.value)}
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                           />
                         </div>
                         <div>
@@ -1213,6 +1259,181 @@ export default function ShiftsPage() {
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Division Segment Overrides — full width so time inputs remain readable */}
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Division-specific segment overrides</h3>
+                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                        Overrides are stored on this Shift. If a division override exists, it will be used for half-day detection and payable halves.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const firstDiv = scopedDivisions?.[0]?._id;
+                        if (!firstDiv) return;
+                        setSegmentOverrides((prev) => [
+                          ...prev,
+                          {
+                            division: firstDiv,
+                            firstHalf: { startTime: '', endTime: '', gracePeriod: '', payableShifts: '' },
+                            break: { startTime: '', endTime: '' },
+                            secondHalf: { startTime: '', endTime: '', gracePeriod: '', payableShifts: '' },
+                          },
+                        ]);
+                      }}
+                      className="shrink-0 rounded-xl bg-blue-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700"
+                    >
+                      + Add
+                    </button>
+                  </div>
+
+                  {segmentOverrides.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-200 p-3 text-center text-[12px] text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                      No division overrides yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {segmentOverrides.map((ovr, idx) => (
+                        <div key={`${ovr.division}-${idx}`} className="rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <select
+                              value={ovr.division}
+                              onChange={(e) => {
+                                const next = e.target.value;
+                                setSegmentOverrides((prev) =>
+                                  prev.map((x, i) => (i === idx ? { ...x, division: next } : x))
+                                );
+                              }}
+                              className="w-full max-w-md rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] font-medium dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            >
+                              {scopedDivisions.map((d) => (
+                                <option key={d._id} value={d._id}>
+                                  {d.name}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => setSegmentOverrides((prev) => prev.filter((_, i) => i !== idx))}
+                              className="shrink-0 rounded-xl border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-semibold text-red-700 hover:bg-red-100 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
+                            >
+                              Remove
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                            <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                              <div className="mb-2 text-xs font-bold text-slate-800 dark:text-slate-100">First half</div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Start</label>
+                                  <input
+                                    type="time"
+                                    value={ovr.firstHalf.startTime}
+                                    onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, firstHalf: { ...x.firstHalf, startTime: e.target.value } } : x))}
+                                    className="w-full min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-300">End</label>
+                                  <input
+                                    type="time"
+                                    value={ovr.firstHalf.endTime}
+                                    onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, firstHalf: { ...x.firstHalf, endTime: e.target.value } } : x))}
+                                    className="w-full min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  />
+                                </div>
+                              </div>
+                              <div className="mt-3 grid grid-cols-2 gap-3">
+                                <input
+                                  type="number"
+                                  value={ovr.firstHalf.gracePeriod}
+                                  onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, firstHalf: { ...x.firstHalf, gracePeriod: e.target.value === '' ? '' : Number(e.target.value) } } : x))}
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  placeholder="Grace"
+                                />
+                                <input
+                                  type="number"
+                                  value={ovr.firstHalf.payableShifts}
+                                  onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, firstHalf: { ...x.firstHalf, payableShifts: e.target.value === '' ? '' : Number(e.target.value) } } : x))}
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  placeholder="Payable"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                              <div className="mb-2 text-xs font-bold text-slate-800 dark:text-slate-100">Break</div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Start</label>
+                                  <input
+                                    type="time"
+                                    value={ovr.break.startTime}
+                                    onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, break: { ...x.break, startTime: e.target.value } } : x))}
+                                    className="w-full min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-300">End</label>
+                                  <input
+                                    type="time"
+                                    value={ovr.break.endTime}
+                                    onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, break: { ...x.break, endTime: e.target.value } } : x))}
+                                    className="w-full min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                              <div className="mb-2 text-xs font-bold text-slate-800 dark:text-slate-100">Second half</div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-300">Start</label>
+                                  <input
+                                    type="time"
+                                    value={ovr.secondHalf.startTime}
+                                    onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, secondHalf: { ...x.secondHalf, startTime: e.target.value } } : x))}
+                                    className="w-full min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-300">End</label>
+                                  <input
+                                    type="time"
+                                    value={ovr.secondHalf.endTime}
+                                    onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, secondHalf: { ...x.secondHalf, endTime: e.target.value } } : x))}
+                                    className="w-full min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-semibold tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  />
+                                </div>
+                              </div>
+                              <div className="mt-3 grid grid-cols-2 gap-3">
+                                <input
+                                  type="number"
+                                  value={ovr.secondHalf.gracePeriod}
+                                  onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, secondHalf: { ...x.secondHalf, gracePeriod: e.target.value === '' ? '' : Number(e.target.value) } } : x))}
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  placeholder="Grace"
+                                />
+                                <input
+                                  type="number"
+                                  value={ovr.secondHalf.payableShifts}
+                                  onChange={(e) => setSegmentOverrides((prev) => prev.map((x, i) => i === idx ? { ...x, secondHalf: { ...x.secondHalf, payableShifts: e.target.value === '' ? '' : Number(e.target.value) } } : x))}
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] tabular-nums dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                  placeholder="Payable"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-8 space-y-4">

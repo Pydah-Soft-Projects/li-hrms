@@ -12,6 +12,7 @@ import {
   formatPolicyAttendanceDeductionDisplay,
   paidLopSublabel,
 } from '@/lib/payRegisterAllSummaryRow';
+import { sumLeaveCreditFromDailyRecords } from '@/lib/leaveDayRange';
 
 /** Absent total from summary (fractional half-days); else totalAbsentDays; else ABSENT-only daily count. */
 export function getAbsentCountForRow(item: { summary?: any }, dailyValues: any[]): number {
@@ -114,7 +115,8 @@ function buildPrAllRowForExport(item: any) {
 
   const monthAbsent = dailyVals.filter((r: any) => r?.status === 'ABSENT').length;
   const leaveRecords = dailyVals.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave);
-  const totalLeaves = item.summary?.totalLeaves ?? leaveRecords.length;
+  const totalLeaves =
+    item.summary?.totalLeaves ?? sumLeaveCreditFromDailyRecords(dailyAttendance);
   const weekOffsCount = item.summary?.totalWeeklyOffs ?? dailyVals.filter((r: any) => r?.status === 'WEEK_OFF').length;
   const holidaysCount = item.summary?.totalHolidays ?? dailyVals.filter((r: any) => r?.status === 'HOLIDAY').length;
   const lopCount = leaveRecords.filter((r: any) => {
@@ -192,7 +194,8 @@ export function writeMonthlyAttendanceExcelFile(
     const partialsCount = getPartialColumnTotal(item.summary, dailyAttendance as Record<string, any>);
     totalPartials += partialsCount;
     const leaveRecords = dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave);
-    const totalLeaves = item.summary?.totalLeaves ?? leaveRecords.length;
+    const totalLeaves =
+    item.summary?.totalLeaves ?? sumLeaveCreditFromDailyRecords(dailyAttendance);
     const lopCount = leaveRecords.filter((r: any) => {
       const anyR = r as any;
       return (
@@ -402,7 +405,8 @@ export function writeMonthlyAttendanceExcelFile(
         if (r?.status === 'HALF_DAY') return sum + 0.5;
         return sum;
       }, 0);
-      const totalLeaves = item.summary?.totalLeaves ?? dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave).length;
+      const totalLeaves =
+        item.summary?.totalLeaves ?? sumLeaveCreditFromDailyRecords(dailyAttendance);
       const monthAbsentRow = getAbsentCountForRow(item, dailyValues);
       const wo = item.summary?.totalWeeklyOffs ?? dailyValues.filter((r: any) => r?.status === 'WEEK_OFF').length;
       const hol = item.summary?.totalHolidays ?? dailyValues.filter((r: any) => r?.status === 'HOLIDAY').length;
@@ -599,7 +603,8 @@ export function writeMonthlyAttendanceExcelFile(
     const dailyAttendance = item.dailyAttendance && typeof item.dailyAttendance === 'object' ? item.dailyAttendance : {};
     const dailyValues = Object.values(dailyAttendance || {});
     const leaveRecords = dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave);
-    const totalLeaves = item.summary?.totalLeaves ?? leaveRecords.length;
+    const totalLeaves =
+    item.summary?.totalLeaves ?? sumLeaveCreditFromDailyRecords(dailyAttendance);
     const lopCount = leaveRecords.filter((r: any) => {
       const anyR = r as any;
       return anyR?.leaveNature === 'lop' || anyR?.leaveInfo?.leaveType?.toLowerCase().includes('lop');

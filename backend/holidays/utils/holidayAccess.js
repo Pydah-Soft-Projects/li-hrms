@@ -220,6 +220,18 @@ function canViewHolidayRecord(actor, holiday) {
     return gid && getManagedGroupIdStrings(actor).includes(gid);
 }
 
+function lockHolidayScopeOnUpdate(existing) {
+    return {
+        scope: existing.scope,
+        groupId: existing.groupId,
+        applicableTo: existing.applicableTo,
+        targetGroupIds: existing.targetGroupIds || [],
+        divisionMapping: existing.divisionMapping || [],
+        isMaster: existing.isMaster,
+        overridesMasterId: existing.overridesMasterId,
+    };
+}
+
 module.exports = {
     resolveFeatureControl,
     loadHolidayActor,
@@ -234,4 +246,5 @@ module.exports = {
     assertCanManageHolidayRecord,
     normalizeHolidayWritePayload,
     canViewHolidayRecord,
+    lockHolidayScopeOnUpdate,
 };

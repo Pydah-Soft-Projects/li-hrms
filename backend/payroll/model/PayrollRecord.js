@@ -434,6 +434,12 @@ const payrollRecordSchema = new mongoose.Schema(
         default: 0,
         min: 0,
       },
+      // Cumulative remaining balance on active loans (after EMI, informational)
+      remainingBalance: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
       // Advance breakdown
       advanceBreakdown: [
         {

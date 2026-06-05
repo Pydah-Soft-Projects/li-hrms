@@ -361,22 +361,35 @@ function reconcilePartialDayStatus(daily) {
 /**
  * Load Shift master and run getShiftSegmentAssignment when segments are not on the daily row yet.
  */
-async function tryShiftSegmentHalfCreditsFromMaster(shiftRow, dateStr) {
+async function tryShiftSegmentHalfCreditsFromMaster(shiftRow, dateStr, employeeNumber = null) {
   if (!shiftRow?.shiftId || !shiftRow?.inTime || !dateStr) return null;
   try {
     const Shift = require('../../shifts/model/Shift');
     const { getShiftSegmentAssignment } = require('../../shifts/services/shiftHalfSegmentService');
     const { resolveGraceFromSettings } = require('../services/shiftSegmentAttendanceService');
+    const Employee = require('../../employees/model/Employee');
+    const { applyShiftSegmentOverride } = require('../../shared/utils/shiftSegmentOverrides');
     const shiftId = shiftRow.shiftId?._id || shiftRow.shiftId;
     const shiftDoc = await Shift.findById(shiftId)
-      .select('startTime endTime firstHalf secondHalf break gracePeriod payableShifts')
+      .select('startTime endTime gracePeriod payableShifts firstHalf secondHalf break segmentOverrides')
       .lean();
-    if (!shiftDoc?.firstHalf && !shiftDoc?.secondHalf) return null;
 
     const graceOpts = await resolveGraceFromSettings();
     const inTime = new Date(shiftRow.inTime);
     const outTime = shiftRowHasDistinctOut(shiftRow) ? new Date(shiftRow.outTime) : null;
-    const seg = getShiftSegmentAssignment(shiftDoc, dateStr, inTime, outTime, graceOpts);
+    let divisionId = null;
+    if (employeeNumber) {
+      const empUpper = String(employeeNumber).toUpperCase();
+      const emp = await Employee.findOne({ emp_no: empUpper })
+        .populate('division_id')
+        .select('division_id')
+        .lean();
+      divisionId = emp?.division_id?._id || emp?.division_id || null;
+    }
+
+    const effectiveShift = applyShiftSegmentOverride(shiftDoc, divisionId);
+
+    const seg = getShiftSegmentAssignment(effectiveShift, dateStr, inTime, outTime, graceOpts);
     return getWorkedHalfFromShiftSegments({ shiftSegments: seg.shiftSegments || [] });
   } catch {
     return null;
@@ -415,7 +428,7 @@ async function partialSingleShiftHalfCreditsAsync(daily, dateStr) {
     return sync;
   }
   const shift = pickPrimaryShift(daily);
-  const key = await tryShiftSegmentHalfCreditsFromMaster(shift, dateStr);
+  const key = await tryShiftSegmentHalfCreditsFromMaster(shift, dateStr, daily?.employeeNumber || null);
   if (key) {
     return halfCreditsFromWorkedKey(collapsePartialHalfKey(key, shift, dateStr));
   }

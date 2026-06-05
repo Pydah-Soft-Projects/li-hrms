@@ -65,16 +65,112 @@ const STYLES = {
     font: { name: 'Calibri', sz: 10, color: { rgb: '1E293B' } },
     alignment: { horizontal: 'right', vertical: 'center' },
     border: BORDER_ALL,
-    numFmt: '#,##0.00',
+    numFmt: '#,##0.##',
   },
   dataNumberAlt: {
     font: { name: 'Calibri', sz: 10, color: { rgb: '1E293B' } },
     fill: { fgColor: { rgb: 'F8FAFC' }, patternType: 'solid' },
     alignment: { horizontal: 'right', vertical: 'center' },
     border: BORDER_ALL,
-    numFmt: '#,##0.00',
+    numFmt: '#,##0.##',
+  },
+  dataText: {
+    font: { name: 'Calibri', sz: 10, color: { rgb: '1E293B' } },
+    alignment: { horizontal: 'left', vertical: 'center' },
+    border: BORDER_ALL,
+    numFmt: '@',
+  },
+  dataTextAlt: {
+    font: { name: 'Calibri', sz: 10, color: { rgb: '1E293B' } },
+    fill: { fgColor: { rgb: 'F8FAFC' }, patternType: 'solid' },
+    alignment: { horizontal: 'left', vertical: 'center' },
+    border: BORDER_ALL,
+    numFmt: '@',
   },
 };
+
+/** Headers that must stay plain text in Excel (no numeric coercion / comma grouping). */
+function normalizeHeaderKey(header) {
+  return String(header || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+const TEXT_COLUMN_HEADER_KEYS = new Set([
+  'employeecode',
+  'employeenumber',
+  'employeeno',
+  'empno',
+  'empnumber',
+  'staffno',
+  'staffnumber',
+  'eno',
+  'pfnumber',
+  'pfno',
+  'esinumber',
+  'esino',
+  'uannumber',
+  'uanno',
+  'pannumber',
+  'panno',
+  'bankaccountno',
+  'bankaccountnumber',
+  'accountno',
+  'acno',
+  'ifsc',
+  'ifsccode',
+]);
+
+function isTextColumnHeader(header) {
+  const key = normalizeHeaderKey(header);
+  if (!key) return false;
+  if (TEXT_COLUMN_HEADER_KEYS.has(key)) return true;
+  if (key.includes('employeecode') || key.includes('employeenumber')) return true;
+  if (key.includes('empno') || key.includes('staffno')) return true;
+  if (key.includes('bankaccount') || key.includes('accountno') || key.includes('acno')) return true;
+  if (key.includes('ifsc')) return true;
+  if (key.includes('pfno') || key.includes('pfnumber')) return true;
+  if (key.includes('esinumber') || key.includes('esino')) return true;
+  if (key.includes('uannumber') || key.includes('uanno')) return true;
+  if (key.includes('pannumber') || key.includes('panno')) return true;
+  return false;
+}
+
+function headerRowForDataRow(r, colHeaderRows, singleHeaderRow) {
+  if (Array.isArray(colHeaderRows) && colHeaderRows.length) {
+    let best = -1;
+    for (const hr of colHeaderRows) {
+      if (hr < r && hr > best) best = hr;
+    }
+    if (best >= 0) return best;
+    return colHeaderRows[0];
+  }
+  return singleHeaderRow != null ? singleHeaderRow : null;
+}
+
+function buildColumnHeaderMap(ws, colCount, headerRowIndices) {
+  const map = new Map();
+  for (const hr of headerRowIndices) {
+    if (hr == null || hr < 0) continue;
+    for (let c = 0; c < colCount; c += 1) {
+      const header = getCellText(ws, hr, c);
+      if (header) map.set(c, header);
+    }
+  }
+  return map;
+}
+
+function forceCellAsText(cell) {
+  if (!cell) return;
+  if (cell.v == null || cell.v === '') {
+    cell.t = 's';
+    cell.v = '';
+    return;
+  }
+  cell.t = 's';
+  cell.v = String(cell.v);
+}
 
 function cellRef(r, c) {
   return XLSX.utils.encode_cell({ r, c });
@@ -143,14 +239,15 @@ function applyPaysheetWorksheetStyles(ws, opts) {
   const cEnd = colCount - 1;
   const range = ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']) : { s: { r: 0, c: 0 }, e: { r: 0, c: cEnd } };
   const totalRows = range.e.r + 1;
-  const headerRowSet = new Set(
+  const headerRowIndices =
     opts.colHeaderRows?.length
       ? opts.colHeaderRows
       : opts.headerRowIndex != null
         ? [opts.headerRowIndex]
-        : []
-  );
+        : [];
+  const headerRowSet = new Set(headerRowIndices);
   const colHeaderStyle = opts.variant === 'bank' ? STYLES.colHeaderBank : STYLES.colHeader;
+  const columnHeaderMap = buildColumnHeaderMap(ws, colCount, headerRowIndices);
 
   const rowHeights = [];
   let dataRowCounter = 0;
@@ -202,10 +299,23 @@ function applyPaysheetWorksheetStyles(ws, opts) {
 
     const alt = dataRowCounter % 2 === 1;
     dataRowCounter += 1;
+    const sectionHeaderRow = headerRowForDataRow(r, headerRowIndices, opts.headerRowIndex);
     for (let c = 0; c <= cEnd; c += 1) {
       const ref = cellRef(r, c);
       if (!ws[ref]) ws[ref] = { t: 's', v: '' };
       const cell = ws[ref];
+      const colHeader =
+        (sectionHeaderRow != null ? getCellText(ws, sectionHeaderRow, c) : '') ||
+        columnHeaderMap.get(c) ||
+        '';
+      const asText = isTextColumnHeader(colHeader);
+
+      if (asText) {
+        forceCellAsText(cell);
+        cell.s = { ...(alt ? STYLES.dataTextAlt : STYLES.dataText) };
+        continue;
+      }
+
       const numeric = cell.t === 'n' || isNumericValue(cell.v);
       if (numeric && c > 0) {
         if (typeof cell.v === 'string' && cell.v.trim() !== '') cell.v = Number(cell.v);
@@ -244,4 +354,6 @@ module.exports = {
   applyPaysheetWorksheetStyles,
   finalizeWorksheet,
   writeStyledWorkbook,
+  isTextColumnHeader,
+  normalizeHeaderKey,
 };

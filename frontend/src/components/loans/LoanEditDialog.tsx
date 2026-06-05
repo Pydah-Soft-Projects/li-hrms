@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import Swal from 'sweetalert2';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
+import {
+  type LeaveODPayPeriodOption,
+  payPeriodSelectValueToMonthKey,
+  payrollMonthKeyToPayPeriodSelectValue,
+} from '@/lib/payPeriodRange';
 
 export interface LoanEditTarget {
   _id: string;
@@ -59,7 +64,9 @@ interface LoanEditDialogProps {
   } | null;
   defaultInterestRate?: number;
   isInterestApplicable?: boolean;
-  payPeriodOptions?: { value: string; label: string }[];
+  payPeriodOptions?: LeaveODPayPeriodOption[];
+  /** Open payroll month — resolves `__default__` in the pay-period dropdown (same as final approval). */
+  presentPayrollMonthKey?: string | null;
 }
 
 const CLOSED_STATUSES = ['completed', 'cancelled', 'rejected'];
@@ -70,8 +77,8 @@ function canEditFinancials(status: string, role: string | undefined) {
   return !['approved', 'disbursed', 'active'].includes(status);
 }
 
-function buildPayPeriodOptions(count = 6): { value: string; label: string }[] {
-  const opts: { value: string; label: string }[] = [];
+function buildPayPeriodOptions(count = 6): LeaveODPayPeriodOption[] {
+  const opts: LeaveODPayPeriodOption[] = [];
   const d = new Date();
   for (let i = 0; i < count; i++) {
     const y = d.getFullYear();
@@ -80,9 +87,27 @@ function buildPayPeriodOptions(count = 6): { value: string; label: string }[] {
     const adjM = ((m - 1) % 12) + 1;
     const value = `${adjY}-${String(adjM).padStart(2, '0')}`;
     const label = new Date(adjY, adjM - 1, 1).toLocaleString('default', { month: 'short', year: 'numeric' });
-    opts.push({ value, label });
+    const from = `${adjY}-${String(adjM).padStart(2, '0')}-01`;
+    const lastDay = new Date(adjY, adjM, 0).getDate();
+    const to = `${adjY}-${String(adjM).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    opts.push({ value, label, range: { from, to } });
   }
   return opts;
+}
+
+/** Map stored YYYY-MM (or empty) to a dropdown value that exists in pay-period options. */
+function storedMonthKeyToPayPeriodSelectValue(
+  monthKey: string | undefined | null,
+  periodOpts: LeaveODPayPeriodOption[]
+): string {
+  const stored = String(monthKey || '').trim();
+  if (/^\d{4}-\d{2}$/.test(stored)) {
+    const full = payrollMonthKeyToPayPeriodSelectValue(stored);
+    if (periodOpts.some((o) => o.value === full)) return full;
+    return full;
+  }
+  if (periodOpts.some((o) => o.value === '__default__')) return '__default__';
+  return periodOpts[0]?.value || '';
 }
 
 export default function LoanEditDialog({
@@ -94,6 +119,7 @@ export default function LoanEditDialog({
   defaultInterestRate = 0,
   isInterestApplicable = false,
   payPeriodOptions,
+  presentPayrollMonthKey,
 }: LoanEditDialogProps) {
   const user = auth.getUser();
   const role = user?.role;
@@ -144,12 +170,14 @@ export default function LoanEditDialog({
       reason: loan.reason || '',
       remarks: loan.remarks || '',
       interestRate: String(loan.loanConfig?.interestRate ?? defaultInterestRate ?? 0),
-      firstDeductionPayrollMonth:
-        loan.approvals?.final?.firstDeductionPayrollMonth ||
-        loan.advanceConfig?.deductionStartCycle ||
-        periodOpts[0]?.value ||
-        '',
-      deductionStartCycle: loan.advanceConfig?.deductionStartCycle || periodOpts[0]?.value || '',
+      firstDeductionPayrollMonth: storedMonthKeyToPayPeriodSelectValue(
+        loan.approvals?.final?.firstDeductionPayrollMonth,
+        periodOpts
+      ),
+      deductionStartCycle: storedMonthKeyToPayPeriodSelectValue(
+        loan.advanceConfig?.deductionStartCycle,
+        periodOpts
+      ),
       changeReason: '',
       recalculate: isActiveLoan,
       status: loan.status,
@@ -164,7 +192,14 @@ export default function LoanEditDialog({
       remarks: loan.remarks || '',
     });
     setEditMode(canRepaymentCorrection ? 'repayment' : 'terms');
-  }, [open, loan._id, loan.amount, loan.duration, loan.status, canRepaymentCorrection]);
+  }, [open, loan._id, loan.amount, loan.duration, loan.status, canRepaymentCorrection, presentPayrollMonthKey]);
+
+  const storedLoanDeductionMonth = String(loan.approvals?.final?.firstDeductionPayrollMonth || '').trim();
+  const storedAdvanceDeductionMonth = String(loan.advanceConfig?.deductionStartCycle || '').trim();
+  const selectedLoanDeductionMonth =
+    payPeriodSelectValueToMonthKey(form.firstDeductionPayrollMonth, presentPayrollMonthKey) || '';
+  const selectedAdvanceDeductionMonth =
+    payPeriodSelectValueToMonthKey(form.deductionStartCycle, presentPayrollMonthKey) || '';
 
   const preview = useMemo(() => {
     const principal = parseFloat(form.amount);
@@ -209,10 +244,8 @@ export default function LoanEditDialog({
     parseInt(form.duration, 10) !== Number(loan.duration) ||
     (loan.requestType === 'loan' &&
       parseFloat(form.interestRate) !== Number(loan.loanConfig?.interestRate ?? defaultInterestRate ?? 0)) ||
-    (loan.requestType === 'loan' &&
-      form.firstDeductionPayrollMonth !== (loan.approvals?.final?.firstDeductionPayrollMonth || '')) ||
-    (loan.requestType === 'salary_advance' &&
-      form.deductionStartCycle !== (loan.advanceConfig?.deductionStartCycle || ''));
+    (loan.requestType === 'loan' && selectedLoanDeductionMonth !== storedLoanDeductionMonth) ||
+    (loan.requestType === 'salary_advance' && selectedAdvanceDeductionMonth !== storedAdvanceDeductionMonth);
 
   const installmentsRemaining = useMemo(() => {
     const total = parseInt(repaymentForm.totalInstallments, 10) || Number(loan.repayment?.totalInstallments) || Number(loan.duration) || 0;
@@ -301,12 +334,17 @@ export default function LoanEditDialog({
       }
       if (loan.requestType === 'loan' && financialEditable) {
         payload.interestRate = parseFloat(form.interestRate) || 0;
-        if (form.firstDeductionPayrollMonth) {
-          payload.firstDeductionPayrollMonth = form.firstDeductionPayrollMonth;
+        if (selectedLoanDeductionMonth && selectedLoanDeductionMonth !== storedLoanDeductionMonth) {
+          payload.firstDeductionPayrollMonth = selectedLoanDeductionMonth;
         }
       }
-      if (loan.requestType === 'salary_advance' && financialEditable && form.deductionStartCycle) {
-        payload.deductionStartCycle = form.deductionStartCycle;
+      if (
+        loan.requestType === 'salary_advance' &&
+        financialEditable &&
+        selectedAdvanceDeductionMonth &&
+        selectedAdvanceDeductionMonth !== storedAdvanceDeductionMonth
+      ) {
+        payload.deductionStartCycle = selectedAdvanceDeductionMonth;
       }
       if (isSuperAdmin && form.status && form.status !== loan.status) {
         payload.status = form.status;
@@ -577,7 +615,7 @@ export default function LoanEditDialog({
               >
                 {periodOpts.map((opt) => (
                   <option key={opt.value} value={opt.value}>
-                    {opt.label}
+                    {opt.range ? `${opt.label} (${opt.range.from} → ${opt.range.to})` : opt.label}
                   </option>
                 ))}
               </select>
@@ -596,7 +634,7 @@ export default function LoanEditDialog({
               >
                 {periodOpts.map((opt) => (
                   <option key={opt.value} value={opt.value}>
-                    {opt.label}
+                    {opt.range ? `${opt.label} (${opt.range.from} → ${opt.range.to})` : opt.label}
                   </option>
                 ))}
               </select>

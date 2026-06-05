@@ -172,7 +172,16 @@ function enrichRegisterMonthLiteCredits(m: RegisterMonthLite, raw?: any): Regist
     elBalance: m.elBalance ?? srcAny?.elBalance,
     cclBalance: m.cclBalance ?? srcAny?.cclBalance,
     cl: { ...m.cl, ...(Number.isFinite(Number(clN)) ? { credited: Number(clN) } : {}) },
-    ccl: { ...m.ccl, ...(Number.isFinite(Number(cclN)) ? { credited: Number(cclN) } : {}) },
+    ccl: {
+      ...m.ccl,
+      ...(Number.isFinite(Number(cclN)) ? { credited: Number(cclN) } : {}),
+      usedAudit:
+        m.ccl?.usedAudit ??
+        (Array.isArray(srcAny?.audit?.cclUsed) ? srcAny.audit.cclUsed : undefined),
+      lockedAudit:
+        m.ccl?.lockedAudit ??
+        (Array.isArray(srcAny?.audit?.cclLocked) ? srcAny.audit.cclLocked : undefined),
+    },
     el: { ...m.el, ...(Number.isFinite(Number(elN)) ? { credited: Number(elN) } : {}) },
   };
 }
@@ -220,6 +229,195 @@ function formatRegisterMonthEquationBal(
   const ul = usedPlusLockedNumeric(used, locked);
   if (crN === null && tin === null && tout === null && used == null && locked == null) return '—';
   return formatNum((crN ?? 0) + (tin ?? 0) - ul - (tout ?? 0));
+}
+
+/** CCL month-end balance: prefer FY register closing (matches ledger); fallback to pool equation. CL unchanged elsewhere. */
+function formatRegisterMonthCclBal(
+  m: RegisterMonthLite,
+  policyCr: number | null,
+  transferOutVal: unknown
+): string {
+  const regBal = m.cclBalance;
+  if (regBal != null && Number.isFinite(Number(regBal))) {
+    return formatNum(regBal);
+  }
+  return formatRegisterMonthEquationBal(
+    policyCr,
+    m.ccl?.transferIn,
+    m.ccl?.used,
+    m.ccl?.locked,
+    transferOutVal
+  );
+}
+
+/** True when today falls inside the row’s payroll period (open / current month). */
+function isCurrentPayrollMonth(m: RegisterMonthLite): boolean {
+  const start = m.payPeriodStart ? new Date(m.payPeriodStart as string) : null;
+  const end = m.payPeriodEnd ? new Date(m.payPeriodEnd as string) : null;
+  if (
+    start &&
+    end &&
+    !Number.isNaN(start.getTime()) &&
+    !Number.isNaN(end.getTime())
+  ) {
+    const now = Date.now();
+    return now >= start.getTime() && now <= end.getTime();
+  }
+  const now = new Date();
+  return Number(m.month) === now.getMonth() + 1 && Number(m.year) === now.getFullYear();
+}
+
+/** Pool balance for the payroll month: Cr + carried in − used/lock − transfer out (may be negative). */
+function formatRegisterMonthPoolEquationBal(
+  m: RegisterMonthLite,
+  kind: 'cl' | 'ccl' | 'el',
+  policyCr: number | null,
+  transferOutVal: unknown
+): string {
+  const bucket = kind === 'cl' ? m.cl : kind === 'ccl' ? m.ccl : m.el;
+  return formatRegisterMonthEquationBal(
+    policyCr,
+    bucket?.transferIn,
+    bucket?.used,
+    bucket?.locked,
+    transferOutVal
+  );
+}
+
+/**
+ * Bal column value: current month uses legacy CCL register closing when set;
+ * all months can use pool equation (shows negative when over-used, e.g. −2.50).
+ */
+function formatRegisterMonthPayPeriodBal(
+  m: RegisterMonthLite,
+  kind: 'cl' | 'ccl' | 'el',
+  policyCr: number | null,
+  transferOutVal: unknown,
+  isCurrentPeriod: boolean
+): string {
+  if (kind === 'ccl' && isCurrentPeriod) {
+    return formatRegisterMonthCclBal(m, policyCr, transferOutVal);
+  }
+  return formatRegisterMonthPoolEquationBal(m, kind, policyCr, transferOutVal);
+}
+
+function payPeriodBalNumericFromDisplay(display: string): number | null {
+  if (display === '—') return null;
+  const n = Number(display);
+  return Number.isFinite(n) ? n : null;
+}
+
+type RegisterBalVariant = 'current' | 'overused' | 'transfer' | 'neutral';
+
+function resolveRegisterBalVariant(
+  payPeriodBalance: string,
+  isCurrentPeriod: boolean
+): RegisterBalVariant {
+  const balN = payPeriodBalNumericFromDisplay(payPeriodBalance);
+  if (isCurrentPeriod) return 'current';
+  if (balN != null && balN < 0) return 'overused';
+  return 'transfer';
+}
+
+/** Fixed column widths for the expanded FY month grid (table-layout: fixed). */
+const REGISTER_MONTH_GRID_COLGROUP = (
+  <colgroup>
+    <col className="w-[11.5rem]" />
+    <col className="w-[2.65rem]" />
+    <col className="w-[3.35rem]" />
+    <col className="w-[3.15rem]" />
+    <col className="w-[3.5rem]" />
+    <col className="w-[2.65rem]" />
+    <col className="w-[3.35rem]" />
+    <col className="w-[3.15rem]" />
+    <col className="w-[3.5rem]" />
+    <col className="w-[2.65rem]" />
+    <col className="w-[3.35rem]" />
+    <col className="w-[3.15rem]" />
+    <col className="w-[3.5rem]" />
+  </colgroup>
+);
+
+/**
+ * Bal column:
+ * - Current payroll month → pay-period pool balance (highlighted).
+ * - Closed month with over-use → negative balance (red pill).
+ * - Other closed months → transfer-out only (amber pill).
+ */
+function RegisterMonthBalanceCell({
+  transferOut,
+  payPeriodBalance,
+  isCurrentPeriod,
+}: {
+  transferOut: unknown;
+  payPeriodBalance: string;
+  isCurrentPeriod: boolean;
+}) {
+  const variant = resolveRegisterBalVariant(payPeriodBalance, isCurrentPeriod);
+  const display =
+    variant === 'transfer' ? formatNullableNum(transferOut) : payPeriodBalance;
+
+  const pillClass =
+    variant === 'current'
+      ? 'border-emerald-400/70 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-400/25 dark:border-emerald-600/60 dark:bg-emerald-950/55 dark:text-emerald-100 dark:ring-emerald-500/20'
+      : variant === 'overused'
+        ? 'border-red-400/80 bg-red-50 text-red-800 ring-1 ring-red-400/30 dark:border-red-700/70 dark:bg-red-950/50 dark:text-red-200 dark:ring-red-500/25'
+        : 'border-amber-400/60 bg-amber-50/90 text-amber-950 dark:border-amber-700/50 dark:bg-amber-950/35 dark:text-amber-100';
+
+  const title =
+    variant === 'current'
+      ? 'Current payroll month — unused pool (Cr + carried in − used − transfer out)'
+      : variant === 'overused'
+        ? 'Over-used this month — used more than credits (Cr + in − out)'
+        : 'Closed month — credits transferred to next payroll period';
+
+  return (
+    <span
+      className={`inline-flex min-w-[2.35rem] max-w-full items-center justify-center rounded-md border px-1.5 py-0.5 text-[13px] font-bold leading-tight tabular-nums ${pillClass}`}
+      title={title}
+    >
+      {display}
+    </span>
+  );
+}
+
+function registerMonthBalTdClass(variant: RegisterBalVariant): string {
+  const base =
+    'text-center px-1 py-2 border border-slate-300 dark:border-slate-600 align-middle cursor-pointer';
+  if (variant === 'current') {
+    return `${base} bg-emerald-50/70 dark:bg-emerald-950/25 hover:bg-emerald-100/80 dark:hover:bg-emerald-950/40`;
+  }
+  if (variant === 'overused') {
+    return `${base} bg-red-50/60 dark:bg-red-950/20 hover:bg-red-100/70 dark:hover:bg-red-950/35`;
+  }
+  return `${base} bg-amber-50/40 dark:bg-amber-950/15 hover:bg-amber-100/60 dark:hover:bg-amber-950/30`;
+}
+
+function registerMonthTypeGroupTh(kind: 'cl' | 'ccl' | 'el', sub = false): string {
+  const base = sub
+    ? 'text-center font-bold px-1 py-1.5 border border-slate-300 dark:border-slate-600 whitespace-nowrap'
+    : 'text-center font-bold px-1 py-2 border border-slate-300 dark:border-slate-600 text-[12px] tracking-wide';
+  if (kind === 'cl') {
+    return `${base} bg-sky-100/90 text-sky-950 dark:bg-sky-950/45 dark:text-sky-100`;
+  }
+  if (kind === 'ccl') {
+    return `${base} bg-amber-100/90 text-amber-950 dark:bg-amber-950/40 dark:text-amber-100`;
+  }
+  return `${base} bg-violet-100/90 text-violet-950 dark:bg-violet-950/40 dark:text-violet-100`;
+}
+
+function sumRegisterCclUsedFy(months: RegisterMonthLite[]): number | null {
+  if (!months.length) return null;
+  let sum = 0;
+  let any = false;
+  for (const m of months) {
+    const u = m.ccl?.used;
+    if (u != null && Number.isFinite(Number(u))) {
+      sum += Number(u);
+      any = true;
+    }
+  }
+  return any ? sum : null;
 }
 
 /** Bulk/slot edit inputs: prefer policy scheduled pool (same as table Cr), then ledger net. */
@@ -663,6 +861,8 @@ export default function LeaveRegisterPage({
     transactions: any[];
     clUsedAudit: MonthContributionAudit[];
     clLockedAudit: MonthContributionAudit[];
+    cclUsedAudit: MonthContributionAudit[];
+    cclLockedAudit: MonthContributionAudit[];
     auditView: 'none' | 'used' | 'locked';
     loading: boolean;
   } | null>(null);
@@ -1053,6 +1253,8 @@ export default function LeaveRegisterPage({
       transactions: [],
       clUsedAudit: [],
       clLockedAudit: [],
+      cclUsedAudit: [],
+      cclLockedAudit: [],
       auditView: 'none',
       loading: true,
     });
@@ -1085,6 +1287,16 @@ export default function LeaveRegisterPage({
       : Array.isArray(mNorm?.cl?.lockedAudit)
         ? mNorm.cl.lockedAudit
         : [];
+    const cclUsedAudit = Array.isArray(canonical?.audit?.cclUsed)
+      ? canonical.audit.cclUsed
+      : Array.isArray(mNorm?.ccl?.usedAudit)
+        ? mNorm.ccl.usedAudit
+        : [];
+    const cclLockedAudit = Array.isArray(canonical?.audit?.cclLocked)
+      ? canonical.audit.cclLocked
+      : Array.isArray(mNorm?.ccl?.lockedAudit)
+        ? mNorm.ccl.lockedAudit
+        : [];
     setMonthModal((prev) => {
       if (!prev) return null;
       const rowBase = normalizeRegisterMonthForBulk(
@@ -1099,6 +1311,11 @@ export default function LeaveRegisterPage({
           usedAudit,
           lockedAudit,
         },
+        ccl: {
+          ...rowBase.ccl,
+          usedAudit: cclUsedAudit,
+          lockedAudit: cclLockedAudit,
+        },
       };
       return {
         ...prev,
@@ -1106,6 +1323,8 @@ export default function LeaveRegisterPage({
         transactions: txs,
         clUsedAudit: usedAudit,
         clLockedAudit: lockedAudit,
+        cclUsedAudit,
+        cclLockedAudit,
         auditView: 'none',
         loading: false,
       };
@@ -1471,10 +1690,15 @@ export default function LeaveRegisterPage({
     const nCl = Number(cl) || 0;
     const nEl = Number(el) || 0;
     const nCcl = Number(ccl) || 0;
+    const normMonths = (row.registerMonths || []).map((m, i) =>
+      normalizeRegisterMonthForBulk(m, monthSlotEditPolicyConfig, i)
+    );
+    const cclUsedFy = fyRegisterRow ? sumRegisterCclUsedFy(normMonths) : null;
     return {
       cl,
       el,
       ccl,
+      cclUsedFy,
       /** Must match CL + EL + CCL above (same basis). Previously used period-only totalPaidBalance, which broke when CL/EL/CCL came from FY snapshot. */
       total: nCl + nEl + nCcl,
       clPoolDays:
@@ -1745,7 +1969,7 @@ export default function LeaveRegisterPage({
                   </th>
                   <th
                     className={`text-right font-bold text-slate-800 dark:text-slate-200 border-l border-slate-300 dark:border-slate-700 ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`}
-                    title="Compensatory / CCL balance"
+                    title="CCL balance (FY register when financial year is set). Second line: FY used (sum of monthly Used in the expanded grid)."
                   >
                     CCL
                   </th>
@@ -1892,7 +2116,15 @@ export default function LeaveRegisterPage({
                         <td
                           className={`text-right font-mono tabular-nums border-l border-slate-300 dark:border-slate-700 ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`}
                         >
-                          {formatNum(bal.ccl)}
+                          <div>{formatNum(bal.ccl)}</div>
+                          {bal.cclUsedFy != null ? (
+                            <div
+                              className="text-[10px] font-normal text-slate-500 dark:text-slate-400 mt-0.5 leading-tight"
+                              title="FY total CCL used (approved + pending lock per month, summed across payroll months in this view)."
+                            >
+                              used {formatNum(bal.cclUsedFy)}
+                            </div>
+                          ) : null}
                         </td>
                         <td
                           className={`text-right font-mono tabular-nums hidden sm:table-cell font-bold text-slate-900 dark:text-slate-100 border-l border-slate-300 dark:border-slate-700 ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`}
@@ -1950,131 +2182,75 @@ export default function LeaveRegisterPage({
                                     </button>
                                   ) : null}
                                 </div>
-                                {isSuperadmin ? (
-                                  <div className="flex gap-2 rounded-lg border border-blue-200/70 dark:border-blue-900/50 bg-blue-50/90 dark:bg-blue-950/25 px-2.5 py-2 text-[10px] leading-snug text-blue-950 dark:text-blue-100">
-                                    <Info className="h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
-                                    <p>
-                                      <span className="font-medium">Per-type apply limits</span> (under each type’s Bal) come
-                                      from leave policy maxDaysByType for that type. Pending and approved days for{' '}
-                                      <em>that type only</em> count toward each limit.
-                                    </p>
-                                  </div>
-                                ) : (
-                                  <p className="text-[10px] text-slate-400">
-                                    When the policy sets a per-type cap, <strong>Limit used/total · left</strong> appears under
-                                    that type’s Bal column. Pending and approved days count only toward that leave type’s cap.
-                                  </p>
-                                )}
-                                <div className="overflow-x-auto rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800/60">
+                                <div className="overflow-x-auto rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800/60 shadow-sm">
                                   <table
-                                    className={`w-full min-w-[1080px] border-collapse border border-slate-300 dark:border-slate-600 ${isSuperadmin ? 'text-[11px]' : 'text-[13px]'}`}
+                                    className={`w-full min-w-[1080px] table-fixed border-collapse border border-slate-300 dark:border-slate-600 ${isSuperadmin ? 'text-[11px]' : 'text-[13px]'}`}
                                   >
+                                    {REGISTER_MONTH_GRID_COLGROUP}
                                     <thead>
-                                      <tr className="bg-slate-100/90 dark:bg-slate-800/80 border-b border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300">
+                                      <tr className="border-b border-slate-300 dark:border-slate-600">
                                         <th
                                           rowSpan={2}
-                                          className="text-left font-semibold px-2 py-2 align-bottom whitespace-nowrap w-[260px] border border-slate-300 dark:border-slate-600"
+                                          className="sticky left-0 z-10 text-left font-semibold px-2.5 py-2 align-bottom border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100"
                                         >
                                           Month
                                         </th>
-                                        <th colSpan={5} className="text-center font-bold px-1 py-1.5 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 text-[13px]">
+                                        <th colSpan={4} className={registerMonthTypeGroupTh('cl')}>
                                           CL
                                         </th>
-                                        <th colSpan={5} className="text-center font-bold px-1 py-1.5 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 text-[13px]">
+                                        <th colSpan={4} className={registerMonthTypeGroupTh('ccl')}>
                                           CCL
                                         </th>
-                                        <th colSpan={5} className="text-center font-bold px-1 py-1.5 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 text-[13px]">
+                                        <th colSpan={4} className={registerMonthTypeGroupTh('el')}>
                                           EL
                                         </th>
                                       </tr>
-                                      <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-700 dark:text-slate-200 border-b border-slate-300 dark:border-slate-600">
-                                        <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
-                                          title="Policy-scheduled credits only (no carry-in)."
-                                        >
+                                      <tr className="border-b-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200">
+                                        <th className={`${registerMonthTypeGroupTh('cl', true)} w-[2.65rem]`} title="Policy credits this month">
                                           Cr
                                         </th>
                                         <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[12px] whitespace-nowrap"
-                                          title="Credits carried into this month from the prior payroll period or FY opening."
+                                          className={`${registerMonthTypeGroupTh('cl', true)} text-[11px]`}
+                                          title="From prior payroll / FY"
                                         >
-                                          Carried in
+                                          In
                                         </th>
-                                        <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
-                                          title="Approved debits plus pending lock (combined)."
-                                        >
+                                        <th className={`${registerMonthTypeGroupTh('cl', true)} bg-sky-50/50 dark:bg-sky-950/20`} title="Used + pending lock">
                                           Used
                                         </th>
                                         <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
-                                          title="Credits transferred out to the next payroll month (0 while this period is still open)."
-                                        >
-                                          Transfer
-                                        </th>
-                                        <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
-                                          title="Cr + Carried in − Used (incl. pending lock) − Transfer out."
+                                          className={`${registerMonthTypeGroupTh('cl', true)} font-extrabold ring-1 ring-inset ring-sky-300/40 dark:ring-sky-600/40`}
+                                          title="Current = balance · Closed = transfer out · Red = over-used"
                                         >
                                           Bal
                                         </th>
-                                        <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
-                                          title="Policy-scheduled credits only (no carry-in)."
-                                        >
+                                        <th className={`${registerMonthTypeGroupTh('ccl', true)}`} title="Policy credits">
                                           Cr
                                         </th>
-                                        <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[12px] whitespace-nowrap"
-                                          title="Credits carried into this month from the prior payroll period."
-                                        >
-                                          Carried in
+                                        <th className={`${registerMonthTypeGroupTh('ccl', true)} text-[11px]`} title="Carried in">
+                                          In
                                         </th>
-                                        <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
-                                          title="Approved debits plus pending lock (combined)."
-                                        >
+                                        <th className={`${registerMonthTypeGroupTh('ccl', true)} bg-amber-50/50 dark:bg-amber-950/20`} title="Used + lock">
                                           Used
                                         </th>
                                         <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
-                                          title="Credits transferred out to the next payroll month."
-                                        >
-                                          Transfer
-                                        </th>
-                                        <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
-                                          title="Month-end CCL balance from the leave register (running). If unavailable, shows unused pool in this period: Cr + Carried in − Used − Transfer out."
+                                          className={`${registerMonthTypeGroupTh('ccl', true)} font-extrabold ring-1 ring-inset ring-amber-400/40 dark:ring-amber-600/35`}
+                                          title="Current = balance · Closed = transfer out · Red = over-used"
                                         >
                                           Bal
                                         </th>
-                                        <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
-                                          title="Policy-scheduled credits only (no carry-in)."
-                                        >
+                                        <th className={`${registerMonthTypeGroupTh('el', true)}`} title="Policy credits">
                                           Cr
                                         </th>
-                                        <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[12px] whitespace-nowrap"
-                                          title="Credits carried into this month from the prior payroll period."
-                                        >
-                                          Carried in
+                                        <th className={`${registerMonthTypeGroupTh('el', true)} text-[11px]`} title="Carried in">
+                                          In
                                         </th>
-                                        <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
-                                          title="Approved debits plus pending lock (combined)."
-                                        >
+                                        <th className={`${registerMonthTypeGroupTh('el', true)} bg-violet-50/50 dark:bg-violet-950/20`} title="Used + lock">
                                           Used
                                         </th>
                                         <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
-                                          title="Credits transferred out to the next payroll month."
-                                        >
-                                          Transfer
-                                        </th>
-                                        <th
-                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
-                                          title="Month-end CCL balance from the register (running). If unavailable: unused pool this period = Cr + Carried in − Used − Transfer out."
+                                          className={`${registerMonthTypeGroupTh('el', true)} font-extrabold ring-1 ring-inset ring-violet-400/40 dark:ring-violet-600/35`}
+                                          title="Current = balance · Closed = transfer out · Red = over-used"
                                         >
                                           Bal
                                         </th>
@@ -2093,6 +2269,28 @@ export default function LeaveRegisterPage({
                                         const clTout = monthPoolTransferOut(m, 'cl');
                                         const cclTout = monthPoolTransferOut(m, 'ccl');
                                         const elTout = monthPoolTransferOut(m, 'el');
+                                        const isCurrentPeriod = isCurrentPayrollMonth(m);
+                                        const clPayPeriodBal = formatRegisterMonthPayPeriodBal(
+                                          m,
+                                          'cl',
+                                          clCr,
+                                          clTout,
+                                          isCurrentPeriod
+                                        );
+                                        const cclPayPeriodBal = formatRegisterMonthPayPeriodBal(
+                                          m,
+                                          'ccl',
+                                          cclCr,
+                                          cclTout,
+                                          isCurrentPeriod
+                                        );
+                                        const elPayPeriodBal = formatRegisterMonthPayPeriodBal(
+                                          m,
+                                          'el',
+                                          elCr,
+                                          elTout,
+                                          isCurrentPeriod
+                                        );
                                         const openMonth = (f: RegisterMonthModalFocus) =>
                                           void openMonthTransactions(idStr, empLabel, m, f, idx);
                                         const monthTypeKeyDown =
@@ -2102,23 +2300,58 @@ export default function LeaveRegisterPage({
                                               openMonth(f);
                                             }
                                           };
+                                        const clBalVariant = resolveRegisterBalVariant(
+                                          clPayPeriodBal,
+                                          isCurrentPeriod
+                                        );
+                                        const cclBalVariant = resolveRegisterBalVariant(
+                                          cclPayPeriodBal,
+                                          isCurrentPeriod
+                                        );
+                                        const elBalVariant = resolveRegisterBalVariant(
+                                          elPayPeriodBal,
+                                          isCurrentPeriod
+                                        );
                                         const typeCellClass =
-                                          'text-center px-1 py-1.5 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600 align-top text-[13px] cursor-pointer hover:bg-indigo-100/50 dark:hover:bg-slate-700/50';
+                                          'text-center px-1.5 py-2 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600 align-middle text-[13px] cursor-pointer hover:bg-indigo-100/55 dark:hover:bg-slate-700/45';
+                                        const carryInCellClass =
+                                          'text-center px-1 py-2 text-slate-600 dark:text-slate-400 bg-slate-50/80 dark:bg-slate-900/40 border border-slate-300 dark:border-slate-600 align-middle text-[12px] cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/60';
+                                        const usedCellClass = (used: unknown, locked: unknown) => {
+                                          const total = usedPlusLockedNumeric(used, locked);
+                                          const hot = total > 0;
+                                          return `${typeCellClass}${hot ? ' font-semibold text-orange-900 dark:text-orange-200 bg-orange-50/30 dark:bg-orange-950/15' : ''}`;
+                                        };
+                                        const rowClass = isCurrentPeriod
+                                          ? 'border-b border-indigo-200/80 dark:border-indigo-800/50 bg-indigo-50/35 dark:bg-indigo-950/20 hover:bg-indigo-50/55 dark:hover:bg-indigo-950/30 font-mono tabular-nums ring-1 ring-inset ring-indigo-300/30 dark:ring-indigo-700/35'
+                                          : 'border-b border-slate-100 dark:border-slate-700/80 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 font-mono tabular-nums';
                                         return (
-                                        <tr
-                                          key={`${m.year}-${m.month}-${idx}`}
-                                          className="border-b border-slate-100 dark:border-slate-700/80 hover:bg-indigo-50/60 dark:hover:bg-slate-700/40 font-mono tabular-nums"
-                                        >
+                                        <tr key={`${m.year}-${m.month}-${idx}`} className={rowClass}>
                                           <td
                                             role="button"
                                             tabIndex={0}
                                             onClick={() => openMonth('all')}
                                             onKeyDown={monthTypeKeyDown('all')}
-                                            className="text-left px-2 py-2 align-top border border-slate-300 dark:border-slate-600 cursor-pointer"
+                                            className={`sticky left-0 z-[1] text-left px-2.5 py-2 align-middle border border-slate-300 dark:border-slate-600 cursor-pointer ${
+                                              isCurrentPeriod
+                                                ? 'bg-indigo-50/90 dark:bg-indigo-950/40 font-semibold'
+                                                : 'bg-white dark:bg-slate-800/80'
+                                            }`}
                                           >
-                                            <div className="flex items-center gap-3 whitespace-nowrap">
-                                              <div className="font-bold text-slate-900 dark:text-slate-100 text-[14px]">
-                                                {m.label && !m.label.includes('/') ? m.label : new Date(m.year, m.month - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}
+                                            <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-2">
+                                              <div className="flex items-center gap-2 whitespace-nowrap">
+                                                <span className="font-bold text-slate-900 dark:text-slate-100 text-[13px]">
+                                                  {m.label && !m.label.includes('/')
+                                                    ? m.label
+                                                    : new Date(m.year, m.month - 1).toLocaleString('default', {
+                                                        month: 'short',
+                                                        year: 'numeric',
+                                                      })}
+                                                </span>
+                                                {isCurrentPeriod ? (
+                                                  <span className="inline-flex shrink-0 rounded-full bg-indigo-600 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-white dark:bg-indigo-500">
+                                                    Now
+                                                  </span>
+                                                ) : null}
                                               </div>
 
                                               {canEditMonths && m.monthEditPolicy?.allowEditMonth ? (
@@ -2196,7 +2429,7 @@ export default function LeaveRegisterPage({
                                             tabIndex={0}
                                             onClick={() => openMonth('cl')}
                                             onKeyDown={monthTypeKeyDown('cl')}
-                                            className="text-center px-1 py-1.5 text-slate-700 dark:text-slate-400 border border-slate-300 dark:border-slate-600 align-top text-[13px] cursor-pointer hover:bg-indigo-100/50 dark:hover:bg-slate-700/50"
+                                            className={carryInCellClass}
                                           >
                                             {formatNullableNum(m.cl?.transferIn)}
                                           </td>
@@ -2205,7 +2438,7 @@ export default function LeaveRegisterPage({
                                             tabIndex={0}
                                             onClick={() => openMonth('cl')}
                                             onKeyDown={monthTypeKeyDown('cl')}
-                                            className={typeCellClass}
+                                            className={usedCellClass(m.cl?.used, m.cl?.locked)}
                                           >
                                             {formatDebitsPlusLocked(m.cl?.used, m.cl?.locked)}
                                           </td>
@@ -2214,26 +2447,13 @@ export default function LeaveRegisterPage({
                                             tabIndex={0}
                                             onClick={() => openMonth('cl')}
                                             onKeyDown={monthTypeKeyDown('cl')}
-                                            className={typeCellClass}
+                                            className={registerMonthBalTdClass(clBalVariant)}
                                           >
-                                            {formatNullableNum(clTout)}
-                                          </td>
-                                          <td
-                                            role="button"
-                                            tabIndex={0}
-                                            onClick={() => openMonth('cl')}
-                                            onKeyDown={monthTypeKeyDown('cl')}
-                                            className={`${typeCellClass} font-bold`}
-                                          >
-                                            <div>
-                                              {formatRegisterMonthEquationBal(
-                                                clCr,
-                                                m.cl?.transferIn,
-                                                m.cl?.used,
-                                                m.cl?.locked,
-                                                clTout
-                                              )}
-                                            </div>
+                                            <RegisterMonthBalanceCell
+                                              transferOut={clTout}
+                                              payPeriodBalance={clPayPeriodBal}
+                                              isCurrentPeriod={isCurrentPeriod}
+                                            />
                                             <TypeApplyCapHint bucket={m.cl} />
                                           </td>
                                           <td
@@ -2250,7 +2470,7 @@ export default function LeaveRegisterPage({
                                             tabIndex={0}
                                             onClick={() => openMonth('ccl')}
                                             onKeyDown={monthTypeKeyDown('ccl')}
-                                            className="text-center px-1 py-1.5 text-slate-700 dark:text-slate-400 border border-slate-300 dark:border-slate-600 align-top text-[13px] cursor-pointer hover:bg-indigo-100/50 dark:hover:bg-slate-700/50"
+                                            className={carryInCellClass}
                                           >
                                             {formatNullableNum(m.ccl?.transferIn)}
                                           </td>
@@ -2259,7 +2479,7 @@ export default function LeaveRegisterPage({
                                             tabIndex={0}
                                             onClick={() => openMonth('ccl')}
                                             onKeyDown={monthTypeKeyDown('ccl')}
-                                            className={typeCellClass}
+                                            className={usedCellClass(m.ccl?.used, m.ccl?.locked)}
                                           >
                                             {formatDebitsPlusLocked(m.ccl?.used, m.ccl?.locked)}
                                           </td>
@@ -2268,26 +2488,13 @@ export default function LeaveRegisterPage({
                                             tabIndex={0}
                                             onClick={() => openMonth('ccl')}
                                             onKeyDown={monthTypeKeyDown('ccl')}
-                                            className={typeCellClass}
+                                            className={registerMonthBalTdClass(cclBalVariant)}
                                           >
-                                            {formatNullableNum(cclTout)}
-                                          </td>
-                                          <td
-                                            role="button"
-                                            tabIndex={0}
-                                            onClick={() => openMonth('ccl')}
-                                            onKeyDown={monthTypeKeyDown('ccl')}
-                                            className={`${typeCellClass} font-bold`}
-                                          >
-                                            <div>
-                                              {formatRegisterMonthEquationBal(
-                                                cclCr,
-                                                m.ccl?.transferIn,
-                                                m.ccl?.used,
-                                                m.ccl?.locked,
-                                                cclTout
-                                              )}
-                                            </div>
+                                            <RegisterMonthBalanceCell
+                                              transferOut={cclTout}
+                                              payPeriodBalance={cclPayPeriodBal}
+                                              isCurrentPeriod={isCurrentPeriod}
+                                            />
                                             <TypeApplyCapHint bucket={m.ccl} />
                                           </td>
                                           <td
@@ -2304,7 +2511,7 @@ export default function LeaveRegisterPage({
                                             tabIndex={0}
                                             onClick={() => openMonth('el')}
                                             onKeyDown={monthTypeKeyDown('el')}
-                                            className="text-center px-1 py-1.5 text-slate-700 dark:text-slate-400 border border-slate-300 dark:border-slate-600 align-top text-[13px] cursor-pointer hover:bg-indigo-100/50 dark:hover:bg-slate-700/50"
+                                            className={carryInCellClass}
                                           >
                                             {formatNullableNum(m.el?.transferIn)}
                                           </td>
@@ -2313,7 +2520,7 @@ export default function LeaveRegisterPage({
                                             tabIndex={0}
                                             onClick={() => openMonth('el')}
                                             onKeyDown={monthTypeKeyDown('el')}
-                                            className={typeCellClass}
+                                            className={usedCellClass(m.el?.used, m.el?.locked)}
                                           >
                                             {formatDebitsPlusLocked(m.el?.used, m.el?.locked)}
                                           </td>
@@ -2322,26 +2529,13 @@ export default function LeaveRegisterPage({
                                             tabIndex={0}
                                             onClick={() => openMonth('el')}
                                             onKeyDown={monthTypeKeyDown('el')}
-                                            className={typeCellClass}
+                                            className={registerMonthBalTdClass(elBalVariant)}
                                           >
-                                            {formatNullableNum(elTout)}
-                                          </td>
-                                          <td
-                                            role="button"
-                                            tabIndex={0}
-                                            onClick={() => openMonth('el')}
-                                            onKeyDown={monthTypeKeyDown('el')}
-                                            className={`${typeCellClass} font-bold`}
-                                          >
-                                            <div>
-                                              {formatRegisterMonthEquationBal(
-                                                elCr,
-                                                m.el?.transferIn,
-                                                m.el?.used,
-                                                m.el?.locked,
-                                                elTout
-                                              )}
-                                            </div>
+                                            <RegisterMonthBalanceCell
+                                              transferOut={elTout}
+                                              payPeriodBalance={elPayPeriodBal}
+                                              isCurrentPeriod={isCurrentPeriod}
+                                            />
                                             <TypeApplyCapHint bucket={m.el} />
                                           </td>
                                         </tr>
@@ -2447,7 +2641,7 @@ export default function LeaveRegisterPage({
                 <p className="text-[11px] font-medium text-indigo-700 dark:text-indigo-300 mt-1">
                   {monthModal.registerFocus === 'all' && 'View: all leave types'}
                   {monthModal.registerFocus === 'cl' && 'View: CL — used vs locked split below'}
-                  {monthModal.registerFocus === 'ccl' && 'View: CCL — split summary below'}
+                  {monthModal.registerFocus === 'ccl' && 'View: CCL — used vs locked split below'}
                   {monthModal.registerFocus === 'el' && 'View: EL — split summary below'}
                 </p>
               </div>
@@ -2508,23 +2702,45 @@ export default function LeaveRegisterPage({
                   </div>
                   )}
 
-                  {monthModal.registerFocus === 'ccl' && monthModal.monthRow && (
-                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/40 px-3 py-2.5 text-xs text-slate-700 dark:text-slate-200">
-                      <p className="font-semibold text-slate-900 dark:text-slate-100 mb-1">CCL — table “Used” = approved + pending</p>
-                      <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 font-mono tabular-nums">
-                        <dt className="text-slate-500">Approved (used)</dt>
-                        <dd>{formatNullableNum(monthModal.monthRow.ccl?.used)}</dd>
-                        <dt className="text-slate-500">Pending lock</dt>
-                        <dd>{formatNullableNum(monthModal.monthRow.ccl?.locked)}</dd>
-                        <dt className="text-slate-500 font-semibold">Combined</dt>
-                        <dd className="font-semibold">
-                          {formatDebitsPlusLocked(monthModal.monthRow.ccl?.used, monthModal.monthRow.ccl?.locked)}
-                        </dd>
-                      </dl>
-                      <p className="text-[10px] text-slate-500 mt-2 leading-snug">
-                        Line-level pending vs approved for CCL is not in the register audit API yet; use the transaction list below for ledger movements.
+                  {monthModal.registerFocus === 'ccl' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMonthModal((prev) =>
+                          prev ? { ...prev, auditView: prev.auditView === 'used' ? 'none' : 'used' } : null
+                        )
+                      }
+                      className={`text-left rounded-lg border px-3 py-2 ${
+                        monthModal.auditView === 'used'
+                          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                          : 'border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      <p className="text-[11px] text-slate-500">Used (approved) audit</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        {formatNum(monthModal.cclUsedAudit.reduce((s, a) => s + (Number(a?.contributedDays) || 0), 0))}
                       </p>
-                    </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMonthModal((prev) =>
+                          prev ? { ...prev, auditView: prev.auditView === 'locked' ? 'none' : 'locked' } : null
+                        )
+                      }
+                      className={`text-left rounded-lg border px-3 py-2 ${
+                        monthModal.auditView === 'locked'
+                          ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20'
+                          : 'border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      <p className="text-[11px] text-slate-500">Locked (in-flight) audit</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        {formatNum(monthModal.cclLockedAudit.reduce((s, a) => s + (Number(a?.contributedDays) || 0), 0))}
+                      </p>
+                    </button>
+                  </div>
                   )}
 
                   {monthModal.registerFocus === 'el' && monthModal.monthRow && (
@@ -2546,7 +2762,10 @@ export default function LeaveRegisterPage({
                     </div>
                   )}
 
-                  {(monthModal.registerFocus === 'all' || monthModal.registerFocus === 'cl') && monthModal.auditView !== 'none' && (
+                  {(monthModal.registerFocus === 'all' ||
+                    monthModal.registerFocus === 'cl' ||
+                    monthModal.registerFocus === 'ccl') &&
+                    monthModal.auditView !== 'none' && (
                     <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
                       <table className={`w-full ${isSuperadmin ? 'text-xs' : 'text-sm'}`}>
                         <thead>
@@ -2558,10 +2777,17 @@ export default function LeaveRegisterPage({
                           </tr>
                         </thead>
                         <tbody>
-                          {(monthModal.auditView === 'used' ? monthModal.clUsedAudit : monthModal.clLockedAudit).map((a, idx) => (
+                          {(monthModal.auditView === 'used'
+                            ? monthModal.registerFocus === 'ccl'
+                              ? monthModal.cclUsedAudit
+                              : monthModal.clUsedAudit
+                            : monthModal.registerFocus === 'ccl'
+                              ? monthModal.cclLockedAudit
+                              : monthModal.clLockedAudit
+                          ).map((a, idx) => (
                             <tr key={`${a.leaveId || 'leave'}-${idx}`} className="border-b border-slate-100 dark:border-slate-800/80">
                               <td className={isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3'}>
-                                <div className="font-medium">{a.leaveType || 'CL'}</div>
+                                <div className="font-medium">{a.leaveType || (monthModal.registerFocus === 'ccl' ? 'CCL' : 'CL')}</div>
                                 <div className="text-[10px] text-slate-500">{a.leaveId || '—'}</div>
                               </td>
                               <td className={isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3'}>
@@ -2571,7 +2797,15 @@ export default function LeaveRegisterPage({
                               <td className={`text-right font-mono tabular-nums font-semibold ${isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3'}`}>{formatNum(a.contributedDays)}</td>
                             </tr>
                           ))}
-                          {(monthModal.auditView === 'used' ? monthModal.clUsedAudit.length === 0 : monthModal.clLockedAudit.length === 0) && (
+                          {(monthModal.auditView === 'used'
+                            ? (monthModal.registerFocus === 'ccl'
+                                ? monthModal.cclUsedAudit
+                                : monthModal.clUsedAudit
+                              ).length === 0
+                            : (monthModal.registerFocus === 'ccl'
+                                ? monthModal.cclLockedAudit
+                                : monthModal.clLockedAudit
+                              ).length === 0) && (
                             <tr>
                               <td colSpan={4} className="py-4 text-center text-xs text-slate-500">
                                 No leave requests contributed in this bucket.
@@ -2926,7 +3160,7 @@ export default function LeaveRegisterPage({
                 {registerExportFormat === 'xlsx' ? (
                   <>
                     Choose leave types for separate worksheets (one sheet per type), plus an &quot;About export&quot;
-                    sheet. On-screen grid per month: Cr, Carried in, Used, Transfer (out), Bal (Cr + in − used − out). Excel: policy credited, taken, closing balance.
+                    sheet. On-screen grid per month: Cr, Carried in, Used, Bal (closed = transfer-out, or red negative if over-used; current = pool balance). Excel: policy credited, taken, closing balance.
                   </>
                 ) : (
                   <>

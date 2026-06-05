@@ -18,7 +18,13 @@ const {
     assertCanManageHolidayRecord,
     normalizeHolidayWritePayload,
     canViewHolidayRecord,
+    lockHolidayScopeOnUpdate,
 } = require('../utils/holidayAccess');
+const {
+    cleanupHolidayRosterBeforeReapply,
+    applyHolidayRosterWithProgress,
+    mergeDateRangesForUpdate,
+} = require('../services/holidayRosterApplyService');
 const {
     normalizeMappingList,
     mappingToEmployeeOrConditions,
@@ -29,17 +35,14 @@ const {
 const {
     normalizeRosterApplyOptions,
     getAttendanceProcessingMode,
-    buildRosterEntriesForHoliday,
 } = require('../utils/holidayRosterApply');
-
-// Normalize to YYYY-MM-DD from a Date or date string (avoids timezone shifting calendar day)
-function toDateString(d) {
-    const x = new Date(d);
-    const y = x.getUTCFullYear();
-    const m = String(x.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(x.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-}
+const { validateHolidayDateConflicts } = require('../utils/holidayDateConflictValidation');
+const {
+    parseHolidayCalendarDate,
+    getHolidayDateRangeStrings,
+    toHolidayDateString,
+    getHolidayYearMongoFilter,
+} = require('../utils/holidayCalendarDates');
 
 function resolveHistoryActor(reqUser, actor) {
     const userId = actor?._id || reqUser?._id || reqUser?.userId || null;
@@ -73,16 +76,7 @@ async function logHolidayHistoryMany(entries) {
 }
 
 function getDateRangeStrings(startInput, endInput) {
-    const startStr = toDateString(startInput);
-    const endStr = endInput ? toDateString(endInput) : startStr;
-    const dates = [];
-    let current = new Date(startStr + 'T12:00:00Z');
-    const stop = new Date(endStr + 'T12:00:00Z');
-    while (current <= stop) {
-        dates.push(toDateString(current));
-        current.setUTCDate(current.getUTCDate() + 1);
-    }
-    return dates;
+    return getHolidayDateRangeStrings(startInput, endInput);
 }
 
 async function resolveEmployeesForHolidayScope({ scope, groupId, applicableTo, targetGroupIds, divisionMapping }) {
@@ -200,7 +194,7 @@ async function guessShiftFromWeekdayPattern(employeeNumber, dateStr) {
     const targetWeekday = new Date(`${dateStr}T00:00:00Z`).getUTCDay();
     const lookbackStart = new Date(`${dateStr}T00:00:00Z`);
     lookbackStart.setUTCDate(lookbackStart.getUTCDate() - 63);
-    const fromStr = toDateString(lookbackStart);
+    const fromStr = toHolidayDateString(lookbackStart);
 
     const candidates = await PreScheduledShift.find({
         employeeNumber,
@@ -321,10 +315,7 @@ exports.getAllHolidaysAdmin = async (req, res) => {
         if (year) {
             query = {
                 ...(includeInactive ? {} : { isActive: { $ne: false } }),
-                $or: [
-                    { date: { $gte: new Date(`${year}-01-01`), $lte: new Date(`${year}-12-31`) } },
-                    { endDate: { $gte: new Date(`${year}-01-01`), $lte: new Date(`${year}-12-31`) } }
-                ]
+                ...getHolidayYearMongoFilter(year),
             };
         }
 
@@ -416,12 +407,7 @@ exports.getMyHolidays = async (req, res) => {
         }
 
         const { year } = req.query;
-        const dateQuery = year ? {
-            $or: [
-                { date: { $gte: new Date(`${year}-01-01`), $lte: new Date(`${year}-12-31`) } },
-                { endDate: { $gte: new Date(`${year}-01-01`), $lte: new Date(`${year}-12-31`) } }
-            ]
-        } : {};
+        const dateQuery = year ? getHolidayYearMongoFilter(year) : {};
 
         // 1. Identify User's Group
         // Find groups that match user's division + department + custom employee group (if configured).
@@ -641,10 +627,13 @@ exports.saveHoliday = async (req, res) => {
     try {
         const actor = await loadHolidayActor(req);
         const normalized = normalizeHolidayWritePayload(actor, req.body);
-        const {
+        let {
             _id, name, date, endDate, type, isMaster, scope, applicableTo, targetGroupIds, groupId,
             overridesMasterId, description, rosterFillMode, divisionMapping,
         } = normalized;
+
+        date = parseHolidayCalendarDate(date);
+        endDate = endDate ? parseHolidayCalendarDate(endDate) : null;
 
         let rosterApplyMode = 'FULL_DAY';
         let halfDayType = null;
@@ -667,6 +656,30 @@ exports.saveHoliday = async (req, res) => {
         }
 
         let createdMessage = null;
+        const streamProgress = Boolean(req.body?.streamProgress);
+        let existingHolidaySnapshot = null;
+
+        if (_id) {
+            const existingRecord = await Holiday.findById(_id);
+            if (!existingRecord) return res.status(404).json({ success: false, message: 'Holiday not found' });
+            if (existingRecord.isActive === false) {
+                return res.status(400).json({ success: false, message: 'Cannot update a deactivated holiday' });
+            }
+            try {
+                assertCanManageHolidayRecord(actor, existingRecord);
+            } catch (accessErr) {
+                return res.status(accessErr.statusCode || 403).json({ success: false, message: accessErr.message });
+            }
+            existingHolidaySnapshot = existingRecord.toObject();
+            const locked = lockHolidayScopeOnUpdate(existingRecord);
+            scope = locked.scope;
+            groupId = locked.groupId;
+            applicableTo = locked.applicableTo;
+            targetGroupIds = locked.targetGroupIds;
+            divisionMapping = locked.divisionMapping;
+            isMaster = locked.isMaster;
+            overridesMasterId = locked.overridesMasterId;
+        }
 
         // Validation
         if (scope === 'GROUP' && !groupId) {
@@ -676,47 +689,50 @@ exports.saveHoliday = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Employee scope mapping is required for this holiday' });
         }
 
+        const isBulkGroupCreate =
+            !_id
+            && scope === 'GLOBAL'
+            && applicableTo === 'SPECIFIC_GROUPS'
+            && targetGroupIds
+            && targetGroupIds.length > 0;
+
+        const dateConflictCheck = await validateHolidayDateConflicts({
+            _id,
+            date,
+            endDate,
+            scope,
+            applicableTo,
+            targetGroupIds,
+            groupId,
+            overridesMasterId,
+            isBulkGroupCreate,
+        });
+        if (!dateConflictCheck.ok) {
+            return res.status(409).json({
+                success: false,
+                message: dateConflictCheck.message,
+                conflicts: dateConflictCheck.conflicts,
+            });
+        }
+
         let holiday;
         // --- UPDATE LOGIC ---
         if (_id) {
             holiday = await Holiday.findById(_id);
             if (!holiday) return res.status(404).json({ success: false, message: 'Holiday not found' });
-            if (holiday.isActive === false) return res.status(400).json({ success: false, message: 'Cannot update a deactivated holiday' });
 
-            try {
-                assertCanManageHolidayRecord(actor, holiday);
-            } catch (accessErr) {
-                return res.status(accessErr.statusCode || 403).json({ success: false, message: accessErr.message });
-            }
+            const isNowGlobal = holiday.scope === 'GLOBAL';
 
-            if (!canManageGlobal(actor) && (scope === 'GLOBAL' || isMaster)) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'Only users with global holiday management can modify org-wide holidays',
-                });
-            }
-
-            const wasGlobal = holiday.scope === 'GLOBAL';
-            const isNowGlobal = scope === 'GLOBAL';
-
-            // Update the main holiday
+            // Scope/group cannot change on update — only event details and day coverage
             holiday.name = name;
             holiday.date = date;
             holiday.endDate = endDate || null;
             holiday.type = type;
-            holiday.isMaster = isMaster;
-            holiday.scope = scope;
-            holiday.applicableTo = applicableTo;
-            holiday.targetGroupIds = applicableTo === 'SPECIFIC_GROUPS' ? targetGroupIds : [];
-            holiday.groupId = scope === 'GROUP' ? groupId : undefined;
-            holiday.divisionMapping = scope === 'MAPPING' ? divisionMapping : [];
-            holiday.overridesMasterId = overridesMasterId;
             holiday.description = description;
             holiday.rosterApplyMode = rosterApplyMode;
             holiday.halfDayType = halfDayType;
             holiday.multiShiftScope = multiShiftScope;
 
-            // If updating a Group Copy (that has a source), break the sync
             if (holiday.sourceHolidayId) {
                 holiday.isSynced = false;
             }
@@ -884,11 +900,11 @@ exports.saveHoliday = async (req, res) => {
             }
         }
 
-        const effectiveScope = scope;
-        const effectiveApplicableTo = applicableTo || 'ALL';
-        const effectiveGroupId = scope === 'GROUP' ? groupId : undefined;
-        const effectiveTargetGroupIds = effectiveApplicableTo === 'SPECIFIC_GROUPS' ? (targetGroupIds || []) : [];
-        const effectiveDivisionMapping = scope === 'MAPPING' ? divisionMapping : [];
+        const effectiveScope = holiday.scope;
+        const effectiveApplicableTo = holiday.applicableTo || 'ALL';
+        const effectiveGroupId = holiday.scope === 'GROUP' ? holiday.groupId : undefined;
+        const effectiveTargetGroupIds = effectiveApplicableTo === 'SPECIFIC_GROUPS' ? (holiday.targetGroupIds || []) : [];
+        const effectiveDivisionMapping = holiday.scope === 'MAPPING' ? holiday.divisionMapping : [];
         const matchedEmployees = await resolveEmployeesForHolidayScope({
             scope: effectiveScope,
             groupId: effectiveGroupId,
@@ -897,7 +913,44 @@ exports.saveHoliday = async (req, res) => {
             divisionMapping: effectiveDivisionMapping,
         });
         const holidayDates = getDateRangeStrings(date, endDate);
-        const rosterEntries = await buildRosterEntriesForHoliday({
+
+        const writeProgress = (payload) => {
+            if (streamProgress) {
+                res.write(`${JSON.stringify(payload)}\n`);
+            }
+        };
+
+        if (streamProgress) {
+            res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.status(200);
+            writeProgress({
+                phase: 'saved',
+                completed: 0,
+                total: matchedEmployees.length,
+            });
+        }
+
+        if (existingHolidaySnapshot) {
+            const cleanupDates = mergeDateRangesForUpdate(existingHolidaySnapshot, holiday);
+            writeProgress({ phase: 'cleanup', completed: 0, total: matchedEmployees.length });
+            await cleanupHolidayRosterBeforeReapply({
+                holiday: { ...existingHolidaySnapshot, _id: holiday._id },
+                dates: cleanupDates,
+                userId: req.user.userId,
+                resolveEmployeesForHolidayScope,
+                guessShiftFromWeekdayPattern,
+                applyRosterEntriesAndSync,
+                onProgress: (p) => writeProgress({
+                    phase: 'cleanup',
+                    completed: p.completed,
+                    total: matchedEmployees.length,
+                }),
+            });
+        }
+
+        await applyHolidayRosterWithProgress({
             employeeNumbers: matchedEmployees,
             dates: holidayDates,
             holidayName: name,
@@ -907,20 +960,42 @@ exports.saveHoliday = async (req, res) => {
             halfDayType,
             multiShiftScope,
             guessShiftFromWeekdayPattern,
+            userId: req.user.userId,
+            applyRosterEntriesAndSync,
+            onProgress: (p) => writeProgress({
+                phase: 'apply',
+                completed: p.completed,
+                total: p.total,
+            }),
         });
-        await applyRosterEntriesAndSync(rosterEntries, req.user.userId);
 
-        res.status(200).json({
+        const resultPayload = {
             success: true,
             data: holiday,
             affectedEmployees: matchedEmployees.length,
-            ...(createdMessage ? { message: createdMessage } : {})
-        });
+            ...(createdMessage ? { message: createdMessage } : {}),
+        };
+
+        if (streamProgress) {
+            writeProgress({ phase: 'done', ...resultPayload });
+            res.end();
+        } else {
+            res.status(200).json(resultPayload);
+        }
 
     } catch (error) {
         const status = error.statusCode && error.statusCode >= 400 && error.statusCode < 600
             ? error.statusCode
             : 500;
+        if (req.body?.streamProgress && res.headersSent) {
+            res.write(`${JSON.stringify({
+                phase: 'error',
+                success: false,
+                message: error.message || 'Error saving holiday',
+            })}\n`);
+            res.end();
+            return;
+        }
         res.status(status).json({
             success: false,
             message: error.message || 'Error saving holiday',

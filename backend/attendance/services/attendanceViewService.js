@@ -9,6 +9,7 @@ const { calculateMonthlySummary } = require('./summaryCalculationService');
 const { createISTDate, extractISTComponents, getAllDatesInRange } = require('../../shared/utils/dateUtils');
 const dateCycleService = require('../../leaves/services/dateCycleService');
 const { filterMonthlySummaryForEmploymentBounds } = require('./employmentBoundsSummaryFilter');
+const { buildAttendanceLeaveInfoForDate } = require('../../shared/utils/leaveDayRangeUtils');
 
 function getSegmentCumulativeExtraHours(record) {
   const shifts = Array.isArray(record?.shifts) ? record.shifts : [];
@@ -100,7 +101,6 @@ exports.getCalendarViewData = async (employee, year, month) => {
     const leaveRangeEnd = extractISTComponents(leave.toDate).dateStr;
     const leaveDays = getAllDatesInRange(leaveRangeStart, leaveRangeEnd);
 
-    let dayCounter = 1;
     for (const dateStr of leaveDays) {
       if (dateStr >= startDateStr && dateStr <= endDateStr) {
         let approvedBy = null;
@@ -116,25 +116,15 @@ exports.getCalendarViewData = async (employee, year, month) => {
           approvedAt = leave.approvals.hod.approvedAt;
         }
 
-        leaveMap[dateStr] = {
-          leaveId: leave._id,
-          leaveType: leave.leaveType,
-          isHalfDay: leave.isHalfDay,
-          halfDayType: leave.halfDayType,
-          purpose: leave.purpose,
-          fromDate: leave.fromDate,
-          toDate: leave.toDate,
-          numberOfDays: leave.numberOfDays,
-          dayInLeave: dayCounter,
-          appliedAt: leave.appliedAt || leave.createdAt,
+        const entry = buildAttendanceLeaveInfoForDate(leave, dateStr, {
           approvedBy: approvedBy ? {
             name: approvedBy.name || approvedBy.email,
-            email: approvedBy.email
+            email: approvedBy.email,
           } : null,
-          approvedAt: approvedAt,
-        };
+          approvedAt,
+        });
+        if (entry) leaveMap[dateStr] = entry;
       }
-      dayCounter++;
     }
   });
 
@@ -354,7 +344,7 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
     ],
     isActive: true,
   })
-    .select('employeeId fromDate toDate leaveType isHalfDay halfDayType numberOfDays')
+    .select('employeeId fromDate toDate leaveType purpose isHalfDay halfDayType fromIsHalfDay fromHalfDayType toIsHalfDay toHalfDayType numberOfDays appliedAt createdAt')
     .populate('employeeId', 'emp_no')
     .lean();
 
@@ -382,13 +372,8 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
     const leaveRangeEnd = extractISTComponents(leave.toDate).dateStr;
     for (const dateStr of getAllDatesInRange(leaveRangeStart, leaveRangeEnd)) {
       if (dateStr >= startYmd && dateStr <= endYmd) {
-        leaveMapByEmployee[empNo][dateStr] = {
-          leaveId: leave._id,
-          leaveType: leave.leaveType,
-          isHalfDay: leave.isHalfDay,
-          halfDayType: leave.halfDayType,
-          numberOfDays: leave.numberOfDays,
-        };
+        const entry = buildAttendanceLeaveInfoForDate(leave, dateStr);
+        if (entry) leaveMapByEmployee[empNo][dateStr] = entry;
       }
     }
   });

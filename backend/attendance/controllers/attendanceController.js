@@ -22,6 +22,14 @@ const {
 } = require('../../overtime/services/esiLeaveOtService');
 const { assertEmployeeNumberDateEditable } = require('../../shared/services/payrollPeriodLockService');
 const { reprocessAttendanceForEmployeeDate } = require('../services/attendanceSyncService');
+const {
+  resolveShiftSegment,
+  removeOutLogsForSegment,
+  removeInLogsForSegment,
+  cleanupCompetingManualOuts,
+  buildOutTimeReprocessOptions,
+  buildInTimeReprocessOptions,
+} = require('../services/attendanceManualEditService');
 const { EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 
 /**
@@ -705,20 +713,12 @@ exports.updateOutTime = async (req, res) => {
       });
     }
 
-    // Determine which shift to update
-    let shiftSegment;
-
-    if (shiftRecordId) {
-      shiftSegment = attendanceRecord.shifts.id(shiftRecordId);
-      if (!shiftSegment) {
-        return res.status(404).json({
-          success: false,
-          message: 'Shift segment not found',
-        });
-      }
-    } else {
-      // Default to the last shift if not specified
-      shiftSegment = attendanceRecord.shifts.find(s => !s.outTime) || attendanceRecord.shifts[attendanceRecord.shifts.length - 1];
+    const shiftSegment = resolveShiftSegment(attendanceRecord, shiftRecordId);
+    if (!shiftSegment) {
+      return res.status(404).json({
+        success: false,
+        message: shiftRecordId ? 'Shift segment not found' : 'No shift segment available to update',
+      });
     }
 
     // Check if shift has inTime
@@ -758,33 +758,30 @@ exports.updateOutTime = async (req, res) => {
       outTimeDate.setDate(outTimeDate.getDate() + 1);
     }
     
-    // --- NEW APPROACH: Add Manual Log and Trigger Full Re-Processing ---
     const punchDateStr = attendanceRecord.date;
-    const oldOutTime = shiftSegment.outTime;
-    
-    // 1. Delete the PREVIOUS manual log for this specific segment (if it was manual)
-    // We use the exact timestamp to avoid wiping out manual edits on OTHER segments of the same day
-    if (oldOutTime) {
-      await AttendanceRawLog.deleteOne({
-        employeeNumber: attendanceRecord.employeeNumber,
-        timestamp: oldOutTime,
-        type: 'OUT'
-      });
-    }
 
-    // 2. Create the new manual log
+    // 1. Remove prior OUT raw log(s) for this segment (punch id, exact, or nearby manual)
+    await removeOutLogsForSegment(attendanceRecord.employeeNumber, shiftSegment, punchDateStr);
+
+    // 2. Create the new manual OUT log
     await AttendanceRawLog.create({
       employeeNumber: attendanceRecord.employeeNumber,
       timestamp: outTimeDate,
       type: 'OUT',
       source: 'manual',
-      date: punchDateStr
+      date: punchDateStr,
     });
 
-    // 3. Set isEdited to true as requested (now used for UI tracking only, not locking)
+    // 3. Remove stale manual OUT punches that could steal pairing on reprocess
+    await cleanupCompetingManualOuts(
+      attendanceRecord.employeeNumber,
+      shiftSegment.inTime,
+      punchDateStr,
+      outTimeDate
+    );
+
     attendanceRecord.isEdited = true;
 
-    // 4. Update history
     attendanceRecord.editHistory.push({
       action: 'OUT_TIME_UPDATE',
       modifiedBy: req.user._id,
@@ -793,13 +790,13 @@ exports.updateOutTime = async (req, res) => {
       details: `Out time updated manually to ${outTimeDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}. Triggering full re-processing.`
     });
 
-    // 5. Save the flags and history first
     await attendanceRecord.save();
 
-    // 6. Trigger full system re-processing (handles multi-shift splitting, status, etc.)
-    const manualOverrides = {
-      [shiftSegment.inTime.toISOString()]: outTimeDate
-    };
+    const { manualOverrides } = buildOutTimeReprocessOptions(
+      attendanceRecord,
+      shiftSegment,
+      outTimeDate
+    );
 
     const reprocessResult = await reprocessAttendanceForEmployeeDate(
       attendanceRecord.employeeNumber,
@@ -905,19 +902,17 @@ exports.assignShift = async (req, res) => {
       await confusedShift.save();
     }
 
-    // Update roster tracking for manual assignment
-    const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
-    const rosterRecord = await PreScheduledShift.findOne({
-      employeeNumber: employeeNumber.toUpperCase(),
-      date: date
-    });
-
-    if (rosterRecord) {
-      const isDeviation = rosterRecord.shiftId && rosterRecord.shiftId.toString() !== shiftId.toString();
-      rosterRecord.actualShiftId = shiftId;
-      rosterRecord.isDeviation = !!isDeviation;
-      rosterRecord.attendanceDailyId = attendanceRecord._id;
-      await rosterRecord.save();
+    // Multi-shift primary override: do NOT create/update PreScheduledShift.
+    // Instead, force the shift on the selected segment during reprocess.
+    // This makes \"Change shift\" act as the primary for that segment/day in multi-shift mode.
+    let segmentIndex = 0;
+    if (shiftRecordId && attendanceRecord.shifts?.length) {
+      const sorted = [...attendanceRecord.shifts].sort((a, b) => {
+        const n = (a.shiftNumber || 0) - (b.shiftNumber || 0);
+        if (n !== 0) return n;
+        return new Date(a.inTime || 0) - new Date(b.inTime || 0);
+      });
+      segmentIndex = Math.max(0, sorted.findIndex((s) => String(s._id) === String(shiftRecordId)));
     }
 
     // Mark as manually edited
@@ -941,17 +936,22 @@ exports.assignShift = async (req, res) => {
     // 2. Save flags and history
     await attendanceRecord.save();
 
-    // 3. Trigger full system re-processing
-    // Since we updated rosterRecord.actualShiftId above, the engine will pick it up
+    // 3. Trigger full system re-processing with a forced shift override (segment-level)
     const reprocessResult = await reprocessAttendanceForEmployeeDate(
       attendanceRecord.employeeNumber,
-      attendanceRecord.date
+      attendanceRecord.date,
+      {
+        shiftEdit: {
+          segmentIndex,
+          shiftId,
+        },
+      }
     );
 
     if (!reprocessResult.success) {
       return res.status(500).json({
         success: false,
-        message: 'Shift assigned in roster but re-processing failed',
+        message: 'Shift override saved but re-processing failed',
         error: reprocessResult.error
       });
     }
@@ -1131,18 +1131,19 @@ exports.updateInTime = async (req, res) => {
       });
     }
 
-    // Validate inTime format (YYYY-MM-DDTHH:mm:ss.sssZ or similar ISO string)
+    if (!req.user || (req.user.role !== 'hr' && req.user.role !== 'sub_admin' && req.user.role !== 'super_admin' && req.user.role !== 'superadmin' && req.user.role !== 'admin')) {
+      return res.status(403).json({
+        success: false,
+        message: 'Permission denied. Only HR and Admins can edit attendance details.',
+      });
+    }
+
     if (!inTime) {
       return res.status(400).json({
         success: false,
         message: 'In Time is required',
       });
     }
-
-    // Get attendance record
-    const AttendanceDaily = require('../model/AttendanceDaily');
-    const { reprocessAttendanceForEmployeeDate } = require('../services/attendanceProcessingService');
-    const AttendanceRawLog = require('../model/AttendanceRawLog');
 
     const attendanceRecord = await AttendanceDaily.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
@@ -1157,56 +1158,63 @@ exports.updateInTime = async (req, res) => {
     }
     assertAttendanceDailyUnlocked(attendanceRecord, employeeNumber, date);
 
-    // Parse new In Time
-    const newInTime = new Date(inTime);
+    if (!attendanceRecord.shifts || attendanceRecord.shifts.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No shifts found for this attendance record',
+      });
+    }
 
-    // Mark as manual
+    const shiftSegment = resolveShiftSegment(attendanceRecord, shiftRecordId);
+    if (!shiftSegment) {
+      return res.status(404).json({
+        success: false,
+        message: shiftRecordId ? 'Shift segment not found' : 'No shift segment available to update',
+      });
+    }
+
+    const newInTime = new Date(inTime);
+    if (isNaN(newInTime.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid in time format',
+      });
+    }
+
     if (!attendanceRecord.source) attendanceRecord.source = [];
     if (!attendanceRecord.source.includes('manual')) {
       attendanceRecord.source.push('manual');
     }
 
-    // --- NEW APPROACH: Add Manual Log and Trigger Full Re-Processing ---
     const punchDateStr = attendanceRecord.date;
-    const oldInTime = shiftSegment.inTime;
 
-    // 1. Delete the PREVIOUS manual log for this specific segment (if it was manual)
-    if (oldInTime) {
-      await AttendanceRawLog.deleteOne({
-        employeeNumber: attendanceRecord.employeeNumber,
-        timestamp: oldInTime,
-        type: 'IN'
-      });
-    }
+    await removeInLogsForSegment(attendanceRecord.employeeNumber, shiftSegment, punchDateStr);
 
-    // 2. Create the new manual log
     await AttendanceRawLog.create({
       employeeNumber: attendanceRecord.employeeNumber,
       timestamp: newInTime,
       type: 'IN',
       source: 'manual',
-      date: punchDateStr
+      date: punchDateStr,
     });
 
-    // 3. Set isEdited to true (now used for UI tracking only, not locking)
     attendanceRecord.isEdited = true;
 
-    // 4. Update history
     attendanceRecord.editHistory.push({
       action: 'IN_TIME_UPDATE',
       modifiedBy: req.user?._id || req.user?.userId,
       modifiedByName: req.user.name,
       modifiedAt: new Date(),
-      details: `In time updated manually to ${newInTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}. Triggering full re-processing.`
+      details: `In time updated manually to ${newInTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}. Triggering full re-processing.`,
     });
 
-    // 5. Save flags and history
     await attendanceRecord.save();
 
-    // 6. Trigger full system re-processing
-    const manualOverrides = {
-      [newInTime.toISOString()]: shiftSegment.outTime
-    };
+    const { manualOverrides } = buildInTimeReprocessOptions(
+      attendanceRecord,
+      shiftSegment,
+      newInTime
+    );
 
     const reprocessResult = await reprocessAttendanceForEmployeeDate(
       attendanceRecord.employeeNumber,

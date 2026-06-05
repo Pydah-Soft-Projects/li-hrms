@@ -3241,6 +3241,7 @@ export default function LoansPage() {
             defaultInterestRate={resolvedLoanSettings?.interestRate ?? loanSettings?.settings?.interestRate ?? 0}
             isInterestApplicable={resolvedLoanSettings?.isInterestApplicable ?? loanSettings?.settings?.isInterestApplicable ?? false}
             payPeriodOptions={finalApprovalPayPeriodOptions}
+            presentPayrollMonthKey={presentPayPeriod?.payrollMonthKey}
           />
         )}
 

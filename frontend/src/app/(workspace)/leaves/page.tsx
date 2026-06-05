@@ -29,6 +29,16 @@ import {
 } from '@/lib/leaveApplyApprovedRecords';
 import LeaveApplyDateCheckBanner from '@/components/leave/LeaveApplyDateCheckBanner';
 import {
+  calculateLeaveNumberOfDays,
+  checkDayHalfCoverageConflict,
+  expandLeaveToDailySegments,
+  getLeaveDetailDisplay,
+  isSameCalendarDay,
+  normalizeLeaveBoundaries,
+  type LeaveBoundaryInput,
+} from '@/lib/leaveDayRange';
+import LeaveDayPortionControls from '@/components/leave/LeaveDayPortionControls';
+import {
   buildStatusLabelMap,
   formatLeaveStatusLabel as fmtLeaveStatus,
   formatOdStatusLabel as fmtOdStatus,
@@ -372,6 +382,10 @@ interface LeaveApplication {
   numberOfDays: number;
   isHalfDay?: boolean;
   halfDayType?: string;
+  fromIsHalfDay?: boolean;
+  fromHalfDayType?: string;
+  toIsHalfDay?: boolean;
+  toHalfDayType?: string;
   purpose: string;
   contactNumber?: string;
   status: string;
@@ -669,37 +683,47 @@ const clampSplitsToRange = (leave: LeaveApplication, splits: LeaveSplit[]) => {
   );
 };
 
-const buildDateRange = (fromDate: string, toDate: string, isHalfDay?: boolean, halfDayType?: string | null) => {
-  const dates: LeaveSplit[] = [];
-  const start = parseDateOnly(fromDate);
-  const end = parseDateOnly(toDate);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(0, 0, 0, 0);
-
-  const current = new Date(start);
-  while (current <= end) {
-    const isSingleHalf = isHalfDay && start.getTime() === end.getTime();
-    dates.push({
-      date: toISODate(current),
-      leaveType: '',
-      status: 'approved',
-      isHalfDay: Boolean(isSingleHalf),
-      halfDayType: isSingleHalf ? (halfDayType as any) || 'first_half' : null,
-      numberOfDays: isSingleHalf ? 0.5 : 1,
-    });
-    current.setDate(current.getDate() + 1);
-  }
-  return dates;
+const buildDateRange = (input: LeaveBoundaryInput & { fromDate: string; toDate: string }) => {
+  return expandLeaveToDailySegments(input).map((seg) => ({
+    date: seg.dateStr,
+    leaveType: '',
+    status: 'approved' as const,
+    isHalfDay: seg.isHalfDay,
+    halfDayType: seg.halfDayType,
+    numberOfDays: seg.numberOfDays,
+  }));
 };
 
-// Compute requested leave days from fromDate, toDate, isHalfDay (same logic as backend)
-const getRequestedDays = (fromDate: string, toDate: string, isHalfDay: boolean): number => {
-  if (!fromDate || !toDate) return 0;
-  if (isHalfDay) return 0.5;
-  const from = parseDateOnly(fromDate);
-  const to = parseDateOnly(toDate);
-  const diffTime = Math.abs(to.getTime() - from.getTime());
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+const getRequestedDays = (input: LeaveBoundaryInput): number => {
+  if (!input.fromDate || !input.toDate) return 0;
+  return calculateLeaveNumberOfDays(input);
+};
+
+const leaveBoundaryFromForm = (form: {
+  fromDate: string;
+  toDate: string;
+  isHalfDay: boolean;
+  halfDayType: 'first_half' | 'second_half' | null;
+  fromIsHalfDay?: boolean;
+  toIsHalfDay?: boolean;
+}): LeaveBoundaryInput => {
+  const to = form.toDate || form.fromDate;
+  const same = isSameCalendarDay(form.fromDate, to);
+  if (same) {
+    const half = form.isHalfDay || Boolean(form.fromIsHalfDay);
+    return {
+      fromDate: form.fromDate,
+      toDate: to,
+      isHalfDay: half,
+      halfDayType: half ? form.halfDayType : null,
+    };
+  }
+  return {
+    fromDate: form.fromDate,
+    toDate: to,
+    fromIsHalfDay: Boolean(form.fromIsHalfDay),
+    toIsHalfDay: Boolean(form.toIsHalfDay),
+  };
 };
 
 const ACTIVE_REQUEST_STATUSES = new Set([
@@ -719,52 +743,61 @@ const normalizeRequestDate = (value: unknown) => {
   return str.length >= 10 ? str.slice(0, 10) : str;
 };
 
+const expandRequestToSegments = (item: {
+  fromDate?: string;
+  toDate?: string;
+  isHalfDay?: boolean;
+  halfDayType?: string | null;
+  fromIsHalfDay?: boolean;
+  toIsHalfDay?: boolean;
+}) => {
+  const from = normalizeRequestDate(item?.fromDate || '');
+  const to = normalizeRequestDate(item?.toDate || item?.fromDate || '');
+  if (!from || !to) return [];
+  return expandLeaveToDailySegments({
+    fromDate: from,
+    toDate: to,
+    isHalfDay: item?.isHalfDay,
+    halfDayType: (item?.halfDayType as 'first_half' | 'second_half') || null,
+    fromIsHalfDay: item?.fromIsHalfDay,
+    toIsHalfDay: item?.toIsHalfDay,
+  });
+};
+
 const findActiveHalfDayConflict = (
-  existingRequests: Array<{ fromDate?: string; toDate?: string; isHalfDay?: boolean; halfDayType?: string | null; status?: string }>,
-  requested: {
-    fromDate: string;
-    toDate: string;
-    isHalfDay: boolean;
+  existingRequests: Array<{
+    fromDate?: string;
+    toDate?: string;
+    isHalfDay?: boolean;
     halfDayType?: string | null;
-    requestLabel: 'leave' | 'od';
-  }
+    fromIsHalfDay?: boolean;
+    toIsHalfDay?: boolean;
+    status?: string;
+  }>,
+  requested: LeaveBoundaryInput & { requestLabel: 'leave' | 'od' }
 ) => {
-  const requestedFrom = normalizeRequestDate(requested.fromDate);
-  const requestedTo = normalizeRequestDate(requested.toDate || requested.fromDate);
-  const requestedHalf = requested.isHalfDay ? (requested.halfDayType || 'first_half') : null;
+  const requestedSegments = expandLeaveToDailySegments(requested);
 
   for (const item of existingRequests) {
     if (!ACTIVE_REQUEST_STATUSES.has(String(item?.status || ''))) continue;
-
-    const existingFrom = normalizeRequestDate(item?.fromDate);
-    const existingTo = normalizeRequestDate(item?.toDate || item?.fromDate);
-    if (!existingFrom || !existingTo) continue;
-
-    const overlaps = existingFrom <= requestedTo && requestedFrom <= existingTo;
-    if (!overlaps) continue;
-
-    const existingIsHalfDay = Boolean(item?.isHalfDay);
-    const existingHalf = existingIsHalfDay ? (item?.halfDayType || 'first_half') : null;
-
-    if (!requested.isHalfDay) {
-      if (existingIsHalfDay) {
-        return `Cannot create full-day ${requested.requestLabel.toUpperCase()} because an active ${existingHalf === 'first_half' ? 'first-half' : 'second-half'} request already exists on this date.`;
+    const existingSegments = expandRequestToSegments(item);
+    for (const reqSeg of requestedSegments) {
+      const existSeg = existingSegments.find((e) => e.dateStr === reqSeg.dateStr);
+      if (!existSeg) continue;
+      if (
+        checkDayHalfCoverageConflict(
+          { isHalfDay: reqSeg.isHalfDay, halfDayType: reqSeg.halfDayType },
+          { isHalfDay: existSeg.isHalfDay, halfDayType: existSeg.halfDayType }
+        )
+      ) {
+        const halfLabel = (half: string | null) =>
+          half === 'second_half' ? 'second-half' : half === 'first_half' ? 'first-half' : 'full-day';
+        if (!reqSeg.isHalfDay || !existSeg.isHalfDay) {
+          return `An active ${requested.requestLabel.toUpperCase()} conflicts on ${reqSeg.dateStr} (you: ${halfLabel(reqSeg.isHalfDay ? reqSeg.halfDayType : null)}, existing: ${halfLabel(existSeg.isHalfDay ? existSeg.halfDayType : null)}).`;
+        }
+        return `An active ${halfLabel(existSeg.halfDayType)} ${requested.requestLabel.toUpperCase()} already exists on ${reqSeg.dateStr}.`;
       }
-      return `An active request already exists for the selected date(s).`;
     }
-
-    if (!existingIsHalfDay) {
-      return `A full-day active request already exists on this date, so ${requested.requestLabel.toUpperCase()} cannot be applied for a half day.`;
-    }
-
-    if (existingFrom === requestedFrom && existingTo === requestedTo) {
-      if (existingHalf === requestedHalf) {
-        return `An active ${requestedHalf === 'first_half' ? 'first-half' : 'second-half'} request already exists on this date.`;
-      }
-      continue;
-    }
-
-    return `An active request already exists for the selected date(s).`;
   }
 
   return null;
@@ -998,6 +1031,8 @@ export default function LeavesPage() {
     placeVisited: string;
     isHalfDay: boolean;
     halfDayType: 'first_half' | 'second_half' | null;
+    fromIsHalfDay: boolean;
+    toIsHalfDay: boolean;
     remarks: string;
   }>({
     leaveType: '',
@@ -1012,6 +1047,8 @@ export default function LeavesPage() {
     placeVisited: '',
     isHalfDay: false,
     halfDayType: null,
+    fromIsHalfDay: false,
+    toIsHalfDay: false,
     remarks: '',
   });
 
@@ -2012,7 +2049,7 @@ export default function LeavesPage() {
         }
         const crossPeriodErr = buildCrossPayrollPeriodLeaveError(
           formData.fromDate,
-          formData.isHalfDay ? formData.fromDate : formData.toDate,
+          formData.toDate || formData.fromDate,
           payCycleStartDay,
           payCycleEndDay
         );
@@ -2125,10 +2162,18 @@ export default function LeavesPage() {
       // - any active half-day blocks a new full-day request on that date
       // - any active full-day blocks any additional request on that date
       if (formData.fromDate && employeeToApplyFor) {
-        const requestedIsHalfDay = Boolean(formData.isHalfDay);
         const requestedFrom = normalizeRequestDate(formData.fromDate);
         const requestedTo = normalizeRequestDate(formData.toDate || formData.fromDate);
         const targetEmpId = String((employeeToApplyFor as any)._id || '').trim();
+        const requestedBoundary =
+          applyType === 'leave'
+            ? leaveBoundaryFromForm(formData)
+            : {
+                fromDate: requestedFrom,
+                toDate: requestedTo,
+                isHalfDay: Boolean(formData.isHalfDay),
+                halfDayType: formData.isHalfDay ? formData.halfDayType : null,
+              };
 
         try {
           let activeLeaves: LeaveApplication[] = [];
@@ -2152,13 +2197,7 @@ export default function LeavesPage() {
 
           const conflictMessage = findActiveHalfDayConflict(
             [...activeLeaves, ...activeOds],
-            {
-              fromDate: requestedFrom,
-              toDate: requestedTo,
-              isHalfDay: requestedIsHalfDay,
-              halfDayType: requestedIsHalfDay ? formData.halfDayType : null,
-              requestLabel: applyType,
-            }
+            { ...requestedBoundary, requestLabel: applyType }
           );
 
           if (conflictMessage) {
@@ -2189,6 +2228,13 @@ export default function LeavesPage() {
       };
 
       if (applyType === 'leave') {
+        const norm = normalizeLeaveBoundaries(leaveBoundaryFromForm(formData));
+        payload.isHalfDay = norm.isHalfDay;
+        payload.halfDayType = norm.halfDayType;
+        payload.fromIsHalfDay = norm.fromIsHalfDay;
+        payload.fromHalfDayType = norm.fromHalfDayType;
+        payload.toIsHalfDay = norm.toIsHalfDay;
+        payload.toHalfDayType = norm.toHalfDayType;
         payload.leaveType = formData.leaveType;
       } else {
         payload.odType = formData.odType;
@@ -2521,6 +2567,8 @@ export default function LeavesPage() {
       placeVisited: '',
       isHalfDay: false,
       halfDayType: null,
+      fromIsHalfDay: false,
+      toIsHalfDay: false,
       remarks: '',
     });
     setSelectedEmployee(null);
@@ -2921,7 +2969,14 @@ export default function LeavesPage() {
         }))
       );
     }
-    const defaults = buildDateRange(leave.fromDate, leave.toDate, leave.isHalfDay, leave.halfDayType);
+    const defaults = buildDateRange({
+      fromDate: toISODate(parseDateOnly(leave.fromDate)),
+      toDate: toISODate(parseDateOnly(leave.toDate)),
+      isHalfDay: leave.isHalfDay,
+      halfDayType: (leave.halfDayType as 'first_half' | 'second_half') || null,
+      fromIsHalfDay: (leave as LeaveApplication & { fromIsHalfDay?: boolean }).fromIsHalfDay,
+      toIsHalfDay: (leave as LeaveApplication & { toIsHalfDay?: boolean }).toIsHalfDay,
+    });
     return defaults.map((d) => ({
       ...d,
       leaveType: leave.leaveType,
@@ -5563,10 +5618,10 @@ export default function LeavesPage() {
                 )}
 
                 {/* Date Selection Logic - min/max from workspace leave/OD settings */}
-                {((applyType === 'leave' && formData.isHalfDay) || applyType === 'od') ? (
+                {applyType === 'od' ? (
                   /* Single Date Input for Half Day / Specific Hours / Any OD */
                   (() => {
-                    const policy = applyType === 'leave' ? leavePolicy : odPolicy;
+                    const policy = odPolicy;
                     const { minDate: singleMin, maxDate: singleMax } = getPolicyDateBounds(policy);
                     return (
                       <div>
@@ -5590,7 +5645,6 @@ export default function LeavesPage() {
                     const { minDate: fromMin, maxDate: policyMax } = getPolicyDateBounds(policy);
                     const isCLFullDay =
                       isCapTrackedLeave &&
-                      !formData.isHalfDay &&
                       formData.fromDate &&
                       clBalanceForMonth !== null &&
                       clBalanceForMonth >= 0;
@@ -5603,89 +5657,151 @@ export default function LeavesPage() {
                       : undefined;
                     const payrollPeriodEnd = applyLeavePayrollPeriod?.to;
                     const toMax = earliestIsoDate(policyMax, payrollPeriodEnd, maxToDateISO);
+                    const leaveSameDay =
+                      applyType === 'leave' &&
+                      formData.fromDate &&
+                      (!formData.toDate || formData.fromDate === formData.toDate);
+                    const leaveMultiDay = applyType === 'leave' && formData.fromDate && !leaveSameDay;
+                    const requestedLeaveDays =
+                      applyType === 'leave' && formData.fromDate
+                        ? getRequestedDays(leaveBoundaryFromForm(formData))
+                        : 0;
+
                     return (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">From Date *</label>
-                          <input
-                            type="date"
-                            min={fromMin}
-                            max={policyMax}
-                            value={formData.fromDate}
-                            onChange={(e) => {
-                              const fromDate = e.target.value;
-                              const capped = capToDateToPayrollPeriod(
-                                fromDate,
-                                formData.toDate || fromDate,
-                                payCycleStartDay,
-                                payCycleEndDay
-                              );
-                              if (capped.adjusted && capped.periodLabel) {
-                                toast.info(
-                                  `To date adjusted — leave must stay within payroll period ${capped.periodLabel}.`
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">From Date *</label>
+                            <input
+                              type="date"
+                              min={fromMin}
+                              max={policyMax}
+                              value={formData.fromDate}
+                              onChange={(e) => {
+                                const fromDate = e.target.value;
+                                const capped = capToDateToPayrollPeriod(
+                                  fromDate,
+                                  formData.toDate || fromDate,
+                                  payCycleStartDay,
+                                  payCycleEndDay
                                 );
-                              }
-                              setFormData({
-                                ...formData,
-                                fromDate,
-                                toDate: capped.toDate,
-                              });
-                            }}
-                            required
-                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                          />
-                          {applyLeavePayrollPeriod && (
-                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                              Payroll period (IST): {applyLeavePayrollPeriod.from} → {applyLeavePayrollPeriod.to}. To date cannot cross into the next period.
-                            </p>
-                          )}
+                                if (capped.adjusted && capped.periodLabel) {
+                                  toast.info(
+                                    `To date adjusted — leave must stay within payroll period ${capped.periodLabel}.`
+                                  );
+                                }
+                                setFormData({
+                                  ...formData,
+                                  fromDate,
+                                  toDate: capped.toDate,
+                                });
+                              }}
+                              required
+                              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            />
+                            {applyType === 'leave' && formData.fromDate && (
+                              <LeaveDayPortionControls
+                                variant={leaveSameDay ? 'single' : 'start'}
+                                isHalf={leaveSameDay ? Boolean(formData.isHalfDay) : Boolean(formData.fromIsHalfDay)}
+                                halfDayType={formData.halfDayType}
+                                disabled={capLeaveDepleted}
+                                onSelectFull={() =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    isHalfDay: false,
+                                    halfDayType: null,
+                                    fromIsHalfDay: false,
+                                    toIsHalfDay: false,
+                                  }))
+                                }
+                                onSelectHalf={() =>
+                                  setFormData((prev) => {
+                                    const sd = !prev.toDate || prev.fromDate === prev.toDate;
+                                    if (sd) {
+                                      return {
+                                        ...prev,
+                                        isHalfDay: true,
+                                        fromIsHalfDay: false,
+                                        halfDayType: prev.halfDayType || 'first_half',
+                                        toDate: prev.fromDate,
+                                      };
+                                    }
+                                    return { ...prev, isHalfDay: false, fromIsHalfDay: true };
+                                  })
+                                }
+                                onHalfDayTypeChange={(half) =>
+                                  setFormData((prev) => ({ ...prev, halfDayType: half }))
+                                }
+                              />
+                            )}
+                            {applyLeavePayrollPeriod && (
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                Payroll period (IST): {applyLeavePayrollPeriod.from} → {applyLeavePayrollPeriod.to}. To date cannot cross into the next period.
+                              </p>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">To Date *</label>
+                            <input
+                              type="date"
+                              min={formData.fromDate || fromMin}
+                              max={toMax}
+                              value={formData.toDate}
+                              disabled={capLeaveDepleted}
+                              onChange={(e) => {
+                                let toDate = e.target.value;
+                                if (payrollPeriodEnd && toDate > payrollPeriodEnd) {
+                                  toDate = payrollPeriodEnd;
+                                  toast.info(
+                                    applyLeavePayrollPeriod
+                                      ? `To date capped to payroll period end (${applyLeavePayrollPeriod.to}). Submit a separate leave for the next period.`
+                                      : 'To date capped to payroll period end.'
+                                  );
+                                }
+                                if (maxToDateISO && toDate > maxToDateISO) {
+                                  toDate = maxToDateISO;
+                                  toast.info(
+                                    `${selectedLeaveTypeUpper} allowed for this period: up to ${clBalanceForMonth} days; To date capped.`
+                                  );
+                                }
+                                if (policyMax && toDate > policyMax) toDate = policyMax;
+                                const crossErr = buildCrossPayrollPeriodLeaveError(
+                                  formData.fromDate,
+                                  toDate,
+                                  payCycleStartDay,
+                                  payCycleEndDay
+                                );
+                                if (crossErr) {
+                                  toast.error(crossErr);
+                                  return;
+                                }
+                                setFormData({ ...formData, toDate });
+                              }}
+                              required
+                              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            />
+                            {leaveMultiDay && (
+                              <LeaveDayPortionControls
+                                variant="end"
+                                isHalf={Boolean(formData.toIsHalfDay)}
+                                disabled={capLeaveDepleted}
+                                onSelectFull={() => setFormData((prev) => ({ ...prev, toIsHalfDay: false }))}
+                                onSelectHalf={() => setFormData((prev) => ({ ...prev, toIsHalfDay: true }))}
+                              />
+                            )}
+                            {isCLFullDay && maxToDateISO && formData.toDate > maxToDateISO && (
+                              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                                Max {clBalanceForMonth} days for {selectedLeaveTypeUpper} in this pay period.
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">To Date *</label>
-                          <input
-                            type="date"
-                            min={formData.fromDate || fromMin}
-                            max={toMax}
-                            value={formData.toDate}
-                            disabled={capLeaveDepleted}
-                            onChange={(e) => {
-                              let toDate = e.target.value;
-                              if (payrollPeriodEnd && toDate > payrollPeriodEnd) {
-                                toDate = payrollPeriodEnd;
-                                toast.info(
-                                  applyLeavePayrollPeriod
-                                    ? `To date capped to payroll period end (${applyLeavePayrollPeriod.to}). Submit a separate leave for the next period.`
-                                    : 'To date capped to payroll period end.'
-                                );
-                              }
-                              if (maxToDateISO && toDate > maxToDateISO) {
-                                toDate = maxToDateISO;
-                                toast.info(
-                                  `${selectedLeaveTypeUpper} allowed for this period: up to ${clBalanceForMonth} days; To date capped.`
-                                );
-                              }
-                              if (policyMax && toDate > policyMax) toDate = policyMax;
-                              const crossErr = buildCrossPayrollPeriodLeaveError(
-                                formData.fromDate,
-                                toDate,
-                                payCycleStartDay,
-                                payCycleEndDay
-                              );
-                              if (crossErr) {
-                                toast.error(crossErr);
-                                return;
-                              }
-                              setFormData({ ...formData, toDate });
-                            }}
-                            required
-                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                          />
-                          {isCLFullDay && maxToDateISO && formData.toDate > maxToDateISO && (
-                            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                              Max {clBalanceForMonth} days for {selectedLeaveTypeUpper} in this pay period.
-                            </p>
-                          )}
-                        </div>
+                        {applyType === 'leave' && formData.fromDate && (
+                          <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                            Total leave: <span className="text-slate-900 dark:text-white">{requestedLeaveDays}</span> day
+                            {requestedLeaveDays !== 1 ? 's' : ''}
+                          </p>
+                        )}
                       </div>
                     );
                   })()
@@ -5791,51 +5907,21 @@ export default function LeavesPage() {
                   </div>
                 )}
 
-                {/* Half Day Selection */}
-                {(applyType === 'leave' || (applyType === 'od' && formData.odType_extended === 'half_day')) && (
+                {applyType === 'od' && formData.odType_extended === 'half_day' && (
                   <div
                     ref={halfDayControlsRef}
                     id="leave-apply-half-day-controls"
                     className="flex flex-wrap items-center gap-4 rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-800/40"
                   >
-                    {applyType === 'leave' && (
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={formData.isHalfDay}
-                          disabled={capLeaveDepleted}
-                          onChange={(e) => {
-                            if (!e.target.checked) {
-                              setFormData({ ...formData, isHalfDay: false, halfDayType: null });
-                            } else {
-                              // When toggling half-day on, sync toDate to fromDate and default to first_half
-                              setFormData({ ...formData, isHalfDay: true, halfDayType: formData.halfDayType || 'first_half', toDate: formData.fromDate });
-                            }
-                          }}
-                          className="w-4 h-4 rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                        />
-                        <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Half day</span>
-                      </label>
-                    )}
-
-                    {(formData.isHalfDay || (applyType === 'od' && formData.odType_extended === 'half_day')) && (
-                      <div className="flex items-center gap-2">
-                        {applyType === 'od' && (
-                          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Select half</span>
-                        )}
-                        {applyType === 'leave' && (
-                          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Which half</span>
-                        )}
-                        <select
-                          value={formData.halfDayType || 'first_half'}
-                          onChange={(e) => setFormData({ ...formData, halfDayType: e.target.value as any })}
-                          className="rounded-lg border-2 border-blue-300 bg-white px-3 py-1.5 text-sm font-semibold dark:border-blue-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                        >
-                          <option value="first_half">First Half</option>
-                          <option value="second_half">Second Half</option>
-                        </select>
-                      </div>
-                    )}
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Select half</span>
+                    <select
+                      value={formData.halfDayType || 'first_half'}
+                      onChange={(e) => setFormData({ ...formData, halfDayType: e.target.value as any })}
+                      className="rounded-lg border-2 border-blue-300 bg-white px-3 py-1.5 text-sm font-semibold dark:border-blue-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                    >
+                      <option value="first_half">First Half</option>
+                      <option value="second_half">Second Half</option>
+                    </select>
                   </div>
                 )}
 
@@ -6122,30 +6208,47 @@ export default function LeavesPage() {
                   )}
 
                   {/* Stats Grid - Cleaner Look */}
-                  {detailType === 'leave' && (
+                  {detailType === 'leave' && (() => {
+                    const leave = selectedItem! as LeaveApplication;
+                    const ld = getLeaveDetailDisplay({
+                      fromDate: leave.fromDate,
+                      toDate: leave.toDate,
+                      numberOfDays: leave.numberOfDays,
+                      isHalfDay: leave.isHalfDay,
+                      halfDayType: leave.halfDayType as 'first_half' | 'second_half' | null,
+                      fromIsHalfDay: leave.fromIsHalfDay,
+                      fromHalfDayType: leave.fromHalfDayType as 'first_half' | 'second_half' | null,
+                      toIsHalfDay: leave.toIsHalfDay,
+                      toHalfDayType: leave.toHalfDayType as 'first_half' | 'second_half' | null,
+                    });
+                    return (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-700/30 p-4 sm:p-6 rounded-xl">
                     <div className="space-y-1">
                       <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">Type</p>
-                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white truncate" title={detailType === 'leave' ? (selectedItem! as LeaveApplication).leaveType : (selectedItem! as ODApplication).odType}>
-                        {((detailType === 'leave' ? (selectedItem! as LeaveApplication).leaveType : (selectedItem! as ODApplication).odType) || '').replace('_', ' ')}
+                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white truncate" title={leave.leaveType}>
+                        {(leave.leaveType || '').replace('_', ' ')}
                       </p>
                     </div>
                     <div className="space-y-1">
                       <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">Duration</p>
-                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">
-                        {selectedItem!.numberOfDays}d {selectedItem!.isHalfDay ? `(${(selectedItem!.halfDayType?.replace('_', ' ') || 'first half')})` : ''}
-                      </p>
+                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{ld.durationText}</p>
+                      {ld.durationNote && (
+                        <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{ld.durationNote}</p>
+                      )}
                     </div>
                     <div className="space-y-1">
                       <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">From</p>
-                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem!.fromDate)}</p>
+                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{formatDate(leave.fromDate)}</p>
+                      <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">{ld.fromPortion}</p>
                     </div>
                     <div className="space-y-1">
                       <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">To</p>
-                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem!.toDate)}</p>
+                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{formatDate(leave.toDate)}</p>
+                      <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">{ld.toPortion}</p>
                     </div>
                   </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Punch Transparency / Time Details (Visible if populated) */}
                   {detailType === 'od' && (selectedItem as ODApplication).odStartTime && (
