@@ -8,6 +8,7 @@ const {
   applyPaysheetWorksheetStyles,
   finalizeWorksheet,
   writeStyledWorkbook,
+  isTextColumnHeader,
 } = require('./paysheetExcelSheetStyle');
 const mongoose = require('mongoose');
 const { compareEmpNo } = require('../../shared/utils/employeeSort');
@@ -96,21 +97,21 @@ function payrollRecordToPayslipShape(record) {
   const mdNorm = normalizeManualDeductionsFromPayrollRecord(record);
   return {
     employee: {
-      emp_no: record.emp_no || empObj?.emp_no || '',
+      emp_no: String(record.emp_no || empObj?.emp_no || ''),
       name: empObj?.employee_name || [empObj?.first_name, empObj?.last_name].filter(Boolean).join(' ') || 'N/A',
       designation: empObj?.designation_id?.name || empObj?.designation_id || '',
       department: empObj?.department_id?.name || empObj?.department_id || 'N/A',
       division: empObj?.division_id?.name || empObj?.division_id || 'N/A',
       location: empObj?.location || '',
-      bank_account_no: empObj?.bank_account_no || '',
+      bank_account_no: empObj?.bank_account_no != null && empObj?.bank_account_no !== '' ? String(empObj.bank_account_no) : '',
       bank_name: empObj?.bank_name || '',
       bank_place: empObj?.bank_place || '',
       ifsc_code: empObj?.ifsc_code || '',
       payment_mode: empObj?.salary_mode || '',
       salary_mode: empObj?.salary_mode || '',
       date_of_joining: empObj?.doj || '',
-      pf_number: empObj?.pf_number || '',
-      esi_number: empObj?.esi_number || '',
+      pf_number: empObj?.pf_number != null && empObj?.pf_number !== '' ? String(empObj.pf_number) : '',
+      esi_number: empObj?.esi_number != null && empObj?.esi_number !== '' ? String(empObj.esi_number) : '',
       leftDate: empObj?.leftDate,
       salaries:
         empObj?.salaries && typeof empObj.salaries === 'object' && !Array.isArray(empObj.salaries)
@@ -150,21 +151,21 @@ function secondSalaryRecordToPayslipShape(record) {
   const elUsedInPayroll = Number(rawAtt.elUsedInPayroll) || 0;
   return {
     employee: {
-      emp_no: record.emp_no || empObj?.emp_no || '',
+      emp_no: String(record.emp_no || empObj?.emp_no || ''),
       name: empObj?.employee_name || [empObj?.first_name, empObj?.last_name].filter(Boolean).join(' ') || 'N/A',
       designation: empObj?.designation_id?.name || empObj?.designation_id || '',
       department: empObj?.department_id?.name || empObj?.department_id || 'N/A',
       division: divName,
       location: empObj?.location || '',
-      bank_account_no: empObj?.bank_account_no || '',
+      bank_account_no: empObj?.bank_account_no != null && empObj?.bank_account_no !== '' ? String(empObj.bank_account_no) : '',
       bank_name: empObj?.bank_name || '',
       bank_place: empObj?.bank_place || '',
       ifsc_code: empObj?.ifsc_code || '',
       payment_mode: empObj?.salary_mode || '',
       salary_mode: empObj?.salary_mode || '',
       date_of_joining: empObj?.doj || '',
-      pf_number: empObj?.pf_number || '',
-      esi_number: empObj?.esi_number || '',
+      pf_number: empObj?.pf_number != null && empObj?.pf_number !== '' ? String(empObj.pf_number) : '',
+      esi_number: empObj?.esi_number != null && empObj?.esi_number !== '' ? String(empObj.esi_number) : '',
       salaries:
         empObj?.salaries && typeof empObj.salaries === 'object' && !Array.isArray(empObj.salaries)
           ? { ...empObj.salaries }
@@ -585,7 +586,7 @@ function buildBankCandidateRows(regularRows, secondRows, netDiffResolver, second
 
     const row = {
       'S.No': idx + 1,
-      'Employee Number': empNo,
+      'Employee Number': String(empNo),
       Name: pickRowName(reg),
       Designation: pickRowDesignation(reg),
       Division: rowDivisionName(reg),
@@ -743,6 +744,30 @@ function extractScopedDepartmentIds(scopeFilter) {
   return ids.size ? [...ids] : null;
 }
 
+function coerceExportCellValue(header, value, row) {
+  if (isTextColumnHeader(header)) {
+    const key = String(header || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+    if (
+      row &&
+      row._exportEmpNo &&
+      (key === 'employeecode' ||
+        key === 'employeenumber' ||
+        key === 'employeeno' ||
+        key === 'empno' ||
+        key === 'eno')
+    ) {
+      return String(row._exportEmpNo);
+    }
+    if (value == null || value === '') return '';
+    return String(value);
+  }
+  if (value == null || value === '') return '';
+  return value;
+}
+
 function objectRowsToTable(rows, options = {}) {
   const hideOrgColumns = options.hideOrgColumns === true;
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -758,7 +783,12 @@ function objectRowsToTable(rows, options = {}) {
   );
   const rest = [...keySet].filter((k) => k !== 'S.No');
   const headers = keySet.has('S.No') ? ['S.No', ...rest] : [...rest];
-  const dataRows = rows.map((r) => headers.map((h) => (r[h] != null ? r[h] : '')));
+  const dataRows = rows.map((r) =>
+    headers.map((h) => {
+      const raw = r[h] != null ? r[h] : '';
+      return coerceExportCellValue(h, raw, r);
+    })
+  );
   return { headers, dataRows };
 }
 

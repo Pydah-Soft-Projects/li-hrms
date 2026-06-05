@@ -33,7 +33,7 @@ function getContextFromPayslip(payslip) {
     return Number.isFinite(n) ? n : fallback;
   };
   return {
-    emp_no: emp.emp_no ?? '',
+    emp_no: emp.emp_no != null && emp.emp_no !== '' ? String(emp.emp_no) : '',
     name: emp.name ?? '',
     designation: emp.designation ?? '',
     department: emp.department ?? '',
@@ -243,6 +243,26 @@ function getValueByPath(obj, path) {
   if (trimmed === 'employee.salary_mode') {
     const mode = obj?.employee?.salary_mode ?? obj?.employee?.payment_mode;
     return mode != null && mode !== '' ? mode : '';
+  }
+  const EMPLOYEE_TEXT_FIELDS = new Set([
+    'emp_no',
+    'pf_number',
+    'esi_number',
+    'uan_number',
+    'pan_number',
+    'bank_account_no',
+    'ifsc_code',
+  ]);
+  if (trimmed.startsWith('employee.')) {
+    const field = trimmed.slice('employee.'.length);
+    if (EMPLOYEE_TEXT_FIELDS.has(field)) {
+      let val = obj?.employee?.[field];
+      if (field === 'emp_no' && (val === undefined || val === null || val === '')) {
+        val = obj?.emp_no;
+      }
+      if (val === undefined || val === null || val === '') return '';
+      return String(val);
+    }
   }
 
   const parts = trimmed.split('.').filter(Boolean);
