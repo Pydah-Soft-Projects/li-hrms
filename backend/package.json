@@ -20,6 +20,7 @@
     "test:post-verify-backfill": "jest attendance/services/__tests__/postVerifyBiometricBackfillService.test.js --no-coverage",
     "test:post-verify-backfill:live": "node scripts/liveTestPostVerifyBiometricBackfill.js",
     "test:holiday-access": "jest holidays/utils/__tests__/holidayAccess.test.js --no-coverage",
+    "test:holiday-date-conflict": "jest holidays/utils/__tests__/holidayDateConflictValidation.test.js --no-coverage --forceExit",
     "test:holiday-access:api": "node scripts/test_holiday_scoped_access_api.js",
     "test:holiday-employee-scope:api": "node scripts/test_holiday_employee_scope_api.js",
     "test:roster-half-holiday": "node scripts/test_roster_half_holiday_integration.js",

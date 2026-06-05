@@ -34,6 +34,8 @@ import {
     type HolidayMappingRow,
 } from '@/components/holidays/HolidayDivisionMappingEditor';
 import HolidayRegistryPanel from '@/components/holidays/HolidayRegistryPanel';
+import { formatHolidayConflictHtml, type HolidayDateConflict } from '@/lib/holidayConflictDisplay';
+import HolidayRosterProgressOverlay from '@/components/holidays/HolidayRosterProgressOverlay';
 
 type MappingRow = { division: string; departments: string[]; employeeGroups: string[] };
 
@@ -74,6 +76,12 @@ export default function WorkspaceHolidaysPage() {
     const [showHolidayActivity, setShowHolidayActivity] = useState(false);
     const [holidayActivity, setHolidayActivity] = useState<HolidayHistoryRow[]>([]);
     const [loadingHolidayActivity, setLoadingHolidayActivity] = useState(false);
+    const [savingHoliday, setSavingHoliday] = useState(false);
+    const [rosterProgress, setRosterProgress] = useState<{
+        phase: 'saved' | 'cleanup' | 'apply' | 'done' | 'error' | null;
+        completed: number;
+        total: number;
+    } | null>(null);
 
     const [currentMonth, setCurrentMonth] = useState(new Date());
     const selectedYear = currentMonth.getFullYear();
@@ -158,6 +166,19 @@ export default function WorkspaceHolidaysPage() {
 
     const isEmployeeScopeMode =
         selectedGroupId === 'EMPLOYEE_SCOPE' || editingHoliday?.scope === 'MAPPING';
+
+    const holidaySubmitLabel = useMemo(() => {
+        const isOverrideContext =
+            !!editingHoliday && selectedGroupId !== 'GLOBAL' && editingHoliday.scope === 'GLOBAL';
+        if (savingHoliday) {
+            if (!editingHoliday) return 'Creating...';
+            if (isOverrideContext) return 'Creating Override...';
+            return 'Updating...';
+        }
+        if (!editingHoliday) return 'Create Event';
+        if (isOverrideContext) return 'Create Override';
+        return 'Update Event';
+    }, [savingHoliday, editingHoliday, selectedGroupId]);
 
     useEffect(() => {
         if (!showHolidayForm || !canManage) return;
@@ -720,6 +741,8 @@ export default function WorkspaceHolidaysPage() {
                                         }
                                     }
 
+                                    setSavingHoliday(true);
+                                    setRosterProgress({ phase: 'saved', completed: 0, total: 0 });
                                     try {
                                         const useMapping =
                                             isMappingContext
@@ -743,49 +766,84 @@ export default function WorkspaceHolidaysPage() {
                                             isMaster: isGlobalContext && canManageGlobal && !useMapping,
                                             scope: useMapping ? 'MAPPING' : isGlobalContext ? 'GLOBAL' : 'GROUP',
                                             applicableTo: useMapping ? undefined : selectedApplicableTo,
-                                            groupId: useMapping || isGlobalContext ? undefined : (selectedGroupId !== 'GLOBAL' && selectedGroupId !== 'EMPLOYEE_SCOPE' ? selectedGroupId : (editingHoliday?.groupId as string)),
+                                            groupId: useMapping || isGlobalContext
+                                                ? undefined
+                                                : (editingHoliday?.groupId
+                                                    ? (typeof editingHoliday.groupId === 'object' ? editingHoliday.groupId._id : editingHoliday.groupId)
+                                                    : (selectedGroupId !== 'GLOBAL' && selectedGroupId !== 'EMPLOYEE_SCOPE' ? selectedGroupId : undefined)),
                                             targetGroupIds: useMapping ? undefined : targetIds,
                                             divisionMapping: useMapping
                                                 ? (holidayTargetMode === 'ALL_SCOPE' ? [] : formMapping.filter((m) => m.division))
                                                 : undefined,
                                         };
 
-                                        if (editingHoliday) {
-                                            if (isCreatingOverride) data.overridesMasterId = editingHoliday._id;
-                                            else data._id = editingHoliday._id;
-                                            const res = await api.updateHoliday({
-                                                ...data,
-                                                rosterFillMode,
-                                                rosterApplyMode,
-                                                halfDayType: rosterApplyMode === 'HALF_DAY' ? halfDayType : undefined,
-                                                multiShiftScope:
-                                                    attendanceProcessingMode === 'multi_shift'
-                                                        ? rosterApplyMode === 'HALF_DAY'
-                                                            ? multiShiftScope
-                                                            : 'FULL_DAY'
-                                                        : 'FULL_DAY',
+                                        const rosterPayload = {
+                                            rosterFillMode,
+                                            rosterApplyMode,
+                                            halfDayType: rosterApplyMode === 'HALF_DAY' ? halfDayType : undefined,
+                                            multiShiftScope:
+                                                attendanceProcessingMode === 'multi_shift'
+                                                    ? rosterApplyMode === 'HALF_DAY'
+                                                        ? multiShiftScope
+                                                        : 'FULL_DAY'
+                                                    : 'FULL_DAY',
+                                        };
+
+                                        const onProgress = (event: { phase?: string; completed?: number; total?: number }) => {
+                                            if (!event.phase) return;
+                                            setRosterProgress({
+                                                phase: event.phase as 'saved' | 'cleanup' | 'apply' | 'done' | 'error',
+                                                completed: event.completed ?? 0,
+                                                total: event.total ?? 0,
                                             });
-                                            if (!res.success) throw new Error(res.message);
-                                            toast.success(isCreatingOverride ? 'Override created' : 'Holiday updated');
+                                        };
+
+                                        if (editingHoliday && !isCreatingOverride) {
+                                            data._id = editingHoliday._id;
+                                            const res = await api.updateHoliday({ ...data, ...rosterPayload }, onProgress);
+                                            if (!res.success) {
+                                                const conflicts = (res as { conflicts?: HolidayDateConflict[]; statusCode?: number }).conflicts;
+                                                const statusCode = (res as { statusCode?: number }).statusCode;
+                                                if (conflicts?.length || statusCode === 409) {
+                                                    await Swal.fire({
+                                                        icon: 'error',
+                                                        title: res.message?.includes('org-wide global holiday')
+                                                            ? 'Cannot Create Global Holiday'
+                                                            : 'Holiday Already Exists',
+                                                        html: formatHolidayConflictHtml(conflicts || [], res.message),
+                                                    });
+                                                    return;
+                                                }
+                                                throw new Error(res.message);
+                                            }
+                                            toast.success('Holiday updated');
                                         } else {
-                                            const res = await api.createHoliday({
-                                                ...data,
-                                                rosterFillMode,
-                                                rosterApplyMode,
-                                                halfDayType: rosterApplyMode === 'HALF_DAY' ? halfDayType : undefined,
-                                                multiShiftScope:
-                                                    attendanceProcessingMode === 'multi_shift'
-                                                        ? rosterApplyMode === 'HALF_DAY'
-                                                            ? multiShiftScope
-                                                            : 'FULL_DAY'
-                                                        : 'FULL_DAY',
-                                            });
-                                            if (!res.success) throw new Error(res.message);
+                                            if (isCreatingOverride && editingHoliday) {
+                                                data.overridesMasterId = editingHoliday._id;
+                                            }
+                                            const res = await api.createHoliday({ ...data, ...rosterPayload }, onProgress);
+                                            if (!res.success) {
+                                                const conflicts = (res as { conflicts?: HolidayDateConflict[]; statusCode?: number }).conflicts;
+                                                const statusCode = (res as { statusCode?: number }).statusCode;
+                                                if (conflicts?.length || statusCode === 409) {
+                                                    await Swal.fire({
+                                                        icon: 'error',
+                                                        title: res.message?.includes('org-wide global holiday')
+                                                            ? 'Cannot Create Global Holiday'
+                                                            : 'Holiday Already Exists',
+                                                        html: formatHolidayConflictHtml(conflicts || [], res.message),
+                                                    });
+                                                    return;
+                                                }
+                                                throw new Error(res.message);
+                                            }
                                             const affected = (res as { affectedEmployees?: number }).affectedEmployees;
                                             toast.success(
-                                                affected != null
-                                                    ? `Holiday created — ${affected} employee(s) affected`
-                                                    : 'Holiday created'
+                                                isCreatingOverride
+                                                    ? 'Override created'
+                                                    : affected != null
+                                                        ? `Holiday created — ${affected} employee(s) affected`
+                                                        : 'Holiday created'
                                             );
                                         }
 
@@ -797,6 +855,9 @@ export default function WorkspaceHolidaysPage() {
                                         console.error(error);
                                         const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
                                         await Swal.fire({ icon: 'error', title: 'Operation Failed', text: errorMessage });
+                                    } finally {
+                                        setSavingHoliday(false);
+                                        setRosterProgress(null);
                                     }
                                 }}
                                 className="p-6 space-y-6"
@@ -1021,10 +1082,11 @@ export default function WorkspaceHolidaysPage() {
                                     <button
                                         type="submit"
                                         form="holiday-form"
-                                        className="flex items-center gap-2 px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 transition-all"
+                                        disabled={savingHoliday}
+                                        className="flex items-center gap-2 px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                                     >
                                         <Save className="h-4 w-4" />
-                                        {editingHoliday ? 'Update Event' : 'Create Event'}
+                                        {holidaySubmitLabel}
                                     </button>
                                 </div>
                             </div>
@@ -1112,6 +1174,14 @@ export default function WorkspaceHolidaysPage() {
                     </div>
                 </div>
             )}
+
+            <HolidayRosterProgressOverlay
+                visible={savingHoliday && rosterProgress != null}
+                phase={rosterProgress?.phase ?? null}
+                completed={rosterProgress?.completed ?? 0}
+                total={rosterProgress?.total ?? 0}
+                isUpdate={!!editingHoliday}
+            />
         </div>
     );
 }

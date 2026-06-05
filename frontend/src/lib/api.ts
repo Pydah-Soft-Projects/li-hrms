@@ -1136,6 +1136,26 @@ export interface HolidayHistoryRow {
   timestamp: string;
 }
 
+export type HolidaySaveProgressCallback = (event: {
+  phase: 'saved' | 'cleanup' | 'apply' | 'done' | 'error';
+  completed?: number;
+  total?: number;
+  success?: boolean;
+  message?: string;
+  affectedEmployees?: number;
+  data?: Holiday;
+  conflicts?: Array<{
+    scope: string;
+    groupId: string | null;
+    groupName: string;
+    date: string;
+    existingHolidayName: string;
+    existingHolidayId: string;
+    existingKind: string;
+  }>;
+  statusCode?: number;
+}) => void;
+
 export const api = {
   login: async (identifier: string, password: string) => {
     return apiRequest<LoginResponse>('/auth/login', {
@@ -1313,18 +1333,94 @@ export const api = {
     });
   },
 
-  createHoliday: async (data: Partial<Holiday> & { rosterFillMode?: 'HOL' | 'WEEK_OFF' }) => {
-    return apiRequest<Holiday>('/holidays', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+  createHoliday: async (
+    data: Partial<Holiday> & { rosterFillMode?: 'HOL' | 'WEEK_OFF' },
+    onProgress?: HolidaySaveProgressCallback
+  ) => {
+    return api.saveHolidayWithProgress(data, onProgress);
   },
 
-  updateHoliday: async (data: Partial<Holiday> & { rosterFillMode?: 'HOL' | 'WEEK_OFF' }) => {
-    return apiRequest<Holiday>('/holidays', {
+  updateHoliday: async (
+    data: Partial<Holiday> & { rosterFillMode?: 'HOL' | 'WEEK_OFF' },
+    onProgress?: HolidaySaveProgressCallback
+  ) => {
+    return api.saveHolidayWithProgress(data, onProgress);
+  },
+
+  saveHolidayWithProgress: async (
+    data: Partial<Holiday> & { rosterFillMode?: 'HOL' | 'WEEK_OFF'; streamProgress?: boolean },
+    onProgress?: HolidaySaveProgressCallback
+  ) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/x-ndjson, application/json',
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const response = await fetch(`${API_BASE_URL}/holidays`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      headers,
+      body: JSON.stringify({ ...data, streamProgress: true }),
     });
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('ndjson')) {
+      const json = await response.json();
+      if (!response.ok) {
+        return {
+          ...(typeof json === 'object' && json !== null ? json : {}),
+          success: false,
+          statusCode: response.status,
+          message: json?.message || 'An error occurred',
+        };
+      }
+      return { success: true, ...json };
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return { success: false, message: 'Streaming not supported by browser' };
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalResult: ApiResponse<Holiday> & { affectedEmployees?: number } = { success: false, message: 'No response' };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const event = JSON.parse(line);
+          onProgress?.(event);
+          if (event.phase === 'done' && event.success) {
+            finalResult = {
+              success: true,
+              data: event.data,
+              affectedEmployees: event.affectedEmployees,
+              message: event.message,
+            };
+          }
+          if (event.phase === 'error' || event.success === false) {
+            finalResult = {
+              success: false,
+              message: event.message || 'Error saving holiday',
+              statusCode: event.statusCode,
+              ...(event.conflicts ? { conflicts: event.conflicts } : {}),
+            };
+          }
+        } catch {
+          // ignore malformed line
+        }
+      }
+    }
+
+    return finalResult;
   },
 
   deleteHoliday: async (id: string, options?: { onDeleteAction?: 'RESTORE_PATTERN' | 'WEEK_OFF' }) => {
