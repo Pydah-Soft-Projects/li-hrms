@@ -902,19 +902,17 @@ exports.assignShift = async (req, res) => {
       await confusedShift.save();
     }
 
-    // Update roster tracking for manual assignment
-    const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
-    const rosterRecord = await PreScheduledShift.findOne({
-      employeeNumber: employeeNumber.toUpperCase(),
-      date: date
-    });
-
-    if (rosterRecord) {
-      const isDeviation = rosterRecord.shiftId && rosterRecord.shiftId.toString() !== shiftId.toString();
-      rosterRecord.actualShiftId = shiftId;
-      rosterRecord.isDeviation = !!isDeviation;
-      rosterRecord.attendanceDailyId = attendanceRecord._id;
-      await rosterRecord.save();
+    // Multi-shift primary override: do NOT create/update PreScheduledShift.
+    // Instead, force the shift on the selected segment during reprocess.
+    // This makes \"Change shift\" act as the primary for that segment/day in multi-shift mode.
+    let segmentIndex = 0;
+    if (shiftRecordId && attendanceRecord.shifts?.length) {
+      const sorted = [...attendanceRecord.shifts].sort((a, b) => {
+        const n = (a.shiftNumber || 0) - (b.shiftNumber || 0);
+        if (n !== 0) return n;
+        return new Date(a.inTime || 0) - new Date(b.inTime || 0);
+      });
+      segmentIndex = Math.max(0, sorted.findIndex((s) => String(s._id) === String(shiftRecordId)));
     }
 
     // Mark as manually edited
@@ -938,17 +936,22 @@ exports.assignShift = async (req, res) => {
     // 2. Save flags and history
     await attendanceRecord.save();
 
-    // 3. Trigger full system re-processing
-    // Since we updated rosterRecord.actualShiftId above, the engine will pick it up
+    // 3. Trigger full system re-processing with a forced shift override (segment-level)
     const reprocessResult = await reprocessAttendanceForEmployeeDate(
       attendanceRecord.employeeNumber,
-      attendanceRecord.date
+      attendanceRecord.date,
+      {
+        shiftEdit: {
+          segmentIndex,
+          shiftId,
+        },
+      }
     );
 
     if (!reprocessResult.success) {
       return res.status(500).json({
         success: false,
-        message: 'Shift assigned in roster but re-processing failed',
+        message: 'Shift override saved but re-processing failed',
         error: reprocessResult.error
       });
     }

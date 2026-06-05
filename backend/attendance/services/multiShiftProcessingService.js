@@ -188,7 +188,7 @@ function dedupePunchesForMultiShift(punches) {
 /**
  * Recompute duration, assignment, status, and penalties for one processed shift row.
  */
-async function recalculateShiftMetrics(pShift, employeeNumber, date, approvedODs, configWithMode) {
+async function recalculateShiftMetrics(pShift, employeeNumber, date, approvedODs, configWithMode, forcedShiftId = null) {
     const punchIn = pShift.inTime ? new Date(pShift.inTime) : null;
     const punchOut = pShift.outTime ? new Date(pShift.outTime) : null;
     const durationMs = punchIn && punchOut ? punchOut - punchIn : 0;
@@ -205,17 +205,53 @@ async function recalculateShiftMetrics(pShift, employeeNumber, date, approvedODs
     let assignedShiftDef = null;
 
     try {
-        shiftAssignment = await detectAndAssignShift(
-            employeeNumber,
-            date,
-            pShift.inTime,
-            pShift.outTime,
-            configWithMode
-        );
+        const Shift = require('../../shifts/model/Shift');
+        const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
 
-        if (shiftAssignment?.assignedShift) {
-            const Shift = require('../../shifts/model/Shift');
-            assignedShiftDef = await Shift.findById(shiftAssignment.assignedShift).select('payableShifts duration');
+        if (forcedShiftId) {
+            const forcedShift = await Shift.findById(forcedShiftId).lean();
+            if (!forcedShift) return pShift;
+
+            const globalLateInGrace = configWithMode?.late_in_grace_time ?? null;
+            const globalEarlyOutGrace = configWithMode?.early_out_grace_time ?? null;
+            const shiftGrace = forcedShift.gracePeriod ?? 15;
+
+            const lateInMinutes = punchIn
+                ? calculateLateIn(punchIn, forcedShift.startTime, shiftGrace, date, globalLateInGrace)
+                : null;
+            const earlyOutMinutes = punchOut
+                ? calculateEarlyOut(punchOut, forcedShift.endTime, forcedShift.startTime, date, globalEarlyOutGrace, shiftGrace)
+                : null;
+
+            shiftAssignment = {
+                success: true,
+                assignedShift: forcedShift._id,
+                shiftName: forcedShift.name,
+                shiftStartTime: forcedShift.startTime,
+                shiftEndTime: forcedShift.endTime,
+                expectedHours: forcedShift.duration ?? 8,
+                lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
+                earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
+                isLateIn: lateInMinutes > 0,
+                isEarlyOut: earlyOutMinutes && earlyOutMinutes > 0,
+            };
+
+            assignedShiftDef = {
+                payableShifts: forcedShift.payableShifts,
+                duration: forcedShift.duration,
+            };
+        } else {
+            shiftAssignment = await detectAndAssignShift(
+                employeeNumber,
+                date,
+                pShift.inTime,
+                pShift.outTime,
+                configWithMode
+            );
+
+            if (shiftAssignment?.assignedShift) {
+                assignedShiftDef = await Shift.findById(shiftAssignment.assignedShift).select('payableShifts duration');
+            }
         }
     } catch (e) {
         console.error('[MultiShift] recalculateShiftMetrics assignment error', e);
@@ -306,6 +342,30 @@ async function recalculateShiftMetrics(pShift, employeeNumber, date, approvedODs
     }
 
     return pShift;
+}
+
+/**
+ * Apply manual shift override after pairing (segment-level primary override).
+ * This does NOT rely on PreScheduledShift; it forces shiftId on the chosen segment and recomputes.
+ */
+async function applyShiftEditPatch(processedShifts, shiftEdit, employeeNumber, date, approvedODs, configWithMode) {
+    if (!shiftEdit || !processedShifts?.length) return processedShifts;
+
+    const sorted = [...processedShifts].sort((a, b) => {
+        const numDiff = (a.shiftNumber || 0) - (b.shiftNumber || 0);
+        if (numDiff !== 0) return numDiff;
+        return new Date(a.inTime || 0) - new Date(b.inTime || 0);
+    });
+
+    let idx = shiftEdit.segmentIndex;
+    if (idx == null || idx < 0 || idx >= sorted.length) {
+        // If index unknown, fallback to first segment (primary)
+        idx = 0;
+    }
+
+    const row = sorted[idx];
+    await recalculateShiftMetrics(row, employeeNumber, date, approvedODs, configWithMode, shiftEdit.shiftId);
+    return sorted;
 }
 
 /**
@@ -991,6 +1051,19 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             const patched = await applySegmentTimeEditPatch(
                 processedShifts,
                 manualOpts.segmentEdit,
+                employeeNumber,
+                date,
+                approvedODs,
+                configWithMode
+            );
+            processedShifts.length = 0;
+            processedShifts.push(...patched);
+        }
+
+        if (options.shiftEdit) {
+            const patched = await applyShiftEditPatch(
+                processedShifts,
+                options.shiftEdit,
                 employeeNumber,
                 date,
                 approvedODs,

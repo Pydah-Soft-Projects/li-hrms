@@ -1,6 +1,6 @@
 /**
  * Audit AttendanceDaily late-in / early-out against configured grace periods.
- * Interactive: pick division → department → payroll month → audit or fix.
+ * Interactive: pick department (or division) → payroll month → audit or fix.
  *
  * Usage (from backend folder):
  *   node scripts/audit_fix_grace_late_early_scope.js
@@ -255,12 +255,36 @@ async function chooseScopeInteractive(divisions, departmentsByDiv) {
   try {
     console.log('\n=== Scope ===');
     console.log('  1) All employees (entire org for selected month)');
-    console.log('  2) Division only');
-    console.log('  3) Division + Department');
-    const mode = await askChoice(rl, 'Select scope', 3);
+    console.log('  2) Department (direct - recommended)');
+    console.log('  3) Division only');
+    console.log('  4) Division + Department');
+    const mode = await askChoice(rl, 'Select scope', 4);
 
     if (mode === 1) {
       return { mode: 'all', divIds: [], deptIds: [] };
+    }
+
+    if (mode === 2) {
+      const allDepartments = [];
+      for (const arr of departmentsByDiv.values()) {
+        for (const dep of arr || []) allDepartments.push(dep);
+      }
+      allDepartments.sort((a, b) =>
+        String(a.name || a.department_name || '').localeCompare(String(b.name || b.department_name || ''), 'en')
+      );
+
+      if (!allDepartments.length) {
+        console.log('\nNo departments found. Falling back to All employees.');
+        return { mode: 'all', divIds: [], deptIds: [] };
+      }
+
+      console.log('\nDepartments:');
+      allDepartments.forEach((dep, i) => {
+        console.log(`  ${i + 1}) ${dep.name || dep.department_name || dep._id}`);
+      });
+      const depChoice = await askChoice(rl, 'Department', allDepartments.length);
+      const deptIds = [String(allDepartments[depChoice - 1]._id)];
+      return { mode: 'department_only', divIds: [], deptIds };
     }
 
     console.log('\nDivisions:');
@@ -271,7 +295,7 @@ async function chooseScopeInteractive(divisions, departmentsByDiv) {
     const division = divisions[divChoice - 1];
     const divIds = [String(division._id)];
 
-    if (mode === 2) {
+    if (mode === 3) {
       return { mode: 'division', divIds, deptIds: [] };
     }
 
@@ -421,6 +445,8 @@ async function main() {
       q.division_id = { $in: scope.divIds };
     } else if (scope.mode === 'department') {
       q.division_id = { $in: scope.divIds };
+      q.department_id = { $in: scope.deptIds };
+    } else if (scope.mode === 'department_only') {
       q.department_id = { $in: scope.deptIds };
     }
     const rows = await Employee.find(q).select('emp_no employee_name division_id department_id').lean();
