@@ -582,6 +582,9 @@ export interface WorkspaceDashboardStats {
 
 export interface LoginResponse {
   token: string;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresIn?: number;
   user: {
     id: string;
     email: string;
@@ -602,15 +605,81 @@ export interface LoginResponse {
   activeWorkspace?: Workspace;
 }
 
+const AUTH_SKIP_REFRESH_PATHS = ['/auth/login', '/auth/sso-login', '/auth/refresh', '/auth/logout'];
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  if (refreshInFlight) {
+    return refreshInFlight;
+  }
+
+  refreshInFlight = (async () => {
+    const refreshToken = auth.getRefreshToken();
+    if (!refreshToken) return false;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data?.success || !data?.data?.accessToken) {
+        return false;
+      }
+
+      auth.setAuthSession(data.data.accessToken || data.data.token, data.data.refreshToken);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+
+  return refreshInFlight;
+}
+
+function shouldAttemptTokenRefresh(endpoint: string, code?: string): boolean {
+  if (!AUTH_SKIP_REFRESH_PATHS.some((path) => endpoint.includes(path))) {
+    return code === 'TOKEN_EXPIRED';
+  }
+  return false;
+}
+
+function handleAuthFailure(endpoint: string, code?: string) {
+  if (AUTH_SKIP_REFRESH_PATHS.some((path) => endpoint.includes(path))) {
+    return;
+  }
+
+  const reason =
+    code === 'SESSION_REPLACED'
+      ? 'SESSION_REPLACED'
+      : code === 'TOKEN_VERSION_MISMATCH'
+        ? 'TOKEN_VERSION_MISMATCH'
+        : 'SESSION_EXPIRED';
+
+  auth.clearLocalSession(reason);
+}
+
 export async function apiRequest<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  retryOnRefresh = true
 ): Promise<ApiResponse<T>> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
+
+  if (typeof window !== 'undefined') {
+    headers['X-Device-Id'] = auth.getDeviceId();
+  }
 
   // Merge existing headers if any
   if (options.headers) {
@@ -628,8 +697,6 @@ export async function apiRequest<T>(
 
   try {
     const url = `${API_BASE_URL}${endpoint}`;
-    // console.log(`[API Request] ${options.method || 'GET'} ${url}`, options.body instanceof FormData ? 'FormData' : (options.body ? JSON.parse(options.body as string) : ''));
-
 
     const response = await fetch(url, {
       ...options,
@@ -640,10 +707,22 @@ export async function apiRequest<T>(
     console.log(`[API Response] ${response.status} ${url}`, data);
 
     if (!response.ok) {
-      // Handle unauthorized (expired token)
+      const errorCode = typeof data === 'object' && data !== null ? (data as { code?: string }).code : undefined;
+
+      if (
+        response.status === 401 &&
+        retryOnRefresh &&
+        shouldAttemptTokenRefresh(endpoint, errorCode)
+      ) {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) {
+          return apiRequest<T>(endpoint, options, false);
+        }
+      }
+
       if (response.status === 401 && !endpoint.includes('/auth/login')) {
-        console.warn(`[API 401] Unauthorized access to ${endpoint}. Triggering logout.`);
-        auth.logout();
+        console.warn(`[API 401] Unauthorized access to ${endpoint}.`, errorCode);
+        handleAuthFailure(endpoint, errorCode);
       }
 
       return {
@@ -652,7 +731,7 @@ export async function apiRequest<T>(
         statusCode: response.status,
         message: (typeof data === 'object' && data !== null && data.message) || 'An error occurred',
         error: (typeof data === 'object' && data !== null && (data.error || data.message)) || `HTTP ${response.status}`,
-        code: typeof data === 'object' && data !== null ? (data as any).code : undefined,
+        code: errorCode,
         reason: typeof data === 'object' && data !== null ? (data as any).reason : undefined,
         data: typeof data === 'object' && data !== null ? (data as any).data : undefined,
       };
@@ -1193,8 +1272,34 @@ export const api = {
   login: async (identifier: string, password: string) => {
     return apiRequest<LoginResponse>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ identifier, email: identifier, password }),
+      body: JSON.stringify({
+        identifier,
+        email: identifier,
+        password,
+        deviceId: auth.getDeviceId(),
+        deviceName: auth.getDeviceName(),
+      }),
     });
+  },
+
+  refreshToken: async () => {
+    const refreshToken = auth.getRefreshToken();
+    if (!refreshToken) {
+      return { success: false, message: 'No refresh token available' };
+    }
+    return apiRequest<{
+      token: string;
+      accessToken: string;
+      refreshToken: string;
+      expiresIn: number;
+    }>('/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+    });
+  },
+
+  logout: async () => {
+    return apiRequest<{ message: string }>('/auth/logout', { method: 'POST' });
   },
 
   forgotPassword: async (identifier: string) => {
@@ -1222,7 +1327,11 @@ export const api = {
   ssoLogin: async (encryptedToken: string) => {
     return apiRequest<LoginResponse>('/auth/sso-login', {
       method: 'POST',
-      body: JSON.stringify({ encryptedToken }),
+      body: JSON.stringify({
+        encryptedToken,
+        deviceId: auth.getDeviceId(),
+        deviceName: auth.getDeviceName(),
+      }),
     });
   },
   // Payroll include-missing setting (global)

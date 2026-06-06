@@ -15,6 +15,8 @@ const app = express();
 module.exports = app;
 const PORT = process.env.PORT || 5000;
 
+app.set('trust proxy', 1);
+
 // Middleware
 const logger = require('./middleware/logger');
 app.use(logger); // Log all requestsbn

@@ -284,6 +284,10 @@ const employeeSchema = new mongoose.Schema(
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     lastLogin: Date,
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
     // Second Salary fixed amount for calculation
     second_salary: {
       type: Number,

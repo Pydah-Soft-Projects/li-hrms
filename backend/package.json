@@ -32,7 +32,8 @@
     "sync:atlas-biometric": "node scripts/sync_atlas_biometric_to_attendance.js",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:notifications": "jest promotions-transfers/services/__tests__/promotionTransferNotificationService.simulation.test.js notifications/services/__tests__/createNotifications.recipients.simulation.test.js --forceExit"
+    "test:notifications": "jest promotions-transfers/services/__tests__/promotionTransferNotificationService.simulation.test.js notifications/services/__tests__/createNotifications.recipients.simulation.test.js --forceExit",
+    "test:auth-session": "jest authentication/__tests__ --forceExit --testTimeout=60000 --runInBand"
   },
   "keywords": [],
   "author": "",

@@ -25,6 +25,7 @@ export interface User {
 
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+const DEVICE_ID_KEY = 'hrms_device_id';
 
 let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
 let inactivityListenersBound = false;
@@ -45,12 +46,36 @@ const resetInactivityTimer = () => {
   inactivityTimer = setTimeout(() => {
     if (!auth.getToken() || !auth.getUser()) return;
 
-    auth.logout();
+    auth.logout().catch(() => {
+      auth.clearLocalSession();
+    });
     inactivityLogoutHandler?.();
   }, INACTIVITY_TIMEOUT_MS);
 };
 
+function generateDeviceId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `dev_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
 export const auth = {
+  getDeviceId: (): string => {
+    if (typeof window === 'undefined') return 'server';
+    let deviceId = localStorage.getItem(DEVICE_ID_KEY);
+    if (!deviceId) {
+      deviceId = generateDeviceId();
+      localStorage.setItem(DEVICE_ID_KEY, deviceId);
+    }
+    return deviceId;
+  },
+
+  getDeviceName: (): string => {
+    if (typeof navigator === 'undefined') return 'unknown';
+    return navigator.userAgent || 'unknown';
+  },
+
   setToken: (token: string) => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('token', token);
@@ -62,6 +87,26 @@ export const auth = {
       return localStorage.getItem('token');
     }
     return null;
+  },
+
+  setRefreshToken: (refreshToken: string) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('refreshToken', refreshToken);
+    }
+  },
+
+  getRefreshToken: (): string | null => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('refreshToken');
+    }
+    return null;
+  },
+
+  setAuthSession: (accessToken: string, refreshToken?: string) => {
+    auth.setToken(accessToken);
+    if (refreshToken) {
+      auth.setRefreshToken(refreshToken);
+    }
   },
 
   setUser: (user: User) => {
@@ -78,18 +123,37 @@ export const auth = {
     return null;
   },
 
-  logout: () => {
+  clearLocalSession: (reason?: string) => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
-      // Clear workspace data on logout
       clearWorkspaceData();
-
-      // Dispatch custom event to notify React contexts to clear memory state
-      window.dispatchEvent(new CustomEvent('auth-logout'));
+      window.dispatchEvent(new CustomEvent('auth-logout', { detail: { reason } }));
     }
+  },
+
+  logout: async () => {
+    if (typeof window === 'undefined') return;
+
+    const refreshToken = auth.getRefreshToken();
+    const accessToken = auth.getToken();
+
+    try {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://hrms.pydah.edu.in/api';
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+      });
+    } catch {
+      // Best-effort server logout; always clear local session
+    }
+
+    auth.clearLocalSession();
   },
 
   confirmLogout: async (
@@ -104,7 +168,7 @@ export const auth = {
   logoutWithConfirmation: async (message = 'Are you sure you want to logout?'): Promise<boolean> => {
     const confirmed = await auth.confirmLogout(message);
     if (!confirmed) return false;
-    auth.logout();
+    await auth.logout();
     return true;
   },
 
@@ -142,24 +206,20 @@ export const auth = {
     return auth.getToken() !== null;
   },
 
-  // Super Admin goes to admin panel, everyone else goes to workspace-based dashboard
   getRoleBasedPath: (role: string): string => {
     if (role === 'super_admin') {
       return '/superadmin/dashboard';
     }
-    // All other users go to workspace-based dashboard
     return '/dashboard';
   },
 
-  // Check if user is super admin
   isSuperAdmin: (): boolean => {
     const user = auth.getUser();
     return user?.role === 'super_admin';
   },
 
-  // Get authentication headers for API requests
   getAuthHeader: async (): Promise<Record<string, string>> => {
     const token = auth.getToken();
-    return token ? { 'Authorization': `Bearer ${token}` } : {};
+    return token ? { Authorization: `Bearer ${token}` } : {};
   },
 };

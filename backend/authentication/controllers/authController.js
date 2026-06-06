@@ -2,8 +2,14 @@ const User = require('../../users/model/User');
 const Employee = require('../../employees/model/Employee');
 const RoleAssignment = require('../../workspaces/model/RoleAssignment');
 const Role = require('../../users/model/Role');
-const { generateToken } = require('../../users/controllers/userController');
 const passwordNotificationService = require('../../shared/services/passwordNotificationService');
+const {
+  issueAuthTokens,
+  logLoginAttempt,
+  bumpTokenVersionAndDestroySession,
+} = require('../services/authSessionHelper');
+const sessionService = require('../services/sessionService');
+const tokenService = require('../services/tokenService');
 
 // @desc    Login user
 // @route   POST /api/auth/login
@@ -78,6 +84,12 @@ exports.login = async (req, res) => {
 
     if (!user) {
       console.warn(`[AuthLogin] Identifier ${identifier} not found in any collection`);
+      await logLoginAttempt({
+        identifier,
+        success: false,
+        reason: 'user_not_found',
+        req,
+      });
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials',
@@ -90,6 +102,14 @@ exports.login = async (req, res) => {
     const isActive = userType === 'user' ? user.isActive : user.is_active;
     if (!isActive) {
       console.warn(`[AuthLogin] Found ${userType} is inactive: ${identifier}`);
+      await logLoginAttempt({
+        identifier,
+        userId: user._id,
+        userType,
+        success: false,
+        reason: 'inactive',
+        req,
+      });
       return res.status(401).json({
         success: false,
         message: 'Account is deactivated. Please contact administrator',
@@ -113,6 +133,14 @@ exports.login = async (req, res) => {
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       console.warn(`[AuthLogin] Password mismatch for ${userType} ${identifier}. Provided length: ${password?.length}, Stored hash present: ${!!user.password}`);
+      await logLoginAttempt({
+        identifier,
+        userId: user._id,
+        userType,
+        success: false,
+        reason: 'invalid_password',
+        req,
+      });
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials',
@@ -120,6 +148,14 @@ exports.login = async (req, res) => {
     }
 
     console.log(`[AuthLogin] Login successful for ${userType} ${identifier}`);
+
+    await logLoginAttempt({
+      identifier,
+      userId: user._id,
+      userType,
+      success: true,
+      req,
+    });
 
     // Update last login on the correct record: if user is upgraded from employee, update Employee only; else update the logged-in entity
     const now = new Date();
@@ -135,14 +171,17 @@ exports.login = async (req, res) => {
       await user.save();
     }
 
-    // Generate token
-    const token = generateToken(user._id);
+    // Issue session-backed tokens (single active device)
+    const tokens = await issueAuthTokens(user, userType, req);
 
     res.status(200).json({
       success: true,
       message: 'Login successful',
       data: {
-        token,
+        token: tokens.accessToken,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
         user: {
           id: user._id,
           email: user.email,
@@ -402,7 +441,7 @@ exports.ssoLogin = async (req, res) => {
       await user.save();
     }
 
-    const token = generateToken(user._id);
+    const tokens = await issueAuthTokens(user, userType, req);
 
     let workspaces = [];
     let activeWorkspace = null;
@@ -451,7 +490,10 @@ exports.ssoLogin = async (req, res) => {
       success: true,
       message: 'Login successful',
       data: {
-        token,
+        token: tokens.accessToken,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
         user: {
           id: user._id,
           email: user.email,
@@ -529,13 +571,13 @@ exports.changePassword = async (req, res) => {
       });
     }
 
-    // Update password
+    // Update password and invalidate all sessions
     user.password = newPassword;
-    await user.save();
+    await bumpTokenVersionAndDestroySession(user, userType);
 
     res.status(200).json({
       success: true,
-      message: 'Password changed successfully',
+      message: 'Password changed successfully. Please login again on all devices.',
     });
   } catch (error) {
     res.status(500).json({
@@ -687,9 +729,9 @@ exports.forgotPassword = async (req, res) => {
       userType === 'employee' ? userBase : (userBase.employeeRef ? await Employee.findById(userBase.employeeRef) : null)
     );
 
-    // Update password
+    // Update password and invalidate existing sessions
     userBase.password = newPassword;
-    await userBase.save();
+    await bumpTokenVersionAndDestroySession(userBase, userType);
 
     // Prepare notification data
     let notificationEmployee = null;
@@ -741,6 +783,101 @@ exports.forgotPassword = async (req, res) => {
   } catch (error) {
     console.error('[ForgotPassword] Error:', error);
     res.status(500).json({ success: false, message: 'Error during password reset' });
+  }
+};
+
+// @desc    Refresh access token using refresh token
+// @route   POST /api/auth/refresh
+// @access  Public
+exports.refresh = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token is required',
+      });
+    }
+
+    const parsed = sessionService.parseRefreshToken(refreshToken);
+    if (!parsed) {
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_REFRESH_TOKEN',
+        message: 'Invalid refresh token',
+      });
+    }
+
+    const refreshResult = await sessionService.refreshSession(parsed.userId, refreshToken);
+    if (!refreshResult.ok) {
+      return res.status(401).json({
+        success: false,
+        code: refreshResult.code,
+        message: refreshResult.message,
+      });
+    }
+
+    const accessToken = tokenService.generateAccessToken({
+      userId: parsed.userId,
+      sessionId: refreshResult.sessionId,
+      tokenVersion: refreshResult.tokenVersion,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        token: accessToken,
+        accessToken,
+        refreshToken: refreshResult.newRefreshToken,
+        expiresIn: tokenService.getAccessExpireSeconds(),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error refreshing token',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Logout current session
+// @route   POST /api/auth/logout
+// @access  Private
+exports.logout = async (req, res) => {
+  try {
+    if (req.user?.userId) {
+      await sessionService.destroySession(req.user.userId.toString());
+    }
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully',
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error during logout',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get current session/device info
+// @route   GET /api/auth/session
+// @access  Private
+exports.getSession = async (req, res) => {
+  try {
+    const sessionInfo = await sessionService.getSessionInfo(req.user.userId.toString());
+    res.status(200).json({
+      success: true,
+      data: sessionInfo,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching session info',
+      error: error.message,
+    });
   }
 };
 

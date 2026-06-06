@@ -9,14 +9,10 @@ const jwt = require('jsonwebtoken');
 const Setting = require('../../settings/model/Settings');
 const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
 const EmployeeApplication = require('../../employee-applications/model/EmployeeApplication');
+const { generateLegacyToken } = require('../../authentication/services/tokenService');
 
-
-// Generate JWT Token
-const generateToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || '7d',
-  });
-};
+// Generate JWT Token (legacy fallback — prefer session-based login tokens)
+const generateToken = (userId) => generateLegacyToken(userId);
 
 async function logUserHistory({ userId, event, reqUser, details, comments }) {
   try {
