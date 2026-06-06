@@ -38,6 +38,40 @@ const PayrollPayslipSnapshot = require('../model/PayrollPayslipSnapshot');
 const DeductionPayrollIntegrationService = require('../../manual-deductions/services/deductionPayrollIntegrationService');
 const paysheetAdjustmentService = require('../services/paysheetAdjustmentService');
 const PaysheetAdjustmentRequest = require('../model/PaysheetAdjustmentRequest');
+const payslipSectionService = require('../services/payslipSectionService');
+const payslipLoanSectionService = require('../services/payslipLoanSectionService');
+
+async function attachPayslipSectionsToRecord(payrollRecord) {
+  const config = await PayrollConfiguration.get();
+  const outputColumns = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
+  const empId = payrollRecord.employeeId?._id || payrollRecord.employeeId;
+  let snapshotRow = null;
+  if (empId && payrollRecord.month) {
+    const snap = await PayrollPayslipSnapshot.findOne({
+      employeeId: empId,
+      month: payrollRecord.month,
+      kind: 'regular',
+    })
+      .select('row')
+      .lean();
+    snapshotRow = snap?.row || null;
+  }
+  const payslipSections = payslipSectionService.buildPayslipSections(
+    outputColumns,
+    payrollRecord,
+    snapshotRow
+  );
+  const data =
+    payrollRecord && typeof payrollRecord.toObject === 'function'
+      ? payrollRecord.toObject()
+      : { ...payrollRecord };
+  data.payslipSections = payslipSections;
+  data.payslipLoans = await payslipLoanSectionService.buildPayslipLoansForRecord(payrollRecord, {
+    outputColumns,
+    snapshotRow,
+  });
+  return data;
+}
 
 async function attachPaysheetAdjustmentMeta(rows, records, month, outputColumnsForRebuild = null) {
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -1848,9 +1882,11 @@ exports.getPayrollRecordById = async (req, res) => {
       });
     }
 
+    const data = await attachPayslipSectionsToRecord(payrollRecord);
+
     res.status(200).json({
       success: true,
-      data: payrollRecord,
+      data,
     });
   } catch (error) {
     console.error('Error fetching payroll record by ID:', error);
@@ -1902,9 +1938,11 @@ exports.getPayrollRecord = async (req, res) => {
       });
     }
 
+    const data = await attachPayslipSectionsToRecord(payrollRecord);
+
     res.status(200).json({
       success: true,
-      data: payrollRecord,
+      data,
     });
   } catch (error) {
     console.error('Error fetching payroll record:', error);
@@ -2040,10 +2078,19 @@ exports.getPayrollRecords = async (req, res) => {
     console.log(`[getPayrollRecords] Final Query executed:`, JSON.stringify(query));
     console.log(`[getPayrollRecords] Found ${payrollRecords.length} records.`);
 
+    const payrollConfig = await PayrollConfiguration.get();
+    const outputColumns = Array.isArray(payrollConfig?.outputColumns)
+      ? payrollConfig.outputColumns
+      : [];
+    const data = await payslipLoanSectionService.attachPayslipLoansToRecords(
+      payrollRecords,
+      outputColumns
+    );
+
     res.status(200).json({
       success: true,
-      count: payrollRecords.length,
-      data: payrollRecords,
+      count: data.length,
+      data,
     });
   } catch (error) {
     console.error('Error fetching payroll records:', error);

@@ -49,6 +49,8 @@ exports.upsertPayrollConfig = async (req, res) => {
           const formulaStr = (c.formula != null && String(c.formula).trim()) ? String(c.formula).trim() : '';
           const explicitSource = c.source === 'formula' ? 'formula' : (c.source === 'field' ? 'field' : null);
           const source = explicitSource || (formulaStr.length > 0 ? 'formula' : 'field');
+          const rawSection = String(c.payslipSection || 'none').trim().toLowerCase();
+          const payslipSection = ['attendance', 'earnings', 'deductions'].includes(rawSection) ? rawSection : 'none';
           return {
             header,
             source,
@@ -58,6 +60,7 @@ exports.upsertPayrollConfig = async (req, res) => {
             paysheetEditable: !!c.paysheetEditable,
             paysheetEditableFieldPath:
               c.paysheetEditableFieldPath != null ? String(c.paysheetEditableFieldPath).trim() : '',
+            payslipSection,
           };
         })
       : [];

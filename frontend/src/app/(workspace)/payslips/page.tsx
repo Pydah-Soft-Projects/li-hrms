@@ -3,13 +3,15 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, PayrollOutputColumn } from '@/lib/api';
 import { toast } from 'react-toastify';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { fetchCompanyProfile, type CompanyProfile } from '@/lib/companyProfile';
-import { drawPayslipCompanyHeaderCentered, drawPayslipFooter } from '@/lib/payslipPdf';
 import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
+import { resolvePayslipSections } from '@/components/payslip/DynamicPayslipSections';
+import { drawDynamicPayslipPdf } from '@/lib/payslipPdfDynamic';
+import { buildPayslipSections } from '@/lib/payslipSections';
+import { resolvePayslipLoans } from '@/lib/payslipLoans';
 
 function PayslipEmployeeBlock({
   employee,
@@ -147,6 +149,7 @@ export default function PayslipsPage() {
   const [generatingBulkPDF, setGeneratingBulkPDF] = useState(false);
   const [selectedRecords, setSelectedRecords] = useState<Set<string>>(new Set());
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
+  const [payrollOutputColumns, setPayrollOutputColumns] = useState<PayrollOutputColumn[]>([]);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -169,6 +172,10 @@ export default function PayslipsPage() {
     fetchDepartments();
     fetchEmployees();
     fetchCompanyProfile().then(setCompanyProfile);
+    api.getPayrollConfig().then((res) => {
+      const cols = (res as { data?: { outputColumns?: PayrollOutputColumn[] } })?.data?.outputColumns;
+      if (Array.isArray(cols)) setPayrollOutputColumns(cols);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -299,196 +306,25 @@ export default function PayslipsPage() {
     const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
     if (!employee) return false;
 
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
+    const sections = resolvePayslipSections(record, payrollOutputColumns);
+    if (!sections.hasConfiguredSections) return false;
+
+    const loans = resolvePayslipLoans(record);
     const profile = companyProfile ?? (await fetchCompanyProfile());
-
-    let monthLabel = `Month: ${record.monthName} ${record.year}`;
-    if (record.startDate && record.endDate) {
-      const startStr = new Date(record.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-      const endStr = new Date(record.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-      monthLabel += ` (${startStr} to ${endStr})`;
-    }
-
-    const detailsY = await drawPayslipCompanyHeaderCentered(doc, profile, { monthLabel });
-
-    // Employee Details Box
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text('EMPLOYEE DETAILS', 14, detailsY);
-
-    doc.setFont('helvetica', 'normal');
-    const col1X = 14;
-    const col2X = 80;
-    const col3X = 145;
-
-    let yPos = detailsY + 8;
-
-    // Row 1
-    doc.setFont('helvetica', 'bold');
-    doc.text('Employee Code:', col1X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(record.emp_no || 'N/A', col1X + 30, yPos);
-
-    doc.setFont('helvetica', 'bold');
-    doc.text('Department:', col2X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(getDeptName(employee.department_id), col2X + 25, yPos);
-
-    doc.setFont('helvetica', 'bold');
-    doc.text('Location:', col3X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(employee.location || 'N/A', col3X + 20, yPos);
-
-    yPos += 7;
-
-    // Row 2
-    doc.setFont('helvetica', 'bold');
-    doc.text('Name:', col1X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(employee.employee_name || 'N/A', col1X + 30, yPos);
-
-    doc.setFont('helvetica', 'bold');
-    doc.text('Designation:', col2X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(getDesigName(employee.designation_id), col2X + 25, yPos);
-
-    doc.setFont('helvetica', 'bold');
-    doc.text('Bank Acc:', col3X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(employee.bank_account_no || 'N/A', col3X + 20, yPos);
-
-    yPos += 7;
-
-    // Row 3
-    doc.setFont('helvetica', 'bold');
-    doc.text('PF Number:', col1X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(employee.pf_number || 'N/A', col1X + 30, yPos);
-
-    doc.setFont('helvetica', 'bold');
-    doc.text('ESI Number:', col2X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(employee.esi_number || 'N/A', col2X + 25, yPos);
-
-    yPos += 5;
-
-    // Attendance Details
-    yPos += 5;
-    doc.setFont('helvetica', 'bold');
-    doc.text('ATTENDANCE DETAILS', 14, yPos);
-    yPos += 6;
-
-    const attendanceData = [
-      ['Month Days', record.totalDaysInMonth || record.attendance?.totalDaysInMonth || 0],
-      ['Present Days', record.attendance?.presentDays || 0],
-      ['Week Offs', record.attendance?.weeklyOffs || 0],
-      ['Paid Leaves', record.attendance?.paidLeaveDays || 0],
-      ['OD Days', record.attendance?.odDays || 0],
-      ['Absents', record.attendance?.absentDays || 0],
-      ['Payable Shifts', record.totalPayableShifts || record.attendance?.payableShifts || 0],
-      ['Extra Days', record.attendance?.extraDays || 0],
-      ['Total Paid Days', record.attendance?.totalPaidDays || 0],
-      ['OT Hours', record.attendance?.otHours || 0],
-    ];
-
-    autoTable(doc, {
-      startY: yPos,
-      head: [['Attendance Type', 'Days/Hours']],
-      body: attendanceData,
-      theme: 'grid',
-      headStyles: { fillColor: [16, 185, 129], fontSize: 9, fontStyle: 'bold' }, // emerald-500
-      bodyStyles: { fontSize: 9 },
-      columnStyles: {
-        0: { cellWidth: 80 },
-        1: { cellWidth: 40, halign: 'right' }
+    await drawDynamicPayslipPdf(doc, {
+      payroll: record,
+      employee: {
+        employee_name: employee.employee_name,
+        emp_no: record.emp_no || employee.emp_no,
+        designation_id: getDesigName(employee.designation_id),
+        department_id: getDeptName(employee.department_id),
+        bank_account_no: employee.bank_account_no,
+        pf_number: employee.pf_number,
       },
-      margin: { left: 14, right: 14 }
+      sections,
+      loans,
+      profile,
     });
-
-    yPos = (doc as any).lastAutoTable.finalY + 10;
-
-    // Earnings and Deductions Side by Side
-    doc.setFont('helvetica', 'bold');
-    doc.text('EARNINGS', 14, yPos);
-    doc.text('DEDUCTIONS', pageWidth / 2 + 7, yPos);
-    yPos += 6;
-
-    // Earnings Table
-    const earningsData = [
-      ['Basic Pay', record.earnings.basicPay.toFixed(2)],
-      ['Earned Salary', record.attendance?.earnedSalary?.toFixed(2) || '0.00'],
-      ...(record.earnings.allowances || []).map(a => [a.name, a.amount.toFixed(2)]),
-      ['Incentive', record.earnings.incentive.toFixed(2)],
-      ['OT Pay', record.earnings.otPay.toFixed(2)],
-      ['Arrears', (record.arrearsAmount || 0).toFixed(2)],
-    ];
-
-    autoTable(doc, {
-      startY: yPos,
-      head: [['Earnings', 'Amount (₹)']],
-      body: earningsData,
-      theme: 'grid',
-      headStyles: { fillColor: [5, 150, 105], fontSize: 9, fontStyle: 'bold' }, // emerald-600
-      bodyStyles: { fontSize: 9 },
-      columnStyles: {
-        0: { cellWidth: 60 },
-        1: { cellWidth: 30, halign: 'right' }
-      },
-      margin: { left: 14, right: pageWidth / 2 + 7 }
-    });
-
-    // Deductions Table
-    const deductionsData = [
-      ['Attendance Deduction', record.deductions.attendanceDeduction.toFixed(2)],
-      ['Permission Deduction', record.deductions.permissionDeduction.toFixed(2)],
-      ['Leave Deduction', record.deductions.leaveDeduction.toFixed(2)],
-      ...(record.deductions.otherDeductions || []).map(d => [d.name, d.amount.toFixed(2)]),
-      ['EMI', record.loanAdvance.totalEMI.toFixed(2)],
-      ['Advance', record.loanAdvance.advanceDeduction.toFixed(2)],
-    ];
-
-    autoTable(doc, {
-      startY: yPos,
-      head: [['Deductions', 'Amount (₹)']],
-      body: deductionsData,
-      theme: 'grid',
-      headStyles: { fillColor: [225, 29, 72], fontSize: 9, fontStyle: 'bold' }, // rose-600
-      bodyStyles: { fontSize: 9 },
-      columnStyles: {
-        0: { cellWidth: 60 },
-        1: { cellWidth: 30, halign: 'right' }
-      },
-      margin: { left: pageWidth / 2 + 7, right: 14 }
-    });
-
-    const finalY = Math.max((doc as any).lastAutoTable.finalY, yPos + 40);
-
-    // Summary
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    const summaryY = finalY + 10;
-    doc.text('SALARY SUMMARY', 14, summaryY);
-
-    doc.setFontSize(10);
-    doc.text('Gross Salary:', 14, summaryY + 8);
-    doc.text(`₹ ${record.earnings.grossSalary.toFixed(2)}`, 80, summaryY + 8);
-
-    doc.text('Total Deductions:', 14, summaryY + 15);
-    doc.text(`₹ ${record.deductions.totalDeductions.toFixed(2)}`, 80, summaryY + 15);
-
-    if (record.roundOff !== undefined) {
-      doc.text('Round Off:', 14, summaryY + 22);
-      doc.text(`₹ ${record.roundOff.toFixed(2)}`, 80, summaryY + 22);
-    }
-
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text('NET SALARY:', 14, summaryY + 32);
-    doc.text(`₹ ${record.netSalary.toFixed(2)}`, 80, summaryY + 32);
-
-    drawPayslipFooter(doc, profile, summaryY + 40);
-
     return true;
   };
 
@@ -502,7 +338,7 @@ export default function PayslipsPage() {
         doc.save(`Payslip_${record.emp_no}_${record.month}.pdf`);
         toast.success('Payslip PDF generated successfully!');
       } else {
-        toast.error('Employee data not found');
+        toast.error('Configure payslip sections in Payroll Configuration or employee data missing');
       }
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -863,19 +699,40 @@ export default function PayslipsPage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                            ₹{record.earnings.grossSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </span>
+                          {(() => {
+                            const s = buildPayslipSections(payrollOutputColumns, record);
+                            return s.hasConfiguredSections ? (
+                              <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                                ₹{(s.totalEarnings ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-400">—</span>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <span className="text-sm font-semibold text-rose-600 dark:text-rose-400">
-                            ₹{record.deductions.totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </span>
+                          {(() => {
+                            const s = buildPayslipSections(payrollOutputColumns, record);
+                            return s.hasConfiguredSections ? (
+                              <span className="text-sm font-semibold text-rose-600 dark:text-rose-400">
+                                ₹{(s.totalDeductions ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-400">—</span>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4 text-right text-emerald-600 dark:text-emerald-400">
-                          <span className="text-sm font-bold">
-                            ₹{record.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </span>
+                          {(() => {
+                            const s = buildPayslipSections(payrollOutputColumns, record);
+                            return s.hasConfiguredSections ? (
+                              <span className="text-sm font-bold">
+                                ₹{(s.netPayable ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-400">—</span>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4 text-center">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${record.status === 'processed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :

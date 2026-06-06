@@ -304,6 +304,8 @@ export interface PayrollConfigStep {
   config?: Record<string, unknown>;
 }
 
+export type PayslipSectionType = 'none' | 'attendance' | 'earnings' | 'deductions';
+
 export interface PayrollOutputColumn {
   header: string;
   source: 'field' | 'formula';
@@ -313,6 +315,39 @@ export interface PayrollOutputColumn {
   /** Paysheet: allow modification requests for this column when global toggle is on. */
   paysheetEditable?: boolean;
   paysheetEditableFieldPath?: string;
+  /** Payslip layout section: attendance, earnings, or deductions. */
+  payslipSection?: PayslipSectionType;
+}
+
+export interface PayslipSectionItem {
+  header: string;
+  value: string | number;
+  order?: number;
+}
+
+export interface PayslipSections {
+  attendance: PayslipSectionItem[];
+  earnings: PayslipSectionItem[];
+  deductions: PayslipSectionItem[];
+  hasConfiguredSections: boolean;
+  totalEarnings?: number;
+  totalDeductions?: number;
+  netPayable?: number;
+}
+
+export interface PayslipLoanItem {
+  loanId?: string;
+  label: string;
+  balanceBefore: number;
+  emiDeducted: number;
+  balanceAfter: number;
+}
+
+export interface PayslipLoans {
+  items: PayslipLoanItem[];
+  totalEmiDeducted: number;
+  totalBalanceAfter: number;
+  hasLoans: boolean;
 }
 
 export interface PaysheetEditableColumn {

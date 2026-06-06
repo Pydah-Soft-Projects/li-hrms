@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { api, PayrollConfig, PayrollConfigStep, PayrollOutputColumn, PayrollStepComponent, StatutoryDeductionConfig } from '@/lib/api';
+import { api, PayrollConfig, PayrollConfigStep, PayrollOutputColumn, PayrollStepComponent, PayslipSectionType, StatutoryDeductionConfig } from '@/lib/api';
+import { inferPayslipSectionFromField } from '@/lib/payslipSections';
 import { toast } from 'react-toastify';
 import { FileSpreadsheet, Save, Plus, Trash2, ChevronDown, ChevronRight, HelpCircle, ArrowRight, GripVertical } from 'lucide-react';
 
@@ -134,7 +135,13 @@ export default function PayrollConfigPage() {
         );
       }
       if (Array.isArray(data?.outputColumns) && data.outputColumns.length > 0) {
-        setOutputColumns(data.outputColumns.map((c, i) => ({ ...c, order: c.order ?? i })));
+        setOutputColumns(
+          data.outputColumns.map((c, i) => ({
+            ...c,
+            order: c.order ?? i,
+            payslipSection: c.payslipSection || 'none',
+          }))
+        );
       } else {
         setOutputColumns([]);
       }
@@ -216,7 +223,10 @@ export default function PayrollConfigPage() {
   };
 
   const addOutputColumn = () => {
-    setOutputColumns((prev) => [...prev, { header: '', source: 'field', field: 'employee.emp_no', order: prev.length }]);
+    setOutputColumns((prev) => [
+      ...prev,
+      { header: '', source: 'field', field: 'employee.emp_no', payslipSection: 'none', order: prev.length },
+    ]);
   };
 
   /** Add only the cumulative column for a step. Components (allowances, deductions, PF/ESI/PT) are calculated by payroll services and stored; we only expose the cumulative so the engine/Excel shows the sum. */
@@ -224,11 +234,11 @@ export default function PayrollConfigPage() {
     const nextOrder = outputColumns.length;
     let newCol: PayrollOutputColumn | null = null;
     if (stepType === 'allowances') {
-      newCol = { header: 'Allowances cumulative', source: 'field', field: 'earnings.allowancesCumulative', formula: '', order: nextOrder };
+      newCol = { header: 'Allowances cumulative', source: 'field', field: 'earnings.allowancesCumulative', formula: '', payslipSection: 'earnings', order: nextOrder };
     } else if (stepType === 'other_deductions') {
-      newCol = { header: 'Deductions cumulative', source: 'field', field: 'deductions.deductionsCumulative', formula: '', order: nextOrder };
+      newCol = { header: 'Deductions cumulative', source: 'field', field: 'deductions.deductionsCumulative', formula: '', payslipSection: 'deductions', order: nextOrder };
     } else if (stepType === 'statutory_deductions') {
-      newCol = { header: 'Statutory cumulative', source: 'field', field: 'deductions.statutoryCumulative', formula: '', order: nextOrder };
+      newCol = { header: 'Statutory cumulative', source: 'field', field: 'deductions.statutoryCumulative', formula: '', payslipSection: 'deductions', order: nextOrder };
     }
     if (newCol) {
       const withOrder = { ...newCol, order: newCol.order ?? nextOrder };
@@ -569,6 +579,9 @@ export default function PayrollConfigPage() {
               <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                 This is the actual payroll flow: add columns in order. Field values (OT pay, attendance deduction, basic pay, etc.) come from the dedicated functions in the services and controllers—for the respective employee we get those values from them. Use &quot;Add cumulative from step&quot; to place Allowances cumulative, Deductions cumulative, or Statutory cumulative for that employee. <strong>Include a &quot;Paid Days&quot; or &quot;Present days&quot; column before those cumulatives</strong> so statutory, allowances and deductions use it for proration (see section below).
               </p>
+              <p className="mt-1 text-xs text-amber-800/90 dark:text-amber-200/90">
+                <strong>Payslip:</strong> only columns with Payslip section set to Attendance, Earnings, or Deductions appear on the payslip. &quot;Paysheet only&quot; stays off the payslip (e.g. gross salary on the paysheet does not show unless you explicitly tag it).
+              </p>
               <label className="mt-3 inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
                 <input
                   type="checkbox"
@@ -695,7 +708,7 @@ export default function PayrollConfigPage() {
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
-                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-0 order-1 sm:order-2">
+                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-4 gap-4 min-w-0 order-1 sm:order-2">
                     <div>
                       <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
                         Column name
@@ -711,6 +724,27 @@ export default function PayrollConfigPage() {
                         placeholder="e.g. Employee Code"
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-shadow"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
+                        Payslip section
+                      </label>
+                      <select
+                        value={col.payslipSection || 'none'}
+                        onChange={(e) =>
+                          setOutputColumns((prev) =>
+                            prev.map((c, i) =>
+                              i === index ? { ...c, payslipSection: e.target.value as PayslipSectionType } : c
+                            )
+                          )
+                        }
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                      >
+                        <option value="none">Paysheet only</option>
+                        <option value="attendance">Attendance</option>
+                        <option value="earnings">Earnings</option>
+                        <option value="deductions">Deductions</option>
+                      </select>
                     </div>
                     <div className="sm:col-span-2">
                       <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
@@ -744,11 +778,18 @@ export default function PayrollConfigPage() {
                         {col.source === 'field' ? (
                           <select
                             value={col.field ?? ''}
-                            onChange={(e) =>
+                            onChange={(e) => {
+                              const field = e.target.value;
                               setOutputColumns((prev) =>
-                                prev.map((c, i) => (i === index ? { ...c, field: e.target.value } : c))
-                              )
-                            }
+                                prev.map((c, i) => {
+                                  if (i !== index) return c;
+                                  const suggested = inferPayslipSectionFromField(field);
+                                  const payslipSection =
+                                    c.payslipSection == null ? suggested : c.payslipSection;
+                                  return { ...c, field, payslipSection };
+                                })
+                              );
+                            }}
                             className="flex-1 min-w-0 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
                           >
                             <option value="">Select field...</option>
@@ -774,7 +815,7 @@ export default function PayrollConfigPage() {
                       </div>
                     </div>
                     {allowPaysheetModification && (
-                      <div className="sm:col-span-3 mt-1 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-violet-200 dark:border-violet-800/60 bg-violet-50/40 dark:bg-violet-950/20 px-3 py-2">
+                      <div className="sm:col-span-4 mt-1 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-violet-200 dark:border-violet-800/60 bg-violet-50/40 dark:bg-violet-950/20 px-3 py-2">
                         <label className="inline-flex items-center gap-2 text-xs font-medium text-violet-800 dark:text-violet-200 cursor-pointer">
                           <input
                             type="checkbox"

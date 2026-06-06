@@ -3,13 +3,15 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
-import { api, Division, Department, Designation } from '@/lib/api';
+import { api, Division, Department, Designation, PayrollOutputColumn } from '@/lib/api';
 import { toast } from 'react-toastify';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { fetchCompanyProfile, type CompanyProfile } from '@/lib/companyProfile';
-import { drawPayslipCompanyHeader, drawPayslipFooter } from '@/lib/payslipPdf';
 import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
+import { resolvePayslipSections } from '@/components/payslip/DynamicPayslipSections';
+import { drawDynamicPayslipPdf } from '@/lib/payslipPdfDynamic';
+import { buildPayslipSections } from '@/lib/payslipSections';
+import { resolvePayslipLoans } from '@/lib/payslipLoans';
 
 function PayslipEmployeeBlock({
   employee,
@@ -139,6 +141,7 @@ export default function PayslipsPage() {
   const [generatingBulkPDF, setGeneratingBulkPDF] = useState(false);
   const [selectedRecords, setSelectedRecords] = useState<Set<string>>(new Set());
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
+  const [payrollOutputColumns, setPayrollOutputColumns] = useState<PayrollOutputColumn[]>([]);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -164,6 +167,10 @@ export default function PayslipsPage() {
     fetchDepartments();
     fetchEmployees();
     fetchCompanyProfile().then(setCompanyProfile);
+    api.getPayrollConfig().then((res) => {
+      const cols = (res as { data?: { outputColumns?: PayrollOutputColumn[] } })?.data?.outputColumns;
+      if (Array.isArray(cols)) setPayrollOutputColumns(cols);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -306,222 +313,25 @@ export default function PayslipsPage() {
     const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
     if (!employee) return false;
 
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const primaryColor: [number, number, number] = [30, 41, 59];
-    const lightBg: [number, number, number] = [248, 250, 252];
-    const borderColor: [number, number, number] = [226, 232, 240];
+    const sections = resolvePayslipSections(record, payrollOutputColumns);
+    if (!sections.hasConfiguredSections) return false;
+
+    const loans = resolvePayslipLoans(record);
     const profile = companyProfile ?? (await fetchCompanyProfile());
-
-    const formatCurr = (amount: number) => `Rs. ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    const formatValue = (val: number) => `Rs. ${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-
-    let periodLabel = `${record.monthName} ${record.year}`;
-    if (record.startDate && record.endDate) {
-      const startStr = new Date(record.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-      const endStr = new Date(record.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-      periodLabel += ` | ${startStr} - ${endStr}`;
-    }
-
-    let yPos = await drawPayslipCompanyHeader(doc, profile, {
-      periodLabel,
-      refId: record._id.toString().slice(-8).toUpperCase(),
+    await drawDynamicPayslipPdf(doc, {
+      payroll: record,
+      employee: {
+        employee_name: employee.employee_name,
+        emp_no: record.emp_no || employee.emp_no,
+        designation_id: getDesigName(employee.designation_id),
+        department_id: getDeptName(employee.department_id),
+        bank_account_no: employee.bank_account_no,
+        location: employee.location,
+      },
+      sections,
+      loans,
+      profile,
     });
-    const cardWidth = (pageWidth - 30) / 3;
-    const cardHeight = 20;
-    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
-    doc.roundedRect(10, yPos, cardWidth, cardHeight, 2, 2, 'F');
-    doc.setFontSize(7);
-    doc.setTextColor(100, 116, 139);
-    doc.text('GROSS EARNINGS', 14, yPos + 7);
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.text(formatValue(record.earnings.grossSalary), 14, yPos + 15);
-
-    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
-    doc.roundedRect(15 + cardWidth, yPos, cardWidth, cardHeight, 2, 2, 'F');
-    doc.setFontSize(7);
-    doc.setTextColor(100, 116, 139);
-    doc.text('TOTAL DEDUCTIONS', 15 + cardWidth + 4, yPos + 7);
-    doc.setFontSize(11);
-    doc.setTextColor(190, 18, 60);
-    doc.text(formatValue(record.deductions.totalDeductions), 15 + cardWidth + 4, yPos + 15);
-
-    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.roundedRect(20 + cardWidth * 2, yPos, cardWidth, cardHeight, 2, 2, 'F');
-    doc.setFontSize(7);
-    doc.setTextColor(209, 213, 219);
-    doc.text('NET PAYABLE', 20 + cardWidth * 2 + 4, yPos + 7);
-    doc.setFontSize(11);
-    doc.setTextColor(255, 255, 255);
-    doc.text(formatValue(record.netSalary), 20 + cardWidth * 2 + 4, yPos + 15);
-
-    // EMPLOYEE DETAILS
-    yPos += 35;
-    doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
-    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
-    doc.rect(10, yPos - 5, pageWidth - 20, 8, 'F');
-    doc.setFontSize(8);
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.setFont('helvetica', 'bold');
-    doc.text('EMPLOYEE DETAILS', 14, yPos);
-    yPos += 10;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(71, 85, 105);
-    const col1 = 14, col2 = 70, col3 = 120;
-    doc.text(`Name ${employee.employee_name || 'N/A'}`, col1, yPos);
-    doc.text(`Employee ID ${record.emp_no || 'N/A'}`, col2, yPos);
-    doc.text(`Designation ${getDesigName(employee.designation_id)}`, col3, yPos);
-    yPos += 5;
-    doc.text(`Department ${getDeptName(employee.department_id)}`, col1, yPos);
-    doc.text(`Bank Account ${employee.bank_account_no || 'N/A'}`, col2, yPos);
-    doc.text(`Location ${employee.location || 'N/A'}`, col3, yPos);
-    yPos += 5;
-    doc.text(`PAN Number ${(employee as any).pan_number || 'N/A'}`, col1, yPos);
-    doc.text(`UAN Number ${(employee as any).uan_number || 'N/A'}`, col2, yPos);
-
-    // ATTENDANCE SUMMARY (no background, bold title and labels)
-    yPos += 12;
-    doc.setFontSize(11);
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.setFont('helvetica', 'bold');
-    doc.text('ATTENDANCE SUMMARY', 14, yPos);
-
-    yPos += 8;
-    const attDedDays = record.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0;
-    const totalPaid = record.attendance?.totalPaidDays ?? 0;
-    const finalPaid = Math.max(0, totalPaid - attDedDays);
-    const monthDays = record.totalDaysInMonth || record.attendance?.totalDaysInMonth || 0;
-    const presentDays = record.attendance?.presentDays || 0;
-    const paidLeaves = record.attendance?.paidLeaveDays || 0;
-    const totalLeaves = (record.attendance as any)?.totalLeaveDays ?? paidLeaves + ((record.attendance as any)?.totalLopDays ?? 0);
-    const absents = record.attendance?.absentDays ?? 0;
-    doc.setFontSize(9);
-    doc.setTextColor(71, 85, 105);
-    let x = 14;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Month Days: ', x, yPos); x += doc.getTextWidth('Month Days: ');
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(monthDays), x, yPos); x += doc.getTextWidth(String(monthDays)) + 6;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Present Days: ', x, yPos); x += doc.getTextWidth('Present Days: ');
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(presentDays), x, yPos); x += doc.getTextWidth(String(presentDays)) + 6;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Paid Leaves: ', x, yPos); x += doc.getTextWidth('Paid Leaves: ');
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(paidLeaves), x, yPos); x += doc.getTextWidth(String(paidLeaves)) + 6;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Total Paid Days: ', x, yPos); x += doc.getTextWidth('Total Paid Days: ');
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(totalPaid), x, yPos);
-    yPos += 6;
-    x = 14;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Total Leaves: ', x, yPos); x += doc.getTextWidth('Total Leaves: ');
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(totalLeaves), x, yPos); x += doc.getTextWidth(String(totalLeaves)) + 6;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Absents: ', x, yPos); x += doc.getTextWidth('Absents: ');
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(absents), x, yPos);
-    yPos += 7;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(185, 28, 28);
-    doc.text('Attendance Deduction Days (Late): ', 14, yPos);
-    const attDedX = doc.getTextWidth('Attendance Deduction Days (Late): ') + 14;
-    doc.setFont('helvetica', 'bold');
-    doc.text(String(attDedDays), attDedX, yPos);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(22, 101, 52);
-    doc.text(`    |    Final Paid Days: ${finalPaid}`, attDedX + 12, yPos);
-
-    // EARNINGS & DEDUCTIONS TABLES (with totals)
-    yPos += 12;
-    const earningsBody = [
-      ['Basic Pay', formatCurr(record.earnings.basicPay)],
-      ['Earned Basic', formatCurr(record.attendance?.earnedSalary || 0)],
-      ...(record.earnings.allowances || []).map(a => [a.name, formatCurr(a.amount)]),
-      ['Extra Days Pay', formatCurr(record.earnings.incentive)],
-      ['OT Pay', formatCurr(record.earnings.otPay)],
-      ['Arrears', formatCurr(record.arrearsAmount || 0)],
-    ];
-    autoTable(doc, {
-      startY: yPos,
-      head: [['EARNINGS', 'AMOUNT']],
-      body: earningsBody,
-      foot: [['TOTAL EARNINGS', formatCurr(record.earnings.grossSalary)]],
-      theme: 'plain',
-      headStyles: { fontStyle: 'bold', textColor: primaryColor, fontSize: 8, cellPadding: 2 },
-      bodyStyles: { fontSize: 8, textColor: [51, 65, 85], cellPadding: 2 },
-      footStyles: { fontStyle: 'bold', textColor: primaryColor, fontSize: 9, cellPadding: 3, fillColor: [248, 250, 252] },
-      columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
-      margin: { left: 10, right: pageWidth / 2 + 2 },
-    });
-
-    const deductionsBody = [
-      ['Attendance Deduction', formatCurr(record.deductions.attendanceDeduction)],
-      ['Permission Deduction', formatCurr(record.deductions.permissionDeduction)],
-      ['Leave Deduction', formatCurr(record.deductions.leaveDeduction)],
-      ...(record.deductions.otherDeductions || []).map(d => [d.name, formatCurr(d.amount)]),
-      ['EMI Deduction', formatCurr(record.loanAdvance.totalEMI)],
-      ['Advance Deduction', formatCurr(record.loanAdvance.advanceDeduction)],
-    ];
-    autoTable(doc, {
-      startY: yPos,
-      head: [['DEDUCTIONS', 'AMOUNT']],
-      body: deductionsBody,
-      foot: [['TOTAL DEDUCTIONS', formatCurr(record.deductions.totalDeductions)]],
-      theme: 'plain',
-      headStyles: { fontStyle: 'bold', textColor: [190, 18, 60], fontSize: 8, cellPadding: 2 },
-      bodyStyles: { fontSize: 8, textColor: [51, 65, 85], cellPadding: 2 },
-      footStyles: { fontStyle: 'bold', textColor: [190, 18, 60], fontSize: 9, cellPadding: 3, fillColor: [255, 241, 242] },
-      columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
-      margin: { left: pageWidth / 2 + 2, right: 10 },
-    });
-
-    yPos = Math.max((doc as any).lastAutoTable.finalY + 15, yPos + 60);
-
-    // NET PAYABLE IN WORDS
-    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
-    doc.roundedRect(10, yPos, pageWidth - 20, 25, 2, 2, 'F');
-    doc.setTextColor(100, 116, 139);
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text('NET PAYABLE IN WORDS', 16, yPos + 8);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.text(`Total amount of: ${formatValue(record.netSalary)} (Approx INR)`, 16, yPos + 16);
-    if (record.roundOff !== 0 && record.roundOff !== undefined) {
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'italic');
-      doc.setTextColor(148, 163, 184);
-      doc.text(`* Adjusted by ${formatValue(record.roundOff)} round-off`, pageWidth - 15, yPos + 22, { align: 'right' });
-    }
-
-    // Signature blocks
-    yPos += 45;
-    doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
-    doc.setLineWidth(0.5);
-    doc.line(20, yPos, 70, yPos);
-    doc.line(pageWidth - 70, yPos, pageWidth - 20, yPos);
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.text('Employee Signature', 45, yPos + 5, { align: 'center' });
-    doc.text('Authorized Signatory', pageWidth - 45, yPos + 5, { align: 'center' });
-
-    // Footer
-    drawPayslipFooter(doc, profile, yPos);
-    doc.setFontSize(7);
-    doc.setTextColor(148, 163, 184);
-    doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, pageWidth / 2, pageHeight - 6, { align: 'center' });
-
     return true;
   };
 
@@ -535,7 +345,7 @@ export default function PayslipsPage() {
         doc.save(`Payslip_${record.emp_no}_${record.month}.pdf`);
         toast.success('Payslip PDF generated successfully!');
       } else {
-        toast.error('Employee data not found');
+        toast.error('Configure payslip sections in Payroll Configuration or employee data missing');
       }
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -924,19 +734,40 @@ export default function PayslipsPage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                            ₹{record.earnings.grossSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </span>
+                          {(() => {
+                            const s = buildPayslipSections(payrollOutputColumns, record);
+                            return s.hasConfiguredSections ? (
+                              <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                                ₹{(s.totalEarnings ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-400">—</span>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <span className="text-sm font-semibold text-rose-600 dark:text-rose-400">
-                            ₹{record.deductions.totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </span>
+                          {(() => {
+                            const s = buildPayslipSections(payrollOutputColumns, record);
+                            return s.hasConfiguredSections ? (
+                              <span className="text-sm font-semibold text-rose-600 dark:text-rose-400">
+                                ₹{(s.totalDeductions ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-400">—</span>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4 text-right text-emerald-600 dark:text-emerald-400">
-                          <span className="text-sm font-bold">
-                            ₹{record.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </span>
+                          {(() => {
+                            const s = buildPayslipSections(payrollOutputColumns, record);
+                            return s.hasConfiguredSections ? (
+                              <span className="text-sm font-bold">
+                                ₹{(s.netPayable ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-400">—</span>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4 text-center">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${record.status === 'processed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
