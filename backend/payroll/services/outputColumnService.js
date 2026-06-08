@@ -468,4 +468,7 @@ module.exports = {
   getValueByPath,
   getContextFromPayslip,
   safeEvalFormula,
+  isAllowancesCumulativeColumn,
+  isDeductionsCumulativeColumn,
+  isStatutoryCumulativeColumn,
 };

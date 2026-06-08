@@ -169,6 +169,230 @@ function headerToKey(header: string): string {
   return header.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || 'col';
 }
 
+const DEFAULT_STATUTORY_CODES = ['PF', 'ESI', 'PT'];
+
+function isAllowancesCumulativeColumn(col: PayrollOutputColumn): boolean {
+  const field = String(col.field || '').trim();
+  const headerKey = headerToKey(col.header || '');
+  return (
+    field === 'earnings.allowancesCumulative'
+    || headerKey === 'allowances_cumulative'
+    || headerKey === 'total_allowances'
+  );
+}
+
+function isDeductionsCumulativeColumn(col: PayrollOutputColumn): boolean {
+  const field = String(col.field || '').trim();
+  const headerKey = headerToKey(col.header || '');
+  return field === 'deductions.deductionsCumulative' || headerKey === 'deductions_cumulative';
+}
+
+function isStatutoryCumulativeColumn(col: PayrollOutputColumn): boolean {
+  const field = String(col.field || '').trim();
+  const headerKey = headerToKey(col.header || '');
+  return (
+    field === 'deductions.statutoryCumulative'
+    || headerKey === 'statutory_cumulative'
+    || headerKey === 'statutory_deductions'
+  );
+}
+
+function expandOutputColumnsWithBreakdown(
+  outputColumns: PayrollOutputColumn[],
+  allAllowanceNames: string[] = [],
+  allDeductionNames: string[] = [],
+  allStatutoryCodes: string[] = []
+): PayrollOutputColumn[] {
+  if (!outputColumns.length) return [];
+
+  const allowances = [...allAllowanceNames].sort((a, b) => String(a).localeCompare(String(b)));
+  const deductions = [...allDeductionNames].sort((a, b) => String(a).localeCompare(String(b)));
+  const statutoryOrder = ['PF', 'ESI', 'PT'];
+  const statutory = [...allStatutoryCodes].sort((a, b) => {
+    const ia = statutoryOrder.indexOf(String(a).toUpperCase());
+    const ib = statutoryOrder.indexOf(String(b).toUpperCase());
+    if (ia >= 0 && ib >= 0) return ia - ib;
+    if (ia >= 0) return -1;
+    if (ib >= 0) return 1;
+    return String(a).localeCompare(String(b));
+  });
+
+  const sorted = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const expanded: PayrollOutputColumn[] = [];
+  const seenHeaders = new Set<string>();
+  let nextOrder = 0;
+
+  function uniqueHeader(header: string, order: number) {
+    const h = header?.trim() ? header.trim() : `Column ${order}`;
+    if (h === 'Column' || seenHeaders.has(h)) {
+      const unique = `Column ${order}`;
+      seenHeaders.add(unique);
+      return unique;
+    }
+    seenHeaders.add(h);
+    return h;
+  }
+
+  for (const col of sorted) {
+    if (isAllowancesCumulativeColumn(col)) {
+      allowances.forEach((name) => {
+        if (!name) return;
+        expanded.push({
+          header: String(name).trim(),
+          source: 'field',
+          field: `earnings.allowanceAmount:${String(name).trim()}`,
+          formula: '',
+          order: nextOrder++,
+        });
+      });
+    }
+    if (isDeductionsCumulativeColumn(col)) {
+      deductions.forEach((name) => {
+        if (!name) return;
+        expanded.push({
+          header: String(name).trim(),
+          source: 'field',
+          field: `deductions.otherDeductionAmount:${String(name).trim()}`,
+          formula: '',
+          order: nextOrder++,
+        });
+      });
+    }
+    if (isStatutoryCumulativeColumn(col)) {
+      statutory.forEach((code) => {
+        if (!code) return;
+        expanded.push({
+          header: String(code).trim(),
+          source: 'field',
+          field: `deductions.statutoryAmount:${String(code).trim()}`,
+          formula: '',
+          order: nextOrder++,
+        });
+      });
+    }
+    const order = nextOrder++;
+    expanded.push({
+      ...col,
+      header: uniqueHeader(col.header || '', order),
+      order,
+    });
+  }
+
+  return expanded;
+}
+
+function collectBreakdownSetsFromRecord(record: Record<string, unknown>) {
+  const payslip = payrollRecordToPayslipShape(record);
+  const allAllowanceNames = new Set<string>();
+  const allDeductionNames = new Set<string>();
+  const allStatutoryCodes = new Set<string>();
+
+  const allowances = (payslip.earnings as { allowances?: Array<{ name?: string }> })?.allowances || [];
+  allowances.forEach((a) => {
+    if (a?.name) allAllowanceNames.add(String(a.name).trim());
+  });
+
+  const otherDeductions = (payslip.deductions as { otherDeductions?: Array<{ name?: string }> })?.otherDeductions || [];
+  otherDeductions.forEach((d) => {
+    if (d?.name) allDeductionNames.add(String(d.name).trim());
+  });
+
+  const statutory = (payslip.deductions as {
+    statutoryDeductions?: Array<{ code?: string; name?: string }>;
+  })?.statutoryDeductions || [];
+  statutory.forEach((s) => {
+    if (s?.code || s?.name) allStatutoryCodes.add(String(s.code || s.name).trim());
+  });
+  DEFAULT_STATUTORY_CODES.forEach((c) => allStatutoryCodes.add(c));
+
+  return { payslip, allAllowanceNames, allDeductionNames, allStatutoryCodes };
+}
+
+function resolveParentCumulativeSections(outputColumns: PayrollOutputColumn[]) {
+  const sorted = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const parentSections: Record<'allowances' | 'deductions' | 'statutory', PayslipSectionType> = {
+    allowances: 'none',
+    deductions: 'none',
+    statutory: 'none',
+  };
+  for (const col of sorted) {
+    if (isAllowancesCumulativeColumn(col)) parentSections.allowances = resolvePayslipSection(col);
+    if (isDeductionsCumulativeColumn(col)) parentSections.deductions = resolvePayslipSection(col);
+    if (isStatutoryCumulativeColumn(col)) parentSections.statutory = resolvePayslipSection(col);
+  }
+  return parentSections;
+}
+
+function buildPayslipDisplayColumns(
+  outputColumns: PayrollOutputColumn[],
+  record: Record<string, unknown>
+): Array<PayrollOutputColumn & { payslipSection?: PayslipSectionType }> {
+  if (!outputColumns.length) return [];
+
+  const { allAllowanceNames, allDeductionNames, allStatutoryCodes } = collectBreakdownSetsFromRecord(record);
+  const parentSections = resolveParentCumulativeSections(outputColumns);
+  const sorted = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  const expanded = expandOutputColumnsWithBreakdown(
+    sorted,
+    [...allAllowanceNames],
+    [...allDeductionNames],
+    [...allStatutoryCodes]
+  );
+
+  const showAllowanceBreakdown =
+    parentSections.allowances !== 'none' && allAllowanceNames.size > 0;
+  const showDeductionBreakdown =
+    parentSections.deductions !== 'none' && allDeductionNames.size > 0;
+  const showStatutoryBreakdown = parentSections.statutory !== 'none';
+
+  const displayColumns: Array<PayrollOutputColumn & { payslipSection?: PayslipSectionType }> = [];
+
+  for (const col of expanded) {
+    const field = String(col.field || '').trim();
+
+    if (isAllowancesCumulativeColumn(col)) {
+      if (showAllowanceBreakdown) continue;
+      if (resolvePayslipSection(col) === 'none') continue;
+      displayColumns.push(col);
+      continue;
+    }
+    if (isDeductionsCumulativeColumn(col)) {
+      if (showDeductionBreakdown) continue;
+      if (resolvePayslipSection(col) === 'none') continue;
+      displayColumns.push(col);
+      continue;
+    }
+    if (isStatutoryCumulativeColumn(col)) {
+      if (showStatutoryBreakdown) continue;
+      if (resolvePayslipSection(col) === 'none') continue;
+      displayColumns.push(col);
+      continue;
+    }
+
+    if (field.startsWith('earnings.allowanceAmount:')) {
+      if (parentSections.allowances === 'none') continue;
+      displayColumns.push({ ...col, payslipSection: parentSections.allowances });
+      continue;
+    }
+    if (field.startsWith('deductions.otherDeductionAmount:')) {
+      if (parentSections.deductions === 'none') continue;
+      displayColumns.push({ ...col, payslipSection: parentSections.deductions });
+      continue;
+    }
+    if (field.startsWith('deductions.statutoryAmount:')) {
+      if (parentSections.statutory === 'none') continue;
+      displayColumns.push({ ...col, payslipSection: parentSections.statutory });
+      continue;
+    }
+
+    if (resolvePayslipSection(col) === 'none') continue;
+    displayColumns.push(col);
+  }
+
+  return displayColumns;
+}
+
 function getContextFromPayslip(payslip: ReturnType<typeof payrollRecordToPayslipShape>) {
   const att = (payslip.attendance || {}) as Record<string, unknown>;
   const earn = (payslip.earnings || {}) as Record<string, unknown>;
@@ -250,20 +474,29 @@ export function buildPayslipSections(
     return { attendance, earnings, deductions, hasConfiguredSections: false };
   }
 
-  const sorted = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  const tagged = sorted.filter((col) => resolvePayslipSection(col) !== 'none');
-  if (tagged.length === 0) {
+  const recordObj = record as Record<string, unknown>;
+  const displayColumns = buildPayslipDisplayColumns(outputColumns, recordObj);
+  if (displayColumns.length === 0) {
     return { attendance, earnings, deductions, hasConfiguredSections: false };
   }
 
-  const payslip = payrollRecordToPayslipShape(record as Record<string, unknown>);
+  const { payslip, allAllowanceNames, allDeductionNames, allStatutoryCodes } =
+    collectBreakdownSetsFromRecord(recordObj);
+  const sorted = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const expandedForRow = expandOutputColumnsWithBreakdown(
+    sorted,
+    [...allAllowanceNames],
+    [...allDeductionNames],
+    [...allStatutoryCodes]
+  );
+
   const computedRow =
     snapshotRow && Object.keys(snapshotRow).length > 0
       ? snapshotRow
-      : buildRowFromOutputColumns(payslip, sorted);
+      : buildRowFromOutputColumns(payslip, expandedForRow);
 
-  for (const col of sorted) {
-    const section = resolvePayslipSection(col);
+  for (const col of displayColumns) {
+    const section = col.payslipSection || resolvePayslipSection(col);
     if (section === 'none') continue;
 
     const header = col.header?.trim() || 'Column';
