@@ -14,6 +14,58 @@ import {
 } from '@/lib/payRegisterAllSummaryRow';
 import { sumLeaveCreditFromDailyRecords } from '@/lib/leaveDayRange';
 
+/** Match attendance page grid: H:MM (e.g. 8:56). */
+function formatWorkingHoursExport(hours: unknown): string {
+  const n = Number(hours);
+  if (!Number.isFinite(n) || n < 0) return '-';
+  if (n === 0) return '0:00';
+  const totalMinutes = Math.round(n * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h}:${String(m).padStart(2, '0')}`;
+}
+
+function getRecordWorkingHours(r: any): number {
+  if (!r) return 0;
+  const raw = r.totalWorkingHours ?? r.totalHours;
+  if (raw === null || raw === undefined || raw === '') return 0;
+  const th = Number(raw);
+  return Number.isFinite(th) && th > 0 ? th : 0;
+}
+
+/** Per-day cell: '-' when no worked hours (same as UI when totalHours is null). */
+function formatDailyWorkingHoursCell(r: any): string {
+  if (!r) return '-';
+  const raw = r.totalWorkingHours ?? r.totalHours;
+  if (raw === null || raw === undefined || raw === '') return '-';
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return '-';
+  return formatWorkingHoursExport(n);
+}
+
+function sumDailyWorkingHours(dailyAttendance: Record<string, any>): number {
+  return Object.values(dailyAttendance || {}).reduce((sum, r) => sum + getRecordWorkingHours(r), 0);
+}
+
+function formatRecordInOutForExport(r: any, formatTimeShort: (t: string) => string): { in: string; out: string } {
+  if (!r) return { in: '-', out: '-' };
+  if (Array.isArray(r.shifts) && r.shifts.length > 0) {
+    const sorted = [...r.shifts].filter(Boolean).sort(
+      (a, b) => (Number(a.shiftNumber) || 0) - (Number(b.shiftNumber) || 0)
+    );
+    const firstIn = sorted.find((s) => s.inTime);
+    const lastOut = [...sorted].reverse().find((s) => s.outTime);
+    return {
+      in: firstIn?.inTime ? formatTimeShort(String(firstIn.inTime)) : '-',
+      out: lastOut?.outTime ? formatTimeShort(String(lastOut.outTime)) : '-',
+    };
+  }
+  return {
+    in: r.inTime ? formatTimeShort(String(r.inTime)) : '-',
+    out: r.outTime ? formatTimeShort(String(r.outTime)) : '-',
+  };
+}
+
 /** Absent total from summary (fractional half-days); else totalAbsentDays; else ABSENT-only daily count. */
 export function getAbsentCountForRow(item: { summary?: any }, dailyValues: any[]): number {
   const absentList = item.summary?.contributingDates?.absent;
@@ -216,6 +268,7 @@ export function writeMonthlyAttendanceExcelFile(
     const monthAbsent = getAbsentCountForRow(item, dailyValues);
     const otHours = dailyValues.reduce((sum: number, r: any) => sum + (r?.otHours || 0), 0);
     const payableShifts = item.payableShifts ?? item.summary?.totalPayableShifts ?? 0;
+    const totalWorkingHrs = sumDailyWorkingHours(dailyAttendance as Record<string, any>);
     return {
       'Emp No': item.employee?.emp_no || '',
       'Employee Name': item.employee?.employee_name || '',
@@ -232,6 +285,7 @@ export function writeMonthlyAttendanceExcelFile(
       Holidays: holidays,
       OD: totalODs,
       'OT Hours': otHours.toFixed(1),
+      'Total Working Hrs': formatWorkingHoursExport(totalWorkingHrs),
       'Payable Shifts': payableShifts,
       'Late/Early Count': item.summary?.lateOrEarlyCount ?? 0,
       'Attendance Deduction Days': item.summary?.totalAttendanceDeductionDays ?? 0,
@@ -342,11 +396,13 @@ export function writeMonthlyAttendanceExcelFile(
       'Ded Absents',
       'Ded LOP',
       'Att ded',
+      'TT',
       'Paid',
     ];
     const completeRowsPr: (string | number)[][] = data.map((item) => {
       const dailyAttendance = item.dailyAttendance && typeof item.dailyAttendance === 'object' ? item.dailyAttendance : {};
       const pr = buildPrAllRowForExport(item);
+      const totalWorkingHrs = sumDailyWorkingHours(dailyAttendance as Record<string, any>);
       const dayCells = daysArrayExport.map((d) =>
         formatCompleteDayCellForExcel((dailyAttendance as Record<string, any>)[d] ?? null)
       );
@@ -370,6 +426,7 @@ export function writeMonthlyAttendanceExcelFile(
         pr.dedAbsent.toFixed(1),
         pr.dedLop.toFixed(1),
         attDedStr,
+        formatWorkingHoursExport(totalWorkingHrs),
         pr.paidDays.toFixed(1),
       ];
     });
@@ -391,12 +448,14 @@ export function writeMonthlyAttendanceExcelFile(
       'Partials',
       'OD',
       'OT',
+      'TT',
       'Pay Shifts',
     ];
     const completeLateEarlyFlags: { isLate: boolean; isEarly: boolean }[][] = [];
     const completeRows: (string | number)[][] = data.map((item) => {
       const dailyAttendance = item.dailyAttendance && typeof item.dailyAttendance === 'object' ? item.dailyAttendance : {};
       const dailyValues = Object.values(dailyAttendance || {});
+      const totalWorkingHrs = sumDailyWorkingHours(dailyAttendance as Record<string, any>);
       const dayResults = daysArrayExport.map((d) => getStatusWithLateEarly((dailyAttendance as Record<string, any>)[d], true));
       completeLateEarlyFlags.push(dayResults.map((d) => ({ isLate: d.isLate, isEarly: d.isEarly })));
       const dayCells = dayResults.map((d) => d.text);
@@ -429,6 +488,7 @@ export function writeMonthlyAttendanceExcelFile(
         partials,
         ods,
         ot.toFixed(1),
+        formatWorkingHoursExport(totalWorkingHrs),
         ps,
       ];
     });
@@ -693,6 +753,85 @@ export function writeMonthlyAttendanceExcelFile(
   });
   const wsOT = XLSX.utils.aoa_to_sheet([otHeaders, ...otRows]);
   XLSX.utils.book_append_sheet(wb, wsOT, 'OT');
+
+  const detailHeaders = [
+    'SNO',
+    'Emp No',
+    'Employee Name',
+    'Designation',
+    'Department',
+    'Division',
+    'Date',
+    'Status',
+    'In Time',
+    'Out Time',
+    'Working Hrs',
+    'Late (mins)',
+  ];
+  const detailRows: (string | number)[][] = [];
+  let detailSno = 0;
+  for (const item of data) {
+    const dailyAttendance = item.dailyAttendance && typeof item.dailyAttendance === 'object' ? item.dailyAttendance : {};
+    const emp = item.employee;
+    for (const d of daysArrayExport) {
+      const r = (dailyAttendance as Record<string, any>)[d];
+      if (!r) continue;
+      const io = formatRecordInOutForExport(r, formatTimeShort);
+      const lateMins = Number(r.totalLateInMinutes ?? r.lateInMinutes) || 0;
+      detailRows.push([
+        ++detailSno,
+        emp?.emp_no || '',
+        emp?.employee_name || '',
+        emp ? getDesignationName(emp) : '',
+        emp ? getDeptName(emp) : '',
+        emp ? getDivisionName(emp) : '',
+        d,
+        r.status || '',
+        io.in,
+        io.out,
+        formatDailyWorkingHoursCell(r),
+        lateMins > 0 ? lateMins : '',
+      ]);
+    }
+  }
+  if (detailRows.length > 0) {
+    const wsDetails = XLSX.utils.aoa_to_sheet([detailHeaders, ...detailRows]);
+    XLSX.utils.book_append_sheet(wb, wsDetails, 'Attendance Details');
+  }
+
+  const totalHoursDayHeaders = daysArrayExport.map((d) => {
+    const dt = new Date(`${d}T12:00:00`);
+    return `${format(dt, 'dd')}\n${dt.toLocaleDateString('en-IN', { weekday: 'short' })}`;
+  });
+  const totalHoursHeaders = [
+    'Emp No',
+    'Employee Name',
+    'Designation',
+    'Department',
+    'Division',
+    ...totalHoursDayHeaders,
+    'Total Hrs',
+  ];
+  const totalHoursRows: (string | number)[][] = data.map((item) => {
+    const dailyAttendance = item.dailyAttendance && typeof item.dailyAttendance === 'object' ? item.dailyAttendance : {};
+    const dayCells = daysArrayExport.map((d) => {
+      const r = (dailyAttendance as Record<string, any>)[d];
+      return formatDailyWorkingHoursCell(r);
+    });
+    return [
+      item.employee?.emp_no || '',
+      item.employee?.employee_name || '',
+      item.employee ? getDesignationName(item.employee) : '',
+      item.employee ? getDeptName(item.employee) : '',
+      item.employee ? getDivisionName(item.employee) : '',
+      ...dayCells,
+      formatWorkingHoursExport(sumDailyWorkingHours(dailyAttendance as Record<string, any>)),
+    ];
+  });
+  if (totalHoursRows.length > 0) {
+    const wsTotalHours = XLSX.utils.aoa_to_sheet([totalHoursHeaders, ...totalHoursRows]);
+    XLSX.utils.book_append_sheet(wb, wsTotalHours, 'Total Hours');
+  }
 
   XLSX.writeFile(wb, `attendance_${monthStr}.xlsx`);
 }

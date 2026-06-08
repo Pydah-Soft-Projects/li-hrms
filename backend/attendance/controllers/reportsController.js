@@ -39,6 +39,42 @@ function formatTime(d) {
     return `${h}.${String(m).padStart(2, '0')}`;
 }
 
+function formatWorkingHours(hours) {
+    const n = Number(hours);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    return n.toFixed(2);
+}
+
+function buildWorkingHoursMaps(dailyRecords) {
+    const dailyByEmpDate = {};
+    const totalByEmp = {};
+    for (const r of dailyRecords || []) {
+        const eid = String(r.employeeNumber).toUpperCase();
+        if (!dailyByEmpDate[eid]) dailyByEmpDate[eid] = {};
+        const hrs = Number(r.totalWorkingHours) || 0;
+        dailyByEmpDate[eid][r.date] = hrs;
+        totalByEmp[eid] = (totalByEmp[eid] || 0) + hrs;
+    }
+    return { dailyByEmpDate, totalByEmp };
+}
+
+function formatRecordInOutTime(rec) {
+    if (!rec) return { in: '', out: '' };
+    if (Array.isArray(rec.shifts) && rec.shifts.length > 0) {
+        const sorted = [...rec.shifts].filter(Boolean).sort((a, b) => (Number(a.shiftNumber) || 0) - (Number(b.shiftNumber) || 0));
+        const firstIn = sorted.find(s => s.inTime);
+        const lastOut = [...sorted].reverse().find(s => s.outTime);
+        return {
+            in: firstIn?.inTime ? formatTime(firstIn.inTime) : '',
+            out: lastOut?.outTime ? formatTime(lastOut.outTime) : '',
+        };
+    }
+    return {
+        in: rec.inTime ? formatTime(rec.inTime) : '',
+        out: rec.outTime ? formatTime(rec.outTime) : '',
+    };
+}
+
 /**
  * @desc    Get attendance summary report
  * @route   GET /api/attendance/reports/summary
@@ -633,6 +669,11 @@ exports.exportAttendanceReport = async (req, res) => {
             // return res.status(404).json({ success: false, message: 'No biometric logs found' });
         }
 
+        const dailyRecords = await AttendanceDaily.find(query)
+            .select('employeeNumber date status totalWorkingHours totalLateInMinutes inTime outTime shifts')
+            .lean();
+        const { dailyByEmpDate } = buildWorkingHoursMaps(dailyRecords);
+
         // ── 3. Group raw logs by empId → dateKey (use timestamp's local date) ───
         const rawLogsByEmpDate = {}; // empId → dateKey → [{ time, type }]
 
@@ -808,6 +849,7 @@ exports.exportAttendanceReport = async (req, res) => {
                         row[`OUT ${i + 1}`] = pairs[i]?.out ? formatTime(pairs[i].out) : '';
                     }
                     row['TOT HRS'] = totHrsStr;
+                    row['WORKING HRS'] = formatWorkingHours(dailyByEmpDate[empId]?.[dk]);
                     rows.push(row);
                 }
             }
@@ -817,11 +859,43 @@ exports.exportAttendanceReport = async (req, res) => {
             }
         }
 
+        // ── 5b. Attendance details rows (matches reports UI detailed view) ───────
+        const detailRows = [];
+        let detailSno = 0;
+        const sortedDetailRecords = [...dailyRecords].sort((a, b) => {
+            const empCmp = compareEmpNo(a.employeeNumber, b.employeeNumber);
+            if (empCmp !== 0) return empCmp;
+            return String(a.date).localeCompare(String(b.date));
+        });
+        for (const rec of sortedDetailRecords) {
+            const eid = String(rec.employeeNumber).toUpperCase();
+            const info = empMap[eid] || { emp_no: rec.employeeNumber, employee_name: rec.employeeNumber, department: '', division: '' };
+            if (info.leftDate) {
+                const leftStr = dayjs(info.leftDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
+                if (rec.date > leftStr) continue;
+            }
+            const io = formatRecordInOutTime(rec);
+            detailRows.push({
+                'SNO': ++detailSno,
+                'E.NO': info.emp_no,
+                'EMPLOYEE NAME': info.employee_name,
+                'DIVISION': info.division || '',
+                'DEPARTMENT': info.department || '',
+                'Date': rec.date,
+                'Status': rec.status || '',
+                'In Time': io.in,
+                'Out Time': io.out,
+                'Working Hrs': formatWorkingHours(rec.totalWorkingHours) || '0.00',
+                'Late (mins)': rec.totalLateInMinutes > 0 ? rec.totalLateInMinutes : '',
+            });
+        }
+        const detailHeaders = ['SNO', 'E.NO', 'EMPLOYEE NAME', 'DIVISION', 'DEPARTMENT', 'Date', 'Status', 'In Time', 'Out Time', 'Working Hrs', 'Late (mins)'];
+
         // ── 6. Build dynamic header & write XLSX ────────────────────────────────
         const fixedHeaders = ['SNO', 'E.NO', 'EMPLOYEE NAME', 'DIVISION', 'DEPARTMENT', 'PDate'];
         const dynamicHeaders = [];
         for (let i = 1; i <= maxPairs; i++) dynamicHeaders.push(`IN ${i}`, `OUT ${i}`);
-        const finalHeaders = [...fixedHeaders, ...dynamicHeaders, 'TOT HRS'];
+        const finalHeaders = [...fixedHeaders, ...dynamicHeaders, 'TOT HRS', 'WORKING HRS'];
 
         const worksheet = XLSX.utils.json_to_sheet(rows, { header: finalHeaders });
         // Column widths
@@ -880,7 +954,7 @@ exports.exportAttendanceReport = async (req, res) => {
                 ['Period', `${startDate} to ${endDate}`],
                 ['Level', groupBy.toUpperCase()],
                 [''],
-                ['Name', 'E.NO', 'Headcount', 'P', 'A', 'L', 'OD', 'LVE', 'WO', 'HOL', 'Present %']
+                ['Name', 'E.NO', 'Headcount', 'P', 'A', 'L', 'OD', 'LVE', 'WO', 'HOL', 'Present %', 'Total Working Hrs']
             ];
 
             for (const child of children) {
@@ -922,7 +996,8 @@ exports.exportAttendanceReport = async (req, res) => {
                                 present: { $sum: "$payableShifts" },
                                 absent: { $sum: { $cond: [{ $eq: ["$status", "ABSENT"] }, 1, 0] } },
                                 late: { $sum: { $cond: [{ $gt: ["$totalLateInMinutes", 0] }, 1, 0] } },
-                                od: { $sum: { $cond: [{ $gt: ["$odHours", 0] }, 1, 0] } }
+                                od: { $sum: { $cond: [{ $gt: ["$odHours", 0] }, 1, 0] } },
+                                totalWorkingHours: { $sum: { $ifNull: ['$totalWorkingHours', 0] } }
                             }
                         }
                     ]),
@@ -960,7 +1035,8 @@ exports.exportAttendanceReport = async (req, res) => {
                     childLeaveCount,
                     Number(avgWO.toFixed(1)),
                     Number(avgHOL.toFixed(1)),
-                    expectedWorkingDays > 0 ? Math.min(100, (((cStats.present || 0) + (cStats.od || 0)) / (expectedWorkingDays * total) * 100)).toFixed(1) + '%' : '0.0%'
+                    expectedWorkingDays > 0 ? Math.min(100, (((cStats.present || 0) + (cStats.od || 0)) / (expectedWorkingDays * total) * 100)).toFixed(1) + '%' : '0.0%',
+                    Number((cStats.totalWorkingHours || 0).toFixed(2))
                 ]);
             }
 
@@ -977,7 +1053,8 @@ exports.exportAttendanceReport = async (req, res) => {
                             present: { $sum: "$payableShifts" },
                             absent: { $sum: { $cond: [{ $eq: ["$status", "ABSENT"] }, 1, 0] } },
                             late: { $sum: { $cond: [{ $gt: ["$totalLateInMinutes", 0] }, 1, 0] } },
-                            od: { $sum: { $cond: [{ $gt: ["$odHours", 0] }, 1, 0] } }
+                            od: { $sum: { $cond: [{ $gt: ["$odHours", 0] }, 1, 0] } },
+                            totalWorkingHours: { $sum: { $ifNull: ['$totalWorkingHours', 0] } }
                         }
                     }
                 ]),
@@ -1028,12 +1105,21 @@ exports.exportAttendanceReport = async (req, res) => {
                 ['On Leave', onLeaveCount],
                 ['Week Off (WO)', Number(avgWO_sel.toFixed(1))],
                 ['Holiday (HOL)', Number(avgHOL_sel.toFixed(1))],
+                ['Total Working Hours', Number((statsRaw.totalWorkingHours || 0).toFixed(2))],
                 [''],
                 ['Total Headcount', totalEmployees],
                 ['Expected Working Days (Avg)', expectedWorkingDays_sel.toFixed(1)]
             ];
             const wsAbstract = XLSX.utils.aoa_to_sheet(abstractData);
             XLSX.utils.book_append_sheet(workbook, wsAbstract, 'Summary Abstract');
+        }
+
+        if (detailRows.length > 0) {
+            const wsDetails = XLSX.utils.json_to_sheet(detailRows, { header: detailHeaders });
+            const detailCols = detailHeaders.map(() => ({ wch: 13 }));
+            detailCols[2] = { wch: 28 };
+            wsDetails['!cols'] = detailCols;
+            XLSX.utils.book_append_sheet(workbook, wsDetails, 'Attendance Details');
         }
 
         // Sheet 2: Biometric Primary Logs
@@ -1066,8 +1152,8 @@ const SUMMARY_HDR_ROW1 = 20;
 const SUMMARY_HDR_ROW2 = 18;
 const SUMMARY_HDR_H = SUMMARY_HDR_ROW1 + SUMMARY_HDR_ROW2;
 
-/** Landscape pay-register PDF summary columns: S.NO, NAME, E.NO, … Total leave (Paid | LOP), … Deduction block, PAID */
-const PAYREG_PDF_SUMMARY_COL_WIDTHS = [22, 92, 48, 40, 38, 38, 20, 20, 40, 38, 40, 34, 40, 38, 40, 42];
+/** Landscape pay-register PDF summary columns: S.NO, NAME, E.NO, … Total leave (Paid | LOP), … Deduction block, TT, PAID */
+const PAYREG_PDF_SUMMARY_COL_WIDTHS = [22, 92, 48, 40, 38, 38, 20, 20, 40, 38, 40, 34, 40, 38, 40, 38, 42];
 
 const DESIGNATION_PDF_COLORS = ['#7c3aed', '#0891b2', '#059669', '#d97706', '#dc2626', '#4f46e5', '#0d9488', '#be185d'];
 
@@ -1216,10 +1302,12 @@ function drawPayRegisterAllSummaryTablePdf(doc, dataRows, startX, startY, colWid
                 .text(subL[j], x + 1, yDed + 4, { width: ww - 2, align: 'center' });
             x += ww;
         }
-        const px = x0 + colWidths.slice(0, 15).reduce((a, b) => a + b, 0);
-        doc.fillColor(headerFill).rect(px, y0, w(15), SUMMARY_HDR_H).fill();
+        hdrSingle(15, 'TT');
+
+        const px = x0 + colWidths.slice(0, 16).reduce((a, b) => a + b, 0);
+        doc.fillColor(headerFill).rect(px, y0, w(16), SUMMARY_HDR_H).fill();
         doc.fillColor('#ffffff').fontSize(6.5).font('Helvetica-Bold');
-        doc.text('PAID', px + 2, hdrSingleY, { width: w(15) - 4, align: 'center' });
+        doc.text('PAID', px + 2, hdrSingleY, { width: w(16) - 4, align: 'center' });
         doc.lineWidth(0.5);
         doc.strokeColor('#e0e7ff');
         doc.rect(x0, y0, tableW, SUMMARY_HDR_H).stroke();
@@ -1516,12 +1604,23 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                                 _id: null,
                                 present: { $sum: { $ifNull: ['$payableShifts', 0] } },
                                 lateEarly: { $sum: { $cond: [{ $or: [{ $gt: ['$totalLateInMinutes', 0] }, { $gt: ['$totalEarlyOutMinutes', 0] }] }, 1, 0] } },
+                                totalWorkingHours: { $sum: { $ifNull: ['$totalWorkingHours', 0] } },
                             }
                         }
                     ]);
                     const s0 = stats[0] || {};
                     entityStats.present = s0.present || 0;
                     entityStats.lates = s0.lateEarly || 0;
+                    entityStats.totalWorkingHours = s0.totalWorkingHours || 0;
+                }
+
+                let childWorkingHrs = Number(entityStats.totalWorkingHours) || 0;
+                if (!childWorkingHrs) {
+                    const whAgg = await AttendanceDaily.aggregate([
+                        { $match: { date: { $gte: startDate, $lte: endDate }, employeeNumber: { $in: childEmpNos } } },
+                        { $group: { _id: null, totalWorkingHours: { $sum: { $ifNull: ['$totalWorkingHours', 0] } } } }
+                    ]);
+                    childWorkingHrs = whAgg[0]?.totalWorkingHours || 0;
                 }
 
                 tableData.push([
@@ -1540,6 +1639,7 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                     entityStats.dedAbsent.toFixed(1),
                     entityStats.dedLop.toFixed(1),
                     entityStats.attDed.toFixed(1),
+                    Number(childWorkingHrs).toFixed(2),
                     entityStats.paidDays.toFixed(1)
                 ]);
             }
@@ -1767,6 +1867,11 @@ exports.exportAttendanceReportPDF = async (req, res) => {
             return t.format('HH:mm');
         };
 
+        const appendPdfCellHours = (cellText, rec) => {
+            const wh = formatWorkingHours(rec?.totalWorkingHours ?? rec?.totalHours);
+            return wh ? `${cellText}\n${wh}h` : cellText;
+        };
+
         const getInOutForRecord = (rec) => {
             if (!rec) return { in: '-', out: '-' };
             if (Array.isArray(rec.shifts) && rec.shifts.length > 0) {
@@ -1862,7 +1967,7 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                             gridRow.push('L\n-\n-');
                         } else if (isOD) {
                             const io = getInOutForRecord(punchRec || rec);
-                            gridRow.push(`OD\nIN ${io.in}\nOUT ${io.out}`);
+                            gridRow.push(appendPdfCellHours(`OD\nIN ${io.in}\nOUT ${io.out}`, punchRec || rec));
                         } else if (rec) {
                             const io = getInOutForRecord(rec);
                             let s = 'A';
@@ -1872,13 +1977,14 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                             else if (rec.status === 'ABSENT') s = 'A';
                             else if (rec.status === 'WEEK_OFF') s = 'WO';
                             else if (rec.status === 'HOLIDAY') s = 'HOL';
-                            gridRow.push(`${s}\nIN ${io.in}\nOUT ${io.out}`);
+                            gridRow.push(appendPdfCellHours(`${s}\nIN ${io.in}\nOUT ${io.out}`, rec));
                         } else {
                             gridRow.push('A\n-\n-');
                         }
                     });
 
                     const r = payRegisterAllRowFromSummary(summary || null, payRegisterPresentProcessingMode);
+                    const empWorkingHrs = empDaily.reduce((sum, rec) => sum + (Number(rec.totalWorkingHours) || 0), 0);
                     deptSumData.push([
                         String(pdfEmployeeSerial),
                         nameCell,
@@ -1895,6 +2001,7 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                         r.dedAbsent.toFixed(1),
                         r.dedLop.toFixed(1),
                         r.attDed.toFixed(1),
+                        empWorkingHrs.toFixed(2),
                         r.paidDays.toFixed(1)
                     ]);
                     deptGridData.push(gridRow);

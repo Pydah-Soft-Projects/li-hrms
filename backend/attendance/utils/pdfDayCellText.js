@@ -148,6 +148,12 @@ function buildSplitCellStatus(record) {
   return { top, bottom };
 }
 
+function appendWorkingHoursLine(text, displayRecord) {
+  const hrs = Number(displayRecord?.totalWorkingHours ?? displayRecord?.totalHours);
+  if (!Number.isFinite(hrs) || hrs <= 0) return text;
+  return `${text}\n${hrs.toFixed(2)}h`;
+}
+
 /**
  * @param {object} displayRecord - getMonthlyTableViewData dailyAttendance[date] object
  * @param {{ in: string, out: string }} io
@@ -163,10 +169,10 @@ function formatPdfDayCellText(displayRecord, io) {
   const inStr = (io && io.in) || '-';
   const outStr = (io && io.out) || '-';
   if (split) {
-    return `1H: ${split.top}\nIN ${inStr} · OUT ${outStr}\n2H: ${split.bottom}`;
+    return appendWorkingHoursLine(`1H: ${split.top}\nIN ${inStr} · OUT ${outStr}\n2H: ${split.bottom}`, displayRecord);
   }
   const one = getBaseDisplayStatus(displayRecord);
-  return `${one}\nIN ${inStr}\nOUT ${outStr}`;
+  return appendWorkingHoursLine(`${one}\nIN ${inStr}\nOUT ${outStr}`, displayRecord);
 }
 
 module.exports = {
