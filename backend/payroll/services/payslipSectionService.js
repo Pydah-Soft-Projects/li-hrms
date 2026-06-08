@@ -98,11 +98,12 @@ function resolveParentCumulativeSections(outputColumns) {
  * Expand cumulative paysheet columns into breakdown lines for payslip (inherits parent payslipSection).
  */
 function buildPayslipDisplayColumns(outputColumns, record) {
-  if (!Array.isArray(outputColumns) || outputColumns.length === 0) return [];
+  const plainColumns = outputColumnService.toPlainOutputColumns(outputColumns);
+  if (!plainColumns.length) return [];
 
   const { allAllowanceNames, allDeductionNames, allStatutoryCodes } = collectBreakdownSetsFromRecord(record);
-  const parentSections = resolveParentCumulativeSections(outputColumns);
-  const sorted = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const parentSections = resolveParentCumulativeSections(plainColumns);
+  const sorted = [...plainColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
   const expanded = outputColumnService.expandOutputColumnsWithBreakdown(
     sorted,
@@ -177,18 +178,19 @@ function buildPayslipSections(outputColumns, record, snapshotRow = null) {
   const empty = () =>
     withSectionTotals({ attendance, earnings, deductions, hasConfiguredSections: false });
 
-  if (!Array.isArray(outputColumns) || outputColumns.length === 0) {
+  const plainColumns = outputColumnService.toPlainOutputColumns(outputColumns);
+  if (!plainColumns.length) {
     return empty();
   }
 
-  const displayColumns = buildPayslipDisplayColumns(outputColumns, record);
+  const displayColumns = buildPayslipDisplayColumns(plainColumns, record);
   if (displayColumns.length === 0) {
     return empty();
   }
 
   const { payslip, allAllowanceNames, allDeductionNames, allStatutoryCodes } =
     collectBreakdownSetsFromRecord(record);
-  const sorted = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const sorted = [...plainColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const expandedForRow = outputColumnService.expandOutputColumnsWithBreakdown(
     sorted,
     [...allAllowanceNames],
