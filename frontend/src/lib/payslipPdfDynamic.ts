@@ -9,7 +9,7 @@ import {
   type PayslipSectionItem,
 } from '@/lib/payslipSections';
 import { drawPayslipCompanyHeader, drawPayslipFooter } from '@/lib/payslipPdf';
-import { payslipHasLoans } from '@/lib/payslipLoans';
+import { formatLoanTakenDate, payslipHasLoans } from '@/lib/payslipLoans';
 import { resolvePayslipAccentDarkRgb } from '@/lib/payslipTheme';
 
 type EmployeeLike = {
@@ -302,7 +302,7 @@ export async function drawDynamicPayslipPdf(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
-    doc.text('EMI is part of deductions. Balances are per loan for this month.', 14, y);
+    doc.text('Cumulative totals for all active loans. EMI matches the paysheet Loan EMI column.', 14, y);
     y += 6;
 
     const loanBody = loanSection.items.map((item) => [
@@ -314,16 +314,8 @@ export async function drawDynamicPayslipPdf(
 
     autoTable(doc, {
       startY: y,
-      head: [['LOAN', 'BALANCE BEFORE', 'EMI DEDUCTED', 'BALANCE AFTER']],
+      head: [['DESCRIPTION', 'TOTAL BALANCE BEFORE', 'TOTAL EMI DEDUCTED', 'TOTAL BALANCE AFTER']],
       body: loanBody,
-      foot: [
-        [
-          'Total',
-          '',
-          formatInrPdf(loanSection.totalEmiDeducted),
-          formatInrPdf(loanSection.totalBalanceAfter),
-        ],
-      ],
       theme: 'plain',
       headStyles: {
         fontStyle: 'bold',
@@ -333,13 +325,6 @@ export async function drawDynamicPayslipPdf(
         fillColor: AMBER_DARK,
       },
       bodyStyles: { fontSize: 8, textColor: INK, cellPadding: 2.5, fillColor: WHITE },
-      footStyles: {
-        fontStyle: 'bold',
-        textColor: AMBER_DARK,
-        fontSize: 8,
-        cellPadding: 3,
-        fillColor: WHITE,
-      },
       columnStyles: {
         1: { halign: 'right' },
         2: { halign: 'right', textColor: DED, fontStyle: 'bold' },
@@ -347,6 +332,41 @@ export async function drawDynamicPayslipPdf(
       },
       margin: { left: 12, right: 12 },
     });
+
+    if (loanSection.loanDetails && loanSection.loanDetails.length > 0) {
+      y = ((doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 6;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+      doc.text('Loans this period', 14, y);
+      y += 4;
+
+      const detailBody = loanSection.loanDetails.map((loan) => [
+        loan.label,
+        formatInrPdf(loan.emiAmount),
+        formatLoanTakenDate(loan.takenDate),
+      ]);
+
+      autoTable(doc, {
+        startY: y,
+        head: [['LOAN', 'EMI AMOUNT', 'DISBURSEMENT DATE']],
+        body: detailBody,
+        theme: 'plain',
+        headStyles: {
+          fontStyle: 'bold',
+          textColor: MUTED,
+          fontSize: 7,
+          cellPadding: 2.5,
+          fillColor: [248, 250, 249],
+        },
+        bodyStyles: { fontSize: 7.5, textColor: INK, cellPadding: 2, fillColor: WHITE },
+        columnStyles: {
+          1: { halign: 'right' },
+          2: { halign: 'right' },
+        },
+        margin: { left: 12, right: 12 },
+      });
+    }
 
     y = ((doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 10;
   }

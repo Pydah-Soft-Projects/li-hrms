@@ -80,6 +80,66 @@ function loanDisplayLabel(loan) {
   return amount > 0 ? `Loan · Rs. ${amount.toLocaleString('en-IN')}` : 'Loan';
 }
 
+function formatTakenDateIso(date) {
+  if (!date) return null;
+  const d = new Date(date);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Only disbursed loans that the dynamic payroll engine included in emiBreakdown for this month. */
+function isDisbursedActiveLoan(loan) {
+  if (!loan) return false;
+  if (loan.requestType && loan.requestType !== 'loan') return false;
+  const status = String(loan.status || '').toLowerCase();
+  if (!['active', 'disbursed'].includes(status)) return false;
+  if (!loan.disbursement?.disbursedAt) return false;
+  return true;
+}
+
+/**
+ * Per-loan list for payslip — same loans as payroll emiBreakdown (due this pay period only).
+ * Taken date = disbursement date only.
+ */
+function buildLoanDetailsForPayslip(emiBreakdown, perLoanItems, loanMap) {
+  const details = [];
+  const seen = new Set();
+  const breakdown = Array.isArray(emiBreakdown) ? emiBreakdown : [];
+  const perByLoanId = new Map(
+    (perLoanItems || [])
+      .filter((i) => i?.loanId)
+      .map((i) => [String(i.loanId), i])
+  );
+
+  for (const emi of breakdown) {
+    if (!emi?.loanId) continue;
+    const emiAmount = round2(emi.emiAmount);
+    if (emiAmount <= 0) continue;
+
+    const loanId = String(emi.loanId);
+    if (seen.has(loanId)) continue;
+
+    const loan = loanMap?.get(loanId) || null;
+    if (!isDisbursedActiveLoan(loan)) continue;
+
+    seen.add(loanId);
+    const perItem = perByLoanId.get(loanId);
+    details.push({
+      loanId,
+      label: perItem?.label || loanDisplayLabel(loan),
+      emiAmount: perItem ? round2(perItem.emiDeducted) : emiAmount,
+      takenDate: formatTakenDateIso(loan.disbursement.disbursedAt),
+    });
+  }
+
+  details.sort((a, b) => {
+    const da = a.takenDate ? new Date(a.takenDate).getTime() : 0;
+    const db = b.takenDate ? new Date(b.takenDate).getTime() : 0;
+    return da - db;
+  });
+
+  return details;
+}
+
 function computeLoanBalances(loan, emiAmount, month, payrollId) {
   const emiDeducted = round2(emiAmount);
   const remainingNow = round2(loan?.repayment?.remainingBalance);
@@ -183,11 +243,43 @@ function buildSummaryLoanRow(paysheetEmiTotal, paysheetRemainingTotal) {
   const balanceBefore = round2(balanceAfter + emiDeducted);
   return {
     loanId: '',
-    label: 'Loan',
+    label: 'Loans',
     balanceBefore,
     emiDeducted,
     balanceAfter,
   };
+}
+
+/** Payslip shows one cumulative row: total balance before / EMI / balance after for all active loans. */
+function collapseToCumulativeLoanDisplay(items, paysheetEmiTotal, paysheetRemainingTotal) {
+  if (!items.length && paysheetEmiTotal <= 0 && paysheetRemainingTotal <= 0) {
+    return [];
+  }
+
+  const emiDeducted =
+    paysheetEmiTotal > 0
+      ? paysheetEmiTotal
+      : round2(items.reduce((s, i) => s + i.emiDeducted, 0));
+
+  const balanceAfter =
+    paysheetRemainingTotal > 0
+      ? paysheetRemainingTotal
+      : round2(items.reduce((s, i) => s + i.balanceAfter, 0));
+
+  let balanceBefore = round2(items.reduce((s, i) => s + i.balanceBefore, 0));
+  if (balanceBefore <= 0 && (emiDeducted > 0 || balanceAfter > 0)) {
+    balanceBefore = round2(balanceAfter + emiDeducted);
+  }
+
+  return [
+    {
+      loanId: '',
+      label: 'Loans',
+      balanceBefore,
+      emiDeducted,
+      balanceAfter,
+    },
+  ];
 }
 
 /**
@@ -238,7 +330,7 @@ function buildPayslipLoans(record, loanMap = null, opts = {}) {
     hasActiveLoanBalances;
 
   if (!hasLoans) {
-    return { items: [], totalEmiDeducted: 0, totalBalanceAfter: 0, hasLoans: false };
+    return { items: [], loanDetails: [], totalEmiDeducted: 0, totalBalanceAfter: 0, hasLoans: false };
   }
 
   if (items.length === 0 && loanMap && loanMap.size > 0) {
@@ -275,11 +367,25 @@ function buildPayslipLoans(record, loanMap = null, opts = {}) {
       ? paysheetRemainingTotal
       : round2(items.reduce((s, i) => s + i.balanceAfter, 0));
 
+  const perLoanItems = [...items];
+  const loanDetails = buildLoanDetailsForPayslip(emiBreakdown, perLoanItems, loanMap);
+
+  const cumulativeItems = collapseToCumulativeLoanDisplay(
+    perLoanItems,
+    paysheetEmiTotal,
+    paysheetRemainingTotal
+  );
+
   return {
-    items,
+    items: cumulativeItems,
+    loanDetails,
     totalEmiDeducted,
     totalBalanceAfter,
-    hasLoans: items.length > 0 || totalEmiDeducted > 0 || totalBalanceAfter > 0,
+    hasLoans:
+      cumulativeItems.length > 0 ||
+      loanDetails.length > 0 ||
+      totalEmiDeducted > 0 ||
+      totalBalanceAfter > 0,
   };
 }
 
@@ -301,7 +407,9 @@ async function preloadLoansForRecords(records) {
 
   if (ids.size > 0) {
     const loans = await Loan.find({ _id: { $in: [...ids] } })
-      .select('amount reason repayment.remainingBalance transactions')
+      .select(
+        'amount reason status repayment.remainingBalance transactions appliedAt disbursement.disbursedAt loanConfig employeeId requestType'
+      )
       .lean();
     for (const l of loans) loanMap.set(String(l._id), l);
   }
@@ -325,6 +433,16 @@ async function preloadLoansForRecords(records) {
         loanMap.set(id, loan.toObject ? loan.toObject() : loan);
       }
     }
+  }
+
+  const allIds = [...loanMap.keys()];
+  if (allIds.length > 0) {
+    const enriched = await Loan.find({ _id: { $in: allIds } })
+      .select(
+        'amount reason status repayment.remainingBalance transactions appliedAt disbursement.disbursedAt loanConfig employeeId requestType'
+      )
+      .lean();
+    for (const l of enriched) loanMap.set(String(l._id), l);
   }
 
   return loanMap;

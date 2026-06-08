@@ -343,8 +343,16 @@ export interface PayslipLoanItem {
   balanceAfter: number;
 }
 
+export interface PayslipLoanDetail {
+  loanId?: string;
+  label: string;
+  emiAmount: number;
+  takenDate?: string | null;
+}
+
 export interface PayslipLoans {
   items: PayslipLoanItem[];
+  loanDetails?: PayslipLoanDetail[];
   totalEmiDeducted: number;
   totalBalanceAfter: number;
   hasLoans: boolean;

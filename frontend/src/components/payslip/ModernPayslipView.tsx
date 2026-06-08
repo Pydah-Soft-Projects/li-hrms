@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { PayslipLoans, PayslipSections } from '@/lib/api';
 import { fetchCompanyProfile } from '@/lib/companyProfile';
-import { payslipHasLoans } from '@/lib/payslipLoans';
+import { formatLoanTakenDate, payslipHasLoans } from '@/lib/payslipLoans';
 import { formatInr, formatSectionValue, type PayslipSectionItem } from '@/lib/payslipSections';
 import { PAYSLIP_ACCENT_FALLBACK, payslipAccentCssVars, resolvePayslipAccentHex } from '@/lib/payslipTheme';
 
@@ -218,10 +218,10 @@ export function ModernPayslipView({
                       className="border-b text-left text-[10px] uppercase tracking-wider text-stone-400"
                       style={{ borderColor: 'var(--ps-accent-border)' }}
                     >
-                      <th className="pb-2 pr-4 font-semibold">Loan</th>
-                      <th className="pb-2 pr-4 text-right font-semibold">Balance before</th>
-                      <th className="pb-2 pr-4 text-right font-semibold">EMI deducted</th>
-                      <th className="pb-2 text-right font-semibold">Balance after</th>
+                      <th className="pb-2 pr-4 font-semibold">Description</th>
+                      <th className="pb-2 pr-4 text-right font-semibold">Total balance before</th>
+                      <th className="pb-2 pr-4 text-right font-semibold">Total EMI deducted</th>
+                      <th className="pb-2 text-right font-semibold">Total balance after</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -240,19 +240,46 @@ export function ModernPayslipView({
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot>
-                    <tr>
-                      <td className="pt-3 text-[10px] font-semibold uppercase tracking-wider text-stone-500">Total</td>
-                      <td className="pt-3" />
-                      <td className="pt-3 text-right font-mono text-base font-semibold tabular-nums text-rose-700 dark:text-rose-400">
-                        {formatInr(loanSection.totalEmiDeducted)}
-                      </td>
-                      <td className="pt-3 text-right font-mono text-base font-semibold tabular-nums text-stone-900 dark:text-stone-100">
-                        {formatInr(loanSection.totalBalanceAfter)}
-                      </td>
-                    </tr>
-                  </tfoot>
                 </table>
+
+                {loanSection.loanDetails && loanSection.loanDetails.length > 0 && (
+                  <div
+                    className="mt-4 border-t pt-4"
+                    style={{ borderColor: 'var(--ps-accent-border)' }}
+                  >
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-500">
+                      Loans this period
+                    </p>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr
+                          className="border-b text-left text-[10px] uppercase tracking-wider text-stone-400"
+                          style={{ borderColor: 'var(--ps-accent-border)' }}
+                        >
+                          <th className="pb-2 pr-4 font-semibold">Loan</th>
+                          <th className="pb-2 pr-4 text-right font-semibold">EMI amount</th>
+                          <th className="pb-2 text-right font-semibold">Disbursement date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {loanSection.loanDetails.map((loan, i) => (
+                          <tr
+                            key={`${loan.loanId || loan.label}-${i}`}
+                            className="border-b border-stone-100 dark:border-stone-800"
+                          >
+                            <td className="py-2 pr-4 text-stone-700 dark:text-stone-300">{loan.label}</td>
+                            <td className="py-2 pr-4 text-right font-mono tabular-nums text-stone-900 dark:text-stone-100">
+                              {formatInr(loan.emiAmount)}
+                            </td>
+                            <td className="py-2 text-right text-stone-600 dark:text-stone-400">
+                              {formatLoanTakenDate(loan.takenDate)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </section>
             )}
 
