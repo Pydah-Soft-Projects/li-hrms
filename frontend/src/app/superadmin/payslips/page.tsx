@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api, Division, Department, Designation, PayrollOutputColumn } from '@/lib/api';
-import { toast } from 'react-toastify';
+import { toast, ToastContainer } from 'react-toastify';
 import jsPDF from 'jspdf';
 import { fetchCompanyProfile, type CompanyProfile } from '@/lib/companyProfile';
 import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
@@ -12,6 +12,39 @@ import { resolvePayslipSections } from '@/components/payslip/DynamicPayslipSecti
 import { drawDynamicPayslipPdf } from '@/lib/payslipPdfDynamic';
 import { buildPayslipSections } from '@/lib/payslipSections';
 import { resolvePayslipLoans } from '@/lib/payslipLoans';
+import Spinner from '@/components/Spinner';
+import { Search, Eye, Download, Loader2, RefreshCw, FileText } from 'lucide-react';
+import {
+  LoansPageShell,
+  LoansPageHeader,
+  LoansStatGrid,
+  LoansToolbar,
+  LoansContentPanel,
+  loansPrimaryButtonClass,
+  loansPrimaryButtonStyle,
+  loansTableHeadClass,
+  loansTableHeadStyle,
+} from '@/components/loans/LoansPageShell';
+import {
+  LoanFormLabel,
+  loansDialogOutlineButtonClass,
+  loansDialogOutlineButtonStyle,
+  loansFormInputClass,
+  loansFormInputStyle,
+} from '@/components/loans/LoanDetailDialogShell';
+import { MultiSelect } from '@/components/MultiSelect';
+import { ledgerMoneyClass, ledgerStatusBadgeClass, type LedgerUiStatus } from '@/lib/ledgerUi';
+import {
+  PAYSLIP_LIST_STATUS_OPTIONS,
+  payslipMatchesListOrgAndStatus,
+  payslipMatchesSearch,
+} from '@/lib/payslipListUi';
+
+const payslipLedgerStatus = (status: string): LedgerUiStatus => {
+  if (status === 'processed' || status === 'approved') return 'approved';
+  if (status === 'calculated') return 'pending';
+  return 'neutral';
+};
 
 function PayslipEmployeeBlock({
   employee,
@@ -34,7 +67,10 @@ function PayslipEmployeeBlock({
       {d.profilePhoto ? (
         <img src={d.profilePhoto} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700" />
       ) : (
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-[10px] font-semibold text-white">
+        <div
+          className="flex h-8 w-8 shrink-0 items-center justify-center text-[10px] font-semibold text-white"
+          style={{ backgroundColor: 'var(--ps-accent)' }}
+        >
           {initial}
         </div>
       )}
@@ -117,7 +153,13 @@ interface PayrollRecord {
   endDate?: string;
 }
 
-export default function PayslipsPage() {
+export function PayslipsContent({
+  basePath = '/superadmin/payslips',
+  showDivisionFilter = true,
+}: {
+  basePath?: string;
+  showDivisionFilter?: boolean;
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
@@ -125,16 +167,14 @@ export default function PayslipsPage() {
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
 
   // Filters
   const [selectedMonth, setSelectedMonth] = useState('');
-  const [selectedDivision, setSelectedDivision] = useState('');
-  const [selectedDepartment, setSelectedDepartment] = useState('');
-  const [selectedDesignation, setSelectedDesignation] = useState('');
-  const [selectedEmployee, setSelectedEmployee] = useState('');
+  const [listFilterDivisions, setListFilterDivisions] = useState<string[]>([]);
+  const [listFilterDepartments, setListFilterDepartments] = useState<string[]>([]);
+  const [listFilterDesignations, setListFilterDesignations] = useState<string[]>([]);
+  const [listFilterStatuses, setListFilterStatuses] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
 
   // PDF Generation
   const [generatingPDF, setGeneratingPDF] = useState(false);
@@ -161,11 +201,7 @@ export default function PayslipsPage() {
     }
     setSelectedMonth(defaultMonth);
 
-    setSelectedMonth(defaultMonth);
-
-    fetchDivisions();
-    fetchDepartments();
-    fetchEmployees();
+    loadFilterData();
     fetchCompanyProfile().then(setCompanyProfile);
     api.getPayrollConfig().then((res) => {
       const cols = (res as { data?: { outputColumns?: PayrollOutputColumn[] } })?.data?.outputColumns;
@@ -174,62 +210,42 @@ export default function PayslipsPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedMonth) {
-      fetchPayrollRecords();
-      if (selectedDepartment) {
-        fetchDesignations(selectedDepartment);
-      } else {
-        setDesignations([]);
-        setSelectedDesignation('');
-      }
-    }
-  }, [selectedMonth, selectedDepartment, selectedDivision]);
+    if (selectedMonth) fetchPayrollRecords();
+  }, [selectedMonth]);
 
   useEffect(() => {
     applyFilters();
-  }, [payrollRecords, searchQuery, selectedDesignation, selectedEmployee, statusFilter]);
+  }, [
+    payrollRecords,
+    searchQuery,
+    listFilterDivisions,
+    listFilterDepartments,
+    listFilterDesignations,
+    listFilterStatuses,
+    divisions,
+    departments,
+  ]);
 
-  const fetchDivisions = async () => {
+  const loadFilterData = async () => {
     try {
-      const response = await api.getDivisions();
-      if (response.success) {
-        setDivisions(response.data || []);
-      }
-    } catch (error) {
-      console.error('Error fetching divisions:', error);
-    }
-  };
+      const requests: Promise<unknown>[] = [
+        api.getDepartments(),
+        api.getAllDesignations(),
+      ];
+      if (showDivisionFilter) requests.unshift(api.getDivisions());
 
-  const fetchDepartments = async () => {
-    try {
-      const response = await api.getDepartments();
-      if (response.success) {
-        setDepartments(response.data || []);
+      const results = await Promise.all(requests);
+      let idx = 0;
+      if (showDivisionFilter) {
+        const divRes = results[idx++] as Awaited<ReturnType<typeof api.getDivisions>>;
+        if (divRes.success) setDivisions(divRes.data || []);
       }
+      const deptRes = results[idx++] as Awaited<ReturnType<typeof api.getDepartments>>;
+      const desigRes = results[idx] as Awaited<ReturnType<typeof api.getAllDesignations>>;
+      if (deptRes.success) setDepartments(deptRes.data || []);
+      if (desigRes.success) setDesignations(desigRes.data || []);
     } catch (error) {
-      console.error('Error fetching departments:', error);
-    }
-  };
-
-  const fetchDesignations = async (deptId: string) => {
-    try {
-      const response = await api.getDesignations(deptId);
-      if (response.success) {
-        setDesignations(response.data || []);
-      }
-    } catch (error) {
-      console.error('Error fetching designations:', error);
-    }
-  };
-
-  const fetchEmployees = async () => {
-    try {
-      const response = await api.getEmployees();
-      if (response.success) {
-        setEmployees(response.data || []);
-      }
-    } catch (error) {
-      console.error('Error fetching employees:', error);
+      console.error('Error loading filter options:', error);
     }
   };
 
@@ -238,11 +254,7 @@ export default function PayslipsPage() {
 
     setLoading(true);
     try {
-      const params: any = { month: selectedMonth };
-      if (selectedDivision) params.divisionId = selectedDivision;
-      if (selectedDepartment) params.departmentId = selectedDepartment;
-
-      const response = await api.getPayrollRecords(params);
+      const response = await api.getPayrollRecords({ month: selectedMonth });
       if (response.success) {
         setPayrollRecords(response.data || []);
       }
@@ -255,43 +267,18 @@ export default function PayslipsPage() {
   };
 
   const applyFilters = () => {
-    let filtered = [...payrollRecords];
-
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(record => {
-        const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
-        return (
-          record.emp_no.toLowerCase().includes(query) ||
-          employee?.employee_name.toLowerCase().includes(query)
-        );
-      });
-    }
-
-    // Designation filter
-    if (selectedDesignation) {
-      filtered = filtered.filter(record => {
-        const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
-        const designationId = typeof employee?.designation_id === 'object'
-          ? employee.designation_id._id
-          : employee?.designation_id;
-        return designationId === selectedDesignation;
-      });
-    }
-
-    // Employee filter
-    if (selectedEmployee) {
-      filtered = filtered.filter(record => {
-        const empId = typeof record.employeeId === 'object' ? record.employeeId._id : record.employeeId;
-        return empId === selectedEmployee;
-      });
-    }
-
-    // Status filter
-    if (statusFilter) {
-      filtered = filtered.filter(record => record.status === statusFilter);
-    }
+    const filtered = payrollRecords.filter((record) => (
+      payslipMatchesSearch(record, searchQuery)
+      && payslipMatchesListOrgAndStatus(
+        record,
+        divisions,
+        departments,
+        showDivisionFilter ? listFilterDivisions : [],
+        listFilterDepartments,
+        listFilterDesignations,
+        listFilterStatuses,
+      )
+    ));
 
     setFilteredRecords(filtered);
     setCurrentPage(1);
@@ -417,437 +404,382 @@ export default function PayslipsPage() {
   const currentRecords = filteredRecords.slice(indexOfFirstRecord, indexOfLastRecord);
   const totalPages = Math.ceil(filteredRecords.length / recordsPerPage);
 
+  const listDepartmentOptions = useMemo(() => {
+    if (!showDivisionFilter || listFilterDivisions.length === 0) return departments;
+    const allowed = new Set<string>();
+    for (const divId of listFilterDivisions) {
+      const div = divisions.find((d) => String(d._id) === String(divId));
+      const deptIds = ((div?.departments ?? []) as unknown[]).map((d) => (typeof d === 'string' ? d : (d as { _id?: string })?._id));
+      if (deptIds.length) {
+        deptIds.forEach((id) => { if (id) allowed.add(String(id)); });
+      } else {
+        departments
+          .filter((d: Department & { division_id?: string; division?: string }) => String(d.division_id || d.division) === String(divId))
+          .forEach((d) => allowed.add(String(d._id)));
+      }
+    }
+    if (allowed.size === 0) return departments;
+    return departments.filter((d) => allowed.has(String(d._id)));
+  }, [showDivisionFilter, listFilterDivisions, divisions, departments]);
+
+  const payslipStats = useMemo(() => ({
+    total: filteredRecords.length,
+    selected: selectedRecords.size,
+    processed: filteredRecords.filter((r) => r.status === 'processed').length,
+    calculated: filteredRecords.filter((r) => r.status === 'calculated').length,
+  }), [filteredRecords, selectedRecords]);
+
+  const anyListFilterActive =
+    searchQuery.trim() !== ''
+    || listFilterDivisions.length > 0
+    || listFilterDepartments.length > 0
+    || listFilterDesignations.length > 0
+    || listFilterStatuses.length > 0;
+
+  const clearListFilters = () => {
+    setSearchQuery('');
+    setListFilterDivisions([]);
+    setListFilterDepartments([]);
+    setListFilterDesignations([]);
+    setListFilterStatuses([]);
+  };
+
   return (
-    <div className="min-h-screen p-6">
-      <div className="w-full">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-slate-800 dark:text-white mb-2">
-            Employee Payslips
-          </h1>
-          <p className="text-slate-600 dark:text-slate-300">
-            View, search, and export employee payslips
-          </p>
-        </div>
+    <LoansPageShell>
+      <ToastContainer position="top-right" autoClose={3000} />
 
-        {/* Filters Section */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm p-6 mb-6 border border-slate-200 dark:border-slate-700">
-          <div className="flex flex-col lg:flex-row lg:items-end gap-4">
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-4 lg:grid-cols-7 gap-4">
-              {/* Month Filter */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Month
-                </label>
-                <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm"
-                  required
-                />
-              </div>
+      <LoansPageHeader
+        badge="Payroll payslips"
+        title="Employee payslips"
+        subtitle="View, search, and export payslips for a pay period"
+      />
 
-              {/* Division Filter */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Division
-                </label>
-                <select
-                  value={selectedDivision}
-                  onChange={(e) => {
-                    setSelectedDivision(e.target.value);
-                    setSelectedDepartment(''); // Reset department
-                    setSelectedDesignation(''); // Reset designation
-                  }}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
-                >
-                  <option value="">All Divisions</option>
-                  {divisions.map(div => (
-                    <option key={div._id} value={div._id}>{div.name}</option>
-                  ))}
-                </select>
-              </div>
+      <LoansStatGrid
+        stats={[
+          { label: 'Payslips found', value: payslipStats.total, accent: true },
+          { label: 'Selected', value: payslipStats.selected },
+          { label: 'Processed', value: payslipStats.processed },
+          { label: 'Calculated', value: payslipStats.calculated, muted: payslipStats.calculated === 0 },
+        ]}
+      />
 
-              {/* Department Filter */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Department
-                </label>
-                <select
-                  value={selectedDepartment}
-                  onChange={(e) => setSelectedDepartment(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
-                >
-                  <option value="">All Departments</option>
-                  {departments
-                    .filter(dept => {
-                      if (!selectedDivision) return true;
-                      const currentDiv = divisions.find(d => d._id === selectedDivision);
-                      return currentDiv?.departments?.some((d: any) => d === dept._id || d._id === dept._id);
-                    })
-                    .map(dept => (
-                      <option key={dept._id} value={dept._id}>{dept.name}</option>
-                    ))}
-                </select>
-              </div>
+      <LoansToolbar>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[150px]">
+            <LoanFormLabel>Pay period *</LoanFormLabel>
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className={loansFormInputClass()}
+              style={loansFormInputStyle()}
+              required
+            />
+          </div>
 
-              {/* Designation Filter */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Designation
-                </label>
-                <select
-                  value={selectedDesignation}
-                  onChange={(e) => setSelectedDesignation(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
-                >
-                  <option value="">All Designations</option>
-                  {designations.map(desig => (
-                    <option key={desig._id} value={desig._id}>{desig.name}</option>
-                  ))}
-                </select>
-              </div>
+          <button
+            type="button"
+            onClick={fetchPayrollRecords}
+            disabled={!selectedMonth || loading}
+            className={`flex h-10 items-center gap-2 ${loansPrimaryButtonClass()}`}
+            style={loansPrimaryButtonStyle()}
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Load payslips
+          </button>
 
-              {/* Employee Filter */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Employee
-                </label>
-                <select
-                  value={selectedEmployee}
-                  onChange={(e) => setSelectedEmployee(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
-                >
-                  <option value="">All Employees</option>
-                  {employees.map(emp => (
-                    <option key={emp._id} value={emp._id}>
-                      {emp.emp_no} - {emp.employee_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          {showDivisionFilter && (
+            <MultiSelect
+              variant="ledger"
+              label="Division"
+              options={divisions.map((d) => ({ id: String(d._id), name: d.name ?? 'Division' }))}
+              selectedIds={listFilterDivisions}
+              onChange={(vals) => {
+                setListFilterDivisions(vals);
+                setListFilterDepartments([]);
+              }}
+              placeholder="All divisions"
+              className="w-full sm:w-40 md:w-44"
+            />
+          )}
 
-              {/* Status Filter */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Status
-                </label>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
-                >
-                  <option value="">All Status</option>
-                  <option value="calculated">Calculated</option>
-                  <option value="approved">Approved</option>
-                  <option value="processed">Processed</option>
-                </select>
-              </div>
+          <MultiSelect
+            variant="ledger"
+            label="Department"
+            options={listDepartmentOptions.map((d) => ({
+              id: String(d._id),
+              name: d.name ?? 'Department',
+            }))}
+            selectedIds={listFilterDepartments}
+            onChange={setListFilterDepartments}
+            placeholder="All departments"
+            className="w-full sm:w-40 md:w-44"
+          />
 
-              {/* Search Bar */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Search
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Emp ID or Name"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm"
-                  />
-                  <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
-              </div>
-            </div>
+          <MultiSelect
+            variant="ledger"
+            label="Designation"
+            options={designations.map((d) => ({
+              id: String(d._id),
+              name: d.name ?? (d as Designation & { title?: string }).title ?? 'Designation',
+            }))}
+            selectedIds={listFilterDesignations}
+            onChange={setListFilterDesignations}
+            placeholder="All designations"
+            className="w-full sm:w-40 md:w-44"
+          />
 
-            {/* Action Buttons */}
-            <div className="flex gap-2 min-w-fit">
-              <button
-                onClick={fetchPayrollRecords}
-                disabled={!selectedMonth || loading}
-                className="h-10 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm hover:shadow-md transition-all flex items-center gap-2 text-sm font-medium disabled:opacity-50"
-              >
-                {loading ? (
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                )}
-                Fetch
-              </button>
+          <MultiSelect
+            variant="ledger"
+            label="Status"
+            options={PAYSLIP_LIST_STATUS_OPTIONS}
+            selectedIds={listFilterStatuses}
+            onChange={setListFilterStatuses}
+            placeholder="All statuses"
+            className="w-full sm:w-48 md:w-56"
+          />
 
-              <button
-                onClick={generateBulkPayslipsPDF}
-                disabled={selectedRecords.size === 0 || generatingBulkPDF}
-                className="h-10 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm hover:shadow-md transition-all flex items-center gap-2 text-sm font-medium disabled:opacity-50"
-              >
-                {generatingBulkPDF ? (
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                )}
-                Export ({selectedRecords.size})
-              </button>
-
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setSelectedDivision('');
-                  setSelectedDepartment('');
-                  setSelectedDesignation('');
-                  setSelectedEmployee('');
-                  setStatusFilter('');
-                }}
-                className="h-10 w-10 flex items-center justify-center bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl transition-all"
-                title="Clear Filters"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+          <div className="flex w-full flex-col gap-1.5 sm:w-44 md:w-52">
+            <LoanFormLabel>Search</LoanFormLabel>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+              <input
+                type="text"
+                placeholder="Emp ID or name…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className={`h-10 pl-9 pr-3 ${loansFormInputClass()}`}
+                style={loansFormInputStyle()}
+              />
             </div>
           </div>
+
+          {anyListFilterActive && (
+            <button
+              type="button"
+              onClick={clearListFilters}
+              className="h-10 rounded-md border px-3 text-xs font-semibold uppercase tracking-wider transition hover:opacity-80"
+              style={{ borderColor: 'var(--ps-accent-border)', color: 'var(--ps-accent)' }}
+            >
+              Clear filters
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={generateBulkPayslipsPDF}
+            disabled={selectedRecords.size === 0 || generatingBulkPDF}
+            className={`ml-auto flex h-10 items-center gap-2 ${loansPrimaryButtonClass()}`}
+            style={loansPrimaryButtonStyle()}
+          >
+            {generatingBulkPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Export PDF ({selectedRecords.size})
+          </button>
+        </div>
+      </LoansToolbar>
+
+      {filteredRecords.length > 0 && (
+        <div className="mb-5 flex items-center justify-between border bg-white px-5 py-3 text-sm dark:bg-stone-950" style={{ borderColor: 'var(--ps-accent-border)' }}>
+          <span className="text-stone-600 dark:text-stone-400">
+            <FileText className="mr-2 inline h-4 w-4" style={{ color: 'var(--ps-accent)' }} />
+            {filteredRecords.length} payslip(s) · {selectedRecords.size} selected
+          </span>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+            Page {currentPage} of {totalPages || 1}
+          </span>
+        </div>
+      )}
+
+      <LoansContentPanel>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[960px] border-collapse text-left text-sm">
+            <thead>
+              <tr className={loansTableHeadClass()} style={loansTableHeadStyle()}>
+                <th className="px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedRecords.size === currentRecords.length && currentRecords.length > 0}
+                    onChange={toggleSelectAll}
+                    className="h-4 w-4 cursor-pointer"
+                    style={{ accentColor: 'var(--ps-accent)' }}
+                  />
+                </th>
+                <th className="px-4 py-3 font-semibold">Employee</th>
+                <th className="px-4 py-3 font-semibold">Dept / designation</th>
+                <th className="px-4 py-3 font-semibold">Month</th>
+                <th className="px-4 py-3 text-right font-semibold">Earnings</th>
+                <th className="px-4 py-3 text-right font-semibold">Deductions</th>
+                <th className="px-4 py-3 text-right font-semibold">Net salary</th>
+                <th className="px-4 py-3 text-center font-semibold">Status</th>
+                <th className="px-4 py-3 text-center font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={9} className="px-4 py-16 text-center">
+                    <Spinner />
+                  </td>
+                </tr>
+              ) : currentRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-4 py-16 text-center text-stone-500">
+                    <FileText className="mx-auto mb-3 h-10 w-10 opacity-30" />
+                    {selectedMonth ? 'No payslips match your filters.' : 'Select a pay period to begin.'}
+                  </td>
+                </tr>
+              ) : (
+                currentRecords.map((record) => {
+                  const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
+                  const sections = buildPayslipSections(payrollOutputColumns, record);
+                  return (
+                    <tr
+                      key={record._id}
+                      onClick={() => router.push(`${basePath}/${record._id}`)}
+                      className="cursor-pointer border-b transition-colors hover:bg-stone-50 dark:hover:bg-stone-900/40"
+                      style={{ borderColor: 'var(--ps-accent-border)' }}
+                    >
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedRecords.has(record._id)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleSelectRecord(record._id);
+                          }}
+                          className="h-4 w-4 cursor-pointer"
+                          style={{ accentColor: 'var(--ps-accent)' }}
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <PayslipEmployeeBlock
+                          employee={employee}
+                          empNo={record.emp_no}
+                          departments={departments}
+                          designations={designations}
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <span className="font-medium text-stone-800 dark:text-stone-200">
+                            {getDeptName(employee?.department_id)}
+                          </span>
+                          <span className="text-xs text-stone-500">{getDesigName(employee?.designation_id)}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-stone-700 dark:text-stone-300">
+                        {record.monthName} {record.year}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {sections.hasConfiguredSections ? (
+                          <span className={`text-sm font-semibold ${ledgerMoneyClass()}`}>
+                            ₹{(sections.totalEarnings ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-stone-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {sections.hasConfiguredSections ? (
+                          <span className={`text-sm font-semibold ${ledgerMoneyClass(true)}`}>
+                            ₹{(sections.totalDeductions ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-stone-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {sections.hasConfiguredSections ? (
+                          <span className={`text-sm font-bold ${ledgerMoneyClass()}`}>
+                            ₹{(sections.netPayable ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-stone-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={ledgerStatusBadgeClass(payslipLedgerStatus(record.status))}>
+                          {record.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-1">
+                          <Link
+                            href={`${basePath}/${record._id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="p-2 text-stone-400 transition-colors hover:text-stone-800 dark:hover:text-stone-200"
+                            title="View details"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              generatePayslipPDF(record);
+                            }}
+                            disabled={generatingPDF}
+                            className="p-2 text-stone-400 transition-colors hover:text-stone-800 disabled:opacity-50 dark:hover:text-stone-200"
+                            title="Download PDF"
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
 
-        {/* Results Summary */}
-        {filteredRecords.length > 0 && (
-          <div className="bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 mb-6 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg">
-                <svg className="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                Found {filteredRecords.length} payslip(s) • {selectedRecords.size} selected
-              </span>
+        {totalPages > 1 && (
+          <div
+            className="flex items-center justify-between border-t px-4 py-3"
+            style={{ borderColor: 'var(--ps-accent-border)' }}
+          >
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className={loansDialogOutlineButtonClass()}
+              style={loansDialogOutlineButtonStyle()}
+            >
+              Previous
+            </button>
+            <div className="flex gap-1">
+              {[...Array(totalPages)].map((_, i) => (
+                <button
+                  key={i + 1}
+                  type="button"
+                  onClick={() => setCurrentPage(i + 1)}
+                  className={`min-w-[36px] px-2 py-1.5 text-sm font-medium ${
+                    currentPage === i + 1 ? loansPrimaryButtonClass() : loansDialogOutlineButtonClass()
+                  }`}
+                  style={currentPage === i + 1 ? loansPrimaryButtonStyle() : loansDialogOutlineButtonStyle()}
+                >
+                  {i + 1}
+                </button>
+              ))}
             </div>
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
-              Page {currentPage} of {totalPages}
-            </div>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className={loansDialogOutlineButtonClass()}
+              style={loansDialogOutlineButtonStyle()}
+            >
+              Next
+            </button>
           </div>
         )}
-
-        {/* Payslips Table */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden border border-slate-200 dark:border-slate-700">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    <input
-                      type="checkbox"
-                      checked={selectedRecords.size === currentRecords.length && currentRecords.length > 0}
-                      onChange={toggleSelectAll}
-                      className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
-                    />
-                  </th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Employee</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Dept / Desig</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Month</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Earnings</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Deductions</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Net Salary</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center">Status</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
-                {loading ? (
-                  <tr>
-                    <td colSpan={10} className="px-6 py-12 text-center text-slate-400">
-                      <div className="flex flex-col items-center gap-2">
-                        <svg className="animate-spin h-8 w-8 text-emerald-500" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <span>Loading records...</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : currentRecords.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="px-6 py-12 text-center text-slate-400">
-                      <div className="flex flex-col items-center gap-2">
-                        <svg className="w-12 h-12 text-slate-200 dark:text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span>{selectedMonth ? 'No payslips found.' : 'Select a month to begin.'}</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  currentRecords.map((record) => {
-                    const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
-                    return (
-                      <tr
-                        key={record._id}
-                        onClick={() => router.push(`/superadmin/payslips/${record._id}`)}
-                        className="hover:bg-emerald-50/50 dark:hover:bg-slate-700/30 transition-colors group cursor-pointer"
-                      >
-                        <td className="px-6 py-4">
-                          <input
-                            type="checkbox"
-                            checked={selectedRecords.has(record._id)}
-                            onChange={(e) => {
-                              e.stopPropagation(); // Prevent row click when clicking checkbox
-                              toggleSelectRecord(record._id);
-                            }}
-                            className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
-                          />
-                        </td>
-                        <td className="px-6 py-4">
-                          <PayslipEmployeeBlock
-                            employee={employee}
-                            empNo={record.emp_no}
-                            departments={departments}
-                            designations={designations}
-                          />
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-col">
-                            <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">
-                              {getDeptName(employee?.department_id)}
-                            </span>
-                            <span className="text-xs text-slate-500">
-                              {getDesigName(employee?.designation_id)}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                            {record.monthName} {record.year}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          {(() => {
-                            const s = buildPayslipSections(payrollOutputColumns, record);
-                            return s.hasConfiguredSections ? (
-                              <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                                ₹{(s.totalEarnings ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-slate-400">—</span>
-                            );
-                          })()}
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          {(() => {
-                            const s = buildPayslipSections(payrollOutputColumns, record);
-                            return s.hasConfiguredSections ? (
-                              <span className="text-sm font-semibold text-rose-600 dark:text-rose-400">
-                                ₹{(s.totalDeductions ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-slate-400">—</span>
-                            );
-                          })()}
-                        </td>
-                        <td className="px-6 py-4 text-right text-emerald-600 dark:text-emerald-400">
-                          {(() => {
-                            const s = buildPayslipSections(payrollOutputColumns, record);
-                            return s.hasConfiguredSections ? (
-                              <span className="text-sm font-bold">
-                                ₹{(s.netPayable ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-slate-400">—</span>
-                            );
-                          })()}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${record.status === 'processed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
-                            record.status === 'approved' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
-                              'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                            }`}>
-                            {record.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-center gap-2">
-                            <Link
-                              href={`/superadmin/payslips/${record._id}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="p-2 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 rounded-lg transition-all"
-                              title="View Details"
-                            >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                              </svg>
-                            </Link>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                generatePayslipPDF(record);
-                              }}
-                              disabled={generatingPDF}
-                              className="p-2 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 rounded-lg transition-all"
-                              title="Download PDF"
-                            >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                              </svg>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className="px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-700 shadow-sm text-sm font-medium transition-all"
-              >
-                Previous
-              </button>
-              <div className="flex gap-1 md:gap-2">
-                {[...Array(totalPages)].map((_, i) => (
-                  <button
-                    key={i + 1}
-                    onClick={() => setCurrentPage(i + 1)}
-                    className={`min-w-[40px] h-10 px-2 rounded-xl text-sm font-medium transition-all ${currentPage === i + 1
-                      ? 'bg-emerald-600 text-white shadow-md'
-                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
-                      }`}
-                  >
-                    {i + 1}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className="px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-700 shadow-sm text-sm font-medium transition-all"
-              >
-                Next
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+      </LoansContentPanel>
+    </LoansPageShell>
   );
+}
+
+export default function PayslipsPage() {
+  return <PayslipsContent />;
 }

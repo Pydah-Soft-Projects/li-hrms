@@ -4,6 +4,21 @@ import { useState, useEffect } from 'react';
 import { api, type ProfessionTaxSlab, type StatutoryPF, type StatutoryESI } from '@/lib/api';
 import { toast } from 'react-toastify';
 import { Save, Shield, Building2, Briefcase, Plus, Trash2 } from 'lucide-react';
+import {
+  LoansPageShell,
+  LoansPageHeader,
+  loansPrimaryButtonClass,
+  loansPrimaryButtonStyle,
+} from '@/components/loans/LoansPageShell';
+import {
+  LoanDetailSection,
+  LoanDetailSectionTitle,
+  LoanFormLabel,
+  loansFormInputClass,
+  loansFormInputStyle,
+  loansFormCompactInputClass,
+  loansFormSelectClass,
+} from '@/components/loans/LoanDetailDialogShell';
 
 const defaultEsi: StatutoryESI = {
   enabled: false,
@@ -98,39 +113,41 @@ export default function StatutoryDeductionsPage() {
 
   if (loading) {
     return (
-      <div className="p-6 flex items-center justify-center min-h-[200px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-2 border-violet-500 border-t-transparent" />
-      </div>
+      <LoansPageShell>
+        <div className="flex min-h-[200px] items-center justify-center border bg-white p-6 dark:bg-stone-950" style={{ borderColor: 'var(--ps-accent-border)' }}>
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: 'var(--ps-accent)' }} />
+        </div>
+      </LoansPageShell>
     );
   }
 
   return (
-    <div className="p-4 sm:p-6 max-w-4xl mx-auto">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Statutory deductions</h1>
-          <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-            Configure ESI, PF (Provident Fund), and Profession Tax. Only <strong>employee share</strong> is deducted from salary; employer share is for your records.
-          </p>
-        </div>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 disabled:opacity-50"
-        >
-          <Save className="h-4 w-4" />
-          {saving ? 'Saving...' : 'Save'}
-        </button>
-      </div>
+    <LoansPageShell>
+      <LoansPageHeader
+        badge="Statutory payroll"
+        title="Statutory deductions"
+        subtitle="Configure ESI, PF, and Profession Tax. Only employee share is deducted from salary; employer share is for your records."
+        action={
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className={`inline-flex items-center gap-2 ${loansPrimaryButtonClass()}`}
+            style={loansPrimaryButtonStyle()}
+          >
+            <Save className="h-4 w-4" />
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        }
+      />
 
-      <div className="space-y-6">
-        {/* ESI */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/80 shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700/80 flex items-center gap-2">
-            <Shield className="h-5 w-5 text-violet-500" />
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">ESI (Employees&apos; State Insurance)</h2>
-          </div>
-          <div className="p-5 space-y-4">
+      <div className="space-y-5">
+        <LoanDetailSection>
+          <LoanDetailSectionTitle className="flex items-center gap-2">
+            <Shield className="h-4 w-4" style={{ color: 'var(--ps-accent)' }} />
+            ESI (Employees&apos; State Insurance)
+          </LoanDetailSectionTitle>
+          <div className="space-y-4">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -153,7 +170,8 @@ export default function StatutoryDeductionsPage() {
                   max="100"
                   value={esi.employeePercent}
                   onChange={(e) => setEsi((s) => ({ ...s, employeePercent: Number(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                  className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
                 />
               </div>
               <div>
@@ -165,7 +183,8 @@ export default function StatutoryDeductionsPage() {
                   max="100"
                   value={esi.employerPercent}
                   onChange={(e) => setEsi((s) => ({ ...s, employerPercent: Number(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                  className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
                 />
               </div>
               <div className="sm:col-span-2">
@@ -175,7 +194,8 @@ export default function StatutoryDeductionsPage() {
                     <select
                       value={esi.wageBaseField || ''}
                       onChange={(e) => setEsi((s) => ({ ...s, wageBaseField: e.target.value }))}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                      className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
                     >
                       <option value="">Percentage of Basic Pay</option>
                       {salaryFields.map((field) => (
@@ -195,7 +215,8 @@ export default function StatutoryDeductionsPage() {
                           max="100"
                           value={esi.wageBasePercentOfBasic ?? 50}
                           onChange={(e) => setEsi((s) => ({ ...s, wageBasePercentOfBasic: Number(e.target.value) || 0 }))}
-                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm pr-8"
+                          className={`${loansFormInputClass()} pr-8`}
+                          style={loansFormInputStyle()}
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%</span>
                       </div>
@@ -215,21 +236,21 @@ export default function StatutoryDeductionsPage() {
                   min="0"
                   value={esi.wageCeiling}
                   onChange={(e) => setEsi((s) => ({ ...s, wageCeiling: Number(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                  className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
                 />
                 <p className="mt-0.5 text-xs text-slate-400">When enabled: ESI applies only if employee basic pay ≤ this ceiling. Contribution is still on (% of basic) above. 0 = no ceiling.</p>
               </div>
             </div>
           </div>
-        </div>
+        </LoanDetailSection>
 
-        {/* PF */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/80 shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700/80 flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-violet-500" />
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">PF (Provident Fund / EPF)</h2>
-          </div>
-          <div className="p-5 space-y-4">
+        <LoanDetailSection>
+          <LoanDetailSectionTitle className="flex items-center gap-2">
+            <Building2 className="h-4 w-4" style={{ color: 'var(--ps-accent)' }} />
+            PF (Provident Fund / EPF)
+          </LoanDetailSectionTitle>
+          <div className="space-y-4">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -252,7 +273,8 @@ export default function StatutoryDeductionsPage() {
                   max="100"
                   value={pf.employeePercent}
                   onChange={(e) => setPf((s) => ({ ...s, employeePercent: Number(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                  className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
                 />
               </div>
               <div>
@@ -264,7 +286,8 @@ export default function StatutoryDeductionsPage() {
                   max="100"
                   value={pf.employerPercent}
                   onChange={(e) => setPf((s) => ({ ...s, employerPercent: Number(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                  className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
                 />
               </div>
               <div>
@@ -274,7 +297,8 @@ export default function StatutoryDeductionsPage() {
                   min="0"
                   value={pf.wageCeiling}
                   onChange={(e) => setPf((s) => ({ ...s, wageCeiling: Number(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                  className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
                 />
                 <p className="mt-0.5 text-xs text-slate-400">If basic ≥ this, PF calculated on this amount; else on full basic. e.g. 15000.</p>
               </div>
@@ -285,7 +309,8 @@ export default function StatutoryDeductionsPage() {
                     <select
                       value={pf.wageBaseField || ""}
                       onChange={(e) => setPf((s) => ({ ...s, wageBaseField: e.target.value || null }))}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                      className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
                     >
                       <option value="">Use Standard Base (Basic/DA)</option>
                       {salaryFields.map((field) => (
@@ -300,7 +325,8 @@ export default function StatutoryDeductionsPage() {
                       <select
                         value={pf.base}
                         onChange={(e) => setPf((s) => ({ ...s, base: e.target.value as 'basic' | 'basic_da' }))}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                        className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
                       >
                         <option value="basic">Basic only</option>
                         <option value="basic_da">Basic + DA</option>
@@ -316,15 +342,14 @@ export default function StatutoryDeductionsPage() {
               </div>
             </div>
           </div>
-        </div>
+        </LoanDetailSection>
 
-        {/* Profession Tax */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/80 shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700/80 flex items-center gap-2">
-            <Briefcase className="h-5 w-5 text-violet-500" />
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Profession Tax</h2>
-          </div>
-          <div className="p-5 space-y-4">
+        <LoanDetailSection>
+          <LoanDetailSectionTitle className="flex items-center gap-2">
+            <Briefcase className="h-4 w-4" style={{ color: 'var(--ps-accent)' }} />
+            Profession Tax
+          </LoanDetailSectionTitle>
+          <div className="space-y-4">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -344,7 +369,8 @@ export default function StatutoryDeductionsPage() {
                 value={professionTax.state}
                 onChange={(e) => setProfessionTax((s) => ({ ...s, state: e.target.value }))}
                 placeholder="e.g. Maharashtra"
-                className="w-full max-w-xs px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                className={`max-w-xs ${loansFormInputClass()}`}
+                style={loansFormInputStyle()}
               />
             </div>
             <div>
@@ -353,14 +379,19 @@ export default function StatutoryDeductionsPage() {
                 <button
                   type="button"
                   onClick={() => setProfessionTax((s) => ({ ...s, slabs: [...(s.slabs ?? defaultPtSlabs), { min: 0, max: null, amount: 0 }] }))}
-                  className="inline-flex items-center gap-1 text-xs text-violet-600 dark:text-violet-400 hover:underline"
+                  className="inline-flex items-center gap-1 text-xs font-medium hover:underline"
+                  style={{ color: 'var(--ps-accent)' }}
                 >
                   <Plus className="h-3.5 w-3.5" /> Add slab
                 </button>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {(professionTax.slabs ?? defaultPtSlabs).map((slab, i) => (
-                  <div key={i} className="flex flex-wrap items-center gap-2 p-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50/50 dark:bg-slate-800/30">
+                  <div
+                    key={i}
+                    className="flex flex-nowrap items-center gap-1.5 border px-2.5 py-1.5 sm:gap-2 sm:px-3 sm:py-2"
+                    style={{ borderColor: 'var(--ps-accent-border)', backgroundColor: 'var(--ps-accent-soft)' }}
+                  >
                     <input
                       type="number"
                       min="0"
@@ -371,13 +402,14 @@ export default function StatutoryDeductionsPage() {
                         next[i] = { ...next[i], min: Number(e.target.value) || 0 };
                         return { ...s, slabs: next };
                       })}
-                      className="w-24 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                      className={`w-[5.5rem] ${loansFormCompactInputClass()}`}
+                      style={loansFormInputStyle()}
                     />
-                    <span className="text-slate-400">–</span>
+                    <span className="shrink-0 text-stone-400">–</span>
                     <input
                       type="number"
                       min="0"
-                      placeholder="Max (empty = above)"
+                      placeholder="Max"
                       value={slab.max ?? ''}
                       onChange={(e) => setProfessionTax((s) => {
                         const next = [...(s.slabs ?? defaultPtSlabs)];
@@ -385,26 +417,28 @@ export default function StatutoryDeductionsPage() {
                         next[i] = { ...next[i], max: v === '' ? null : Number(v) };
                         return { ...s, slabs: next };
                       })}
-                      className="w-24 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                      className={`w-[5.5rem] ${loansFormCompactInputClass()}`}
+                      style={loansFormInputStyle()}
                       title="Leave empty for no upper limit (and above)"
                     />
-                    <span className="text-slate-500 text-sm">→ ₹</span>
+                    <span className="shrink-0 text-xs text-stone-500">→ ₹</span>
                     <input
                       type="number"
                       min="0"
-                      placeholder="Amount"
+                      placeholder="Amt"
                       value={slab.amount}
                       onChange={(e) => setProfessionTax((s) => {
                         const next = [...s.slabs];
                         next[i] = { ...next[i], amount: Number(e.target.value) || 0 };
                         return { ...s, slabs: next };
                       })}
-                      className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                      className={`w-[4.5rem] ${loansFormCompactInputClass()}`}
+                      style={loansFormInputStyle()}
                     />
                     <button
                       type="button"
                       onClick={() => setProfessionTax((s) => ({ ...s, slabs: (s.slabs ?? defaultPtSlabs).filter((_, j) => j !== i) }))}
-                      className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                      className="ml-auto shrink-0 p-1 text-stone-400 transition hover:text-rose-600 dark:hover:text-rose-400"
                       title="Remove slab"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -415,8 +449,8 @@ export default function StatutoryDeductionsPage() {
               <p className="mt-1.5 text-xs text-slate-400">Example: 0–14999 → ₹0, 15000–19999 → ₹150, 20000+ (max empty) → ₹200</p>
             </div>
           </div>
-        </div>
+        </LoanDetailSection>
       </div>
-    </div>
+    </LoansPageShell>
   );
 }

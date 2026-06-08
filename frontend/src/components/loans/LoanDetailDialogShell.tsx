@@ -1,22 +1,25 @@
 'use client';
 
 import type { CSSProperties, ReactNode } from 'react';
+import { ledgerPageHeaderStyle } from '@/lib/ledgerUi';
 
 export function LoanDetailDialog({
   open,
   onClose,
   children,
   maxWidth = 'max-w-2xl',
+  layerClass = 'z-50',
 }: {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
   maxWidth?: string;
+  layerClass?: string;
 }) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+    <div className={`fixed inset-0 ${layerClass} flex items-center justify-center p-4 sm:p-6`}>
       <div
         className="fixed inset-0 bg-stone-900/50 backdrop-blur-[2px]"
         onClick={onClose}
@@ -50,7 +53,7 @@ export function LoanDetailDialogHeader({
   return (
     <header
       className="shrink-0 border-b bg-white px-5 py-5 sm:px-6 dark:bg-stone-950"
-      style={{ borderColor: 'var(--ps-accent-border)' }}
+      style={ledgerPageHeaderStyle()}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
@@ -193,6 +196,227 @@ export function loansDialogDangerButtonClass() {
   return 'inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-white bg-rose-600 transition hover:bg-rose-700 disabled:opacity-40';
 }
 
-export function loansDialogSuccessButtonClass() {
-  return 'inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-white bg-emerald-600 transition hover:bg-emerald-700 disabled:opacity-40';
+export function loansDialogSuccessButtonClass(fullWidth = false) {
+  return `${fullWidth ? 'w-full ' : ''}inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-white bg-emerald-600 transition hover:bg-emerald-700 disabled:opacity-40`;
+}
+
+export function loansFormLabelClass() {
+  return 'mb-2 block text-[10px] font-semibold uppercase tracking-[0.2em]';
+}
+
+export function loansFormLabelStyle(): CSSProperties {
+  return { color: 'var(--ps-accent-ink)' };
+}
+
+export function LoanFormLabel({
+  children,
+  className = '',
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <label className={`${loansFormLabelClass()} ${className}`} style={loansFormLabelStyle()}>
+      {children}
+    </label>
+  );
+}
+
+export function loansFormInputClass(invalid = false) {
+  return `w-full border bg-white px-4 py-2.5 text-sm text-stone-900 transition focus:outline-none focus:ring-1 disabled:opacity-60 dark:bg-stone-950 dark:text-stone-100 ${
+    invalid
+      ? 'border-rose-500 ring-rose-200 dark:ring-rose-900'
+      : 'focus:ring-[color:var(--ps-accent)]'
+  }`;
+}
+
+export function loansFormInputStyle(invalid = false): CSSProperties {
+  return invalid ? {} : { borderColor: 'var(--ps-accent-border)' };
+}
+
+/** Inline fields (slabs, table cells) — no full-width stretch */
+export function loansFormCompactInputClass(invalid = false) {
+  return `shrink-0 border bg-white px-2.5 py-1.5 text-sm tabular-nums text-stone-900 transition focus:outline-none focus:ring-1 disabled:opacity-60 dark:bg-stone-950 dark:text-stone-100 ${
+    invalid
+      ? 'border-rose-500 ring-rose-200 dark:ring-rose-900'
+      : 'focus:ring-[color:var(--ps-accent)]'
+  }`;
+}
+
+export function loansFormTextareaClass(invalid = false) {
+  return `${loansFormInputClass(invalid)} resize-none`;
+}
+
+export function loansFormSelectClass(invalid = false) {
+  return loansFormInputClass(invalid);
+}
+
+export function LoanFormPanel({
+  children,
+  soft,
+  highlight,
+  className = '',
+}: {
+  children: ReactNode;
+  soft?: boolean;
+  highlight?: boolean;
+  className?: string;
+}) {
+  return (
+    <LoanDetailSection soft={soft} highlight={highlight} className={className}>
+      {children}
+    </LoanDetailSection>
+  );
+}
+
+export function LoanFormInfo({
+  children,
+  title,
+}: {
+  children: ReactNode;
+  title?: string;
+}) {
+  return (
+    <div
+      className="border p-4 text-sm text-stone-700 dark:text-stone-300"
+      style={{ borderColor: 'var(--ps-accent-border)', backgroundColor: 'var(--ps-accent-soft)' }}
+    >
+      {title && (
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--ps-accent-ink)' }}>
+          {title}
+        </p>
+      )}
+      {children}
+    </div>
+  );
+}
+
+export function LoanFormError({ children }: { children: ReactNode }) {
+  return (
+    <div className="border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+      {children}
+    </div>
+  );
+}
+
+export function LoanDialogTypeToggle<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (next: T) => void;
+  options: Array<{ value: T; label: string; icon?: ReactNode }>;
+}) {
+  return (
+    <div
+      className="mb-4 flex gap-1 border p-1"
+      style={{ borderColor: 'var(--ps-accent-border)', backgroundColor: 'rgba(var(--ps-accent-rgb), 0.03)' }}
+    >
+      {options.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className="flex flex-1 items-center justify-center gap-2 px-3 py-2.5 text-xs font-semibold uppercase tracking-wider transition"
+            style={
+              active
+                ? { backgroundColor: 'var(--ps-accent)', color: '#fff' }
+                : { color: 'rgb(120 113 108)' }
+            }
+          >
+            {opt.icon}
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function LoanDialogModeTabs({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  options: Array<{ value: string; label: string }>;
+}) {
+  return (
+    <div
+      className="mb-4 flex gap-1 border p-1"
+      style={{ borderColor: 'var(--ps-accent-border)' }}
+    >
+      {options.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className="flex-1 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition"
+            style={
+              active
+                ? { backgroundColor: 'var(--ps-accent-soft)', color: 'var(--ps-accent)' }
+                : { color: 'rgb(120 113 108)' }
+            }
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function LoanDialogFooter({
+  onCancel,
+  cancelLabel = 'Cancel',
+  submitLabel,
+  submitDisabled,
+  loading,
+  submitType = 'submit',
+  onSubmit,
+  variant = 'primary',
+  className = '',
+}: {
+  onCancel: () => void;
+  cancelLabel?: string;
+  submitLabel: string;
+  submitDisabled?: boolean;
+  loading?: boolean;
+  submitType?: 'submit' | 'button';
+  onSubmit?: () => void;
+  variant?: 'primary' | 'success';
+  className?: string;
+}) {
+  const submitClass =
+    variant === 'success'
+      ? loansDialogSuccessButtonClass(true)
+      : loansDialogPrimaryButtonClass(true);
+
+  return (
+    <div className={`flex gap-3 border-t pt-4 ${className}`} style={{ borderColor: 'var(--ps-accent-border)' }}>
+      <button
+        type="button"
+        onClick={onCancel}
+        className={`flex-1 ${loansDialogSecondaryButtonClass()}`}
+        style={loansDialogSecondaryButtonStyle()}
+      >
+        {cancelLabel}
+      </button>
+      <button
+        type={submitType}
+        onClick={onSubmit}
+        disabled={submitDisabled || loading}
+        className={submitClass}
+        style={variant === 'success' ? undefined : loansDialogPrimaryButtonStyle()}
+      >
+        {loading ? 'Please wait…' : submitLabel}
+      </button>
+    </div>
+  );
 }

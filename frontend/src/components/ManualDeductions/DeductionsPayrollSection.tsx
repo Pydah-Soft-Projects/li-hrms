@@ -3,6 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
+import {
+  LoansContentPanel,
+  loansTableHeadClass,
+  loansTableHeadStyle,
+} from '@/components/loans/LoansPageShell';
+import { ledgerMoneyClass } from '@/lib/ledgerUi';
 
 interface DeductionForPayroll {
   _id: string;
@@ -134,27 +140,28 @@ export default function DeductionsPayrollSection({
   }
 
   return (
-    <div className="overflow-x-auto">
-      <p className="text-xs font-bold uppercase text-slate-600 dark:text-slate-400 mb-2">
-        Include deductions (checkbox) and set amount to deduct in this payroll. Filtered by selected division/department above.
+    <LoansContentPanel>
+      <p className="border-b px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-stone-500" style={{ borderColor: 'var(--ps-accent-border)' }}>
+        Include deductions and set amount to deduct in this payroll.
       </p>
-      <table className="min-w-full bg-white dark:bg-slate-800 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">
-        <thead className="bg-slate-50 dark:bg-slate-700">
-          <tr>
-            <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Include</th>
-            <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Employee</th>
-            <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Reason</th>
-            <th className="px-4 py-2 text-right text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Remaining</th>
-            <th className="px-4 py-2 text-right text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Amount to deduct</th>
+      <div className="overflow-x-auto">
+      <table className="min-w-full">
+        <thead>
+          <tr className="border-b" style={{ borderColor: 'var(--ps-accent-border)' }}>
+            <th className={`px-4 py-3 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Include</th>
+            <th className={`px-4 py-3 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Employee</th>
+            <th className={`px-4 py-3 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Reason</th>
+            <th className={`px-4 py-3 text-right ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Remaining</th>
+            <th className={`px-4 py-3 text-right ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Amount to deduct</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+        <tbody className="divide-y" style={{ borderColor: 'var(--ps-accent-border)' }}>
           {filtered.map((d) => {
             const isSelected = selected.hasOwnProperty(d._id);
             const maxAmt = d.remainingAmount || 0;
             const emp = d.employee as any;
             return (
-              <tr key={d._id} className={isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''}>
+              <tr key={d._id} style={isSelected ? { backgroundColor: 'var(--ps-accent-soft)' } : undefined}>
                 <td className="px-4 py-2 whitespace-nowrap">
                   <input
                     type="checkbox"
@@ -187,7 +194,7 @@ export default function DeductionsPayrollSection({
                 <td className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 max-w-[200px] truncate" title={d.reason}>
                   {d.reason || '—'}
                 </td>
-                <td className="px-4 py-2 text-sm text-right text-slate-900 dark:text-white">
+                <td className={`px-4 py-2 text-right text-sm ${ledgerMoneyClass()}`}>
                   ₹{Number(maxAmt).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </td>
                 <td className="px-4 py-2 whitespace-nowrap">
@@ -207,6 +214,7 @@ export default function DeductionsPayrollSection({
           })}
         </tbody>
       </table>
-    </div>
+      </div>
+    </LoansContentPanel>
   );
 }

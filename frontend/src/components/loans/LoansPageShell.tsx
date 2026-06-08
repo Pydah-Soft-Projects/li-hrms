@@ -3,13 +3,15 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { fetchCompanyProfile } from '@/lib/companyProfile';
+import { ledgerPageHeaderStyle } from '@/lib/ledgerUi';
 import { PAYSLIP_ACCENT_FALLBACK, payslipAccentCssVars, resolvePayslipAccentHex } from '@/lib/payslipTheme';
 
 export function LoansPageShell({
   children,
-  maxWidth = 'max-w-7xl',
+  maxWidth = 'max-w-[1920px]',
 }: {
   children: ReactNode;
+  /** Default is full workspace width (1920px cap). Pass `max-w-4xl` etc. only when a narrow form is intentional. */
   maxWidth?: string;
 }) {
   const [accentHex, setAccentHex] = useState(PAYSLIP_ACCENT_FALLBACK);
@@ -47,7 +49,7 @@ export function LoansPageHeader({
   return (
     <header
       className="mb-5 flex flex-col gap-4 border bg-white px-5 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-8 dark:bg-stone-950"
-      style={{ borderColor: 'var(--ps-accent-border)' }}
+      style={ledgerPageHeaderStyle()}
     >
       <div>
         {badge && (

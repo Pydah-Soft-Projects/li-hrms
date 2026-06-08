@@ -24,17 +24,20 @@ export function CompanyBrandMark({ profile, collapsed, className = '' }: Company
         />
       ) : (
         <div
-          className="h-8 w-8 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0 text-sm font-bold text-white"
+          className="flex h-8 w-8 shrink-0 items-center justify-center border text-sm font-bold text-white"
           style={{
-            background: `linear-gradient(135deg, ${accent}, ${accent}dd)`,
-            boxShadow: `0 10px 15px -3px ${accent}33`,
+            backgroundColor: accent,
+            borderColor: 'var(--ps-accent-border, rgba(5, 150, 105, 0.22))',
           }}
         >
           {initials}
         </div>
       )}
       {!collapsed && (
-        <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight truncate">
+        <h2
+          className="truncate font-serif text-lg font-semibold tracking-tight text-stone-900 dark:text-stone-100"
+          style={{ color: 'var(--ps-accent-ink, rgb(28 25 23))' }}
+        >
           {displayName}
         </h2>
       )}
