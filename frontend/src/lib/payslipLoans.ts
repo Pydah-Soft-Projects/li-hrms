@@ -42,14 +42,21 @@ function collapseToCumulativeLoanDisplay(
   const emiDeducted =
     paysheetEmi > 0 ? paysheetEmi : round2(items.reduce((s, i) => s + (i.emiDeducted || 0), 0));
 
-  const balanceAfter =
-    paysheetRemaining > 0
-      ? paysheetRemaining
-      : round2(items.reduce((s, i) => s + (i.balanceAfter || 0), 0));
-
   let balanceBefore = round2(items.reduce((s, i) => s + (i.balanceBefore || 0), 0));
-  if (balanceBefore <= 0 && (emiDeducted > 0 || balanceAfter > 0)) {
-    balanceBefore = round2(balanceAfter + emiDeducted);
+  if (balanceBefore <= 0 && paysheetRemaining > 0) {
+    balanceBefore = round2(paysheetRemaining);
+  } else if (balanceBefore <= 0 && emiDeducted > 0) {
+    const sumAfter = round2(items.reduce((s, i) => s + (i.balanceAfter || 0), 0));
+    balanceBefore = round2(sumAfter + emiDeducted);
+  }
+
+  let balanceAfter = round2(items.reduce((s, i) => s + (i.balanceAfter || 0), 0));
+  if (emiDeducted > 0 && balanceBefore > 0) {
+    balanceAfter = round2(Math.max(0, balanceBefore - emiDeducted));
+  } else if (balanceAfter <= 0 && paysheetRemaining > 0) {
+    balanceAfter = round2(
+      emiDeducted > 0 ? Math.max(0, paysheetRemaining - emiDeducted) : paysheetRemaining
+    );
   }
 
   return [
@@ -71,11 +78,11 @@ function finalizePayslipLoans(
 ): PayslipLoans {
   const totalEmiDeducted =
     paysheetEmi > 0 ? paysheetEmi : round2(items.reduce((s, i) => s + (i.emiDeducted || 0), 0));
-  const totalBalanceAfter =
-    paysheetRemaining > 0
-      ? paysheetRemaining
-      : round2(items.reduce((s, i) => s + (i.balanceAfter || 0), 0));
   const cumulativeItems = collapseToCumulativeLoanDisplay(items, paysheetEmi, paysheetRemaining);
+  const totalBalanceAfter =
+    cumulativeItems.length > 0
+      ? round2(cumulativeItems[0].balanceAfter)
+      : round2(Math.max(0, (paysheetRemaining > 0 ? paysheetRemaining : 0) - totalEmiDeducted));
   const details = loanDetails && loanDetails.length > 0 ? loanDetails : [];
 
   return {
@@ -171,9 +178,9 @@ export function resolvePayslipLoans(payroll: PayrollLike): PayslipLoans {
         {
           loanId: '',
           label: 'Loans',
-          balanceBefore: round2(paysheetRemaining + paysheetEmi),
+          balanceBefore: round2(paysheetRemaining),
           emiDeducted: paysheetEmi,
-          balanceAfter: paysheetRemaining,
+          balanceAfter: round2(Math.max(0, paysheetRemaining - paysheetEmi)),
         },
       ],
       paysheetEmi,

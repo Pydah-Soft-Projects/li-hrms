@@ -126,6 +126,7 @@ function buildLoanDetailsForPayslip(emiBreakdown, perLoanItems, loanMap) {
     details.push({
       loanId,
       label: perItem?.label || loanDisplayLabel(loan),
+      principalAmount: round2(loan.amount),
       emiAmount: perItem ? round2(perItem.emiDeducted) : emiAmount,
       takenDate: formatTakenDateIso(loan.disbursement.disbursedAt),
     });
@@ -168,8 +169,12 @@ function reconcileEmiTotalToPaysheet(items, paysheetEmiTotal) {
 
   if (items.length === 1) {
     const loan = items[0];
-    const balanceBefore = round2(loan.balanceAfter + target);
-    return [{ ...loan, emiDeducted: target, balanceBefore }];
+    const balanceBefore =
+      round2(loan.balanceBefore) > 0
+        ? round2(loan.balanceBefore)
+        : round2(loan.balanceAfter + target);
+    const balanceAfter = round2(Math.max(0, balanceBefore - target));
+    return [{ ...loan, emiDeducted: target, balanceBefore, balanceAfter }];
   }
 
   const ratio = current > 0 ? target / current : 0;
@@ -239,8 +244,8 @@ function buildItemsFromActiveLoans(loans, paysheetEmiTotal, month, payrollId) {
 
 function buildSummaryLoanRow(paysheetEmiTotal, paysheetRemainingTotal) {
   const emiDeducted = round2(paysheetEmiTotal);
-  const balanceAfter = round2(paysheetRemainingTotal);
-  const balanceBefore = round2(balanceAfter + emiDeducted);
+  const balanceBefore = round2(paysheetRemainingTotal);
+  const balanceAfter = round2(Math.max(0, balanceBefore - emiDeducted));
   return {
     loanId: '',
     label: 'Loans',
@@ -261,14 +266,23 @@ function collapseToCumulativeLoanDisplay(items, paysheetEmiTotal, paysheetRemain
       ? paysheetEmiTotal
       : round2(items.reduce((s, i) => s + i.emiDeducted, 0));
 
-  const balanceAfter =
-    paysheetRemainingTotal > 0
-      ? paysheetRemainingTotal
-      : round2(items.reduce((s, i) => s + i.balanceAfter, 0));
-
   let balanceBefore = round2(items.reduce((s, i) => s + i.balanceBefore, 0));
-  if (balanceBefore <= 0 && (emiDeducted > 0 || balanceAfter > 0)) {
-    balanceBefore = round2(balanceAfter + emiDeducted);
+  if (balanceBefore <= 0 && paysheetRemainingTotal > 0) {
+    balanceBefore = round2(paysheetRemainingTotal);
+  } else if (balanceBefore <= 0 && emiDeducted > 0) {
+    const sumAfter = round2(items.reduce((s, i) => s + i.balanceAfter, 0));
+    balanceBefore = round2(sumAfter + emiDeducted);
+  }
+
+  let balanceAfter = round2(items.reduce((s, i) => s + i.balanceAfter, 0));
+  if (emiDeducted > 0 && balanceBefore > 0) {
+    balanceAfter = round2(Math.max(0, balanceBefore - emiDeducted));
+  } else if (balanceAfter <= 0 && paysheetRemainingTotal > 0) {
+    balanceAfter = round2(
+      emiDeducted > 0
+        ? Math.max(0, paysheetRemainingTotal - emiDeducted)
+        : paysheetRemainingTotal
+    );
   }
 
   return [
@@ -362,11 +376,6 @@ function buildPayslipLoans(record, loanMap = null, opts = {}) {
       ? paysheetEmiTotal
       : round2(items.reduce((s, i) => s + i.emiDeducted, 0));
 
-  const totalBalanceAfter =
-    paysheetRemainingTotal > 0
-      ? paysheetRemainingTotal
-      : round2(items.reduce((s, i) => s + i.balanceAfter, 0));
-
   const perLoanItems = [...items];
   const loanDetails = buildLoanDetailsForPayslip(emiBreakdown, perLoanItems, loanMap);
 
@@ -375,6 +384,16 @@ function buildPayslipLoans(record, loanMap = null, opts = {}) {
     paysheetEmiTotal,
     paysheetRemainingTotal
   );
+
+  const totalBalanceAfter =
+    cumulativeItems.length > 0
+      ? round2(cumulativeItems[0].balanceAfter)
+      : round2(
+          Math.max(
+            0,
+            (paysheetRemainingTotal > 0 ? paysheetRemainingTotal : 0) - totalEmiDeducted
+          )
+        );
 
   return {
     items: cumulativeItems,

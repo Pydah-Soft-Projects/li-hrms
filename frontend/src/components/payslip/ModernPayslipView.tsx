@@ -256,7 +256,8 @@ export function ModernPayslipView({
                           className="border-b text-left text-[10px] uppercase tracking-wider text-stone-400"
                           style={{ borderColor: 'var(--ps-accent-border)' }}
                         >
-                          <th className="pb-2 pr-4 font-semibold">Loan</th>
+                          <th className="pb-2 pr-4 font-semibold">Loan reason</th>
+                          <th className="pb-2 pr-4 text-right font-semibold">Principal amount</th>
                           <th className="pb-2 pr-4 text-right font-semibold">EMI amount</th>
                           <th className="pb-2 text-right font-semibold">Disbursement date</th>
                         </tr>
@@ -268,6 +269,11 @@ export function ModernPayslipView({
                             className="border-b border-stone-100 dark:border-stone-800"
                           >
                             <td className="py-2 pr-4 text-stone-700 dark:text-stone-300">{loan.label}</td>
+                            <td className="py-2 pr-4 text-right font-mono tabular-nums text-stone-600 dark:text-stone-400">
+                              {loan.principalAmount != null && loan.principalAmount > 0
+                                ? formatInr(loan.principalAmount)
+                                : '—'}
+                            </td>
                             <td className="py-2 pr-4 text-right font-mono tabular-nums text-stone-900 dark:text-stone-100">
                               {formatInr(loan.emiAmount)}
                             </td>

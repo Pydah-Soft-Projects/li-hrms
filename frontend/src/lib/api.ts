@@ -345,7 +345,9 @@ export interface PayslipLoanItem {
 
 export interface PayslipLoanDetail {
   loanId?: string;
+  /** Loan reason (display label) */
   label: string;
+  principalAmount?: number;
   emiAmount: number;
   takenDate?: string | null;
 }

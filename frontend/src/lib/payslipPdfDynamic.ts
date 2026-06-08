@@ -343,13 +343,16 @@ export async function drawDynamicPayslipPdf(
 
       const detailBody = loanSection.loanDetails.map((loan) => [
         loan.label,
+        loan.principalAmount != null && loan.principalAmount > 0
+          ? formatInrPdf(loan.principalAmount)
+          : '—',
         formatInrPdf(loan.emiAmount),
         formatLoanTakenDate(loan.takenDate),
       ]);
 
       autoTable(doc, {
         startY: y,
-        head: [['LOAN', 'EMI AMOUNT', 'DISBURSEMENT DATE']],
+        head: [['LOAN REASON', 'PRINCIPAL AMOUNT', 'EMI AMOUNT', 'DISBURSEMENT DATE']],
         body: detailBody,
         theme: 'plain',
         headStyles: {
@@ -363,6 +366,7 @@ export async function drawDynamicPayslipPdf(
         columnStyles: {
           1: { halign: 'right' },
           2: { halign: 'right' },
+          3: { halign: 'right' },
         },
         margin: { left: 12, right: 12 },
       });
