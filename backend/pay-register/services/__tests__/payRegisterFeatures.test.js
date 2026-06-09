@@ -209,6 +209,35 @@ describe('Pay Register — Monthly totals (payableShifts per day)', () => {
   });
 });
 
+describe('Pay Register — employee filter (multi division/department)', () => {
+  const { parseQueryIdList } = require('../payRegisterEmployeeFilter');
+  const idA = '507f1f77bcf86cd799439011';
+  const idB = '507f1f77bcf86cd799439012';
+
+  test('parseQueryIdList handles single id', () => {
+    const out = parseQueryIdList(idA);
+    expect(out).toHaveLength(1);
+    expect(String(out[0])).toBe(idA);
+  });
+
+  test('parseQueryIdList handles comma-separated ids', () => {
+    const out = parseQueryIdList(`${idA},${idB}`);
+    expect(out).toHaveLength(2);
+    expect(out.map(String)).toEqual([idA, idB]);
+  });
+
+  test('parseQueryIdList dedupes repeated array values', () => {
+    const out = parseQueryIdList([idA, idA, idB]);
+    expect(out).toHaveLength(2);
+  });
+
+  test('parseQueryIdList ignores invalid and empty values', () => {
+    expect(parseQueryIdList('')).toEqual([]);
+    expect(parseQueryIdList('all')).toEqual([]);
+    expect(parseQueryIdList('not-an-id')).toEqual([]);
+  });
+});
+
 describe('Pay Register — API routes registered', () => {
   test('modifications export routes are declared in pay-register index', () => {
     const fs = require('fs');

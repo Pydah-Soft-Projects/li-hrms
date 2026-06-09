@@ -7,6 +7,7 @@ router.use(protect);
 
 router.get('/', employeeGroupController.getEmployeeGroups);
 router.get('/for-roster-filters', employeeGroupController.getGroupsForRosterFilters);
+router.get('/:id/employees', employeeGroupController.getEmployeeGroupEmployees);
 router.get('/:id', employeeGroupController.getEmployeeGroup);
 
 router.post(

@@ -1,10 +1,19 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
+import { fetchCompanyProfile } from '@/lib/companyProfile';
+import {
+  drawLoanApplicationFormPage,
+  drawLoanApplicationSuretyPage,
+  isLoanPostDisbursement,
+  type LoanApplicationPdfContext,
+} from '@/lib/loanApplicationFormPdf';
+import { drawLoanRtgsPage, shouldIncludeRtgsPage } from '@/lib/loanRtgsPdf';
 
 /** Minimal loan/advance shape for PDF export (matches list/detail payloads). */
 export type LoanAdvancePdfLoan = {
   _id: string;
+  applicationFormNumber?: number;
   requestType: 'loan' | 'salary_advance';
   amount: number;
   reason?: string;
@@ -18,6 +27,12 @@ export type LoanAdvancePdfLoan = {
     emp_no?: string;
     email?: string;
     phone_number?: string;
+    gross_salary?: number;
+    bank_account_no?: string;
+    bank_name?: string;
+    bank_place?: string;
+    ifsc_code?: string;
+    department_id?: { name?: string; code?: string } | string;
   };
   emp_no?: string;
   department?: { name?: string; code?: string };
@@ -64,7 +79,13 @@ export type LoanAdvancePdfLoan = {
     status?: string;
     actionAt?: string;
     remarks?: string;
-    employeeId?: { employee_name?: string; emp_no?: string } | string;
+    employeeId?:
+      | {
+          employee_name?: string;
+          emp_no?: string;
+          department_id?: { name?: string; code?: string } | string;
+        }
+      | string;
   }>;
   cancellation?: {
     cancelledAt?: string;
@@ -407,17 +428,16 @@ function lastTableBottom(doc: jsPDF, fallback: number): number {
   return (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? fallback;
 }
 
-export function downloadLoanAdvanceRequestPdf(
+export function appendLoanSimpleDetailsPage(
+  doc: jsPDF,
   loan: LoanAdvancePdfLoan,
-  transactions: LoanAdvancePdfTxn[],
   options?: { summary?: LoanAdvancePdfSummary },
 ): void {
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
   const margin = 16;
   const [pr, pg, pb] = primaryRgb(loan.requestType);
-  const title = loan.requestType === 'loan' ? 'Loan statement & slips' : 'Salary advance statement & slips';
+  const title =
+    loan.requestType === 'loan' ? 'Loan request details' : 'Salary advance request details';
   const employeeDisplay = resolveEmployeeListDisplayParts({
     employeeId: loan.employeeId,
     emp_no: loan.emp_no,
@@ -431,7 +451,6 @@ export function downloadLoanAdvanceRequestPdf(
       .filter(Boolean)
       .join('  ·  ') || employeeDisplay.name;
   const summary = options?.summary;
-  const sorted = sortTxnsChrono(transactions);
   const generated = new Date().toLocaleString('en-IN', {
     day: '2-digit',
     month: 'short',
@@ -795,6 +814,59 @@ export function downloadLoanAdvanceRequestPdf(
     y = tableBottom + 8;
   }
 
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7.5);
+  doc.setTextColor(148, 163, 184);
+  doc.text('System record: employee, request, guarantors, approvals and workflow. Amounts in Rs.', margin, doc.internal.pageSize.getHeight() - 10, {
+    maxWidth: pageW - margin * 2,
+  });
+}
+
+function appendLoanLedgerAndSlips(
+  doc: jsPDF,
+  loan: LoanAdvancePdfLoan,
+  transactions: LoanAdvancePdfTxn[],
+  options?: { summary?: LoanAdvancePdfSummary },
+): void {
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 16;
+  const [pr, pg, pb] = primaryRgb(loan.requestType);
+  const title = loan.requestType === 'loan' ? 'Loan statement & slips' : 'Salary advance statement & slips';
+  const empNo =
+    resolveEmployeeListDisplayParts({
+      employeeId: loan.employeeId,
+      emp_no: loan.emp_no,
+      department: loan.department,
+      designation: loan.designation,
+      division_id: loan.division_id,
+    }).empNo || '—';
+  const sorted = sortTxnsChrono(transactions);
+  const generated = new Date().toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  const drawHeaderBand = (subtitle?: string) => {
+    doc.setFillColor(pr, pg, pb);
+    doc.rect(0, 0, pageW, 30, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text(title, margin, 12);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(`Generated: ${generated}`, margin, 20);
+    if (subtitle) doc.text(subtitle, margin, 26);
+    doc.setTextColor(33, 37, 41);
+  };
+
+  drawHeaderBand(`Reference: ${loan._id}`);
+  let y = 38;
+
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(71, 85, 105);
@@ -844,7 +916,7 @@ export function downloadLoanAdvanceRequestPdf(
   doc.setFontSize(7.5);
   doc.setTextColor(148, 163, 184);
   doc.text(
-    'Full record: system meta, approvals, guarantors, workflow, changes, ledger and slips. Amounts in Rs.',
+    'Ledger and transaction slips. Amounts in Rs.',
     margin,
     pageH - 10,
     {
@@ -942,7 +1014,46 @@ export function downloadLoanAdvanceRequestPdf(
     );
   });
 
+}
+
+export async function downloadLoanAdvanceRequestPdf(
+  loan: LoanAdvancePdfLoan,
+  transactions: LoanAdvancePdfTxn[],
+  options?: {
+    summary?: LoanAdvancePdfSummary;
+    applicationPdfContext?: LoanApplicationPdfContext;
+  },
+): Promise<void> {
+  const profile = await fetchCompanyProfile();
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pdfContext = options?.applicationPdfContext;
+
+  drawLoanApplicationFormPage(doc, loan, profile, pdfContext);
+
+  doc.addPage();
+  drawLoanApplicationSuretyPage(doc, loan, profile, pdfContext);
+
+  if (shouldIncludeRtgsPage(loan)) {
+    doc.addPage();
+    drawLoanRtgsPage(doc, loan, profile, pdfContext);
+  }
+
+  if (isLoanPostDisbursement(loan.status)) {
+    doc.addPage();
+    appendLoanLedgerAndSlips(doc, loan, transactions, options);
+  }
+
+  const empNo =
+    resolveEmployeeListDisplayParts({
+      employeeId: loan.employeeId,
+      emp_no: loan.emp_no,
+      department: loan.department,
+      designation: loan.designation,
+      division_id: loan.division_id,
+    }).empNo || 'unknown';
   const prefix = loan.requestType === 'loan' ? 'Loan' : 'SalaryAdvance';
-  const fname = `${prefix}_${safeFilePart(empNo)}_${loan._id.slice(-8)}.pdf`;
+  const formNo =
+    loan.applicationFormNumber != null ? `_No${loan.applicationFormNumber}` : '';
+  const fname = `${prefix}${formNo}_${safeFilePart(empNo)}_${loan._id.slice(-8)}.pdf`;
   doc.save(fname);
 }

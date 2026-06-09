@@ -20,7 +20,9 @@
  * Pay component badges: ledgerPayComponentBadgeClass, ledgerPayComponentStripClass, ledgerPayComponentCardClass
  *
  * Applied on: payslip, loans, allowances-deductions, statutory-deductions, manual-deductions, arrears,
- *   DeductionForm, DeductionsPayrollSection (pay register embed), Sidebar, WorkspaceSidebar (LedgerSidebar)
+ *   payroll-config, payments (PayrollBatchesHub), DeductionForm, DeductionsPayrollSection (pay register embed), Sidebar, WorkspaceSidebar (LedgerSidebar)
+ *
+ * SweetAlert: use `ledgerSwalFire` / `alertConfirm` from `@/lib/customSwal` (not raw Swal.fire).
  *
  * Future work: say "apply Ledger UI" to restyle any page, dialog, or section.
  */
@@ -108,4 +110,44 @@ export function ledgerMoneyClass(debit = false): string {
   return debit
     ? 'font-mono text-base font-semibold tabular-nums text-rose-700 dark:text-rose-400'
     : 'font-mono text-base font-semibold tabular-nums text-emerald-700 dark:text-emerald-400';
+}
+
+/** Semantic tones for ledger action buttons (outline or solid). */
+export type LedgerActionTone = 'emerald' | 'sky' | 'rose' | 'amber' | 'violet';
+
+const ledgerActionBtnBase =
+  'inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2.5 text-[10px] font-semibold uppercase tracking-wide transition hover:opacity-90 disabled:opacity-40 disabled:hover:opacity-40';
+
+/** Ledger-shaped toolbar button with a fixed semantic colour (not company accent). */
+export function ledgerActionButtonClass(
+  tone: LedgerActionTone,
+  variant: 'solid' | 'outline' = 'outline',
+): string {
+  if (variant === 'solid') {
+    switch (tone) {
+      case 'emerald':
+        return `${ledgerActionBtnBase} border-emerald-700 bg-emerald-600 text-white hover:bg-emerald-700`;
+      case 'sky':
+        return `${ledgerActionBtnBase} border-sky-700 bg-sky-600 text-white hover:bg-sky-700`;
+      case 'rose':
+        return `${ledgerActionBtnBase} border-rose-700 bg-rose-600 text-white hover:bg-rose-700`;
+      case 'amber':
+        return `${ledgerActionBtnBase} border-amber-700 bg-amber-600 text-white hover:bg-amber-700`;
+      case 'violet':
+        return `${ledgerActionBtnBase} border-violet-700 bg-violet-600 text-white hover:bg-violet-700`;
+    }
+  }
+
+  switch (tone) {
+    case 'emerald':
+      return `${ledgerActionBtnBase} border-emerald-300/90 bg-emerald-50/80 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300`;
+    case 'sky':
+      return `${ledgerActionBtnBase} border-sky-300/90 bg-sky-50/80 text-sky-800 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300`;
+    case 'rose':
+      return `${ledgerActionBtnBase} border-rose-300/90 bg-rose-50/80 text-rose-800 hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300`;
+    case 'amber':
+      return `${ledgerActionBtnBase} border-amber-300/90 bg-amber-50/80 text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300`;
+    case 'violet':
+      return `${ledgerActionBtnBase} border-violet-300/90 bg-violet-50/80 text-violet-800 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300`;
+  }
 }

@@ -721,14 +721,9 @@ exports.getLockedSummaryEmployees = async (req, res) => {
       })
       .lean();
 
-    let divFilter = null;
-    if (divisionId && mongoose.Types.ObjectId.isValid(String(divisionId))) {
-      divFilter = new mongoose.Types.ObjectId(String(divisionId));
-    }
-    let deptFilter = null;
-    if (departmentId && mongoose.Types.ObjectId.isValid(String(departmentId))) {
-      deptFilter = new mongoose.Types.ObjectId(String(departmentId));
-    }
+    const { parseQueryIdList } = require('../services/payRegisterEmployeeFilter');
+    const divFilters = parseQueryIdList(divisionId);
+    const deptFilters = parseQueryIdList(departmentId);
     let groupFilter = null;
     if (employeeGroupId && mongoose.Types.ObjectId.isValid(String(employeeGroupId))) {
       groupFilter = new mongoose.Types.ObjectId(String(employeeGroupId));
@@ -745,13 +740,13 @@ exports.getLockedSummaryEmployees = async (req, res) => {
       const emp = d.employeeId;
       if (!emp || typeof emp !== 'object') continue;
 
-      if (divFilter) {
+      if (divFilters.length) {
         const divIdVal = refId(emp.division_id);
-        if (!divIdVal || divIdVal !== String(divFilter)) continue;
+        if (!divIdVal || !divFilters.some((id) => String(id) === divIdVal)) continue;
       }
-      if (deptFilter) {
+      if (deptFilters.length) {
         const deptIdVal = refId(emp.department_id);
-        if (!deptIdVal || deptIdVal !== String(deptFilter)) continue;
+        if (!deptIdVal || !deptFilters.some((id) => String(id) === deptIdVal)) continue;
       }
       if (groupFilter) {
         const groupIdVal = refId(emp.employee_group_id);

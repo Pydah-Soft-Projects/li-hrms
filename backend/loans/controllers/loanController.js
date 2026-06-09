@@ -25,6 +25,7 @@ const {
   repairOpenLoanForHistory,
   repairOpenSalaryAdvanceForHistory,
 } = require('../services/loanHistoryRepairService');
+const { nextLoanApplicationFormNumber } = require('../services/loanApplicationFormSequence');
 
 /** Write calculateEMI schedule fields onto loan document. */
 function applyCalculatedEmiToLoan(loan, emiResult) {
@@ -561,12 +562,65 @@ exports.calculateEligibility = async (req, res) => {
 // @desc    Get single loan
 // @route   GET /api/loans/:id
 // @access  Private
+async function ensureLoanApplicationFormNumber(loan) {
+  if (loan.applicationFormNumber) return loan.applicationFormNumber;
+  loan.applicationFormNumber = await nextLoanApplicationFormNumber();
+  await loan.save();
+  return loan.applicationFormNumber;
+}
+
+async function buildLoanApplicationPdfContext(loan) {
+  const employeeId = loan.employeeId?._id || loan.employeeId;
+  let previousAdvance = null;
+
+  if (employeeId) {
+    const prev = await Loan.findOne({
+      employeeId,
+      _id: { $ne: loan._id },
+      isActive: true,
+      status: { $in: ['disbursed', 'active', 'completed'] },
+      appliedAt: { $lt: loan.appliedAt || loan.createdAt },
+    })
+      .sort({ appliedAt: -1 })
+      .select('amount requestType disbursement.disbursedAt appliedAt')
+      .lean();
+
+    if (prev) {
+      previousAdvance = {
+        amount: prev.amount,
+        drawnOnDate: prev.disbursement?.disbursedAt || prev.appliedAt,
+        requestType: prev.requestType,
+      };
+    }
+  }
+
+  const division =
+    loan.division_id && typeof loan.division_id === 'object'
+      ? loan.division_id.name || ''
+      : '';
+
+  const grossSalary =
+    loan.employeeId && typeof loan.employeeId === 'object'
+      ? loan.employeeId.gross_salary
+      : null;
+
+  return {
+    previousAdvance,
+    grossSalary: grossSalary != null ? Number(grossSalary) : null,
+    divisionName: division || null,
+  };
+}
+
 exports.getLoan = async (req, res) => {
   try {
     const loan = await Loan.findById(req.params.id)
-      .populate('employeeId', 'employee_name emp_no gross_salary email phone_number')
+      .populate(
+        'employeeId',
+        'employee_name emp_no gross_salary email phone_number bank_account_no bank_name bank_place ifsc_code',
+      )
       .populate('department', 'name code')
       .populate('designation', 'name')
+      .populate('division_id', 'name code')
       .populate('appliedBy', 'name email')
       .populate('workflow.history.actionBy', 'name email')
       .populate('approvals.hod.approvedBy', 'name email')
@@ -576,7 +630,11 @@ exports.getLoan = async (req, res) => {
       .populate('disbursement.disbursedBy', 'name email')
       .populate('cancellation.cancelledBy', 'name email')
       .populate('changeHistory.modifiedBy', 'name email')
-      .populate('guarantors.employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id');
+      .populate({
+        path: 'guarantors.employeeId',
+        select: 'employee_name emp_no profilePhoto department_id designation_id division_id',
+        populate: { path: 'department_id', select: 'name code' },
+      });
 
     if (!loan) {
       return res.status(404).json({
@@ -597,11 +655,14 @@ exports.getLoan = async (req, res) => {
     loan.markModified('workflow');
 
     const presentPayPeriod = await getPresentPayPeriod();
+    await ensureLoanApplicationFormNumber(loan);
+    const applicationPdfContext = await buildLoanApplicationPdfContext(loan);
 
     res.status(200).json({
       success: true,
       data: loan,
       presentPayPeriod,
+      applicationPdfContext,
     });
   } catch (error) {
     console.error('Error fetching loan:', error);
@@ -906,6 +967,7 @@ exports.applyLoan = async (req, res) => {
       loanPayload.loanConfig = loanConfig;
     }
     const loan = new Loan(loanPayload);
+    loan.applicationFormNumber = await nextLoanApplicationFormNumber();
 
     const wfSettings = await resolveLoanWorkflowSettings(requestType, employee.division_id?._id || employee.division_id);
     const approvalChain = buildLoanApprovalChain(wfSettings);

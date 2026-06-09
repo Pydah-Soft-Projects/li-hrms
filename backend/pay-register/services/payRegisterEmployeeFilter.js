@@ -1,6 +1,34 @@
 const mongoose = require('mongoose');
 const { buildPayrollPeriodEmployeeQuery } = require('../../payroll/services/payrollEmployeeQueryHelper');
 
+function toObjectIdIfValid(id) {
+  if (id === undefined || id === null || id === '') return null;
+  const s = String(id).trim();
+  if (!s || s === 'all') return null;
+  if (!mongoose.Types.ObjectId.isValid(s)) return null;
+  return new mongoose.Types.ObjectId(s);
+}
+
+/**
+ * Parse divisionId / departmentId query values: single id, comma-separated, or repeated params (array).
+ * @returns {import('mongoose').Types.ObjectId[]}
+ */
+function parseQueryIdList(raw) {
+  if (raw === undefined || raw === null || raw === '') return [];
+  const parts = Array.isArray(raw) ? raw : String(raw).split(',');
+  const seen = new Set();
+  const out = [];
+  for (const part of parts) {
+    const oid = toObjectIdIfValid(part);
+    if (!oid) continue;
+    const key = String(oid);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(oid);
+  }
+  return out;
+}
+
 /**
  * Mongo filter for Pay Register list / export: pay-period employment scope, optional dept/div, optional text search (server-side).
  */
@@ -9,23 +37,23 @@ async function buildPayRegisterEmployeeFilter(
   rangeEnd,
   { departmentId, divisionId, employeeGroupId, search, scopeFilter } = {}
 ) {
-  const toOid = (id) => {
-    if (id === undefined || id === null || id === '') return null;
-    const s = String(id);
-    try {
-      if (mongoose.Types.ObjectId.isValid(s)) return new mongoose.Types.ObjectId(s);
-    } catch (e) {
-      /* ignore */
-    }
-    return id;
-  };
+  const departmentIds = parseQueryIdList(departmentId);
+  const divisionIds = parseQueryIdList(divisionId);
 
   const conditions = [
-    buildPayrollPeriodEmployeeQuery(divisionId, departmentId, rangeStart, rangeEnd, scopeFilter),
+    buildPayrollPeriodEmployeeQuery(null, null, rangeStart, rangeEnd, scopeFilter),
   ];
 
-  if (employeeGroupId) {
-    conditions.push({ employee_group_id: toOid(employeeGroupId) });
+  if (divisionIds.length) {
+    conditions.push({ division_id: { $in: divisionIds } });
+  }
+  if (departmentIds.length) {
+    conditions.push({ department_id: { $in: departmentIds } });
+  }
+
+  const groupOid = toObjectIdIfValid(employeeGroupId);
+  if (groupOid) {
+    conditions.push({ employee_group_id: groupOid });
   }
 
   await appendEmployeeSearchCondition(conditions, search);
@@ -103,4 +131,6 @@ module.exports = {
   buildPayRegisterEmployeeFilter,
   appendEmployeeSearchCondition,
   assertEmployeeInPayRegisterDisplayScope,
+  parseQueryIdList,
+  toObjectIdIfValid,
 };

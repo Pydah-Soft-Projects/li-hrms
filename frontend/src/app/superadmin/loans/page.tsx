@@ -993,7 +993,10 @@ export default function LoansPage() {
       }
       const txns = txnRes.data.transactions || [];
       const summary = txnRes.data.summary;
-      downloadLoanAdvanceRequestPdf(loanRes.data as LoanAdvancePdfLoan, txns, { summary });
+      await downloadLoanAdvanceRequestPdf(loanRes.data as LoanAdvancePdfLoan, txns, {
+        summary,
+        applicationPdfContext: loanRes.applicationPdfContext,
+      });
       toast.success('PDF downloaded');
     } catch (err: any) {
       toast.error(err?.message || 'Failed to generate PDF');
@@ -1884,7 +1887,7 @@ export default function LoansPage() {
                   disabled={exportingPdf}
                   className={loansDialogOutlineButtonClass()}
                   style={loansDialogOutlineButtonStyle()}
-                  title="Download PDF: summary, ledger, and one slip per transaction"
+                  title="Download PDF: application form; after disbursement includes statement, ledger, and slips"
                 >
                   <PrintIcon />
                   {exportingPdf ? '…' : 'Print PDF'}

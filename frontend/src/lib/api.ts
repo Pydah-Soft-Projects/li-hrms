@@ -1947,6 +1947,10 @@ export const api = {
     return apiRequest<EmployeeGroup>(`/employee-groups/${id}`, { method: 'GET' });
   },
 
+  getEmployeeGroupEmployees: async (id: string) => {
+    return apiRequest<any[]>(`/employee-groups/${id}/employees`, { method: 'GET' });
+  },
+
   createEmployeeGroup: async (data: Partial<EmployeeGroup>) => {
     return apiRequest<EmployeeGroup>('/employee-groups', {
       method: 'POST',
@@ -4879,12 +4883,25 @@ export const api = {
     );
   },
 
-  getPayRegisterLockedEmployees: async (month: string, departmentId?: string, divisionId?: string, search?: string, employeeGroupId?: string) => {
+  getPayRegisterLockedEmployees: async (
+    month: string,
+    filters?: {
+      departmentIds?: string[];
+      divisionIds?: string[];
+      search?: string;
+      employeeGroupId?: string;
+    },
+  ) => {
     const query = new URLSearchParams();
-    if (departmentId) query.append('departmentId', departmentId);
-    if (divisionId) query.append('divisionId', divisionId);
-    if (search) query.append('search', search);
-    if (employeeGroupId) query.append('employeeGroupId', employeeGroupId);
+    const { appendPayRegisterOrgFilters } = await import('@/lib/payRegisterApiFilters');
+    if (filters) {
+      appendPayRegisterOrgFilters(query, {
+        departmentIds: filters.departmentIds,
+        divisionIds: filters.divisionIds,
+      });
+      if (filters.search) query.append('search', filters.search);
+      if (filters.employeeGroupId) query.append('employeeGroupId', filters.employeeGroupId);
+    }
     const qs = query.toString();
     return apiRequest<{
       success: boolean;
@@ -4909,15 +4926,31 @@ export const api = {
     });
   },
 
-  getEmployeesWithPayRegister: async (month: string, departmentId?: string, divisionId?: string, status?: string, page?: number, limit?: number, search?: string, employeeGroupId?: string) => {
+  getEmployeesWithPayRegister: async (
+    month: string,
+    filters?: {
+      departmentIds?: string[];
+      divisionIds?: string[];
+      status?: string;
+      page?: number;
+      limit?: number;
+      search?: string;
+      employeeGroupId?: string;
+    },
+  ) => {
     const query = new URLSearchParams();
-    if (departmentId) query.append('departmentId', departmentId);
-    if (divisionId) query.append('divisionId', divisionId);
-    if (status) query.append('status', status);
-    if (page) query.append('page', page.toString());
-    if (limit) query.append('limit', limit.toString());
-    if (search) query.append('search', search);
-    if (employeeGroupId) query.append('employeeGroupId', employeeGroupId);
+    const { appendPayRegisterOrgFilters } = await import('@/lib/payRegisterApiFilters');
+    if (filters) {
+      appendPayRegisterOrgFilters(query, {
+        departmentIds: filters.departmentIds,
+        divisionIds: filters.divisionIds,
+      });
+      if (filters.status) query.append('status', filters.status);
+      if (filters.page) query.append('page', filters.page.toString());
+      if (filters.limit !== undefined) query.append('limit', filters.limit.toString());
+      if (filters.search) query.append('search', filters.search);
+      if (filters.employeeGroupId) query.append('employeeGroupId', filters.employeeGroupId);
+    }
     return apiRequest<{ data: any[], pagination?: any, success: boolean, message?: string }>(`/pay-register/employees/${month}${query.toString() ? `?${query.toString()}` : ''}`, {
       method: 'GET',
     });
@@ -4925,17 +4958,13 @@ export const api = {
 
   exportPayRegisterSummary: async (params: {
     month: string;
-    departmentId?: string;
-    divisionId?: string;
+    departmentIds?: string[];
+    divisionIds?: string[];
     search?: string;
     employeeGroupId?: string;
   }) => {
-    const query = new URLSearchParams();
-    query.append('month', params.month);
-    if (params.departmentId) query.append('departmentId', params.departmentId);
-    if (params.divisionId) query.append('divisionId', params.divisionId);
-    if (params.search) query.append('search', params.search);
-    if (params.employeeGroupId) query.append('employeeGroupId', params.employeeGroupId);
+    const { payRegisterExportQueryParams } = await import('@/lib/payRegisterApiFilters');
+    const query = payRegisterExportQueryParams(params);
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
@@ -4960,16 +4989,13 @@ export const api = {
 
   exportPayRegisterSummaryPDF: async (params: {
     month: string;
-    departmentId?: string;
-    divisionId?: string;
+    departmentIds?: string[];
+    divisionIds?: string[];
     search?: string;
     employeeGroupId?: string;
   }) => {
-    const query = new URLSearchParams();
-    if (params.departmentId) query.append('departmentId', params.departmentId);
-    if (params.divisionId) query.append('divisionId', params.divisionId);
-    if (params.search) query.append('search', params.search);
-    if (params.employeeGroupId) query.append('employeeGroupId', params.employeeGroupId);
+    const { payRegisterExportQueryParams } = await import('@/lib/payRegisterApiFilters');
+    const query = payRegisterExportQueryParams(params);
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
@@ -4993,16 +5019,13 @@ export const api = {
 
   exportPayRegisterModifications: async (params: {
     month: string;
-    departmentId?: string;
-    divisionId?: string;
+    departmentIds?: string[];
+    divisionIds?: string[];
     search?: string;
     employeeGroupId?: string;
   }) => {
-    const query = new URLSearchParams();
-    if (params.departmentId) query.append('departmentId', params.departmentId);
-    if (params.divisionId) query.append('divisionId', params.divisionId);
-    if (params.search) query.append('search', params.search);
-    if (params.employeeGroupId) query.append('employeeGroupId', params.employeeGroupId);
+    const { payRegisterExportQueryParams } = await import('@/lib/payRegisterApiFilters');
+    const query = payRegisterExportQueryParams(params);
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
@@ -5025,16 +5048,13 @@ export const api = {
 
   exportPayRegisterModificationsPDF: async (params: {
     month: string;
-    departmentId?: string;
-    divisionId?: string;
+    departmentIds?: string[];
+    divisionIds?: string[];
     search?: string;
     employeeGroupId?: string;
   }) => {
-    const query = new URLSearchParams();
-    if (params.departmentId) query.append('departmentId', params.departmentId);
-    if (params.divisionId) query.append('divisionId', params.divisionId);
-    if (params.search) query.append('search', params.search);
-    if (params.employeeGroupId) query.append('employeeGroupId', params.employeeGroupId);
+    const { payRegisterExportQueryParams } = await import('@/lib/payRegisterApiFilters');
+    const query = payRegisterExportQueryParams(params);
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
@@ -5293,12 +5313,26 @@ export const api = {
   },
 
   // Live Attendance
-  getLiveAttendanceReport: async (params?: { date?: string; division?: string; department?: string; shift?: string }) => {
+  getLiveAttendanceReport: async (params?: {
+    date?: string;
+    divisionIds?: string[];
+    departmentIds?: string[];
+    shiftIds?: string[];
+  }) => {
     const query = new URLSearchParams();
     if (params?.date) query.append('date', params.date);
-    if (params?.division) query.append('division', params.division);
-    if (params?.department) query.append('department', params.department);
-    if (params?.shift) query.append('shift', params.shift);
+    for (const id of params?.divisionIds ?? []) {
+      const s = String(id).trim();
+      if (s) query.append('division', s);
+    }
+    for (const id of params?.departmentIds ?? []) {
+      const s = String(id).trim();
+      if (s) query.append('department', s);
+    }
+    for (const id of params?.shiftIds ?? []) {
+      const s = String(id).trim();
+      if (s) query.append('shift', s);
+    }
     const queryString = query.toString() ? `?${query.toString()}` : '';
     return apiRequest<LiveAttendanceReportData>(`/attendance/reports/live${queryString}`, { method: 'GET' });
   },

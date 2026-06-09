@@ -4,15 +4,15 @@ import { useEffect, useRef } from "react";
 
 type Options = {
   setCurrentDate: (date: Date) => void;
-  setSelectedDepartment: (id: string) => void;
-  setSelectedDivision: (id: string) => void;
+  setFilterDepartments: (ids: string[]) => void;
+  setFilterDivisions: (ids: string[]) => void;
 };
 
 /** Apply ?month=YYYY-MM&departmentId=&divisionId= from payments approval warning links. */
 export function usePayRegisterDeepLink({
   setCurrentDate,
-  setSelectedDepartment,
-  setSelectedDivision,
+  setFilterDepartments,
+  setFilterDivisions,
 }: Options) {
   const applied = useRef(false);
 
@@ -32,7 +32,7 @@ export function usePayRegisterDeepLink({
         setCurrentDate(new Date(y, m - 1, 1));
       }
     }
-    if (dept) setSelectedDepartment(dept);
-    if (div) setSelectedDivision(div);
-  }, [setCurrentDate, setSelectedDepartment, setSelectedDivision]);
+    if (dept) setFilterDepartments([dept]);
+    if (div) setFilterDivisions([div]);
+  }, [setCurrentDate, setFilterDepartments, setFilterDivisions]);
 }

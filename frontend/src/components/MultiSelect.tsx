@@ -21,6 +21,8 @@ interface MultiSelectProps {
   single?: boolean;
   /** Ledger UI — accent borders, flat panel, company accent highlights */
   variant?: 'default' | 'ledger';
+  /** Shorter trigger + tighter label (toolbar / header filters) */
+  compact?: boolean;
 }
 
 const LEDGER_VAR_KEYS = [
@@ -72,6 +74,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   className = '',
   single = false,
   variant = 'default',
+  compact = false,
 }) => {
   const isLedger = variant === 'ledger';
   const [isOpen, setIsOpen] = useState(false);
@@ -208,13 +211,17 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
     }`;
   };
 
+  const triggerHeight = compact ? 'h-7' : isLedger ? 'h-10' : 'h-9';
+
   return (
-    <div className={`relative flex flex-col gap-1.5 ${className}`} ref={containerRef}>
+    <div className={`relative flex flex-col ${compact ? 'gap-0.5' : 'gap-1.5'} ${className}`} ref={containerRef}>
       {label && (
         <label
           className={
             isLedger
-              ? 'text-[10px] font-semibold uppercase tracking-[0.2em]'
+              ? compact
+                ? 'text-[9px] font-semibold uppercase tracking-[0.16em]'
+                : 'text-[10px] font-semibold uppercase tracking-[0.2em]'
               : 'ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500'
           }
           style={isLedger ? { color: 'var(--ps-accent-ink)' } : undefined}
@@ -226,7 +233,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
         onClick={() => !disabled && setIsOpen(!isOpen)}
         className={
           isLedger
-            ? `flex h-10 cursor-pointer items-center justify-between px-3 transition hover:opacity-95 ${
+            ? `flex ${triggerHeight} cursor-pointer items-center justify-between ${compact ? 'px-2' : 'px-3'} transition hover:opacity-95 ${
                 disabled ? 'cursor-not-allowed opacity-50' : ''
               } ${loansFormInputClass()}`
             : `flex h-9 cursor-pointer items-center justify-between rounded-lg border px-3 transition-all ${
@@ -236,7 +243,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
         style={isLedger ? loansFormInputStyle() : undefined}
       >
         <span
-          className={`truncate text-[11px] font-semibold ${
+          className={`truncate font-semibold ${compact ? 'text-[10px]' : 'text-[11px]'} ${
             selectedIds.length === 0 ? 'text-stone-400' : 'text-stone-900 dark:text-stone-100'
           }`}
           style={isLedger && selectedIds.length > 0 ? { color: 'var(--ps-accent-ink)' } : undefined}
