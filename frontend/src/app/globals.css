@@ -968,3 +968,32 @@ input[type="number"],
     justify-content: center;
   }
 }
+
+/* Ledger UI — settings module scope */
+.settings-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.settings-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.settings-scrollbar::-webkit-scrollbar-thumb {
+  background: #d6d3d1;
+  border-radius: 10px;
+}
+.dark .settings-scrollbar::-webkit-scrollbar-thumb {
+  background: #44403c;
+}
+
+.settings-ledger-scope input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']),
+.settings-ledger-scope select,
+.settings-ledger-scope textarea {
+  border-color: var(--ps-accent-border);
+  border-radius: 0;
+}
+.settings-ledger-scope input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):focus,
+.settings-ledger-scope select:focus,
+.settings-ledger-scope textarea:focus {
+  outline: none;
+  ring: 1px;
+  --tw-ring-color: var(--ps-accent);
+}

@@ -159,7 +159,7 @@ function drawSignatureBlock(
   doc.setFontSize(fontSize);
   doc.setTextColor(...theme.label);
   const labelLines = doc.splitTextToSize(label, colW);
-  labelLines.forEach((line, i) => {
+  labelLines.forEach((line: string, i: number) => {
     doc.text(line, textAnchor, cy + i * 4, { align: textAlign });
   });
   cy += labelLines.length * 4 + 2;
@@ -243,7 +243,7 @@ function drawFieldLine(
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(...theme.body);
       const valLines = doc.splitTextToSize(value, rightX - x - labelW - 2);
-      valLines.forEach((line, i) => {
+      valLines.forEach((line: string, i: number) => {
         doc.text(line, x + labelW + 2, y + i * 4);
       });
       return Math.max(ROW_GAP, valLines.length * 4 + 2);
@@ -252,7 +252,7 @@ function drawFieldLine(
   }
 
   const labelLines = doc.splitTextToSize(label, maxW);
-  labelLines.forEach((line, i) => {
+  labelLines.forEach((line: string, i: number) => {
     doc.text(line, x, y + i * 4);
   });
   let cursorY = y + labelLines.length * 4 + 1;
@@ -261,7 +261,7 @@ function drawFieldLine(
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(...theme.body);
     const valLines = doc.splitTextToSize(value, maxW);
-    valLines.forEach((line, i) => {
+    valLines.forEach((line: string, i: number) => {
       doc.text(line, x, cursorY + i * 4);
     });
     cursorY += valLines.length * 4;

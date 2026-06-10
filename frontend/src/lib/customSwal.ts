@@ -22,7 +22,6 @@ export const customSwal = Swal.mixin({
   customClass: {
     container: 'ledger-swal-container',
     popup: 'ledger-swal-popup',
-    header: 'ledger-swal-header',
     title: 'ledger-swal-title',
     htmlContainer: 'ledger-swal-html',
     actions: 'ledger-swal-actions',
@@ -58,6 +57,7 @@ function applyLedgerPopupStyles(popup: HTMLElement, options: LedgerSwalOptions) 
 
   const header = popup.querySelector<HTMLElement>('.swal2-header');
   if (header) {
+    header.classList.add('ledger-swal-header');
     header.style.borderBottom = '1px solid var(--ps-accent-border)';
     header.style.backgroundImage =
       'linear-gradient(180deg, var(--ps-accent-soft) 0%, transparent 100%)';

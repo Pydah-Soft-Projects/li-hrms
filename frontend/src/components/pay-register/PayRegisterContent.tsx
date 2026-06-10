@@ -82,6 +82,7 @@ import {
   payRegisterDayShowsShiftPicker,
   type PayRegisterShiftSelection,
 } from '@/lib/payRegisterShifts';
+import PayRegisterShiftField from '@/components/pay-register/PayRegisterShiftField';
 import {
   LoansPageShell,
   LoansPageHeader,
@@ -1141,7 +1142,7 @@ export function PayRegisterContent({
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Pay_Register_Summary_${monthStr}${params.departmentId ? `_${params.departmentId}` : ''}.pdf`;
+      a.download = `Pay_Register_Summary_${monthStr}${params.departmentIds?.length ? `_${params.departmentIds.join(',')}` : ''}.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);

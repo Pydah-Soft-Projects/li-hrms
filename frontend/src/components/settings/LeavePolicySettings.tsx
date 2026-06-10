@@ -6,16 +6,24 @@ import { toast } from 'react-toastify';
 import { alertConfirm } from '@/lib/customSwal';
 import { SettingsSkeleton } from './SettingsSkeleton';
 import {
-    Calculator,
-    RefreshCw,
-    Save,
+    SettingsPanel,
+    SettingsPanelHeader,
+    SettingsSaveBar,
+    SettingsSectionCard,
+} from './SettingsPageShell';
+import {
+    settingsInputClass,
+    settingsInputStyle,
+} from '@/lib/settingsUi';
+import {
     AlertTriangle,
-    Calendar,
     ChevronDown,
-    ChevronRight,
     Clock,
     Table2,
 } from 'lucide-react';
+
+const policyInputClass = settingsInputClass();
+const policyInputStyle = settingsInputStyle();
 
 interface LeavePolicySettings {
     financialYear: {
@@ -601,31 +609,20 @@ const LeavePolicySettings = () => {
     }
 
     return (
-        <div className="w-full max-w-full space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="mb-10 flex items-end justify-between flex-wrap gap-4 border-b border-gray-200 dark:border-gray-800 pb-8">
-                <div>
-                    <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">
-                        <span>Settings</span>
-                        <ChevronRight className="h-3 w-3" />
-                        <span className="text-indigo-600 dark:text-indigo-400">Leave Policy</span>
-                    </div>
-                    <h2 className="text-3xl font-black tracking-tight text-gray-900 dark:text-white">Leave Policy Configuration</h2>
-                    <p className="mt-2 text-sm font-medium text-gray-500 dark:text-gray-400">
-                        Configure financial year, earned leave rules, carry forward, and annual CL reset.
-                    </p>
-                </div>
-                <button
-                    onClick={saveSettings}
-                    disabled={saving}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors text-sm font-medium shadow-sm"
-                >
-                    <Save className="w-4 h-4" />
-                    {saving ? 'Saving...' : 'Save Settings'}
-                </button>
-            </div>
+        <SettingsPanel className="max-w-full">
+            <SettingsPanelHeader
+                section="Leave Policy"
+                title="Leave Policy Configuration"
+                subtitle="Configure financial year, earned leave rules, carry forward, and annual CL reset."
+            />
 
             {/* Full width (top): leave register month-slot edit permissions */}
-            <section className="w-full min-w-0 rounded-2xl border border-indigo-200/80 dark:border-indigo-500/35 bg-white dark:bg-[#1E293B] shadow-md shadow-indigo-500/[0.07] dark:shadow-lg dark:shadow-black/25 overflow-hidden ring-1 ring-indigo-500/15 dark:ring-indigo-400/20">
+            <SettingsSectionCard
+                title="Leave register — month slot edit permissions"
+                description="Twelve payroll periods 1–12 match the Financial Year order below. Expand to configure Default row + 12 FY periods."
+                accent
+                className="w-full min-w-0"
+            >
                 <button
                     type="button"
                     aria-expanded={leaveRegisterSlotEditExpanded}
@@ -855,23 +852,14 @@ const LeavePolicySettings = () => {
                                 </div>
                             );
                         })()}
-            </section>
+            </SettingsSectionCard>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 w-full">
                 {/* ——— Left column: Financial Year + EL Earning Rules ——— */}
                 <div className="space-y-8 min-w-0">
                     {/* 1. Financial Year */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-                        <div className="px-6 sm:px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                            <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
-                                <Calendar className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Financial Year</h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Leave cycles and annual reset.</p>
-                            </div>
-                        </div>
-                        <div className="p-6 sm:p-8 space-y-6">
+                    <SettingsSectionCard title="Financial Year" description="Leave cycles and annual reset.">
+                        <div className="space-y-6">
 
                         {/* Use calendar year — same toggle style as Leave Settings (Backdated / Future Dated) */}
                         <div className="flex items-center justify-between gap-4 p-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 mb-4">
@@ -894,7 +882,8 @@ const LeavePolicySettings = () => {
                                     <select
                                         value={settings.financialYear.startMonth}
                                         onChange={(e) => updateSettings('financialYear.startMonth', '', parseInt(e.target.value))}
-                                        className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                        className={policyInputClass}
+                                        style={policyInputStyle}
                                     >
                                         {[...Array(12)].map((_, i) => (
                                             <option key={i} value={i + 1}>{new Date(0, i).toLocaleString('default', { month: 'long' })}</option>
@@ -909,29 +898,21 @@ const LeavePolicySettings = () => {
                                         max="31"
                                         value={settings.financialYear.startDay}
                                         onChange={(e) => updateSettings('financialYear.startDay', '', parseInt(e.target.value))}
-                                        className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                        className={policyInputClass}
+                                        style={policyInputStyle}
                                     />
                                 </div>
                             </div>
                         )}
                         </div>
-                    </section>
+                    </SettingsSectionCard>
 
                     {/* Monthly application cap (payroll period) */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-                        <div className="px-6 sm:px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                            <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
-                                <Clock className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Monthly application cap</h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                    Maximum days of each leave type (CL / CCL / EL) that can be <strong>applied</strong> in one payroll
-                                    period (pending + approved). <strong>0</strong> means no per-type limit for that type.
-                                </p>
-                            </div>
-                        </div>
-                        <div className="p-6 sm:p-8 space-y-4">
+                    <SettingsSectionCard
+                        title="Monthly application cap"
+                        description="Maximum days of each leave type (CL / CCL / EL) that can be applied in one payroll period. 0 means no per-type limit."
+                    >
+                        <div className="space-y-4">
                             <div className="space-y-2">
                                 <p className="text-xs font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wide">
                                     Per leave type (payroll period)
@@ -954,7 +935,8 @@ const LeavePolicySettings = () => {
                                                         Math.max(0, parseInt(e.target.value, 10) || 0)
                                                     )
                                                 }
-                                                className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                                className={policyInputClass}
+                                        style={policyInputStyle}
                                             />
                                         </div>
                                     ))}
@@ -989,20 +971,14 @@ const LeavePolicySettings = () => {
                                 </button>
                             </div>
                         </div>
-                    </section>
+                    </SettingsSectionCard>
 
                     {/* 2. EL Earning Rules */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-                        <div className="px-6 sm:px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                            <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
-                                <Calculator className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">EL Earning Rules</h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Enable earned leave and set how EL is accrued (attendance-based or fixed).</p>
-                            </div>
-                        </div>
-                        <div className="p-6 sm:p-8 space-y-6">
+                    <SettingsSectionCard
+                        title="EL Earning Rules"
+                        description="Enable earned leave and set how EL is accrued (attendance-based or fixed)."
+                    >
+                        <div className="space-y-6">
 
                         {/* Enable EL — same toggle style as Financial Year / Backdated */}
                         <div className="flex items-center justify-between gap-4 p-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 mb-4">
@@ -1053,7 +1029,8 @@ const LeavePolicySettings = () => {
                                 <select
                                     value={settings.earnedLeave.earningType}
                                     onChange={(e) => updateSettings('earnedLeave.earningType', '', e.target.value)}
-                                    className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                    className={policyInputClass}
+                                        style={policyInputStyle}
                                 >
                                     <option value="attendance_based">Attendance based</option>
                                     <option value="fixed">Fixed amount</option>
@@ -1067,25 +1044,29 @@ const LeavePolicySettings = () => {
                                             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Min days (first EL)</label>
                                             <input type="number" min="1" max="31" value={settings.earnedLeave.attendanceRules.minDaysForFirstEL}
                                                 onChange={(e) => updateSettings('earnedLeave.attendanceRules.minDaysForFirstEL', '', parseInt(e.target.value))}
-                                                className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                                                className={policyInputClass}
+                                        style={policyInputStyle} />
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Days per EL</label>
                                             <input type="number" min="1" max="31" value={settings.earnedLeave.attendanceRules.daysPerEL}
                                                 onChange={(e) => updateSettings('earnedLeave.attendanceRules.daysPerEL', '', parseInt(e.target.value))}
-                                                className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                                                className={policyInputClass}
+                                        style={policyInputStyle} />
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Max EL / month</label>
                                             <input type="number" min="0" max="10" value={settings.earnedLeave.attendanceRules.maxELPerMonth}
                                                 onChange={(e) => updateSettings('earnedLeave.attendanceRules.maxELPerMonth', '', parseInt(e.target.value))}
-                                                className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                                                className={policyInputClass}
+                                        style={policyInputStyle} />
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Max EL / year</label>
                                             <input type="number" min="0" max="50" value={settings.earnedLeave.attendanceRules.maxELPerYear}
                                                 onChange={(e) => updateSettings('earnedLeave.attendanceRules.maxELPerYear', '', parseInt(e.target.value))}
-                                                className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                                                className={policyInputClass}
+                                        style={policyInputStyle} />
                                         </div>
                                     </div>
                                     <div className="flex flex-wrap gap-4">
@@ -1111,13 +1092,15 @@ const LeavePolicySettings = () => {
                                         <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">EL per month</label>
                                         <input type="number" min="0" max="10" value={settings.earnedLeave.fixedRules.elPerMonth}
                                             onChange={(e) => updateSettings('earnedLeave.fixedRules.elPerMonth', '', parseInt(e.target.value))}
-                                            className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                                            className={policyInputClass}
+                                        style={policyInputStyle} />
                                     </div>
                                     <div className="space-y-1.5">
                                         <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Max EL / year</label>
                                         <input type="number" min="0" max="50" value={settings.earnedLeave.fixedRules.maxELPerYear}
                                             onChange={(e) => updateSettings('earnedLeave.fixedRules.maxELPerYear', '', parseInt(e.target.value))}
-                                            className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                                            className={policyInputClass}
+                                        style={policyInputStyle} />
                                     </div>
                                 </div>
                             )}
@@ -1218,23 +1201,13 @@ const LeavePolicySettings = () => {
                         </>
                         )}
                         </div>
-                    </section>
+                    </SettingsSectionCard>
                 </div>
 
                 {/* ——— Right column: Carry Forward ——— */}
                 <div className="space-y-8 min-w-0">
                     {/* 3. Carry Forward */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-                        <div className="px-6 sm:px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                            <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
-                                <RefreshCw className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Carry Forward</h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">CL monthly pool; EL & CCL carry and expiry.</p>
-                            </div>
-                        </div>
-                        <div className="p-6 sm:p-8">
+                    <SettingsSectionCard title="Carry Forward" description="CL monthly pool; EL and CCL carry and expiry.">
                         <div className="grid grid-cols-1 gap-6">
                             <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-3">
                                 <h4 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Casual Leave (CL)</h4>
@@ -1283,13 +1256,15 @@ const LeavePolicySettings = () => {
                                             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Max months</label>
                                             <input type="number" min="1" max="12" value={settings.carryForward.earnedLeave.maxMonths}
                                                 onChange={(e) => updateSettings('carryForward.earnedLeave.maxMonths', '', parseInt(e.target.value))}
-                                                className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                                                className={policyInputClass}
+                                        style={policyInputStyle} />
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Expiry months</label>
                                             <input type="number" min="1" max="12" value={settings.carryForward.earnedLeave.expiryMonths}
                                                 onChange={(e) => updateSettings('carryForward.earnedLeave.expiryMonths', '', parseInt(e.target.value))}
-                                                className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                                                className={policyInputClass}
+                                        style={policyInputStyle} />
                                         </div>
                                     </div>
                                 )}
@@ -1309,13 +1284,15 @@ const LeavePolicySettings = () => {
                                                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Max months</label>
                                                 <input type="number" min="1" max="12" value={settings.carryForward.compensatoryOff.maxMonths}
                                                     onChange={(e) => updateSettings('carryForward.compensatoryOff.maxMonths', '', parseInt(e.target.value))}
-                                                    className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                                                    className={policyInputClass}
+                                        style={policyInputStyle} />
                                             </div>
                                             <div className="space-y-1.5">
                                                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Expiry months</label>
                                                 <input type="number" min="1" max="12" value={settings.carryForward.compensatoryOff.expiryMonths}
                                                     onChange={(e) => updateSettings('carryForward.compensatoryOff.expiryMonths', '', parseInt(e.target.value))}
-                                                    className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                                                    className={policyInputClass}
+                                        style={policyInputStyle} />
                                             </div>
                                         </div>
                                         <label className="flex items-center gap-2 cursor-pointer pt-1">
@@ -1328,21 +1305,14 @@ const LeavePolicySettings = () => {
                                 )}
                             </div>
                         </div>
-                        </div>
-                    </section>
+                    </SettingsSectionCard>
 
                     {/* 4. Annual CL Reset */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-                        <div className="px-6 sm:px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                            <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
-                                <AlertTriangle className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Annual CL Reset</h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Reset CL at configured date (pay cycle / year). Default entitlement or experience-based tiers; optional carry forward.</p>
-                            </div>
-                        </div>
-                        <div className="p-6 sm:p-8 space-y-6">
+                    <SettingsSectionCard
+                        title="Annual CL Reset"
+                        description="Reset CL at configured date (pay cycle / year). Default entitlement or experience-based tiers; optional carry forward."
+                    >
+                        <div className="space-y-6">
                         <label className="flex items-center gap-2 cursor-pointer mb-4">
                             <input type="checkbox" checked={settings.annualCLReset.enabled}
                                 onChange={(e) => updateSettings('annualCLReset.enabled', '', e.target.checked)}
@@ -1356,7 +1326,8 @@ const LeavePolicySettings = () => {
                                         <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Default CL entitlement</label>
                                         <input type="number" min="0" max="365" value={settings.annualCLReset.resetToBalance}
                                             onChange={(e) => updateSettings('annualCLReset.resetToBalance', '', parseInt(e.target.value) || 0)}
-                                            className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                            className={policyInputClass}
+                                        style={policyInputStyle}
                                             title="Used for all employees when experience tiers are empty or no tier matches" />
                                         <p className="text-[10px] text-gray-500 dark:text-gray-400">Used when no experience tier matches</p>
                                     </div>
@@ -1374,7 +1345,8 @@ const LeavePolicySettings = () => {
                                         <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Reset month</label>
                                         <select value={settings.annualCLReset.resetMonth}
                                             onChange={(e) => updateSettings('annualCLReset.resetMonth', '', parseInt(e.target.value))}
-                                            className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all">
+                                            className={policyInputClass}
+                                        style={policyInputStyle}>
                                             {[...Array(12)].map((_, i) => (
                                                 <option key={i} value={i + 1}>{new Date(0, i).toLocaleString('default', { month: 'long' })}</option>
                                             ))}
@@ -1384,7 +1356,8 @@ const LeavePolicySettings = () => {
                                         <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Reset day</label>
                                         <input type="number" min="1" max="31" value={settings.annualCLReset.resetDay}
                                             onChange={(e) => updateSettings('annualCLReset.resetDay', '', parseInt(e.target.value))}
-                                            className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                                            className={policyInputClass}
+                                        style={policyInputStyle} />
                                     </div>
                                 </div>
                                 )}
@@ -1520,20 +1493,11 @@ const LeavePolicySettings = () => {
                             </div>
                         </div>
                         </div>
-                    </section>
+                    </SettingsSectionCard>
 
                     {/* 5. Auto Update */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-                        <div className="px-6 sm:px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                            <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
-                                <Clock className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Auto Update</h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Schedule automatic balance updates.</p>
-                            </div>
-                        </div>
-                        <div className="p-6 sm:p-8 space-y-6">
+                    <SettingsSectionCard title="Auto Update" description="Schedule automatic balance updates.">
+                        <div className="space-y-6">
                         <label className="flex items-center gap-2 cursor-pointer mb-4">
                             <input type="checkbox" checked={settings.autoUpdate.enabled}
                                 onChange={(e) => updateSettings('autoUpdate.enabled', '', e.target.checked)}
@@ -1546,7 +1510,8 @@ const LeavePolicySettings = () => {
                                     <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Frequency</label>
                                     <select value={settings.autoUpdate.updateFrequency}
                                         onChange={(e) => updateSettings('autoUpdate.updateFrequency', '', e.target.value)}
-                                        className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all">
+                                        className={policyInputClass}
+                                        style={policyInputStyle}>
                                         <option value="daily">Daily</option>
                                         <option value="weekly">Weekly</option>
                                         <option value="monthly">Monthly</option>
@@ -1556,12 +1521,13 @@ const LeavePolicySettings = () => {
                                     <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Update day</label>
                                     <input type="number" min="1" max="31" value={settings.autoUpdate.updateDay}
                                         onChange={(e) => updateSettings('autoUpdate.updateDay', '', parseInt(e.target.value))}
-                                        className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                                        className={policyInputClass}
+                                        style={policyInputStyle} />
                                 </div>
                             </div>
                         )}
                         </div>
-                    </section>
+                    </SettingsSectionCard>
                 </div>
             </div>
 
@@ -1851,17 +1817,8 @@ const LeavePolicySettings = () => {
                 </div>
             )}
 
-            {/* Save — full width */}
-            <div className="flex justify-end pt-6 border-t border-gray-200 dark:border-gray-800">
-                <button
-                    onClick={saveSettings}
-                    disabled={saving}
-                    className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 font-medium text-sm shadow-sm"
-                >
-                    {saving ? 'Saving...' : 'Save changes'}
-                </button>
-            </div>
-            </div>
+            <SettingsSaveBar onSave={saveSettings} saving={saving} label="Save changes" />
+        </SettingsPanel>
         );
 };
 

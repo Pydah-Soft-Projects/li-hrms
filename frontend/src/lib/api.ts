@@ -525,6 +525,18 @@ export interface ApiResponse<T> {
     lastDate: string;
     totalDays?: number;
   };
+  /** GET /loans/:id includes PDF context for loan application form alongside `data`. */
+  applicationPdfContext?: {
+    previousAdvance?: {
+      amount: number;
+      drawnOnDate?: string;
+      requestType?: string;
+    } | null;
+    grossSalary?: number | null;
+    /** @deprecated use divisionName */
+    sectionName?: string | null;
+    divisionName?: string | null;
+  };
   /** Payroll batch approve failure (400, code MISSING_PAYROLL) */
   missingEmployees?: {
     employeeId?: string;

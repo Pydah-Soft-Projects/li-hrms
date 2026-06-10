@@ -3,10 +3,18 @@
 import React, { useState, useEffect } from 'react';
 import { api, apiRequest } from '@/lib/api';
 import { toast } from 'react-toastify';
-import Spinner from '@/components/Spinner';
 import { SettingsSkeleton } from './SettingsSkeleton';
-import { Rocket, Save, ChevronRight } from 'lucide-react';
+import { Rocket } from 'lucide-react';
 import { IncludeMissingPayrollComponentsCard } from './shared/IncludeMissingPayrollComponentsCard';
+import {
+  SettingsPanel,
+  SettingsPanelHeader,
+  SettingsSectionCard,
+  SettingsField,
+  SettingsToggleRow,
+  SettingsSaveBar,
+} from '@/components/settings/SettingsPageShell';
+import { settingsInputClass, settingsInputStyle, settingsFieldHelpClass } from '@/lib/settingsUi';
 
 const PayrollSettings = () => {
     const [payslipReleaseRequired, setPayslipReleaseRequired] = useState<boolean>(true);
@@ -126,123 +134,101 @@ const PayrollSettings = () => {
     if (loading) return <SettingsSkeleton />;
 
     return (
-        <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="mb-10 flex items-end justify-between border-b border-gray-200 pb-8 dark:border-gray-800">
-                <div>
-                    <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">
-                        <span>Settings</span>
-                        <ChevronRight className="h-3 w-3" />
-                        <span className="text-indigo-600">Payroll</span>
-                    </div>
-                    <h2 className="text-3xl font-black tracking-tight text-gray-900 dark:text-white">Payroll & Cycle</h2>
-                    <p className="mt-2 text-sm font-medium text-gray-500 dark:text-gray-400">Configure financial timelines and disbursement logic.</p>
-                </div>
-            </div>
+        <SettingsPanel>
+            <SettingsPanelHeader
+                section="Payroll"
+                title="Payroll & Cycle"
+                subtitle="Configure financial timelines and disbursement logic."
+            />
 
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
-                <div className="xl:col-span-2 space-y-8">
-                    {/* Visibility & Control Section */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
-                        <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
-                            <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Privacy & Visibility</h3>
-                            <div className="flex items-center gap-2">
-                                {payslipReleaseRequired ? (
-                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-bold text-indigo-600 border border-indigo-100 dark:bg-indigo-900/20 dark:border-indigo-900/30 uppercase tracking-tight">
-                                        Manual Release Mandatory
-                                    </span>
-                                ) : (
-                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-600 border border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-900/30 uppercase tracking-tight">
-                                        Auto-Release Enabled
-                                    </span>
-                                )}
-                            </div>
+            <div className="grid grid-cols-1 gap-10 xl:grid-cols-3">
+                <div className="space-y-8 xl:col-span-2">
+                    <SettingsSectionCard title="Privacy & Visibility">
+                        <div className="mb-6 flex items-center justify-end">
+                            {payslipReleaseRequired ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--ps-accent-border)] bg-[var(--ps-accent-soft)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-tight text-[color:var(--ps-accent-ink)]">
+                                    Manual Release Mandatory
+                                </span>
+                            ) : (
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-tight text-emerald-600 dark:border-emerald-900/30 dark:bg-emerald-900/20">
+                                    Auto-Release Enabled
+                                </span>
+                            )}
                         </div>
 
-                        <div className="p-8 space-y-8">
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-1">
-                                    <p className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-tight">Enforce Manual Release</p>
-                                    <p className="text-xs text-gray-500">Payslips must be explicitly released before they appear on employee dashboards.</p>
-                                </div>
-                                <button
-                                    onClick={() => setPayslipReleaseRequired(!payslipReleaseRequired)}
-                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${payslipReleaseRequired ? 'bg-indigo-600 shadow-[0_0_12px_rgba(79,70,229,0.3)]' : 'bg-gray-200 dark:bg-gray-800'}`}
-                                >
-                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${payslipReleaseRequired ? 'translate-x-6' : 'translate-x-1'}`} />
-                                </button>
-                            </div>
+                        <div className="space-y-8">
+                            <SettingsToggleRow
+                                id="payslip-release-required"
+                                label="Enforce Manual Release"
+                                description="Payslips must be explicitly released before they appear on employee dashboards."
+                                checked={payslipReleaseRequired}
+                                onChange={setPayslipReleaseRequired}
+                            />
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-8 border-t border-gray-50 dark:border-gray-800/50">
-                                <div className="space-y-2">
-                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest">History Retention (Mos)</label>
+                            <div className="grid grid-cols-1 gap-8 border-t pt-8 md:grid-cols-2" style={{ borderColor: 'var(--ps-accent-border)' }}>
+                                <SettingsField
+                                    label="History Retention (Mos)"
+                                    help="Number of previous months visible to staff."
+                                >
                                     <input
                                         type="number"
                                         value={payslipHistoryMonths ?? ''}
                                         onChange={(e) => setPayslipHistoryMonths(Number(e.target.value))}
-                                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white transition-all"
+                                        className={settingsInputClass()}
+                                        style={settingsInputStyle()}
                                     />
-                                    <p className="text-[10px] text-gray-400">Number of previous months visible to staff.</p>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest">Download Quota</label>
+                                </SettingsField>
+                                <SettingsField
+                                    label="Download Quota"
+                                    help="Max PDF generations per session per user."
+                                >
                                     <input
                                         type="number"
                                         value={payslipDownloadLimit ?? ''}
                                         onChange={(e) => setPayslipDownloadLimit(Number(e.target.value))}
-                                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white transition-all"
+                                        className={settingsInputClass()}
+                                        style={settingsInputStyle()}
                                     />
-                                    <p className="text-[10px] text-gray-400">Max PDF generations per session per user.</p>
-                                </div>
+                                </SettingsField>
                             </div>
                         </div>
-                    </section>
+                    </SettingsSectionCard>
 
-                    {/* Payroll Cycle Section */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
-                        <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800">
-                            <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Payroll Cycle</h3>
-                        </div>
-                        <div className="p-8 space-y-8">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                <div className="space-y-2">
-                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest">Cycle Commencement (Day)</label>
+                    <SettingsSectionCard title="Payroll Cycle">
+                        <div className="space-y-8">
+                            <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+                                <SettingsField label="Cycle Commencement (Day)">
                                     <input
                                         type="number"
                                         min="1"
                                         max="31"
                                         value={payrollCycleStartDay ?? ''}
                                         onChange={(e) => setPayrollCycleStartDay(Number(e.target.value))}
-                                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white transition-all"
+                                        className={settingsInputClass()}
+                                        style={settingsInputStyle()}
                                     />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest">Cycle Conclusion (Day)</label>
+                                </SettingsField>
+                                <SettingsField label="Cycle Conclusion (Day)">
                                     <input
                                         type="number"
                                         min="1"
                                         max="31"
                                         value={payrollCycleEndDay ?? ''}
                                         onChange={(e) => setPayrollCycleEndDay(Number(e.target.value))}
-                                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white transition-all"
+                                        className={settingsInputClass()}
+                                        style={settingsInputStyle()}
                                     />
-                                </div>
+                                </SettingsField>
                             </div>
 
-                            <div className="pt-8 border-t border-gray-50 dark:border-gray-800/50">
-                                <div className="flex items-center justify-between gap-4">
-                                    <div className="space-y-1">
-                                        <p className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-tight">Auto-Reject In-Period Requests On Batch Complete</p>
-                                        <p className="text-xs text-gray-500">
-                                            When enabled, payroll completion automatically rejects non-final Leave, OD, Permission, and OT requests for the same employees within that payroll period.
-                                        </p>
-                                    </div>
-                                    <button
-                                        onClick={() => setAutoRejectPendingRequestsOnComplete(!autoRejectPendingRequestsOnComplete)}
-                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${autoRejectPendingRequestsOnComplete ? 'bg-indigo-600 shadow-[0_0_12px_rgba(79,70,229,0.3)]' : 'bg-gray-200 dark:bg-gray-800'}`}
-                                    >
-                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${autoRejectPendingRequestsOnComplete ? 'translate-x-6' : 'translate-x-1'}`} />
-                                    </button>
-                                </div>
+                            <div className="border-t pt-8" style={{ borderColor: 'var(--ps-accent-border)' }}>
+                                <SettingsToggleRow
+                                    id="auto-reject-pending-requests"
+                                    label="Auto-Reject In-Period Requests On Batch Complete"
+                                    description="When enabled, payroll completion automatically rejects non-final Leave, OD, Permission, and OT requests for the same employees within that payroll period."
+                                    checked={autoRejectPendingRequestsOnComplete}
+                                    onChange={setAutoRejectPendingRequestsOnComplete}
+                                />
                             </div>
 
                             <IncludeMissingPayrollComponentsCard
@@ -250,111 +236,79 @@ const PayrollSettings = () => {
                                 onChange={setIncludeMissing}
                             />
 
-                            <div className="pt-8 border-t border-gray-50 dark:border-gray-800/50">
-                                <div className="flex items-center justify-between gap-4">
-                                    <div className="space-y-1">
-                                        <p className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-tight">Second salary (2nd salary)</p>
-                                        <p className="text-xs text-gray-500">
-                                            When off, 2nd salary menus, paysheet mode, employee second-salary fields, and all second-salary payroll actions are hidden or blocked. Bulk pay register skips the 2nd salary phase.
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setEnableSecondSalary(!enableSecondSalary)}
-                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${enableSecondSalary ? 'bg-indigo-600 shadow-[0_0_12px_rgba(79,70,229,0.3)]' : 'bg-gray-200 dark:bg-gray-800'}`}
-                                    >
-                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${enableSecondSalary ? 'translate-x-6' : 'translate-x-1'}`} />
-                                    </button>
-                                </div>
+                            <div className="border-t pt-8" style={{ borderColor: 'var(--ps-accent-border)' }}>
+                                <SettingsToggleRow
+                                    id="enable-second-salary"
+                                    label="Second salary (2nd salary)"
+                                    description="When off, 2nd salary menus, paysheet mode, employee second-salary fields, and all second-salary payroll actions are hidden or blocked. Bulk pay register skips the 2nd salary phase."
+                                    checked={enableSecondSalary}
+                                    onChange={setEnableSecondSalary}
+                                />
                             </div>
                         </div>
-                    </section>
+                    </SettingsSectionCard>
 
-                    {/* Absent Deduction Section */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
-                        <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800">
-                            <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Attendance Deductions</h3>
-                        </div>
-                        <div className="p-8 space-y-8">
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-1">
-                                    <p className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-tight">Enable Absent Deduction</p>
-                                    <p className="text-xs text-gray-500">Automatically apply Loss of Pay (LOP) for unexcused absences.</p>
-                                </div>
-                                <button
-                                    onClick={() => setEnableAbsentDeduction(!enableAbsentDeduction)}
-                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${enableAbsentDeduction ? 'bg-red-600 shadow-[0_0_12px_rgba(220,38,38,0.3)]' : 'bg-gray-200 dark:bg-gray-800'}`}
-                                >
-                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${enableAbsentDeduction ? 'translate-x-6' : 'translate-x-1'}`} />
-                                </button>
-                            </div>
+                    <SettingsSectionCard title="Attendance Deductions">
+                        <div className="space-y-8">
+                            <SettingsToggleRow
+                                id="enable-absent-deduction"
+                                label="Enable Absent Deduction"
+                                description="Automatically apply Loss of Pay (LOP) for unexcused absences."
+                                checked={enableAbsentDeduction}
+                                onChange={setEnableAbsentDeduction}
+                            />
 
                             {enableAbsentDeduction && (
-                                <div className="pt-8 border-t border-gray-50 dark:border-gray-800/50 animate-in fade-in slide-in-from-top-2 duration-300">
-                                    <div className="max-w-xs space-y-2">
-                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest">LOP Days per Absent</label>
+                                <div className="animate-in fade-in slide-in-from-top-2 border-t pt-8 duration-300" style={{ borderColor: 'var(--ps-accent-border)' }}>
+                                    <SettingsField
+                                        label="LOP Days per Absent"
+                                        help="Number of days to deduct for each unverified absent record."
+                                    >
                                         <input
                                             type="number"
                                             step="0.1"
                                             min="0"
                                             value={lopDaysPerAbsent ?? ''}
                                             onChange={(e) => setLopDaysPerAbsent(Number(e.target.value))}
-                                            className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium focus:border-red-500 focus:ring-2 focus:ring-red-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white transition-all"
+                                            className={`${settingsInputClass()} max-w-xs`}
+                                            style={settingsInputStyle()}
                                         />
-                                        <p className="text-[10px] text-gray-400">Number of days to deduct for each unverified absent record.</p>
-                                    </div>
+                                    </SettingsField>
                                 </div>
                             )}
                         </div>
-                    </section>
+                    </SettingsSectionCard>
                 </div>
 
                 <div className="space-y-8">
-                    {/* Bulk Release Card */}
-                    <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
-                        <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 bg-emerald-50/30 dark:bg-emerald-900/5">
-                            <h3 className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Batch Operations</h3>
-                        </div>
-                        <div className="p-6 space-y-4">
-                            <div className="space-y-2">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">Release Target Month</label>
+                    <SettingsSectionCard title="Batch Operations" accent>
+                        <div className="space-y-4">
+                            <SettingsField label="Release Target Month">
                                 <input
                                     type="text"
                                     value={releaseMonth}
                                     onChange={(e) => setReleaseMonth(e.target.value)}
                                     placeholder="e.g. February 2026"
-                                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs font-bold dark:border-gray-700 dark:bg-[#0F172A] dark:text-white"
+                                    className={settingsInputClass()}
+                                    style={settingsInputStyle()}
                                 />
-                            </div>
+                            </SettingsField>
                             <button
                                 onClick={handleBulkRelease}
                                 disabled={releasing}
-                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-xs font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50 shadow-lg shadow-emerald-500/10 active:scale-95"
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
                             >
                                 {releasing ? 'Releasing...' : 'Broadcast Payslips'}
                                 <Rocket className="h-3.5 w-3.5" />
                             </button>
-                            <p className="text-[9px] text-center text-gray-400 font-bold uppercase">This triggers mobile notifications to all staff.</p>
+                            <p className={`${settingsFieldHelpClass} text-center uppercase`}>This triggers mobile notifications to all staff.</p>
                         </div>
-                    </div>
-
-                    {/* Global Save Action */}
-                    <div className="bg-indigo-600 rounded-2xl p-8 text-white shadow-xl shadow-indigo-500/20">
-                        <h3 className="text-lg font-bold mb-2">Save Settings</h3>
-                        <p className="text-xs opacity-80 leading-relaxed mb-6">
-                            Updates to payroll cycles will take effect from the next generation period.
-                        </p>
-                        <button
-                            onClick={handleSave}
-                            disabled={saving}
-                            className="w-full py-3 bg-white text-indigo-600 rounded-xl text-xs font-bold hover:bg-gray-50 transition-colors shadow-lg active:scale-95 disabled:opacity-50"
-                        >
-                            {saving ? 'Saving...' : 'Commit Changes'}
-                        </button>
-                    </div>
+                    </SettingsSectionCard>
                 </div>
             </div>
-        </div>
+
+            <SettingsSaveBar onSave={handleSave} saving={saving} label="Commit Changes" />
+        </SettingsPanel>
     );
 };
 

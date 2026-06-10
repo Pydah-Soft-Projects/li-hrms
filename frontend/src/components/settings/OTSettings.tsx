@@ -3,9 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
-import Spinner from '@/components/Spinner';
 import { SettingsSkeleton } from './SettingsSkeleton';
-import { Save, Clock, ChevronRight } from 'lucide-react';
+import {
+    SettingsPanel,
+    SettingsPanelHeader,
+    SettingsSaveBar,
+    SettingsSectionCard,
+} from './SettingsPageShell';
+import { settingsFieldHelpClass, settingsInputClass, settingsInputStyle, settingsLedgerBorder } from '@/lib/settingsUi';
 import WorkflowManager, { WorkflowData } from './shared/WorkflowManager';
 import { minutesToHHMM, hhmmToMinutes, hoursToHHMM, hhmmToHours } from './otTimeHelpers';
 
@@ -189,41 +194,29 @@ const OTSettings = () => {
 
     if (loading) return <SettingsSkeleton />;
 
+    const inputCls = settingsInputClass();
+    const inputStyle = settingsInputStyle();
+
     return (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex items-end justify-between border-b border-gray-200 dark:border-gray-800 pb-5">
-                <div>
-                    <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">
-                        <span>Settings</span>
-                        <ChevronRight className="h-3 w-3" />
-                        <span className="text-indigo-600">Overtime</span>
-                    </div>
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Overtime (OT)</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Automatic OT hour rules, range slabs, employee hourly OT pay, and approvals.
-                    </p>
-                </div>
-            </div>
+        <SettingsPanel>
+            <SettingsPanelHeader
+                section="Overtime"
+                title="Overtime (OT)"
+                subtitle="Automatic OT hour rules, range slabs, employee hourly OT pay, and approvals."
+            />
 
-            <div className="grid grid-cols-1 xl:grid-cols-[1.05fr_1.95fr] gap-6 items-start">
-                {/* OT Parameters */}
-                <div>
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden sticky top-24">
-                        <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                            <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
-                                <Clock className="h-5 w-5" />
-                            </div>
-                            <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Parameters</h3>
-                        </div>
-
-                        <div className="p-5 space-y-6">
+            <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[1.05fr_1.95fr]">
+                <div className="xl:sticky xl:top-24">
+                    <SettingsSectionCard title="Parameters" accent>
+                        <div className="space-y-6">
                             <div className="space-y-4">
                                 <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-800">
                                     <p className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">Hour rules (automatic)</p>
                                     <select
                                         value={otSettings.recognitionMode}
                                         onChange={(e) => setOTSettings({ ...otSettings, recognitionMode: e.target.value })}
-                                        className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-900 px-2 py-2 text-xs"
+                                        className={`${inputCls} text-xs`}
+                                        style={inputStyle}
                                     >
                                         <option value="none">No threshold</option>
                                         <option value="threshold_full">Threshold — full raw hours count once met</option>
@@ -241,7 +234,8 @@ const OTSettings = () => {
                                                     thresholdHours: hhmmToHours(e.target.value),
                                                 })
                                             }
-                                            className="w-28 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-right"
+                                            className={`${inputCls} w-28 text-xs text-right`}
+                                            style={inputStyle}
                                         />
                                     </div>
                                     <div className="flex items-center justify-between gap-2">
@@ -259,7 +253,8 @@ const OTSettings = () => {
                                                 })
                                             }
                                             placeholder="off"
-                                            className="w-16 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-right"
+                                            className={`${inputCls} w-16 text-xs text-right`}
+                                            style={inputStyle}
                                         />
                                     </div>
                                     <label className="flex items-center gap-2 text-[10px] text-gray-600 dark:text-gray-300">
@@ -289,7 +284,8 @@ const OTSettings = () => {
                                                 min={0}
                                                 value={otSettings.maxBackdatedDays}
                                                 onChange={(e) => setOTSettings({ ...otSettings, maxBackdatedDays: Number(e.target.value || 0) })}
-                                                className="w-16 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-right"
+                                                className={`${inputCls} w-16 text-xs text-right`}
+                                            style={inputStyle}
                                             />
                                         </div>
                                         <label className="flex items-center justify-between text-[10px] text-gray-600 dark:text-gray-300">
@@ -307,7 +303,8 @@ const OTSettings = () => {
                                                 min={0}
                                                 value={otSettings.maxAdvanceDays}
                                                 onChange={(e) => setOTSettings({ ...otSettings, maxAdvanceDays: Number(e.target.value || 0) })}
-                                                className="w-16 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-right"
+                                                className={`${inputCls} w-16 text-xs text-right`}
+                                            style={inputStyle}
                                             />
                                         </div>
                                     </div>
@@ -333,7 +330,8 @@ const OTSettings = () => {
                                                     defaultWorkingHoursPerDay: parseFloat(e.target.value) || 8,
                                                 })
                                             }
-                                            className="w-16 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-right"
+                                            className={`${inputCls} w-16 text-xs text-right`}
+                                            style={inputStyle}
                                         />
                                     </div>
                                     <p className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter pt-2">
@@ -363,7 +361,8 @@ const OTSettings = () => {
                                                         next[idx] = { ...next[idx], minMinutes: hhmmToMinutes(e.target.value) };
                                                         setOTSettings({ ...otSettings, otHourRanges: next });
                                                     }}
-                                                    className="col-span-2 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs"
+                                                    className={`${inputCls} col-span-2 text-xs`}
+                                                    style={inputStyle}
                                                 />
                                                 <span className="text-[10px] text-gray-500 text-center">to</span>
                                                 <input
@@ -376,7 +375,8 @@ const OTSettings = () => {
                                                         next[idx] = { ...next[idx], maxMinutes: hhmmToMinutes(e.target.value) };
                                                         setOTSettings({ ...otSettings, otHourRanges: next });
                                                     }}
-                                                    className="col-span-2 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs"
+                                                    className={`${inputCls} col-span-2 text-xs`}
+                                                    style={inputStyle}
                                                 />
                                                 <span className="text-[10px] text-gray-500 text-center">consider</span>
                                                 <input
@@ -389,7 +389,8 @@ const OTSettings = () => {
                                                         next[idx] = { ...next[idx], creditedMinutes: hhmmToMinutes(e.target.value) };
                                                         setOTSettings({ ...otSettings, otHourRanges: next });
                                                     }}
-                                                    className="col-span-2 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs"
+                                                    className={`${inputCls} col-span-2 text-xs`}
+                                                    style={inputStyle}
                                                 />
                                                 <button
                                                     type="button"
@@ -422,100 +423,77 @@ const OTSettings = () => {
                                 </div>
                             </div>
 
-                            <button
-                                onClick={handleSaveParams}
-                                disabled={saving}
-                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3.5 text-xs font-bold text-white transition hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 active:scale-95 disabled:opacity-50"
-                            >
-                                {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                                Commit Parameters
-                            </button>
+                            <SettingsSaveBar onSave={handleSaveParams} saving={saving} label="Commit Parameters" />
                         </div>
-                    </section>
+                    </SettingsSectionCard>
                 </div>
 
-                {/* OT Workflow */}
-                <div className="space-y-6">
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden min-h-[400px] p-4 sm:p-5 lg:p-6">
-                        <div className="rounded-xl border border-purple-100 dark:border-purple-900/40 bg-purple-50/60 dark:bg-purple-900/10 px-3 py-2 mb-4">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-300">
-                                Approval Chain
-                            </p>
-                            <p className="text-[11px] text-purple-700/80 dark:text-purple-200/80 mt-0.5">
-                                Keep steps minimal for faster OT approvals.
-                            </p>
-                        </div>
-                        <div className="px-1">
-                            <WorkflowManager
-                                workflow={otSettings.workflow}
-                                onChange={(newWorkflow: WorkflowData) => setOTSettings({ ...otSettings, workflow: newWorkflow })}
-                                title="Multi-Level Approval"
-                                description="Workflow Engine for overtime hierarchies."
-                                addStepLabel="Add Approval Step"
-                            />
-
-                            <button
-                                onClick={handleSaveWorkflow}
-                                disabled={saving}
-                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-purple-600 text-white py-3.5 text-xs font-bold hover:bg-purple-700 transition-all shadow-lg shadow-purple-500/20 active:scale-95 disabled:opacity-50 mt-6"
-                            >
-                                {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                                Save Approval Chain
-                            </button>
-                        </div>
-                    </section>
-                </div>
+                <SettingsSectionCard
+                    title="Approval Chain"
+                    description="Keep steps minimal for faster OT approvals."
+                    className="min-h-[400px]"
+                >
+                    <WorkflowManager
+                        workflow={otSettings.workflow}
+                        onChange={(newWorkflow: WorkflowData) => setOTSettings({ ...otSettings, workflow: newWorkflow })}
+                        title="Multi-Level Approval"
+                        description="Workflow Engine for overtime hierarchies."
+                        addStepLabel="Add Approval Step"
+                    />
+                    <div className="mt-6">
+                        <SettingsSaveBar onSave={handleSaveWorkflow} saving={saving} label="Save Approval Chain" />
+                    </div>
+                </SettingsSectionCard>
             </div>
 
-            <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm p-6 sm:p-8">
-                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-1">
-                    Policy simulator
-                </h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-                    Try raw OT hours against the rules above (including unsaved values). Does not persist data.
-                </p>
+            <SettingsSectionCard
+                title="Policy simulator"
+                description="Try raw OT hours against the rules above (including unsaved values). Does not persist data."
+            >
                 <div className="flex flex-wrap items-end gap-3">
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Raw OT (HH:MM)</label>
+                        <label className="mb-1 block text-[10px] font-semibold uppercase text-stone-500">Raw OT (HH:MM)</label>
                         <input
                             type="time"
                             lang="en-GB"
                             step={60}
                             value={simRawHours}
                             onChange={(e) => setSimRawHours(e.target.value)}
-                            className="w-28 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                            className={`${inputCls} w-28 text-sm`}
+                            style={inputStyle}
                         />
                     </div>
                     <button
                         type="button"
                         onClick={handleSimulatePolicy}
                         disabled={simLoading}
-                        className="rounded-xl bg-slate-800 dark:bg-slate-600 text-white px-4 py-2 text-xs font-bold hover:opacity-90 disabled:opacity-50"
+                        className={`${settingsInputClass()} px-4 py-2 text-xs font-semibold disabled:opacity-50`}
+                        style={{ ...inputStyle, backgroundColor: 'var(--ps-accent)', color: 'white', borderColor: 'var(--ps-accent)' }}
                     >
                         {simLoading ? 'Running…' : 'Run simulation'}
                     </button>
                 </div>
                 {simResult && (
-                    <div className="mt-4 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/80 dark:bg-black/20 p-4 text-xs space-y-2">
+                    <div className="mt-4 space-y-2 border p-4 text-xs" style={settingsLedgerBorder}>
                         <p>
-                            <span className="font-semibold text-gray-700 dark:text-gray-300">Eligible:</span>{' '}
+                            <span className="font-semibold text-stone-700 dark:text-stone-300">Eligible:</span>{' '}
                             {simResult.eligible ? 'yes' : 'no'}
                         </p>
                         <p>
-                            <span className="font-semibold text-gray-700 dark:text-gray-300">Final hours:</span>{' '}
+                            <span className="font-semibold text-stone-700 dark:text-stone-300">Final hours:</span>{' '}
                             {minutesToHHMM(Math.round((simResult.finalHours || 0) * 60))} ({simResult.finalHours})
                         </p>
-                        <p className="text-gray-600 dark:text-gray-400">
-                            <span className="font-semibold text-gray-700 dark:text-gray-300">Steps:</span>{' '}
+                        <p className="text-stone-600 dark:text-stone-400">
+                            <span className="font-semibold text-stone-700 dark:text-stone-300">Steps:</span>{' '}
                             {simResult.steps?.join(' → ') || '—'}
                         </p>
-                        <p className="text-[10px] text-gray-500 font-mono break-all">
+                        <p className={`${settingsFieldHelpClass} font-mono break-all`}>
                             {JSON.stringify(simResult.policyUsed)}
                         </p>
                     </div>
                 )}
-            </section>
-        </div>
+            </SettingsSectionCard>
+        </SettingsPanel>
     );
 };
 
