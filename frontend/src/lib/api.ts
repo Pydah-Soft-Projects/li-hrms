@@ -2236,6 +2236,13 @@ export const api = {
     });
   },
 
+  testFileStorage: async (config?: Record<string, unknown>) => {
+    return apiRequest<{ ok?: boolean; basePath?: string; bucket?: string }>('/settings/file-storage/test', {
+      method: 'POST',
+      body: JSON.stringify(config ? { config } : {}),
+    });
+  },
+
   // Permission Deduction Settings
   getPermissionDeductionSettings: async () => {
     return apiRequest<any>('/permissions/settings/deduction', { method: 'GET' });

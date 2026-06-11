@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { uploadToS3, deleteFromS3, replaceInS3, isS3Configured } = require('../services/s3UploadService');
+const fileStorageService = require('../services/fileStorageService');
+const { resolveRequestOrigin } = require('../utils/fileStorageConfig');
 const { protect } = require('../../authentication/middleware/authMiddleware');
 
 // Configure multer for memory storage
@@ -28,11 +29,10 @@ const upload = multer({
  */
 router.post('/certificate', protect, upload.single('file'), async (req, res) => {
     try {
-        // Check if S3 is configured
-        if (!isS3Configured()) {
+        if (!(await fileStorageService.isConfigured())) {
             return res.status(500).json({
                 success: false,
-                message: 'S3 storage is not configured. Please contact administrator.'
+                message: 'File storage is not configured. Please configure it in General Settings.'
             });
         }
 
@@ -45,11 +45,12 @@ router.post('/certificate', protect, upload.single('file'), async (req, res) => 
 
         console.log(`[Upload Certificate] User: ${req.user.email}, File: ${req.file.originalname}`);
 
-        const fileUrl = await uploadToS3(
+        const fileUrl = await fileStorageService.upload(
             req.file.buffer,
             req.file.originalname,
             req.file.mimetype,
-            'certificates/qualifications'
+            'certificates/qualifications',
+            { origin: resolveRequestOrigin(req) }
         );
 
         res.json({
@@ -87,7 +88,7 @@ router.delete('/certificate', protect, async (req, res) => {
 
         console.log(`[Delete Certificate] User: ${req.user.email}, URL: ${url}`);
 
-        await deleteFromS3(url);
+        await fileStorageService.deleteFile(url);
 
         res.json({
             success: true,
@@ -121,12 +122,13 @@ router.put('/certificate', protect, upload.single('file'), async (req, res) => {
 
         console.log(`[Replace Certificate] User: ${req.user.email}, Old: ${oldUrl}, New: ${req.file.originalname}`);
 
-        const newUrl = await replaceInS3(
+        const newUrl = await fileStorageService.replace(
             oldUrl,
             req.file.buffer,
             req.file.originalname,
             req.file.mimetype,
-            'certificates/qualifications'
+            'certificates/qualifications',
+            { origin: resolveRequestOrigin(req) }
         );
 
         res.json({
@@ -145,16 +147,6 @@ router.put('/certificate', protect, upload.single('file'), async (req, res) => {
     }
 });
 
-/**
- * @desc    Upload evidence file (OD/OT/Permission)
- * @route   POST /api/upload/evidence
- * @access  Private
- */
-/**
- * @desc    Upload employee profile photo
- * @route   POST /api/upload/profile
- * @access  Private
- */
 const profileUpload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 20 * 1024 * 1024 },
@@ -167,6 +159,7 @@ const profileUpload = multer({
         }
     }
 });
+
 /**
  * @desc    Upload company logo / branding image
  * @route   POST /api/upload/company-logo
@@ -174,10 +167,10 @@ const profileUpload = multer({
  */
 router.post('/company-logo', protect, profileUpload.single('file'), async (req, res) => {
     try {
-        if (!isS3Configured()) {
+        if (!(await fileStorageService.isConfigured())) {
             return res.status(500).json({
                 success: false,
-                message: 'S3 storage is not configured.',
+                message: 'File storage is not configured.',
             });
         }
         if (!req.file) {
@@ -186,11 +179,12 @@ router.post('/company-logo', protect, profileUpload.single('file'), async (req, 
                 message: 'No file uploaded',
             });
         }
-        const fileUrl = await uploadToS3(
+        const fileUrl = await fileStorageService.upload(
             req.file.buffer,
             req.file.originalname,
             req.file.mimetype,
-            'company-branding'
+            'company-branding',
+            { origin: resolveRequestOrigin(req) }
         );
         res.json({
             success: true,
@@ -207,12 +201,17 @@ router.post('/company-logo', protect, profileUpload.single('file'), async (req, 
     }
 });
 
+/**
+ * @desc    Upload employee profile photo
+ * @route   POST /api/upload/profile
+ * @access  Private
+ */
 router.post('/profile', protect, profileUpload.single('file'), async (req, res) => {
     try {
-        if (!isS3Configured()) {
+        if (!(await fileStorageService.isConfigured())) {
             return res.status(500).json({
                 success: false,
-                message: 'S3 storage is not configured.'
+                message: 'File storage is not configured.'
             });
         }
         if (!req.file) {
@@ -221,11 +220,12 @@ router.post('/profile', protect, profileUpload.single('file'), async (req, res) 
                 message: 'No file uploaded'
             });
         }
-        const fileUrl = await uploadToS3(
+        const fileUrl = await fileStorageService.upload(
             req.file.buffer,
             req.file.originalname,
             req.file.mimetype,
-            'profiles'
+            'profiles',
+            { origin: resolveRequestOrigin(req) }
         );
         res.json({
             success: true,
@@ -242,12 +242,17 @@ router.post('/profile', protect, profileUpload.single('file'), async (req, res) 
     }
 });
 
+/**
+ * @desc    Upload evidence file (OD/OT/Permission)
+ * @route   POST /api/upload/evidence
+ * @access  Private
+ */
 router.post('/evidence', protect, upload.single('file'), async (req, res) => {
     try {
-        if (!isS3Configured()) {
+        if (!(await fileStorageService.isConfigured())) {
             return res.status(500).json({
                 success: false,
-                message: 'S3 storage is not configured.'
+                message: 'File storage is not configured.'
             });
         }
 
@@ -262,17 +267,18 @@ router.post('/evidence', protect, upload.single('file'), async (req, res) => {
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
 
-        const fileUrl = await uploadToS3(
+        const fileUrl = await fileStorageService.upload(
             req.file.buffer,
             req.file.originalname,
             req.file.mimetype,
-            `evidence/${year}/${month}`
+            `evidence/${year}/${month}`,
+            { origin: resolveRequestOrigin(req) }
         );
 
         res.json({
             success: true,
             url: fileUrl,
-            key: `evidence/${year}/${month}`, // Returning partial key if needed
+            key: `evidence/${year}/${month}`,
             filename: req.file.originalname
         });
     } catch (error) {

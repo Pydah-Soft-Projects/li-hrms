@@ -5,7 +5,7 @@ const http = require('http');
 const cors = require('cors');
 const { initSocket } = require('./shared/services/socketService');
 const { initializeAllDatabases } = require('./config/init');
-const { checkConnection: checkS3Connection } = require('./shared/services/s3UploadService');
+const { checkConnection: checkStorageConnection } = require('./shared/services/fileStorageService');
 const {
   isWebPushConfigured,
   ensureVapid,
@@ -141,9 +141,13 @@ app.use('/api/permissions', permissionRoutes);
 const securityRoutes = require('./security/routes/securityRoutes.js');
 app.use('/api/security', securityRoutes);
 
-// Upload routes (S3 file uploads)
+// Upload routes (S3 or local file uploads)
 const uploadRoutes = require('./shared/routes/uploadRoutes');
 app.use('/api/upload', uploadRoutes);
+
+// Serve locally stored files (when local provider is active)
+const fileRoutes = require('./shared/routes/fileRoutes');
+app.use('/api/files', fileRoutes);
 
 // Allowances & Deductions routes
 const allowanceDeductionRoutes = require('./allowances-deductions/index.js');
@@ -228,8 +232,8 @@ const startServer = async () => {
     // Initialize database connections
     await initializeAllDatabases();
 
-    // Check S3 Connection
-    await checkS3Connection();
+    // Check file storage connection (S3 or local)
+    await checkStorageConnection();
 
     // Start attendance sync job
     const { startSyncJob } = require('./attendance/services/attendanceSyncJob');

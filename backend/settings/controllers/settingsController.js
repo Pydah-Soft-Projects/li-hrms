@@ -5,6 +5,14 @@ const {
   mergeCompanyProfile,
   validateCompanyProfile,
 } = require('../../shared/utils/companyProfile');
+const {
+  SETTING_KEY: FILE_STORAGE_SETTING_KEY,
+  sanitizeForClient,
+  validateFileStorageConfig,
+  invalidateFileStorageCache,
+  mergeConfig,
+} = require('../../shared/utils/fileStorageConfig');
+const fileStorageService = require('../../shared/services/fileStorageService');
 
 // @desc    Get all settings
 // @route   GET /api/settings
@@ -65,12 +73,15 @@ exports.getSetting = async (req, res) => {
         'default_apply_attendance_deductions': true,
         'enable_second_salary': true,
         company_profile: DEFAULT_COMPANY_PROFILE,
+        [FILE_STORAGE_SETTING_KEY]: sanitizeForClient(mergeConfig(null)),
       };
 
       if (defaults[req.params.key] !== undefined) {
         const defaultCategory =
           req.params.key === 'company_profile'
             ? 'company'
+            : req.params.key === FILE_STORAGE_SETTING_KEY
+              ? 'general'
             : ['allow_employee_bulk_process', 'custom_employee_grouping_enabled'].includes(req.params.key)
             ? 'employee'
             : 'payroll';
@@ -91,15 +102,59 @@ exports.getSetting = async (req, res) => {
       });
     }
 
+    const responseData = setting.toObject ? setting.toObject() : { ...setting };
+    if (responseData.key === FILE_STORAGE_SETTING_KEY) {
+      responseData.value = sanitizeForClient(responseData.value);
+    }
+
     res.status(200).json({
       success: true,
-      data: setting,
+      data: responseData,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
       message: 'Error fetching setting',
       error: error.message,
+    });
+  }
+};
+
+// @desc    Test file storage connection (S3 or local)
+// @route   POST /api/settings/file-storage/test
+// @access  Private (Super Admin, Sub Admin)
+exports.testFileStorage = async (req, res) => {
+  try {
+    const payload = req.body?.config;
+    let configToTest;
+
+    if (payload && typeof payload === 'object') {
+      const existing = await Settings.findOne({ key: FILE_STORAGE_SETTING_KEY }).lean();
+      const validation = validateFileStorageConfig(payload, existing?.value);
+      if (!validation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: validation.errors.join('; '),
+        });
+      }
+      configToTest = mergeConfig(validation.normalized);
+    } else {
+      configToTest = await mergeConfig((await Settings.findOne({ key: FILE_STORAGE_SETTING_KEY }))?.value);
+    }
+
+    const result = await fileStorageService.testConnection(configToTest);
+    res.status(200).json({
+      success: true,
+      message:
+        configToTest.provider === 'local'
+          ? 'Local storage path is writable'
+          : 'S3 connection successful',
+      data: result,
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message || 'File storage connection test failed',
     });
   }
 };
@@ -228,6 +283,18 @@ exports.upsertSetting = async (req, res) => {
       valueToSave = validation.normalized;
     }
 
+    if (key === FILE_STORAGE_SETTING_KEY) {
+      const existing = await Settings.findOne({ key: FILE_STORAGE_SETTING_KEY }).lean();
+      const validation = validateFileStorageConfig(value, existing?.value);
+      if (!validation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: validation.errors.join('; '),
+        });
+      }
+      valueToSave = validation.normalized;
+    }
+
     const setting = await Settings.findOneAndUpdate(
       { key },
       {
@@ -238,6 +305,8 @@ exports.upsertSetting = async (req, res) => {
           category ||
           (key === 'company_profile'
             ? 'company'
+            : key === FILE_STORAGE_SETTING_KEY
+              ? 'general'
             : ['include_missing_employee_components', 'enable_absent_deduction', 'lop_days_per_absent', 'auto_reject_pending_requests_on_batch_complete', 'enable_second_salary'].includes(key)
             ? 'payroll'
             : ['allow_employee_bulk_process', 'custom_employee_grouping_enabled'].includes(key)
@@ -261,10 +330,19 @@ exports.upsertSetting = async (req, res) => {
       invalidateSecondSalaryFeatureCache();
     }
 
+    if (key === FILE_STORAGE_SETTING_KEY) {
+      invalidateFileStorageCache();
+    }
+
+    const responseData = setting.toObject ? setting.toObject() : { ...setting };
+    if (responseData.key === FILE_STORAGE_SETTING_KEY) {
+      responseData.value = sanitizeForClient(responseData.value);
+    }
+
     res.status(200).json({
       success: true,
       message: 'Setting saved successfully',
-      data: setting,
+      data: responseData,
     });
   } catch (error) {
     res.status(500).json({

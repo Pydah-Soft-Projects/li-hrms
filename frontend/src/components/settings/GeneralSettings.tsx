@@ -17,6 +17,43 @@ import {
 } from '@/components/settings/SettingsPageShell';
 import { settingsInputClass, settingsInputStyle, settingsLedgerBorder } from '@/lib/settingsUi';
 
+type FileStorageProvider = 's3' | 'local';
+
+type FileStorageConfig = {
+  provider: FileStorageProvider;
+  s3: {
+    accessKeyId: string;
+    secretAccessKey: string;
+    hasSecretAccessKey?: boolean;
+    bucketName: string;
+    region: string;
+    endpoint: string;
+    forcePathStyle: boolean;
+  };
+  local: {
+    basePath: string;
+    publicBaseUrl: string;
+    backendPublicUrl: string;
+  };
+};
+
+const DEFAULT_FILE_STORAGE_CONFIG: FileStorageConfig = {
+  provider: 'local',
+  s3: {
+    accessKeyId: '',
+    secretAccessKey: '',
+    bucketName: '',
+    region: 'us-east-1',
+    endpoint: '',
+    forcePathStyle: false,
+  },
+  local: {
+    basePath: './uploads',
+    publicBaseUrl: '/api/files',
+    backendPublicUrl: '',
+  },
+};
+
 const GeneralSettings = () => {
   const router = useRouter();
   const pathname = usePathname();
@@ -29,13 +66,15 @@ const GeneralSettings = () => {
     useState<boolean>(true);
   const [skipLeaveAttendanceReconciliation, setSkipLeaveAttendanceReconciliation] =
     useState<boolean>(false);
+  const [fileStorageConfig, setFileStorageConfig] = useState<FileStorageConfig>(DEFAULT_FILE_STORAGE_CONFIG);
+  const [testingStorage, setTestingStorage] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const [resLate, resEarly, resBulk, resGrouping, resAutoOD, resLeaveRecon, resSkipRecon] =
+      const [resLate, resEarly, resBulk, resGrouping, resAutoOD, resLeaveRecon, resSkipRecon, resFileStorage] =
         await Promise.all([
         api.getSetting('late_in_grace_time'),
         api.getSetting('early_out_grace_time'),
@@ -44,6 +83,7 @@ const GeneralSettings = () => {
         api.getSetting('auto_od_creation_enabled'),
         api.getSetting('leave_attendance_reconciliation_enabled'),
         api.getSetting('skip_leave_attendance_reconciliation'),
+        api.getSetting('file_storage_config'),
       ]);
 
       if (resLate.success && resLate.data) setLateInGrace(Number(resLate.data.value));
@@ -57,6 +97,26 @@ const GeneralSettings = () => {
       if (resSkipRecon.success && resSkipRecon.data) {
         setSkipLeaveAttendanceReconciliation(!!resSkipRecon.data.value);
       }
+      if (resFileStorage.success && resFileStorage.data?.value) {
+        const value = resFileStorage.data.value as FileStorageConfig;
+        setFileStorageConfig({
+          provider: value.provider === 's3' ? 's3' : 'local',
+          s3: {
+            accessKeyId: value.s3?.accessKeyId || '',
+            secretAccessKey: value.s3?.secretAccessKey || '',
+            hasSecretAccessKey: !!value.s3?.hasSecretAccessKey,
+            bucketName: value.s3?.bucketName || '',
+            region: value.s3?.region || 'us-east-1',
+            endpoint: value.s3?.endpoint || '',
+            forcePathStyle: !!value.s3?.forcePathStyle,
+          },
+          local: {
+            basePath: value.local?.basePath || './uploads',
+            publicBaseUrl: value.local?.publicBaseUrl || '/api/files',
+            backendPublicUrl: value.local?.backendPublicUrl || '',
+          },
+        });
+      }
     } catch (err) {
       console.error('Failed to load general settings', err);
       toast.error('Failed to load settings');
@@ -69,10 +129,26 @@ const GeneralSettings = () => {
     loadSettings();
   }, []);
 
+  const handleTestFileStorage = async () => {
+    try {
+      setTestingStorage(true);
+      const res = await api.testFileStorage(fileStorageConfig);
+      if (res.success) {
+        toast.success(res.message || 'File storage connection successful');
+      } else {
+        toast.error(res.message || 'File storage connection test failed');
+      }
+    } catch {
+      toast.error('File storage connection test failed');
+    } finally {
+      setTestingStorage(false);
+    }
+  };
+
   const handleSave = async () => {
     try {
       setSaving(true);
-      const [resLate, resEarly, resBulk, resGrouping, resAutoOD, resLeaveRecon, resSkipRecon] =
+      const [resLate, resEarly, resBulk, resGrouping, resAutoOD, resLeaveRecon, resSkipRecon, resFileStorage] =
         await Promise.all([
         api.upsertSetting({
           key: 'late_in_grace_time',
@@ -118,6 +194,12 @@ const GeneralSettings = () => {
           description:
             'When ON, pauses leave–attendance reconciliation on attendance updates (same as bulk script SKIP env).',
         }),
+        api.upsertSetting({
+          key: 'file_storage_config',
+          value: fileStorageConfig,
+          category: 'general',
+          description: 'File upload storage provider (Amazon S3 or local server disk)',
+        }),
       ]);
 
       if (
@@ -127,8 +209,29 @@ const GeneralSettings = () => {
         resGrouping.success &&
         resAutoOD.success &&
         resLeaveRecon.success &&
-        resSkipRecon.success
+        resSkipRecon.success &&
+        resFileStorage.success
       ) {
+        if (resFileStorage.data?.value) {
+          const value = resFileStorage.data.value as FileStorageConfig;
+          setFileStorageConfig({
+            provider: value.provider === 's3' ? 's3' : 'local',
+            s3: {
+              accessKeyId: value.s3?.accessKeyId || '',
+              secretAccessKey: value.s3?.secretAccessKey || '',
+              hasSecretAccessKey: !!value.s3?.hasSecretAccessKey,
+              bucketName: value.s3?.bucketName || '',
+              region: value.s3?.region || 'us-east-1',
+              endpoint: value.s3?.endpoint || '',
+              forcePathStyle: !!value.s3?.forcePathStyle,
+            },
+            local: {
+              basePath: value.local?.basePath || './uploads',
+              publicBaseUrl: value.local?.publicBaseUrl || '/api/files',
+              backendPublicUrl: value.local?.backendPublicUrl || '',
+            },
+          });
+        }
         toast.success('General settings saved successfully');
       } else {
         toast.error('Failed to save general settings');
@@ -301,6 +404,228 @@ const GeneralSettings = () => {
                 className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${skipLeaveAttendanceReconciliation ? 'translate-x-5' : 'translate-x-1'}`}
               />
             </button>
+          </div>
+        </div>
+      </SettingsSectionCard>
+
+      <SettingsSectionCard
+        title="File storage"
+        description="Choose where uploaded files (certificates, profile photos, evidence, company logo) are stored."
+      >
+        <div className="space-y-6">
+          <SettingsField
+            label="Storage provider"
+            help="Use Amazon S3 for cloud storage, or local server storage when files should stay on the application server."
+          >
+            <div className="flex flex-wrap gap-3">
+              {(['s3', 'local'] as FileStorageProvider[]).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() =>
+                    setFileStorageConfig((prev) => ({
+                      ...prev,
+                      provider: option,
+                    }))
+                  }
+                  className={`border px-4 py-2 text-sm font-medium transition-colors ${
+                    fileStorageConfig.provider === option
+                      ? 'border-[color:var(--ps-accent)] bg-[color:var(--ps-accent-soft)] text-stone-900 dark:text-stone-100'
+                      : 'border-stone-200 bg-white text-stone-600 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-300'
+                  }`}
+                  style={fileStorageConfig.provider === option ? undefined : settingsLedgerBorder}
+                >
+                  {option === 's3' ? 'Amazon S3' : 'Local server'}
+                </button>
+              ))}
+            </div>
+          </SettingsField>
+
+          {fileStorageConfig.provider === 's3' ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <SettingsField label="Access key ID" htmlFor="s3AccessKeyId" required>
+                <input
+                  id="s3AccessKeyId"
+                  type="text"
+                  value={fileStorageConfig.s3.accessKeyId}
+                  onChange={(e) =>
+                    setFileStorageConfig((prev) => ({
+                      ...prev,
+                      s3: { ...prev.s3, accessKeyId: e.target.value },
+                    }))
+                  }
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
+                />
+              </SettingsField>
+
+              <SettingsField
+                label="Secret access key"
+                htmlFor="s3SecretAccessKey"
+                help={
+                  fileStorageConfig.s3.hasSecretAccessKey
+                    ? 'Leave as ******** to keep the existing secret.'
+                    : undefined
+                }
+                required
+              >
+                <input
+                  id="s3SecretAccessKey"
+                  type="password"
+                  value={fileStorageConfig.s3.secretAccessKey}
+                  onChange={(e) =>
+                    setFileStorageConfig((prev) => ({
+                      ...prev,
+                      s3: { ...prev.s3, secretAccessKey: e.target.value },
+                    }))
+                  }
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
+                  placeholder={fileStorageConfig.s3.hasSecretAccessKey ? '********' : ''}
+                />
+              </SettingsField>
+
+              <SettingsField label="Bucket name" htmlFor="s3BucketName" required>
+                <input
+                  id="s3BucketName"
+                  type="text"
+                  value={fileStorageConfig.s3.bucketName}
+                  onChange={(e) =>
+                    setFileStorageConfig((prev) => ({
+                      ...prev,
+                      s3: { ...prev.s3, bucketName: e.target.value },
+                    }))
+                  }
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
+                />
+              </SettingsField>
+
+              <SettingsField label="Region" htmlFor="s3Region" required>
+                <input
+                  id="s3Region"
+                  type="text"
+                  value={fileStorageConfig.s3.region}
+                  onChange={(e) =>
+                    setFileStorageConfig((prev) => ({
+                      ...prev,
+                      s3: { ...prev.s3, region: e.target.value },
+                    }))
+                  }
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
+                />
+              </SettingsField>
+
+              <SettingsField
+                label="Custom endpoint (optional)"
+                htmlFor="s3Endpoint"
+                help="For MinIO, DigitalOcean Spaces, or other S3-compatible storage."
+              >
+                <input
+                  id="s3Endpoint"
+                  type="text"
+                  value={fileStorageConfig.s3.endpoint}
+                  onChange={(e) =>
+                    setFileStorageConfig((prev) => ({
+                      ...prev,
+                      s3: { ...prev.s3, endpoint: e.target.value },
+                    }))
+                  }
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
+                  placeholder="https://s3.example.com"
+                />
+              </SettingsField>
+
+              <div className="flex items-end">
+                <SettingsToggleRow
+                  id="s3ForcePathStyle"
+                  label="Force path-style URLs"
+                  description="Enable for some S3-compatible providers (e.g. MinIO)."
+                  checked={fileStorageConfig.s3.forcePathStyle}
+                  onChange={(checked) =>
+                    setFileStorageConfig((prev) => ({
+                      ...prev,
+                      s3: { ...prev.s3, forcePathStyle: checked },
+                    }))
+                  }
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <SettingsField
+                label="Storage directory"
+                htmlFor="localBasePath"
+                help="Absolute or relative path on the server where uploaded files are saved."
+                required
+              >
+                <input
+                  id="localBasePath"
+                  type="text"
+                  value={fileStorageConfig.local.basePath}
+                  onChange={(e) =>
+                    setFileStorageConfig((prev) => ({
+                      ...prev,
+                      local: { ...prev.local, basePath: e.target.value },
+                    }))
+                  }
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
+                  placeholder="./uploads"
+                />
+              </SettingsField>
+
+              <SettingsField
+                label="Backend public URL"
+                htmlFor="localBackendPublicUrl"
+                help="Host and port where the backend is reachable (e.g. http://192.168.0.36:5000). Used in uploaded file links. Leave empty to use the URL from each upload request."
+                required
+              >
+                <input
+                  id="localBackendPublicUrl"
+                  type="text"
+                  value={fileStorageConfig.local.backendPublicUrl}
+                  onChange={(e) =>
+                    setFileStorageConfig((prev) => ({
+                      ...prev,
+                      local: { ...prev.local, backendPublicUrl: e.target.value },
+                    }))
+                  }
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
+                  placeholder="http://192.168.0.36:5000"
+                />
+              </SettingsField>
+
+              <SettingsField
+                label="Public URL base"
+                htmlFor="localPublicBaseUrl"
+                help="Path prefix after the backend URL. Keep /api/files unless you use a custom route."
+              >
+                <input
+                  id="localPublicBaseUrl"
+                  type="text"
+                  value={fileStorageConfig.local.publicBaseUrl}
+                  onChange={(e) =>
+                    setFileStorageConfig((prev) => ({
+                      ...prev,
+                      local: { ...prev.local, publicBaseUrl: e.target.value },
+                    }))
+                  }
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
+                  placeholder="/api/files"
+                />
+              </SettingsField>
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <SettingsOutlineButton onClick={handleTestFileStorage} disabled={testingStorage}>
+              {testingStorage ? 'Testing…' : 'Test connection'}
+            </SettingsOutlineButton>
           </div>
         </div>
       </SettingsSectionCard>

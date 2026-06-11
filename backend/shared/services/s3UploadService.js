@@ -1,131 +1,135 @@
-const { s3, BUCKET_NAME } = require('../config/s3Config');
-const { v4: uuidv4 } = require('uuid');
+const AWS = require('aws-sdk');
+const crypto = require('crypto');
 const path = require('path');
+const { loadFileStorageConfig } = require('../utils/fileStorageConfig');
 
-/**
- * Upload file to S3
- * @param {Buffer} fileBuffer - File buffer
- * @param {String} originalName - Original filename
- * @param {String} mimeType - File MIME type
- * @param {String} folder - S3 folder path (e.g., 'certificates/qualifications')
- * @returns {Promise<String>} - S3 file URL
- */
-const uploadToS3 = async (fileBuffer, originalName, mimeType, folder = 'certificates') => {
-    try {
-        const fileExtension = path.extname(originalName);
-        const fileName = `${folder}/${uuidv4()}${fileExtension}`;
+function createS3Client(s3Config) {
+  const options = {
+    accessKeyId: s3Config.accessKeyId,
+    secretAccessKey: s3Config.secretAccessKey,
+    region: s3Config.region || 'us-east-1',
+  };
 
-        const params = {
-            Bucket: BUCKET_NAME,
-            Key: fileName,
-            Body: fileBuffer,
-            ContentType: mimeType
-            // ACL removed to support Bucket Owner Enforced settings
-        };
+  if (s3Config.endpoint) {
+    options.endpoint = s3Config.endpoint;
+    options.s3ForcePathStyle = s3Config.forcePathStyle !== false;
+  }
 
-        console.log(`[S3 Upload] Uploading file: ${fileName}`);
-        const result = await s3.upload(params).promise();
-        console.log(`[S3 Upload] Success: ${result.Location}`);
+  return new AWS.S3(options);
+}
 
-        return result.Location; // Returns the public URL
-    } catch (error) {
-        console.error('[S3 Upload] Error:', error);
-        throw new Error(`Failed to upload file to S3: ${error.message}`);
-    }
+async function getActiveS3Config() {
+  const config = await loadFileStorageConfig();
+  return config.s3;
+}
+
+const uploadToS3 = async (fileBuffer, originalName, mimeType, folder = 'certificates', s3ConfigOverride = null) => {
+  try {
+    const s3Config = s3ConfigOverride || (await getActiveS3Config());
+    const s3 = createS3Client(s3Config);
+    const bucketName = s3Config.bucketName;
+
+    const fileExtension = path.extname(originalName);
+    const fileName = `${folder}/${crypto.randomUUID()}${fileExtension}`;
+
+    const params = {
+      Bucket: bucketName,
+      Key: fileName,
+      Body: fileBuffer,
+      ContentType: mimeType,
+    };
+
+    console.log(`[S3 Upload] Uploading file: ${fileName}`);
+    const result = await s3.upload(params).promise();
+    console.log(`[S3 Upload] Success: ${result.Location}`);
+
+    return result.Location;
+  } catch (error) {
+    console.error('[S3 Upload] Error:', error);
+    throw new Error(`Failed to upload file to S3: ${error.message}`);
+  }
 };
 
-/**
- * Delete file from S3
- * @param {String} fileUrl - Full S3 URL
- * @returns {Promise<Boolean>}
- */
-const deleteFromS3 = async (fileUrl) => {
-    try {
-        if (!fileUrl || !fileUrl.includes(BUCKET_NAME)) {
-            console.warn('[S3 Delete] Invalid URL or not from our bucket:', fileUrl);
-            return false;
-        }
+const deleteFromS3 = async (fileUrl, s3ConfigOverride = null) => {
+  try {
+    if (!fileUrl) return false;
 
-        // Extract key from URL
-        const url = new URL(fileUrl);
-        const key = url.pathname.substring(1); // Remove leading '/'
+    const s3Config = s3ConfigOverride || (await getActiveS3Config());
+    const bucketName = s3Config.bucketName;
 
-        const params = {
-            Bucket: BUCKET_NAME,
-            Key: key
-        };
-
-        console.log(`[S3 Delete] Deleting file: ${key}`);
-        await s3.deleteObject(params).promise();
-        console.log(`[S3 Delete] Success: ${key}`);
-
-        return true;
-    } catch (error) {
-        console.error('[S3 Delete] Error:', error);
-        throw new Error(`Failed to delete file from S3: ${error.message}`);
+    if (!fileUrl.includes(bucketName) && !fileUrl.includes('amazonaws.com')) {
+      console.warn('[S3 Delete] URL does not match configured bucket:', fileUrl);
+      return false;
     }
+
+    const url = new URL(fileUrl);
+    const key = decodeURIComponent(url.pathname.replace(/^\//, ''));
+
+    const s3 = createS3Client(s3Config);
+    const params = {
+      Bucket: bucketName,
+      Key: key,
+    };
+
+    console.log(`[S3 Delete] Deleting file: ${key}`);
+    await s3.deleteObject(params).promise();
+    console.log(`[S3 Delete] Success: ${key}`);
+
+    return true;
+  } catch (error) {
+    console.error('[S3 Delete] Error:', error);
+    throw new Error(`Failed to delete file from S3: ${error.message}`);
+  }
 };
 
-/**
- * Replace file in S3 (delete old, upload new)
- * @param {String} oldFileUrl - Old file URL to delete
- * @param {Buffer} newFileBuffer - New file buffer
- * @param {String} originalName - New filename
- * @param {String} mimeType - New file MIME type
- * @param {String} folder - S3 folder
- * @returns {Promise<String>} - New file URL
- */
-const replaceInS3 = async (oldFileUrl, newFileBuffer, originalName, mimeType, folder = 'certificates') => {
-    try {
-        // Delete old file if exists
-        if (oldFileUrl) {
-            await deleteFromS3(oldFileUrl);
-        }
-
-        // Upload new file
-        return await uploadToS3(newFileBuffer, originalName, mimeType, folder);
-    } catch (error) {
-        console.error('[S3 Replace] Error:', error);
-        throw new Error(`Failed to replace file in S3: ${error.message}`);
+const replaceInS3 = async (oldFileUrl, newFileBuffer, originalName, mimeType, folder = 'certificates', s3ConfigOverride = null) => {
+  try {
+    if (oldFileUrl) {
+      await deleteFromS3(oldFileUrl, s3ConfigOverride);
     }
+    return await uploadToS3(newFileBuffer, originalName, mimeType, folder, s3ConfigOverride);
+  } catch (error) {
+    console.error('[S3 Replace] Error:', error);
+    throw new Error(`Failed to replace file in S3: ${error.message}`);
+  }
 };
 
-/**
- * Check if S3 is configured
- * @returns {Boolean}
- */
-const isS3Configured = () => {
-    return !!(process.env.AWS_ACCESS_KEY_ID &&
-        process.env.AWS_SECRET_ACCESS_KEY &&
-        process.env.AWS_S3_BUCKET_NAME);
+const isS3Configured = async (s3ConfigOverride = null) => {
+  const s3Config = s3ConfigOverride || (await loadFileStorageConfig()).s3;
+  return !!(s3Config.accessKeyId && s3Config.secretAccessKey && s3Config.bucketName);
 };
 
-/**
- * Check S3 connection and permissions
- * @returns {Promise<Boolean>}
- */
-const checkConnection = async () => {
-    try {
-        if (!isS3Configured()) {
-            console.warn('[S3 Check] ⚠️ S3 is not configured in environment variables.');
-            return false;
-        }
-
-        console.log(`[S3 Check] Verifying connection to bucket: ${BUCKET_NAME}...`);
-        await s3.headBucket({ Bucket: BUCKET_NAME }).promise();
-        console.log('[S3 Check] ✅ S3 Connection Successful!');
-        return true;
-    } catch (error) {
-        console.error('[S3 Check] ❌ Connection Failed:', error.message);
-        // Don't throw, just return false to avoid crashing server if S3 is optional
-        return false;
+const checkConnection = async (s3ConfigOverride = null) => {
+  try {
+    const s3Config = s3ConfigOverride || (await loadFileStorageConfig(true)).s3;
+    if (!(s3Config.accessKeyId && s3Config.secretAccessKey && s3Config.bucketName)) {
+      console.warn('[S3 Check] S3 provider selected but credentials are incomplete.');
+      return false;
     }
+
+    const s3 = createS3Client(s3Config);
+    console.log(`[S3 Check] Verifying connection to bucket: ${s3Config.bucketName}...`);
+    await s3.headBucket({ Bucket: s3Config.bucketName }).promise();
+    console.log('[S3 Check] S3 connection successful.');
+    return true;
+  } catch (error) {
+    console.error('[S3 Check] Connection failed:', error.message);
+    return false;
+  }
+};
+
+const testS3Connection = async (s3Config) => {
+  const s3 = createS3Client(s3Config);
+  await s3.headBucket({ Bucket: s3Config.bucketName }).promise();
+  return { ok: true, bucket: s3Config.bucketName };
 };
 
 module.exports = {
-    uploadToS3,
-    deleteFromS3,
-    replaceInS3,
-    isS3Configured,
-    checkConnection
+  uploadToS3,
+  deleteFromS3,
+  replaceInS3,
+  isS3Configured,
+  checkConnection,
+  testS3Connection,
+  createS3Client,
 };

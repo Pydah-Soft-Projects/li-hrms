@@ -33,7 +33,8 @@ const {
   employeeExistsMSSQL,
 } = require('../config/sqlHelper');
 const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
-const s3UploadService = require('../../shared/services/s3UploadService');
+const fileStorageService = require('../../shared/services/fileStorageService');
+const { resolveRequestOrigin } = require('../../shared/utils/fileStorageConfig');
 const { getNextEmpNo } = require('../services/empNoService');
 const EmployeeHistory = require('../model/EmployeeHistory');
 const { initializeEmployeeLeaves } = require('../../leaves/services/employeeLeaveInitializationService');
@@ -117,16 +118,14 @@ const processQualifications = async (req, settings) => {
         console.log(`[EmployeeController] Found file for qualification index [${i}]`);
         try {
           // Pass buffer, originalname, mimetype, and specify 'hrms/certificates' folder
-          const uploadResult = await s3UploadService.uploadToS3(
+          const uploadResult = await fileStorageService.upload(
             file.buffer,
             file.originalname,
             file.mimetype,
-            'hrms/certificates'
+            'hrms/certificates',
+            { origin: resolveRequestOrigin(req) }
           );
 
-          // s3UploadService returns the URL directly (or check if it returns { Location })
-          // Looking at s3UploadService.js: return result.Location; 
-          // So uploadResult is the URL string.
           qualifications[i].certificateUrl = uploadResult;
           console.log(`[EmployeeController] Upload success for index ${i}: ${uploadResult}`);
         } catch (uploadErr) {
