@@ -21,7 +21,10 @@ import {
   getMergedPresentDaysForSummary,
   getPartialRecordPayableContribution,
 } from '@/lib/attendancePartialContribution';
-import { buildSplitCellStatus } from '@/lib/attendanceCompleteDayCellText';
+import {
+  buildSplitCellStatus,
+  shouldShowWorkedHoursInCompleteCell,
+} from '@/lib/attendanceCompleteDayCellText';
 import { AttendanceLeaveInfoSection } from '@/components/attendance/AttendanceLeaveInfoSection';
 import { sumLeaveCreditFromDailyRecords } from '@/lib/leaveDayRange';
 import {
@@ -38,8 +41,13 @@ import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/cust
 import {
   getAbsentCountForRow,
   normalizeMonthlyAttendanceRows,
-  writeMonthlyAttendanceExcelFile,
 } from '@/lib/attendanceMonthlyExcelExport';
+import { patchMonthlyDayFromDetail } from '@/lib/attendanceMonthlyPatch';
+import {
+  formatOdDurationHours,
+  formatOdDurationHoursParen,
+  formatOdDurationHoursValue,
+} from '@/lib/formatOdDuration';
 import { ArrowLeftIcon, ArrowRightIcon, Briefcase, MapPin, Camera, ExternalLink, Star, Info } from 'lucide-react';
 import dynamic from 'next/dynamic';
 const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: false });
@@ -397,7 +405,7 @@ export default function AttendancePage() {
   const getODCellLabel = (record: AttendanceRecord | null) => {
     if (!(record?.hasOD || record?.status === 'OD')) return '-';
     if (record?.odInfo?.odType_extended === 'hours') {
-      return `ODh${record.odInfo.durationHours != null ? `(${record.odInfo.durationHours}h)` : ''}`;
+      return `ODh${record.odInfo.durationHours != null ? formatOdDurationHoursParen(record.odInfo.durationHours) : ''}`;
     }
     if (record?.odInfo?.isHalfDay || record?.odInfo?.odType_extended === 'half_day') {
       return `OD-${formatHalfTag(record.odInfo?.halfDayType)}`;
@@ -442,7 +450,10 @@ export default function AttendancePage() {
 
   const [debouncedSearch, setDebouncedSearch] = useState('');
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
+    const t = setTimeout(() => {
+      const q = searchQuery.trim();
+      setDebouncedSearch(q.length >= 2 ? q : '');
+    }, 400);
     return () => clearTimeout(t);
   }, [searchQuery]);
 
@@ -462,6 +473,8 @@ export default function AttendancePage() {
   const [hasMore, setHasMore] = useState(true);
   const [filteredMonthlyData, setFilteredMonthlyData] = useState<MonthlyAttendanceData[]>([]);
   const observerTarget = useRef<HTMLDivElement>(null);
+  const isFetchingRef = useRef(false);
+  const fetchSeqRef = useRef(0);
 
   // OutTime dialog state
   const [showOutTimeDialog, setShowOutTimeDialog] = useState(false);
@@ -637,11 +650,43 @@ export default function AttendancePage() {
     return map;
   }, [bulkOtEligibleQueue]);
 
-  const handleSummaryClick = (employeeId: string, category: string) => {
-    setActiveHighlight(prev => {
+  const ensureSummaryContributions = async (employeeId: string) => {
+    const item = monthlyData.find((d) => d.employee._id === employeeId);
+    if (!item?.summary || item.summary.contributingDates) return;
+    try {
+      const res = await api.getMonthlySummaryContributions(employeeId, year, month);
+      if (res.success && res.data?.contributingDates) {
+        setMonthlyData((prev) =>
+          prev.map((row) =>
+            row.employee._id === employeeId
+              ? {
+                  ...row,
+                  summary: {
+                    ...row.summary,
+                    contributingDates: res.data!.contributingDates as NonNullable<
+                      typeof row.summary
+                    >['contributingDates'],
+                  },
+                }
+              : row
+          )
+        );
+      }
+    } catch (err) {
+      console.error('Failed to load summary contributions:', err);
+    }
+  };
+
+  const handleSummaryClick = async (employeeId: string, category: string) => {
+    const togglingOff =
+      activeHighlight?.employeeId === employeeId && activeHighlight?.category === category;
+    setActiveHighlight((prev) => {
       if (prev?.employeeId === employeeId && prev?.category === category) return null;
       return { employeeId, category };
     });
+    if (!togglingOff) {
+      await ensureSummaryContributions(employeeId);
+    }
   };
 
   const openAttendanceDeductionInfo = (
@@ -870,7 +915,13 @@ export default function AttendancePage() {
     // Reset page when filters change
     setPage(1);
     loadMonthlyAttendance(true);
-  }, [selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate, debouncedSearch]); // Removed tableType dependency
+  }, [selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate, debouncedSearch]);
+
+  useEffect(() => {
+    if (!cycleDates.startDate) return;
+    setPage(1);
+    loadMonthlyAttendance(true);
+  }, [tableType]);
 
   // Handle Load More when page changes
   useEffect(() => {
@@ -890,7 +941,7 @@ export default function AttendancePage() {
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loading && !loadingMore) {
+        if (entries[0].isIntersecting && hasMore && !loading && !loadingMore && !isFetchingRef.current) {
           setPage(prev => prev + 1);
         }
       },
@@ -947,15 +998,27 @@ export default function AttendancePage() {
     normalizeMonthlyAttendanceRows(data) as MonthlyAttendanceData[];
 
   const loadMonthlyAttendance = async (reset: boolean = false) => {
+    const targetPage = reset ? 1 : page;
+
+    if (!reset && isFetchingRef.current) return;
+    if (!reset && targetPage > totalPages && totalPages > 0) {
+      setHasMore(false);
+      return;
+    }
+
+    const seq = reset ? ++fetchSeqRef.current : fetchSeqRef.current;
+
     try {
+      isFetchingRef.current = true;
       if (reset) {
         setLoading(true);
+        setMonthlyData([]);
+        setFilteredMonthlyData([]);
       } else {
         setLoadingMore(true);
       }
 
       setError('');
-      const targetPage = reset ? 1 : page;
 
       const response = await api.getMonthlyAttendance(year, month, {
         page: targetPage,
@@ -965,8 +1028,11 @@ export default function AttendancePage() {
         departmentId: selectedDepartment,
         designationId: selectedDesignation,
         startDate: cycleDates.startDate,
-        endDate: cycleDates.endDate
+        endDate: cycleDates.endDate,
+        mode: tableType,
       });
+
+      if (seq !== fetchSeqRef.current) return;
 
       if (response.success) {
         const rawData = response.data || [];
@@ -974,7 +1040,6 @@ export default function AttendancePage() {
         if (reset) {
           setMonthlyData(newData);
         } else {
-          // Append new data, but filter out duplicates just in case
           setMonthlyData(prev => {
             const existingIds = new Set(prev.map(i => i.employee._id));
             const uniqueNewData = newData.filter((i: any) => !existingIds.has(i.employee._id));
@@ -994,11 +1059,15 @@ export default function AttendancePage() {
         setError(response.message || 'Failed to load monthly attendance');
       }
     } catch (err: any) {
+      if (seq !== fetchSeqRef.current) return;
       console.error('Error loading monthly attendance:', err);
       setError(err.message || 'Failed to load monthly attendance');
     } finally {
-      if (reset) setLoading(false);
-      setLoadingMore(false);
+      if (seq === fetchSeqRef.current) {
+        if (reset) setLoading(false);
+        setLoadingMore(false);
+        isFetchingRef.current = false;
+      }
     }
   };
 
@@ -1108,11 +1177,7 @@ export default function AttendancePage() {
           return empData;
         }));
 
-        // Reload attendance detail and monthly data
-        await loadMonthlyAttendance();
-
-        // Refresh the detail view
-        const updatedDetail = await loadAttendanceDetailWithPermissions(selectedEmployee.emp_no, selectedDate);
+        const updatedDetail = await refreshDayInGrid(selectedEmployee.emp_no, selectedDate);
         if (updatedDetail) {
           setAttendanceDetail(updatedDetail);
         }
@@ -1165,11 +1230,7 @@ export default function AttendancePage() {
         setOutTimeInput('');
         setSelectedShiftRecordId(null);
 
-        // Reload attendance detail and monthly data
-        await loadMonthlyAttendance();
-
-        // Refresh the detail view
-        const updatedDetail = await loadAttendanceDetailWithPermissions(selectedEmployee.emp_no, selectedDate);
+        const updatedDetail = await refreshDayInGrid(selectedEmployee.emp_no, selectedDate);
         if (updatedDetail) {
           setAttendanceDetail(updatedDetail);
         }
@@ -1350,8 +1411,8 @@ export default function AttendancePage() {
               odInfo: dayRecord.odInfo,
               isConflict: dayRecord.isConflict,
               isEdited: dayRecord.isEdited,
-              editHistory: dayRecord.editHistory,
-              source: dayRecord.source,
+              editHistory: dayRecord.editHistory ?? base.editHistory,
+              source: dayRecord.source ?? base.source,
             });
           } else {
             setAttendanceDetail(base);
@@ -1408,6 +1469,16 @@ export default function AttendancePage() {
     } finally {
       setUpdatingLeave(false);
     }
+  };
+
+  const refreshDayInGrid = async (employeeNumber: string, date: string) => {
+    const updatedDetail = await loadAttendanceDetailWithPermissions(employeeNumber, date);
+    if (updatedDetail) {
+      setMonthlyData((prev) =>
+        patchMonthlyDayFromDetail(prev, employeeNumber, date, updatedDetail as Record<string, unknown>)
+      );
+    }
+    return updatedDetail;
   };
 
   const loadAttendanceDetailWithPermissions = async (employeeNumber: string, date: string) => {
@@ -1519,8 +1590,8 @@ export default function AttendancePage() {
           odInfo: dayRecord.odInfo,
           isConflict: dayRecord.isConflict,
           isEdited: dayRecord.isEdited,
-          editHistory: dayRecord.editHistory,
-          source: dayRecord.source,
+          editHistory: dayRecord.editHistory ?? detail.editHistory,
+          source: dayRecord.source ?? detail.source,
         });
         setShowDetailDialog(true);
       } else if (detail) {
@@ -2048,9 +2119,9 @@ export default function AttendancePage() {
     try {
       setExportingExcel(true);
       setError('');
-      const response = await api.getMonthlyAttendance(year, month, {
-        page: 1,
-        limit: 50000,
+      await api.downloadMonthlyAttendanceExport({
+        year,
+        month,
         search: debouncedSearch,
         divisionId: selectedDivision,
         departmentId: selectedDepartment,
@@ -2058,22 +2129,8 @@ export default function AttendancePage() {
         startDate: cycleDates.startDate,
         endDate: cycleDates.endDate,
       });
-      if (!response.success || !response.data?.length) {
-        toast.warn('No attendance data to export');
-        return;
-      }
-      const data = normalizeAttendanceData(response.data || []);
       const monthStr = `${year}-${String(month).padStart(2, '0')}`;
-      const monthLabel = `${monthNames[month - 1]} ${year}`;
-      writeMonthlyAttendanceExcelFile(data, {
-        cycleDates,
-        year,
-        month,
-        monthLabel,
-        whenNoCycle: 'none',
-        processingMode: attendanceProcessingMode,
-      });
-      toast.success(`Exported ${data.length} employees to attendance_${monthStr}.xlsx`);
+      toast.success(`Downloaded attendance_${monthStr}.xlsx`);
     } catch (err: any) {
       console.error('Export error:', err);
       toast.error(err?.message || 'Failed to export attendance');
@@ -2376,17 +2433,16 @@ export default function AttendancePage() {
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            loadMonthlyAttendance(true);
-                          }
-                        }}
-                        placeholder="Search..."
+                        placeholder="Search (min 2 chars)..."
                         className="w-40 h-9 pl-9 pr-3 text-xs rounded-xl border border-slate-200 bg-white focus:border-green-500 focus:ring-2 focus:ring-green-500/10 transition-all dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
                       />
                     </div>
                     <button
-                      onClick={() => { setShowSearch(false); setSearchQuery(''); }}
+                      onClick={() => {
+                        setShowSearch(false);
+                        setSearchQuery('');
+                        setDebouncedSearch('');
+                      }}
                       className="h-9 w-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-all"
                     >
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3385,16 +3441,20 @@ export default function AttendancePage() {
                                           {isMultiShift ? 'Multi' : (shiftName as string).substring(0, 3)}
                                         </div>
                                       )}
-                                      {record && record.totalHours !== null && (
-                                        <div className="text-[8px] font-semibold">{formatHours(record.totalHours)}</div>
+                                      {shouldShowWorkedHoursInCompleteCell(record) && (
+                                        <div className="text-[8px] font-semibold">{formatHours(record!.totalHours)}</div>
                                       )}
                                       {record?.odInfo?.odType_extended === 'hours' && (
                                         <div
-                                          className="inline-flex items-center gap-1 rounded bg-indigo-100 px-1 py-[1px] text-[7px] font-extrabold text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200"
-                                          title={`Hourly OD ${record.odInfo.durationHours != null ? `(${record.odInfo.durationHours}h)` : ''}`}
+                                          className="mx-auto inline-flex flex-col items-center leading-none rounded bg-indigo-100 px-1 py-[2px] text-[7px] font-extrabold text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200"
+                                          title={`Hourly OD ${record.odInfo.durationHours != null ? formatOdDurationHoursParen(record.odInfo.durationHours) : ''}`}
                                         >
                                           <span>ODh</span>
-                                          {record.odInfo.durationHours != null ? <span>{record.odInfo.durationHours}h</span> : null}
+                                          {record.odInfo.durationHours != null ? (
+                                            <span className="mt-[1px] text-[8px] font-bold tabular-nums">
+                                              {formatOdDurationHoursValue(record.odInfo.durationHours)}
+                                            </span>
+                                          ) : null}
                                         </div>
                                       )}
                                     </>

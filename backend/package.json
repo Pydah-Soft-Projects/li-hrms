@@ -38,6 +38,7 @@
     "benchmark:pay-register-sync": "node scripts/benchmark_pay_register_sync.js",
     "test:optimization-validation": "node scripts/simulate_optimization_validation.js",
     "test:leave-approval-reliability": "node scripts/simulate_leave_approval_reliability.js",
+    "report:leave-real-data": "node scripts/report_leave_real_data.js",
     "test:leave-approval-side-effects": "jest leaves/services/__tests__/leaveApprovalSideEffectsService.test.js --forceExit --no-coverage"
   },
   "keywords": [],

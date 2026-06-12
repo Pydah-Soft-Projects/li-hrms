@@ -289,8 +289,9 @@ const { enforceSingleShiftPartialLopSnapshot } = require('../utils/partialPolicy
  * - An AttendanceDaily doc is saved (post-save hook defers recalc via setImmediate)
  * - An AttendanceDaily doc is updated via findOneAndUpdate (post-hook, same defer)
  * - Leave/OD approved, OT applied, permissions, etc. (call recalculateOn* directly)
- * Summaries are not triggered by insertMany/bulk writes; missing summaries are
- * calculated on demand when loading the monthly attendance view.
+ * Summaries are not triggered by insertMany/bulk writes. The monthly attendance
+ * view reads stored summaries only; use recalc scripts or attendance/leave hooks
+ * to populate or refresh them.
  */
 
 /**

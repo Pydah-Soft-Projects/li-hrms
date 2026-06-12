@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
+const compression = require('compression');
 const { initSocket } = require('./shared/services/socketService');
 const { initializeAllDatabases } = require('./config/init');
 const { checkConnection: checkStorageConnection } = require('./shared/services/fileStorageService');
@@ -38,6 +39,8 @@ app.use(cors({
   origin: allowedOrigins,
   credentials: true,
 }));
+
+app.use(compression());
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));

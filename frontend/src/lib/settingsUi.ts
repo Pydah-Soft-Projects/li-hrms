@@ -16,12 +16,12 @@ export const settingsLedgerBorder: CSSProperties = { borderColor: 'var(--ps-acce
 
 /** Flat ledger card — no heavy shadows */
 export const settingsCardClass =
-  'overflow-hidden border bg-white dark:bg-stone-950';
+  'w-full min-w-0 overflow-hidden border bg-white dark:bg-stone-950';
 
 export const settingsCardHeaderClass =
-  'border-b px-4 py-4 sm:px-6 sm:py-5';
+  'border-b px-3 py-2 sm:px-4 sm:py-2.5';
 
-export const settingsCardBodyClass = 'p-4 sm:p-6 lg:p-8';
+export const settingsCardBodyClass = 'p-3 sm:p-4';
 
 export const settingsSectionTitleClass =
   'text-[10px] font-semibold uppercase tracking-[0.28em] text-stone-500 dark:text-stone-400';

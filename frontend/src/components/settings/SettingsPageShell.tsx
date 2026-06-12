@@ -64,7 +64,7 @@ export function SettingsAccentShell({
 export function SettingsContentPanel({ children }: { children: ReactNode }) {
   return (
     <div
-      className="overflow-hidden border bg-white p-4 dark:bg-stone-950 sm:p-6 lg:p-8"
+      className="w-full min-w-0 overflow-hidden border bg-white dark:bg-stone-950"
       style={{ borderColor: 'var(--ps-accent-border)' }}
     >
       {children}
@@ -121,7 +121,7 @@ export function SettingsHubLayout({
         }`}
         style={settingsLedgerBorder}
       >
-        <div className="border-b p-4 sm:p-6" style={ledgerPageHeaderStyle()}>
+        <div className="border-b p-3 sm:p-4" style={ledgerPageHeaderStyle()}>
           <p
             className="text-[10px] font-semibold uppercase tracking-[0.32em]"
             style={{ color: 'var(--ps-accent-ink)' }}
@@ -164,7 +164,7 @@ export function SettingsHubLayout({
           </div>
         </div>
 
-        <nav className="settings-scrollbar flex-1 space-y-5 overflow-y-auto px-3 pb-8 sm:space-y-7 sm:px-4">
+        <nav className="settings-scrollbar flex-1 space-y-4 overflow-y-auto px-3 pb-4 sm:px-4">
           {Object.entries(navGroups).map(([group, items]) => (
             <div key={group} className="space-y-1">
               <h3
@@ -209,10 +209,8 @@ export function SettingsHubLayout({
         ) : null}
       </aside>
 
-      <main className="min-w-0 w-full flex-1 overflow-x-hidden">
-        <div className="mx-auto w-full max-w-7xl p-3 sm:p-6 lg:p-8">
-          <SettingsContentPanel>{children}</SettingsContentPanel>
-        </div>
+      <main className="min-w-0 flex-1 overflow-x-hidden">
+        <SettingsContentPanel>{children}</SettingsContentPanel>
       </main>
     </SettingsAccentShell>
   );
@@ -228,7 +226,7 @@ export function SettingsPanel({
   style?: CSSProperties;
 }) {
   return (
-    <div className={`settings-ledger-scope space-y-6 sm:space-y-8 ${className}`} style={style}>
+    <div className={`settings-ledger-scope w-full min-w-0 space-y-4 p-3 sm:space-y-5 sm:p-4 ${className}`} style={style}>
       {children}
     </div>
   );
@@ -249,7 +247,7 @@ export function SettingsPanelHeader({
   const crumb = badge || section;
   return (
     <header
-      className="mb-5 border bg-white px-5 py-5 sm:px-8 sm:py-6 dark:bg-stone-950"
+      className="-mx-3 -mt-3 mb-3 border-x-0 border-t-0 bg-white px-3 py-3 dark:bg-stone-950 sm:-mx-4 sm:-mt-4 sm:mb-4 sm:px-4 sm:py-3.5"
       style={ledgerPageHeaderStyle()}
     >
       {crumb ? (
@@ -260,11 +258,11 @@ export function SettingsPanelHeader({
           {crumb}
         </p>
       ) : null}
-      <h2 className="mt-1 font-serif text-2xl font-light tracking-tight text-stone-900 dark:text-stone-50 sm:text-3xl">
+      <h2 className="mt-0.5 font-serif text-xl font-light tracking-tight text-stone-900 dark:text-stone-50 sm:text-2xl">
         {title}
       </h2>
-      {subtitle ? <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">{subtitle}</p> : null}
-      <div className="mt-4 h-0.5 w-16 rounded-full" style={{ backgroundColor: 'var(--ps-accent)' }} />
+      {subtitle ? <p className="mt-0.5 text-sm text-stone-500 dark:text-stone-400">{subtitle}</p> : null}
+      <div className="mt-3 h-0.5 w-12 rounded-full" style={{ backgroundColor: 'var(--ps-accent)' }} />
     </header>
   );
 }
@@ -285,13 +283,8 @@ export function SettingsSectionCard({
   return (
     <section className={`${settingsCardClass} ${className}`} style={settingsLedgerBorder}>
       {title ? (
-        <div className={settingsCardHeaderClass} style={ledgerPageHeaderStyle()}>
-          <h3
-            className="text-[10px] font-semibold uppercase tracking-[0.28em]"
-            style={{ color: 'var(--ps-accent-ink)' }}
-          >
-            {title}
-          </h3>
+        <div className={settingsCardHeaderClass} style={settingsLedgerBorder}>
+          <h3 className={settingsSectionTitleClass}>{title}</h3>
           {description ? (
             <p className="mt-1 text-sm normal-case tracking-normal text-stone-500 dark:text-stone-400">{description}</p>
           ) : null}
@@ -351,7 +344,7 @@ export function SettingsToggleRow({
 }) {
   return (
     <div
-      className="flex items-center justify-between gap-4 border p-4 sm:p-5"
+      className="flex items-center justify-between gap-3 border p-3 sm:p-3.5"
       style={settingsLedgerBorder}
     >
       <div className="min-w-0">
@@ -387,7 +380,7 @@ export function SettingsSaveBar({
 }) {
   return (
     <div
-      className="sticky bottom-0 z-10 -mx-4 border-t bg-white/95 px-4 py-4 backdrop-blur-sm sm:-mx-6 sm:px-6 dark:bg-stone-950/95"
+      className="sticky bottom-0 z-10 -mx-3 border-t bg-white/95 px-3 py-3 backdrop-blur-sm sm:-mx-4 sm:px-4 dark:bg-stone-950/95"
       style={settingsLedgerBorder}
     >
       <button
@@ -429,7 +422,7 @@ export function SettingsOutlineButton({
 
 export function SettingsHubFooter() {
   return (
-    <div className="border p-3 sm:p-4" style={ledgerPageHeaderStyle()}>
+    <div className="border p-3 sm:p-4" style={settingsLedgerBorder}>
       <p
         className="truncate text-[10px] font-semibold uppercase tracking-widest sm:text-xs"
         style={{ color: 'var(--ps-accent-ink)' }}

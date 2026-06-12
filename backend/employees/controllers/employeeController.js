@@ -139,21 +139,30 @@ const processQualifications = async (req, settings) => {
   return qualifications;
 };
 
+const EMPLOYEE_SETTINGS_TTL_MS = 5 * 60 * 1000;
+let employeeSettingsCache = { at: 0, value: null };
+
 /**
- * Get employee settings from database
+ * Get employee settings from database (short TTL cache for list endpoints)
  */
 const getEmployeeSettings = async () => {
+  if (employeeSettingsCache.value && Date.now() - employeeSettingsCache.at < EMPLOYEE_SETTINGS_TTL_MS) {
+    return employeeSettingsCache.value;
+  }
+
   try {
     const autoGenSetting = await Settings.findOne({ key: 'auto_generate_employee_number' });
 
     const autoGenerateEmployeeNumber = autoGenSetting?.value === true
       || autoGenSetting?.value === 'true';
 
-    return {
+    const settings = {
       dataSource: 'mongodb',
       deleteTarget: 'mongodb',
       auto_generate_employee_number: autoGenerateEmployeeNumber,
     };
+    employeeSettingsCache = { at: Date.now(), value: settings };
+    return settings;
   } catch (error) {
     console.error('Error getting employee settings:', error);
     return { dataSource: 'mongodb', deleteTarget: 'mongodb', auto_generate_employee_number: false };
@@ -311,6 +320,10 @@ const populateUsersInDynamicFields = async (dynamicFields, prefetchedUserMap = n
 const EMPLOYEE_SUMMARY_SELECT =
   '_id emp_no employee_name division_id department_id designation_id employee_group_id is_active leftDate profilePhoto dob phone_number email';
 
+/** Fields required by the employees grid (no dynamicFields / salary components). */
+const EMPLOYEE_LIST_SELECT =
+  `${EMPLOYEE_SUMMARY_SELECT} gross_salary qualificationStatus salaryStatus`;
+
 const mapSummaryEmployeeRow = (emp) => ({
   _id: emp._id,
   emp_no: emp.emp_no,
@@ -329,6 +342,14 @@ const mapSummaryEmployeeRow = (emp) => ({
   dob: emp.dob,
   phone_number: emp.phone_number,
   email: emp.email,
+});
+
+const mapListEmployeeRow = (emp) => ({
+  ...mapSummaryEmployeeRow(emp),
+  gross_salary:
+    emp.gross_salary !== undefined && emp.gross_salary !== null ? Number(emp.gross_salary) : null,
+  qualificationStatus: emp.qualificationStatus || 'not_submitted',
+  salaryStatus: emp.salaryStatus || null,
 });
 
 const applyDepartmentIdFilter = (filters, department_id, department_ids) => {
@@ -529,6 +550,7 @@ exports.getAllEmployees = async (req, res) => {
     const { scopeFilter } = req;
     const settings = await getEmployeeSettings();
     const isSummaryView = view === 'summary';
+    const isListView = view === 'list';
 
     let employees = [];
     const limitNum = parseInt(limit, 10);
@@ -537,8 +559,6 @@ exports.getAllEmployees = async (req, res) => {
     const filters = buildActiveEmployeeFilters(req.query, scopeFilter);
 
     const query = { ...filters };
-
-    const total = await Employee.countDocuments(query);
 
     let employeeQuery = Employee.find(query)
       .populate('division_id', 'name code')
@@ -551,15 +571,21 @@ exports.getAllEmployees = async (req, res) => {
       .limit(limitNum);
 
     if (isSummaryView) {
-      employeeQuery = employeeQuery.select(EMPLOYEE_SUMMARY_SELECT).lean();
-    } else {
-      employeeQuery = employeeQuery.lean();
+      employeeQuery = employeeQuery.select(EMPLOYEE_SUMMARY_SELECT);
+    } else if (isListView) {
+      employeeQuery = employeeQuery.select(EMPLOYEE_LIST_SELECT);
     }
+    employeeQuery = employeeQuery.lean();
 
-    const mongoEmployees = await employeeQuery;
+    const [total, mongoEmployees] = await Promise.all([
+      Employee.countDocuments(query),
+      employeeQuery,
+    ]);
 
     if (isSummaryView) {
       employees = mongoEmployees.map(mapSummaryEmployeeRow);
+    } else if (isListView) {
+      employees = mongoEmployees.map(mapListEmployeeRow);
     } else {
       const userMap = await buildUserMapForEmployeeDocs(mongoEmployees);
       employees = await Promise.all(
@@ -570,10 +596,12 @@ exports.getAllEmployees = async (req, res) => {
       );
     }
 
+    const responseView = isSummaryView ? 'summary' : isListView ? 'list' : 'full';
+
     res.status(200).json({
       success: true,
       count: employees.length,
-      view: isSummaryView ? 'summary' : 'full',
+      view: responseView,
       dataSource: settings.dataSource,
       pagination: {
         total,
@@ -2403,5 +2431,7 @@ exports.exportEmployees = async (req, res) => {
 // Exported for performance unit tests
 exports.buildActiveEmployeeFilters = buildActiveEmployeeFilters;
 exports.mapSummaryEmployeeRow = mapSummaryEmployeeRow;
+exports.mapListEmployeeRow = mapListEmployeeRow;
+exports.EMPLOYEE_LIST_SELECT = EMPLOYEE_LIST_SELECT;
 exports.applyDepartmentIdFilter = applyDepartmentIdFilter;
 exports.buildUserMapForEmployeeDocs = buildUserMapForEmployeeDocs;

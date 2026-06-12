@@ -2414,7 +2414,7 @@ export const api = {
       endDate?: string;
       page?: number;
       limit?: number;
-      view?: 'full' | 'summary';
+      view?: 'full' | 'summary' | 'list';
     },
     fetchInit?: RequestInit
   ) => {
@@ -2434,6 +2434,27 @@ export const api = {
     if (filters?.view) params.append('view', filters.view);
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/employees${query}`, { method: 'GET', ...fetchInit });
+  },
+
+  /** Lean employee list for the employees grid (table columns only, fast). */
+  getEmployeesList: async (
+    filters?: {
+      is_active?: boolean;
+      department_id?: string;
+      department_ids?: string;
+      division_id?: string;
+      designation_id?: string;
+      employee_group_id?: string;
+      includeLeft?: boolean;
+      search?: string;
+      startDate?: string;
+      endDate?: string;
+      page?: number;
+      limit?: number;
+    },
+    fetchInit?: RequestInit
+  ) => {
+    return api.getEmployees({ ...filters, view: 'list' }, fetchInit);
   },
 
   /** Lean employee list for dropdowns and reports (minimal fields, fast). */
@@ -3982,7 +4003,21 @@ export const api = {
     return apiRequest<any>(`/attendance/employees${q ? `?${q}` : ''}`, { method: 'GET' });
   },
 
-  getMonthlyAttendance: async (year: number, month: number, filters?: { page?: number; limit?: number; search?: string; divisionId?: string; departmentId?: string; designationId?: string; startDate?: string; endDate?: string }) => {
+  getMonthlyAttendance: async (
+    year: number,
+    month: number,
+    filters?: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      divisionId?: string;
+      departmentId?: string;
+      designationId?: string;
+      startDate?: string;
+      endDate?: string;
+      mode?: 'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot';
+    }
+  ) => {
     const params = new URLSearchParams();
     params.append('year', String(year));
     params.append('month', String(month));
@@ -3995,11 +4030,77 @@ export const api = {
     if (filters?.designationId) params.append('designationId', filters.designationId);
     if (filters?.startDate) params.append('startDate', filters.startDate);
     if (filters?.endDate) params.append('endDate', filters.endDate);
+    if (filters?.mode) params.append('mode', filters.mode);
 
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/attendance/monthly${query}`, {
       method: 'GET',
     });
+  },
+
+  getMonthlySummaryContributions: async (employeeId: string, year: number, month: number) => {
+    const params = new URLSearchParams({
+      employeeId,
+      year: String(year),
+      month: String(month),
+    });
+    return apiRequest<{ contributingDates: Record<string, unknown> | null; emp_no?: string; month?: string }>(
+      `/attendance/monthly/summary-detail?${params.toString()}`,
+      { method: 'GET' }
+    );
+  },
+
+  downloadMonthlyAttendanceExport: async (filters: {
+    year: number;
+    month: number;
+    search?: string;
+    divisionId?: string;
+    departmentId?: string;
+    designationId?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const params = new URLSearchParams();
+    params.append('year', String(filters.year));
+    params.append('month', String(filters.month));
+    if (filters.search) params.append('search', filters.search);
+    if (filters.divisionId) params.append('divisionId', filters.divisionId);
+    if (filters.departmentId) params.append('departmentId', filters.departmentId);
+    if (filters.designationId) params.append('designationId', filters.designationId);
+    if (filters.startDate) params.append('startDate', filters.startDate);
+    if (filters.endDate) params.append('endDate', filters.endDate);
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE_URL}/attendance/monthly/export?${params.toString()}`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!res.ok) {
+      let message = 'Failed to export attendance';
+      try {
+        const body = await res.json();
+        message = body.message || message;
+      } catch {
+        /* binary error body */
+      }
+      throw new Error(message);
+    }
+
+    const blob = await res.blob();
+    const monthStr = `${filters.year}-${String(filters.month).padStart(2, '0')}`;
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `attendance_${monthStr}.xlsx`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    return { success: true };
   },
 
   // Attendance Settings

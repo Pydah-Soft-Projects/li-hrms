@@ -948,7 +948,7 @@ export default function DepartmentalSettingsPage() {
         }`}
         style={settingsLedgerBorder}
       >
-        <div className="border-b p-4 sm:p-6" style={ledgerPageHeaderStyle()}>
+        <div className="border-b p-3 sm:p-4" style={ledgerPageHeaderStyle()}>
           <p
             className="text-[10px] font-semibold uppercase tracking-[0.32em]"
             style={{ color: 'var(--ps-accent-ink)' }}
@@ -1113,8 +1113,7 @@ export default function DepartmentalSettingsPage() {
         </div>
       </aside>
 
-      <main className="min-w-0 w-full flex-1 overflow-x-hidden">
-        <div className="mx-auto w-full max-w-7xl p-3 sm:p-6 lg:p-8">
+      <main className="min-w-0 flex-1 overflow-x-hidden">
           <SettingsContentPanel>
           <div className="settings-ledger-scope w-full overflow-x-hidden">
           {!scopeReady ? (
@@ -2006,7 +2005,6 @@ export default function DepartmentalSettingsPage() {
           )}
           </div>
           </SettingsContentPanel>
-        </div>
       </main>
     </SettingsAccentShell>
   );

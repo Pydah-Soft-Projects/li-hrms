@@ -542,7 +542,7 @@ exports.getEmployeesWithAttendance = async (req, res) => {
  */
 exports.getMonthlyAttendance = async (req, res) => {
   try {
-    const { year, month, page = 1, limit = 20, search, divisionId, departmentId, designationId, startDate, endDate } = req.query;
+    const { year, month } = req.query;
 
     if (!year || !month) {
       return res.status(400).json({
@@ -551,100 +551,145 @@ exports.getMonthlyAttendance = async (req, res) => {
       });
     }
 
-    const targetYear = parseInt(year, 10);
-    const targetMonth = parseInt(month, 10);
-    const dateCycleService = require('../../leaves/services/dateCycleService');
-
-    let periodStartStr = startDate;
-    let periodEndStr = endDate;
-    if (!periodStartStr || !periodEndStr) {
-      const anchorDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-15`;
-      const periodInfo = await dateCycleService.getPeriodInfo(new Date(anchorDateStr));
-      periodStartStr = extractISTComponents(periodInfo.payrollCycle.startDate).dateStr;
-      periodEndStr = extractISTComponents(periodInfo.payrollCycle.endDate).dateStr;
-    }
-
-    const periodStart = new Date(`${periodStartStr}T00:00:00.000Z`);
-    const periodEnd = new Date(`${periodEndStr}T23:59:59.999Z`);
-
-    // Active employees, OR inactive employees whose last working day (leftDate) falls in this payroll period.
-    // Must $and with scopeFilter: scope often has top-level `$or`; assigning `filter.$or` for roster would drop scope.
-    const rosterVisibility = {
-      $or: [
-        { is_active: { $ne: false } },
-        {
-          is_active: false,
-          leftDate: { $gte: periodStart, $lte: periodEnd },
-        },
-      ],
-    };
-
-    const extraClauses = [rosterVisibility];
-    if (search) {
-      const safeSearch = escapeRegex(search);
-      extraClauses.push({
-        $or: [
-          { employee_name: { $regex: safeSearch, $options: 'i' } },
-          { emp_no: { $regex: safeSearch, $options: 'i' } },
-        ],
-      });
-    }
-    if (divisionId) extraClauses.push({ division_id: divisionId });
-    if (departmentId) extraClauses.push({ department_id: departmentId });
-    if (designationId) extraClauses.push({ designation_id: designationId });
-
-    const filter = mergeScopeWithEmployeeClauses(req.scopeFilter, extraClauses);
-
-    const pageNum = parseInt(page, 10) || 1;
-    const limitNum = parseInt(limit, 10) || 20;
-    const skip = limitNum === -1 ? 0 : (pageNum - 1) * limitNum;
-
-    let employeeFind = Employee.find(filter)
-      .populate('division_id', 'name')
-      .populate('department_id', 'name')
-      .populate('designation_id', 'name')
-      .sort(EMP_NO_SORT)
-      .collation(EMP_NO_COLLATION);
-
-    if (limitNum !== -1) {
-      employeeFind = employeeFind.skip(skip).limit(limitNum);
-    }
-
-    // Active + those who left in this payroll period (and optional "fetch all" via limit=-1)
-    const employees = await employeeFind;
-
-    const totalEmployees = await Employee.countDocuments(filter);
-
+    const { fetchMonthlyEmployees } = require('../services/monthlyAttendanceQueryService');
+    const ctx = await fetchMonthlyEmployees(req.scopeFilter, req.query);
     const { getMonthlyTableViewData } = require('../services/attendanceViewService');
+
     const employeesWithAttendance = await getMonthlyTableViewData(
-      employees,
-      year,
-      month,
-      periodStartStr,
-      periodEndStr
+      ctx.employees,
+      ctx.targetYear,
+      ctx.targetMonth,
+      ctx.periodStartStr,
+      ctx.periodEndStr,
+      { mode: ctx.mode, includeContributingDates: false }
     );
 
     res.status(200).json({
       success: true,
       data: employeesWithAttendance,
       pagination: {
-        total: totalEmployees,
-        page: pageNum,
-        limit: limitNum,
-        totalPages: limitNum === -1 ? 1 : Math.ceil(totalEmployees / limitNum),
+        total: ctx.totalEmployees,
+        page: ctx.pageNum,
+        limit: ctx.limitNum,
+        totalPages: ctx.limitNum === -1 ? 1 : Math.ceil(ctx.totalEmployees / ctx.limitNum),
       },
-      month: parseInt(month),
-      year: parseInt(year),
-      daysInMonth: new Date(parseInt(year), parseInt(month), 0).getDate(),
-      startDate: periodStartStr,
-      endDate: periodEndStr,
+      month: ctx.targetMonth,
+      year: ctx.targetYear,
+      daysInMonth: new Date(ctx.targetYear, ctx.targetMonth, 0).getDate(),
+      startDate: ctx.periodStartStr,
+      endDate: ctx.periodEndStr,
+      mode: ctx.mode,
     });
-
   } catch (error) {
     console.error('Error fetching monthly attendance:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch monthly attendance',
+    });
+  }
+};
+
+/**
+ * @desc    Lazy-load contributingDates for summary column highlights
+ * @route   GET /api/attendance/monthly/summary-detail
+ * @access  Private
+ */
+exports.getMonthlySummaryDetail = async (req, res) => {
+  try {
+    const { employeeId, year, month } = req.query;
+    if (!employeeId || !year || !month) {
+      return res.status(400).json({
+        success: false,
+        message: 'employeeId, year, and month are required',
+      });
+    }
+
+    const allowed = await Employee.findOne({
+      ...req.scopeFilter,
+      _id: employeeId,
+    })
+      .select('_id emp_no')
+      .lean();
+
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied or employee not found',
+      });
+    }
+
+    const { getMonthlySummaryContributions } = require('../services/attendanceViewService');
+    const data = await getMonthlySummaryContributions(employeeId, year, month);
+
+    res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error('Error fetching monthly summary detail:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch summary detail',
+    });
+  }
+};
+
+/**
+ * @desc    Export monthly attendance as XLSX (server-side; all matching employees)
+ * @route   GET /api/attendance/monthly/export
+ * @access  Private
+ */
+exports.exportMonthlyAttendance = async (req, res) => {
+  try {
+    const { year, month } = req.query;
+    if (!year || !month) {
+      return res.status(400).json({
+        success: false,
+        message: 'Year and month are required',
+      });
+    }
+
+    const {
+      buildEmployeeListQuery,
+      buildMonthlyEmployeeFilter,
+      resolveMonthlyPeriod,
+    } = require('../services/monthlyAttendanceQueryService');
+    const { buildMonthlyAttendanceExportBuffer } = require('../services/monthlyAttendanceExportService');
+
+    const targetYear = parseInt(year, 10);
+    const targetMonth = parseInt(month, 10);
+    const { periodStartStr, periodEndStr, periodStart, periodEnd } = await resolveMonthlyPeriod(
+      targetYear,
+      targetMonth,
+      req.query.startDate,
+      req.query.endDate
+    );
+    const filter = buildMonthlyEmployeeFilter(req.scopeFilter, req.query, periodStart, periodEnd);
+    const employees = await buildEmployeeListQuery(filter, { skip: 0, limit: -1 });
+
+    const buffer = await buildMonthlyAttendanceExportBuffer(
+      employees,
+      targetYear,
+      targetMonth,
+      periodStartStr,
+      periodEndStr
+    );
+
+    const monthStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="attendance_${monthStr}.xlsx"`
+    );
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.send(buffer);
+  } catch (error) {
+    console.error('Error exporting monthly attendance:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to export monthly attendance',
     });
   }
 };
