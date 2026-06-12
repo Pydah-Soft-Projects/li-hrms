@@ -1,6 +1,6 @@
 /**
  * Employee Controller
- * Handles dual database operations (MongoDB + MSSQL) based on settings
+ * Handles employee operations via MongoDB
  */
 
 const Employee = require('../model/Employee');
@@ -23,15 +23,6 @@ const {
 const { resolveForEmployee } = require('../../payroll/services/allowanceDeductionResolverService');
 const mongoose = require('mongoose');
 const { compareEmpNo, EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
-const {
-  isHRMSConnected,
-  createEmployeeMSSQL,
-  getAllEmployeesMSSQL,
-  getEmployeeByIdMSSQL,
-  updateEmployeeMSSQL,
-  deleteEmployeeMSSQL,
-  employeeExistsMSSQL,
-} = require('../config/sqlHelper');
 const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
 const fileStorageService = require('../../shared/services/fileStorageService');
 const { resolveRequestOrigin } = require('../../shared/utils/fileStorageConfig');
@@ -153,53 +144,20 @@ const processQualifications = async (req, settings) => {
  */
 const getEmployeeSettings = async () => {
   try {
-    const [dataSourceSetting, deleteTargetSetting, autoGenSetting] = await Promise.all([
-      Settings.findOne({ key: 'employee_data_source' }),
-      Settings.findOne({ key: 'employee_delete_target' }),
-      Settings.findOne({ key: 'auto_generate_employee_number' }),
-    ]);
+    const autoGenSetting = await Settings.findOne({ key: 'auto_generate_employee_number' });
 
     const autoGenerateEmployeeNumber = autoGenSetting?.value === true
       || autoGenSetting?.value === 'true';
 
     return {
-      dataSource: dataSourceSetting?.value || 'mongodb', // 'mongodb' | 'mssql' | 'both'
-      deleteTarget: deleteTargetSetting?.value || 'both', // 'mongodb' | 'mssql' | 'both'
+      dataSource: 'mongodb',
+      deleteTarget: 'mongodb',
       auto_generate_employee_number: autoGenerateEmployeeNumber,
     };
   } catch (error) {
     console.error('Error getting employee settings:', error);
-    return { dataSource: 'mongodb', deleteTarget: 'both', auto_generate_employee_number: false };
+    return { dataSource: 'mongodb', deleteTarget: 'mongodb', auto_generate_employee_number: false };
   }
-};
-
-/**
- * Resolve department and designation names for employees
- */
-const resolveEmployeeReferences = async (employees) => {
-  // Get unique department and designation IDs
-  const deptIds = [...new Set(employees.map(e => e.department_id).filter(Boolean))];
-  const desigIds = [...new Set(employees.map(e => e.designation_id).filter(Boolean))];
-
-  // Fetch departments, designations, and divisions
-  const [departments, designations, divisions] = await Promise.all([
-    Department.find({ _id: { $in: deptIds } }).select('_id name code'),
-    Designation.find({ _id: { $in: desigIds } }).select('_id name code'),
-    Division.find({ _id: { $in: employees.map(e => e.division_id).filter(Boolean) } }).select('_id name code'),
-  ]);
-
-  // Create lookup maps
-  const deptMap = new Map(departments.map(d => [d._id.toString(), d]));
-  const desigMap = new Map(designations.map(d => [d._id.toString(), d]));
-  const divMap = new Map(divisions.map(d => [d._id.toString(), d]));
-
-  // Resolve references
-  return employees.map(emp => ({
-    ...emp,
-    division: emp.division_id ? divMap.get(emp.division_id.toString()) : null,
-    department: emp.department_id ? deptMap.get(emp.department_id.toString()) : null,
-    designation: emp.designation_id ? desigMap.get(emp.designation_id.toString()) : null,
-  }));
 };
 
 /**
@@ -216,123 +174,254 @@ const toPlainObject = (doc) => {
  * @param {Object} dynamicFields - Dynamic fields object
  * @returns {Object} Dynamic fields with populated users
  */
-const populateUsersInDynamicFields = async (dynamicFields) => {
+const extractReportingToUserIdStrings = (reportingToField) => {
+  if (!Array.isArray(reportingToField) || reportingToField.length === 0) return [];
+  const userIds = [];
+  for (const id of reportingToField) {
+    if (typeof id === 'string' && mongoose.Types.ObjectId.isValid(id)) {
+      userIds.push(id);
+    } else if (id && typeof id === 'object') {
+      if (id._id && mongoose.Types.ObjectId.isValid(id._id)) {
+        userIds.push(id._id.toString());
+      } else if (mongoose.Types.ObjectId.isValid(id)) {
+        userIds.push(id.toString());
+      }
+    } else if (id && id.toString && typeof id.toString === 'function') {
+      const idStr = id.toString();
+      if (mongoose.Types.ObjectId.isValid(idStr)) userIds.push(idStr);
+    }
+  }
+  return userIds;
+};
+
+const resolveReportingToWithUserMap = (reportingToField, userMap) => {
+  return reportingToField.map((id) => {
+    let idStr;
+    if (typeof id === 'string') {
+      idStr = id;
+    } else if (id && typeof id === 'object') {
+      if (id._id) idStr = id._id.toString();
+      else if (id.toString && typeof id.toString === 'function') idStr = id.toString();
+      else idStr = String(id);
+    } else {
+      idStr = String(id);
+    }
+    const user = userMap.get(idStr);
+    if (user) return user;
+    if (typeof id === 'object' && id._id) {
+      const userById = userMap.get(id._id.toString());
+      if (userById) return userById;
+    }
+    return id;
+  });
+};
+
+const buildUserMapForEmployeeDocs = async (employees) => {
+  const allIds = new Set();
+  for (const employee of employees) {
+    const plainObj = toPlainObject(employee);
+    const dynamicFields = plainObj.dynamicFields;
+    const reportingToField =
+      plainObj.reporting_to ||
+      plainObj.reporting_to_ ||
+      dynamicFields?.reporting_to ||
+      dynamicFields?.reporting_to_;
+    extractReportingToUserIdStrings(reportingToField).forEach((id) => allIds.add(id));
+  }
+  if (allIds.size === 0) return new Map();
+
+  const objectIds = [...allIds]
+    .map((id) => {
+      try {
+        return new mongoose.Types.ObjectId(id);
+      } catch (e) {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+  if (objectIds.length === 0) return new Map();
+
+  const users = await User.find({ _id: { $in: objectIds } })
+    .select('_id name email role')
+    .lean();
+
+  const userMap = new Map();
+  users.forEach((u) => {
+    userMap.set(u._id.toString(), u);
+    userMap.set(String(u._id), u);
+  });
+  return userMap;
+};
+
+const populateUsersInDynamicFields = async (dynamicFields, prefetchedUserMap = null) => {
   if (!dynamicFields || typeof dynamicFields !== 'object') {
     return dynamicFields || {};
   }
 
   const populated = { ...dynamicFields };
-
-  // Check if reporting_to or reporting_to_ exists and is an array of ObjectIds
-  // Handle both field names (reporting_to and reporting_to_)
   const reportingToField = populated.reporting_to || populated.reporting_to_;
 
   if (reportingToField && Array.isArray(reportingToField) && reportingToField.length > 0) {
     try {
       const fieldName = populated.reporting_to ? 'reporting_to' : 'reporting_to_';
-      console.log(`Found ${fieldName} field:`, JSON.stringify(reportingToField));
-      // Check if already populated (has user objects with name property)
-      const isAlreadyPopulated = reportingToField[0] && typeof reportingToField[0] === 'object' && reportingToField[0].name;
-      console.log('Is already populated:', isAlreadyPopulated);
+      const isAlreadyPopulated =
+        reportingToField[0] && typeof reportingToField[0] === 'object' && reportingToField[0].name;
 
       if (!isAlreadyPopulated) {
-        // Filter valid ObjectIds and convert to strings
-        const userIds = [];
-        for (const id of reportingToField) {
-          if (typeof id === 'string') {
-            if (mongoose.Types.ObjectId.isValid(id)) {
-              userIds.push(id);
-            }
-          } else if (id && typeof id === 'object') {
-            if (id._id && mongoose.Types.ObjectId.isValid(id._id)) {
-              userIds.push(id._id.toString());
-            } else if (mongoose.Types.ObjectId.isValid(id)) {
-              userIds.push(id.toString());
-            }
-          } else if (id && id.toString && typeof id.toString === 'function') {
-            const idStr = id.toString();
-            if (mongoose.Types.ObjectId.isValid(idStr)) {
-              userIds.push(idStr);
-            }
-          }
-        }
-
+        const userIds = extractReportingToUserIdStrings(reportingToField);
         if (userIds.length > 0) {
-          // Convert string ObjectIds to mongoose ObjectIds for query
-          const objectIds = userIds.map(id => {
-            try {
-              return new mongoose.Types.ObjectId(id);
-            } catch (e) {
-              return null;
-            }
-          }).filter(Boolean);
-
-          if (objectIds.length > 0) {
-            // Fetch users
-            const users = await User.find({ _id: { $in: objectIds } })
-              .select('_id name email role')
-              .lean();
-
-            // Create a map for quick lookup (using both string and ObjectId keys)
-            const userMap = new Map();
-            users.forEach(u => {
-              const idStr = u._id.toString();
-              userMap.set(idStr, u);
-              // Also add with ObjectId key for matching
-              userMap.set(u._id, u);
-            });
-
-            // Replace ObjectIds with populated user objects, preserving order
-            populated[fieldName] = reportingToField.map(id => {
-              let idStr;
-              if (typeof id === 'string') {
-                idStr = id;
-              } else if (id && typeof id === 'object') {
-                if (id._id) {
-                  idStr = id._id.toString();
-                } else if (id.toString && typeof id.toString === 'function') {
-                  idStr = id.toString();
-                } else {
-                  idStr = String(id);
+          let userMap = prefetchedUserMap;
+          if (!userMap) {
+            const objectIds = userIds
+              .map((id) => {
+                try {
+                  return new mongoose.Types.ObjectId(id);
+                } catch (e) {
+                  return null;
                 }
-              } else {
-                idStr = String(id);
-              }
-
-              // Try to find user by string ID
-              const user = userMap.get(idStr);
-              if (user) {
-                return user;
-              }
-
-              // Try to find by ObjectId if id is an object
-              if (typeof id === 'object' && id._id) {
-                const userById = userMap.get(id._id);
-                if (userById) return userById;
-              }
-
-              // If not found, return original ID
-              return id;
-            });
-
-            console.log(`Populated ${users.length} of ${userIds.length} users for ${fieldName} field`);
-            console.log(`Populated ${fieldName}:`, JSON.stringify(populated[fieldName]));
-          } else {
-            console.log('No valid ObjectIds could be created from userIds array. userIds:', userIds);
+              })
+              .filter(Boolean);
+            if (objectIds.length > 0) {
+              const users = await User.find({ _id: { $in: objectIds } })
+                .select('_id name email role')
+                .lean();
+              userMap = new Map();
+              users.forEach((u) => {
+                userMap.set(u._id.toString(), u);
+                userMap.set(String(u._id), u);
+              });
+            } else {
+              userMap = new Map();
+            }
           }
-        } else {
-          console.log(`No valid ObjectIds found in ${fieldName} array. Original array:`, JSON.stringify(reportingToField));
+          if (userMap && userMap.size > 0) {
+            populated[fieldName] = resolveReportingToWithUserMap(reportingToField, userMap);
+          }
         }
       }
     } catch (error) {
-      console.error('Error populating users in reporting_to:', error);
-      console.error('Error details:', error.message, error.stack);
-      // Keep original IDs if population fails
+      console.error('Error populating users in reporting_to:', error.message);
     }
   }
 
   return populated;
 };
+
+const EMPLOYEE_SUMMARY_SELECT =
+  '_id emp_no employee_name division_id department_id designation_id employee_group_id is_active leftDate profilePhoto dob phone_number email';
+
+const mapSummaryEmployeeRow = (emp) => ({
+  _id: emp._id,
+  emp_no: emp.emp_no,
+  employee_name: emp.employee_name,
+  division_id: emp.division_id,
+  department_id: emp.department_id,
+  designation_id: emp.designation_id,
+  employee_group_id: emp.employee_group_id,
+  division: emp.division_id,
+  department: emp.department_id,
+  designation: emp.designation_id,
+  employee_group: emp.employee_group_id,
+  is_active: emp.is_active,
+  leftDate: emp.leftDate,
+  profilePhoto: emp.profilePhoto,
+  dob: emp.dob,
+  phone_number: emp.phone_number,
+  email: emp.email,
+});
+
+const applyDepartmentIdFilter = (filters, department_id, department_ids) => {
+  const raw = department_ids || department_id;
+  if (!raw) return;
+  const ids = String(raw)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (ids.length === 1) {
+    filters.department_id = ids[0];
+  } else if (ids.length > 1) {
+    filters.department_id = { $in: ids };
+  }
+};
+
+const buildActiveEmployeeFilters = (reqQuery, scopeFilter) => {
+  const {
+    is_active,
+    division_id,
+    divisionId,
+    department_id,
+    department_ids,
+    designation_id,
+    employee_group_id,
+    includeLeft,
+    startDate,
+    endDate,
+    search,
+  } = reqQuery;
+
+  const filters = { ...scopeFilter };
+  if (is_active !== undefined) filters.is_active = is_active === 'true';
+  if (division_id || divisionId) filters.division_id = division_id || divisionId;
+  applyDepartmentIdFilter(filters, department_id, department_ids);
+  if (designation_id) filters.designation_id = designation_id;
+  if (employee_group_id) filters.employee_group_id = employee_group_id;
+
+  if (search) {
+    const searchRegex = new RegExp(search, 'i');
+    filters.$or = [
+      { emp_no: searchRegex },
+      { employee_name: searchRegex },
+      { phone_number: searchRegex },
+      { email: searchRegex },
+    ];
+  }
+
+  if (startDate && endDate) {
+    const rangeStart = new Date(startDate);
+    const rangeEnd = new Date(endDate);
+    if (!Number.isNaN(rangeStart.getTime()) && !Number.isNaN(rangeEnd.getTime())) {
+      rangeStart.setUTCHours(0, 0, 0, 0);
+      rangeEnd.setUTCHours(23, 59, 59, 999);
+      filters.$and = filters.$and || [];
+      filters.$and.push({ $or: [{ doj: null }, { doj: { $lte: rangeEnd } }] });
+      filters.$and.push({ $or: [{ leftDate: null }, { leftDate: { $gte: rangeStart } }] });
+    }
+  } else if (includeLeft !== 'true') {
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+    filters.$and = filters.$and || [];
+    filters.$and.push({ $or: [{ leftDate: null }, { leftDate: { $gte: startOfToday } }] });
+  }
+
+  return filters;
+};
+
+const mapFullEmployeeListRow = (transformed) => ({
+  ...transformed,
+  division: transformed.division_id,
+  department: transformed.department_id,
+  designation: transformed.designation_id,
+  employee_group: transformed.employee_group_id,
+  paidLeaves:
+    transformed.paidLeaves !== undefined && transformed.paidLeaves !== null
+      ? Number(transformed.paidLeaves)
+      : 0,
+  allottedLeaves:
+    transformed.allottedLeaves !== undefined && transformed.allottedLeaves !== null
+      ? Number(transformed.allottedLeaves)
+      : 0,
+  employeeAllowances: transformed.employeeAllowances || [],
+  employeeDeductions: transformed.employeeDeductions || [],
+  ctcSalary:
+    transformed.ctcSalary !== undefined && transformed.ctcSalary !== null
+      ? Number(transformed.ctcSalary)
+      : null,
+  calculatedSalary:
+    transformed.calculatedSalary !== undefined && transformed.calculatedSalary !== null
+      ? Number(transformed.calculatedSalary)
+      : null,
+});
 
 /**
  * Transform employee data for API response
@@ -342,7 +431,7 @@ const populateUsersInDynamicFields = async (dynamicFields) => {
  * @param {Boolean} populateUsers - Whether to populate user ObjectIds in dynamicFields
  * @returns {Object} Transformed employee data
  */
-const transformEmployeeForResponse = async (employee, populateUsers = true) => {
+const transformEmployeeForResponse = async (employee, populateUsers = true, prefetchedUserMap = null) => {
   if (!employee) return null;
 
   const plainObj = toPlainObject(employee);
@@ -351,7 +440,7 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
   // Populate users in dynamicFields if needed
   let populatedDynamicFields = dynamicFields || {};
   if (populateUsers && dynamicFields) {
-    populatedDynamicFields = await populateUsersInDynamicFields(dynamicFields);
+    populatedDynamicFields = await populateUsersInDynamicFields(dynamicFields, prefetchedUserMap);
   }
 
   const salariesOut =
@@ -408,8 +497,10 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
   if (populateUsers && rootReportingTo && Array.isArray(rootReportingTo) && rootReportingTo.length > 0) {
     const isAlreadyPopulated = rootReportingTo[0] && typeof rootReportingTo[0] === 'object' && rootReportingTo[0].name;
     if (!isAlreadyPopulated) {
-      // Populate reporting_to at root level
-      const populatedRoot = await populateUsersInDynamicFields({ reporting_to: rootReportingTo });
+      const populatedRoot = await populateUsersInDynamicFields(
+        { reporting_to: rootReportingTo },
+        prefetchedUserMap
+      );
       merged.reporting_to = populatedRoot.reporting_to;
       // Also update in dynamicFields
       if (merged.dynamicFields) {
@@ -431,150 +522,64 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
 exports.getAllEmployees = async (req, res) => {
   try {
     const {
-      is_active,
-      division_id,
-      divisionId,
-      department_id,
-      designation_id,
-      employee_group_id,
-      includeLeft,
-      startDate,
-      endDate,
       page = 1,
       limit = 50,
-      search,
+      view = 'full',
     } = req.query;
-    const { scopeFilter } = req; // Get scope filter from data scope middleware
+    const { scopeFilter } = req;
     const settings = await getEmployeeSettings();
+    const isSummaryView = view === 'summary';
 
     let employees = [];
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const limitNum = parseInt(limit, 10);
+    const pageNum = parseInt(page, 10);
+    const skip = (pageNum - 1) * limitNum;
+    const filters = buildActiveEmployeeFilters(req.query, scopeFilter);
 
-    // Build filters - merge scope filter with query filters
-    const filters = { ...scopeFilter };
-    if (is_active !== undefined) filters.is_active = is_active === 'true';
-    if (division_id || divisionId) filters.division_id = division_id || divisionId;
-    if (department_id) filters.department_id = department_id;
-    if (designation_id) filters.designation_id = designation_id;
-    if (employee_group_id) filters.employee_group_id = employee_group_id;
+    const query = { ...filters };
 
-    // Search functionality
-    if (search) {
-      const searchRegex = new RegExp(search, 'i');
-      filters.$or = [
-        { emp_no: searchRegex },
-        { employee_name: searchRegex },
-        { phone_number: searchRegex },
-        { email: searchRegex }
-      ];
-    }
+    const total = await Employee.countDocuments(query);
 
-    // If a date range is provided (e.g. shift roster payroll cycle), include employees
-    // whose employment overlaps that period.
-    if (startDate && endDate) {
-      const rangeStart = new Date(startDate);
-      const rangeEnd = new Date(endDate);
-      if (!Number.isNaN(rangeStart.getTime()) && !Number.isNaN(rangeEnd.getTime())) {
-        rangeStart.setUTCHours(0, 0, 0, 0);
-        rangeEnd.setUTCHours(23, 59, 59, 999);
-        filters.$and = filters.$and || [];
-        // Employee should have joined by range end
-        filters.$and.push({ $or: [{ doj: null }, { doj: { $lte: rangeEnd } }] });
-        // Employee should not have left before range start
-        filters.$and.push({ $or: [{ leftDate: null }, { leftDate: { $gte: rangeStart } }] });
-      }
-    } else if (includeLeft !== 'true') {
-      // By default, show only currently active: no leftDate or leftDate on/after today
-      const startOfToday = new Date();
-      startOfToday.setUTCHours(0, 0, 0, 0);
-      filters.$and = filters.$and || [];
-      filters.$and.push({ $or: [{ leftDate: null }, { leftDate: { $gte: startOfToday } }] });
-    }
+    let employeeQuery = Employee.find(query)
+      .populate('division_id', 'name code')
+      .populate('department_id', 'name code')
+      .populate('designation_id', 'name code')
+      .populate('employee_group_id', 'name code isActive')
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION)
+      .skip(skip)
+      .limit(limitNum);
 
-    console.log('[Employee Controller] Scope filters:', filters);
-
-    let total = 0;
-
-    // Fetch based on data source setting
-    if (settings.dataSource === 'mssql' && isHRMSConnected()) {
-      // Fetch from MSSQL
-      const mssqlEmployees = await getAllEmployeesMSSQL(filters);
-      total = mssqlEmployees.length;
-      const sortedAll = [...mssqlEmployees].sort((a, b) => compareEmpNo(a.emp_no, b.emp_no));
-      const sortedMssql = sortedAll.slice(skip, skip + parseInt(limit));
-
-      // Resolve names/refs for MSSQL employees
-      const resolved = await resolveEmployeeReferences(sortedMssql);
-
-      // MERGE with MongoDB data for fields not in SQL (allowances, dynamicFields, etc.)
-      const empNos = resolved.map(e => e.emp_no);
-      const mongoMatches = await Employee.find({ emp_no: { $in: empNos } });
-      const mongoMap = new Map(mongoMatches.map(m => [m.emp_no, m]));
-
-      employees = await Promise.all(resolved.map(async (mssqlEmp) => {
-        const mongoEmp = mongoMap.get(mssqlEmp.emp_no);
-        if (!mongoEmp) return mssqlEmp;
-
-        // Transform MongoDB extra data
-        const transformed = await transformEmployeeForResponse(mongoEmp, true);
-
-        // Merge: MSSQL fields take priority for core fields, MongoDB for extra ones
-        return {
-          ...transformed,
-          ...mssqlEmp,
-          // Explicitly ensure MongoDB-only fields are preserved if transformed had them
-          employeeAllowances: transformed.employeeAllowances || [],
-          employeeDeductions: transformed.employeeDeductions || [],
-          dynamicFields: transformed.dynamicFields || {},
-          paidLeaves: mssqlEmp.paidLeaves ?? transformed.paidLeaves ?? 0,
-          allottedLeaves: mssqlEmp.allottedLeaves ?? transformed.allottedLeaves ?? 0,
-          ctcSalary: mssqlEmp.ctc_salary ?? transformed.ctcSalary ?? null,
-          calculatedSalary: mssqlEmp.calculated_salary ?? transformed.calculatedSalary ?? null,
-        };
-      }));
+    if (isSummaryView) {
+      employeeQuery = employeeQuery.select(EMPLOYEE_SUMMARY_SELECT).lean();
     } else {
-      // Fetch from MongoDB (default)
-      const query = { ...filters };
+      employeeQuery = employeeQuery.lean();
+    }
 
-      total = await Employee.countDocuments(query);
-      const mongoEmployees = await Employee.find(query)
-        .populate('division_id', 'name code')
-        .populate('department_id', 'name code')
-        .populate('designation_id', 'name code')
-        .populate('employee_group_id', 'name code isActive')
-        .sort(EMP_NO_SORT)
-        .collation(EMP_NO_COLLATION)
-        .skip(skip)
-        .limit(parseInt(limit));
+    const mongoEmployees = await employeeQuery;
 
-      // Transform employees with user population
-      employees = await Promise.all(mongoEmployees.map(async (emp) => {
-        const transformed = await transformEmployeeForResponse(emp, true);
-        return {
-          ...transformed,
-          division: transformed.division_id,
-          department: transformed.department_id,
-          designation: transformed.designation_id,
-          employee_group: transformed.employee_group_id,
-          paidLeaves: transformed.paidLeaves !== undefined && transformed.paidLeaves !== null ? Number(transformed.paidLeaves) : 0,
-          allottedLeaves: transformed.allottedLeaves !== undefined && transformed.allottedLeaves !== null ? Number(transformed.allottedLeaves) : 0,
-          employeeAllowances: transformed.employeeAllowances || [],
-          employeeDeductions: transformed.employeeDeductions || [],
-          ctcSalary: transformed.ctcSalary !== undefined && transformed.ctcSalary !== null ? Number(transformed.ctcSalary) : null,
-          calculatedSalary: transformed.calculatedSalary !== undefined && transformed.calculatedSalary !== null ? Number(transformed.calculatedSalary) : null,
-        };
-      }));
+    if (isSummaryView) {
+      employees = mongoEmployees.map(mapSummaryEmployeeRow);
+    } else {
+      const userMap = await buildUserMapForEmployeeDocs(mongoEmployees);
+      employees = await Promise.all(
+        mongoEmployees.map(async (emp) => {
+          const transformed = await transformEmployeeForResponse(emp, true, userMap);
+          return mapFullEmployeeListRow(transformed);
+        })
+      );
     }
 
     res.status(200).json({
       success: true,
       count: employees.length,
+      view: isSummaryView ? 'summary' : 'full',
       dataSource: settings.dataSource,
       pagination: {
         total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(total / parseInt(limit))
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum) || 1,
       },
       data: employees,
     });
@@ -595,7 +600,7 @@ exports.getAllEmployees = async (req, res) => {
  */
 exports.getBirthdaysSummary = async (req, res) => {
   try {
-    const { includeLeft } = req.query;
+    const { includeLeft, today } = req.query;
     const scopeFilter = req.scopeFilter || {};
     const settings = await getEmployeeSettings();
 
@@ -607,6 +612,16 @@ exports.getBirthdaysSummary = async (req, res) => {
       filters.$and.push({ $or: [{ leftDate: null }, { leftDate: { $gte: startOfToday } }] });
     }
     filters.dob = { $exists: true, $ne: null };
+
+    if (today === 'true') {
+      const now = new Date();
+      filters.$expr = {
+        $and: [
+          { $eq: [{ $month: '$dob' }, now.getMonth() + 1] },
+          { $eq: [{ $dayOfMonth: '$dob' }, now.getDate()] },
+        ],
+      };
+    }
 
     const mapMongoBirthdayRow = (emp) => ({
       _id: emp._id,
@@ -621,48 +636,16 @@ exports.getBirthdaysSummary = async (req, res) => {
       designation: emp.designation_id,
     });
 
-    let data = [];
-
-    if (settings.dataSource === 'mssql' && isHRMSConnected()) {
-      const mssqlEmployees = await getAllEmployeesMSSQL(filters);
-      const withDob = mssqlEmployees.filter((e) => {
-        const v = e.dob;
-        return v != null && String(v).trim() !== '';
-      });
-      const resolved = await resolveEmployeeReferences(withDob);
-      const empNos = resolved.map((e) => e.emp_no).filter(Boolean);
-      let mongoMap = new Map();
-      if (empNos.length > 0) {
-        const mongoMatches = await Employee.find({ emp_no: { $in: empNos } }).select('_id emp_no').lean();
-        mongoMap = new Map(mongoMatches.map((m) => [m.emp_no, m]));
-      }
-      data = resolved.map((row) => {
-        const m = mongoMap.get(row.emp_no);
-        return {
-          _id: m?._id || null,
-          emp_no: row.emp_no,
-          employee_name: row.employee_name,
-          dob: row.dob,
-          division_id: row.division_id,
-          department_id: row.department_id,
-          designation_id: row.designation_id,
-          division: row.division,
-          department: row.department,
-          designation: row.designation,
-        };
-      });
-    } else {
-      const query = { ...filters };
-      const mongoEmployees = await Employee.find(query)
-        .select('_id emp_no employee_name dob division_id department_id designation_id')
-        .populate('division_id', 'name code')
-        .populate('department_id', 'name code')
-        .populate('designation_id', 'name code')
-        .sort(EMP_NO_SORT)
-        .collation(EMP_NO_COLLATION)
-        .lean();
-      data = mongoEmployees.map(mapMongoBirthdayRow);
-    }
+    const query = { ...filters };
+    const mongoEmployees = await Employee.find(query)
+      .select('_id emp_no employee_name dob division_id department_id designation_id')
+      .populate('division_id', 'name code')
+      .populate('department_id', 'name code')
+      .populate('designation_id', 'name code')
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION)
+      .lean();
+    const data = mongoEmployees.map(mapMongoBirthdayRow);
 
     res.status(200).json({
       success: true,
@@ -692,58 +675,27 @@ exports.getEmployee = async (req, res) => {
 
     let employee = null;
 
-    if (settings.dataSource === 'mssql' && isHRMSConnected()) {
-      const mssqlEmployee = await getEmployeeByIdMSSQL(empNo);
-      if (mssqlEmployee) {
-        const resolved = await resolveEmployeeReferences([mssqlEmployee]);
-        const baseEmployee = resolved[0];
+    const mongoEmployee = await Employee.findOne({ emp_no: empNo })
+      .populate('division_id', 'name code')
+      .populate('department_id', 'name code')
+      .populate('designation_id', 'name code')
+      .populate('employee_group_id', 'name code isActive');
 
-        // Fetch extra fields from MongoDB
-        const mongoEmployee = await Employee.findOne({ emp_no: empNo })
-          .populate('division_id', 'name code')
-          .populate('department_id', 'name code')
-          .populate('designation_id', 'name code')
-          .populate('employee_group_id', 'name code isActive');
-
-        if (mongoEmployee) {
-          const transformed = await transformEmployeeForResponse(mongoEmployee, true);
-          employee = {
-            ...transformed,
-            ...baseEmployee,
-            employeeAllowances: transformed.employeeAllowances || [],
-            employeeDeductions: transformed.employeeDeductions || [],
-            ctcSalary: baseEmployee.gross_salary !== undefined ? transformed.ctcSalary : (transformed.ctcSalary || null),
-            calculatedSalary: baseEmployee.gross_salary !== undefined ? transformed.calculatedSalary : (transformed.calculatedSalary || null),
-          };
-        } else {
-          employee = baseEmployee;
-        }
-      }
-    } else {
-      const mongoEmployee = await Employee.findOne({ emp_no: empNo })
-        .populate('division_id', 'name code')
-        .populate('department_id', 'name code')
-        .populate('designation_id', 'name code')
-        .populate('employee_group_id', 'name code isActive');
-
-      if (mongoEmployee) {
-        const transformed = await transformEmployeeForResponse(mongoEmployee, true);
-        employee = {
-          ...transformed,
-          division: transformed.division_id,
-          department: transformed.department_id,
-          designation: transformed.designation_id,
-          employee_group: transformed.employee_group_id,
-          // Explicitly ensure paidLeaves and allottedLeaves are included
-          paidLeaves: transformed.paidLeaves !== undefined && transformed.paidLeaves !== null ? Number(transformed.paidLeaves) : 0,
-          allottedLeaves: transformed.allottedLeaves !== undefined && transformed.allottedLeaves !== null ? Number(transformed.allottedLeaves) : 0,
-          // Explicitly include allowances, deductions, and calculated salaries
-          employeeAllowances: transformed.employeeAllowances || [],
-          employeeDeductions: transformed.employeeDeductions || [],
-          ctcSalary: transformed.ctcSalary !== undefined && transformed.ctcSalary !== null ? Number(transformed.ctcSalary) : null,
-          calculatedSalary: transformed.calculatedSalary !== undefined && transformed.calculatedSalary !== null ? Number(transformed.calculatedSalary) : null,
-        };
-      }
+    if (mongoEmployee) {
+      const transformed = await transformEmployeeForResponse(mongoEmployee, true);
+      employee = {
+        ...transformed,
+        division: transformed.division_id,
+        department: transformed.department_id,
+        designation: transformed.designation_id,
+        employee_group: transformed.employee_group_id,
+        paidLeaves: transformed.paidLeaves !== undefined && transformed.paidLeaves !== null ? Number(transformed.paidLeaves) : 0,
+        allottedLeaves: transformed.allottedLeaves !== undefined && transformed.allottedLeaves !== null ? Number(transformed.allottedLeaves) : 0,
+        employeeAllowances: transformed.employeeAllowances || [],
+        employeeDeductions: transformed.employeeDeductions || [],
+        ctcSalary: transformed.ctcSalary !== undefined && transformed.ctcSalary !== null ? Number(transformed.ctcSalary) : null,
+        calculatedSalary: transformed.calculatedSalary !== undefined && transformed.calculatedSalary !== null ? Number(transformed.calculatedSalary) : null,
+      };
     }
 
     if (!employee) {
@@ -870,8 +822,6 @@ exports.createEmployee = async (req, res) => {
         message: groupErrCreate.error,
       });
     }
-
-    const results = { mongodb: false, mssql: false };
 
     // Separate permanent fields and dynamicFields
     const permanentFields = extractPermanentFields(employeeData);
@@ -1008,9 +958,8 @@ exports.createEmployee = async (req, res) => {
     // Generate password
     const rawPassword = await generatePassword(employeeData, passwordMode || null);
 
-    // Create in MongoDB (MANDATORY)
     try {
-      const mongoEmployee = await Employee.create({
+      await Employee.create({
         ...permanentFields,
         qualifications, // Explicitly save resolved qualifications
         dynamicFields: Object.keys(dynamicFields).length > 0 ? dynamicFields : {},
@@ -1020,32 +969,13 @@ exports.createEmployee = async (req, res) => {
         password: rawPassword, // Will be hashed by pre-save hook
         plain_password: rawPassword, // Store raw password for credential resend
       });
-      results.mongodb = true;
     } catch (mongoError) {
       console.error('MongoDB create error:', mongoError);
       return res.status(500).json({
         success: false,
-        message: 'Failed to create employee in MongoDB',
+        message: 'Failed to create employee',
         error: mongoError.message,
       });
-    }
-
-    // Create in MSSQL (OPTIONAL/FAIL-SAFE)
-    if (isHRMSConnected()) {
-      try {
-        await createEmployeeMSSQL({
-          ...permanentFields,
-          emp_no: String(employeeData.emp_no || '').toUpperCase(),
-          department_id: permanentFields.department_id?.toString() || null,
-          designation_id: permanentFields.designation_id?.toString() || null,
-        });
-        results.mssql = true;
-      } catch (mssqlError) {
-        console.error('MSSQL create error (non-blocking):', mssqlError.message);
-        // We don't return error here because MongoDB succeeded
-      }
-    } else {
-      console.warn('MSSQL not connected, skipping employee sync (non-blocking)');
     }
 
     // Fetch the created employee
@@ -1068,10 +998,7 @@ exports.createEmployee = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: results.mssql
-        ? 'Employee created successfully in both databases'
-        : 'Employee created successfully in MongoDB. MSSQL sync skipped/failed.',
-      savedTo: results,
+      message: 'Employee created successfully',
       leaveInitialization: leaveInitResults,
       notificationResults,
       data: createdEmployee,
@@ -1464,9 +1391,6 @@ exports.updateEmployee = async (req, res) => {
       qualifications = existingEmployee.qualifications || [];
     }
 
-    const results = { mongodb: false, mssql: false };
-
-    // Update in MongoDB (MANDATORY)
     try {
       // Ensure paidLeaves is explicitly set (even if 0)
       const updateData = {
@@ -1551,41 +1475,13 @@ exports.updateEmployee = async (req, res) => {
         updateData,
         { new: true }
       );
-      results.mongodb = true;
     } catch (mongoError) {
       console.error('MongoDB update error:', mongoError);
       return res.status(500).json({
         success: false,
-        message: 'Failed to update employee in MongoDB',
+        message: 'Failed to update employee',
         error: mongoError.message,
       });
-    }
-
-    // Update in MSSQL (OPTIONAL/FAIL-SAFE)
-    let mssqlSyncError = null;
-
-    // Update in MSSQL (OPTIONAL/FAIL-SAFE)
-    if (isHRMSConnected()) {
-      try {
-        const mssqlUpdateData = { ...permanentFields };
-        if (permanentFields.department_id !== undefined) {
-          mssqlUpdateData.department_id = permanentFields.department_id?.toString() || null;
-        }
-        if (permanentFields.designation_id !== undefined) {
-          mssqlUpdateData.designation_id = permanentFields.designation_id?.toString() || null;
-        }
-        await updateEmployeeMSSQL(empNo, mssqlUpdateData);
-        results.mssql = true;
-      } catch (mssqlError) {
-        console.error('MSSQL update error (non-blocking):', mssqlError);
-        mssqlSyncError = {
-          message: mssqlError.message,
-          code: mssqlError.code,
-          originalError: mssqlError.originalError ? mssqlError.originalError.message : null
-        };
-      }
-    } else {
-      console.warn('MSSQL not connected, skipping employee update sync (non-blocking)');
     }
 
     // Fetch updated employee
@@ -1694,11 +1590,7 @@ exports.updateEmployee = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: results.mssql
-        ? 'Employee updated successfully in both databases'
-        : 'Employee updated successfully in MongoDB. MSSQL sync skipped/failed.',
-      savedTo: results,
-      syncError: mssqlSyncError,
+      message: 'Employee updated successfully',
       data: updatedEmployee,
     });
   } catch (error) {
@@ -1719,49 +1611,21 @@ exports.updateEmployee = async (req, res) => {
 exports.deleteEmployee = async (req, res) => {
   try {
     const { empNo } = req.params;
-    const settings = await getEmployeeSettings();
 
-    // Check if employee exists
     const existingEmployee = await Employee.findOne({ emp_no: empNo });
-    const existsMSSql = isHRMSConnected() ? await employeeExistsMSSQL(empNo) : false;
 
-    if (!existingEmployee && !existsMSSql) {
+    if (!existingEmployee) {
       return res.status(404).json({
         success: false,
         message: 'Employee not found',
       });
     }
 
-    const results = { mongodb: false, mssql: false };
-
-    // Delete based on settings
-    if (settings.deleteTarget === 'mongodb' || settings.deleteTarget === 'both') {
-      try {
-        if (existingEmployee) {
-          await Employee.findOneAndDelete({ emp_no: empNo });
-          results.mongodb = true;
-        }
-      } catch (mongoError) {
-        console.error('MongoDB delete error:', mongoError);
-      }
-    }
-
-    if (settings.deleteTarget === 'mssql' || settings.deleteTarget === 'both') {
-      if (isHRMSConnected()) {
-        try {
-          await deleteEmployeeMSSQL(empNo);
-          results.mssql = true;
-        } catch (mssqlError) {
-          console.error('MSSQL delete error:', mssqlError);
-        }
-      }
-    }
+    await Employee.findOneAndDelete({ emp_no: empNo });
 
     res.status(200).json({
       success: true,
       message: 'Employee deleted successfully',
-      deletedFrom: results,
-      deleteTarget: settings.deleteTarget,
     });
   } catch (error) {
     console.error('Error deleting employee:', error);
@@ -1811,14 +1675,10 @@ exports.getEmployeeCount = async (req, res) => {
 exports.getSettings = async (req, res) => {
   try {
     const settings = await getEmployeeSettings();
-    const mssqlConnected = isHRMSConnected();
 
     res.status(200).json({
       success: true,
-      data: {
-        ...settings,
-        mssqlConnected,
-      },
+      data: settings,
     });
   } catch (error) {
     console.error('Error getting employee settings:', error);
@@ -1837,11 +1697,9 @@ exports.getSettings = async (req, res) => {
  */
 exports.updateSettings = async (req, res) => {
   try {
-    const { dataSource, deleteTarget, auto_generate_employee_number } = req.body;
+    const { auto_generate_employee_number } = req.body;
 
     const updates = [
-      dataSource != null && { key: 'employee_data_source', value: dataSource },
-      deleteTarget != null && { key: 'employee_delete_target', value: deleteTarget },
       auto_generate_employee_number != null && { key: 'auto_generate_employee_number', value: !!auto_generate_employee_number },
     ].filter(Boolean);
 
@@ -2521,29 +2379,12 @@ exports.exportEmployees = async (req, res) => {
       }
     }));
 
-    // Multi-database handling
-    let cursor;
-    const settingsHelper = await getEmployeeSettings();
-    if (settingsHelper.dataSource === 'mssql' && isHRMSConnected()) {
-      // For MSSQL, we fetch all and create a stream-like behavior or just build CSV in memory if small
-      // Since streamingExportService.streamToCSV expects a mongoose cursor, we might need a workaround
-      // Or just fetch simplified MongoDB data if shared fields are enough.
-      // But user likely wants SQL data too.
-      // For now, let's support MongoDB streaming which covers 90% of cases and all dynamic fields.
-      cursor = Employee.find(filters)
-        .populate('division_id', 'name')
-        .populate('department_id', 'name')
-        .populate('designation_id', 'name')
-        .populate('employee_group_id', 'name')
-        .cursor();
-    } else {
-      cursor = Employee.find(filters)
-        .populate('division_id', 'name')
-        .populate('department_id', 'name')
-        .populate('designation_id', 'name')
-        .populate('employee_group_id', 'name')
-        .cursor();
-    }
+    const cursor = Employee.find(filters)
+      .populate('division_id', 'name')
+      .populate('department_id', 'name')
+      .populate('designation_id', 'name')
+      .populate('employee_group_id', 'name')
+      .cursor();
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=employees_export_${Date.now()}.csv`);
@@ -2558,3 +2399,9 @@ exports.exportEmployees = async (req, res) => {
     }
   }
 };
+
+// Exported for performance unit tests
+exports.buildActiveEmployeeFilters = buildActiveEmployeeFilters;
+exports.mapSummaryEmployeeRow = mapSummaryEmployeeRow;
+exports.applyDepartmentIdFilter = applyDepartmentIdFilter;
+exports.buildUserMapForEmployeeDocs = buildUserMapForEmployeeDocs;

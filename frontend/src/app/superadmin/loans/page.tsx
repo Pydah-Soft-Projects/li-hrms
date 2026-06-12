@@ -1223,7 +1223,7 @@ export default function LoansPage() {
         }
       } else {
         // For HOD/HR/Admin: Load all employees
-        const response = await api.getEmployees({ is_active: true, limit: 10000 });
+        const response = await api.getEmployeesSummary({ is_active: true, limit: 100, page: 1 });
         if (response.success && response.data) {
           setEmployees(response.data || []);
         }

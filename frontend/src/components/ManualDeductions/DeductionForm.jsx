@@ -81,7 +81,7 @@ const DeductionForm = ({ open, onClose, onSubmit, employees = [] }) => {
   }, [deductionType, attendanceData, formData.monthlyAmount, formData.startMonth, formData.endMonth]);
 
   const loadEmployees = () => {
-    api.getEmployees({ is_active: true }).then((r) => { if (r.success) setLocalEmployees(r.data || []); }).catch(() => {});
+    api.getEmployeesSummary({ is_active: true, limit: 500, page: 1 }).then((r) => { if (r.success) setLocalEmployees(r.data || []); }).catch(() => {});
   };
 
   const validateForm = () => {

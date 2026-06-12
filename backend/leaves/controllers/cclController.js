@@ -15,8 +15,6 @@ const User = require('../../users/model/User');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Department = require('../../departments/model/Department');
-const Settings = require('../../settings/model/Settings');
-const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const {
   buildWorkflowVisibilityFilter,
   getEmployeeIdsInScope,
@@ -25,42 +23,9 @@ const {
 const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const { createISTDate } = require('../../shared/utils/dateUtils');
 
-const getEmployeeSettings = async () => {
-  try {
-    const dataSourceSetting = await Settings.findOne({ key: 'employee_data_source' });
-    return { dataSource: dataSourceSetting?.value || 'mongodb' };
-  } catch (error) {
-    return { dataSource: 'mongodb' };
-  }
-};
-
 const findEmployeeByEmpNo = async (empNo) => {
   if (!empNo) return null;
-  let employee = await Employee.findOne({ emp_no: String(empNo).trim().toUpperCase() });
-  if (employee) return employee;
-  const settings = await getEmployeeSettings();
-  if ((settings.dataSource === 'mssql' || settings.dataSource === 'both') && isHRMSConnected()) {
-    try {
-      const mssqlEmployee = await getEmployeeByIdMSSQL(empNo);
-      if (mssqlEmployee) {
-        employee = new Employee({
-          emp_no: mssqlEmployee.emp_no,
-          employee_name: mssqlEmployee.employee_name,
-          department_id: mssqlEmployee.department_id || null,
-          designation_id: mssqlEmployee.designation_id || null,
-          division_id: mssqlEmployee.division_id || null,
-          doj: mssqlEmployee.doj || null,
-          dob: mssqlEmployee.dob || null,
-          is_active: mssqlEmployee.is_active !== false,
-        });
-        await employee.save();
-        return employee;
-      }
-    } catch (err) {
-      console.error('[CCL] Error syncing from MSSQL:', err);
-    }
-  }
-  return null;
+  return Employee.findOne({ emp_no: String(empNo).trim().toUpperCase() });
 };
 
 const findEmployeeByIdOrEmpNo = async (identifier) => {

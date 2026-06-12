@@ -10,7 +10,6 @@ const {
 } = require('./contributingDatesService');
 const { recalculatePayRegisterAttendanceDeduction } = require('./payRegisterAttendanceDeductionService');
 const { getPayrollDateRange, extractISTComponents, getAllDatesInRange } = require('../../shared/utils/dateUtils');
-const { syncAttendanceFromMSSQL } = require('../../attendance/services/attendanceSyncService');
 const summaryCalculationService = require('../../attendance/services/summaryCalculationService');
 const { assertEmployeeMonthEditable } = require('../../shared/services/payrollPeriodLockService');
 
@@ -397,17 +396,6 @@ async function manualSyncPayRegister(employeeId, month, options = {}) {
       throw new Error('Employee not found');
     }
 
-    // CRITICAL: First trigger attendance sync from biometric source for THIS specific payroll range
-    // This ensures any spanned dates (e.g. 26th-31st) are updated in MongoDB before we read them
-    try {
-      const from = new Date(startDate);
-      const to = new Date(endDate);
-      await syncAttendanceFromMSSQL(from, to);
-    } catch (syncErr) {
-      console.warn(`[SyncAll] MSSQL sync failed for range ${startDate} to ${endDate}:`, syncErr.message);
-      // Continue anyway, maybe data is already in MongoDB or sync is not available
-    }
-
     const dailyRecords = await populatePayRegisterFromSources(
       employeeId,
       employee.emp_no,
@@ -499,11 +487,131 @@ async function ensurePayRegisterForPayroll(employeeId, month) {
   return manualSyncPayRegister(employeeId, month, { force: false });
 }
 
+function isPayrollBatchCompletedError(error) {
+  const msg = String(error?.message || '').toLowerCase();
+  return (
+    error?.code === 'PAYROLL_BATCH_COMPLETED' ||
+    error?.reason === 'payroll_batch_completed' ||
+    msg.includes('payroll batch is completed')
+  );
+}
+
+/**
+ * Sync pay registers for many employees in one job (parallel per-employee rebuild from MongoDB sources).
+ */
+async function bulkManualSyncPayRegister(month, options = {}) {
+  const {
+    employeeQuery,
+    employeeIds: explicitIds,
+    forceEmployeeIds = [],
+    concurrency = 20,
+    onProgress,
+  } = options;
+
+  const emitProgress = (payload) => {
+    if (typeof onProgress === 'function') onProgress(payload);
+  };
+
+  const started = process.hrtime.bigint();
+
+  const Employee = require('../../employees/model/Employee');
+  let targetIds = Array.isArray(explicitIds) ? explicitIds.map(String).filter(Boolean) : [];
+  if (!targetIds.length && employeeQuery) {
+    emitProgress({ phase: 'prepare', completed: 0, total: 0 });
+    const rows = await Employee.find(employeeQuery).select('_id').lean();
+    targetIds = rows.map((r) => String(r._id));
+  }
+
+  emitProgress({ phase: 'prepare', completed: 0, total: targetIds.length });
+
+  const forceSet = new Set(forceEmployeeIds.map(String));
+  const result = {
+    month,
+    total: targetIds.length,
+    synced: 0,
+    skippedLocked: 0,
+    skippedPayrollCompleted: 0,
+    failed: [],
+    perEmployeeMs: 0,
+    durationMs: 0,
+  };
+
+  if (!targetIds.length) {
+    result.durationMs = Number(process.hrtime.bigint() - started) / 1e6;
+    return result;
+  }
+
+  let cursor = 0;
+  let processed = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), 30, targetIds.length);
+
+  emitProgress({
+    phase: 'sync',
+    completed: 0,
+    total: targetIds.length,
+    synced: 0,
+    skippedLocked: 0,
+    skippedPayrollCompleted: 0,
+    failedCount: 0,
+  });
+
+  const runWorker = async () => {
+    for (;;) {
+      const idx = cursor++;
+      if (idx >= targetIds.length) break;
+      const employeeId = targetIds[idx];
+      try {
+        const existing = await PayRegisterSummary.findOne({ employeeId, month })
+          .select('summaryLocked')
+          .lean();
+        if (existing?.summaryLocked && !forceSet.has(employeeId)) {
+          result.skippedLocked += 1;
+        } else {
+          await manualSyncPayRegister(employeeId, month, {
+            force: forceSet.has(employeeId),
+          });
+          result.synced += 1;
+        }
+      } catch (error) {
+        if (isPayrollBatchCompletedError(error)) {
+          result.skippedPayrollCompleted += 1;
+        } else {
+          result.failed.push({
+            employeeId,
+            error: error.message || 'Sync failed',
+          });
+        }
+      } finally {
+        processed += 1;
+        emitProgress({
+          phase: 'sync',
+          completed: processed,
+          total: targetIds.length,
+          synced: result.synced,
+          skippedLocked: result.skippedLocked,
+          skippedPayrollCompleted: result.skippedPayrollCompleted,
+          failedCount: result.failed.length,
+        });
+      }
+    }
+  };
+
+  const syncStart = process.hrtime.bigint();
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  result.perEmployeeMs = Number(process.hrtime.bigint() - syncStart) / 1e6;
+  result.durationMs = Number(process.hrtime.bigint() - started) / 1e6;
+  result.avgMsPerEmployee =
+    targetIds.length > 0 ? result.perEmployeeMs / targetIds.length : 0;
+
+  return result;
+}
+
 module.exports = {
   syncPayRegisterFromLeave,
   syncPayRegisterFromOD,
   syncPayRegisterFromOT,
   manualSyncPayRegister,
+  bulkManualSyncPayRegister,
   ensurePayRegisterForPayroll,
   checkIfManuallyEdited,
 };

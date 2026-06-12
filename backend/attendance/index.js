@@ -13,7 +13,6 @@ const attendanceController = require('./controllers/attendanceController');
 const attendanceSettingsController = require('./controllers/attendanceSettingsController');
 const attendanceDeductionSettingsController = require('./controllers/attendanceDeductionSettingsController');
 const earlyOutSettingsController = require('./controllers/earlyOutSettingsController');
-const attendanceSyncController = require('./controllers/attendanceSyncController');
 const attendanceUploadController = require('./controllers/attendanceUploadController');
 const monthlySummaryController = require('./controllers/monthlySummaryController');
 const liveAttendanceReportController = require('./controllers/liveAttendanceReportController');
@@ -91,10 +90,6 @@ router.post(
   applyScopeFilter,
   attendanceShiftSegmentRefreshController.refreshShiftSegmentsBatch
 );
-
-// Sync Routes (Super Admin, Sub Admin only)
-router.post('/sync', authorize('super_admin', 'sub_admin'), attendanceSyncController.manualSync);
-router.get('/sync/status', attendanceSyncController.getSyncStatus);
 
 // Upload Routes (Super Admin, Sub Admin, HR)
 router.post('/upload', authorize('manager', 'super_admin', 'sub_admin', 'hr'), upload.single('file'), attendanceUploadController.uploadExcel);

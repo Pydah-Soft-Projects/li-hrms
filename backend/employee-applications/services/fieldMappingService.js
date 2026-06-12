@@ -8,7 +8,7 @@ const Employee = require('../../employees/model/Employee');
 
 /**
  * List of permanent field names in Employee model
- * These fields are stored in both MongoDB and MSSQL
+ * Permanent employee fields stored in MongoDB
  * Excludes: _id, __v, timestamps, virtuals, dynamicFields
  */
 const PERMANENT_FIELDS = [

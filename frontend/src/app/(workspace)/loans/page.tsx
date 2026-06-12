@@ -1150,6 +1150,26 @@ export default function LoansPage() {
     }
   };
 
+  useEffect(() => {
+    if (!currentUser || isEmployee) return;
+    const timer = setTimeout(async () => {
+      try {
+        const trimmed = employeeSearch.trim();
+        const response = await api.getEmployeesSummary(
+          trimmed
+            ? { is_active: true, search: trimmed, limit: 50, page: 1 }
+            : { is_active: true, limit: 100, page: 1 }
+        );
+        if (response.success) {
+          setEmployees(response.data || []);
+        }
+      } catch (err) {
+        console.error('Error searching employees:', err);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [employeeSearch, currentUser, isEmployee]);
+
   const loadEmployees = async () => {
     try {
       if (!currentUser) return;
@@ -1171,7 +1191,7 @@ export default function LoansPage() {
         }
       } else {
         // For HOD/HR/Admin: Load all employees
-        const response = await api.getEmployees({ is_active: true, limit: 10000 });
+        const response = await api.getEmployeesSummary({ is_active: true, limit: 100, page: 1 });
         if (response.success && response.data) {
           setEmployees(response.data || []);
         }

@@ -559,7 +559,7 @@ export default function SuperAdminResignationsPage() {
       try {
         const [settingsRes, empRes] = await Promise.all([
           api.getResignationSettings(),
-          api.getEmployees({ is_active: true, limit: 500, page: 1 }),
+          api.getEmployeesSummary({ is_active: true, limit: 500, page: 1 }),
         ]);
         if (cancelled) return;
         if (settingsRes.success && settingsRes.data) setResignationSettings(settingsRes.data);

@@ -1,6 +1,6 @@
 /**
  * MongoDB Employee Model
- * Mirrors the MSSQL employees table for dual database storage
+ * Employee master record (MongoDB)
  */
 
 const mongoose = require('mongoose');
@@ -443,7 +443,7 @@ employeeSchema.methods.getUnifiedData = function () {
   };
 };
 
-// Method to get only permanent fields (for MSSQL sync)
+// Method to get only permanent fields for persistence/export
 employeeSchema.methods.getPermanentFields = function () {
   const allFields = this.toObject({ virtuals: false });
   const { dynamicFields, _id, __v, ...permanentFields } = allFields;

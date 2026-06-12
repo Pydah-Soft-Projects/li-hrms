@@ -485,7 +485,6 @@ export interface ApiResponse<T> {
   qrSecret?: string;
   waitTime?: number;
   newPassword?: string;
-  syncError?: any;
   identifier?: string;
   generatedPassword?: string;
   summaries?: any[];
@@ -1304,6 +1303,29 @@ export interface HolidayHistoryRow {
   comments?: string | null;
   timestamp: string;
 }
+
+export type PayRegisterBulkSyncProgressCallback = (event: {
+  phase: 'prepare' | 'sync' | 'done' | 'error';
+  completed?: number;
+  total?: number;
+  synced?: number;
+  skippedLocked?: number;
+  skippedPayrollCompleted?: number;
+  failedCount?: number;
+  success?: boolean;
+  message?: string;
+  data?: {
+    month: string;
+    total: number;
+    synced: number;
+    skippedLocked: number;
+    skippedPayrollCompleted: number;
+    failed: Array<{ employeeId: string; error: string }>;
+    perEmployeeMs: number;
+    durationMs: number;
+    avgMsPerEmployee: number;
+  };
+}) => void;
 
 export type HolidaySaveProgressCallback = (event: {
   phase: 'saved' | 'cleanup' | 'apply' | 'done' | 'error';
@@ -2379,12 +2401,27 @@ export const api = {
   },
 
   getEmployees: async (
-    filters?: { is_active?: boolean; department_id?: string; division_id?: string; designation_id?: string; employee_group_id?: string; includeLeft?: boolean; search?: string; startDate?: string; endDate?: string; page?: number; limit?: number },
+    filters?: {
+      is_active?: boolean;
+      department_id?: string;
+      department_ids?: string;
+      division_id?: string;
+      designation_id?: string;
+      employee_group_id?: string;
+      includeLeft?: boolean;
+      search?: string;
+      startDate?: string;
+      endDate?: string;
+      page?: number;
+      limit?: number;
+      view?: 'full' | 'summary';
+    },
     fetchInit?: RequestInit
   ) => {
     const params = new URLSearchParams();
     if (filters?.is_active !== undefined) params.append('is_active', String(filters.is_active));
     if (filters?.department_id) params.append('department_id', filters.department_id);
+    if (filters?.department_ids) params.append('department_ids', filters.department_ids);
     if (filters?.division_id) params.append('division_id', filters.division_id);
     if (filters?.designation_id) params.append('designation_id', filters.designation_id);
     if (filters?.employee_group_id) params.append('employee_group_id', filters.employee_group_id);
@@ -2393,14 +2430,55 @@ export const api = {
     if (filters?.startDate) params.append('startDate', filters.startDate);
     if (filters?.endDate) params.append('endDate', filters.endDate);
     if (filters?.page) params.append('page', String(filters.page));
-    if (filters?.limit) params.append('limit', String(filters.limit));
+    if (filters?.limit !== undefined) params.append('limit', String(filters.limit));
+    if (filters?.view) params.append('view', filters.view);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/employees${query}`, { method: 'GET', ...fetchInit });
+  },
+
+  /** Lean employee list for dropdowns and reports (minimal fields, fast). */
+  getEmployeesSummary: async (
+    filters?: {
+      is_active?: boolean;
+      department_id?: string;
+      department_ids?: string;
+      division_id?: string;
+      designation_id?: string;
+      employee_group_id?: string;
+      includeLeft?: boolean;
+      search?: string;
+      startDate?: string;
+      endDate?: string;
+      page?: number;
+      limit?: number;
+    },
+    fetchInit?: RequestInit
+  ) => {
+    const params = new URLSearchParams();
+    params.append('view', 'summary');
+    if (filters?.is_active !== undefined) params.append('is_active', String(filters.is_active));
+    if (filters?.department_id) params.append('department_id', filters.department_id);
+    if (filters?.department_ids) params.append('department_ids', filters.department_ids);
+    if (filters?.division_id) params.append('division_id', filters.division_id);
+    if (filters?.designation_id) params.append('designation_id', filters.designation_id);
+    if (filters?.employee_group_id) params.append('employee_group_id', filters.employee_group_id);
+    if (filters?.includeLeft !== undefined) params.append('includeLeft', String(filters.includeLeft));
+    if (filters?.search) params.append('search', filters.search);
+    if (filters?.startDate) params.append('startDate', filters.startDate);
+    if (filters?.endDate) params.append('endDate', filters.endDate);
+    if (filters?.page) params.append('page', String(filters.page));
+    if (filters?.limit !== undefined) params.append('limit', String(filters.limit));
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/employees${query}`, { method: 'GET', ...fetchInit });
   },
 
   /** Scoped lean payload for birthday calendar (DOB + org refs only). */
-  getBirthdaysSummary: async (fetchInit?: RequestInit) => {
-    return apiRequest<any>('/employees/birthdays-summary', { method: 'GET', ...fetchInit });
+  getBirthdaysSummary: async (options?: { today?: boolean; includeLeft?: boolean }, fetchInit?: RequestInit) => {
+    const params = new URLSearchParams();
+    if (options?.today) params.append('today', 'true');
+    if (options?.includeLeft !== undefined) params.append('includeLeft', String(options.includeLeft));
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/employees/birthdays-summary${query}`, { method: 'GET', ...fetchInit });
   },
 
   getEmployee: async (empNo: string) => {
@@ -3936,18 +4014,6 @@ export const api = {
     });
   },
 
-  // Attendance Sync
-  manualSyncAttendance: async (fromDate?: string, toDate?: string) => {
-    return apiRequest<any>('/attendance/sync', {
-      method: 'POST',
-      body: JSON.stringify({ fromDate, toDate }),
-    });
-  },
-
-  getAttendanceSyncStatus: async () => {
-    return apiRequest<any>('/attendance/sync/status', { method: 'GET' });
-  },
-
   // Attendance Upload
   uploadAttendanceExcel: async (file: File) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -4885,11 +4951,123 @@ export const api = {
     });
   },
 
-  syncPayRegister: async (employeeId: string, month: string, opts?: { force?: boolean }) => {
+  syncPayRegister: async (
+    employeeId: string,
+    month: string,
+    opts?: { force?: boolean; minimal?: boolean }
+  ) => {
+    const body: Record<string, boolean> = {};
+    if (opts?.force) body.force = true;
+    if (opts?.minimal) body.minimal = true;
     return apiRequest<any>(`/pay-register/${employeeId}/${month}/sync`, {
       method: 'POST',
-      body: JSON.stringify(opts?.force ? { force: true } : {}),
+      body: JSON.stringify(body),
     });
+  },
+
+  bulkSyncPayRegister: async (
+    month: string,
+    body?: {
+      divisionIds?: string[];
+      departmentIds?: string[];
+      employeeGroupId?: string;
+      search?: string;
+      forceEmployeeIds?: string[];
+      concurrency?: number;
+    }
+  ) => {
+    return api.bulkSyncPayRegisterWithProgress(month, body);
+  },
+
+  bulkSyncPayRegisterWithProgress: async (
+    month: string,
+    body?: {
+      divisionIds?: string[];
+      departmentIds?: string[];
+      employeeGroupId?: string;
+      search?: string;
+      forceEmployeeIds?: string[];
+      concurrency?: number;
+    },
+    onProgress?: PayRegisterBulkSyncProgressCallback
+  ) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/x-ndjson, application/json',
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const response = await fetch(`${API_BASE_URL}/pay-register/bulk-sync/${month}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ...(body || {}), streamProgress: true }),
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('ndjson')) {
+      const json = await response.json();
+      if (!response.ok) {
+        return {
+          ...(typeof json === 'object' && json !== null ? json : {}),
+          success: false,
+          statusCode: response.status,
+          message: json?.message || json?.error || 'Bulk sync failed',
+        };
+      }
+      return { success: true, ...json };
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return { success: false, message: 'Streaming not supported by browser' };
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalResult: ApiResponse<{
+      month: string;
+      total: number;
+      synced: number;
+      skippedLocked: number;
+      skippedPayrollCompleted: number;
+      failed: Array<{ employeeId: string; error: string }>;
+      perEmployeeMs: number;
+      durationMs: number;
+      avgMsPerEmployee: number;
+    }> = { success: false, message: 'No response' };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const event = JSON.parse(line);
+          onProgress?.(event);
+          if (event.phase === 'done' && event.success) {
+            finalResult = {
+              success: true,
+              data: event.data,
+              message: event.message,
+            };
+          }
+          if (event.phase === 'error' || event.success === false) {
+            finalResult = {
+              success: false,
+              message: event.message || 'Bulk sync failed',
+            };
+          }
+        } catch {
+          // ignore malformed line
+        }
+      }
+    }
+
+    return finalResult;
   },
 
   setPayRegisterSummaryLock: async (month: string, data: { employeeIds: string[]; locked: boolean }) => {
@@ -4955,6 +5133,8 @@ export const api = {
       limit?: number;
       search?: string;
       employeeGroupId?: string;
+      /** Set false for sync/bulk ops — omits heavy dailyRecords from response */
+      includeDailyRecords?: boolean;
     },
   ) => {
     const query = new URLSearchParams();
@@ -4969,6 +5149,7 @@ export const api = {
       if (filters.limit !== undefined) query.append('limit', filters.limit.toString());
       if (filters.search) query.append('search', filters.search);
       if (filters.employeeGroupId) query.append('employeeGroupId', filters.employeeGroupId);
+      if (filters.includeDailyRecords === false) query.append('includeDailyRecords', 'false');
     }
     return apiRequest<{ data: any[], pagination?: any, success: boolean, message?: string }>(`/pay-register/employees/${month}${query.toString() ? `?${query.toString()}` : ''}`, {
       method: 'GET',

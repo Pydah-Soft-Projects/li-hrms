@@ -44,7 +44,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       unique: true,
       sparse: true, // Allow null values but enforce uniqueness when present
-    }, // Link to MSSQL employee data
+    }, // Link to employee master record
     employeeRef: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Employee',

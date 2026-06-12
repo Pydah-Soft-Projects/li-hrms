@@ -235,10 +235,6 @@ const startServer = async () => {
     // Check file storage connection (S3 or local)
     await checkStorageConnection();
 
-    // Start attendance sync job
-    const { startSyncJob } = require('./attendance/services/attendanceSyncJob');
-    await startSyncJob();
-
     // Monthly leave accrual cron (00:10 IST daily – runs EL/CCL leave register entries on payroll cycle end date)
     try {
       const { startMonthlyAccrualCron } = require('./leaves/jobs/monthlyAccrualCron');
@@ -370,8 +366,7 @@ const startServer = async () => {
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
-  const { closeMongoDB, closeMSSQL } = require('./config/database');
-  await closeMSSQL();
+  const { closeMongoDB } = require('./config/database');
   await closeMongoDB();
   process.exit(0);
 });

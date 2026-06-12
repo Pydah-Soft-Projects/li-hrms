@@ -3,7 +3,6 @@ const Loan = require('../model/Loan');
 const LoanSettings = require('../model/LoanSettings');
 const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
-const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const { getResolvedLoanSettings } = require('../../departments/controllers/departmentSettingsController');
 const { resolveLoanWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
@@ -69,22 +68,6 @@ const {
 // ============================================
 
 /**
- * Get employee settings from database
- */
-const getEmployeeSettings = async () => {
-  try {
-    const Settings = require('../../settings/model/Settings');
-    const dataSourceSetting = await Settings.findOne({ key: 'employee_data_source' });
-    return {
-      dataSource: dataSourceSetting?.value || 'mongodb', // 'mongodb' | 'mssql' | 'both'
-    };
-  } catch (error) {
-    console.error('Error getting employee settings:', error);
-    return { dataSource: 'mongodb' };
-  }
-};
-
-/**
  * Internal helper to cast ids to ObjectId for aggregation pipelines
  */
 const toObjectId = (id) => {
@@ -102,65 +85,11 @@ const toObjectId = (id) => {
 
 
 /**
- * Find employee by emp_no - respects employee settings
+ * Find employee by emp_no (MongoDB only)
  */
 const findEmployeeByEmpNo = async (empNo) => {
   if (!empNo) return null;
-
-  // Always try MongoDB first
-  let employee = await Employee.findOne({ emp_no: empNo });
-
-  if (employee) {
-    return employee;
-  }
-
-  // If not in MongoDB, check if MSSQL is available and try there
-  const settings = await getEmployeeSettings();
-
-  if ((settings.dataSource === 'mssql' || settings.dataSource === 'both') && isHRMSConnected()) {
-    try {
-      const mssqlEmployee = await getEmployeeByIdMSSQL(empNo);
-      if (mssqlEmployee) {
-        console.log(`Syncing employee ${empNo} from MSSQL to MongoDB...`);
-
-        const newEmployee = new Employee({
-          emp_no: mssqlEmployee.emp_no,
-          employee_name: mssqlEmployee.employee_name,
-          department_id: mssqlEmployee.department_id || null,
-          designation_id: mssqlEmployee.designation_id || null,
-          doj: mssqlEmployee.doj || null,
-          dob: mssqlEmployee.dob || null,
-          gross_salary: mssqlEmployee.gross_salary || null,
-          gender: mssqlEmployee.gender || null,
-          marital_status: mssqlEmployee.marital_status || null,
-          blood_group: mssqlEmployee.blood_group || null,
-          qualifications: mssqlEmployee.qualifications || null,
-          experience: mssqlEmployee.experience || null,
-          address: mssqlEmployee.address || null,
-          location: mssqlEmployee.location || null,
-          aadhar_number: mssqlEmployee.aadhar_number || null,
-          phone_number: mssqlEmployee.phone_number || null,
-          alt_phone_number: mssqlEmployee.alt_phone_number || null,
-          email: mssqlEmployee.email || null,
-          pf_number: mssqlEmployee.pf_number || null,
-          esi_number: mssqlEmployee.esi_number || null,
-          bank_account_no: mssqlEmployee.bank_account_no || null,
-          bank_name: mssqlEmployee.bank_name || null,
-          bank_place: mssqlEmployee.bank_place || null,
-          ifsc_code: mssqlEmployee.ifsc_code || null,
-          is_active: mssqlEmployee.is_active !== false,
-        });
-
-        await newEmployee.save();
-        console.log(`✅ Employee ${empNo} synced to MongoDB`);
-        return newEmployee;
-      }
-    } catch (error) {
-      console.error('Error fetching/syncing from MSSQL:', error);
-    }
-  }
-
-  return null;
+  return Employee.findOne({ emp_no: empNo });
 };
 
 // Helper to find employee by ID or emp_no
@@ -2782,72 +2711,54 @@ exports.getLoanReportSummary = async (req, res) => {
       totalInterest: 0
     };
 
-    // Grouped summaries
+    // Grouped summaries — single aggregation instead of per-child queries
     let summaries = [];
     if (groupBy === 'division' || groupBy === 'department' || groupBy === 'employee') {
-      let children = [];
-      if (groupBy === 'division') {
-        const divQuery = { isActive: { $ne: false } };
-        if (divisionId && divisionId !== 'all') {
-          const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
-          divQuery._id = { $in: divIds.map(toObjectId) };
-        }
-        children = await Division.find(divQuery).select('name').lean();
-      } else if (groupBy === 'department') {
-        const deptQuery = { isActive: { $ne: false } };
-        if (departmentId && departmentId !== 'all') {
-          const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
-          deptQuery._id = { $in: deptIds.map(toObjectId) };
-        } else if (divisionId && divisionId !== 'all') {
-          const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
-          deptQuery.divisions = { $in: divIds.map(toObjectId) };
-        }
-        children = await Department.find(deptQuery).select('name').lean();
-      } else if (groupBy === 'employee') {
-        const empQuery = { is_active: { $ne: false } };
-        if (employeeId && employeeId !== 'all') {
-          const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
-          empQuery._id = { $in: empIds.map(toObjectId) };
-        } else if (departmentId && departmentId !== 'all') {
-          const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
-          empQuery.department_id = { $in: deptIds.map(toObjectId) };
-        } else if (divisionId && divisionId !== 'all') {
-          const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
-          empQuery.division_id = { $in: divIds.map(toObjectId) };
-        }
-        const emps = await Employee.find(empQuery).select('employee_name emp_no profilePhoto department_id designation_id division_id').lean();
-        children = emps.map(e => ({ _id: e._id, name: `${e.employee_name} (${e.emp_no})` }));
+      const groupField =
+        groupBy === 'division' ? '$division_id' : groupBy === 'department' ? '$department' : '$employeeId';
+
+      const grouped = await Loan.aggregate([
+        { $match: query },
+        {
+          $group: {
+            _id: groupField,
+            distributed: { $sum: '$amount' },
+            recovered: { $sum: '$repayment.totalPaid' },
+            outstanding: { $sum: '$repayment.remainingBalance' },
+            interest: { $sum: '$loanConfig.totalInterest' },
+            count: { $sum: 1 },
+          },
+        },
+        { $match: { count: { $gt: 0 }, _id: { $ne: null } } },
+      ]);
+
+      const groupIds = grouped.map((g) => g._id).filter(Boolean);
+      let nameMap = new Map();
+
+      if (groupBy === 'division' && groupIds.length > 0) {
+        const docs = await Division.find({ _id: { $in: groupIds } }).select('name').lean();
+        nameMap = new Map(docs.map((d) => [d._id.toString(), d.name]));
+      } else if (groupBy === 'department' && groupIds.length > 0) {
+        const docs = await Department.find({ _id: { $in: groupIds } }).select('name').lean();
+        nameMap = new Map(docs.map((d) => [d._id.toString(), d.name]));
+      } else if (groupBy === 'employee' && groupIds.length > 0) {
+        const docs = await Employee.find({ _id: { $in: groupIds } })
+          .select('employee_name emp_no')
+          .lean();
+        nameMap = new Map(
+          docs.map((e) => [e._id.toString(), `${e.employee_name} (${e.emp_no})`])
+        );
       }
 
-      for (const child of children) {
-        const childQuery = { ...query };
-        if (groupBy === 'division') childQuery.division_id = toObjectId(child._id);
-        else if (groupBy === 'department') childQuery.department = toObjectId(child._id);
-        else if (groupBy === 'employee') childQuery.employeeId = toObjectId(child._id);
-
-        const childStatsResult = await Loan.aggregate([
-          { $match: childQuery },
-          {
-            $group: {
-              _id: null,
-              distributed: { $sum: "$amount" },
-              recovered: { $sum: "$repayment.totalPaid" },
-              outstanding: { $sum: "$repayment.remainingBalance" },
-              interest: { $sum: "$loanConfig.totalInterest" },
-              count: { $sum: 1 }
-            }
-          }
-        ]);
-
-        const cStats = childStatsResult[0] || { distributed: 0, recovered: 0, outstanding: 0, interest: 0, count: 0 };
-        if (cStats.count > 0) {
-          summaries.push({
-            id: child._id,
-            name: child.name,
-            ...cStats
-          });
-        }
-      }
+      summaries = grouped.map((g) => ({
+        id: g._id,
+        name: nameMap.get(String(g._id)) || 'Unknown',
+        distributed: g.distributed,
+        recovered: g.recovered,
+        outstanding: g.outstanding,
+        interest: g.interest,
+        count: g.count,
+      }));
     }
 
     // Detailed records for current view (paginated)

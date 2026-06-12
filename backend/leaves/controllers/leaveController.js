@@ -4,8 +4,6 @@ const LeaveSettings = require('../model/LeaveSettings');
 const Employee = require('../../employees/model/Employee');
 const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 const User = require('../../users/model/User');
-const Settings = require('../../settings/model/Settings');
-const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const { getResolvedLeaveSettings } = require('../../departments/controllers/departmentSettingsController');
 const {
   updateLeaveForAttendance,
@@ -25,6 +23,7 @@ const { buildLeaveRegisterXlsxBuffer } = require('../services/leaveRegisterXlsxE
 const dateCycleService = require('../services/dateCycleService');
 const leaveRegisterYearMonthlyApplyService = require('../services/leaveRegisterYearMonthlyApplyService');
 const monthlyTransferReconciliationService = require('../services/monthlyTransferReconciliationService');
+const { scheduleLeaveStatusSideEffects } = require('../services/leaveApprovalSideEffectsService');
 
 function scheduleLeaveRegisterTransferRebuild(leave, options = {}) {
   monthlyTransferReconciliationService.scheduleTransferRebuildForLeaveChange(leave, options);
@@ -51,84 +50,11 @@ const XLSX = require('xlsx');
 const dayjs = require('dayjs');
 
 /**
- * Get employee settings from database
- */
-const getEmployeeSettings = async () => {
-  try {
-    const dataSourceSetting = await Settings.findOne({ key: 'employee_data_source' });
-    return {
-      dataSource: dataSourceSetting?.value || 'mongodb', // 'mongodb' | 'mssql' | 'both'
-    };
-  } catch (error) {
-    console.error('Error getting employee settings:', error);
-    return { dataSource: 'mongodb' };
-  }
-};
-
-/**
- * Find employee by emp_no - respects employee settings
- * Always tries MongoDB first (for leave records), then MSSQL if configured
- * If found only in MSSQL, syncs to MongoDB for leave record integrity
+ * Find employee by emp_no (MongoDB only)
  */
 const findEmployeeByEmpNo = async (empNo) => {
   if (!empNo) return null;
-
-  // Always try MongoDB first (Leave model needs MongoDB employee references)
-  let employee = await Employee.findOne({ emp_no: empNo });
-
-  if (employee) {
-    return employee;
-  }
-
-  // If not in MongoDB, check if MSSQL is available and try there
-  const settings = await getEmployeeSettings();
-
-  if ((settings.dataSource === 'mssql' || settings.dataSource === 'both') && isHRMSConnected()) {
-    try {
-      const mssqlEmployee = await getEmployeeByIdMSSQL(empNo);
-      if (mssqlEmployee) {
-        // Sync employee from MSSQL to MongoDB for leave record integrity
-        // This ensures we have a valid MongoDB _id for the leave record
-        console.log(`Syncing employee ${empNo} from MSSQL to MongoDB...`);
-
-        const newEmployee = new Employee({
-          emp_no: mssqlEmployee.emp_no,
-          employee_name: mssqlEmployee.employee_name,
-          department_id: mssqlEmployee.department_id || null,
-          designation_id: mssqlEmployee.designation_id || null,
-          doj: mssqlEmployee.doj || null,
-          dob: mssqlEmployee.dob || null,
-          gross_salary: mssqlEmployee.gross_salary || null,
-          gender: mssqlEmployee.gender || null,
-          marital_status: mssqlEmployee.marital_status || null,
-          blood_group: mssqlEmployee.blood_group || null,
-          qualifications: mssqlEmployee.qualifications || null,
-          experience: mssqlEmployee.experience || null,
-          address: mssqlEmployee.address || null,
-          location: mssqlEmployee.location || null,
-          aadhar_number: mssqlEmployee.aadhar_number || null,
-          phone_number: mssqlEmployee.phone_number || null,
-          alt_phone_number: mssqlEmployee.alt_phone_number || null,
-          email: mssqlEmployee.email || null,
-          pf_number: mssqlEmployee.pf_number || null,
-          esi_number: mssqlEmployee.esi_number || null,
-          bank_account_no: mssqlEmployee.bank_account_no || null,
-          bank_name: mssqlEmployee.bank_name || null,
-          bank_place: mssqlEmployee.bank_place || null,
-          ifsc_code: mssqlEmployee.ifsc_code || null,
-          is_active: mssqlEmployee.is_active !== false,
-        });
-
-        await newEmployee.save();
-        console.log(`✅ Employee ${empNo} synced to MongoDB`);
-        return newEmployee;
-      }
-    } catch (error) {
-      console.error('Error fetching/syncing from MSSQL:', error);
-    }
-  }
-
-  return null;
+  return Employee.findOne({ emp_no: empNo });
 };
 
 // Helper to find employee by ID or emp_no (legacy support)
@@ -536,7 +462,7 @@ exports.applyLeave = async (req, res) => {
 
       console.log(`[Apply Leave] ✅ Authorization granted`);
 
-      // Find employee by emp_no (checks MongoDB first, then MSSQL based on settings)
+      // Find employee by emp_no in MongoDB
       employee = await findEmployeeByEmpNo(empNo);
 
       if (employee) {
@@ -1360,14 +1286,9 @@ exports.updateLeave = async (req, res) => {
     }
 
     await leave.save();
-    try {
-      const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
-      if (isEsiLeaveType(leave.leaveType)) {
-        await syncEsiLeaveOtForLeave(leave, { requestedByUserId: req.user._id });
-      }
-    } catch (esiErr) {
-      console.error('ESI OT sync failed after leave cancel:', esiErr);
-    }
+    scheduleLeaveStatusSideEffects(leave, {
+      esiOptions: { requestedByUserId: req.user._id },
+    });
 
     if (affectsMonthlyApply) {
       try {
@@ -1419,20 +1340,12 @@ exports.updateLeave = async (req, res) => {
       }
     }
 
-    // Keep monthly summary in sync when an approved leave (before/after edit) changes.
-    // Recalculate old and new ranges so cross-cycle date edits are covered.
     if (affectsLedger || wasApprovedBefore !== isApprovedNow) {
-      try {
-        const { recalculateOnLeaveApproval } = require('../../attendance/services/summaryCalculationService');
-        if (wasApprovedBefore) {
-          await recalculateOnLeaveApproval(originalApprovedSnapshot);
-        }
-        if (isApprovedNow) {
-          await recalculateOnLeaveApproval(leave);
-        }
-      } catch (summaryErr) {
-        console.error('Failed to recalculate monthly summary during leave update:', summaryErr);
-      }
+      scheduleLeaveStatusSideEffects(leave, {
+        forceHeavyRefresh: true,
+        extraLeaveSnapshots: wasApprovedBefore ? [originalApprovedSnapshot] : [],
+        esiOptions: { requestedByUserId: req.user._id },
+      });
     }
 
     if (affectsLedger || wasApprovedBefore !== isApprovedNow || affectsMonthlyApply) {
@@ -2002,14 +1915,9 @@ exports.processLeaveAction = async (req, res) => {
     leave.markModified('approvals');
 
     await leave.save();
-    try {
-      const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
-      if (isEsiLeaveType(leave.leaveType)) {
-        await syncEsiLeaveOtForLeave(leave, { requestedByUserId: req.user._id });
-      }
-    } catch (esiErr) {
-      console.error('ESI OT sync failed after leave action:', esiErr);
-    }
+    scheduleLeaveStatusSideEffects(leave, {
+      esiOptions: { requestedByUserId: req.user._id },
+    });
 
     // Monthly slot: await only for final approval or canonical final rejection (`rejected`).
     // Intermediate pipeline outcomes (`hod_approved`, `hod_rejected`, etc.) use deferred sync.
@@ -2034,16 +1942,6 @@ exports.processLeaveAction = async (req, res) => {
         await leaveRegisterService.addLeaveDebit(leave, req.user._id);
       } catch (err) {
         console.error('Leave register debit failed (leave already approved):', err);
-      }
-    }
-
-    // Workflow approval must recalc monthly summary explicitly (post-save isModified('status') is unreliable).
-    if (finalApprove) {
-      try {
-        const { recalculateOnLeaveApproval } = require('../../attendance/services/summaryCalculationService');
-        await recalculateOnLeaveApproval(leave);
-      } catch (summaryErr) {
-        console.error('Failed to recalculate monthly summary after leave approval:', summaryErr);
       }
     }
 
@@ -2291,30 +2189,20 @@ exports.revokeLeaveApproval = async (req, res) => {
     leave.markModified('workflow');
     leave.markModified('approvals');
     await leave.save();
-    try {
-      const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
-      if (isEsiLeaveType(leave.leaveType)) {
-        await syncEsiLeaveOtForLeave(leave, { requestedByUserId: req.user._id });
-      }
-    } catch (esiErr) {
-      console.error('ESI OT sync failed after leave revoke:', esiErr);
+
+    if (originalStatus === 'approved') {
+      scheduleLeaveStatusSideEffects(leave, {
+        forceHeavyRefresh: true,
+        esiOptions: { requestedByUserId: req.user._id },
+      });
+      scheduleLeaveRegisterTransferRebuild(leave);
+    } else {
+      scheduleLeaveStatusSideEffects(leave, {
+        esiOptions: { requestedByUserId: req.user._id },
+      });
     }
 
     leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
-
-    if (originalStatus === 'approved') {
-      scheduleLeaveRegisterTransferRebuild(leave);
-    }
-
-    // If a final approval was revoked, recompute monthly summary for touched payroll cycles.
-    if (originalStatus === 'approved') {
-      try {
-        const { recalculateOnLeaveApproval } = require('../../attendance/services/summaryCalculationService');
-        await recalculateOnLeaveApproval(leave);
-      } catch (summaryErr) {
-        console.error('Failed to recalculate monthly summary during leave revoke:', summaryErr);
-      }
-    }
 
     res.status(200).json({
       success: true,
@@ -2369,30 +2257,15 @@ exports.deleteLeave = async (req, res) => {
         console.error('Failed to reverse leave register debit during delete:', err);
       }
     }
-    try {
-      const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
-      if (isEsiLeaveType(leave.leaveType)) {
-        await syncEsiLeaveOtForLeave(leave, { requestedByUserId: req.user._id });
-      }
-    } catch (esiErr) {
-      console.error('ESI OT sync failed after leave delete:', esiErr);
-    }
-
-    leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
-
     if (wasApproved) {
+      scheduleLeaveStatusSideEffects(leave, {
+        forceHeavyRefresh: true,
+        esiOptions: { requestedByUserId: req.user._id },
+      });
       scheduleLeaveRegisterTransferRebuild(leave);
     }
 
-    // Recompute monthly summary for all payroll cycles touched by this leave.
-    if (wasApproved) {
-      try {
-        const { recalculateOnLeaveApproval } = require('../../attendance/services/summaryCalculationService');
-        await recalculateOnLeaveApproval(leave);
-      } catch (summaryErr) {
-        console.error('Failed to recalculate monthly summary during leave delete:', summaryErr);
-      }
-    }
+    leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
 
     res.status(200).json({
       success: true,

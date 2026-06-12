@@ -218,15 +218,15 @@ exports.getDashboardStats = async (req, res) => {
 
     // 1. Super Admin / Sub Admin - Global Stats
     if (['super_admin', 'sub_admin'].includes(role)) {
-      const totalEmployees = await Employee.countDocuments(Employee.getCurrentlyActiveFilter());
-      const pendingLeaves = await Leave.countDocuments({ status: 'pending' });
-      const approvedLeaves = await Leave.countDocuments({ status: 'approved' });
-
-      // AttendanceDaily.date is stored as a YYYY-MM-DD string
-      const todayPresent = await AttendanceDaily.countDocuments({
-        date: todayStr,
-        status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] },
-      });
+      const [totalEmployees, pendingLeaves, approvedLeaves, todayPresent] = await Promise.all([
+        Employee.countDocuments(Employee.getCurrentlyActiveFilter()),
+        Leave.countDocuments({ status: 'pending' }),
+        Leave.countDocuments({ status: 'approved' }),
+        AttendanceDaily.countDocuments({
+          date: todayStr,
+          status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] },
+        }),
+      ]);
 
       stats = {
         totalEmployees,

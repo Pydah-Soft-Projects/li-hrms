@@ -1,20 +1,17 @@
 /**
- * Attendance Sync Service
- * Handles syncing attendance logs from MSSQL to MongoDB
- * Processes raw logs and aggregates into daily records
+ * Attendance Processing Service
+ * Processes raw attendance logs and aggregates them into daily records
  */
 
 const AttendanceRawLog = require('../model/AttendanceRawLog');
 const AttendanceDaily = require('../model/AttendanceDaily');
-const AttendanceSettings = require('../model/AttendanceSettings');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
-const { fetchAttendanceLogsSQL } = require('../config/attendanceSQLHelper');
 const Employee = require('../../employees/model/Employee');
 const OD = require('../../leaves/model/OD');
 const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
 const { detectExtraHours } = require('./extraHoursService');
 const Settings = require('../../settings/model/Settings');
-const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
+const { extractISTComponents } = require('../../shared/utils/dateUtils');
 const { isEmployeeNumberDateLocked } = require('../../shared/services/payrollPeriodLockService');
 
 const MAX_PAIRING_WINDOW_HOURS = 25; // Maximum allowed duration for a shift (prevents multi-day jumps)
@@ -83,7 +80,7 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
             employeeNumber: log.employeeNumber,
             timestamp: timestamp,
             type: log.type,
-            source: log.source || 'mssql',
+            source: log.source || 'manual',
             date: date,
             rawData: log.rawData,
           };
@@ -206,136 +203,6 @@ const applyPreviousDayLinking = async (logsByEmployeeAndDate) => {
 };
 
 /**
- * Sync attendance from MSSQL to MongoDB
- * @param {Date} fromDate - Start date (optional, defaults to last 7 days)
- * @param {Date} toDate - End date (optional, defaults to today)
- * @returns {Object} Sync statistics
- */
-const syncAttendanceFromMSSQL = async (fromDate = null, toDate = null) => {
-  const stats = {
-    success: false,
-    rawLogsFetched: 0,
-    rawLogsInserted: 0,
-    rawLogsSkipped: 0,
-    redundantLogsFiltered: 0,
-    dailyRecordsCreated: 0,
-    dailyRecordsUpdated: 0,
-    errors: [],
-    message: '',
-  };
-
-  try {
-    // Get settings
-    const settings = await AttendanceSettings.getSettings();
-
-    if (settings.dataSource !== 'mssql') {
-      throw new Error('Data source is not set to MSSQL');
-    }
-
-    if (!settings.mssqlConfig.databaseName || !settings.mssqlConfig.tableName) {
-      throw new Error('MSSQL configuration is incomplete');
-    }
-
-    // Set default date range if not provided (IST aware)
-    if (!fromDate) {
-      const { year, month, day } = extractISTComponents(new Date());
-      fromDate = createISTDate(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
-      fromDate.setDate(fromDate.getDate() - 7); // Last 7 days
-    }
-    if (!toDate) {
-      const { dateStr } = extractISTComponents(new Date());
-      toDate = createISTDate(dateStr);
-      // toDate should represent the end of the day or just the date boundary
-    }
-
-    // Fetch logs from MSSQL
-    const rawLogs = await fetchAttendanceLogsSQL(settings, fromDate, toDate);
-    stats.rawLogsFetched = rawLogs.length;
-
-    if (rawLogs.length === 0) {
-      stats.message = 'No logs found in MSSQL for the specified date range';
-      stats.success = true;
-      return stats;
-    }
-
-    // Process and aggregate
-    const processStats = await processAndAggregateLogs(
-      rawLogs,
-      settings.previousDayLinking?.enabled || false
-    );
-
-    stats.rawLogsInserted = processStats.rawLogsInserted;
-    stats.rawLogsSkipped = processStats.rawLogsSkipped;
-    stats.redundantLogsFiltered = processStats.redundantLogsFiltered;
-    stats.dailyRecordsCreated = processStats.dailyRecordsCreated;
-    stats.dailyRecordsUpdated = processStats.dailyRecordsUpdated;
-    stats.errors = processStats.errors;
-
-    // Update sync status in settings
-    await AttendanceSettings.findOneAndUpdate(
-      {},
-      {
-        $set: {
-          'syncSettings.lastSyncAt': new Date(),
-          'syncSettings.lastSyncStatus': stats.errors.length > 0 ? 'failed' : 'success',
-          'syncSettings.lastSyncMessage': stats.errors.length > 0
-            ? `Sync completed with ${stats.errors.length} errors`
-            : `Successfully synced ${stats.rawLogsInserted} logs`,
-        },
-      }
-    );
-
-    stats.success = true;
-    stats.message = `Successfully synced ${stats.rawLogsInserted} logs, filtered ${stats.redundantLogsFiltered} redundant logs, created ${stats.dailyRecordsCreated} daily records, updated ${stats.dailyRecordsUpdated} records`;
-
-    // NEW: Run Absenteeism Check (Auto-deactivation)
-    try {
-      const { ensureDailyRecordsExist, checkConsecutiveAbsences } = require('./absenteeismService');
-      const checkDate = toDate instanceof Date ? toDate : new Date(toDate);
-      const checkDateStr = formatDate(checkDate);
-
-      console.log(`[AttendanceSync] Running absenteeism check for ${checkDateStr}...`);
-
-      // 1. Ensure records exist for today (or sync end date)
-      // We also check previous few days just in case, but primary focus is current sync window
-      await ensureDailyRecordsExist(checkDateStr);
-
-      // 2. Check for 3 consecutive absences
-      await checkConsecutiveAbsences(checkDateStr);
-
-      // 3. Removed: Auto-OD Creation for Holidays/Week-offs (Moved to calculation engine)
-
-    } catch (absentError) {
-      console.error('[AttendanceSync] Error in absenteeism check:', absentError);
-      // We don't fail the sync stats if this auxiliary task fails, but we log it
-    }
-
-  } catch (error) {
-    stats.success = false;
-    stats.errors.push(error.message);
-    stats.message = `Sync failed: ${error.message}`;
-
-    // Update sync status
-    try {
-      await AttendanceSettings.findOneAndUpdate(
-        {},
-        {
-          $set: {
-            'syncSettings.lastSyncAt': new Date(),
-            'syncSettings.lastSyncStatus': 'failed',
-            'syncSettings.lastSyncMessage': error.message,
-          },
-        }
-      );
-    } catch (updateError) {
-      // Ignore update error
-    }
-  }
-
-  return stats;
-};
-
-/**
  * Filter redundant logs within specified time window
  * Same-type only, compared to the last accepted punch per employee (not every prior punch of that type).
  * So e.g. IN → OUT → IN within 30 minutes does not drop the second IN as "redundant" with the first IN.
@@ -452,10 +319,9 @@ const reprocessAttendanceForEmployeeDate = async (employeeNumber, date, options 
 };
 
 module.exports = {
-  syncAttendanceFromMSSQL,
   processAndAggregateLogs,
   formatDate,
   filterRedundantLogs,
-  reprocessAttendanceForEmployeeDate
+  reprocessAttendanceForEmployeeDate,
 };
 

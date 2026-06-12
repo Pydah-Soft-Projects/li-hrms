@@ -100,28 +100,16 @@ export default function DashboardPage() {
         }
 
         try {
-          const empRes = await api.getEmployees({ includeLeft: false, limit: 10000, page: 1 });
-          if (empRes?.success && Array.isArray(empRes.data)) {
-            const today = new Date();
-            const month = today.getMonth();
-            const date = today.getDate();
-
-            const items = empRes.data
-              .filter((emp: any) => {
-                if (!emp?.dob) return false;
-                const dob = new Date(emp.dob);
-                if (Number.isNaN(dob.getTime())) return false;
-                return dob.getMonth() === month && dob.getDate() === date;
-              })
-              .map((emp: any) => ({
-                id: emp._id || emp.emp_no,
-                name: emp.employee_name || emp.emp_no || 'Employee',
-                designationName:
-                  (typeof emp.designation_id === 'object' && emp.designation_id?.name) ||
-                  (typeof emp.designation === 'object' && emp.designation?.name) ||
-                  '—',
-              }));
-
+          const birthdayRes = await api.getBirthdaysSummary({ today: true, includeLeft: false });
+          if (birthdayRes?.success && Array.isArray(birthdayRes.data)) {
+            const items = birthdayRes.data.map((emp: any) => ({
+              id: emp._id || emp.emp_no,
+              name: emp.employee_name || emp.emp_no || 'Employee',
+              designationName:
+                (typeof emp.designation_id === 'object' && emp.designation_id?.name) ||
+                (typeof emp.designation === 'object' && emp.designation?.name) ||
+                '—',
+            }));
             setTodayBirthdayItems(items);
           } else {
             setTodayBirthdayItems([]);

@@ -126,7 +126,7 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
   }, [arrearsType, attendanceData, formData.monthlyAmount, formData.startMonth, formData.endMonth]);
 
   const loadEmployees = () => {
-    Promise.resolve(api.getEmployees({ is_active: true }))
+    Promise.resolve(api.getEmployeesSummary({ is_active: true, limit: 500, page: 1 }))
       .then((response) => {
         if (response.success) {
           setLocalEmployees(response.data || []);

@@ -2024,9 +2024,6 @@ export default function EmployeesPage() {
         }));
 
         let msg = `Employee deactivated successfully!`;
-        if ((response as any).syncError) {
-          msg += ` (MSSQL sync failed, but local update succeeded: ${(response as any).syncError})`;
-        }
         setSuccess(msg);
         // Force reload to update UI status immediately
         await loadEmployees();
@@ -2062,9 +2059,6 @@ export default function EmployeesPage() {
         }));
 
         let msg = 'Employee activated successfully!';
-        if ((response as any).syncError) {
-          msg += ` (MSSQL sync failed, but local update succeeded: ${(response as any).syncError})`;
-        }
         setSuccess(msg);
         // Force reload to update UI status immediately
         await loadEmployees();
@@ -6675,7 +6669,7 @@ export default function EmployeesPage() {
                         <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
                       </div>
                       <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('esi_number', formSettings) || 'ESI Number'}</label>
                         <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
                       </div>
                       <div>

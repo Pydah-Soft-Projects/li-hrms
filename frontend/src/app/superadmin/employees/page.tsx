@@ -2594,8 +2594,7 @@ export default function EmployeesPage() {
       console.log(`API response for ${action} employee ${empNo}:`, response);
 
       if (response.success) {
-        const syncMessage = response.syncError ? ' (MSSQL sync failed, but local update succeeded)' : '';
-        setSuccess(`Employee ${action}d successfully!${syncMessage}`);
+        setSuccess(`Employee ${action}d successfully!`);
         // Update with actual server data if available to ensure consistency
         if (response.data) {
           setEmployees((prev) =>
@@ -2681,8 +2680,7 @@ export default function EmployeesPage() {
           leftDateForm.leftReason || undefined
         );
         if (response.success) {
-          const syncMessage = response.syncError ? ' (MSSQL sync failed, but local update succeeded)' : '';
-          setSuccess(`Employee left date set successfully!${syncMessage}`);
+          setSuccess('Employee left date set successfully!');
           setShowLeftDateModal(false);
           setSelectedEmployeeForLeftDate(null);
           setLeftDateForm({ leftDate: '', leftReason: '' });
@@ -6567,7 +6565,7 @@ export default function EmployeesPage() {
                             </p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('esi_number', formSettings) || 'ESI Number'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                               {(viewingEmployee as any).esi_number ||
                                 (viewingEmployee as any).dynamicFields?.esi_number ||

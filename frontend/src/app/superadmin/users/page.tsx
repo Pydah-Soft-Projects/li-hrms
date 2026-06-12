@@ -725,8 +725,7 @@ export default function UsersPage() {
       const res = await api.toggleUserStatus(user._id);
       if (res.success) {
         const isNowActive = res.data?.isActive ?? !user.isActive;
-        const syncMessage = res.syncError ? ' (MSSQL sync failed, but local update succeeded)' : '';
-        setSuccess(`User ${isNowActive ? 'activated' : 'deactivated'} successfully${syncMessage}`);
+        setSuccess(`User ${isNowActive ? 'activated' : 'deactivated'} successfully`);
         loadData();
       } else {
         setError(res.message || 'Failed to update status');

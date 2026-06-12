@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { payrollQueue, attendanceSyncQueue, applicationQueue, attendanceUploadQueue } = require('../jobs/queueManager');
+const { payrollQueue, applicationQueue, attendanceUploadQueue } = require('../jobs/queueManager');
 
 /**
  * @desc    Get job status and progress
@@ -13,7 +13,6 @@ router.get('/status/:jobId', async (req, res) => {
 
         let activeQueue;
         switch (queue) {
-            case 'attendanceSync': activeQueue = attendanceSyncQueue; break;
             case 'application': activeQueue = applicationQueue; break;
             case 'attendanceUpload': activeQueue = attendanceUploadQueue; break;
             default: activeQueue = payrollQueue;

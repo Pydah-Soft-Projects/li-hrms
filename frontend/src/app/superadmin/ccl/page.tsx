@@ -207,7 +207,7 @@ export default function SuperadminCCLPage() {
 
   useEffect(() => {
     if (!showForm) return;
-    api.getEmployees({ is_active: true }).then((r) => {
+    api.getEmployeesSummary({ is_active: true, limit: 500, page: 1 }).then((r) => {
       if (r.success && Array.isArray(r.data)) setEmployees(r.data);
     });
   }, [showForm]);

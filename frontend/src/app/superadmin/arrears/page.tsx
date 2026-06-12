@@ -137,7 +137,7 @@ export function ArrearsContent() {
   };
 
   const loadEmployees = () => {
-    Promise.resolve(api.getEmployees({ is_active: true }))
+    Promise.resolve(api.getEmployeesSummary({ is_active: true, limit: 500, page: 1 }))
       .then((response: any) => {
         if (response.success) {
           setEmployees(response.data || []);

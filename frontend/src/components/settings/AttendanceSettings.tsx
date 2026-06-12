@@ -27,7 +27,7 @@ import {
     settingsToggleThumbClass,
     settingsToggleTrackClass,
 } from '@/lib/settingsUi';
-import { RefreshCw, Upload, MapPin, Clock } from 'lucide-react';
+import { Upload, MapPin, Clock } from 'lucide-react';
 
 const PROCESSING_MODE_DEFAULTS = {
     mode: 'multi_shift',
@@ -43,7 +43,6 @@ const AttendanceSettings = () => {
     const [attendanceSettings, setAttendanceSettings] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [syncing, setSyncing] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [uploadFile, setUploadFile] = useState<File | null>(null);
 
@@ -126,22 +125,6 @@ const AttendanceSettings = () => {
         }
     };
 
-    const handleManualSync = async () => {
-        try {
-            setSyncing(true);
-            const res = await api.manualSyncAttendance();
-            if (res.success) {
-                toast.success(res.message || 'Sync completed successfully');
-            } else {
-                toast.error(res.message || 'Sync failed');
-            }
-        } catch (err) {
-            toast.error('An error occurred during sync');
-        } finally {
-            setSyncing(false);
-        }
-    };
-
     const handleFileUpload = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!uploadFile) return;
@@ -193,68 +176,11 @@ const AttendanceSettings = () => {
             <SettingsPanelHeader
                 section="Attendance"
                 title="Attendance Configuration"
-                subtitle="Manage device sync, mobile tracking, and manual data imports."
+                subtitle="Manage attendance processing rules and manual data imports."
             />
 
             <div className="grid grid-cols-1 gap-10 xl:grid-cols-3">
                 <div className="space-y-8 xl:col-span-2">
-                    <SettingsSectionCard
-                        title="Device Connectivity"
-                        description={attendanceSettings.autoSync ? 'Auto-Sync Enabled' : 'Manual Sync Only'}
-                        accent
-                    >
-                        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-                            <div className="space-y-4">
-                                <SettingsToggleRow
-                                    id="attendance-auto-sync"
-                                    label="Real-time Pull"
-                                    description="Fetch logs automatically."
-                                    checked={!!attendanceSettings.autoSync}
-                                    onChange={(next) => setAttendanceSettings({ ...attendanceSettings, autoSync: next })}
-                                />
-
-                                <div className="flex items-center justify-between border p-4 sm:p-5" style={settingsLedgerBorder}>
-                                    <div className="space-y-1">
-                                        <p className="text-xs font-semibold uppercase tracking-tight text-stone-900 dark:text-stone-100">Sync Interval</p>
-                                        <p className={settingsFieldHelpClass}>Minutes between cycles.</p>
-                                    </div>
-                                    <div className="relative">
-                                        <input
-                                            type="number"
-                                            value={attendanceSettings.syncInterval || 15}
-                                            onChange={(e) => setAttendanceSettings({ ...attendanceSettings, syncInterval: Number(e.target.value) })}
-                                            className={`${inputCls} w-20 text-center text-xs`}
-                                            style={inputStyle}
-                                        />
-                                        <span className="absolute -right-1 top-1/2 ml-1 -translate-y-1/2 translate-x-full text-[9px] font-semibold uppercase text-stone-400">Min</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="flex flex-col items-center justify-center gap-3 border p-6 text-center" style={settingsLedgerBorder}>
-                                <div
-                                    className={`p-4 ${syncing ? 'text-[color:var(--ps-accent)]' : 'text-stone-400'}`}
-                                    style={{ ...settingsLedgerBorder, backgroundColor: syncing ? 'var(--ps-accent-soft)' : undefined }}
-                                >
-                                    <RefreshCw className={`h-6 w-6 ${syncing ? 'animate-spin' : ''}`} />
-                                </div>
-                                <div className="space-y-1">
-                                    <h4 className="text-xs font-semibold uppercase tracking-wider text-stone-900 dark:text-stone-100">Manual Force Sync</h4>
-                                    <p className={settingsFieldHelpClass}>Trigger an immediate check of all devices.</p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={handleManualSync}
-                                    disabled={syncing}
-                                    className={`${inputCls} mt-2 w-full py-2 text-xs font-semibold disabled:opacity-50`}
-                                    style={{ ...inputStyle, backgroundColor: 'var(--ps-accent)', color: 'white', borderColor: 'var(--ps-accent)' }}
-                                >
-                                    {syncing ? 'Syncing...' : 'Start Manual Sync'}
-                                </button>
-                            </div>
-                        </div>
-                    </SettingsSectionCard>
-
                     <SettingsSectionCard
                         title="Processing Mode"
                         description={pm.mode === 'multi_shift' ? 'Multi-Shift (1–3 per day)' : 'Single-Shift (1 per day)'}

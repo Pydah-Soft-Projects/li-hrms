@@ -46,7 +46,7 @@ export default function EmployeeSelect({
         let isMounted = true;
         const loadInitial = async () => {
             try {
-                const res = await api.getEmployees({ is_active: true, limit: 50 });
+                const res = await api.getEmployeesSummary({ is_active: true, limit: 50 });
                 if (isMounted && res.success) {
                     setEmployees(sortByEmpNo(res.data || []));
                 }
@@ -72,7 +72,7 @@ export default function EmployeeSelect({
             setIsSearching(true);
             try {
                 const query: any = { is_active: true, search: employeeSearch, limit: 50 };
-                const res = await api.getEmployees(query);
+                const res = await api.getEmployeesSummary(query);
                 if (res.success && res.data) {
                     setEmployees(sortByEmpNo(res.data));
                 }

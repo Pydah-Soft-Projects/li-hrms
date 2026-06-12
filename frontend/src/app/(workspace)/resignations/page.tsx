@@ -612,7 +612,7 @@ export default function ResignationsPage() {
         } else {
           const [settingsRes, empRes] = await Promise.all([
             api.getResignationSettings(),
-            api.getEmployees({ is_active: true, limit: 500, page: 1 }),
+            api.getEmployeesSummary({ is_active: true, limit: 500, page: 1 }),
           ]);
           if (cancelled) return;
           const raw = settingsRes?.data?.noticePeriodDays ?? settingsRes?.data?.value?.noticePeriodDays;

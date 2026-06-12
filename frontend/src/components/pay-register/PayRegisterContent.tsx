@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, type MouseEvent, type ReactNode, useMemo, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
 import { parseFile } from '@/lib/bulkUpload';
@@ -83,6 +84,9 @@ import {
   type PayRegisterShiftSelection,
 } from '@/lib/payRegisterShifts';
 import PayRegisterShiftField from '@/components/pay-register/PayRegisterShiftField';
+import PayRegisterSyncProgressOverlay, {
+  type PayRegisterSyncProgressEvent,
+} from '@/components/pay-register/PayRegisterSyncProgressOverlay';
 import {
   LoansPageShell,
   LoansPageHeader,
@@ -249,6 +253,7 @@ export function PayRegisterContent({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<PayRegisterSyncProgressEvent | null>(null);
   const [showSyncAllModal, setShowSyncAllModal] = useState(false);
   const [syncOverrideLockedIds, setSyncOverrideLockedIds] = useState<Set<string>>(new Set());
   const [syncModalLockedRows, setSyncModalLockedRows] = useState<
@@ -827,54 +832,56 @@ export function PayRegisterContent({
     try {
       setSyncing(true);
       setShowSyncAllModal(false);
+      setSyncProgress({ phase: 'prepare', completed: 0, total: 0 });
 
-      if (payrollStartDate && payrollEndDate) {
-        Swal.fire({
-          icon: 'info',
-          title: 'Syncing',
-          text: 'Syncing logs from biometric source...',
-          timer: 2000,
-          showConfirmButton: false,
-          toast: true,
-          position: 'top-end'
-        });
-        await apiRequest('/attendance/sync', {
-          method: 'POST',
-          body: JSON.stringify({
-            fromDate: payrollStartDate,
-            toDate: payrollEndDate
-          })
+      const syncFilters = buildPayRegisterApiFilters();
+      const bulkRes = await api.bulkSyncPayRegisterWithProgress(
+        monthStr,
+        {
+          ...syncFilters,
+          forceEmployeeIds: [...overrideLockedIds],
+          concurrency: 20,
+        },
+        (event) => {
+          flushSync(() => {
+            setSyncProgress(event);
+          });
+        }
+      );
+
+      if (!bulkRes?.success || !bulkRes.data) {
+        throw new Error(bulkRes?.message || 'Bulk sync failed');
+      }
+
+      type BulkSyncStats = {
+        synced?: number;
+        skippedLocked?: number;
+        skippedPayrollCompleted?: number;
+        failed?: Array<{ employeeId: string; error: string }>;
+        durationMs?: number;
+        total?: number;
+      };
+      const bulkData = bulkRes.data as BulkSyncStats;
+      const synced = bulkData.synced ?? 0;
+      const skippedLocked = bulkData.skippedLocked ?? 0;
+      const skippedPayrollCompleted = bulkData.skippedPayrollCompleted ?? 0;
+      const failed = bulkData.failed ?? [];
+      const durationMs = bulkData.durationMs ?? 0;
+      const total = bulkData.total ?? 0;
+
+      const failedSyncs = failed.map((f: { employeeId: string; error: string }) => ({
+        employee_name: f.employeeId,
+        emp_no: f.employeeId,
+        reason: f.error,
+      }));
+      const skippedPayrollCompletedList: Array<{ employee_name: string; emp_no: string }> = [];
+      if (skippedPayrollCompleted > 0) {
+        skippedPayrollCompletedList.push({
+          employee_name: `${skippedPayrollCompleted} employee(s)`,
+          emp_no: 'payroll completed',
         });
       }
 
-      const fullRes = (await api.getEmployeesWithPayRegister(monthStr, {
-        ...buildPayRegisterApiFilters(),
-        page: 1,
-        limit: -1,
-      })) as any;
-
-      if (!fullRes?.success || !Array.isArray(fullRes.data) || fullRes.data.length === 0) {
-        Swal.fire({
-          icon: 'info',
-          title: 'Nothing to sync',
-          text: 'No employees match the current month and filters.',
-          timer: 2200,
-          showConfirmButton: false,
-          toast: true,
-          position: 'top-end'
-        });
-        return;
-      }
-
-      const syncTargets: PayRegisterSummary[] = sortPayRegistersByEmpNo(fullRes.data);
-      const SYNC_CHUNK = 15;
-
-      let synced = 0;
-      const processedIds = new Set<string>();
-      const skippedPayrollCompleted: Array<{ employee_name: string; emp_no: string }> = [];
-      const failedSyncs: Array<{ employee_name: string; emp_no: string; reason: string }> = [];
-      const isPayrollBatchCompletedResponse = (res: any) =>
-        !res?.success && (res?.code === 'PAYROLL_BATCH_COMPLETED' || res?.reason === 'payroll_batch_completed');
       const escapeHtml = (value: string) =>
         String(value)
           .replace(/&/g, '&amp;')
@@ -882,87 +889,28 @@ export function PayRegisterContent({
           .replace(/>/g, '&gt;')
           .replace(/"/g, '&quot;')
           .replace(/'/g, '&#39;');
-      const trackResult = (
-        res: any,
-        meta: { employeeId: string; employee_name: string; emp_no: string }
-      ) => {
-        processedIds.add(meta.employeeId);
-        if (res?.success) {
-          synced += 1;
-          return;
-        }
-        if (isPayrollBatchCompletedResponse(res)) {
-          skippedPayrollCompleted.push({
-            employee_name: meta.employee_name,
-            emp_no: meta.emp_no,
-          });
-          return;
-        }
-        failedSyncs.push({
-          employee_name: meta.employee_name,
-          emp_no: meta.emp_no,
-          reason: res?.error || res?.message || 'Failed to sync',
-        });
-      };
-
-      const runOne = async (pr: PayRegisterSummary) => {
-        const idStr = employeeIdString(pr);
-        if (pr.summaryLocked && !overrideLockedIds.has(idStr)) {
-          return;
-        }
-        const force = !!(pr.summaryLocked && overrideLockedIds.has(idStr));
-        const res = await api.syncPayRegister(idStr, monthStr, force ? { force: true } : undefined);
-        trackResult(res, {
-          employeeId: idStr,
-          employee_name: employeeDisplayName(pr),
-          emp_no: pr.emp_no || idStr,
-        });
-      };
-
-      for (let i = 0; i < syncTargets.length; i += SYNC_CHUNK) {
-        const chunk = syncTargets.slice(i, i + SYNC_CHUNK);
-        await Promise.allSettled(chunk.map((pr) => runOne(pr)));
-      }
-
-      for (const row of lockedRowsList) {
-        const idStr = String(row.employeeId);
-        if (!overrideLockedIds.has(idStr)) continue;
-        if (processedIds.has(idStr)) continue;
-        const res = await api.syncPayRegister(idStr, monthStr, { force: true });
-        trackResult(res, {
-          employeeId: idStr,
-          employee_name: row.employee_name,
-          emp_no: row.emp_no || idStr,
-        });
-      }
 
       setPage(1);
       await loadPayRegisters(1, false);
 
-      const skippedLocked =
-        lockedRowsList.length > 0
-          ? lockedRowsList.filter((r) => !overrideLockedIds.has(String(r.employeeId))).length
-          : syncTargets.filter(
-              (pr) =>
-                !isPayRegisterStub(pr) &&
-                pr.summaryLocked &&
-                !overrideLockedIds.has(employeeIdString(pr))
-            ).length;
+      const skippedLockedCount = skippedLocked;
 
-      const parts = [`${synced} employee(s) synced.`];
-      if (skippedPayrollCompleted.length > 0) {
+      const parts = [
+        `${synced} of ${total} employee(s) synced in ${(durationMs / 1000).toFixed(1)}s.`,
+      ];
+      if (skippedPayrollCompleted > 0) {
         parts.push(
-          `${skippedPayrollCompleted.length} employee(s) were not synced because payroll batch is already completed.`
+          `${skippedPayrollCompleted} skipped because payroll batch is already completed.`
         );
       }
-      if (skippedLocked > 0) parts.push(`${skippedLocked} locked summary(ies) left unchanged.`);
+      if (skippedLockedCount > 0) parts.push(`${skippedLockedCount} locked summary(ies) left unchanged.`);
       if (failedSyncs.length > 0) parts.push(`${failedSyncs.length} employee(s) failed to sync.`);
       const skippedListHtml =
-        skippedPayrollCompleted.length > 0
-          ? `<div class="mt-3 text-left"><div class="font-semibold mb-1">Not synced because payroll batch is completed</div><div class="text-sm">${skippedPayrollCompleted
+        skippedPayrollCompleted > 0
+          ? `<div class="mt-3 text-left"><div class="font-semibold mb-1">Not synced because payroll batch is completed</div><div class="text-sm">${skippedPayrollCompletedList
               .slice(0, 8)
-              .map((item) => `${escapeHtml(item.employee_name)} (${escapeHtml(item.emp_no)})`)
-              .join('<br>')}${skippedPayrollCompleted.length > 8 ? `<br>and ${skippedPayrollCompleted.length - 8} more...` : ''}</div></div>`
+              .map((item: { employee_name: string; emp_no: string }) => `${escapeHtml(item.employee_name)} (${escapeHtml(item.emp_no)})`)
+              .join('<br>')}${skippedPayrollCompleted > 8 ? `<br>and ${skippedPayrollCompleted - 8} more...` : ''}</div></div>`
           : '';
       const failedListHtml =
         failedSyncs.length > 0
@@ -976,7 +924,7 @@ export function PayRegisterContent({
           : '';
       Swal.fire({
         icon: failedSyncs.length > 0 ? 'warning' : 'success',
-        title: failedSyncs.length > 0 || skippedPayrollCompleted.length > 0 ? 'Sync completed with notes' : 'Synced',
+        title: failedSyncs.length > 0 || skippedPayrollCompleted > 0 ? 'Sync completed with notes' : 'Synced',
         html: `<div>${escapeHtml(parts.join(' '))}</div>${skippedListHtml}${failedListHtml}`,
         confirmButtonText: 'OK',
       });
@@ -988,6 +936,7 @@ export function PayRegisterContent({
         text: err.message || 'Failed to sync pay registers',
       });
     } finally {
+      setSyncProgress(null);
       setSyncing(false);
     }
   };
@@ -2105,52 +2054,22 @@ export function PayRegisterContent({
     const rows = getFilteredPayRegisters();
     if (tabId === 'all') return rows.length;
     return rows.filter((pr) => {
-      if (!pr.dailyRecords || pr.dailyRecords.length === 0) return false;
+      const totals = pr.totals || {};
       switch (tabId) {
         case 'present':
-          return pr.dailyRecords.some(
-            (r) =>
-              r.status === 'present' ||
-              r.firstHalf.status === 'present' ||
-              r.secondHalf.status === 'present'
-          );
+          return (totals.totalPresentDays || 0) > 0;
         case 'absent':
-          return pr.dailyRecords.some(
-            (r) =>
-              r.status === 'absent' ||
-              r.firstHalf.status === 'absent' ||
-              r.secondHalf.status === 'absent'
-          );
+          return (totals.totalAbsentDays || 0) > 0;
         case 'leaves':
-          return pr.dailyRecords.some(
-            (r) =>
-              r.status === 'leave' ||
-              r.firstHalf.status === 'leave' ||
-              r.secondHalf.status === 'leave'
-          );
+          return (totals.totalLeaveDays || 0) > 0;
         case 'od':
-          return pr.dailyRecords.some(
-            (r) =>
-              r.status === 'od' ||
-              r.isOD ||
-              r.firstHalf.status === 'od' ||
-              r.secondHalf.status === 'od' ||
-              r.firstHalf.isOD ||
-              r.secondHalf.isOD
-          );
+          return (totals.totalODDays || 0) > 0;
         case 'ot':
+          return (totals.totalOTHours || 0) > 0;
         case 'extraHours':
-          return pr.dailyRecords.some(
-            (r) => r.otHours > 0 || r.firstHalf.otHours > 0 || r.secondHalf.otHours > 0
-          );
+          return (totals.totalPayableShifts || 0) > (totals.totalPresentDays || 0);
         case 'shifts':
-          return pr.dailyRecords.some(
-            (r) =>
-              r.shiftId !== null ||
-              r.shiftName !== null ||
-              r.firstHalf.shiftId !== null ||
-              r.secondHalf.shiftId !== null
-          );
+          return (totals.totalPayableShifts || 0) > 0;
         default:
           return true;
       }
@@ -2551,6 +2470,48 @@ export function PayRegisterContent({
           </div>
         }
       />
+
+        {syncing && syncProgress && syncProgress.phase !== 'done' && syncProgress.phase !== 'error' && (() => {
+          const phase = syncProgress.phase;
+          const total = syncProgress.total ?? 0;
+          const completed = syncProgress.completed ?? 0;
+          const pct =
+            phase === 'prepare'
+              ? 4
+              : total > 0
+                ? Math.min(100, Math.round((completed / total) * 100))
+                : 0;
+          const phaseTitle =
+            phase === 'prepare' ? 'Preparing sync' : 'Syncing pay register';
+          const countLine =
+            phase === 'sync' && total > 0
+              ? `${completed} / ${total} employees`
+              : 'Finding employees in scope…';
+          return (
+            <div className="mb-6 animate-fade-in relative z-20">
+              <LoanFormInfo title={`Sync All · ${monthStr}`}>
+                <div className="flex justify-between items-center text-sm font-medium">
+                  <span className="flex items-center gap-2 text-stone-700 dark:text-stone-300">
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    {phaseTitle}
+                  </span>
+                  <span className="font-bold tabular-nums" style={{ color: 'var(--ps-accent-ink)' }}>
+                    {countLine} ({pct}%)
+                  </span>
+                </div>
+                <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-stone-200/80 dark:bg-stone-800">
+                  <div
+                    className="h-2.5 rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${pct}%`, backgroundColor: 'var(--ps-accent)' }}
+                  />
+                </div>
+              </LoanFormInfo>
+            </div>
+          );
+        })()}
 
         {/* Progress Bar for Bulk Calculation */}
         {calculationProgress && (() => {
@@ -4679,6 +4640,18 @@ export function PayRegisterContent({
           </div>
         </LoanDetailDialogBody>
       </LoanDetailDialog>
+      <PayRegisterSyncProgressOverlay
+        visible={
+          syncing &&
+          syncProgress != null &&
+          syncProgress.phase !== 'done' &&
+          syncProgress.phase !== 'error'
+        }
+        phase={syncProgress?.phase ?? null}
+        completed={syncProgress?.completed ?? 0}
+        total={syncProgress?.total ?? 0}
+        monthLabel={monthStr}
+      />
     </LoansPageShell>
   );
 }

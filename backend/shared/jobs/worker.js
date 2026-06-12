@@ -303,21 +303,6 @@ const startWorkers = () => {
         }
     }, { connection: redisConfig });
 
-    // Attendance Sync Worker
-    const attendanceSyncWorker = new Worker('attendanceSyncQueue', async (job) => {
-        console.log(`[Worker] Processing attendance sync job: ${job.id}`);
-
-        try {
-            const { syncAttendanceFromMSSQL } = require('../../attendance/services/attendanceSyncService');
-            const stats = await syncAttendanceFromMSSQL();
-            console.log(`[Worker] Attendance sync complete: ${stats.message}`);
-            return stats;
-        } catch (error) {
-            console.error(`[Worker] Attendance sync job ${job.id} failed:`, error.message);
-            throw error;
-        }
-    }, { connection: redisConfig });
-
     // Application Action Worker
     const applicationWorker = new Worker('applicationQueue', async (job) => {
         const { type, applicationIds, bulkSettings, approverId, comments } = job.data;
@@ -328,8 +313,6 @@ const startWorkers = () => {
         const EmployeeApplicationFormSettings = require('../../employee-applications/model/EmployeeApplicationFormSettings');
         const { resolveQualificationLabels, transformApplicationToEmployee } = require('../../employee-applications/services/fieldMappingService');
         const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
-        const sqlHelper = require('../../employees/config/sqlHelper');
-
         const results = {
             successCount: 0,
             failCount: 0,
@@ -372,11 +355,6 @@ const startWorkers = () => {
 
                     await Employee.create(employeeData);
                     await application.save();
-
-                    // Optional MSSQL Sync
-                    if (sqlHelper.isHRMSConnected?.() && !await sqlHelper.employeeExistsMSSQL(employeeData.emp_no)) {
-                        await sqlHelper.createEmployeeMSSQL(employeeData).catch(e => console.error(`MSSQL Error for ${employeeData.emp_no}:`, e.message));
-                    }
 
                     // Send Credentials
                     await sendCredentials(employeeData, employeeData.password, { email: true, sms: true }).catch(e => console.error(`Notification Error:`, e.message));
@@ -562,10 +540,6 @@ const startWorkers = () => {
 
     payrollWorker.on('failed', (job, err) => {
         console.error(`[Worker] Job ${job.id} has failed with ${err.message}`);
-    });
-
-    attendanceSyncWorker.on('completed', (job) => {
-        console.log(`[Worker] Attendance Sync Job ${job.id} completed successfully`);
     });
 
     applicationWorker.on('completed', (job) => {

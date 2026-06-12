@@ -587,56 +587,30 @@ function leaveStatusChangedOnSave(doc) {
   return doc.$_statusModifiedOnSave === true;
 }
 
-// Post-save hook to update monthly attendance summary and leave records when leave status changes
+// Post-save hook: fast balance updates inline; heavy summary/pay-register work deferred.
 LeaveSchema.post('save', async function () {
   try {
-    // Update monthly attendance summary when leave is approved
-    if (this.status === 'approved' && leaveStatusChangedOnSave(this)) {
-      const { recalculateOnLeaveApproval } = require('../../attendance/services/summaryCalculationService');
-      await recalculateOnLeaveApproval(this);
+    if (!leaveStatusChangedOnSave(this)) return;
+
+    const { updateMonthlyRecordOnLeaveAction } = require('../services/leaveBalanceService');
+    let action = null;
+
+    if (this.status === 'approved' || this.status === 'hod_approved' || this.status === 'hr_approved') {
+      action = 'approved';
+    } else if (this.status === 'rejected' || this.status === 'hod_rejected' || this.status === 'hr_rejected') {
+      action = 'rejected';
+    } else if (this.status === 'cancelled') {
+      action = 'cancelled';
     }
 
-    // Update monthly leave record for any status change (approved, rejected, cancelled)
-    if (leaveStatusChangedOnSave(this)) {
-      const { updateMonthlyRecordOnLeaveAction } = require('../services/leaveBalanceService');
-      let action = null;
-
-      if (this.status === 'approved' || this.status === 'hod_approved' || this.status === 'hr_approved') {
-        action = 'approved';
-      } else if (this.status === 'rejected' || this.status === 'hod_rejected' || this.status === 'hr_rejected') {
-        action = 'rejected';
-      } else if (this.status === 'cancelled') {
-        action = 'cancelled';
-      }
-
-      if (action) {
-        await updateMonthlyRecordOnLeaveAction(this, action);
-      }
+    if (action) {
+      await updateMonthlyRecordOnLeaveAction(this, action);
     }
 
-    // Auto-sync pay register when leave is approved/rejected/cancelled
-    if (
-      leaveStatusChangedOnSave(this) &&
-      (this.status === 'approved' ||
-        this.status === 'hr_approved' ||
-        this.status === 'hod_approved' ||
-        this.status === 'rejected' ||
-        this.status === 'cancelled')
-    ) {
-      const { syncPayRegisterFromLeave } = require('../../pay-register/services/autoSyncService');
-      await syncPayRegisterFromLeave(this);
-    }
-
-    // ESI leave OT sync: approved => create/update OT from punches, non-approved => deactivate ESI-converted OT
-    if (leaveStatusChangedOnSave(this)) {
-      const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
-      if (isEsiLeaveType(this.leaveType)) {
-        await syncEsiLeaveOtForLeave(this);
-      }
-    }
+    const { scheduleLeaveStatusSideEffects } = require('../services/leaveApprovalSideEffectsService');
+    scheduleLeaveStatusSideEffects(this);
   } catch (error) {
-    // Don't throw - this is a background operation
-    console.error('Error updating monthly summary/leave record on leave status change:', error);
+    console.error('Error updating leave record on status change:', error);
   }
 });
 

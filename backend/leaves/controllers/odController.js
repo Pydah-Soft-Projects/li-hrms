@@ -3,8 +3,6 @@ const OD = require('../model/OD');
 const LeaveSettings = require('../model/LeaveSettings');
 const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
-const Settings = require('../../settings/model/Settings');
-const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const {
   buildWorkflowVisibilityFilter,
   getEmployeeIdsInScope,
@@ -136,83 +134,11 @@ function isOdApplicantOwner(od, user) {
 }
 
 /**
- * Get employee settings from database
- */
-const getEmployeeSettings = async () => {
-  try {
-    const dataSourceSetting = await Settings.findOne({ key: 'employee_data_source' });
-    return {
-      dataSource: dataSourceSetting?.value || 'mongodb', // 'mongodb' | 'mssql' | 'both'
-    };
-  } catch (error) {
-    console.error('Error getting employee settings:', error);
-    return { dataSource: 'mongodb' };
-  }
-};
-
-/**
- * Find employee by emp_no - respects employee settings
- * Always tries MongoDB first (for OD records), then MSSQL if configured
- * If found only in MSSQL, syncs to MongoDB for OD record integrity
+ * Find employee by emp_no (MongoDB only)
  */
 const findEmployeeByEmpNo = async (empNo) => {
   if (!empNo) return null;
-
-  // Always try MongoDB first (OD model needs MongoDB employee references)
-  let employee = await Employee.findOne({ emp_no: empNo });
-
-  if (employee) {
-    return employee;
-  }
-
-  // If not in MongoDB, check if MSSQL is available and try there
-  const settings = await getEmployeeSettings();
-
-  if ((settings.dataSource === 'mssql' || settings.dataSource === 'both') && isHRMSConnected()) {
-    try {
-      const mssqlEmployee = await getEmployeeByIdMSSQL(empNo);
-      if (mssqlEmployee) {
-        // Sync employee from MSSQL to MongoDB for OD record integrity
-        console.log(`Syncing employee ${empNo} from MSSQL to MongoDB...`);
-
-        const newEmployee = new Employee({
-          emp_no: mssqlEmployee.emp_no,
-          employee_name: mssqlEmployee.employee_name,
-          department_id: mssqlEmployee.department_id || null,
-          designation_id: mssqlEmployee.designation_id || null,
-          doj: mssqlEmployee.doj || null,
-          dob: mssqlEmployee.dob || null,
-          gross_salary: mssqlEmployee.gross_salary || null,
-          gender: mssqlEmployee.gender || null,
-          marital_status: mssqlEmployee.marital_status || null,
-          blood_group: mssqlEmployee.blood_group || null,
-          qualifications: mssqlEmployee.qualifications || null,
-          experience: mssqlEmployee.experience || null,
-          address: mssqlEmployee.address || null,
-          location: mssqlEmployee.location || null,
-          aadhar_number: mssqlEmployee.aadhar_number || null,
-          phone_number: mssqlEmployee.phone_number || null,
-          alt_phone_number: mssqlEmployee.alt_phone_number || null,
-          email: mssqlEmployee.email || null,
-          pf_number: mssqlEmployee.pf_number || null,
-          esi_number: mssqlEmployee.esi_number || null,
-          bank_account_no: mssqlEmployee.bank_account_no || null,
-          bank_name: mssqlEmployee.bank_name || null,
-          bank_place: mssqlEmployee.bank_place || null,
-          ifsc_code: mssqlEmployee.ifsc_code || null,
-          is_active: mssqlEmployee.is_active !== false,
-        });
-
-        await newEmployee.save();
-        console.log(`✅ Employee ${empNo} synced to MongoDB`);
-        return newEmployee;
-      }
-    } catch (error) {
-      console.error('Error fetching/syncing from MSSQL:', error);
-    }
-  }
-
-  return null;
+  return Employee.findOne({ emp_no: empNo });
 };
 
 // Helper to find employee by ID or emp_no (legacy support)
@@ -802,7 +728,7 @@ exports.applyOD = async (req, res) => {
           });
         }
         console.log(`[Apply OD] ✅ Workspace Authorization granted`);
-        // Find employee by emp_no (checks MongoDB first, then MSSQL based on settings)
+        // Find employee by emp_no in MongoDB
         employee = await findEmployeeByEmpNo(empNo);
       }
 
