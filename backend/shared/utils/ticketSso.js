@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 
 const TICKET_SSO_TOKEN_EXPIRE = process.env.TICKET_SSO_TOKEN_EXPIRE || '30m';
-const TICKET_SSO_DEFAULT_REDIRECT = process.env.TICKET_SSO_DEFAULT_REDIRECT || '/my-tickets';
+const TICKET_SSO_DEFAULT_REDIRECT = process.env.TICKET_SSO_DEFAULT_REDIRECT || '/student/my-tickets';
 
 function getTicketSsoSecret() {
   return process.env.HRMS_SSO_SECRET || process.env.JWT_SECRET;
