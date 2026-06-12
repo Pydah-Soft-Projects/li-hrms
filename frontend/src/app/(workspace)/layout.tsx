@@ -11,6 +11,7 @@ import Spinner from '@/components/Spinner';
 import WorkspaceSidebar from '@/components/WorkspaceSidebar';
 import MobileBottomNav from '@/components/MobileBottomNav';
 import MainContent from '@/components/MainContent';
+import TicketSupportBubble from '@/components/TicketSupportBubble';
 
 function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
   return (
@@ -23,6 +24,7 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
       <div className="sm:hidden">
         <MobileBottomNav />
       </div>
+      <TicketSupportBubble />
     </div>
   );
 };

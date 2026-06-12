@@ -1225,6 +1225,14 @@ export const api = {
       body: JSON.stringify({ encryptedToken }),
     });
   },
+
+  /** Signed redirect URL for Ticket Management portal (HRMS → ticket app SSO). */
+  getTicketSsoUrl: async (redirect?: string) => {
+    const query = redirect ? `?redirect=${encodeURIComponent(redirect)}` : '';
+    return apiRequest<{ url: string; redirect: string }>(`/auth/ticket-sso-url${query}`, {
+      method: 'GET',
+    });
+  },
   // Payroll include-missing setting (global)
   getIncludeMissingSetting: async () => {
     return apiRequest<Setting>('/settings/include_missing_employee_components', { method: 'GET' });

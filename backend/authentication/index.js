@@ -11,6 +11,7 @@ router.post('/verify-identifier', authController.verifyIdentifier);
 
 // Protected routes
 router.get('/me', protect, authController.getMe);
+router.get('/ticket-sso-url', protect, authController.getTicketSsoUrl);
 router.put('/change-password', protect, authController.changePassword);
 
 module.exports = router;
