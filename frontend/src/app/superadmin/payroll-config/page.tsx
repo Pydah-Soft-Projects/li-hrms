@@ -331,7 +331,7 @@ export default function PayrollConfigPage() {
   };
 
   return (
-    <LoansPageShell maxWidth="max-w-5xl">
+    <LoansPageShell>
       <LoansPageHeader
         badge="Payroll configuration"
         title="Payroll configuration"

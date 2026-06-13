@@ -141,8 +141,9 @@ export default function StatutoryDeductionsPage() {
         }
       />
 
-      <div className="space-y-5">
-        <LoanDetailSection>
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+        <div className="min-w-0 space-y-5">
+        <LoanDetailSection className="min-w-0">
           <LoanDetailSectionTitle className="flex items-center gap-2">
             <Shield className="h-4 w-4" style={{ color: 'var(--ps-accent)' }} />
             ESI (Employees&apos; State Insurance)
@@ -187,15 +188,15 @@ export default function StatutoryDeductionsPage() {
                   style={loansFormInputStyle()}
                 />
               </div>
-              <div className="sm:col-span-2">
+              <div>
                 <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">ESI Wage Base (Calculation Method)</label>
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <div className="flex-1">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <div className="min-w-0 flex-1">
                     <select
                       value={esi.wageBaseField || ''}
                       onChange={(e) => setEsi((s) => ({ ...s, wageBaseField: e.target.value }))}
                       className={loansFormInputClass()}
-                  style={loansFormInputStyle()}
+                      style={loansFormInputStyle()}
                     >
                       <option value="">Percentage of Basic Pay</option>
                       {salaryFields.map((field) => (
@@ -206,7 +207,7 @@ export default function StatutoryDeductionsPage() {
                     </select>
                   </div>
                   {!esi.wageBaseField && (
-                    <div className="flex-1">
+                    <div className="w-full shrink-0 sm:w-28">
                       <div className="relative">
                         <input
                           type="number"
@@ -218,14 +219,14 @@ export default function StatutoryDeductionsPage() {
                           className={`${loansFormInputClass()} pr-8`}
                           style={loansFormInputStyle()}
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
                       </div>
                     </div>
                   )}
                 </div>
                 <p className="mt-1 text-xs text-slate-400">
-                  {esi.wageBaseField 
-                    ? `ESI will be calculated on the full value of "${salaryFields.find(f => f.id === esi.wageBaseField)?.label || esi.wageBaseField}".`
+                  {esi.wageBaseField
+                    ? `ESI will be calculated on the full value of "${salaryFields.find((f) => f.id === esi.wageBaseField)?.label || esi.wageBaseField}".`
                     : `ESI will be calculated on ${esi.wageBasePercentOfBasic}% of the employee's Basic Salary.`}
                 </p>
               </div>
@@ -239,13 +240,13 @@ export default function StatutoryDeductionsPage() {
                   className={loansFormInputClass()}
                   style={loansFormInputStyle()}
                 />
-                <p className="mt-0.5 text-xs text-slate-400">When enabled: ESI applies only if employee basic pay ≤ this ceiling. Contribution is still on (% of basic) above. 0 = no ceiling.</p>
+                <p className="mt-1 text-xs text-slate-400">When enabled: ESI applies only if employee basic pay ≤ this ceiling. Contribution is still on (% of basic) above. 0 = no ceiling.</p>
               </div>
             </div>
           </div>
         </LoanDetailSection>
 
-        <LoanDetailSection>
+        <LoanDetailSection className="min-w-0">
           <LoanDetailSectionTitle className="flex items-center gap-2">
             <Building2 className="h-4 w-4" style={{ color: 'var(--ps-accent)' }} />
             PF (Provident Fund / EPF)
@@ -263,88 +264,93 @@ export default function StatutoryDeductionsPage() {
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Calculated on Basic (or Basic + DA). Upper limit: if salary ≥ ceiling, PF is calculated on the ceiling amount (e.g. ₹15,000); else on full basic. Employee share is deducted from salary; employer share is for records.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Employee %</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="100"
-                  value={pf.employeePercent}
-                  onChange={(e) => setPf((s) => ({ ...s, employeePercent: Number(e.target.value) || 0 }))}
-                  className={loansFormInputClass()}
-                  style={loansFormInputStyle()}
-                />
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Employee %</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={pf.employeePercent}
+                    onChange={(e) => setPf((s) => ({ ...s, employeePercent: Number(e.target.value) || 0 }))}
+                    className={loansFormInputClass()}
+                    style={loansFormInputStyle()}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Employer %</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={pf.employerPercent}
+                    onChange={(e) => setPf((s) => ({ ...s, employerPercent: Number(e.target.value) || 0 }))}
+                    className={loansFormInputClass()}
+                    style={loansFormInputStyle()}
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Employer %</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="100"
-                  value={pf.employerPercent}
-                  onChange={(e) => setPf((s) => ({ ...s, employerPercent: Number(e.target.value) || 0 }))}
-                  className={loansFormInputClass()}
-                  style={loansFormInputStyle()}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Upper limit / wage ceiling (₹/month)</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={pf.wageCeiling}
-                  onChange={(e) => setPf((s) => ({ ...s, wageCeiling: Number(e.target.value) || 0 }))}
-                  className={loansFormInputClass()}
-                  style={loansFormInputStyle()}
-                />
-                <p className="mt-0.5 text-xs text-slate-400">If basic ≥ this, PF calculated on this amount; else on full basic. e.g. 15000.</p>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">Contribution Base (Calculated On)</label>
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <select
-                      value={pf.wageBaseField || ""}
-                      onChange={(e) => setPf((s) => ({ ...s, wageBaseField: e.target.value || null }))}
-                      className={loansFormInputClass()}
-                  style={loansFormInputStyle()}
-                    >
-                      <option value="">Use Standard Base (Basic/DA)</option>
-                      {salaryFields.map((field) => (
-                        <option key={field.id} value={field.id}>
-                          Use {field.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {!pf.wageBaseField && (
-                    <div className="flex-1">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Upper limit / wage ceiling (₹/month)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={pf.wageCeiling}
+                    onChange={(e) => setPf((s) => ({ ...s, wageCeiling: Number(e.target.value) || 0 }))}
+                    className={loansFormInputClass()}
+                    style={loansFormInputStyle()}
+                  />
+                  <p className="mt-1 text-xs text-slate-400">If basic ≥ this, PF calculated on this amount; else on full basic. e.g. 15000.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Contribution Base (Calculated On)</label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="min-w-0 flex-1">
                       <select
-                        value={pf.base}
-                        onChange={(e) => setPf((s) => ({ ...s, base: e.target.value as 'basic' | 'basic_da' }))}
+                        value={pf.wageBaseField || ''}
+                        onChange={(e) => setPf((s) => ({ ...s, wageBaseField: e.target.value || null }))}
                         className={loansFormInputClass()}
-                  style={loansFormInputStyle()}
+                        style={loansFormInputStyle()}
                       >
-                        <option value="basic">Basic only</option>
-                        <option value="basic_da">Basic + DA</option>
+                        <option value="">Use Standard Base (Basic/DA)</option>
+                        {salaryFields.map((field) => (
+                          <option key={field.id} value={field.id}>
+                            Use {field.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
-                  )}
+                    {!pf.wageBaseField && (
+                      <div className="w-full shrink-0 sm:w-40">
+                        <select
+                          value={pf.base}
+                          onChange={(e) => setPf((s) => ({ ...s, base: e.target.value as 'basic' | 'basic_da' }))}
+                          className={loansFormInputClass()}
+                          style={loansFormInputStyle()}
+                        >
+                          <option value="basic">Basic only</option>
+                          <option value="basic_da">Basic + DA</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {pf.wageBaseField
+                      ? `PF will be calculated on the full value of "${salaryFields.find((f) => f.id === pf.wageBaseField)?.label || pf.wageBaseField}".`
+                      : `PF will be calculated on ${pf.base === 'basic' ? 'Basic Salary' : 'Basic + Dearness Allowance'}.`}
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-slate-400">
-                  {pf.wageBaseField 
-                    ? `PF will be calculated on the full value of "${salaryFields.find(f => f.id === pf.wageBaseField)?.label || pf.wageBaseField}".`
-                    : `PF will be calculated on ${pf.base === 'basic' ? 'Basic Salary' : 'Basic + Dearness Allowance'}.`}
-                </p>
               </div>
             </div>
           </div>
         </LoanDetailSection>
+        </div>
 
-        <LoanDetailSection>
+        <LoanDetailSection className="min-w-0">
           <LoanDetailSectionTitle className="flex items-center gap-2">
             <Briefcase className="h-4 w-4" style={{ color: 'var(--ps-accent)' }} />
             Profession Tax
@@ -369,17 +375,17 @@ export default function StatutoryDeductionsPage() {
                 value={professionTax.state}
                 onChange={(e) => setProfessionTax((s) => ({ ...s, state: e.target.value }))}
                 placeholder="e.g. Maharashtra"
-                className={`max-w-xs ${loansFormInputClass()}`}
+                className={loansFormInputClass()}
                 style={loansFormInputStyle()}
               />
             </div>
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="mb-2 flex items-center justify-between gap-3">
                 <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Slabs (salary range → amount)</span>
                 <button
                   type="button"
                   onClick={() => setProfessionTax((s) => ({ ...s, slabs: [...(s.slabs ?? defaultPtSlabs), { min: 0, max: null, amount: 0 }] }))}
-                  className="inline-flex items-center gap-1 text-xs font-medium hover:underline"
+                  className="inline-flex shrink-0 items-center gap-1 text-xs font-medium hover:underline"
                   style={{ color: 'var(--ps-accent)' }}
                 >
                   <Plus className="h-3.5 w-3.5" /> Add slab

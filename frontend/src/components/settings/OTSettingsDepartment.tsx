@@ -258,7 +258,7 @@ export default function OTSettingsDepartment({
   const compactInputStyle = inputStyle;
 
   return (
-    <SettingsPanel className="max-w-5xl">
+    <SettingsPanel>
       <SettingsPanelHeader section="Overtime" title="Overtime (OT)" subtitle="Department-level OT recognition, hours, and pay basis overrides." />
 
       <SettingsSectionCard title="Parameters" accent className="lg:sticky lg:top-24">

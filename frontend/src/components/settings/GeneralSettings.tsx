@@ -1,11 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import { SettingsSkeleton } from './SettingsSkeleton';
-import { Award, ArrowRight } from 'lucide-react';
 import {
   SettingsPanel,
   SettingsPanelHeader,
@@ -55,8 +53,6 @@ const DEFAULT_FILE_STORAGE_CONFIG: FileStorageConfig = {
 };
 
 const GeneralSettings = () => {
-  const router = useRouter();
-  const pathname = usePathname();
   const [lateInGrace, setLateInGrace] = useState<number>(15);
   const [earlyOutGrace, setEarlyOutGrace] = useState<number>(15);
   const [allowEmployeeBulkProcess, setAllowEmployeeBulkProcess] = useState<boolean>(false);
@@ -253,42 +249,10 @@ const GeneralSettings = () => {
         subtitle="Comprehensive Overview of Core Configuration and General Settings"
       />
 
-      <SettingsSectionCard
-        title="Human resources"
-        description="Shortcuts to HR policy settings that also live under the Human resources group in the sidebar."
-        accent
-      >
-        <div
-          className="flex flex-col gap-4 border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"
-          style={settingsLedgerBorder}
-        >
-          <div className="flex min-w-0 gap-3">
-            <div
-              className="flex h-10 w-10 flex-shrink-0 items-center justify-center"
-              style={{ ...settingsLedgerBorder, backgroundColor: 'var(--ps-accent-soft)', color: 'var(--ps-accent)' }}
-            >
-              <Award className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              <h4 className="text-sm font-semibold text-stone-900 dark:text-stone-100">Promotions &amp; transfers — multi-level approval</h4>
-              <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
-                Configure the ordered approval chain for salary changes and internal moves (or the default RM/HOD first approver
-                when multi-level stages are off).
-              </p>
-            </div>
-          </div>
-          <SettingsOutlineButton
-            onClick={() => router.push(`${pathname}?tab=promotions_transfers`)}
-            className="self-start whitespace-nowrap sm:self-center"
-          >
-            Open settings
-            <ArrowRight className="h-3.5 w-3.5" />
-          </SettingsOutlineButton>
-        </div>
-      </SettingsSectionCard>
-
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2 lg:gap-5">
+        <div className="min-w-0 space-y-4 sm:space-y-5">
       <SettingsSectionCard title="Attendance Grace Periods">
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <SettingsField
             label="Late In Grace Period"
             htmlFor="lateInGrace"
@@ -408,6 +372,9 @@ const GeneralSettings = () => {
         </div>
       </SettingsSectionCard>
 
+        </div>
+
+        <div className="min-w-0 space-y-4 sm:space-y-5">
       <SettingsSectionCard
         title="File storage"
         description="Choose where uploaded files (certificates, profile photos, evidence, company logo) are stored."
@@ -634,7 +601,7 @@ const GeneralSettings = () => {
         <div className="mb-4 flex items-center justify-end">
           <span className="rounded bg-stone-100 px-2 py-0.5 text-[10px] font-semibold text-stone-500">COMING SOON</span>
         </div>
-        <div className="grid grid-cols-2 gap-8 grayscale">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 grayscale">
           <SettingsField label="Language">
             <div className="h-11 border bg-stone-50" style={settingsLedgerBorder} />
           </SettingsField>
@@ -643,6 +610,8 @@ const GeneralSettings = () => {
           </SettingsField>
         </div>
       </SettingsSectionCard>
+        </div>
+      </div>
 
       <SettingsSaveBar onSave={handleSave} saving={saving} />
     </SettingsPanel>

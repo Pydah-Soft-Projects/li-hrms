@@ -1034,7 +1034,7 @@ export default function PayrollBatchesHub({
           className="fixed bottom-0 left-0 right-0 z-40 border-t bg-white/95 px-4 py-3 backdrop-blur-md dark:bg-stone-950/95 sm:ml-[240px]"
           style={{ borderColor: "var(--ps-accent-border)" }}
         >
-          <div className="mx-auto flex max-w-[1920px] flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center">
+          <div className="flex w-full min-w-0 flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center">
             <div className="text-sm font-semibold text-stone-800 dark:text-stone-200">
               {selectedIds.length} batch(es) selected
               <button

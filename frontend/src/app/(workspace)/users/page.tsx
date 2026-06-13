@@ -20,6 +20,13 @@ import {
   isManagementRole
 } from '@/lib/permissions';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
+import {
+  getReadButtonLabel,
+  getWriteButtonLabel,
+  getReadButtonTitle,
+  getWriteButtonTitle,
+  getReleaseButtonTitle,
+} from '@/lib/modulePermissionLabels';
 import Spinner from '@/components/Spinner';
 import {
   buildDivisionMappingFromDepartment,
@@ -1728,6 +1735,7 @@ export default function UsersPage() {
                                   const hasWrite = formData.featureControl?.includes(`${module.code}:write`) || false;
                                   const hasVerify = (module as any).verifiable ? (formData.featureControl?.includes(`${module.code}:verify`) || false) : false;
                                   const hasTerminate = (module as any).terminable ? (formData.featureControl?.includes(`${module.code}:terminate`) || false) : false;
+                                  const hasRelease = (module as any).releasable ? (formData.featureControl?.includes(`${module.code}:release`) || false) : false;
 
                                   const hasBank = (module as any).bankable ? (formData.featureControl?.includes(`${module.code}:bank`) || false) : false;
                                   const hasFile = (module as any).fileUploadable ? (formData.featureControl?.includes(`${module.code}:file`) || false) : false;
@@ -1782,6 +1790,15 @@ export default function UsersPage() {
                                     setFormData({ ...formData, featureControl: newFeatures });
                                   };
 
+                                  const toggleRelease = () => {
+                                    const currentFeatures = formData.featureControl || [];
+                                    const releasePerm = `${module.code}:release`;
+                                    const newFeatures = hasRelease
+                                      ? currentFeatures.filter(f => f !== releasePerm)
+                                      : [...currentFeatures, releasePerm];
+                                    setFormData({ ...formData, featureControl: newFeatures });
+                                  };
+
                                   const toggleBank = () => {
                                     const currentFeatures = formData.featureControl || [];
                                     const bankPerm = `${module.code}:bank`;
@@ -1807,27 +1824,27 @@ export default function UsersPage() {
                                     >
                                       <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{module.label}</span>
                                       <div className="flex flex-wrap gap-2 justify-end max-w-[70%]">
-                                        {/* Read Toggle */}
                                         <button
                                           type="button"
                                           onClick={toggleRead}
+                                          title={getReadButtonTitle(module.code)}
                                           className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRead
                                             ? 'bg-blue-500 text-white shadow-sm'
                                             : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                             }`}
                                         >
-                                          Read
+                                          {getReadButtonLabel(module.code)}
                                         </button>
-                                        {/* Write Toggle */}
                                         <button
                                           type="button"
                                           onClick={toggleWrite}
+                                          title={getWriteButtonTitle(module.code)}
                                           className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasWrite
                                             ? 'bg-emerald-500 text-white shadow-sm'
                                             : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                             }`}
                                         >
-                                          Write
+                                          {getWriteButtonLabel(module.code)}
                                         </button>
                                         {(module as any).terminable && (
                                           <button
@@ -1840,6 +1857,19 @@ export default function UsersPage() {
                                               }`}
                                           >
                                             Terminate
+                                          </button>
+                                        )}
+                                        {(module as any).releasable && (
+                                          <button
+                                            type="button"
+                                            onClick={toggleRelease}
+                                            title={getReleaseButtonTitle(module.code)}
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRelease
+                                              ? 'bg-teal-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            Release
                                           </button>
                                         )}
                                         {/* Verify Toggle — only for verifiable modules (e.g. EMPLOYEES) */}
@@ -2248,6 +2278,7 @@ export default function UsersPage() {
                                 const hasWrite = employeeFormData.featureControl?.includes(`${module.code}:write`) || false;
                                 const hasVerify = (module as any).verifiable ? (employeeFormData.featureControl?.includes(`${module.code}:verify`) || false) : false;
                                 const hasTerminate = (module as any).terminable ? (employeeFormData.featureControl?.includes(`${module.code}:terminate`) || false) : false;
+                                const hasRelease = (module as any).releasable ? (employeeFormData.featureControl?.includes(`${module.code}:release`) || false) : false;
                                 const hasBank = (module as any).bankable ? (employeeFormData.featureControl?.includes(`${module.code}:bank`) || false) : false;
                                 const hasFile = (module as any).fileUploadable ? (employeeFormData.featureControl?.includes(`${module.code}:file`) || false) : false;
 
@@ -2301,6 +2332,15 @@ export default function UsersPage() {
                                   setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
                                 };
 
+                                const toggleRelease = () => {
+                                  const currentFeatures = employeeFormData.featureControl || [];
+                                  const releasePerm = `${module.code}:release`;
+                                  const newFeatures = hasRelease
+                                    ? currentFeatures.filter(f => f !== releasePerm)
+                                    : [...currentFeatures, releasePerm];
+                                  setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
+                                };
+
                                 const toggleBank = () => {
                                   const currentFeatures = employeeFormData.featureControl || [];
                                   const bankPerm = `${module.code}:bank`;
@@ -2329,22 +2369,24 @@ export default function UsersPage() {
                                       <button
                                         type="button"
                                         onClick={toggleRead}
+                                        title={getReadButtonTitle(module.code)}
                                         className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRead
                                           ? 'bg-blue-500 text-white shadow-sm'
                                           : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                           }`}
                                       >
-                                        Read
+                                        {getReadButtonLabel(module.code)}
                                       </button>
                                       <button
                                         type="button"
                                         onClick={toggleWrite}
+                                        title={getWriteButtonTitle(module.code)}
                                         className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasWrite
                                           ? 'bg-emerald-500 text-white shadow-sm'
                                           : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                           }`}
                                       >
-                                        Write
+                                        {getWriteButtonLabel(module.code)}
                                       </button>
                                       {(module as any).terminable && (
                                         <button
@@ -2357,6 +2399,19 @@ export default function UsersPage() {
                                             }`}
                                         >
                                           Terminate
+                                        </button>
+                                      )}
+                                      {(module as any).releasable && (
+                                        <button
+                                          type="button"
+                                          onClick={toggleRelease}
+                                          title={getReleaseButtonTitle(module.code)}
+                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRelease
+                                            ? 'bg-teal-500 text-white shadow-sm'
+                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                            }`}
+                                        >
+                                          Release
                                         </button>
                                       )}
                                       {(module as any).fileUploadable && (
@@ -2618,6 +2673,7 @@ export default function UsersPage() {
                                   const hasWrite = formData.featureControl?.includes(`${module.code}:write`) || false;
                                   const hasVerify = (module as any).verifiable ? (formData.featureControl?.includes(`${module.code}:verify`) || false) : false;
                                   const hasTerminate = (module as any).terminable ? (formData.featureControl?.includes(`${module.code}:terminate`) || false) : false;
+                                  const hasRelease = (module as any).releasable ? (formData.featureControl?.includes(`${module.code}:release`) || false) : false;
                                   const hasBank = (module as any).bankable ? (formData.featureControl?.includes(`${module.code}:bank`) || false) : false;
                                   const hasFile = (module as any).fileUploadable ? (formData.featureControl?.includes(`${module.code}:file`) || false) : false;
 
@@ -2671,6 +2727,15 @@ export default function UsersPage() {
                                     setFormData({ ...formData, featureControl: newFeatures });
                                   };
 
+                                  const toggleRelease = () => {
+                                    const currentFeatures = formData.featureControl || [];
+                                    const releasePerm = `${module.code}:release`;
+                                    const newFeatures = hasRelease
+                                      ? currentFeatures.filter(f => f !== releasePerm)
+                                      : [...currentFeatures, releasePerm];
+                                    setFormData({ ...formData, featureControl: newFeatures });
+                                  };
+
                                   const toggleBank = () => {
                                     const currentFeatures = formData.featureControl || [];
                                     const bankPerm = `${module.code}:bank`;
@@ -2699,22 +2764,24 @@ export default function UsersPage() {
                                         <button
                                           type="button"
                                           onClick={toggleRead}
+                                          title={getReadButtonTitle(module.code)}
                                           className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRead
                                             ? 'bg-blue-500 text-white shadow-sm'
                                             : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                             }`}
                                         >
-                                          Read
+                                          {getReadButtonLabel(module.code)}
                                         </button>
                                         <button
                                           type="button"
                                           onClick={toggleWrite}
+                                          title={getWriteButtonTitle(module.code)}
                                           className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasWrite
                                             ? 'bg-emerald-500 text-white shadow-sm'
                                             : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                             }`}
                                         >
-                                          Write
+                                          {getWriteButtonLabel(module.code)}
                                         </button>
                                         {(module as any).terminable && (
                                           <button
@@ -2727,6 +2794,19 @@ export default function UsersPage() {
                                               }`}
                                           >
                                             Terminate
+                                          </button>
+                                        )}
+                                        {(module as any).releasable && (
+                                          <button
+                                            type="button"
+                                            onClick={toggleRelease}
+                                            title={getReleaseButtonTitle(module.code)}
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRelease
+                                              ? 'bg-teal-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            Release
                                           </button>
                                         )}
                                         {(module as any).verifiable && (
@@ -3178,7 +3258,8 @@ export default function UsersPage() {
                                   hasWrite: selectedViewUser.featureControl?.includes(`${m.code}:write`) || false,
                                   hasVerify: (m as any).verifiable ? (selectedViewUser.featureControl?.includes(`${m.code}:verify`) || false) : false,
                                   hasTerminate: (m as any).terminable ? (selectedViewUser.featureControl?.includes(`${m.code}:terminate`) || false) : false,
-                                })).filter(m => m.hasRead || m.hasWrite || m.hasVerify || m.hasTerminate);
+                                  hasRelease: (m as any).releasable ? (selectedViewUser.featureControl?.includes(`${m.code}:release`) || false) : false,
+                                })).filter(m => m.hasRead || m.hasWrite || m.hasVerify || m.hasTerminate || m.hasRelease);
 
                                 if (modulesWithPerms.length === 0) return null;
 
@@ -3197,12 +3278,12 @@ export default function UsersPage() {
                                           <div className="flex gap-2">
                                             {m.hasRead && (
                                               <span className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-2 py-1 text-[9px] font-black text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
-                                                <div className="h-1 w-1 rounded-full bg-blue-500" /> READ
+                                                <div className="h-1 w-1 rounded-full bg-blue-500" /> {getReadButtonLabel(m.code).toUpperCase()}
                                               </span>
                                             )}
                                             {m.hasWrite && (
                                               <span className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 text-[9px] font-black text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
-                                                <div className="h-1 w-1 rounded-full bg-emerald-500" /> WRITE
+                                                <div className="h-1 w-1 rounded-full bg-emerald-500" /> {getWriteButtonLabel(m.code).toUpperCase()}
                                               </span>
                                             )}
                                             {(m as any).hasVerify && (
@@ -3213,6 +3294,11 @@ export default function UsersPage() {
                                             {(m as any).hasTerminate && (
                                               <span className="flex items-center gap-1.5 rounded-lg bg-rose-50 px-2 py-1 text-[9px] font-black text-rose-600 dark:bg-rose-500/10 dark:text-rose-400">
                                                 <div className="h-1 w-1 rounded-full bg-rose-500" /> TERMINATE
+                                              </span>
+                                            )}
+                                            {(m as any).hasRelease && (
+                                              <span className="flex items-center gap-1.5 rounded-lg bg-teal-50 px-2 py-1 text-[9px] font-black text-teal-600 dark:bg-teal-500/10 dark:text-teal-400">
+                                                <div className="h-1 w-1 rounded-full bg-teal-500" /> RELEASE
                                               </span>
                                             )}
                                           </div>

@@ -23,6 +23,9 @@ import {
   settingsSectionTitleClass,
 } from '@/lib/settingsUi';
 import {
+  getAccessLevelLabel,
+} from '@/lib/modulePermissionLabels';
+import {
   LoanDetailDialog,
   LoanDetailDialogBody,
   LoanDetailDialogHeader,
@@ -351,7 +354,7 @@ const FeatureControlSettings = () => {
                 key={mod.id}
                 type="button"
                 onClick={() => cycleModule(role, mod.id)}
-                title={`${mod.label} — ${tileState === 'disabled' ? 'Off' : tileState === 'read' ? 'Read' : 'Write'} (click to cycle)`}
+                title={`${mod.label} — ${getAccessLevelLabel(mod.id, tileState)} (click to cycle)`}
                 className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-xs font-medium transition-all ${
                   tileState === 'write'
                     ? 'border-emerald-500/80 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-600/60'
@@ -438,11 +441,11 @@ const FeatureControlSettings = () => {
   );
 
   return (
-    <SettingsPanel className="max-w-[1600px]">
+    <SettingsPanel>
       <SettingsPanelHeader
         section="Feature Control"
         title="Permissions by role"
-        subtitle="Control which modules each role can see and whether they have read or write access."
+        subtitle="Control which modules each role can access. Most modules use Read/Write; Payslips uses Self, Scoped, and Release (per user)."
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -453,12 +456,21 @@ const FeatureControlSettings = () => {
         </SettingsOutlineButton>
       </div>
 
-      <div className={`flex flex-wrap items-center gap-2 text-xs ${settingsFieldHelpClass}`}>
-        <span className="font-medium text-stone-600 dark:text-stone-300">Legend:</span>
-        <span><span className="inline-block h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-500 align-middle mr-1" />Off</span>
-        <span><span className="inline-block h-2 w-2 rounded-full bg-blue-500 align-middle mr-1" />Read</span>
-        <span><span className="inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle mr-1" />Write</span>
-        <span className="text-slate-400 dark:text-slate-500">— Click a tile to cycle.</span>
+      <div className={`flex flex-col gap-2 text-xs ${settingsFieldHelpClass}`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-stone-600 dark:text-stone-300">Legend:</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-500 align-middle mr-1" />Off</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-blue-500 align-middle mr-1" />Read</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle mr-1" />Write</span>
+          <span className="text-slate-400 dark:text-slate-500">— Click a tile to cycle.</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-stone-500 dark:text-stone-400">
+          <span className="font-medium text-stone-600 dark:text-stone-300">Payslips:</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-blue-500 align-middle mr-1" />Self</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle mr-1" />Scoped</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-teal-500 align-middle mr-1" />Release</span>
+          <span className="text-slate-400">— Release is set per user under Users.</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">

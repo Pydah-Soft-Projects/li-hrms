@@ -17,7 +17,11 @@ import {
   settingsInputStyle,
   settingsLedgerBorder,
   settingsFieldHelpClass,
+  settingsThemeAccentStyle,
+  settingsThemeInkStyle,
+  settingsThemeSoftStyle,
 } from '@/lib/settingsUi';
+import { SettingsWorkflowTheme } from '@/components/settings/SettingsThemeContext';
 
 const ResignationSettings = () => {
   const [loading, setLoading] = useState(false);
@@ -134,6 +138,7 @@ const ResignationSettings = () => {
             />
           </SettingsField>
 
+          <SettingsWorkflowTheme>
           <WorkflowManager
             workflow={settings.workflow}
             onChange={(workflow) => setSettings((s) => ({ ...s, workflow }))}
@@ -141,6 +146,7 @@ const ResignationSettings = () => {
             description="Approval steps before employee left date is set."
             isResignationWorkflow={true}
           />
+          </SettingsWorkflowTheme>
 
           <div className="space-y-4 border-t pt-6" style={settingsLedgerBorder}>
             <SettingsField label="Roles Allowed to Initiate Termination">
@@ -167,7 +173,7 @@ const ResignationSettings = () => {
                           workflow: { ...s.workflow, terminationAllowedRoles: roles }
                         }));
                       }}
-                      className="h-4 w-4 rounded border-stone-300 text-[color:var(--ps-accent)] focus:ring-[color:var(--ps-accent)] dark:border-stone-700 dark:bg-stone-900"
+                      className="h-4 w-4 rounded border-stone-300 text-[color:var(--settings-theme-accent,var(--ps-accent))] focus:ring-[color:var(--settings-theme-accent,var(--ps-accent))] dark:border-stone-700 dark:bg-stone-900"
                     />
                     <span className="text-xs font-semibold uppercase tracking-wider text-stone-700 dark:text-stone-300">
                       {role.replace('_', ' ')}
@@ -176,7 +182,7 @@ const ResignationSettings = () => {
                 ))}
                 <label
                   className="flex cursor-not-allowed items-center gap-3 border p-3 opacity-80"
-                  style={{ ...settingsLedgerBorder, borderColor: 'var(--ps-accent-border)', backgroundColor: 'var(--ps-accent-soft)' }}
+                  style={{ ...settingsLedgerBorder, ...settingsThemeSoftStyle, ...settingsThemeInkStyle }}
                 >
                   <input
                     type="checkbox"
@@ -184,7 +190,7 @@ const ResignationSettings = () => {
                     disabled={true}
                     className="h-4 w-4 rounded border-stone-300 text-[color:var(--ps-accent)] dark:border-stone-700 dark:bg-stone-900"
                   />
-                  <span className="text-xs font-semibold uppercase tracking-wider text-[color:var(--ps-accent-ink)]">
+                  <span className="text-xs font-semibold uppercase tracking-wider" style={settingsThemeInkStyle}>
                     super admin
                   </span>
                 </label>

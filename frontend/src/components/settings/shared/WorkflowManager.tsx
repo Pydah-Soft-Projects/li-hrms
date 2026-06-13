@@ -12,6 +12,9 @@ import {
   settingsInputStyle,
   settingsLedgerBorder,
   settingsSectionTitleClass,
+  settingsThemeAccentStyle,
+  settingsThemeInkStyle,
+  settingsThemeSoftStyle,
   settingsToggleThumbClass,
   settingsToggleTrackClass,
 } from '@/lib/settingsUi';
@@ -117,7 +120,7 @@ const WorkflowManager = ({
                 <div className="flex items-center gap-3">
                     <div
                         className="flex h-10 w-10 items-center justify-center"
-                        style={{ ...settingsLedgerBorder, backgroundColor: 'var(--ps-accent-soft)', color: 'var(--ps-accent)' }}
+                        style={{ ...settingsLedgerBorder, ...settingsThemeSoftStyle, ...settingsThemeAccentStyle }}
                     >
                         <Icon className="h-5 w-5" />
                     </div>
@@ -137,8 +140,8 @@ const WorkflowManager = ({
                     {steps.map((step, idx) => (
                         <React.Fragment key={idx}>
                             <div
-                                className="flex items-center gap-2 whitespace-nowrap border px-3 py-1.5 text-[10px] font-semibold uppercase text-[color:var(--ps-accent-ink)]"
-                                style={{ ...settingsLedgerBorder, backgroundColor: 'var(--ps-accent-soft)' }}
+                                className="flex items-center gap-2 whitespace-nowrap border px-3 py-1.5 text-[10px] font-semibold uppercase"
+                                style={{ ...settingsLedgerBorder, ...settingsThemeSoftStyle, ...settingsThemeInkStyle }}
                             >
                                 {step.stepName || `Level ${step.stepOrder}`}
                             </div>
@@ -158,8 +161,8 @@ const WorkflowManager = ({
                             style={settingsLedgerBorder}
                         >
                             <div
-                                className="flex h-10 w-10 shrink-0 items-center justify-center font-bold text-[color:var(--ps-accent)]"
-                                style={{ ...settingsLedgerBorder, backgroundColor: 'var(--ps-accent-soft)' }}
+                                className="flex h-10 w-10 shrink-0 items-center justify-center font-bold"
+                                style={{ ...settingsLedgerBorder, ...settingsThemeSoftStyle, ...settingsThemeAccentStyle }}
                             >
                                 {step.stepOrder}
                             </div>

@@ -11,8 +11,22 @@ import {
 } from '@/components/loans/LoanDetailDialogShell';
 import { loansPrimaryButtonClass, loansPrimaryButtonStyle } from '@/components/loans/LoansPageShell';
 
-/** Ledger border token for settings surfaces */
-export const settingsLedgerBorder: CSSProperties = { borderColor: 'var(--ps-accent-border)' };
+/** Section/field border — themed per settings tab; falls back to company accent. */
+export const settingsLedgerBorder: CSSProperties = {
+  borderColor: 'var(--settings-theme-border, var(--ps-accent-border))',
+};
+
+export const settingsThemeSoftStyle: CSSProperties = {
+  backgroundColor: 'var(--settings-theme-soft, var(--ps-accent-soft))',
+};
+
+export const settingsThemeInkStyle: CSSProperties = {
+  color: 'var(--settings-theme-ink, var(--ps-accent-ink))',
+};
+
+export const settingsThemeAccentStyle: CSSProperties = {
+  color: 'var(--settings-theme-accent, var(--ps-accent))',
+};
 
 /** Flat ledger card — no heavy shadows */
 export const settingsCardClass =
@@ -24,7 +38,7 @@ export const settingsCardHeaderClass =
 export const settingsCardBodyClass = 'p-3 sm:p-4';
 
 export const settingsSectionTitleClass =
-  'text-[10px] font-semibold uppercase tracking-[0.28em] text-stone-500 dark:text-stone-400';
+  'text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--settings-theme-ink,var(--ps-accent-ink))]';
 
 export const settingsPanelTitleClass =
   'text-lg font-semibold text-stone-900 dark:text-stone-100 sm:text-xl';
@@ -48,8 +62,8 @@ export const settingsNavItemInactiveClass =
   'border-transparent text-stone-500 hover:border-stone-200 hover:bg-stone-50 hover:text-stone-900 dark:text-stone-400 dark:hover:border-stone-800 dark:hover:bg-stone-900 dark:hover:text-stone-100';
 
 export const settingsToggleTrackClass = (on: boolean) =>
-  `relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-[color:var(--ps-accent)] focus:ring-offset-2 ${
-    on ? 'bg-[var(--ps-accent)]' : 'bg-stone-200 dark:bg-stone-700'
+  `relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-[color:var(--settings-theme-accent,var(--ps-accent))] focus:ring-offset-2 ${
+    on ? 'bg-[var(--settings-theme-accent,var(--ps-accent))]' : 'bg-stone-200 dark:bg-stone-700'
   }`;
 
 export const settingsToggleThumbClass = (on: boolean) =>
@@ -57,8 +71,17 @@ export const settingsToggleThumbClass = (on: boolean) =>
     on ? 'translate-x-5' : 'translate-x-1'
   }`;
 
-export const settingsInputClass = loansFormInputClass;
-export const settingsInputStyle = loansFormInputStyle;
+export function settingsInputClass(invalid = false) {
+  return `w-full border bg-white px-4 py-2.5 text-sm text-stone-900 transition focus:outline-none focus:ring-1 disabled:opacity-60 dark:bg-stone-950 dark:text-stone-100 ${
+    invalid
+      ? 'border-rose-500 ring-rose-200 dark:ring-rose-900'
+      : 'focus:ring-[color:var(--settings-theme-accent,var(--ps-accent))]'
+  }`;
+}
+
+export function settingsInputStyle(invalid = false): CSSProperties {
+  return invalid ? {} : { borderColor: 'var(--settings-theme-border, var(--ps-accent-border))' };
+}
 export const settingsLabelClass = loansFormLabelClass;
 export const settingsLabelStyle = loansFormLabelStyle;
 export const settingsSaveButtonClass = loansPrimaryButtonClass;

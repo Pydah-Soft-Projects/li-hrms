@@ -157,22 +157,28 @@ const EmployeeSettings = () => {
                 </div>
 
                 <div className="space-y-4">
-                    <SettingsToggleRow
-                        id="profileUpdateRequestEnabled"
-                        label="Profile update requests"
-                        description="Allow employees to submit profile update requests for HR approval."
-                        checked={updateRequestConfig.enabled}
-                        onChange={(next) => setUpdateRequestConfig({ ...updateRequestConfig, enabled: next })}
-                    />
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <SettingsToggleRow
+                            id="profileUpdateRequestEnabled"
+                            label="Profile update requests"
+                            description="Allow employees to submit profile update requests for HR approval."
+                            checked={updateRequestConfig.enabled}
+                            onChange={(next) => setUpdateRequestConfig({ ...updateRequestConfig, enabled: next })}
+                        />
 
-                    <SettingsToggleRow
-                        id="allowQualifications"
-                        label="Allow qualifications in requests"
-                        description="Employees can request changes to qualifications when profile update requests are enabled."
-                        checked={updateRequestConfig.allowQualifications}
-                        onChange={(next) => setUpdateRequestConfig({ ...updateRequestConfig, allowQualifications: next })}
-                        disabled={!updateRequestConfig.enabled}
-                    />
+                        <div className={!updateRequestConfig.enabled ? 'opacity-50' : undefined}>
+                            <SettingsToggleRow
+                                id="allowQualifications"
+                                label="Allow qualifications in requests"
+                                description="Employees can request changes to qualifications when profile update requests are enabled."
+                                checked={updateRequestConfig.allowQualifications}
+                                onChange={(next) => {
+                                    if (!updateRequestConfig.enabled) return;
+                                    setUpdateRequestConfig({ ...updateRequestConfig, allowQualifications: next });
+                                }}
+                            />
+                        </div>
+                    </div>
 
                     <div className="space-y-2">
                         <p className="text-xs font-semibold uppercase tracking-tight text-stone-900 dark:text-stone-100">
@@ -213,7 +219,7 @@ const EmployeeSettings = () => {
             </SettingsSectionCard>
 
             <SettingsSectionCard title="Default deduction settings for new employees">
-                <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <SettingsToggleRow
                         id="defaultApplyStatutoryDeductions"
                         label="Apply statutory deductions by default"

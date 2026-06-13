@@ -15,25 +15,25 @@ const seedSettings = async () => {
         const settingsToSeed = [
             {
                 key: 'feature_control_employee',
-                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'PROMOTIONS_TRANSFERS'] },
+                value: { activeModules: ['DASHBOARD:read', 'LEAVE_OD:read', 'ATTENDANCE:read', 'PROFILE:read', 'PAYSLIPS:read', 'PROMOTIONS_TRANSFERS:read'] },
                 description: 'Active modules for Employee role',
                 category: 'feature_control',
             },
             {
                 key: 'feature_control_hod',
-                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'LEAVE_REGISTER', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'REPORTS', 'PROMOTIONS_TRANSFERS'] },
+                value: { activeModules: ['DASHBOARD:read', 'LEAVE_OD:read', 'LEAVE_REGISTER:read', 'ATTENDANCE:read', 'PROFILE:read', 'PAYSLIPS:read', 'PAYSLIPS:write', 'PAYSLIPS:release', 'REPORTS:read', 'PROMOTIONS_TRANSFERS:read'] },
                 description: 'Active modules for HOD role',
                 category: 'feature_control',
             },
             {
                 key: 'feature_control_hr',
-                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'LEAVE_REGISTER', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'EMPLOYEES', 'REPORTS', 'PROMOTIONS_TRANSFERS'] },
+                value: { activeModules: ['DASHBOARD:read', 'LEAVE_OD:read', 'LEAVE_REGISTER:read', 'ATTENDANCE:read', 'PROFILE:read', 'PAYSLIPS:read', 'PAYSLIPS:write', 'PAYSLIPS:release', 'EMPLOYEES:read', 'REPORTS:read', 'PROMOTIONS_TRANSFERS:read'] },
                 description: 'Active modules for HR role',
                 category: 'feature_control',
             },
             {
                 key: 'feature_control_manager',
-                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'LEAVE_REGISTER', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'REPORTS', 'PROMOTIONS_TRANSFERS'] },
+                value: { activeModules: ['DASHBOARD:read', 'LEAVE_OD:read', 'LEAVE_REGISTER:read', 'ATTENDANCE:read', 'PROFILE:read', 'PAYSLIPS:read', 'PAYSLIPS:write', 'PAYSLIPS:release', 'REPORTS:read', 'PROMOTIONS_TRANSFERS:read'] },
                 description: 'Active modules for Manager role',
                 category: 'feature_control',
             },

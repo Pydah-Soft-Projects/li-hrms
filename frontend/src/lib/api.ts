@@ -4710,15 +4710,59 @@ export const api = {
     return apiRequest<any>(`/payroll/payslip/${employeeId}/${month}`, { method: 'GET' });
   },
 
-  getPayrollRecords: async (params: { month?: string; employeeId?: string; departmentId?: string; divisionId?: string; status?: string }) => {
+  getPayrollRecords: async (params: {
+    month?: string;
+    employeeId?: string;
+    departmentId?: string;
+    divisionId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) => {
     const queryParams = new URLSearchParams();
     if (params.month) queryParams.append('month', params.month);
     if (params.employeeId) queryParams.append('employeeId', params.employeeId);
     if (params.departmentId) queryParams.append('departmentId', params.departmentId);
     if (params.divisionId) queryParams.append('divisionId', params.divisionId);
     if (params.status) queryParams.append('status', params.status);
+    if (params.page) queryParams.append('page', String(params.page));
+    if (params.limit) queryParams.append('limit', String(params.limit));
     const query = queryParams.toString();
-    return apiRequest<any>(`/payroll${query ? `?${query}` : ''}`, { method: 'GET' });
+    return apiRequest<{
+      success: boolean;
+      data?: unknown[];
+      count?: number;
+      total?: number;
+      hasMore?: boolean;
+      page?: number;
+      message?: string;
+    }>(`/payroll${query ? `?${query}` : ''}`, { method: 'GET' });
+  },
+
+  releasePayslips: async (body: {
+    month: string;
+    departmentId?: string;
+    divisionId?: string;
+    recordIds?: string[];
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      count?: number;
+      modifiedCount?: number;
+      message?: string;
+      stats?: {
+        total: number;
+        alreadyReleased: number;
+        pendingRelease: number;
+        batchNotReady: number;
+        noBatch: number;
+        notEligible: number;
+        newlyReleased?: number;
+      };
+    }>(
+      '/payroll/release',
+      { method: 'PUT', body: JSON.stringify(body) }
+    );
   },
 
   /** Paysheet table data: headers + rows from config output columns (same as Excel export). secondSalary=1 uses saved 2nd salary records (same columns as 2nd salary Excel export). */

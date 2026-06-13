@@ -23,6 +23,7 @@ import {
   settingsSaveButtonClass,
   settingsSaveButtonStyle,
   settingsSectionTitleClass,
+  settingsThemeSoftStyle,
   settingsToggleThumbClass,
   settingsToggleTrackClass,
 } from '@/lib/settingsUi';
@@ -283,7 +284,15 @@ export function SettingsSectionCard({
   return (
     <section className={`${settingsCardClass} ${className}`} style={settingsLedgerBorder}>
       {title ? (
-        <div className={settingsCardHeaderClass} style={settingsLedgerBorder}>
+        <div
+          className={settingsCardHeaderClass}
+          style={{
+            ...settingsLedgerBorder,
+            ...settingsThemeSoftStyle,
+            borderLeftWidth: 3,
+            borderLeftColor: 'var(--settings-theme-accent, var(--ps-accent))',
+          }}
+        >
           <h3 className={settingsSectionTitleClass}>{title}</h3>
           {description ? (
             <p className="mt-1 text-sm normal-case tracking-normal text-stone-500 dark:text-stone-400">{description}</p>

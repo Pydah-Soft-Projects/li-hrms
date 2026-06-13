@@ -74,13 +74,13 @@ export function ModernPayslipView({
 
   return (
     <div
-      className="min-h-[calc(100dvh-5rem)] px-4 py-5 sm:px-6 sm:py-6 lg:px-8"
+      className="min-h-[calc(100dvh-5rem)] w-full min-w-0 -m-4 sm:-m-5 lg:-m-6 p-2 sm:p-3"
       style={{
         ...themeStyle,
         background: `linear-gradient(165deg, rgba(var(--ps-accent-rgb), 0.05) 0%, #f8faf9 50%, #f1f5f4 100%)`,
       }}
     >
-      <div className="mx-auto mb-4 flex w-full max-w-6xl items-center justify-between">
+      <div className="mb-3 flex w-full min-w-0 items-center justify-between sm:mb-4">
         <Link
           href={backHref}
           className="text-xs font-medium tracking-wide text-stone-500 transition hover:text-[var(--ps-accent)]"
@@ -99,7 +99,7 @@ export function ModernPayslipView({
       </div>
 
       <article
-        className="mx-auto flex w-full max-w-6xl flex-col overflow-hidden border bg-white dark:bg-stone-950"
+        className="flex w-full min-w-0 flex-col overflow-hidden border bg-white dark:bg-stone-950"
         style={{ ...themeStyle, borderColor: 'var(--ps-accent-border)' }}
       >
       <div className="flex min-h-0 flex-1 flex-col">

@@ -15,6 +15,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
+import { getReadButtonLabel, getWriteButtonLabel } from '@/lib/modulePermissionLabels';
 import type { Department, Division, User, UserHistoryRow } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 import {
@@ -262,8 +263,11 @@ export function UserViewDialog({
                         hasTerminate: (m as any).terminable
                           ? user.featureControl?.includes(`${m.code}:terminate`) || false
                           : false,
+                        hasRelease: (m as any).releasable
+                          ? user.featureControl?.includes(`${m.code}:release`) || false
+                          : false,
                       }))
-                      .filter((m) => m.hasRead || m.hasWrite || m.hasVerify || m.hasTerminate);
+                      .filter((m) => m.hasRead || m.hasWrite || m.hasVerify || m.hasTerminate || m.hasRelease);
 
                     if (modulesWithPerms.length === 0) return null;
 
@@ -289,10 +293,11 @@ export function UserViewDialog({
                                 {m.label}
                               </span>
                               <div className="flex flex-wrap justify-end gap-1">
-                                {m.hasRead ? <span className={permissionChipClass('read')}><Eye className="h-3 w-3" />Read</span> : null}
-                                {m.hasWrite ? <span className={permissionChipClass('write')}>Write</span> : null}
+                                {m.hasRead ? <span className={permissionChipClass('read')}><Eye className="h-3 w-3" />{getReadButtonLabel(m.code)}</span> : null}
+                                {m.hasWrite ? <span className={permissionChipClass('write')}>{getWriteButtonLabel(m.code)}</span> : null}
                                 {m.hasVerify ? <span className={permissionChipClass('verify')}>Verify</span> : null}
                                 {m.hasTerminate ? <span className={permissionChipClass('terminate')}>Terminate</span> : null}
+                                {m.hasRelease ? <span className={permissionChipClass('release')}>Release</span> : null}
                                 {user.featureControl?.includes(`${m.code}:bank`) ? (
                                   <span className={permissionChipClass('bank')}><RotateCw className="h-3 w-3" />Bank</span>
                                 ) : null}

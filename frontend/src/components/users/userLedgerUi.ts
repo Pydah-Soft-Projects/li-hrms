@@ -53,7 +53,7 @@ export function userTabClass(active: boolean): string {
   }`;
 }
 
-export function permissionChipClass(kind: 'read' | 'write' | 'verify' | 'terminate' | 'bank'): string {
+export function permissionChipClass(kind: 'read' | 'write' | 'verify' | 'terminate' | 'bank' | 'release'): string {
   const base = 'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-semibold uppercase tracking-widest border';
   switch (kind) {
     case 'read':
@@ -64,6 +64,8 @@ export function permissionChipClass(kind: 'read' | 'write' | 'verify' | 'termina
       return `${base} border-violet-200/80 bg-violet-50 text-violet-800 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-300`;
     case 'terminate':
       return `${base} border-orange-200/80 bg-orange-50 text-orange-900 dark:border-orange-900 dark:bg-orange-950/40 dark:text-orange-300`;
+    case 'release':
+      return `${base} border-teal-200/80 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-300`;
     case 'bank':
       return `${base} border-amber-200/80 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300`;
     default:

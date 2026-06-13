@@ -38,6 +38,7 @@ import AttendanceDeductionsSettings from '@/components/settings/AttendanceDeduct
 import ResignationSettings from '@/components/settings/ResignationSettings';
 import PromotionTransferSettings from '@/components/settings/PromotionTransferSettings';
 import { SettingsHubFooter, SettingsHubLayout } from '@/components/settings/SettingsPageShell';
+import { SettingsThemeProvider } from '@/components/settings/SettingsThemeContext';
 
 export type SettingsTabType =
   | 'general'
@@ -203,7 +204,7 @@ export default function SettingsHubClient() {
       onMobileMenuToggle={() => setIsMobileMenuOpen((v) => !v)}
       footer={<SettingsHubFooter />}
     >
-      {renderActiveSection()}
+      <SettingsThemeProvider themeKey={activeTab}>{renderActiveSection()}</SettingsThemeProvider>
     </SettingsHubLayout>
   );
 }

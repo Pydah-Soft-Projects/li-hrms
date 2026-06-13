@@ -11,13 +11,16 @@ import {
     settingsToggleThumbClass,
     settingsToggleTrackClass,
 } from '@/lib/settingsUi';
+import { leaveSettingsLabels, type LeaveSettingsKind } from './leaveSettingsLabels';
 
 interface LeavePolicyProps {
+    kind?: LeaveSettingsKind;
     settings: any;
     onChange: (settings: any) => void;
 }
 
-const LeavePolicy = ({ settings, onChange }: LeavePolicyProps) => {
+const LeavePolicy = ({ kind = 'leave', settings, onChange }: LeavePolicyProps) => {
+    const copy = leaveSettingsLabels(kind);
     const s = settings?.settings || {};
     const inputClass = settingsInputClass();
     const inputStyle = settingsInputStyle();
@@ -31,7 +34,7 @@ const LeavePolicy = ({ settings, onChange }: LeavePolicyProps) => {
 
     return (
         <div className="space-y-6">
-            <SettingsSectionCard title="Backdated leave" description="Allow employees to apply for past dates.">
+            <SettingsSectionCard title={copy.backdatedTitle} description={copy.backdatedDescription}>
                 <div className="flex items-center justify-between gap-4 border p-4" style={settingsLedgerBorder}>
                     <div className="flex items-center gap-3">
                         <div
@@ -66,7 +69,7 @@ const LeavePolicy = ({ settings, onChange }: LeavePolicyProps) => {
                 )}
             </SettingsSectionCard>
 
-            <SettingsSectionCard title="Future dated" description="Allow employees to apply for future dates.">
+            <SettingsSectionCard title={copy.futureTitle} description={copy.futureDescription}>
                 <div className="flex items-center justify-between gap-4 border p-4" style={settingsLedgerBorder}>
                     <div className="flex items-center gap-3">
                         <div
@@ -104,7 +107,7 @@ const LeavePolicy = ({ settings, onChange }: LeavePolicyProps) => {
             <div className="flex items-start gap-3 border p-4" style={{ ...settingsLedgerBorder, backgroundColor: 'var(--ps-accent-soft)' }}>
                 <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
                 <p className={`text-xs leading-relaxed text-amber-900 dark:text-amber-200 ${settingsFieldHelpClass}`}>
-                    <strong>Tip:</strong> Restricting backdated applications helps in timely attendance processing. For major leaves, we recommend a max backdated period of 3–7 days.
+                    <strong>Tip:</strong> {copy.policyTip}
                 </p>
             </div>
         </div>

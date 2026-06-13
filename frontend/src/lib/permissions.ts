@@ -205,6 +205,25 @@ export function canViewPayslips(user: User): boolean {
     return true && canViewFeature(user, 'PAYSLIPS'); // All roles (employees see their own)
 }
 
+/** PAYSLIPS:write or admin — view payslips for employees within data scope */
+export function canViewScopedPayslips(user: User): boolean {
+    if (!user) return false;
+    if (hasAnyRole(user, ['super_admin', 'sub_admin', 'hr'])) return true;
+    return canManageFeature(user, 'PAYSLIPS');
+}
+
+/** Self-only payslip viewer (PAYSLIPS:read without write) */
+export function canViewOwnPayslipsOnly(user: User): boolean {
+    return canViewPayslips(user) && !canViewScopedPayslips(user);
+}
+
+export function canReleasePayslips(user: User): boolean {
+    if (!user) return false;
+    if (hasAnyRole(user, ['super_admin', 'sub_admin', 'hr'])) return true;
+    if (!user.featureControl || user.featureControl.length === 0) return false;
+    return user.featureControl.includes('PAYSLIPS:release');
+}
+
 export function canGeneratePayslips(user: User): boolean {
     return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'employee']) && canManageFeature(user, 'PAYSLIPS');
 }

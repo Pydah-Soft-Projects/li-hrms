@@ -13,7 +13,7 @@ import { drawDynamicPayslipPdf } from '@/lib/payslipPdfDynamic';
 import { buildPayslipSections } from '@/lib/payslipSections';
 import { resolvePayslipLoans } from '@/lib/payslipLoans';
 import Spinner from '@/components/Spinner';
-import { Search, Eye, Download, Loader2, RefreshCw, FileText } from 'lucide-react';
+import { Search, Eye, Download, Loader2, RefreshCw, FileText, Rocket } from 'lucide-react';
 import {
   LoansPageShell,
   LoansPageHeader,
@@ -38,7 +38,21 @@ import {
   PAYSLIP_LIST_STATUS_OPTIONS,
   payslipMatchesListOrgAndStatus,
   payslipMatchesSearch,
+  summarizePayslipRelease,
+  formatPayslipReleaseMessage,
+  canReleasePayslipRecord,
+  isPayslipReleased,
+  getPayslipEmployeeViewLabel,
 } from '@/lib/payslipListUi';
+import { auth } from '@/lib/auth';
+import {
+  canViewScopedPayslips,
+  canReleasePayslips,
+  hasAnyRole,
+  type User as PermUser,
+} from '@/lib/permissions';
+
+const SELF_PAYSLIP_PAGE_SIZE = 6;
 
 const payslipLedgerStatus = (status: string): LedgerUiStatus => {
   if (status === 'processed' || status === 'approved') return 'approved';
@@ -145,6 +159,13 @@ interface PayrollRecord {
   };
   netSalary: number;
   status: string;
+  isReleased?: boolean;
+  payrollBatchId?: {
+    _id?: string;
+    status?: string;
+    batchNumber?: string;
+    month?: string;
+  } | string;
   arrearsAmount?: number;
   totalDaysInMonth?: number;
   totalPayableShifts?: number;
@@ -161,9 +182,26 @@ export function PayslipsContent({
   showDivisionFilter?: boolean;
 }) {
   const router = useRouter();
+  const currentUser = auth.getUser() as PermUser | null;
+  const viewMode = useMemo(() => {
+    if (!currentUser) return 'self' as const;
+    if (basePath.includes('superadmin') && hasAnyRole(currentUser, ['super_admin', 'sub_admin', 'hr'])) {
+      return 'admin' as const;
+    }
+    if (canViewScopedPayslips(currentUser)) return 'scoped' as const;
+    return 'self' as const;
+  }, [currentUser, basePath]);
+  const isSelfView = viewMode === 'self';
+  const canRelease = Boolean(currentUser && canReleasePayslips(currentUser) && viewMode !== 'self');
+
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [releasing, setReleasing] = useState(false);
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [filteredRecords, setFilteredRecords] = useState<PayrollRecord[]>([]);
+  const [selfPage, setSelfPage] = useState(1);
+  const [selfHasMore, setSelfHasMore] = useState(false);
+  const [selfTotal, setSelfTotal] = useState(0);
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
@@ -188,18 +226,18 @@ export function PayslipsContent({
   const recordsPerPage = 20;
 
   useEffect(() => {
-    const today = new Date();
-    const day = today.getDate();
-    let defaultMonth = '';
-    if (day > 15) {
-      // Current month (YYYY-MM)
-      defaultMonth = today.toISOString().substring(0, 7);
-    } else {
-      // Previous month
-      const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      defaultMonth = prevMonth.toISOString().substring(0, 7);
+    if (!isSelfView) {
+      const today = new Date();
+      const day = today.getDate();
+      let defaultMonth = '';
+      if (day > 15) {
+        defaultMonth = today.toISOString().substring(0, 7);
+      } else {
+        const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        defaultMonth = prevMonth.toISOString().substring(0, 7);
+      }
+      setSelectedMonth(defaultMonth);
     }
-    setSelectedMonth(defaultMonth);
 
     loadFilterData();
     fetchCompanyProfile().then(setCompanyProfile);
@@ -207,11 +245,16 @@ export function PayslipsContent({
       const cols = (res as { data?: { outputColumns?: PayrollOutputColumn[] } })?.data?.outputColumns;
       if (Array.isArray(cols)) setPayrollOutputColumns(cols);
     }).catch(() => {});
-  }, []);
+  }, [isSelfView]);
 
   useEffect(() => {
-    if (selectedMonth) fetchPayrollRecords();
-  }, [selectedMonth]);
+    if (isSelfView) {
+      setSelfPage(1);
+      fetchPayrollRecords({ page: 1, append: false });
+    } else if (selectedMonth) {
+      fetchPayrollRecords();
+    }
+  }, [selectedMonth, isSelfView]);
 
   useEffect(() => {
     applyFilters();
@@ -249,20 +292,93 @@ export function PayslipsContent({
     }
   };
 
-  const fetchPayrollRecords = async () => {
-    if (!selectedMonth) return;
+  const fetchPayrollRecords = async (opts?: { page?: number; append?: boolean }) => {
+    if (!isSelfView && !selectedMonth) return;
 
-    setLoading(true);
+    const page = opts?.page ?? (isSelfView ? selfPage : 1);
+    const append = opts?.append ?? false;
+
+    if (append) setLoadingMore(true);
+    else setLoading(true);
+
     try {
-      const response = await api.getPayrollRecords({ month: selectedMonth });
+      const response = await api.getPayrollRecords({
+        month: selectedMonth || undefined,
+        page: isSelfView ? page : undefined,
+        limit: isSelfView ? SELF_PAYSLIP_PAGE_SIZE : undefined,
+      });
       if (response.success) {
-        setPayrollRecords(response.data || []);
+        const rows = (response.data || []) as PayrollRecord[];
+        if (isSelfView && append) {
+          setPayrollRecords((prev) => [...prev, ...rows]);
+        } else {
+          setPayrollRecords(rows);
+        }
+        if (isSelfView) {
+          setSelfHasMore(Boolean(response.hasMore));
+          setSelfTotal(response.total ?? rows.length);
+          setSelfPage(page);
+        }
       }
     } catch (error: any) {
       console.error('Error fetching payroll records:', error);
       toast.error(error.message || 'Failed to fetch payroll records');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
+    }
+  };
+
+  const handleLoadMoreSelf = () => {
+    if (!selfHasMore || loadingMore) return;
+    fetchPayrollRecords({ page: selfPage + 1, append: true });
+  };
+
+  const handleReleaseFiltered = async () => {
+    if (!selectedMonth) {
+      toast.error('Select a pay period before releasing payslips');
+      return;
+    }
+
+    const releaseSummary = summarizePayslipRelease(filteredRecords);
+    const toRelease = filteredRecords.filter((r) => canReleasePayslipRecord(r));
+
+    if (toRelease.length === 0) {
+      toast.warning(formatPayslipReleaseMessage(releaseSummary), { autoClose: 6000 });
+      return;
+    }
+
+    const divisionId = showDivisionFilter && listFilterDivisions.length === 1
+      ? listFilterDivisions[0]
+      : undefined;
+    const departmentId = listFilterDepartments.length === 1 ? listFilterDepartments[0] : undefined;
+
+    try {
+      setReleasing(true);
+      const response = await api.releasePayslips({
+        month: selectedMonth,
+        divisionId,
+        departmentId,
+        recordIds: filteredRecords.map((r) => r._id),
+      });
+      if (response.success) {
+        const newlyReleased = response.stats?.newlyReleased ?? response.modifiedCount ?? response.count ?? 0;
+        const msg = response.message
+          || formatPayslipReleaseMessage(response.stats ?? releaseSummary, newlyReleased);
+        if (newlyReleased > 0) {
+          toast.success(msg, { autoClose: 6000 });
+        } else {
+          toast.warning(msg, { autoClose: 6000 });
+        }
+        await fetchPayrollRecords();
+      } else {
+        toast.error(response.message || 'Failed to release payslips');
+      }
+    } catch (error: any) {
+      console.error('Error releasing payslips:', error);
+      toast.error(error.message || 'Failed to release payslips');
+    } finally {
+      setReleasing(false);
     }
   };
 
@@ -401,7 +517,9 @@ export function PayslipsContent({
   // Pagination
   const indexOfLastRecord = currentPage * recordsPerPage;
   const indexOfFirstRecord = indexOfLastRecord - recordsPerPage;
-  const currentRecords = filteredRecords.slice(indexOfFirstRecord, indexOfLastRecord);
+  const currentRecords = isSelfView
+    ? filteredRecords
+    : filteredRecords.slice(indexOfFirstRecord, indexOfLastRecord);
   const totalPages = Math.ceil(filteredRecords.length / recordsPerPage);
 
   const listDepartmentOptions = useMemo(() => {
@@ -422,12 +540,24 @@ export function PayslipsContent({
     return departments.filter((d) => allowed.has(String(d._id)));
   }, [showDivisionFilter, listFilterDivisions, divisions, departments]);
 
+  const tableColSpan = isSelfView ? 6 : canRelease ? 10 : 9;
+
+  const releaseSummary = useMemo(
+    () => summarizePayslipRelease(filteredRecords),
+    [filteredRecords],
+  );
+
   const payslipStats = useMemo(() => ({
     total: filteredRecords.length,
     selected: selectedRecords.size,
     processed: filteredRecords.filter((r) => r.status === 'processed').length,
     calculated: filteredRecords.filter((r) => r.status === 'calculated').length,
-  }), [filteredRecords, selectedRecords]);
+    pendingRelease: releaseSummary.pendingRelease,
+    alreadyReleased: releaseSummary.alreadyReleased,
+    batchNotReady: releaseSummary.batchNotReady,
+    noBatch: releaseSummary.noBatch,
+    notEligible: releaseSummary.notEligible,
+  }), [filteredRecords, selectedRecords, releaseSummary]);
 
   const anyListFilterActive =
     searchQuery.trim() !== ''
@@ -450,45 +580,75 @@ export function PayslipsContent({
 
       <LoansPageHeader
         badge="Payroll payslips"
-        title="Employee payslips"
-        subtitle="View, search, and export payslips for a pay period"
+        title={isSelfView ? 'My payslips' : 'Employee payslips'}
+        subtitle={
+          isSelfView
+            ? 'View your released payslips — newest first. Load more to see older months.'
+            : 'View, search, and release payslips after the payment batch is frozen or completed'
+        }
       />
 
       <LoansStatGrid
         stats={[
-          { label: 'Payslips found', value: payslipStats.total, accent: true },
-          { label: 'Selected', value: payslipStats.selected },
-          { label: 'Processed', value: payslipStats.processed },
-          { label: 'Calculated', value: payslipStats.calculated, muted: payslipStats.calculated === 0 },
+          { label: isSelfView ? 'Payslips loaded' : 'Payslips found', value: isSelfView ? payrollRecords.length : payslipStats.total, accent: true },
+          ...(isSelfView
+            ? [
+                { label: 'Total available', value: selfTotal },
+                { label: 'Showing', value: `${payrollRecords.length} of ${selfTotal || payrollRecords.length}` },
+              ]
+            : [
+                { label: 'Selected', value: payslipStats.selected },
+                { label: 'Ready to release', value: payslipStats.pendingRelease, accent: payslipStats.pendingRelease > 0 },
+                { label: 'Awaiting batch', value: payslipStats.batchNotReady },
+                { label: 'Already released', value: payslipStats.alreadyReleased },
+              ]),
         ]}
       />
 
       <LoansToolbar>
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[150px]">
-            <LoanFormLabel>Pay period *</LoanFormLabel>
+            <LoanFormLabel>{isSelfView ? 'Filter by month (optional)' : 'Pay period *'}</LoanFormLabel>
             <input
               type="month"
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
               className={loansFormInputClass()}
               style={loansFormInputStyle()}
-              required
+              required={!isSelfView}
             />
           </div>
 
-          <button
-            type="button"
-            onClick={fetchPayrollRecords}
-            disabled={!selectedMonth || loading}
-            className={`flex h-10 items-center gap-2 ${loansPrimaryButtonClass()}`}
-            style={loansPrimaryButtonStyle()}
-          >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Load payslips
-          </button>
+          {!isSelfView && (
+            <button
+              type="button"
+              onClick={() => fetchPayrollRecords()}
+              disabled={!selectedMonth || loading}
+              className={`flex h-10 items-center gap-2 ${loansPrimaryButtonClass()}`}
+              style={loansPrimaryButtonStyle()}
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Load payslips
+            </button>
+          )}
 
-          {showDivisionFilter && (
+          {isSelfView && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelfPage(1);
+                fetchPayrollRecords({ page: 1, append: false });
+              }}
+              disabled={loading}
+              className={`flex h-10 items-center gap-2 ${loansPrimaryButtonClass()}`}
+              style={loansPrimaryButtonStyle()}
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Refresh
+            </button>
+          )}
+
+          {!isSelfView && showDivisionFilter && (
             <MultiSelect
               variant="ledger"
               label="Division"
@@ -503,86 +663,118 @@ export function PayslipsContent({
             />
           )}
 
-          <MultiSelect
-            variant="ledger"
-            label="Department"
-            options={listDepartmentOptions.map((d) => ({
-              id: String(d._id),
-              name: d.name ?? 'Department',
-            }))}
-            selectedIds={listFilterDepartments}
-            onChange={setListFilterDepartments}
-            placeholder="All departments"
-            className="w-full sm:w-40 md:w-44"
-          />
-
-          <MultiSelect
-            variant="ledger"
-            label="Designation"
-            options={designations.map((d) => ({
-              id: String(d._id),
-              name: d.name ?? (d as Designation & { title?: string }).title ?? 'Designation',
-            }))}
-            selectedIds={listFilterDesignations}
-            onChange={setListFilterDesignations}
-            placeholder="All designations"
-            className="w-full sm:w-40 md:w-44"
-          />
-
-          <MultiSelect
-            variant="ledger"
-            label="Status"
-            options={PAYSLIP_LIST_STATUS_OPTIONS}
-            selectedIds={listFilterStatuses}
-            onChange={setListFilterStatuses}
-            placeholder="All statuses"
-            className="w-full sm:w-48 md:w-56"
-          />
-
-          <div className="flex w-full flex-col gap-1.5 sm:w-44 md:w-52">
-            <LoanFormLabel>Search</LoanFormLabel>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
-              <input
-                type="text"
-                placeholder="Emp ID or name…"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className={`h-10 pl-9 pr-3 ${loansFormInputClass()}`}
-                style={loansFormInputStyle()}
+          {!isSelfView && (
+            <>
+              <MultiSelect
+                variant="ledger"
+                label="Department"
+                options={listDepartmentOptions.map((d) => ({
+                  id: String(d._id),
+                  name: d.name ?? 'Department',
+                }))}
+                selectedIds={listFilterDepartments}
+                onChange={setListFilterDepartments}
+                placeholder="All departments"
+                className="w-full sm:w-40 md:w-44"
               />
-            </div>
-          </div>
 
-          {anyListFilterActive && (
+              <MultiSelect
+                variant="ledger"
+                label="Designation"
+                options={designations.map((d) => ({
+                  id: String(d._id),
+                  name: d.name ?? (d as Designation & { title?: string }).title ?? 'Designation',
+                }))}
+                selectedIds={listFilterDesignations}
+                onChange={setListFilterDesignations}
+                placeholder="All designations"
+                className="w-full sm:w-40 md:w-44"
+              />
+
+              <MultiSelect
+                variant="ledger"
+                label="Status"
+                options={PAYSLIP_LIST_STATUS_OPTIONS}
+                selectedIds={listFilterStatuses}
+                onChange={setListFilterStatuses}
+                placeholder="All statuses"
+                className="w-full sm:w-48 md:w-56"
+              />
+
+              <div className="flex w-full flex-col gap-1.5 sm:w-44 md:w-52">
+                <LoanFormLabel>Search</LoanFormLabel>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+                  <input
+                    type="text"
+                    placeholder="Emp ID or name…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className={`h-10 pl-9 pr-3 ${loansFormInputClass()}`}
+                    style={loansFormInputStyle()}
+                  />
+                </div>
+              </div>
+
+              {anyListFilterActive && (
+                <button
+                  type="button"
+                  onClick={clearListFilters}
+                  className="h-10 rounded-md border px-3 text-xs font-semibold uppercase tracking-wider transition hover:opacity-80"
+                  style={{ borderColor: 'var(--ps-accent-border)', color: 'var(--ps-accent)' }}
+                >
+                  Clear filters
+                </button>
+              )}
+            </>
+          )}
+
+          {canRelease && (
             <button
               type="button"
-              onClick={clearListFilters}
-              className="h-10 rounded-md border px-3 text-xs font-semibold uppercase tracking-wider transition hover:opacity-80"
-              style={{ borderColor: 'var(--ps-accent-border)', color: 'var(--ps-accent)' }}
+              onClick={handleReleaseFiltered}
+              disabled={!selectedMonth || releasing || loading}
+              className={`flex h-10 items-center gap-2 ${loansPrimaryButtonClass()}`}
+              style={loansPrimaryButtonStyle()}
+              title={
+                releaseSummary.pendingRelease > 0
+                  ? `Release ${releaseSummary.pendingRelease} payslip(s) whose payment batch is frozen or completed.`
+                  : formatPayslipReleaseMessage(releaseSummary)
+              }
             >
-              Clear filters
+              {releasing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+              Release ({releaseSummary.pendingRelease} ready)
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={generateBulkPayslipsPDF}
-            disabled={selectedRecords.size === 0 || generatingBulkPDF}
-            className={`ml-auto flex h-10 items-center gap-2 ${loansPrimaryButtonClass()}`}
-            style={loansPrimaryButtonStyle()}
-          >
-            {generatingBulkPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Export PDF ({selectedRecords.size})
-          </button>
+          {!isSelfView && (
+            <button
+              type="button"
+              onClick={generateBulkPayslipsPDF}
+              disabled={selectedRecords.size === 0 || generatingBulkPDF}
+              className={`ml-auto flex h-10 items-center gap-2 ${loansPrimaryButtonClass()}`}
+              style={loansPrimaryButtonStyle()}
+            >
+              {generatingBulkPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Export PDF ({selectedRecords.size})
+            </button>
+          )}
         </div>
       </LoansToolbar>
 
-      {filteredRecords.length > 0 && (
-        <div className="mb-5 flex items-center justify-between border bg-white px-5 py-3 text-sm dark:bg-stone-950" style={{ borderColor: 'var(--ps-accent-border)' }}>
+      {(filteredRecords.length > 0 || isSelfView) && !isSelfView && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-2 border bg-white px-5 py-3 text-sm dark:bg-stone-950" style={{ borderColor: 'var(--ps-accent-border)' }}>
           <span className="text-stone-600 dark:text-stone-400">
             <FileText className="mr-2 inline h-4 w-4" style={{ color: 'var(--ps-accent)' }} />
             {filteredRecords.length} payslip(s) · {selectedRecords.size} selected
+            {canRelease && (
+              <span className="ml-3 text-xs text-stone-500">
+                · {releaseSummary.pendingRelease} ready to release
+                · {releaseSummary.batchNotReady} awaiting batch freeze/complete
+                · {releaseSummary.alreadyReleased} already released
+                {releaseSummary.noBatch > 0 ? ` · ${releaseSummary.noBatch} no batch` : ''}
+              </span>
+            )}
           </span>
           <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">
             Page {currentPage} of {totalPages || 1}
@@ -596,37 +788,44 @@ export function PayslipsContent({
           <table className="w-full min-w-[960px] border-collapse text-left text-sm">
             <thead>
               <tr className={loansTableHeadClass()} style={loansTableHeadStyle()}>
-                <th className="px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={selectedRecords.size === currentRecords.length && currentRecords.length > 0}
-                    onChange={toggleSelectAll}
-                    className="h-4 w-4 cursor-pointer"
-                    style={{ accentColor: 'var(--ps-accent)' }}
-                  />
-                </th>
-                <th className="px-4 py-3 font-semibold">Employee</th>
-                <th className="px-4 py-3 font-semibold">Dept / designation</th>
+                {!isSelfView && (
+                  <th className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedRecords.size === currentRecords.length && currentRecords.length > 0}
+                      onChange={toggleSelectAll}
+                      className="h-4 w-4 cursor-pointer"
+                      style={{ accentColor: 'var(--ps-accent)' }}
+                    />
+                  </th>
+                )}
+                {!isSelfView && <th className="px-4 py-3 font-semibold">Employee</th>}
+                {!isSelfView && <th className="px-4 py-3 font-semibold">Dept / designation</th>}
                 <th className="px-4 py-3 font-semibold">Month</th>
                 <th className="px-4 py-3 text-right font-semibold">Earnings</th>
                 <th className="px-4 py-3 text-right font-semibold">Deductions</th>
                 <th className="px-4 py-3 text-right font-semibold">Net salary</th>
                 <th className="px-4 py-3 text-center font-semibold">Status</th>
+                {canRelease && <th className="px-4 py-3 text-center font-semibold">Employee view</th>}
                 <th className="px-4 py-3 text-center font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-16 text-center">
+                  <td colSpan={tableColSpan} className="px-4 py-16 text-center">
                     <Spinner />
                   </td>
                 </tr>
               ) : currentRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-16 text-center text-stone-500">
+                  <td colSpan={tableColSpan} className="px-4 py-16 text-center text-stone-500">
                     <FileText className="mx-auto mb-3 h-10 w-10 opacity-30" />
-                    {selectedMonth ? 'No payslips match your filters.' : 'Select a pay period to begin.'}
+                    {isSelfView
+                      ? 'No released payslips available yet. Payslips appear here after the payment batch is frozen/completed and HR releases them.'
+                      : selectedMonth
+                        ? 'No payslips match your filters.'
+                        : 'Select a pay period to begin.'}
                   </td>
                 </tr>
               ) : (
@@ -640,34 +839,40 @@ export function PayslipsContent({
                       className="cursor-pointer border-b transition-colors hover:bg-stone-50 dark:hover:bg-stone-900/40"
                       style={{ borderColor: 'var(--ps-accent-border)' }}
                     >
-                      <td className="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedRecords.has(record._id)}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            toggleSelectRecord(record._id);
-                          }}
-                          className="h-4 w-4 cursor-pointer"
-                          style={{ accentColor: 'var(--ps-accent)' }}
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <PayslipEmployeeBlock
-                          employee={employee}
-                          empNo={record.emp_no}
-                          departments={departments}
-                          designations={designations}
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col">
-                          <span className="font-medium text-stone-800 dark:text-stone-200">
-                            {getDeptName(employee?.department_id)}
-                          </span>
-                          <span className="text-xs text-stone-500">{getDesigName(employee?.designation_id)}</span>
-                        </div>
-                      </td>
+                      {!isSelfView && (
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedRecords.has(record._id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              toggleSelectRecord(record._id);
+                            }}
+                            className="h-4 w-4 cursor-pointer"
+                            style={{ accentColor: 'var(--ps-accent)' }}
+                          />
+                        </td>
+                      )}
+                      {!isSelfView && (
+                        <td className="px-4 py-3">
+                          <PayslipEmployeeBlock
+                            employee={employee}
+                            empNo={record.emp_no}
+                            departments={departments}
+                            designations={designations}
+                          />
+                        </td>
+                      )}
+                      {!isSelfView && (
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col">
+                            <span className="font-medium text-stone-800 dark:text-stone-200">
+                              {getDeptName(employee?.department_id)}
+                            </span>
+                            <span className="text-xs text-stone-500">{getDesigName(employee?.designation_id)}</span>
+                          </div>
+                        </td>
+                      )}
                       <td className="px-4 py-3 font-medium text-stone-700 dark:text-stone-300">
                         {record.monthName} {record.year}
                       </td>
@@ -703,6 +908,33 @@ export function PayslipsContent({
                           {record.status}
                         </span>
                       </td>
+                      {canRelease && (
+                        <td className="px-4 py-3 text-center">
+                          {(() => {
+                            const view = getPayslipEmployeeViewLabel(record);
+                            const toneClass =
+                              view.tone === 'released'
+                                ? ledgerStatusBadgeClass('approved')
+                                : view.tone === 'pending'
+                                  ? ledgerStatusBadgeClass('pending')
+                                  : view.tone === 'waiting'
+                                    ? ledgerStatusBadgeClass('neutral')
+                                    : 'text-xs text-stone-400';
+                            return (
+                              <span
+                                className={view.tone === 'neutral' ? toneClass : toneClass}
+                                title={
+                                  view.tone === 'waiting'
+                                    ? 'Payment batch must be frozen or completed before employees can see this payslip'
+                                    : undefined
+                                }
+                              >
+                                {view.label}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                      )}
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-center gap-1">
                           <Link
@@ -735,7 +967,22 @@ export function PayslipsContent({
           </table>
         </div>
 
-        {totalPages > 1 && (
+        {isSelfView && selfHasMore && (
+          <div className="flex justify-center border-t px-4 py-4" style={{ borderColor: 'var(--ps-accent-border)' }}>
+            <button
+              type="button"
+              onClick={handleLoadMoreSelf}
+              disabled={loadingMore}
+              className={`flex h-10 items-center gap-2 ${loansPrimaryButtonClass()}`}
+              style={loansPrimaryButtonStyle()}
+            >
+              {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Load more payslips
+            </button>
+          </div>
+        )}
+
+        {!isSelfView && totalPages > 1 && (
           <div
             className="flex items-center justify-between border-t px-4 py-3"
             style={{ borderColor: 'var(--ps-accent-border)' }}
@@ -783,5 +1030,6 @@ export function PayslipsContent({
 export default function PayslipsPage() {
   return <PayslipsContent />;
 }
+
 
 

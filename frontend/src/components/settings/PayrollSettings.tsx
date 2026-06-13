@@ -14,7 +14,7 @@ import {
   SettingsToggleRow,
   SettingsSaveBar,
 } from '@/components/settings/SettingsPageShell';
-import { settingsInputClass, settingsInputStyle, settingsFieldHelpClass } from '@/lib/settingsUi';
+import { settingsInputClass, settingsInputStyle, settingsFieldHelpClass, settingsLedgerBorder } from '@/lib/settingsUi';
 
 const PayrollSettings = () => {
     const [payslipReleaseRequired, setPayslipReleaseRequired] = useState<boolean>(true);
@@ -221,26 +221,23 @@ const PayrollSettings = () => {
                                 </SettingsField>
                             </div>
 
-                            <div className="border-t pt-8" style={{ borderColor: 'var(--ps-accent-border)' }}>
+                            <div className="grid grid-cols-1 gap-3 border-t pt-8 lg:grid-cols-3" style={settingsLedgerBorder}>
                                 <SettingsToggleRow
                                     id="auto-reject-pending-requests"
                                     label="Auto-Reject In-Period Requests On Batch Complete"
-                                    description="When enabled, payroll completion automatically rejects non-final Leave, OD, Permission, and OT requests for the same employees within that payroll period."
                                     checked={autoRejectPendingRequestsOnComplete}
                                     onChange={setAutoRejectPendingRequestsOnComplete}
                                 />
-                            </div>
 
-                            <IncludeMissingPayrollComponentsCard
-                                checked={includeMissing}
-                                onChange={setIncludeMissing}
-                            />
+                                <IncludeMissingPayrollComponentsCard
+                                    checked={includeMissing}
+                                    onChange={setIncludeMissing}
+                                    showDescription={false}
+                                />
 
-                            <div className="border-t pt-8" style={{ borderColor: 'var(--ps-accent-border)' }}>
                                 <SettingsToggleRow
                                     id="enable-second-salary"
                                     label="Second salary (2nd salary)"
-                                    description="When off, 2nd salary menus, paysheet mode, employee second-salary fields, and all second-salary payroll actions are hidden or blocked. Bulk pay register skips the 2nd salary phase."
                                     checked={enableSecondSalary}
                                     onChange={setEnableSecondSalary}
                                 />
@@ -249,33 +246,29 @@ const PayrollSettings = () => {
                     </SettingsSectionCard>
 
                     <SettingsSectionCard title="Attendance Deductions">
-                        <div className="space-y-8">
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                             <SettingsToggleRow
                                 id="enable-absent-deduction"
                                 label="Enable Absent Deduction"
-                                description="Automatically apply Loss of Pay (LOP) for unexcused absences."
                                 checked={enableAbsentDeduction}
                                 onChange={setEnableAbsentDeduction}
                             />
 
-                            {enableAbsentDeduction && (
-                                <div className="animate-in fade-in slide-in-from-top-2 border-t pt-8 duration-300" style={{ borderColor: 'var(--ps-accent-border)' }}>
-                                    <SettingsField
-                                        label="LOP Days per Absent"
-                                        help="Number of days to deduct for each unverified absent record."
-                                    >
-                                        <input
-                                            type="number"
-                                            step="0.1"
-                                            min="0"
-                                            value={lopDaysPerAbsent ?? ''}
-                                            onChange={(e) => setLopDaysPerAbsent(Number(e.target.value))}
-                                            className={`${settingsInputClass()} max-w-xs`}
-                                            style={settingsInputStyle()}
-                                        />
-                                    </SettingsField>
-                                </div>
-                            )}
+                            <SettingsField
+                                label="LOP Days per Absent"
+                                help="Number of days to deduct for each unverified absent record."
+                            >
+                                <input
+                                    type="number"
+                                    step="0.1"
+                                    min="0"
+                                    value={lopDaysPerAbsent ?? ''}
+                                    onChange={(e) => setLopDaysPerAbsent(Number(e.target.value))}
+                                    disabled={!enableAbsentDeduction}
+                                    className={settingsInputClass()}
+                                    style={settingsInputStyle()}
+                                />
+                            </SettingsField>
                         </div>
                     </SettingsSectionCard>
                 </div>

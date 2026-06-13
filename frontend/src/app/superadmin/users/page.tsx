@@ -10,6 +10,13 @@ import {
 } from '@/components/holidays/HolidayDivisionMappingEditor';
 import { useAuth } from '@/contexts/AuthContext';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
+import {
+  getReadButtonLabel,
+  getWriteButtonLabel,
+  getReadButtonTitle,
+  getWriteButtonTitle,
+  getReleaseButtonTitle,
+} from '@/lib/modulePermissionLabels';
 import Spinner from '@/components/Spinner';
 import {
   buildDivisionMappingFromDepartment,
@@ -1793,27 +1800,27 @@ export default function UsersPage() {
                                     >
                                       <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{module.label}</span>
                                       <div className="flex flex-wrap gap-2 justify-end max-w-[70%]">
-                                        {/* Read Toggle */}
                                         <button
                                           type="button"
                                           onClick={toggleRead}
+                                          title={getReadButtonTitle(module.code)}
                                           className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRead
                                             ? 'bg-blue-500 text-white shadow-sm'
                                             : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                             }`}
                                         >
-                                          Read
+                                          {getReadButtonLabel(module.code)}
                                         </button>
-                                        {/* Write Toggle */}
                                         <button
                                           type="button"
                                           onClick={toggleWrite}
+                                          title={getWriteButtonTitle(module.code)}
                                           className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasWrite
                                             ? 'bg-emerald-500 text-white shadow-sm'
                                             : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                             }`}
                                         >
-                                          Write
+                                          {getWriteButtonLabel(module.code)}
                                         </button>
                                         {(module as any).terminable && (
                                           <button
@@ -1834,6 +1841,27 @@ export default function UsersPage() {
                                               }`}
                                           >
                                             Terminate
+                                          </button>
+                                        )}
+                                        {(module as any).releasable && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const currentFeatures = formData.featureControl || [];
+                                              const releasePerm = `${module.code}:release`;
+                                              const hasRelease = currentFeatures.includes(releasePerm);
+                                              const newFeatures = hasRelease
+                                                ? currentFeatures.filter(f => f !== releasePerm)
+                                                : [...currentFeatures, releasePerm];
+                                              setFormData({ ...formData, featureControl: newFeatures });
+                                            }}
+                                            title={getReleaseButtonTitle(module.code)}
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:release`)
+                                              ? 'bg-teal-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            Release
                                           </button>
                                         )}
                                         {/* Verify Toggle â€” only for verifiable modules (e.g. EMPLOYEES) */}
@@ -2379,22 +2407,24 @@ export default function UsersPage() {
                                       <button
                                         type="button"
                                         onClick={toggleRead}
+                                        title={getReadButtonTitle(module.code)}
                                         className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRead
                                           ? 'bg-blue-500 text-white shadow-sm'
                                           : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                           }`}
                                       >
-                                        Read
+                                        {getReadButtonLabel(module.code)}
                                       </button>
                                       <button
                                         type="button"
                                         onClick={toggleWrite}
+                                        title={getWriteButtonTitle(module.code)}
                                         className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasWrite
                                           ? 'bg-emerald-500 text-white shadow-sm'
                                           : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                           }`}
                                       >
-                                        Write
+                                        {getWriteButtonLabel(module.code)}
                                       </button>
                                       {(module as any).terminable && (
                                         <button
@@ -2415,6 +2445,27 @@ export default function UsersPage() {
                                             }`}
                                         >
                                           Terminate
+                                        </button>
+                                      )}
+                                      {(module as any).releasable && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const currentFeatures = employeeFormData.featureControl || [];
+                                            const releasePerm = `${module.code}:release`;
+                                            const hasRelease = currentFeatures.includes(releasePerm);
+                                            const newFeatures = hasRelease
+                                              ? currentFeatures.filter(f => f !== releasePerm)
+                                              : [...currentFeatures, releasePerm];
+                                            setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
+                                          }}
+                                          title={getReleaseButtonTitle(module.code)}
+                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${employeeFormData.featureControl?.includes(`${module.code}:release`)
+                                            ? 'bg-teal-500 text-white shadow-sm'
+                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                            }`}
+                                        >
+                                          Release
                                         </button>
                                       )}
                                       {/* Verify Toggle â€” only for verifiable modules (e.g. EMPLOYEES) */}
@@ -2860,22 +2911,24 @@ export default function UsersPage() {
                                         <button
                                           type="button"
                                           onClick={toggleRead}
+                                          title={getReadButtonTitle(module.code)}
                                           className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRead
                                             ? 'bg-blue-500 text-white shadow-sm'
                                             : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                             }`}
                                         >
-                                          Read
+                                          {getReadButtonLabel(module.code)}
                                         </button>
                                         <button
                                           type="button"
                                           onClick={toggleWrite}
+                                          title={getWriteButtonTitle(module.code)}
                                           className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasWrite
                                             ? 'bg-emerald-500 text-white shadow-sm'
                                             : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                             }`}
                                         >
-                                          Write
+                                          {getWriteButtonLabel(module.code)}
                                         </button>
                                         {(module as any).terminable && (
                                           <button
@@ -2896,6 +2949,27 @@ export default function UsersPage() {
                                               }`}
                                           >
                                             Terminate
+                                          </button>
+                                        )}
+                                        {(module as any).releasable && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const currentFeatures = formData.featureControl || [];
+                                              const releasePerm = `${module.code}:release`;
+                                              const hasRelease = currentFeatures.includes(releasePerm);
+                                              const newFeatures = hasRelease
+                                                ? currentFeatures.filter(f => f !== releasePerm)
+                                                : [...currentFeatures, releasePerm];
+                                              setFormData({ ...formData, featureControl: newFeatures });
+                                            }}
+                                            title={getReleaseButtonTitle(module.code)}
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:release`)
+                                              ? 'bg-teal-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            Release
                                           </button>
                                         )}
                                         {/* Verify Toggle â€” only for verifiable modules (e.g. EMPLOYEES) */}

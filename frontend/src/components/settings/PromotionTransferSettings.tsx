@@ -96,8 +96,8 @@ const PromotionTransferSettings = () => {
     <SettingsPanel>
       <SettingsPanelHeader
         section="Human resources"
-        title="Promotions & transfers — multi-level approval"
-        subtitle={'Configure approval stages for salary promotions, demotions, increments, and internal transfers. When multi-level workflow is on and you add stages below, that ordered list is the full approval chain. Add "Reporting manager" as the first stage if your policy still needs it. When the workflow is off (or no stages are defined), the first approver defaults to the employee\'s reporting manager when set, otherwise the department HOD. Unless the chain already ends with your "Final authority" role (usually HR), that final approval is appended automatically so requests do not complete after only line management.'}
+        title="Promotions & transfers"
+        subtitle="Approval workflow for promotions, demotions, increments, and transfers."
       />
 
       <SettingsSectionCard title="Workflow">
@@ -105,7 +105,7 @@ const PromotionTransferSettings = () => {
           <SettingsToggleRow
             id="promotion-transfer-workflow-enabled"
             label="Additional approval stages"
-            description="When on, the stages below define the full approval order (first to last). When off, only the default first approver applies (reporting manager if set on the employee, otherwise HOD), then the request follows your final-authority rules."
+            description="When on, define the ordered approval chain below. When off, requests use the default first approver (RM or HOD), then final authority."
             checked={settings.workflow.isEnabled}
             onChange={(next) =>
               setSettings((s) => ({
@@ -119,15 +119,14 @@ const PromotionTransferSettings = () => {
             <WorkflowManager
               workflow={settings.workflow}
               onChange={(workflow) => setSettings((s) => ({ ...s, workflow }))}
-              title="Promotions &amp; transfers — multi-level approval workflow"
-              description="Define each approval stage in order. Include a reporting-manager stage at the top if required. Add HR, division manager, HOD, or admin steps as your policy requires."
+              title="Approval workflow"
+              description="Add each approval stage in order."
               addStepLabel="Add approval stage"
               icon={Award}
             />
           ) : (
             <p className="text-sm text-stone-500 dark:text-stone-400">
-              Multi-level stages are off. New requests use only the default first approver (reporting manager or HOD), then
-              final-authority rules.
+              Multi-level stages are off. Requests use the default first approver, then final authority.
             </p>
           )}
         </div>

@@ -14,6 +14,7 @@ import {
 import LeaveTypesManager from './leave/LeaveTypesManager';
 import LeavePolicy from './leave/LeavePolicy';
 import LeaveWorkflow from './leave/LeaveWorkflow';
+import { leaveSettingsLabels, normalizeLeaveTypeItem, serializeLeaveTypesForSave } from './leave/leaveSettingsLabels';
 
 const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) => {
     const [loading, setLoading] = useState(false);
@@ -52,10 +53,14 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) =>
             setLoading(true);
             const res = await api.getLeaveSettings(type);
             if (res.success && res.data) {
+                const loadedTypes = Array.isArray(res.data.types)
+                    ? res.data.types.map((t: Record<string, unknown>) => normalizeLeaveTypeItem(t, type))
+                    : [];
+
                 setSettings(prev => ({
                     ...prev,
                     ...res.data,
-                    // Deeply merge nested objects to ensure properties like finalAuthority exist
+                    types: loadedTypes,
                     workflow: {
                         ...prev.workflow,
                         ...(res.data.workflow || {})
@@ -68,7 +73,7 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) =>
             }
         } catch (err) {
             console.error(`Error loading leave settings:`, err);
-            toast.error('Failed to load leave settings');
+            toast.error(`Failed to load ${type === 'od' ? 'OD' : type === 'ccl' ? 'CCL' : 'leave'} settings`);
         } finally {
             setLoading(false);
         }
@@ -81,7 +86,11 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) =>
     const handleSave = async () => {
         try {
             setSaving(true);
-            const res = await api.saveLeaveSettings(type, settings);
+            const payload = {
+                ...settings,
+                types: serializeLeaveTypesForSave(settings.types || [], type),
+            };
+            const res = await api.saveLeaveSettings(type, payload);
             if (res.success) toast.success(`${type.toUpperCase()} settings updated successfully`);
             else toast.error(res.message || 'Failed to save settings');
         } catch {
@@ -95,7 +104,11 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) =>
     const handleSettingsChange = async (newSettings: typeof settings) => {
         setSettings(newSettings);
         try {
-            await api.saveLeaveSettings(type, newSettings);
+            const payload = {
+                ...newSettings,
+                types: serializeLeaveTypesForSave(newSettings.types || [], type),
+            };
+            await api.saveLeaveSettings(type, payload);
             toast.success('Settings updated');
         } catch {
             toast.error('Failed to update settings');
@@ -104,22 +117,22 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) =>
 
     if (loading) return <SettingsSkeleton />;
 
-    const title =
-        type === 'leave' ? 'Leave Management' : type === 'od' ? 'On Duty (OD)' : 'Compensatory Casual Leave (CCL)';
+    const copy = leaveSettingsLabels(type);
 
     return (
         <SettingsPanel>
             <SettingsPanelHeader
-                section={type.toUpperCase()}
-                title={title}
-                subtitle={`Configure ${type} categories, eligibility policies, and approval workflows.`}
+                section={type === 'od' ? 'OD' : type === 'ccl' ? 'CCL' : 'Leave'}
+                title={copy.panelTitle}
+                subtitle={copy.panelSubtitle}
             />
 
             <div className="grid grid-cols-1 items-start gap-6 md:gap-8 xl:grid-cols-2">
                 <div className="space-y-6 md:space-y-8">
                     {type !== 'ccl' && (
-                        <SettingsSectionCard title={`${type.toUpperCase()} Types`} accent>
+                        <SettingsSectionCard title={copy.typesSectionTitle} accent>
                             <LeaveTypesManager
+                                kind={type}
                                 types={settings.types || []}
                                 onChange={(ts) => setSettings({ ...settings, types: ts })}
                             />
@@ -127,13 +140,14 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) =>
                                 <SettingsSaveBar
                                     onSave={handleSave}
                                     saving={saving}
-                                    label={`Save ${type.toUpperCase()} Types`}
+                                    label={copy.saveTypesLabel}
                                 />
                             </div>
                         </SettingsSectionCard>
                     )}
 
                     <LeavePolicy
+                        kind={type}
                         settings={settings}
                         onChange={handleSettingsChange}
                     />

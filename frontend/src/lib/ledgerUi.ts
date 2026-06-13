@@ -7,7 +7,7 @@
  * - White panels on soft accent-tinted page background
  * - Company accent via CSS vars (--ps-accent, --ps-accent-border, --ps-accent-soft, --ps-accent-ink)
  * - Page headers: ledgerPageHeaderStyle() — payslip-style accent gradient band
- * - Page width: LoansPageShell defaults to max-w-[1920px] (full workspace width)
+ * - Page width: LoansPageShell bleeds edge-to-edge in the workspace (cancels MainContent padding)
  * - Serif titles, uppercase micro-labels (10px tracking)
  * - Flat borders (no heavy shadows / gradient cards)
  * - Monospace tabular nums for money

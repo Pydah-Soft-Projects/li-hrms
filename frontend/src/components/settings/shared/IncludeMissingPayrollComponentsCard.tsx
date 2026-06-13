@@ -8,6 +8,8 @@ export type IncludeMissingPayrollComponentsCardProps = {
   onChange: (next: boolean) => void;
   /** Shown under the standard description (e.g. department override copy). */
   contextNote?: string;
+  /** When false, only the label is shown (no helper text). */
+  showDescription?: boolean;
   className?: string;
 };
 
@@ -20,6 +22,7 @@ export function IncludeMissingPayrollComponentsCard({
   checked,
   onChange,
   contextNote,
+  showDescription = true,
   className = '',
 }: IncludeMissingPayrollComponentsCardProps) {
   return (
@@ -27,7 +30,7 @@ export function IncludeMissingPayrollComponentsCard({
       <SettingsToggleRow
         id="include-missing-payroll-components"
         label="Include Missing Components"
-        description="Include standard allowances/deductions even if employee has no overrides."
+        description={showDescription ? 'Include standard allowances/deductions even if employee has no overrides.' : undefined}
         checked={checked}
         onChange={onChange}
       />
