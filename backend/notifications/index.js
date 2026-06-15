@@ -26,5 +26,20 @@ router.get(
   authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'),
   controller.getPushSubscriptionStatus
 );
+router.post(
+  '/push/expo-subscribe',
+  authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'),
+  controller.subscribeExpoPush
+);
+router.post(
+  '/push/expo-unsubscribe',
+  authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'),
+  controller.unsubscribeExpoPush
+);
+router.get(
+  '/push/expo-status',
+  authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'),
+  controller.getExpoPushStatus
+);
 
 module.exports = router;

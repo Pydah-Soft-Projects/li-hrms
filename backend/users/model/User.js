@@ -177,6 +177,16 @@ const userSchema = new mongoose.Schema(
         createdAt: { type: Date, default: Date.now },
       },
     ],
+    /** Expo push tokens (React Native mobile app) */
+    expoPushTokens: [
+      {
+        token: { type: String, required: true, trim: true },
+        deviceName: { type: String, default: null, trim: true },
+        platform: { type: String, enum: ['ios', 'android', 'unknown'], default: 'unknown' },
+        createdAt: { type: Date, default: Date.now },
+        lastSeenAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   {
     timestamps: true,
