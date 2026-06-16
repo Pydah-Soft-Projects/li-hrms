@@ -1,6 +1,6 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
-import { api, Department, Division, Employee } from '@/lib/api';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { api, Department, Division, Employee, Designation, EmployeeGroup } from '@/lib/api';
 import { MultiSelect } from '@/components/MultiSelect';
 import {
     Search,
@@ -16,7 +16,10 @@ import {
     PieChart,
     TrendingUp,
     Coins,
-    Banknote
+    Calendar,
+    Users,
+    AlertTriangle,
+    Banknote,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
@@ -30,6 +33,52 @@ interface LoanSummary {
     outstanding: number;
     interest: number;
     count: number;
+    activeCount?: number;
+    completedCount?: number;
+}
+
+interface PeriodStats {
+    approvedCount: number;
+    disbursedCount: number;
+    disbursedAmount: number;
+    recoveredInPeriod: number;
+}
+
+interface PayPeriodStats {
+    totalEmiDue?: number;
+    totalAdvanceDue?: number;
+    totalDue?: number;
+    employeeCount?: number;
+    payPeriodMonth?: string;
+    scheduledEmi?: number;
+    recoveredEmi?: number;
+    scheduledAdvance?: number;
+    recoveredAdvance?: number;
+    shortfallTotal?: number;
+    underpaidEmployees?: {
+        emp_no: string;
+        employee_name: string;
+        scheduledEmi: number;
+        recoveredEmi: number;
+        scheduledAdvance: number;
+        recoveredAdvance: number;
+        shortfall: number;
+    }[];
+}
+
+interface PersonalStats {
+    totalCount: number;
+    activeCount: number;
+    completedCount: number;
+    totalDistributed: number;
+    totalRecovered: number;
+    totalOutstanding: number;
+    totalInterestOnLoans?: number;
+    interestPaid?: number;
+    currentPeriodEmi?: number;
+    currentPeriodAdvanceDue?: number;
+    payPeriodMonth?: string;
+    period?: PeriodStats;
 }
 
 interface LoanRecord {
@@ -75,9 +124,12 @@ export default function LoanReportsTab({
     const [departments, setDepartments] = useState<Department[]>([]);
     const [divisions, setDivisions] = useState<Division[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
+    const [designations, setDesignations] = useState<Designation[]>([]);
+    const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
 
     // View & Tab states
     const [viewMode, setViewMode] = useState<'detailed' | 'abstract'>('abstract');
+    const [abstractGroupBy, setAbstractGroupBy] = useState<'division' | 'department' | 'designation' | 'employee_group' | 'employee'>('division');
     
     // Pagination states
     const [page, setPage] = useState(1);
@@ -88,51 +140,117 @@ export default function LoanReportsTab({
         totalDistributed: 0,
         totalRecovered: 0,
         totalOutstanding: 0,
-        totalInterest: 0
+        totalInterest: 0,
+        activeCount: 0,
+        completedCount: 0,
+        totalCount: 0,
+        activeOutstandingInterest: 0,
     });
+    const [periodStats, setPeriodStats] = useState<PeriodStats>({
+        approvedCount: 0,
+        disbursedCount: 0,
+        disbursedAmount: 0,
+        recoveredInPeriod: 0,
+    });
+    const [payPeriod, setPayPeriod] = useState<{
+        current?: PayPeriodStats;
+        last?: PayPeriodStats;
+        currentPayMonth?: string;
+        lastPayMonth?: string;
+    }>({});
+    const [personalStats, setPersonalStats] = useState<PersonalStats | null>(null);
 
     // Filter states
     const [divisionIds, setDivisionIds] = useState<string[]>([]);
     const [departmentIds, setDepartmentIds] = useState<string[]>([]);
     const [employeeIds, setEmployeeIds] = useState<string[]>([]);
+    const [designationIds, setDesignationIds] = useState<string[]>([]);
+    const [employeeGroupIds, setEmployeeGroupIds] = useState<string[]>([]);
     const [requestType, setRequestType] = useState<string>(defaultRequestType || '');
     const [status, setStatus] = useState<string>('');
+
+    // Date filters
+    const [dateMode, setDateMode] = useState<'pay_cycle' | 'monthly' | 'range'>('pay_cycle');
+    const [selectedMonth, setSelectedMonth] = useState<string>((new Date().getMonth() + 1).toString());
+    const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
+    const [startDate, setStartDate] = useState(dayjs().startOf('month').format('YYYY-MM-DD'));
+    const [endDate, setEndDate] = useState(dayjs().endOf('month').format('YYYY-MM-DD'));
+    const [payrollStartDay, setPayrollStartDay] = useState<number>(1);
+
+    // Export modal
+    const [showExportModal, setShowExportModal] = useState(false);
+    const [exportFormat, setExportFormat] = useState<'xlsx' | 'pdf'>('pdf');
+    const [exportMode, setExportMode] = useState<'detailed' | 'summary'>('detailed');
+    const [exportGroupBy, setExportGroupBy] = useState<string>('division');
     
     // Drill-down states
     const [drilldownLevel, setDrilldownLevel] = useState<'all' | 'division' | 'department' | 'employee'>('all');
     const [summaries, setSummaries] = useState<LoanSummary[]>([]);
     const [selectedLoan, setSelectedLoan] = useState<LoanRecord | null>(null);
 
+    const effectiveDates = useMemo(() => {
+        if (dateMode === 'monthly') {
+            const start = dayjs(`${selectedYear}-${selectedMonth}-01`).format('YYYY-MM-DD');
+            const end = dayjs(`${selectedYear}-${selectedMonth}-01`).endOf('month').format('YYYY-MM-DD');
+            return { start, end };
+        }
+        if (dateMode === 'pay_cycle') {
+            const startDay = payrollStartDay;
+            const year = parseInt(selectedYear);
+            const month = parseInt(selectedMonth);
+            if (startDay === 1) {
+                return {
+                    start: dayjs(`${year}-${month}-01`).format('YYYY-MM-DD'),
+                    end: dayjs(`${year}-${month}-01`).endOf('month').format('YYYY-MM-DD'),
+                };
+            }
+            const currentMonthStart = dayjs(`${year}-${month}-${startDay}`);
+            const prevMonthStart = currentMonthStart.subtract(1, 'month');
+            return {
+                start: prevMonthStart.format('YYYY-MM-DD'),
+                end: currentMonthStart.subtract(1, 'day').format('YYYY-MM-DD'),
+            };
+        }
+        return { start: startDate, end: endDate };
+    }, [dateMode, selectedYear, selectedMonth, payrollStartDay, startDate, endDate]);
+
+    const buildReportParams = useCallback((pageToLoad: number = page) => {
+        let groupBy: string | undefined;
+        if (viewMode === 'abstract') {
+            if (drilldownLevel === 'all') groupBy = abstractGroupBy;
+            else if (drilldownLevel === 'division') groupBy = 'department';
+            else if (drilldownLevel === 'department') groupBy = 'employee';
+        }
+
+        return {
+            page: pageToLoad,
+            limit,
+            groupBy,
+            divisionId: divisionIds.join(','),
+            departmentId: departmentIds.join(','),
+            employeeId: employeeIds.join(','),
+            designationId: designationIds.join(','),
+            employeeGroupId: employeeGroupIds.join(','),
+            requestType: requestType || undefined,
+            status: status || undefined,
+            startDate: effectiveDates.start,
+            endDate: effectiveDates.end,
+        };
+    }, [page, limit, viewMode, drilldownLevel, abstractGroupBy, divisionIds, departmentIds, employeeIds, designationIds, employeeGroupIds, requestType, status, effectiveDates.start, effectiveDates.end]);
+
     const loadReport = useCallback(async (pageToLoad: number = page) => {
         setLoading(true);
         try {
-            let groupBy: string | undefined;
-            if (viewMode === 'abstract') {
-                if (drilldownLevel === 'all') groupBy = 'division';
-                else if (drilldownLevel === 'division') groupBy = 'department';
-                else if (drilldownLevel === 'department') groupBy = 'employee';
-            }
-
-            const params: any = {
-                page: pageToLoad,
-                limit,
-                groupBy,
-                divisionId: divisionIds.join(','),
-                departmentId: departmentIds.join(','),
-                employeeId: employeeIds.join(','),
-                requestType: requestType || undefined,
-                status: status || undefined
-            };
-
-            const response = await api.getLoanReportSummary(params);
+            const response = await api.getLoanReportSummary(buildReportParams(pageToLoad));
             if (response.success) {
                 setRecords(response.data || []);
                 setTotalPages(response.totalPages || 1);
                 setTotalCount(response.total || 0);
                 setSummaries(response.summaries || []);
-                if (response.stats) {
-                    setReportStats(response.stats);
-                }
+                if (response.stats) setReportStats(response.stats);
+                if (response.periodStats) setPeriodStats(response.periodStats);
+                if (response.payPeriod) setPayPeriod(response.payPeriod);
+                setPersonalStats(response.personalStats || null);
             } else {
                 toast.error(response.message || 'Failed to load report');
             }
@@ -142,7 +260,7 @@ export default function LoanReportsTab({
         } finally {
             setLoading(false);
         }
-    }, [page, limit, viewMode, drilldownLevel, divisionIds, departmentIds, employeeIds, requestType, status]);
+    }, [buildReportParams, page]);
 
     useEffect(() => {
         loadInitialFilters();
@@ -150,13 +268,23 @@ export default function LoanReportsTab({
 
     useEffect(() => {
         loadReport(1);
-    }, [loadReport, drilldownLevel, divisionIds, departmentIds, employeeIds, viewMode, requestType, status]);
+    }, [loadReport]);
 
     const loadInitialFilters = async () => {
         setFetchingFilters(true);
         try {
-            const divRes = await api.getDivisions(true);
+            const [divRes, desRes, grpRes, settingRes] = await Promise.all([
+                api.getDivisions(true),
+                api.getAllDesignations(),
+                api.getEmployeeGroups(true),
+                api.getSetting('payroll_cycle_start_day'),
+            ]);
             if (divRes.success) setDivisions(divRes.data || []);
+            if (desRes.success) setDesignations(desRes.data || []);
+            if (grpRes.success) setEmployeeGroups(grpRes.data || []);
+            if (settingRes?.success && settingRes.data?.value) {
+                setPayrollStartDay(parseInt(settingRes.data.value));
+            }
         } catch (error) {
             console.error('Error loading initial filters:', error);
         } finally {
@@ -223,16 +351,16 @@ export default function LoanReportsTab({
         }
     };
 
-    const handleExport = async (format: 'xlsx' | 'pdf' = 'xlsx') => {
+    const handleExport = async (format: 'xlsx' | 'pdf' = 'xlsx', options?: { exportMode?: string; groupBy?: string }) => {
         const toastId = toast.loading(`Preparing your ${format.toUpperCase()} report...`);
         try {
             const params: any = {
-                divisionId: divisionIds.join(','),
-                departmentId: departmentIds.join(','),
-                employeeId: employeeIds.join(','),
-                requestType: requestType || undefined,
-                status: status || undefined
+                ...buildReportParams(1),
+                exportMode: options?.exportMode || exportMode,
+                groupBy: options?.groupBy || (exportMode === 'summary' ? exportGroupBy : undefined),
             };
+            delete params.page;
+            delete params.limit;
 
             let blob;
             if (format === 'xlsx') {
@@ -245,11 +373,13 @@ export default function LoanReportsTab({
             const a = document.createElement('a');
             a.href = url;
             const fileNamePrefix = requestType === 'salary_advance' ? 'salary_advance' : 'loan';
-            a.download = `${fileNamePrefix}_report_${dayjs().format('YYYYMMDD')}.${format}`;
+            const scopeSuffix = exportMode === 'summary' ? `_${exportGroupBy}` : employeeIds.length === 1 ? '_personal' : '';
+            a.download = `${fileNamePrefix}_report${scopeSuffix}_${effectiveDates.start}_to_${effectiveDates.end}.${format}`;
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
             a.remove();
+            setShowExportModal(false);
             toast.success(`${format.toUpperCase()} report downloaded successfully`, { id: toastId });
         } catch (error: any) {
             console.error('Export error:', error);
@@ -320,8 +450,11 @@ export default function LoanReportsTab({
             <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm dark:border-slate-800 dark:bg-slate-900 transition-all duration-300">
                 <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex justify-between items-center">
                     <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest">
-                        {drilldownLevel === 'all' ? 'Summary by Division' :
-                            drilldownLevel === 'division' ? 'Summary by Department' : 'Summary by Employee'}
+                        {drilldownLevel === 'all'
+                            ? `Summary by ${abstractGroupBy.replace('_', ' ')}`
+                            : drilldownLevel === 'division'
+                                ? 'Summary by Department'
+                                : 'Summary by Employee'}
                     </h3>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Double-click row to drill-down</p>
                 </div>
@@ -330,12 +463,16 @@ export default function LoanReportsTab({
                         <thead>
                             <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/20">
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                    {drilldownLevel === 'all' ? 'Division' : (drilldownLevel === 'division' ? 'Department' : 'Employee')}
+                                    {drilldownLevel === 'all'
+                                        ? abstractGroupBy.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
+                                        : (drilldownLevel === 'division' ? 'Department' : 'Employee')}
                                 </th>
                                 <th className="px-4 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Distributed</th>
                                 <th className="px-4 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Recovered</th>
                                 <th className="px-4 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Outstanding</th>
                                 {requestType !== 'salary_advance' && <th className="px-4 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Interest</th>}
+                                <th className="px-4 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Active</th>
+                                <th className="px-4 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Closed</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Count</th>
                             </tr>
                         </thead>
@@ -358,9 +495,11 @@ export default function LoanReportsTab({
                                     key={item.id}
                                     className="group hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all cursor-pointer select-none"
                                     onDoubleClick={() => {
-                                        if (drilldownLevel === 'all') navigateTo('division', item.id);
+                                        if (abstractGroupBy === 'division' && drilldownLevel === 'all') navigateTo('division', item.id);
                                         else if (drilldownLevel === 'division') navigateTo('department', item.id);
-                                        else if (drilldownLevel === 'department') navigateTo('employee', item.id);
+                                        else if (drilldownLevel === 'department' || abstractGroupBy === 'employee') navigateTo('employee', item.id);
+                                        else if (abstractGroupBy === 'designation') setDesignationIds([item.id]);
+                                        else if (abstractGroupBy === 'employee_group') setEmployeeGroupIds([item.id]);
                                     }}
                                 >
                                     <td className="px-6 py-4">
@@ -385,6 +524,8 @@ export default function LoanReportsTab({
                                             {formatCurrency(item.interest)}
                                         </td>
                                     )}
+                                    <td className="px-4 py-4 text-center text-xs font-bold text-blue-600">{item.activeCount ?? 0}</td>
+                                    <td className="px-4 py-4 text-center text-xs font-bold text-emerald-600">{item.completedCount ?? 0}</td>
                                     <td className="px-6 py-4 text-center">
                                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                                             {item.count}
@@ -562,23 +703,36 @@ export default function LoanReportsTab({
                     <div className="h-10 w-px bg-slate-200 dark:bg-slate-800 mx-2 hidden xl:block" />
 
                     <button
-                        onClick={() => handleExport('xlsx')}
+                        onClick={() => { setExportFormat('xlsx'); setShowExportModal(true); }}
                         className="h-11 px-5 rounded-2xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-[0.1em] shadow-lg shadow-emerald-100 dark:shadow-none hover:bg-emerald-700 transition-all flex items-center gap-2 active:scale-95"
                     >
                         <Download className="h-4 w-4" />
-                        Download XLSX
+                        Export XLSX
                     </button>
                     <button
-                        onClick={() => handleExport('pdf')}
+                        onClick={() => { setExportFormat('pdf'); setShowExportModal(true); }}
                         className="h-11 px-5 rounded-2xl bg-rose-600 text-white text-[10px] font-black uppercase tracking-[0.1em] shadow-lg shadow-rose-100 dark:shadow-none hover:bg-rose-700 transition-all flex items-center gap-2 active:scale-95"
                     >
                         <Download className="h-4 w-4" />
-                        Download PDF
+                        Export PDF
                     </button>
                 </div>
             </div>
 
-            {/* Stats Overview */}
+            {/* Period banner */}
+            <div className="flex flex-wrap items-center gap-3 px-4 py-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50">
+                <Calendar className="h-4 w-4 text-indigo-600" />
+                <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300 uppercase tracking-widest">
+                    Report Period: {dayjs(effectiveDates.start).format('DD MMM YYYY')} – {dayjs(effectiveDates.end).format('DD MMM YYYY')}
+                </span>
+                {payPeriod.currentPayMonth && (
+                    <span className="text-[10px] font-bold text-slate-500 ml-auto">
+                        Current Pay Period: {payPeriod.currentPayMonth}
+                    </span>
+                )}
+            </div>
+
+            {/* Lifetime Stats */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div className="group bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-300 dark:bg-slate-900 dark:border-slate-800 relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:scale-110 transition-transform">
@@ -619,10 +773,10 @@ export default function LoanReportsTab({
                         <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:scale-110 transition-transform">
                             <Coins className="h-24 w-24 text-slate-900 dark:text-white" />
                         </div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Advance Count</p>
-                        <h3 className="text-2xl font-black text-amber-600">{totalCount}</h3>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Active / Closed</p>
+                        <h3 className="text-2xl font-black text-amber-600">{reportStats.activeCount} / {reportStats.completedCount}</h3>
                         <div className="mt-4 flex items-center gap-2">
-                            <span className="text-[9px] font-bold text-amber-500 uppercase tracking-tight">Total Applications</span>
+                            <span className="text-[9px] font-bold text-amber-500 uppercase tracking-tight">{reportStats.totalCount} total advances</span>
                         </div>
                     </div>
                 ) : (
@@ -630,14 +784,160 @@ export default function LoanReportsTab({
                         <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:scale-110 transition-transform">
                             <TrendingUp className="h-24 w-24 text-slate-900 dark:text-white" />
                         </div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Interest</p>
-                        <h3 className="text-2xl font-black text-indigo-600">{formatCurrency(reportStats.totalInterest)}</h3>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Active Interest Due</p>
+                        <h3 className="text-2xl font-black text-indigo-600">{formatCurrency(reportStats.activeOutstandingInterest || 0)}</h3>
                         <div className="mt-4 flex items-center gap-2">
-                            <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-tight">Revenue Generation</span>
+                            <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-tight">{reportStats.activeCount} active · {reportStats.completedCount} closed</span>
                         </div>
                     </div>
                 )}
             </div>
+
+            {/* Period Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-violet-50 dark:bg-violet-950/20 rounded-2xl p-4 border border-violet-100 dark:border-violet-900/30">
+                    <p className="text-[9px] font-black text-violet-500 uppercase tracking-widest">Approved (Period)</p>
+                    <p className="text-xl font-black text-violet-700 dark:text-violet-300 mt-1">{periodStats.approvedCount}</p>
+                </div>
+                <div className="bg-purple-50 dark:bg-purple-950/20 rounded-2xl p-4 border border-purple-100 dark:border-purple-900/30">
+                    <p className="text-[9px] font-black text-purple-500 uppercase tracking-widest">Disbursed (Period)</p>
+                    <p className="text-xl font-black text-purple-700 dark:text-purple-300 mt-1">{periodStats.disbursedCount}</p>
+                    <p className="text-[9px] font-bold text-purple-400 mt-0.5">{formatCurrency(periodStats.disbursedAmount)}</p>
+                </div>
+                <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-2xl p-4 border border-emerald-100 dark:border-emerald-900/30">
+                    <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Recovered (Period)</p>
+                    <p className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1">{formatCurrency(periodStats.recoveredInPeriod)}</p>
+                </div>
+                <div className="bg-rose-50 dark:bg-rose-950/20 rounded-2xl p-4 border border-rose-100 dark:border-rose-900/30">
+                    <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest">To Recover</p>
+                    <p className="text-xl font-black text-rose-700 dark:text-rose-300 mt-1">{formatCurrency(reportStats.totalOutstanding)}</p>
+                </div>
+            </div>
+
+            {/* Pay Period EMI / Advance Recovery */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:bg-slate-900 dark:border-slate-800">
+                    <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest flex items-center gap-2 mb-4">
+                        <Wallet className="h-4 w-4 text-amber-500" />
+                        Current Pay Period — {payPeriod.current?.payPeriodMonth || payPeriod.currentPayMonth || '—'}
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                        {requestType !== 'salary_advance' && (
+                            <div>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase">Total EMI Due</p>
+                                <p className="text-lg font-black text-slate-900 dark:text-white">{formatCurrency(payPeriod.current?.totalEmiDue || 0)}</p>
+                            </div>
+                        )}
+                        {requestType !== 'loan' && (
+                            <div>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase">Advance Due</p>
+                                <p className="text-lg font-black text-amber-600">{formatCurrency(payPeriod.current?.totalAdvanceDue || 0)}</p>
+                            </div>
+                        )}
+                        <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">Employees</p>
+                            <p className="text-lg font-black text-indigo-600">{payPeriod.current?.employeeCount || 0}</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:bg-slate-900 dark:border-slate-800">
+                    <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest flex items-center gap-2 mb-4">
+                        <Undo2 className="h-4 w-4 text-emerald-500" />
+                        Last Pay Period — {payPeriod.last?.payPeriodMonth || payPeriod.lastPayMonth || '—'}
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                        {requestType !== 'salary_advance' && (
+                            <>
+                                <div>
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase">EMI Scheduled</p>
+                                    <p className="text-lg font-black text-slate-900 dark:text-white">{formatCurrency(payPeriod.last?.scheduledEmi || 0)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase">EMI Recovered</p>
+                                    <p className="text-lg font-black text-emerald-600">{formatCurrency(payPeriod.last?.recoveredEmi || 0)}</p>
+                                </div>
+                            </>
+                        )}
+                        {requestType !== 'loan' && (
+                            <>
+                                <div>
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase">Advance Scheduled</p>
+                                    <p className="text-lg font-black text-slate-900 dark:text-white">{formatCurrency(payPeriod.last?.scheduledAdvance || 0)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase">Advance Recovered</p>
+                                    <p className="text-lg font-black text-emerald-600">{formatCurrency(payPeriod.last?.recoveredAdvance || 0)}</p>
+                                </div>
+                            </>
+                        )}
+                        <div className="col-span-2">
+                            <p className="text-[9px] font-bold text-rose-400 uppercase flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3" /> Shortfall
+                            </p>
+                            <p className="text-lg font-black text-rose-600">{formatCurrency(payPeriod.last?.shortfallTotal || 0)}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Personal Stats (when single employee selected) */}
+            {personalStats && employeeIds.length === 1 && (
+                <div className="rounded-2xl border-2 border-indigo-200 bg-indigo-50/50 p-6 dark:bg-indigo-950/20 dark:border-indigo-800">
+                    <h3 className="text-xs font-black text-indigo-700 dark:text-indigo-300 uppercase tracking-widest flex items-center gap-2 mb-4">
+                        <Users className="h-4 w-4" />
+                        Personal Loan Summary
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                        <div><p className="text-[9px] font-bold text-slate-500 uppercase">Total Taken</p><p className="font-black text-slate-900 dark:text-white">{formatCurrency(personalStats.totalDistributed)}</p></div>
+                        <div><p className="text-[9px] font-bold text-slate-500 uppercase">Returned</p><p className="font-black text-emerald-600">{formatCurrency(personalStats.totalRecovered)}</p></div>
+                        <div><p className="text-[9px] font-bold text-slate-500 uppercase">Outstanding</p><p className="font-black text-rose-600">{formatCurrency(personalStats.totalOutstanding)}</p></div>
+                        <div><p className="text-[9px] font-bold text-slate-500 uppercase">Active / Closed</p><p className="font-black">{personalStats.activeCount} / {personalStats.completedCount}</p></div>
+                        {requestType !== 'salary_advance' && (
+                            <>
+                                <div><p className="text-[9px] font-bold text-slate-500 uppercase">Interest Paid</p><p className="font-black text-indigo-600">{formatCurrency(personalStats.interestPaid || 0)}</p></div>
+                                <div><p className="text-[9px] font-bold text-slate-500 uppercase">EMI This Period</p><p className="font-black text-amber-600">{formatCurrency(personalStats.currentPeriodEmi || 0)}</p></div>
+                            </>
+                        )}
+                        {requestType === 'salary_advance' && (
+                            <div><p className="text-[9px] font-bold text-slate-500 uppercase">Advance This Period</p><p className="font-black text-amber-600">{formatCurrency(personalStats.currentPeriodAdvanceDue || 0)}</p></div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Underpaid employees last period */}
+            {(payPeriod.last?.underpaidEmployees?.length || 0) > 0 && (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50/30 overflow-hidden dark:bg-rose-950/10 dark:border-rose-900/30">
+                    <div className="px-6 py-4 border-b border-rose-100 dark:border-rose-900/30 flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-rose-500" />
+                        <h3 className="text-xs font-black text-rose-700 dark:text-rose-300 uppercase tracking-widest">
+                            Underpaid Last Pay Period ({payPeriod.last?.underpaidEmployees?.length})
+                        </h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                            <thead>
+                                <tr className="bg-rose-100/50 dark:bg-rose-900/20">
+                                    <th className="px-4 py-3 font-black text-[9px] uppercase text-rose-600">Employee</th>
+                                    <th className="px-4 py-3 font-black text-[9px] uppercase text-rose-600 text-right">Scheduled EMI</th>
+                                    <th className="px-4 py-3 font-black text-[9px] uppercase text-rose-600 text-right">Recovered EMI</th>
+                                    <th className="px-4 py-3 font-black text-[9px] uppercase text-rose-600 text-right">Shortfall</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-rose-100 dark:divide-rose-900/20">
+                                {payPeriod.last?.underpaidEmployees?.slice(0, 20).map((u, i) => (
+                                    <tr key={i} className="hover:bg-rose-50 dark:hover:bg-rose-900/10">
+                                        <td className="px-4 py-3 font-bold text-slate-900 dark:text-white">{u.employee_name} <span className="text-slate-400 font-normal">({u.emp_no})</span></td>
+                                        <td className="px-4 py-3 text-right">{formatCurrency(u.scheduledEmi)}</td>
+                                        <td className="px-4 py-3 text-right text-emerald-600">{formatCurrency(u.recoveredEmi)}</td>
+                                        <td className="px-4 py-3 text-right font-black text-rose-600">{formatCurrency(u.shortfall)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
 
             {/* Main Content Area */}
             <div className="grid grid-cols-1 xl:grid-cols-4 gap-8 items-start">
@@ -663,6 +963,51 @@ export default function LoanReportsTab({
                             )}
                         </div>
                         <div className="p-6 space-y-6">
+                            {/* Date Period */}
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Period Mode</label>
+                                <select
+                                    value={dateMode}
+                                    onChange={(e) => setDateMode(e.target.value as any)}
+                                    className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold p-3 focus:ring-2 focus:ring-indigo-500"
+                                >
+                                    <option value="pay_cycle">Pay Cycle</option>
+                                    <option value="monthly">Calendar Month</option>
+                                    <option value="range">Custom Range</option>
+                                </select>
+                            </div>
+                            {dateMode !== 'range' ? (
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Month</label>
+                                        <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 rounded-xl text-xs font-bold p-2.5">
+                                            {Array.from({ length: 12 }, (_, i) => (
+                                                <option key={i + 1} value={String(i + 1)}>{dayjs().month(i).format('MMM')}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Year</label>
+                                        <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 rounded-xl text-xs font-bold p-2.5">
+                                            {[2024, 2025, 2026, 2027].map(y => <option key={y} value={String(y)}>{y}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">From</label>
+                                        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 rounded-xl text-xs font-bold p-2.5" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">To</label>
+                                        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 rounded-xl text-xs font-bold p-2.5" />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="h-px bg-slate-100 dark:bg-slate-800" />
+
                             <MultiSelect
                                 label="Division"
                                 options={divisions.map(d => ({ id: d._id, name: d.name }))}
@@ -688,6 +1033,39 @@ export default function LoanReportsTab({
                                 }}
                                 disabled={departmentIds.length === 0}
                             />
+
+                            <MultiSelect
+                                label="Designation"
+                                options={designations.map(d => ({ id: d._id, name: d.name }))}
+                                selectedIds={designationIds}
+                                onChange={setDesignationIds}
+                            />
+
+                            <MultiSelect
+                                label="Employee Group"
+                                options={employeeGroups.map(g => ({ id: g._id, name: g.name }))}
+                                selectedIds={employeeGroupIds}
+                                onChange={setEmployeeGroupIds}
+                            />
+
+                            <div className="h-px bg-slate-100 dark:bg-slate-800 my-2" />
+
+                            {viewMode === 'abstract' && drilldownLevel === 'all' && (
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Group Summary By</label>
+                                    <select
+                                        value={abstractGroupBy}
+                                        onChange={(e) => setAbstractGroupBy(e.target.value as any)}
+                                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold p-3 focus:ring-2 focus:ring-indigo-500"
+                                    >
+                                        <option value="division">Division</option>
+                                        <option value="department">Department</option>
+                                        <option value="designation">Designation</option>
+                                        <option value="employee_group">Employee Group</option>
+                                        <option value="employee">Employee</option>
+                                    </select>
+                                </div>
+                            )}
 
                             <div className="h-px bg-slate-100 dark:bg-slate-800 my-2" />
 
@@ -748,6 +1126,66 @@ export default function LoanReportsTab({
                         loan={selectedLoan} 
                         onClose={() => setSelectedLoan(null)} 
                     />
+                )}
+
+                {/* Export Modal */}
+                {showExportModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                        <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-md border border-slate-200 dark:border-slate-800 overflow-hidden">
+                            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Export Report</h3>
+                                <button onClick={() => setShowExportModal(false)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+                                    <X className="h-5 w-5 text-slate-400" />
+                                </button>
+                            </div>
+                            <div className="p-6 space-y-5">
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Export Type</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            onClick={() => setExportMode('detailed')}
+                                            className={`py-3 rounded-xl text-xs font-black uppercase ${exportMode === 'detailed' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800'}`}
+                                        >
+                                            Detailed List
+                                        </button>
+                                        <button
+                                            onClick={() => setExportMode('summary')}
+                                            className={`py-3 rounded-xl text-xs font-black uppercase ${exportMode === 'summary' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800'}`}
+                                        >
+                                            Grouped Summary
+                                        </button>
+                                    </div>
+                                </div>
+                                {exportMode === 'summary' && (
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Group By</label>
+                                        <select
+                                            value={exportGroupBy}
+                                            onChange={(e) => setExportGroupBy(e.target.value)}
+                                            className="w-full bg-slate-50 dark:bg-slate-800 rounded-xl text-xs font-bold p-3"
+                                        >
+                                            <option value="division">Division Wise</option>
+                                            <option value="department">Department Wise</option>
+                                            <option value="designation">Designation Wise</option>
+                                            <option value="employee_group">Employee Group Wise</option>
+                                            <option value="employee">Employee Wise</option>
+                                        </select>
+                                    </div>
+                                )}
+                                <p className="text-[10px] text-slate-500">
+                                    Period: {dayjs(effectiveDates.start).format('DD MMM YYYY')} – {dayjs(effectiveDates.end).format('DD MMM YYYY')}
+                                    {employeeIds.length === 1 && ' · Personal report'}
+                                </p>
+                                <button
+                                    onClick={() => handleExport(exportFormat)}
+                                    className="w-full py-4 rounded-2xl bg-rose-600 text-white text-xs font-black uppercase tracking-widest hover:bg-rose-700 flex items-center justify-center gap-2"
+                                >
+                                    <Download className="h-4 w-4" />
+                                    Download {exportFormat.toUpperCase()}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 )}
             </div>
         </div>

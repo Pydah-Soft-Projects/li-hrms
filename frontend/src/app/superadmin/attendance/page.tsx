@@ -657,19 +657,19 @@ export default function AttendancePage() {
       const res = await api.getMonthlySummaryContributions(employeeId, year, month);
       if (res.success && res.data?.contributingDates) {
         setMonthlyData((prev) =>
-          prev.map((row) =>
-            row.employee._id === employeeId
-              ? {
-                  ...row,
-                  summary: {
-                    ...row.summary,
-                    contributingDates: res.data!.contributingDates as NonNullable<
-                      typeof row.summary
-                    >['contributingDates'],
-                  },
-                }
-              : row
-          )
+          prev.map((row) => {
+            if (row.employee._id !== employeeId || !row.summary) return row;
+            const summary = row.summary;
+            return {
+              ...row,
+              summary: {
+                ...summary,
+                contributingDates: res.data!.contributingDates as NonNullable<
+                  typeof summary
+                >['contributingDates'],
+              },
+            };
+          })
         );
       }
     } catch (err) {

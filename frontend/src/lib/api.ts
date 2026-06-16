@@ -473,8 +473,13 @@ export interface ApiResponse<T> {
   total?: number;
   page?: number;
   totalPages?: number;
+  hasMore?: boolean;
+  modifiedCount?: number;
   count?: number;
   stats?: any;
+  periodStats?: any;
+  personalStats?: any;
+  payPeriod?: any;
   // For backward compatibility with various response formats
   durations?: any[];
   warnings?: string[];

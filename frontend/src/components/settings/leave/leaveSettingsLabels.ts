@@ -83,7 +83,14 @@ export function normalizeLeaveTypeItem(raw: Record<string, unknown>, kind: Leave
   const code = String(raw?.code ?? '').trim().toUpperCase();
   const name = String(raw?.name ?? raw?.label ?? '').trim();
 
-  const normalized = {
+  const normalized: Record<string, unknown> & {
+    code: string;
+    name: string;
+    color: string;
+    isActive: boolean;
+    isPaid?: boolean;
+    leaveNature?: string;
+  } = {
     ...raw,
     code,
     name,
@@ -92,7 +99,7 @@ export function normalizeLeaveTypeItem(raw: Record<string, unknown>, kind: Leave
   };
 
   if (kind === 'od') {
-    const { isPaid, leaveNature, ...odType } = normalized;
+    const { isPaid: _isPaid, leaveNature: _leaveNature, ...odType } = normalized;
     return odType;
   }
 
@@ -104,9 +111,12 @@ export function normalizeLeaveTypeItem(raw: Record<string, unknown>, kind: Leave
 
 export function serializeLeaveTypesForSave(types: Record<string, unknown>[], kind: LeaveSettingsKind) {
   return types.map((raw) => {
-    const normalized = normalizeLeaveTypeItem(raw, kind);
+    const normalized = normalizeLeaveTypeItem(raw, kind) as Record<string, unknown> & {
+      isPaid?: boolean;
+      leaveNature?: string;
+    };
     if (kind === 'od') {
-      const { isPaid, leaveNature, ...odType } = normalized;
+      const { isPaid: _isPaid, leaveNature: _leaveNature, ...odType } = normalized;
       return odType;
     }
     return normalized;

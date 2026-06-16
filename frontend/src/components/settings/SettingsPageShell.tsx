@@ -411,16 +411,19 @@ export function SettingsOutlineButton({
   onClick,
   type = 'button',
   className = '',
+  disabled = false,
 }: {
   children: ReactNode;
   onClick?: () => void;
   type?: 'button' | 'submit';
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type={type}
       onClick={onClick}
+      disabled={disabled}
       className={`inline-flex items-center gap-1.5 ${settingsOutlineButtonClass()} ${className}`}
       style={settingsOutlineButtonStyle()}
     >

@@ -33,16 +33,18 @@ function normalizeDayForGrid(detail: MonthlyDayPatch, prev?: MonthlyDayPatch | n
   };
 }
 
-export function patchMonthlyDayFromDetail<T extends { employee: { emp_no?: string }; dailyAttendance: Record<string, MonthlyDayPatch | null> }>(
+export function patchMonthlyDayFromDetail<
+  T extends { employee: { emp_no?: string }; dailyAttendance: Record<string, unknown | null> },
+>(
   rows: T[],
   empNo: string,
   date: string,
   detail: MonthlyDayPatch,
-  preserve?: Partial<MonthlyDayPatch>
+  preserve?: Partial<MonthlyDayPatch>,
 ): T[] {
   return rows.map((row) => {
     if (String(row.employee.emp_no || '') !== String(empNo)) return row;
-    const prev = row.dailyAttendance[date];
+    const prev = row.dailyAttendance[date] as MonthlyDayPatch | null | undefined;
     const normalized = normalizeDayForGrid(detail, prev);
     const merged: MonthlyDayPatch = {
       ...(prev || {}),
@@ -63,6 +65,6 @@ export function patchMonthlyDayFromDetail<T extends { employee: { emp_no?: strin
         ...row.dailyAttendance,
         [date]: merged,
       },
-    };
+    } as T;
   });
 }
