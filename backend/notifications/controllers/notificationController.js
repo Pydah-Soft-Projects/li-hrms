@@ -1,8 +1,10 @@
 const Notification = require('../model/Notification');
 const User = require('../../users/model/User');
 const Employee = require('../../employees/model/Employee');
+const { isExpoPushToken } = require('../../shared/services/expoPushNotificationService');
 
 const MAX_PUSH_SUBSCRIPTIONS = 12;
+const MAX_EXPO_PUSH_TOKENS = 8;
 
 exports.getVapidPublicKey = async (req, res) => {
   try {
@@ -84,6 +86,77 @@ exports.getPushSubscriptionStatus = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to read push subscription status',
+      error: error.message,
+    });
+  }
+};
+
+exports.subscribeExpoPush = async (req, res) => {
+  try {
+    const token = String(req.body?.token || '').trim();
+    if (!isExpoPushToken(token)) {
+      return res.status(400).json({ success: false, message: 'Invalid Expo push token' });
+    }
+
+    const platformRaw = String(req.body?.platform || 'unknown').toLowerCase();
+    const platform = platformRaw === 'ios' || platformRaw === 'android' ? platformRaw : 'unknown';
+    const deviceName = String(req.body?.deviceName || '').slice(0, 120) || null;
+
+    const entry = {
+      token,
+      platform,
+      deviceName,
+      createdAt: new Date(),
+      lastSeenAt: new Date(),
+    };
+
+    const isEmployeePortal = req.user.type === 'employee';
+    const Model = isEmployeePortal ? Employee : User;
+    const notFoundMsg = isEmployeePortal ? 'Employee not found' : 'User not found';
+
+    const account = await Model.findById(req.user._id).select('expoPushTokens');
+    if (!account) {
+      return res.status(404).json({ success: false, message: notFoundMsg });
+    }
+
+    const existing = Array.isArray(account.expoPushTokens) ? account.expoPushTokens : [];
+    const filtered = existing.filter((s) => String(s.token) !== token);
+    filtered.push(entry);
+    const trimmed = filtered.slice(-MAX_EXPO_PUSH_TOKENS);
+    account.expoPushTokens = trimmed;
+    await account.save();
+
+    res.status(200).json({ success: true, message: 'Expo push token saved', count: trimmed.length });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to save Expo push token', error: error.message });
+  }
+};
+
+exports.unsubscribeExpoPush = async (req, res) => {
+  try {
+    const token = String(req.body?.token || '').trim();
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'token is required' });
+    }
+    const Model = req.user.type === 'employee' ? Employee : User;
+    await Model.updateOne({ _id: req.user._id }, { $pull: { expoPushTokens: { token } } });
+    res.status(200).json({ success: true, message: 'Expo push token removed' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to remove Expo push token', error: error.message });
+  }
+};
+
+exports.getExpoPushStatus = async (req, res) => {
+  try {
+    const isEmployeePortal = req.user.type === 'employee';
+    const Model = isEmployeePortal ? Employee : User;
+    const doc = await Model.findById(req.user._id).select('expoPushTokens').lean();
+    const count = Array.isArray(doc?.expoPushTokens) ? doc.expoPushTokens.length : 0;
+    res.status(200).json({ success: true, subscribed: count > 0, count });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to read Expo push status',
       error: error.message,
     });
   }

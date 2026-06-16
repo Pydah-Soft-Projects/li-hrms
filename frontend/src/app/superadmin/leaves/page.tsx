@@ -1575,7 +1575,7 @@ function LeavesPageContent() {
 
   const loadEmployees = async () => {
     try {
-      const response = await api.getEmployees({ is_active: true });
+      const response = await api.getEmployeesSummary({ is_active: true, limit: 500, page: 1 });
       if (response.success) {
         setEmployees(response.data || []);
       }

@@ -2,12 +2,13 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { auth, User } from '@/lib/auth';
+import { toast } from 'react-hot-toast';
 
 interface AuthContextType {
     user: User | null;
     loading: boolean;
-    login: (token: string, user: User) => void;
-    logout: () => void;
+    login: (token: string, user: User, refreshToken?: string) => void;
+    logout: () => Promise<void>;
     checkAuth: () => void;
 }
 
@@ -15,7 +16,7 @@ const AuthContext = createContext<AuthContextType>({
     user: null,
     loading: true,
     login: () => { },
-    logout: () => { },
+    logout: async () => { },
     checkAuth: () => { },
 });
 
@@ -29,31 +30,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setLoading(false);
     };
 
-    const login = (token: string, userData: User) => {
-        auth.setToken(token);
+    const login = (token: string, userData: User, refreshToken?: string) => {
+        auth.setAuthSession(token, refreshToken);
         auth.setUser(userData);
         setUser(userData);
     };
 
-    const logout = () => {
-        auth.logout();
+    const logout = async () => {
+        await auth.logout();
         setUser(null);
     };
 
     useEffect(() => {
         checkAuth();
 
-        // Listen for global logout events (e.g. from 401 handlers in api.ts)
-        const handleGlobalLogout = () => {
+        const handleGlobalLogout = (event: Event) => {
             console.log('[AuthContext] Global logout event received');
-            // JUST update local state, do NOT call auth.logout() again as it dispatches the event
             setUser(null);
-            localStorage.removeItem('user'); // Ensure local storage user is gone
 
-            // Redirect to login page only if not already there
+            const reason = (event as CustomEvent<{ reason?: string }>).detail?.reason;
+            if (reason === 'SESSION_REPLACED') {
+                toast.error('You were logged out because your account signed in on another device.');
+            } else if (reason === 'TOKEN_VERSION_MISMATCH') {
+                toast.error('Your password was changed. Please sign in again.');
+            }
+
             if (typeof window !== 'undefined') {
-                const loadedUser = localStorage.getItem('user');
-                const parsedUser = loadedUser ? JSON.parse(loadedUser) : null;
+                const storedUser = localStorage.getItem('user');
+                const parsedUser = storedUser ? JSON.parse(storedUser) : null;
                 const isSSO = parsedUser?.loginMethod === 'sso';
                 const crmUrl = process.env.NEXT_PUBLIC_CRM_URL || 'https://crm.pydah.edu.in';
 

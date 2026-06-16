@@ -38,6 +38,41 @@ const PayrollPayslipSnapshot = require('../model/PayrollPayslipSnapshot');
 const DeductionPayrollIntegrationService = require('../../manual-deductions/services/deductionPayrollIntegrationService');
 const paysheetAdjustmentService = require('../services/paysheetAdjustmentService');
 const PaysheetAdjustmentRequest = require('../model/PaysheetAdjustmentRequest');
+const payslipSectionService = require('../services/payslipSectionService');
+const payslipLoanSectionService = require('../services/payslipLoanSectionService');
+const payslipAccess = require('../utils/payslipAccess');
+
+async function attachPayslipSectionsToRecord(payrollRecord) {
+  const config = await PayrollConfiguration.get();
+  const outputColumns = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
+  const empId = payrollRecord.employeeId?._id || payrollRecord.employeeId;
+  let snapshotRow = null;
+  if (empId && payrollRecord.month) {
+    const snap = await PayrollPayslipSnapshot.findOne({
+      employeeId: empId,
+      month: payrollRecord.month,
+      kind: 'regular',
+    })
+      .select('row')
+      .lean();
+    snapshotRow = snap?.row || null;
+  }
+  const payslipSections = payslipSectionService.buildPayslipSections(
+    outputColumns,
+    payrollRecord,
+    snapshotRow
+  );
+  const data =
+    payrollRecord && typeof payrollRecord.toObject === 'function'
+      ? payrollRecord.toObject()
+      : { ...payrollRecord };
+  data.payslipSections = payslipSections;
+  data.payslipLoans = await payslipLoanSectionService.buildPayslipLoansForRecord(payrollRecord, {
+    outputColumns,
+    snapshotRow,
+  });
+  return data;
+}
 
 async function attachPaysheetAdjustmentMeta(rows, records, month, outputColumnsForRebuild = null) {
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -1848,9 +1883,21 @@ exports.getPayrollRecordById = async (req, res) => {
       });
     }
 
+    const actor = await payslipAccess.loadPayslipActor(req);
+    try {
+      await payslipAccess.assertCanViewPayrollRecord(actor, payrollRecord, req);
+    } catch (accessErr) {
+      return res.status(accessErr.statusCode || 403).json({
+        success: false,
+        message: accessErr.message || 'Access denied',
+      });
+    }
+
+    const data = await attachPayslipSectionsToRecord(payrollRecord);
+
     res.status(200).json({
       success: true,
-      data: payrollRecord,
+      data,
     });
   } catch (error) {
     console.error('Error fetching payroll record by ID:', error);
@@ -1902,9 +1949,11 @@ exports.getPayrollRecord = async (req, res) => {
       });
     }
 
+    const data = await attachPayslipSectionsToRecord(payrollRecord);
+
     res.status(200).json({
       success: true,
-      data: payrollRecord,
+      data,
     });
   } catch (error) {
     console.error('Error fetching payroll record:', error);
@@ -1923,18 +1972,17 @@ exports.getPayrollRecord = async (req, res) => {
  */
 exports.getPayrollRecords = async (req, res) => {
   try {
-    const { month, employeeId, departmentId, status } = req.query;
+    const { month, employeeId, departmentId, status, page, limit } = req.query;
+    const actor = await payslipAccess.loadPayslipActor(req);
+    const isAdmin = payslipAccess.isPayslipAdmin(actor);
+    const isScoped = payslipAccess.hasPayslipScoped(actor);
+    const isSelfOnly = payslipAccess.isSelfOnlyPayslipViewer(actor);
 
-    const query = { ...req.scopeFilter };
+    const query = isSelfOnly ? {} : { ...req.scopeFilter };
 
-    // Debugging Payslip Issue
-    console.log('[getPayrollRecords] Params:', { month, employeeId, departmentId, status });
+    console.log('[getPayrollRecords] Params:', { month, employeeId, departmentId, status, page, limit });
     console.log('[getPayrollRecords] User Role:', req.user.role);
     console.log('[getPayrollRecords] Scope:', JSON.stringify(req.scopeFilter));
-    console.log('[getPayrollRecords] Initial Query:', JSON.stringify(query));
-
-    // Role-based filtering
-    const isAdmin = ['super_admin', 'sub_admin', 'hr'].includes(req.user.role);
 
     if (month) {
       if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -1944,106 +1992,149 @@ exports.getPayrollRecords = async (req, res) => {
         });
       }
       query.month = month;
+    } else if (!isAdmin && !isScoped) {
+      // Self-view: month optional — list all released payslips within history window
+    } else if (!isAdmin && isScoped && !month) {
+      return res.status(400).json({
+        success: false,
+        message: 'Month is required for scoped payslip view',
+      });
     }
 
     if (employeeId) {
       query.employeeId = employeeId;
-    } else if (!isAdmin) {
-      // If not admin and no employeeId is provided, force employee filter to current user's employeeId
-      if (!req.user.employee) {
+    } else if (isSelfOnly) {
+      const ownEmployeeId = await payslipAccess.resolveOwnEmployeeObjectId(req, actor);
+      if (!ownEmployeeId) {
         return res.status(403).json({ success: false, message: 'Access denied: No employee profile found' });
       }
-      query.employeeId = req.user.employee;
+      query.employeeId = ownEmployeeId;
+    } else if (!isAdmin) {
+      const viewableIds = await payslipAccess.getViewableEmployeeIds(actor, req);
+      if (!viewableIds || viewableIds.length === 0) {
+        return res.status(200).json({
+          success: true,
+          count: 0,
+          total: 0,
+          hasMore: false,
+          page: 1,
+          data: [],
+        });
+      }
+      query.employeeId = { $in: viewableIds };
     }
 
-    // Secondary security check for non-admins
-    if (!isAdmin && query.employeeId && query.employeeId.toString() !== req.user.employee?.toString()) {
-      return res.status(403).json({ success: false, message: 'Access denied: You can only view your own records' });
+    if (!isAdmin && !isScoped && employeeId && query.employeeId) {
+      const ownEmployeeId = (await payslipAccess.resolveOwnEmployeeObjectId(req, actor))?.toString?.();
+      const requestedId = (typeof query.employeeId === 'object' && query.employeeId.$in)
+        ? null
+        : query.employeeId?.toString?.();
+      if (requestedId && ownEmployeeId && requestedId !== ownEmployeeId) {
+        return res.status(403).json({ success: false, message: 'Access denied: You can only view your own records' });
+      }
     }
 
     if (status) {
       query.status = status;
     }
 
-    // Apply Payslip Settings for non-admins
-    if (!isAdmin) {
-      // 1. Check if release is required
-      const releaseRequiredSetting = await Settings.findOne({ key: 'payslip_release_required' });
-      if (releaseRequiredSetting && releaseRequiredSetting.value === true) {
-        query.isReleased = true;
-      }
-
-      // 2. Filter by history window
-      const historyMonthsSetting = await Settings.findOne({ key: 'payslip_history_months' });
-      if (historyMonthsSetting && historyMonthsSetting.value > 0) {
-        const monthsOffset = parseInt(historyMonthsSetting.value);
-        const cutoffDate = new Date();
-        cutoffDate.setMonth(cutoffDate.getMonth() - monthsOffset);
-
-        const cutoffMonth = `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`;
-        query.month = { ...query.month, $gte: cutoffMonth };
-      }
+    if (isSelfOnly) {
+      await payslipAccess.applySelfViewPayrollFilters(query);
     }
 
     // If departmentId or divisionId is provided, filter by employees in that scope
-    let employeeIds = null;
-    if (departmentId || (req.query.divisionId)) {
+    if (departmentId || req.query.divisionId) {
       const empQuery = { ...req.scopeFilter };
       if (departmentId) empQuery.department_id = departmentId;
       if (req.query.divisionId) empQuery.division_id = req.query.divisionId;
 
       const employees = await Employee.find(empQuery).select('_id');
-      employeeIds = employees.map((emp) => emp._id);
+      const employeeIds = employees.map((emp) => emp._id);
 
       if (employeeIds.length === 0) {
         return res.status(200).json({
           success: true,
           count: 0,
+          total: 0,
+          hasMore: false,
+          page: 1,
           data: [],
         });
       }
-      // If we already have a list of employeeIds (from specific employee filter), intersection is needed
+
       if (query.employeeId) {
-        // query.employeeId might be a single ID or $in array. 
-        // For simplicity, if both filters exist, we can just add $in with the intersection, 
-        // but since query.employeeId usually comes from direct selection, it's safer to just let the $in overlap happen or 
-        // simpler: if specific employee is selected, ignore list filter? No, user might select emp + div. 
-        // Let's use $in intersection logic if needed, but Mongoose doesn't support implicit AND on same field easily in basic object.
-        // Actually line 678 sets query.employeeId = employeeId. 
-        // If employeeId is passed, we probably don't need to filter by div/dept for discovery, but for validation.
-        // Let's assume if employeeId is passed, we check if they are in the list.
-        const validIds = new Set(employeeIds.map(id => id.toString()));
+        const validIds = new Set(employeeIds.map((id) => id.toString()));
         if (Array.isArray(query.employeeId.$in)) {
-          query.employeeId.$in = query.employeeId.$in.filter(id => validIds.has(id.toString()));
+          query.employeeId.$in = query.employeeId.$in.filter((id) => validIds.has(id.toString()));
+          if (query.employeeId.$in.length === 0) {
+            return res.status(200).json({
+              success: true,
+              count: 0,
+              total: 0,
+              hasMore: false,
+              page: 1,
+              data: [],
+            });
+          }
         } else if (query.employeeId && !validIds.has(query.employeeId.toString())) {
-          // Employee not in the selected division/dept
-          return res.status(200).json({ success: true, count: 0, data: [] });
+          return res.status(200).json({ success: true, count: 0, total: 0, hasMore: false, page: 1, data: [] });
         }
       } else {
         query.employeeId = { $in: employeeIds };
       }
     }
 
-    const payrollRecords = await PayrollRecord.find(query)
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const pageLimit = isSelfOnly
+      ? Math.min(Math.max(parseInt(limit, 10) || 6, 1), 50)
+      : Math.min(Math.max(parseInt(limit, 10) || 1000, 1), 1000);
+    const skip = isSelfOnly ? (pageNum - 1) * pageLimit : 0;
+
+    const totalCount = await PayrollRecord.countDocuments(query);
+
+    let payrollQuery = PayrollRecord.find(query)
       .populate({
         path: 'employeeId',
         select: 'employee_name emp_no department_id designation_id location bank_account_no pf_number esi_number',
         populate: [
           { path: 'department_id', select: 'name' },
-          { path: 'designation_id', select: 'name' }
-        ]
+          { path: 'designation_id', select: 'name' },
+        ],
+      })
+      .populate({
+        path: 'payrollBatchId',
+        select: 'status batchNumber month',
       })
       .sort({ month: -1, emp_no: 1 })
-      .collation(EMP_NO_COLLATION)
-      .limit(1000); // Limit to prevent large queries
+      .collation(EMP_NO_COLLATION);
+
+    if (isSelfOnly) {
+      payrollQuery = payrollQuery.skip(skip).limit(pageLimit);
+    } else {
+      payrollQuery = payrollQuery.limit(pageLimit);
+    }
+
+    const payrollRecords = await payrollQuery;
 
     console.log(`[getPayrollRecords] Final Query executed:`, JSON.stringify(query));
-    console.log(`[getPayrollRecords] Found ${payrollRecords.length} records.`);
+    console.log(`[getPayrollRecords] Found ${payrollRecords.length} records (total ${totalCount}).`);
+
+    const payrollConfig = await PayrollConfiguration.get();
+    const outputColumns = Array.isArray(payrollConfig?.outputColumns)
+      ? payrollConfig.outputColumns
+      : [];
+    const data = await payslipLoanSectionService.attachPayslipLoansToRecords(
+      payrollRecords,
+      outputColumns
+    );
 
     res.status(200).json({
       success: true,
-      count: payrollRecords.length,
-      data: payrollRecords,
+      count: data.length,
+      total: totalCount,
+      hasMore: isSelfOnly ? skip + data.length < totalCount : false,
+      page: isSelfOnly ? pageNum : 1,
+      data,
     });
   } catch (error) {
     console.error('Error fetching payroll records:', error);
@@ -2176,37 +2267,19 @@ exports.getPayslip = async (req, res) => {
       });
     }
 
-    // Check permissions
-    const isAdmin = ['super_admin', 'sub_admin', 'hr'].includes(req.user.role);
-    if (!isAdmin && employeeId.toString() !== req.user.employee?.toString()) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
+    const actor = await payslipAccess.loadPayslipActor(req);
+    const payrollRecord = await PayrollRecord.findOne({ employeeId, month });
+    if (!payrollRecord) {
+      return res.status(404).json({ success: false, message: 'Payslip not found' });
     }
 
-    // Verify settings for non-admins
-    if (!isAdmin) {
-      const payrollRecord = await PayrollRecord.findOne({ employeeId, month });
-      if (!payrollRecord) {
-        return res.status(404).json({ success: false, message: 'Payslip not found' });
-      }
-
-      // Check Release status
-      const releaseRequiredSetting = await Settings.findOne({ key: 'payslip_release_required' });
-      if (releaseRequiredSetting && releaseRequiredSetting.value === true && !payrollRecord.isReleased) {
-        return res.status(403).json({ success: false, message: 'Payslip not yet released' });
-      }
-
-      // Check History months
-      const historyMonthsSetting = await Settings.findOne({ key: 'payslip_history_months' });
-      if (historyMonthsSetting && historyMonthsSetting.value > 0) {
-        const monthsOffset = parseInt(historyMonthsSetting.value);
-        const cutoffDate = new Date();
-        cutoffDate.setMonth(cutoffDate.getMonth() - monthsOffset);
-        const cutoffMonth = `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`;
-
-        if (month < cutoffMonth) {
-          return res.status(403).json({ success: false, message: 'Historical payslip access limit exceeded' });
-        }
-      }
+    try {
+      await payslipAccess.assertCanViewPayrollRecord(actor, payrollRecord, req);
+    } catch (accessErr) {
+      return res.status(accessErr.statusCode || 403).json({
+        success: false,
+        message: accessErr.message || 'Access denied',
+      });
     }
 
     const { payslip } = await buildPayslipData(employeeId, month);
@@ -2234,16 +2307,22 @@ exports.downloadPayslip = async (req, res) => {
   try {
     const { employeeId, month } = req.params;
 
-    // Permissions check
-    const isAdmin = ['super_admin', 'sub_admin', 'hr'].includes(req.user.role);
-    if (!isAdmin && employeeId.toString() !== req.user.employee?.toString()) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
-    }
-
+    const actor = await payslipAccess.loadPayslipActor(req);
     const payrollRecord = await PayrollRecord.findOne({ employeeId, month });
     if (!payrollRecord) {
       return res.status(404).json({ success: false, message: 'Payroll record not found' });
     }
+
+    try {
+      await payslipAccess.assertCanViewPayrollRecord(actor, payrollRecord, req);
+    } catch (accessErr) {
+      return res.status(accessErr.statusCode || 403).json({
+        success: false,
+        message: accessErr.message || 'Access denied',
+      });
+    }
+
+    const isAdmin = payslipAccess.isPayslipAdmin(actor);
 
     // Check download limits for non-admins
     if (!isAdmin) {
@@ -2287,7 +2366,17 @@ exports.downloadPayslip = async (req, res) => {
  */
 exports.releasePayslips = async (req, res) => {
   try {
-    const { month, departmentId, employeeIds } = req.body;
+    const actor = await payslipAccess.loadPayslipActor(req);
+    try {
+      payslipAccess.assertCanReleasePayslips(actor);
+    } catch (accessErr) {
+      return res.status(accessErr.statusCode || 403).json({
+        success: false,
+        message: accessErr.message || 'Access denied',
+      });
+    }
+
+    const { month, departmentId, divisionId, recordIds } = req.body;
 
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
@@ -2296,26 +2385,93 @@ exports.releasePayslips = async (req, res) => {
       });
     }
 
-    const query = { month, status: { $in: ['approved', 'processed'] } };
+    const scopeQuery = { month };
 
-    if (employeeIds && Array.isArray(employeeIds) && employeeIds.length > 0) {
-      query.employeeId = { $in: employeeIds };
-    } else if (departmentId) {
-      // Find employees in department
-      const employees = await Employee.find({ department_id: departmentId }).select('_id');
-      const deptEmpIds = employees.map(e => e._id);
-      query.employeeId = { $in: deptEmpIds };
+    if (!payslipAccess.isPayslipAdmin(actor)) {
+      const viewableIds = await payslipAccess.getViewableEmployeeIds(actor, req);
+      if (!viewableIds || viewableIds.length === 0) {
+        return res.status(200).json({
+          success: true,
+          message: 'No payslips in your scope for this period',
+          modifiedCount: 0,
+          count: 0,
+          stats: { total: 0, alreadyReleased: 0, pendingRelease: 0, notEligible: 0, newlyReleased: 0 },
+        });
+      }
+      scopeQuery.employeeId = { $in: viewableIds };
     }
 
+    if (Array.isArray(recordIds) && recordIds.length > 0) {
+      scopeQuery._id = { $in: recordIds };
+    }
+
+    if (departmentId || divisionId) {
+      const empQuery = { ...(req.scopeFilter || {}) };
+      if (departmentId) empQuery.department_id = departmentId;
+      if (divisionId) empQuery.division_id = divisionId;
+
+      const employees = await Employee.find(empQuery).select('_id');
+      const filterEmpIds = employees.map((emp) => emp._id);
+      if (filterEmpIds.length === 0) {
+        return res.status(200).json({
+          success: true,
+          message: 'No payslips match the selected department/division filters',
+          modifiedCount: 0,
+          count: 0,
+          stats: { total: 0, alreadyReleased: 0, pendingRelease: 0, notEligible: 0, newlyReleased: 0 },
+        });
+      }
+
+      if (scopeQuery.employeeId?.$in) {
+        const allowed = new Set(filterEmpIds.map((id) => id.toString()));
+        scopeQuery.employeeId.$in = scopeQuery.employeeId.$in.filter((id) => allowed.has(id.toString()));
+        if (scopeQuery.employeeId.$in.length === 0) {
+          return res.status(200).json({
+            success: true,
+            message: 'No payslips match the selected department/division filters',
+            modifiedCount: 0,
+            count: 0,
+            stats: { total: 0, alreadyReleased: 0, pendingRelease: 0, notEligible: 0, newlyReleased: 0 },
+          });
+        }
+      } else {
+        scopeQuery.employeeId = { $in: filterEmpIds };
+      }
+    }
+
+    const matchedRecords = await PayrollRecord.find(scopeQuery)
+      .select('status isReleased payrollBatchId')
+      .populate({ path: 'payrollBatchId', select: 'status batchNumber' })
+      .lean();
+    const stats = payslipAccess.summarizePayrollReleaseRecords(matchedRecords);
+
+    if (stats.pendingRelease === 0) {
+      return res.status(200).json({
+        success: true,
+        message: payslipAccess.formatReleaseStatsMessage(stats, 0),
+        modifiedCount: 0,
+        count: 0,
+        stats: { ...stats, newlyReleased: 0 },
+      });
+    }
+
+    const releasableIds = matchedRecords
+      .filter((record) => payslipAccess.canReleasePayrollRecord(record))
+      .map((record) => record._id);
+
     const updateResult = await PayrollRecord.updateMany(
-      query,
+      { _id: { $in: releasableIds }, isReleased: { $ne: true } },
       { $set: { isReleased: true } }
     );
 
+    const newlyReleased = updateResult.modifiedCount || 0;
+
     res.status(200).json({
       success: true,
-      message: `Released ${updateResult.modifiedCount} payslips for ${month}`,
-      modifiedCount: updateResult.modifiedCount,
+      message: payslipAccess.formatReleaseStatsMessage(stats, newlyReleased),
+      modifiedCount: newlyReleased,
+      count: newlyReleased,
+      stats: { ...stats, newlyReleased },
     });
   } catch (error) {
     console.error('Error releasing payslips:', error);

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -10,6 +10,13 @@ import {
 } from '@/components/holidays/HolidayDivisionMappingEditor';
 import { useAuth } from '@/contexts/AuthContext';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
+import {
+  getReadButtonLabel,
+  getWriteButtonLabel,
+  getReadButtonTitle,
+  getWriteButtonTitle,
+  getReleaseButtonTitle,
+} from '@/lib/modulePermissionLabels';
 import Spinner from '@/components/Spinner';
 import {
   buildDivisionMappingFromDepartment,
@@ -50,29 +57,41 @@ import {
   Clock,
   Phone
 } from 'lucide-react';
+import {
+  LoansPageShell,
+  LoansPageHeader,
+  LoansStatGrid,
+  LoansContentPanel,
+  loansPrimaryButtonClass,
+  loansPrimaryButtonStyle,
+  loansTableHeadClass,
+  loansTableHeadStyle,
+} from '@/components/loans/LoansPageShell';
+import {
+  LoanDetailDialog,
+  LoanDetailDialogHeader,
+  LoanDetailDialogBody,
+  loansDialogOutlineButtonClass,
+  loansDialogOutlineButtonStyle,
+  loansDialogPrimaryButtonClass,
+  loansDialogPrimaryButtonStyle,
+  loansDialogSuccessButtonClass,
+  loansFormInputClass,
+  loansFormInputStyle,
+  loansFormSelectClass,
+} from '@/components/loans/LoanDetailDialogShell';
+import { ledgerActionButtonClass } from '@/lib/ledgerUi';
+import { UserViewDialog } from '@/components/users/UserViewDialog';
+import {
+  userActiveBadgeClass,
+  userActiveLabel,
+  userAvatarClass,
+  userAvatarStyle,
+  userRoleBadgeClass,
+  userStatusDotClass,
+} from '@/components/users/userLedgerUi';
 
-// Custom Stat Card for User Management
-const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, trend?: { value: string, positive: boolean } }) => (
-  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
-    <div className="flex items-center justify-between gap-4">
-      <div className="flex-1">
-        <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{title}</p>
-        <div className="mt-2 flex items-baseline gap-2">
-          <h3 className="text-3xl font-black text-slate-900 dark:text-white">{value}</h3>
-          {trend && (
-            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${trend.positive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
-              {trend.value}
-            </span>
-          )}
-        </div>
-      </div>
-      <div className={`flex h-14 w-14 items-center justify-center rounded-[1.25rem] ${bgClass} ${iconClass}`}>
-        <Icon className="h-7 w-7" />
-      </div>
-    </div>
-    {dekorClass && <div className={`absolute -right-4 -bottom-4 h-24 w-24 rounded-full ${dekorClass}`} />}
-  </div>
-);
+const ledgerBorder = { borderColor: 'var(--ps-accent-border)' };
 
 interface UserFormData {
   email: string;
@@ -713,8 +732,7 @@ export default function UsersPage() {
       const res = await api.toggleUserStatus(user._id);
       if (res.success) {
         const isNowActive = res.data?.isActive ?? !user.isActive;
-        const syncMessage = res.syncError ? ' (MSSQL sync failed, but local update succeeded)' : '';
-        setSuccess(`User ${isNowActive ? 'activated' : 'deactivated'} successfully${syncMessage}`);
+        setSuccess(`User ${isNowActive ? 'activated' : 'deactivated'} successfully`);
         loadData();
       } else {
         setError(res.message || 'Failed to update status');
@@ -906,7 +924,7 @@ export default function UsersPage() {
         </div>
         <div>
           <h3 className="text-sm font-bold text-slate-900 dark:text-white">Holiday Employee Scope</h3>
-          <p className="text-xs text-slate-500">Optional — direct division/department scope for holiday management</p>
+          <p className="text-xs text-slate-500">Optional â€” direct division/department scope for holiday management</p>
         </div>
       </div>
       <HolidayDivisionMappingEditor
@@ -1053,7 +1071,7 @@ export default function UsersPage() {
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 dark:bg-blue-900/10 dark:border-blue-800">
             <h3 className="flex items-center gap-2 text-sm font-bold text-blue-800 dark:text-blue-400 mb-2">
               <Building className="h-4 w-4" />
-              Division Manager – Division & Department Assignment
+              Division Manager â€“ Division & Department Assignment
             </h3>
             <p className="text-xs text-blue-700 dark:text-blue-500 mb-4">
               Select division(s) and departments this manager can access (same mapping as HR / Sub Admin).
@@ -1070,7 +1088,7 @@ export default function UsersPage() {
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 dark:bg-amber-900/10 dark:border-amber-800">
             <h3 className="flex items-center gap-2 text-sm font-bold text-amber-800 dark:text-amber-400 mb-2">
               <Users className="h-4 w-4" />
-              HOD – Division & Department Assignment
+              HOD â€“ Division & Department Assignment
             </h3>
             <p className="text-xs text-amber-700 dark:text-amber-500 mb-4">
               Select one or more divisions and the departments this HOD will head.
@@ -1130,229 +1148,177 @@ export default function UsersPage() {
 
   if (loading && users.length === 0) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Spinner />
-      </div>
+      <LoansPageShell>
+        <div className="flex min-h-[400px] items-center justify-center">
+          <Spinner />
+        </div>
+      </LoansPageShell>
     );
   }
 
+  const hdrOutlineBtn =
+    'inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[10px] font-semibold uppercase tracking-wide transition hover:opacity-80 disabled:opacity-40';
+  const hdrPrimaryBtn =
+    'inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2.5 text-[10px] font-semibold uppercase tracking-wide text-white transition hover:opacity-90 disabled:opacity-40';
+  const hdrFieldClass =
+    'h-7 border bg-white px-2 text-[11px] text-stone-900 transition focus:outline-none focus:ring-1 focus:ring-[color:var(--ps-accent)] dark:bg-stone-950 dark:text-stone-100';
+
   return (
-    <div className="relative min-h-screen bg-slate-50 p-6 dark:bg-slate-950/50">
-      {/* Background Decorations */}
-      <div className="pointer-events-none absolute " />
-
-      <div className="relative mx-auto max-w-7xl">
-        {/* Header */}
-        <div className="mb-10 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">
-                <Shield className="h-5 w-5" />
-              </span>
-              <span className="text-sm font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400">System Control</span>
-            </div>
-            <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white">User Management</h1>
-            <p className="mt-1 text-base text-slate-500 dark:text-slate-400">
-              Configure system access, manage roles, and monitor user activity.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={loadData}
-              className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-            >
-              <RotateCw className={`h-4 w-4 transition-transform group-hover:rotate-180 ${loading ? 'animate-spin' : ''}`} />
-              Sync Data
-            </button>
-            <button
-              onClick={openFromEmployeeDialog}
-              className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition-all hover:bg-emerald-100 dark:border-emerald-800/50 dark:bg-emerald-900/20 dark:text-emerald-400"
-            >
-              <UserPlus className="h-4 w-4" />
-              Upgrade Employee
-            </button>
-            <button
-              onClick={() => setShowCreateDialog(true)}
-              className="flex items-center gap-2 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-bold text-white shadow-xl shadow-slate-900/20 transition-all hover:scale-[1.02] hover:bg-slate-800 active:scale-95 dark:bg-white dark:text-slate-900 dark:shadow-none"
-            >
-              <Plus className="h-4 w-4" />
-              New User
-            </button>
-          </div>
-        </div>
-
-        {/* Messages */}
-        {error && (
-          <div className="mb-6 flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-800/50 dark:bg-red-900/20 dark:text-red-400">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-red-100 dark:bg-red-900/30">
-              <span className="text-xl">⚠️</span>
-            </div>
-            <p className="font-medium">{error}</p>
-          </div>
-        )}
-        {success && (
-          <div className="mb-6 flex items-center gap-3 rounded-2xl border border-green-200 bg-green-50 p-4 text-green-700 dark:border-green-800/50 dark:bg-green-900/20 dark:text-green-400">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-green-100 dark:bg-green-900/30">
-              <CheckCircle className="h-6 w-6" />
-            </div>
-            <p className="font-medium">{success}</p>
-          </div>
-        )}
-
-        {/* Stats Grid */}
-        {stats && (
-          <div className="mb-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-5">
-            <StatCard
-              title="Total Accounts"
-              value={stats.totalUsers}
-              icon={Users}
-              bgClass="bg-blue-500/10"
-              iconClass="text-blue-600 dark:text-blue-400"
-            // dekorClass="bg-blue-500/5"
-            />
-            <StatCard
-              title="Active Users"
-              value={stats.activeUsers}
-              icon={UserCheck}
-              bgClass="bg-emerald-500/10"
-              iconClass="text-emerald-600 dark:text-emerald-400"
-              // dekorClass="bg-emerald-500/5"
-              trend={{ value: "+12%", positive: true }}
-            />
-            <StatCard
-              title="HODs"
-              value={stats.byRole?.hod || 0}
-              icon={Shield}
-              bgClass="bg-violet-500/10"
-              iconClass="text-violet-600 dark:text-violet-400"
-            // dekorClass="bg-violet-500/5"
-            />
-            <StatCard
-              title="Managers"
-              value={stats.byRole?.manager || 0}
-              icon={Building}
-              bgClass="bg-sky-500/10"
-              iconClass="text-sky-600 dark:text-sky-400"
-            // dekorClass="bg-sky-500/5"
-            />
-            <StatCard
-              title="Inactive"
-              value={stats.inactiveUsers}
-              icon={UserX}
-              bgClass="bg-rose-500/10"
-              iconClass="text-rose-600 dark:text-rose-400"
-            // dekorClass="bg-rose-500/5"
-            />
-          </div>
-        )}
-
-        {/* Filters & Actions Bar */}
-        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center">
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search users by name, email, or emp ID..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-12 pr-4 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white dark:focus:border-blue-500"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-1.5 dark:border-slate-800 dark:bg-slate-900">
-              <Filter className="h-4 w-4 text-slate-400" />
+    <LoansPageShell>
+      <LoansPageHeader
+        dense
+        layout="toolbar"
+        badge="System control"
+        title="User management"
+        subtitle="Access, roles, and activity"
+        action={
+          <div className="grid min-w-0 grid-cols-[1fr_auto_1fr] items-center gap-2">
+            <div aria-hidden className="min-w-0" />
+            <div className="flex shrink-0 flex-nowrap items-center gap-1.5">
+              <div className="relative w-28 sm:w-36">
+                <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-stone-400" />
+                <input
+                  type="text"
+                  placeholder="Search…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className={`${hdrFieldClass} w-full pl-7`}
+                  style={loansFormInputStyle()}
+                />
+              </div>
               <select
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
-                className="bg-transparent text-sm font-medium text-slate-600 focus:outline-none dark:text-slate-300"
+                className={`${hdrFieldClass} w-24 sm:w-28`}
+                style={loansFormInputStyle()}
+                title="Role"
               >
-                <option value="">All Roles</option>
+                <option value="">All roles</option>
                 {ROLES.map((role) => (
-                  <option key={role.value} value={role.value}>
-                    {role.label}
-                  </option>
+                  <option key={role.value} value={role.value}>{role.label}</option>
                 ))}
               </select>
-            </div>
-            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-1.5 dark:border-slate-800 dark:bg-slate-900">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="bg-transparent text-sm font-medium text-slate-600 focus:outline-none dark:text-slate-300"
+                className={`${hdrFieldClass} w-24 sm:w-28`}
+                style={loansFormInputStyle()}
+                title="Status"
               >
-                <option value="">Any Status</option>
+                <option value="">Any status</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
             </div>
+            <div className="flex shrink-0 flex-nowrap items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={loadData}
+                className={hdrOutlineBtn}
+                style={loansDialogOutlineButtonStyle()}
+              >
+                <RotateCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
+                Sync
+              </button>
+              <button
+                type="button"
+                onClick={openFromEmployeeDialog}
+                className={hdrOutlineBtn}
+                style={loansDialogOutlineButtonStyle()}
+              >
+                <UserPlus className="h-3 w-3" />
+                From employee
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreateDialog(true)}
+                className={hdrPrimaryBtn}
+                style={loansPrimaryButtonStyle()}
+              >
+                <Plus className="h-3 w-3" />
+                New user
+              </button>
+            </div>
           </div>
-        </div>
+        }
+      />
 
-        {/* Users Table */}
-        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50">
-                  <th className="px-6 py-5 text-left text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                    System User
-                  </th>
-                  <th className="px-6 py-5 text-left text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                    Role & Permissions
-                  </th>
-                  <th className="px-6 py-5 text-left text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                    Access Scope
-                  </th>
-                  <th className="px-6 py-5 text-left text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                    Identifier
-                  </th>
-                  <th className="px-6 py-5 text-left text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                    Account Status
-                  </th>
-                  <th className="px-6 py-5 text-right text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+      {error ? (
+        <div className="mb-5 border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300" style={ledgerBorder}>
+          {error}
+        </div>
+      ) : null}
+      {success ? (
+        <div className="mb-5 border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300" style={ledgerBorder}>
+          {success}
+        </div>
+      ) : null}
+
+      {stats ? (
+        <LoansStatGrid
+          columns={5}
+          stats={[
+            { label: 'Total accounts', value: stats.totalUsers, accent: true },
+            { label: 'Active users', value: stats.activeUsers, highlight: true },
+            { label: 'HODs', value: stats.byRole?.hod || 0 },
+            { label: 'Managers', value: stats.byRole?.manager || 0 },
+            { label: 'Inactive', value: stats.inactiveUsers, muted: true },
+          ]}
+        />
+      ) : null}
+
+      <LoansContentPanel>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[960px]">
+            <thead>
+              <tr className={loansTableHeadClass()} style={loansTableHeadStyle()}>
+                <th className="px-4 py-3 text-left">User</th>
+                <th className="px-4 py-3 text-left">Role</th>
+                <th className="px-4 py-3 text-left">Access scope</th>
+                <th className="px-4 py-3 text-left">Employee ID</th>
+                <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y dark:divide-stone-800" style={ledgerBorder}>
                 {users.map((user) => (
-                  <tr key={user._id} className="group transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/50">
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-4">
-                        <div
-                          className="relative flex h-11 w-11 flex-shrink-0 cursor-pointer items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 font-bold text-white shadow-lg shadow-blue-500/20 transition-transform group-hover:scale-110"
+                  <tr key={user._id} className="group transition-colors hover:bg-[var(--ps-accent-soft)]/30">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          className={`${userAvatarClass()} cursor-pointer`}
+                          style={userAvatarStyle()}
                           onClick={() => {
                             setSelectedViewUser(user);
                             setShowViewDialog(true);
                           }}
                         >
                           {user.name?.[0]?.toUpperCase() || '?'}
-                          <div className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-white bg-emerald-500 dark:border-slate-900 ${!user.isActive && 'bg-slate-400 hover:bg-slate-500'}`} />
-                        </div>
+                          <span className={userStatusDotClass(!!user.isActive)} />
+                        </button>
                         <div className="min-w-0">
                           <button
+                            type="button"
                             onClick={() => {
                               setSelectedViewUser(user);
                               setShowViewDialog(true);
                             }}
-                            className="block truncate text-sm font-bold text-slate-900 transition-colors hover:text-blue-600 dark:text-white dark:hover:text-blue-400"
+                            className="block truncate text-left text-sm font-medium text-stone-900 transition hover:text-[color:var(--ps-accent)] dark:text-stone-100"
                           >
                             {user.name}
                           </button>
-                          <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-                            <span className="truncate">{user.email}</span>
-                          </div>
+                          <p className="truncate text-xs text-stone-500">{user.email}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-5">
-                      <span className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1 text-[11px] font-bold uppercase tracking-tight ${getRoleColor(user.role)}`}>
+                    <td className="px-4 py-3">
+                      <span className={userRoleBadgeClass(user.role)}>
                         <Shield className="h-3 w-3" />
                         {getRoleLabel(user.role)}
                       </span>
                     </td>
-                    <td className="px-6 py-5">
+                    <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1.5">
                         {(() => {
                           const mapping = user.divisionMapping || [];
@@ -1373,78 +1339,69 @@ export default function UsersPage() {
                           return items.length > 0 ? (
                             <>
                               {items.slice(0, 2).map((item: { _id: string; name: string }, idx: number) => (
-                                <span key={`${user._id}-${item._id}-${idx}`} className="flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                <span key={`${user._id}-${item._id}-${idx}`} className="flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium text-stone-600 dark:text-stone-400" style={ledgerBorder}>
                                   <Building className="h-2.5 w-2.5" />
                                   {item.name}
                                 </span>
                               ))}
                               {items.length > 2 && (
-                                <span className="rounded-md bg-blue-100/50 px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                                  +{items.length - 2} more
+                                <span className="rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--ps-accent-ink)]" style={{ ...ledgerBorder, backgroundColor: 'var(--ps-accent-soft)' }}>
+                                  +{items.length - 2}
                                 </span>
                               )}
                             </>
                           ) : (
-                            <span className="text-[11px] font-medium text-slate-400 italic">No dept assigned</span>
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-stone-400">No scope</span>
                           );
                         })()}
                       </div>
                     </td>
-                    <td className="px-6 py-5">
-                      <code className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                        {user.employeeId || user.employeeRef?.emp_no || 'SYSTEM'}
+                    <td className="px-4 py-3">
+                      <code className="font-mono text-xs tabular-nums text-stone-600 dark:text-stone-400">
+                        {user.employeeId || user.employeeRef?.emp_no || 'â€”'}
                       </code>
                     </td>
-                    <td className="px-6 py-5">
+                    <td className="px-4 py-3">
                       <button
+                        type="button"
                         onClick={() => handleToggleStatus(user)}
                         disabled={user.role === 'super_admin'}
-                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold transition-all ${user.isActive
-                          ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
-                          : 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-400'
-                          } ${user.role === 'super_admin' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                        className={`${userActiveBadgeClass(!!user.isActive)} ${user.role === 'super_admin' ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                       >
-                        <span className={`h-1.5 w-1.5 rounded-full ${user.isActive ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                        {user.isActive ? 'ACTIVE' : 'DISABLED'}
+                        {userActiveLabel(!!user.isActive)}
                       </button>
                     </td>
-                    <td className="px-6 py-5">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => openEditDialog(user)}
-                          className="rounded-xl border border-slate-100 bg-white p-2.5 text-slate-500 shadow-sm transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-blue-500/30 dark:hover:bg-blue-500/10"
-                          title="Edit Account"
-                        >
-                          <Edit className="h-4 w-4" />
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <button type="button" onClick={() => openEditDialog(user)} className={ledgerActionButtonClass('sky')} title="Edit">
+                          <Edit className="h-3.5 w-3.5" />
                         </button>
                         <button
+                          type="button"
                           onClick={() => {
                             setSelectedUser(user);
                             setShowPasswordDialog(true);
                           }}
-                          className="rounded-xl border border-slate-100 bg-white p-2.5 text-slate-500 shadow-sm transition-all hover:border-amber-200 hover:bg-amber-50 hover:text-amber-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-amber-500/30 dark:hover:bg-amber-500/10"
-                          title="Reset Password"
+                          className={ledgerActionButtonClass('amber')}
+                          title="Reset password"
                         >
-                          <Key className="h-4 w-4" />
+                          <Key className="h-3.5 w-3.5" />
                         </button>
-                        {user.role !== 'super_admin' && (
-                          <button
-                            onClick={() => handleDelete(user)}
-                            className="rounded-xl border border-slate-100 bg-white p-2.5 text-slate-500 shadow-sm transition-all hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-rose-500/30 dark:hover:bg-rose-500/10"
-                            title="Delete User"
-                          >
-                            <Trash2 className="h-4 w-4" />
+                        {user.role !== 'super_admin' ? (
+                          <button type="button" onClick={() => handleDelete(user)} className={ledgerActionButtonClass('rose')} title="Delete">
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
-                        )}
+                        ) : null}
                         <button
+                          type="button"
                           onClick={() => {
                             setSelectedViewUser(user);
                             setShowViewDialog(true);
                           }}
-                          className="rounded-xl border border-slate-100 bg-white p-2.5 text-slate-500 shadow-sm transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-indigo-500/30 dark:hover:bg-indigo-500/10"
-                          title="View Details"
+                          className={ledgerActionButtonClass('violet')}
+                          title="View"
                         >
-                          <ChevronRight className="h-4 w-4" />
+                          <ChevronRight className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </td>
@@ -1453,49 +1410,23 @@ export default function UsersPage() {
               </tbody>
             </table>
           </div>
-          {users.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-20">
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-slate-100 dark:bg-slate-800">
-                <Users className="h-8 w-8 text-slate-400" />
-              </div>
-              <p className="text-lg font-bold text-slate-900 dark:text-white">No Users Found</p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Try adjusting your filters or search query.</p>
+          {users.length === 0 ? (
+            <div className="flex flex-col items-center justify-center border-t py-16 text-center" style={ledgerBorder}>
+              <Users className="mb-3 h-10 w-10 text-stone-300" />
+              <p className="font-serif text-lg font-light text-stone-800 dark:text-stone-100">No users found</p>
+              <p className="mt-1 text-sm text-stone-500">Adjust filters or search.</p>
             </div>
-          )}
-        </div>
+          ) : null}
+      </LoansContentPanel>
 
-        {/* Create User Dialog */}
-        {
-          showCreateDialog && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md" onClick={() => setShowCreateDialog(false)} />
-              <div className="relative z-50 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-slate-900">
-
-                {/* Modern Gradient Header */}
-                <div className="relative bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-700 px-8 py-6 text-white overflow-hidden">
-                  <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLW9wYWNpdHk9IjAuMSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-30"></div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowCreateDialog(false);
-                    }}
-                    className="absolute right-6 top-6 z-10 rounded-xl p-2 text-white/80 transition-all hover:bg-white/10 hover:text-white"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                  <div className="relative flex items-center gap-4">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 backdrop-blur-sm ring-2 ring-white/20">
-                      <UserPlus className="h-7 w-7" />
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-bold">Create New User</h2>
-                      <p className="text-sm text-indigo-100 font-medium">Add a new team member to the system</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Scrollable Content */}
-                <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+        <LoanDetailDialog open={showCreateDialog} onClose={() => setShowCreateDialog(false)} maxWidth="max-w-6xl">
+          <LoanDetailDialogHeader
+            badge="User management"
+            title="Create new user"
+            subtitle="Add a team member and configure access"
+            onClose={() => setShowCreateDialog(false)}
+          />
+          <div className="flex-1 overflow-y-auto">
                   <form onSubmit={handleCreateUser} className="flex flex-col lg:flex-row h-full">
 
                     {/* LEFT COLUMN - Main Form Fields */}
@@ -1869,27 +1800,27 @@ export default function UsersPage() {
                                     >
                                       <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{module.label}</span>
                                       <div className="flex flex-wrap gap-2 justify-end max-w-[70%]">
-                                        {/* Read Toggle */}
                                         <button
                                           type="button"
                                           onClick={toggleRead}
+                                          title={getReadButtonTitle(module.code)}
                                           className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRead
                                             ? 'bg-blue-500 text-white shadow-sm'
                                             : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                             }`}
                                         >
-                                          Read
+                                          {getReadButtonLabel(module.code)}
                                         </button>
-                                        {/* Write Toggle */}
                                         <button
                                           type="button"
                                           onClick={toggleWrite}
+                                          title={getWriteButtonTitle(module.code)}
                                           className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasWrite
                                             ? 'bg-emerald-500 text-white shadow-sm'
                                             : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                             }`}
                                         >
-                                          Write
+                                          {getWriteButtonLabel(module.code)}
                                         </button>
                                         {(module as any).terminable && (
                                           <button
@@ -1912,7 +1843,28 @@ export default function UsersPage() {
                                             Terminate
                                           </button>
                                         )}
-                                        {/* Verify Toggle — only for verifiable modules (e.g. EMPLOYEES) */}
+                                        {(module as any).releasable && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const currentFeatures = formData.featureControl || [];
+                                              const releasePerm = `${module.code}:release`;
+                                              const hasRelease = currentFeatures.includes(releasePerm);
+                                              const newFeatures = hasRelease
+                                                ? currentFeatures.filter(f => f !== releasePerm)
+                                                : [...currentFeatures, releasePerm];
+                                              setFormData({ ...formData, featureControl: newFeatures });
+                                            }}
+                                            title={getReleaseButtonTitle(module.code)}
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:release`)
+                                              ? 'bg-teal-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            Release
+                                          </button>
+                                        )}
+                                        {/* Verify Toggle â€” only for verifiable modules (e.g. EMPLOYEES) */}
                                         {(module as any).verifiable && (
                                           <button
                                             type="button"
@@ -1926,7 +1878,7 @@ export default function UsersPage() {
                                             Verify
                                           </button>
                                         )}
-                                        {/* Bank Toggle — only for bankable modules (e.g. EMPLOYEES) */}
+                                        {/* Bank Toggle â€” only for bankable modules (e.g. EMPLOYEES) */}
                                         {(module as any).bankable && (
                                           <button
                                             type="button"
@@ -1969,7 +1921,7 @@ export default function UsersPage() {
                                             File
                                           </button>
                                         )}
-                                        {/* Edit Toggle — only for editable modules (e.g. EMPLOYEES): auto-approves profile requests */}
+                                        {/* Edit Toggle â€” only for editable modules (e.g. EMPLOYEES): auto-approves profile requests */}
                                         {(module as any).editable && (
                                           <button
                                             type="button"
@@ -2003,42 +1955,17 @@ export default function UsersPage() {
                     </div>
 
                   </form>
-                </div>
-              </div>
-            </div>
-          )}
+          </div>
+        </LoanDetailDialog>
 
-        {/* Update User Dialog */}
-        {showFromEmployeeDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md" onClick={() => setShowFromEmployeeDialog(false)} />
-            <div className="relative z-50 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-slate-900">
-
-              {/* Modern Gradient Header - Emerald Theme */}
-              <div className="relative bg-gradient-to-br from-emerald-600 via-teal-600 to-emerald-700 px-8 py-6 text-white overflow-hidden">
-                <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLW9wYWNpdHk9IjAuMSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-30"></div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowFromEmployeeDialog(false);
-                  }}
-                  className="absolute right-6 top-6 z-10 rounded-xl p-2 text-white/80 transition-all hover:bg-white/10 hover:text-white"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-                <div className="relative flex items-center gap-4">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 backdrop-blur-sm ring-2 ring-white/20">
-                    <UserPlus className="h-7 w-7" />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-bold">Upgrade Employee</h2>
-                    <p className="text-sm text-emerald-100 font-medium">Grant system access to existing employee</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Scrollable Content */}
-              <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+        <LoanDetailDialog open={showFromEmployeeDialog} onClose={() => setShowFromEmployeeDialog(false)} maxWidth="max-w-6xl">
+          <LoanDetailDialogHeader
+            badge="User management"
+            title="Create from employee"
+            subtitle="Upgrade an employee record to a system user"
+            onClose={() => setShowFromEmployeeDialog(false)}
+          />
+          <div className="flex-1 overflow-y-auto">
                 <form onSubmit={handleCreateFromEmployee} className="flex flex-col lg:flex-row h-full">
 
                   {/* LEFT COLUMN - Main Form Fields */}
@@ -2147,7 +2074,7 @@ export default function UsersPage() {
                                           </div>
                                           <div>
                                             <div className="text-sm font-bold text-slate-900 dark:text-white">{emp.employee_name}</div>
-                                            <div className="text-xs text-slate-500">{emp.emp_no} • {emp.department_id?.name || 'General'}</div>
+                                            <div className="text-xs text-slate-500">{emp.emp_no} â€¢ {emp.department_id?.name || 'General'}</div>
                                           </div>
                                         </div>
                                         {employeeFormData.employeeId === emp.emp_no && <CheckCircle className="h-5 w-5 text-emerald-500" />}
@@ -2480,22 +2407,24 @@ export default function UsersPage() {
                                       <button
                                         type="button"
                                         onClick={toggleRead}
+                                        title={getReadButtonTitle(module.code)}
                                         className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRead
                                           ? 'bg-blue-500 text-white shadow-sm'
                                           : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                           }`}
                                       >
-                                        Read
+                                        {getReadButtonLabel(module.code)}
                                       </button>
                                       <button
                                         type="button"
                                         onClick={toggleWrite}
+                                        title={getWriteButtonTitle(module.code)}
                                         className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasWrite
                                           ? 'bg-emerald-500 text-white shadow-sm'
                                           : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                           }`}
                                       >
-                                        Write
+                                        {getWriteButtonLabel(module.code)}
                                       </button>
                                       {(module as any).terminable && (
                                         <button
@@ -2518,7 +2447,28 @@ export default function UsersPage() {
                                           Terminate
                                         </button>
                                       )}
-                                      {/* Verify Toggle — only for verifiable modules (e.g. EMPLOYEES) */}
+                                      {(module as any).releasable && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const currentFeatures = employeeFormData.featureControl || [];
+                                            const releasePerm = `${module.code}:release`;
+                                            const hasRelease = currentFeatures.includes(releasePerm);
+                                            const newFeatures = hasRelease
+                                              ? currentFeatures.filter(f => f !== releasePerm)
+                                              : [...currentFeatures, releasePerm];
+                                            setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
+                                          }}
+                                          title={getReleaseButtonTitle(module.code)}
+                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${employeeFormData.featureControl?.includes(`${module.code}:release`)
+                                            ? 'bg-teal-500 text-white shadow-sm'
+                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                            }`}
+                                        >
+                                          Release
+                                        </button>
+                                      )}
+                                      {/* Verify Toggle â€” only for verifiable modules (e.g. EMPLOYEES) */}
                                       {(module as any).verifiable && (
                                         <button
                                           type="button"
@@ -2532,7 +2482,7 @@ export default function UsersPage() {
                                           Verify
                                         </button>
                                       )}
-                                      {/* Bank Toggle — only for bankable modules (e.g. EMPLOYEES) */}
+                                      {/* Bank Toggle â€” only for bankable modules (e.g. EMPLOYEES) */}
                                       {(module as any).bankable && (
                                         <button
                                           type="button"
@@ -2575,7 +2525,7 @@ export default function UsersPage() {
                                           File
                                         </button>
                                       )}
-                                      {/* Edit Toggle — auto-approves profile requests */}
+                                      {/* Edit Toggle â€” auto-approves profile requests */}
                                       {(module as any).editable && (
                                         <button
                                           type="button"
@@ -2609,44 +2559,18 @@ export default function UsersPage() {
                   </div>
 
                 </form>
-              </div>
-            </div>
           </div>
-        )
-        }
+        </LoanDetailDialog>
 
-        {/* Edit User Dialog */}
-        {
-          showEditDialog && selectedUser && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md" onClick={() => setShowEditDialog(false)} />
-              <div className="relative z-50 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-slate-900">
-
-                {/* Modern Gradient Header - Indigo Theme */}
-                <div className="relative bg-gradient-to-br from-indigo-600 via-blue-600 to-indigo-700 px-8 py-6 text-white overflow-hidden">
-                  <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLW9wYWNpdHk9IjAuMSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-30"></div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowEditDialog(false);
-                    }}
-                    className="absolute right-6 top-6 z-10 rounded-xl p-2 text-white/80 transition-all hover:bg-white/10 hover:text-white"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                  <div className="relative flex items-center gap-4">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 backdrop-blur-sm ring-2 ring-white/20">
-                      <Edit className="h-7 w-7" />
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-bold">Edit User Account</h2>
-                      <p className="text-sm text-indigo-100 font-medium">Update user information and permissions</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Scrollable Content */}
-                <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+        {selectedUser ? (
+        <LoanDetailDialog open={showEditDialog} onClose={() => setShowEditDialog(false)} maxWidth="max-w-6xl">
+          <LoanDetailDialogHeader
+            badge="User management"
+            title="Edit user"
+            subtitle={selectedUser.name || selectedUser.email}
+            onClose={() => setShowEditDialog(false)}
+          />
+          <div className="flex-1 overflow-y-auto">
                   <form onSubmit={handleUpdateUser} className="flex flex-col lg:flex-row h-full">
 
                     {/* LEFT COLUMN - Main Form Fields */}
@@ -2987,22 +2911,24 @@ export default function UsersPage() {
                                         <button
                                           type="button"
                                           onClick={toggleRead}
+                                          title={getReadButtonTitle(module.code)}
                                           className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRead
                                             ? 'bg-blue-500 text-white shadow-sm'
                                             : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                             }`}
                                         >
-                                          Read
+                                          {getReadButtonLabel(module.code)}
                                         </button>
                                         <button
                                           type="button"
                                           onClick={toggleWrite}
+                                          title={getWriteButtonTitle(module.code)}
                                           className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasWrite
                                             ? 'bg-emerald-500 text-white shadow-sm'
                                             : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                             }`}
                                         >
-                                          Write
+                                          {getWriteButtonLabel(module.code)}
                                         </button>
                                         {(module as any).terminable && (
                                           <button
@@ -3025,7 +2951,28 @@ export default function UsersPage() {
                                             Terminate
                                           </button>
                                         )}
-                                        {/* Verify Toggle — only for verifiable modules (e.g. EMPLOYEES) */}
+                                        {(module as any).releasable && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const currentFeatures = formData.featureControl || [];
+                                              const releasePerm = `${module.code}:release`;
+                                              const hasRelease = currentFeatures.includes(releasePerm);
+                                              const newFeatures = hasRelease
+                                                ? currentFeatures.filter(f => f !== releasePerm)
+                                                : [...currentFeatures, releasePerm];
+                                              setFormData({ ...formData, featureControl: newFeatures });
+                                            }}
+                                            title={getReleaseButtonTitle(module.code)}
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:release`)
+                                              ? 'bg-teal-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            Release
+                                          </button>
+                                        )}
+                                        {/* Verify Toggle â€” only for verifiable modules (e.g. EMPLOYEES) */}
                                         {(module as any).verifiable && (
                                           <button
                                             type="button"
@@ -3039,7 +2986,7 @@ export default function UsersPage() {
                                             Verify
                                           </button>
                                         )}
-                                        {/* Bank Toggle — only for bankable modules (e.g. EMPLOYEES) */}
+                                        {/* Bank Toggle â€” only for bankable modules (e.g. EMPLOYEES) */}
                                         {(module as any).bankable && (
                                           <button
                                             type="button"
@@ -3082,7 +3029,7 @@ export default function UsersPage() {
                                             File
                                           </button>
                                         )}
-                                        {/* Edit Toggle — auto-approves profile requests */}
+                                        {/* Edit Toggle â€” auto-approves profile requests */}
                                         {(module as any).editable && (
                                           <button
                                             type="button"
@@ -3116,33 +3063,19 @@ export default function UsersPage() {
                     </div>
 
                   </form>
-                </div>
-              </div>
-            </div>
-          )
-        }
+          </div>
+        </LoanDetailDialog>
+        ) : null}
 
-        {/* Password Reset Dialog */}
-        {
-          showPasswordDialog && selectedUser && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowPasswordDialog(false)} />
-              <div className="relative z-50 flex w-full max-sm:max-w-full max-w-md max-h-[90vh] flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl dark:bg-slate-900">
-                <div className="relative bg-gradient-to-r from-amber-500 to-orange-600 px-8 py-6 text-white text-center">
-                  <button
-                    onClick={() => setShowPasswordDialog(false)}
-                    className="absolute right-4 top-4 rounded-xl p-2 text-white/60 hover:bg-white/10 hover:text-white"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20 mb-3">
-                    <Key className="h-6 w-6" />
-                  </div>
-                  <h2 className="text-xl font-bold">Security Reset</h2>
-                  <p className="text-amber-100 text-[10px] font-bold uppercase tracking-widest opacity-80">Credential Reconstruction</p>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-8 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+        {selectedUser ? (
+        <LoanDetailDialog open={showPasswordDialog} onClose={() => setShowPasswordDialog(false)} maxWidth="max-w-md">
+          <LoanDetailDialogHeader
+            badge="Security"
+            title="Reset password"
+            subtitle={selectedUser.name || selectedUser.email}
+            onClose={() => setShowPasswordDialog(false)}
+          />
+          <LoanDetailDialogBody>
                   <div className="space-y-6">
                     <div className="flex items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl">
                       <button
@@ -3219,7 +3152,7 @@ export default function UsersPage() {
                                   : 'border-rose-500/50 bg-rose-50/20 focus:ring-rose-500/10 dark:border-rose-500/30')
                                 : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 focus:border-amber-500 focus:ring-amber-500/10'
                                 }`}
-                              placeholder="••••••••••••"
+                              placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                             />
                             <button
                               type="button"
@@ -3260,403 +3193,102 @@ export default function UsersPage() {
                       </div>
                     )}
 
-                    <div className="flex gap-4">
+                    <div className="flex gap-2 pt-2">
                       <button
+                        type="button"
                         onClick={() => {
                           setShowPasswordDialog(false);
                           setSelectedUser(null);
                         }}
-                        className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-xs font-bold uppercase tracking-widest text-slate-500 transition-all hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
+                        className={`flex-1 ${loansDialogOutlineButtonClass()}`}
+                        style={loansDialogOutlineButtonStyle()}
                       >
-                        Discard
+                        Cancel
                       </button>
                       <button
+                        type="button"
                         onClick={handleResetPassword}
                         disabled={!resetPasswordState.autoGenerate && (resetPasswordState.newPassword.length < 4 || resetPasswordState.newPassword !== resetPasswordState.confirmPassword)}
-                        className="flex-1 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-3.5 text-xs font-bold uppercase tracking-widest text-white shadow-xl shadow-amber-500/30 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:grayscale disabled:pointer-events-none"
+                        className={`flex-1 ${loansDialogPrimaryButtonClass()}`}
+                        style={loansDialogPrimaryButtonStyle()}
                       >
-                        Process
+                        Reset password
                       </button>
                     </div>
                   </div>
-                </div>
-              </div>
+          </LoanDetailDialogBody>
+        </LoanDetailDialog>
+        ) : null}
+
+        {selectedViewUser ? (
+        <UserViewDialog
+          open={showViewDialog}
+          onClose={() => setShowViewDialog(false)}
+          user={selectedViewUser}
+          divisions={divisions}
+          departments={departments}
+          getRoleLabel={getRoleLabel}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          onEdit={() => {
+            if (!selectedViewUser) return;
+            setShowViewDialog(false);
+            openEditDialog(selectedViewUser);
+          }}
+          showActivityTab={currentUser?.role === 'super_admin'}
+          loadingUserActivity={loadingUserActivity}
+          userActivity={userActivity}
+        />
+        ) : null}
+
+
+        <LoanDetailDialog open={showSuccessModal} onClose={() => setShowSuccessModal(false)} maxWidth="max-w-md" layerClass="z-[100]">
+          <LoanDetailDialogHeader
+            badge="Provisioning"
+            title="Account created"
+            subtitle="Share these credentials securely with the user"
+            onClose={() => setShowSuccessModal(false)}
+          />
+          <LoanDetailDialogBody>
+            <div className="flex flex-col items-center py-4 text-center">
+              <CheckCircle className="mb-3 h-12 w-12 text-emerald-500" />
+              <p className="text-sm text-stone-600 dark:text-stone-400">The account has been successfully provisioned.</p>
             </div>
-          )
-        }
-        {/* View User Dialog - Redesigned */}
-        {
-          showViewDialog && selectedViewUser && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div
-                className="fixed inset-0 bg-slate-900/40 backdrop-blur-xl transition-opacity animate-in fade-in duration-500"
-                onClick={() => setShowViewDialog(false)}
-              />
-              <div className="relative z-50 flex w-full max-w-5xl max-h-[90vh] flex-col overflow-hidden rounded-[2.5rem] bg-white shadow-[0_32px_128px_-16px_rgba(0,0,0,0.3)] dark:bg-slate-900 border border-white/20 dark:border-slate-800 animate-in fade-in zoom-in duration-500">
-                {/* Close Button */}
+            <div className="space-y-4 border p-4" style={ledgerBorder}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-stone-500">Login</span>
                 <button
-                  onClick={() => setShowViewDialog(false)}
-                  className="absolute right-6 top-6 z-[60] flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-slate-400 backdrop-blur-md transition-all hover:bg-white/20 hover:text-white dark:bg-slate-800/50"
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(successModalData.username)}
+                  className="text-sm font-medium text-stone-900 dark:text-stone-100"
                 >
-                  <X className="h-6 w-6" />
+                  {successModalData.username}
                 </button>
-
-                <div className="flex flex-1 overflow-hidden">
-                  {/* Premium Sidebar */}
-                  <div className="hidden w-80 flex-col border-r border-slate-100 bg-slate-50/50 p-8 dark:border-slate-800 dark:bg-slate-900/50 lg:flex">
-                    <div className="relative mb-8 self-center">
-                      <div className="relative group">
-                        <div className="flex h-32 w-32 items-center justify-center rounded-[2.5rem] bg-gradient-to-br from-blue-600 to-indigo-700 text-5xl font-black text-white shadow-2xl shadow-blue-500/20 transition-all duration-500 group-hover:scale-105 group-hover:rotate-3">
-                          {selectedViewUser.name?.[0]?.toUpperCase() || '?'}
-                        </div>
-                        <div className={`absolute -bottom-1 -right-1 h-10 w-10 rounded-full border-4 border-white bg-emerald-500 shadow-xl dark:border-slate-900 ${!selectedViewUser.isActive && 'bg-slate-400'}`}>
-                          <div className={`h-full w-full rounded-full ${selectedViewUser.isActive ? 'animate-pulse bg-emerald-400/50' : ''}`} />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="text-center">
-                      <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
-                        {selectedViewUser.name}
-                      </h2>
-                      <p className="mt-1 text-xs font-bold uppercase tracking-widest text-slate-400">{selectedViewUser.email}</p>
-                    </div>
-
-                    <div className="mt-8 space-y-4">
-                      <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
-                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Role & Authority</div>
-                        <div className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[10px] font-black uppercase tracking-widest ${getRoleColor(selectedViewUser.role)} shadow-sm`}>
-                          <Shield className="h-3.5 w-3.5" />
-                          {getRoleLabel(selectedViewUser.role)}
-                        </div>
-                      </div>
-
-                      <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
-                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Visibility Scope</div>
-                        <div className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
-                          <Globe className="h-4 w-4 text-indigo-500" />
-                          {selectedViewUser.dataScope === 'all' ? 'Global Access' : 'Restricted Scope'}
-                        </div>
-                      </div>
-
-                      {selectedViewUser.lastLogin && (
-                        <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
-                          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Last Activity</div>
-                          <div className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
-                            <Clock className="h-4 w-4 text-amber-500" />
-                            {new Date(selectedViewUser.lastLogin).toLocaleDateString()}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="mt-auto pt-8">
-                      <button
-                        onClick={() => {
-                          setShowViewDialog(false);
-                          openEditDialog(selectedViewUser);
-                        }}
-                        className="w-full flex items-center justify-center gap-3 rounded-2xl bg-slate-900 px-6 py-4 text-xs font-black uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-black hover:scale-[1.02] active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700"
-                      >
-                        <Edit className="h-4 w-4" />
-                        Modify Profile
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Main Content Area */}
-                  <div className="flex flex-1 flex-col bg-white dark:bg-slate-900">
-                    {/* Navigation Tabs */}
-                    <div className="flex border-b border-slate-100 px-8 pt-8 dark:border-slate-800">
-                      {[
-                        { id: 'overview', label: 'Overview', icon: Layers },
-                        { id: 'permissions', label: 'Feature Access', icon: Lock },
-                        ...(currentUser?.role === 'super_admin' ? [{ id: 'activity', label: 'Activity Log', icon: Info }] : []),
-                      ].map((tab) => (
-                        <button
-                          key={tab.id}
-                          onClick={() => setActiveTab(tab.id as any)}
-                          className={`group relative flex items-center gap-2.5 px-6 pb-4 text-xs font-black uppercase tracking-widest transition-all ${activeTab === tab.id
-                            ? 'text-blue-600 dark:text-blue-400'
-                            : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-                            }`}
-                        >
-                          <tab.icon className={`h-4 w-4 transition-transform group-hover:scale-110 ${activeTab === tab.id ? 'text-blue-600 dark:text-blue-400' : ''}`} />
-                          {tab.label}
-                          {activeTab === tab.id && (
-                            <div className="absolute bottom-0 left-0 h-1 w-full rounded-t-full bg-blue-600 dark:bg-blue-400" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Tab Content */}
-                    <div className="flex-1 overflow-y-auto p-8 lg:p-12">
-                      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        {activeTab === 'overview' ? (
-                          <div className="space-y-10">
-                            <section>
-                              <div className="mb-6">
-                                <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase">Business Unit Mapping</h3>
-                                <p className="text-xs font-medium text-slate-500">Authorized partitions and organizational hierarchy</p>
-                              </div>
-
-                              {(!selectedViewUser.divisionMapping || selectedViewUser.divisionMapping.length === 0) ? (
-                                <div className="flex flex-col items-center justify-center rounded-[2rem] border-2 border-dashed border-slate-100 bg-slate-50/50 p-12 dark:border-slate-800 dark:bg-slate-950/30">
-                                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-sm dark:bg-slate-800">
-                                    <ShieldAlert className="h-8 w-8 text-slate-300" />
-                                  </div>
-                                  <p className="text-sm font-bold text-slate-400 italic">No explicit unit mappings identified</p>
-                                  <p className="mt-1 text-[10px] text-slate-400 uppercase tracking-widest">Inherited global restrictions may apply</p>
-                                </div>
-                              ) : (
-                                <div className="grid gap-6">
-                                  {selectedViewUser.divisionMapping.map((mapping: any, idx: number) => {
-                                    const divId = typeof mapping.division === 'string' ? mapping.division : mapping.division?._id;
-                                    const division = divisions.find(d => d._id === divId);
-                                    const divisionName = division?.name || 'General Operations';
-                                    const deptIds = mapping.departments?.map((d: any) => typeof d === 'string' ? d : d._id) || [];
-
-                                    return (
-                                      <div key={idx} className="group relative overflow-hidden rounded-[2rem] border border-slate-100 bg-white p-7 shadow-sm transition-all hover:shadow-xl hover:-translate-y-1 dark:border-slate-800 dark:bg-slate-950">
-                                        <div className="absolute left-0 top-0 h-full w-2 bg-gradient-to-b from-blue-500 to-indigo-600" />
-                                        <div className="mb-5 flex items-center justify-between">
-                                          <div>
-                                            <div className="flex items-center gap-2">
-                                              <Building className="h-4 w-4 text-blue-500" />
-                                              <h4 className="text-lg font-black tracking-tight text-slate-900 dark:text-white uppercase">{divisionName}</h4>
-                                            </div>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 ml-6 font-mono">DIV_ID: {divId?.slice(-6) || 'N/A'}</p>
-                                          </div>
-                                          <span className="rounded-full bg-blue-50 px-4 py-1.5 text-[10px] font-black uppercase tracking-widest text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">Restricted Access</span>
-                                        </div>
-                                        <div className="flex flex-wrap gap-2.5 ml-6">
-                                          {deptIds.length === 0 ? (
-                                            <span className="rounded-xl bg-blue-50/50 border border-blue-100/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-blue-600 dark:bg-blue-900/20 dark:border-blue-500/20 dark:text-blue-400">
-                                              All Functional Departments Included
-                                            </span>
-                                          ) : (
-                                            deptIds.map((deptId: string) => {
-                                              const dept = departments.find(d => d._id === deptId);
-                                              const deptName = dept?.name || 'Unknown Unit';
-                                              return (
-                                                <span key={deptId} className="flex items-center gap-2 rounded-xl bg-slate-50 border border-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400">
-                                                  <div className="h-1 w-1 rounded-full bg-blue-400" />
-                                                  {deptName}
-                                                </span>
-                                              );
-                                            })
-                                          )}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </section>
-
-                            <section className="rounded-[2rem] bg-amber-50/30 p-8 border border-amber-100/50 dark:bg-amber-900/5 dark:border-amber-900/10">
-                              <div className="flex items-start gap-4">
-                                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400">
-                                  <ShieldAlert className="h-5 w-5" />
-                                </div>
-                                <div>
-                                  <h4 className="text-sm font-black text-amber-900 dark:text-amber-400 uppercase tracking-widest">Access Policy Note</h4>
-                                  <p className="mt-1 text-xs font-medium leading-relaxed text-amber-700/80 dark:text-amber-500/60">
-                                    This user&apos;s data visibility is strictly governed by the assigned business units. Any changes to division or department hierarchy will automatically propagate to this user&apos;s visibility scope.
-                                  </p>
-                                </div>
-                              </div>
-                            </section>
-                          </div>
-                        ) : activeTab === 'permissions' ? (
-                          <div className="space-y-10">
-                            <div className="mb-6">
-                              <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase">Module Permissions</h3>
-                              <p className="text-xs font-medium text-slate-500">Fine-grained functional access controls per category</p>
-                            </div>
-
-                            {(!selectedViewUser.featureControl || selectedViewUser.featureControl.length === 0) ? (
-                              <div className="flex flex-col items-center justify-center py-16 text-center bg-slate-50/50 dark:bg-slate-950/30 rounded-[2.5rem] border-2 border-dashed border-slate-100 dark:border-slate-800">
-                                <ShieldCheck className="h-16 w-16 text-emerald-500/20 mb-6" />
-                                <p className="text-sm font-black text-slate-500 uppercase tracking-widest">Global Defaults Active</p>
-                                <p className="mt-1 text-xs text-slate-400 font-medium">Using system standard permissions for {getRoleLabel(selectedViewUser.role)}</p>
-                              </div>
-                            ) : (
-                              <div className="grid gap-8">
-                                {MODULE_CATEGORIES.map(category => {
-                                  const modulesWithPerms = category.modules.map(m => ({
-                                    ...m,
-                                    hasRead: selectedViewUser.featureControl?.includes(`${m.code}:read`) || false,
-                                    hasWrite: selectedViewUser.featureControl?.includes(`${m.code}:write`) || false,
-                                    hasVerify: (m as any).verifiable ? (selectedViewUser.featureControl?.includes(`${m.code}:verify`) || false) : false,
-                                    hasTerminate: (m as any).terminable ? (selectedViewUser.featureControl?.includes(`${m.code}:terminate`) || false) : false,
-                                  })).filter(m => m.hasRead || m.hasWrite || m.hasVerify || m.hasTerminate);
-
-                                  if (modulesWithPerms.length === 0) return null;
-
-                                  return (
-                                    <div key={category.code} className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/50 transition-all hover:border-emerald-500/20">
-                                      <div className="flex items-center gap-3 bg-slate-50/50 px-6 py-4 dark:bg-slate-900/50">
-                                        <span className="text-xl">{category.icon}</span>
-                                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white">{category.name}</h4>
-                                      </div>
-                                      <div className="p-6">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                          {modulesWithPerms.map(m => (
-                                            <div key={m.code} className="flex items-center justify-between rounded-2xl border border-slate-50 bg-slate-50/30 p-4 dark:border-slate-800/50 dark:bg-slate-900/30">
-                                              <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">{m.label}</span>
-                                              <div className="flex gap-1.5">
-                                                {m.hasRead && (
-                                                  <span className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-2 py-1 text-[9px] font-black text-blue-600 dark:bg-blue-500/10 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">
-                                                    <Eye className="h-3 w-3" />
-                                                    READ
-                                                  </span>
-                                                )}
-                                                {m.hasWrite && (
-                                                  <span className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 text-[9px] font-black text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20">
-                                                    <Edit className="h-3 w-3" />
-                                                    WRITE
-                                                  </span>
-                                                )}
-                                                {(m as any).hasTerminate && (
-                                                  <span className="flex items-center gap-1.5 rounded-lg bg-orange-50 px-2 py-1 text-[9px] font-black text-orange-600 dark:bg-orange-500/10 dark:text-orange-400 border border-orange-100 dark:border-orange-500/20">
-                                                    TERMINATE
-                                                  </span>
-                                                )}
-                                                {selectedViewUser.featureControl?.includes(`${m.code}:bank`) && (
-                                                  <span className="flex items-center gap-1.5 rounded-lg bg-amber-50 px-2 py-1 text-[9px] font-black text-amber-600 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-100 dark:border-amber-500/20">
-                                                    <RotateCw className="h-3 w-3" />
-                                                    BANK
-                                                  </span>
-                                                )}
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="space-y-6">
-                            <div className="mb-2">
-                              <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase">Activity Log</h3>
-                              <p className="text-xs font-medium text-slate-500">Tracked changes for this user profile</p>
-                            </div>
-
-                            {currentUser?.role !== 'super_admin' ? (
-                              <div className="rounded-[2rem] border border-dashed border-slate-200 bg-slate-50 p-10 text-center text-sm font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-400">
-                                Only super admins can view activity logs.
-                              </div>
-                            ) : loadingUserActivity ? (
-                              <div className="flex h-48 items-center justify-center rounded-[2rem] border border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-950/40">
-                                <Spinner />
-                              </div>
-                            ) : userActivity.length === 0 ? (
-                              <div className="rounded-[2rem] border border-dashed border-slate-200 bg-slate-50 p-10 text-center text-sm font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-400">
-                                No activity recorded yet.
-                              </div>
-                            ) : (
-                              <div className="space-y-3">
-                                {userActivity.map((row) => (
-                                  <div key={row._id} className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/40">
-                                    <div className="flex items-start justify-between gap-4">
-                                      <div className="min-w-0">
-                                        <div className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white truncate">
-                                          {row.event}
-                                        </div>
-                                        <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                                          {row.comments || '—'}
-                                        </div>
-                                        <div className="mt-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                          By {row.performedByName || 'System'} {row.performedByRole ? `(${row.performedByRole})` : ''}
-                                        </div>
-                                      </div>
-                                      <div className="shrink-0 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                        {row.timestamp ? new Date(row.timestamp).toLocaleString() : '—'}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              </div>
+              <div className="h-px bg-stone-200 dark:bg-stone-800" />
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-stone-500">Password</span>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(successModalData.password)}
+                  className="font-mono text-sm font-semibold text-emerald-700 dark:text-emerald-400"
+                >
+                  {successModalData.password}
+                </button>
               </div>
             </div>
-          )
-        }
-
-        {/* Success Modal */}
-        {
-          showSuccessModal && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-              <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md" />
-              <div className="relative z-[110] w-full max-w-md scale-in-center">
-                <div className="overflow-hidden rounded-[2.5rem] bg-white shadow-[0_32px_64px_-16px_rgba(0,0,0,0.3)] dark:bg-slate-900">
-                  <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-10 text-center text-white">
-                    <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-[2rem] bg-white p-5 shadow-2xl">
-                      <CheckCircle className="h-16 w-16 text-emerald-500" />
-                    </div>
-                    <h2 className="text-3xl font-black tracking-tight">Access Granted!</h2>
-                    <p className="mt-2 text-emerald-100">The account has been successfully provisioned</p>
-                  </div>
-
-                  <div className="p-10">
-                    <div className="space-y-6">
-                      <div className="rounded-3xl border border-slate-100 bg-slate-50 p-6 dark:border-slate-800 dark:bg-slate-950">
-                        <div className="mb-4 flex items-center justify-between">
-                          <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Security Credentials</span>
-                          <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                        </div>
-                        <div className="space-y-4">
-                          <div className="flex justify-between items-center group cursor-pointer" onClick={() => {
-                            navigator.clipboard.writeText(successModalData.username);
-                            // toast success
-                          }}>
-                            <span className="text-[10px] font-black uppercase text-slate-400">Login Identifier</span>
-                            <span className="text-sm font-bold text-slate-700 dark:text-slate-200 group-hover:text-blue-500 transition-colors uppercase">{successModalData.username}</span>
-                          </div>
-                          <div className="h-px bg-slate-200/50 dark:bg-slate-800" />
-                          <div className="flex justify-between items-center group cursor-pointer" onClick={() => {
-                            navigator.clipboard.writeText(successModalData.password);
-                            // toast success
-                          }}>
-                            <span className="text-[10px] font-black uppercase text-slate-400">Temporary Access Key</span>
-                            <code className="rounded-lg bg-emerald-100 px-3 py-1 text-sm font-black text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 group-hover:scale-105 transition-transform">{successModalData.password}</code>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-3 rounded-2xl bg-blue-50/50 p-4 border border-blue-100/50 dark:bg-blue-900/10 dark:border-blue-800/50">
-                        <Info className="h-5 w-5 text-blue-500 mt-0.5" />
-                        <p className="text-[11px] leading-relaxed text-blue-700/80 dark:text-blue-400/80">
-                          These credentials have been dispatched to the user&apos;s primary contact endpoint. Please ensure they update their access key upon first authentication.
-                        </p>
-                      </div>
-
-                      <button
-                        onClick={() => setShowSuccessModal(false)}
-                        className="w-full rounded-2xl bg-slate-900 py-4.5 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-slate-900/20 transition-all hover:bg-black active:scale-[0.98] dark:bg-emerald-600 dark:hover:bg-emerald-700"
-                      >
-                        Close & Dispatch
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )
-        }
-      </div >
-    </div >
+            <p className="text-xs leading-relaxed text-stone-500">
+              Ask the user to change their password on first login.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowSuccessModal(false)}
+              className={loansDialogSuccessButtonClass(true)}
+            >
+              Done
+            </button>
+          </LoanDetailDialogBody>
+        </LoanDetailDialog>
+    </LoansPageShell>
   );
 }

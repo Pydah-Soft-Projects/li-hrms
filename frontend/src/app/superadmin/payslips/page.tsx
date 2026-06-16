@@ -1,15 +1,64 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { api, Division, Department, Designation } from '@/lib/api';
-import { toast } from 'react-toastify';
+import { api, Division, Department, Designation, PayrollOutputColumn } from '@/lib/api';
+import { toast, ToastContainer } from 'react-toastify';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { fetchCompanyProfile, type CompanyProfile } from '@/lib/companyProfile';
-import { drawPayslipCompanyHeader, drawPayslipFooter } from '@/lib/payslipPdf';
 import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
+import { resolvePayslipSections } from '@/components/payslip/DynamicPayslipSections';
+import { drawDynamicPayslipPdf } from '@/lib/payslipPdfDynamic';
+import { buildPayslipSections } from '@/lib/payslipSections';
+import { resolvePayslipLoans } from '@/lib/payslipLoans';
+import Spinner from '@/components/Spinner';
+import { Search, Eye, Download, Loader2, RefreshCw, FileText, Rocket } from 'lucide-react';
+import {
+  LoansPageShell,
+  LoansPageHeader,
+  LoansStatGrid,
+  LoansToolbar,
+  LoansContentPanel,
+  loansPrimaryButtonClass,
+  loansPrimaryButtonStyle,
+  loansTableHeadClass,
+  loansTableHeadStyle,
+} from '@/components/loans/LoansPageShell';
+import {
+  LoanFormLabel,
+  loansDialogOutlineButtonClass,
+  loansDialogOutlineButtonStyle,
+  loansFormInputClass,
+  loansFormInputStyle,
+} from '@/components/loans/LoanDetailDialogShell';
+import { MultiSelect } from '@/components/MultiSelect';
+import { ledgerMoneyClass, ledgerStatusBadgeClass, type LedgerUiStatus } from '@/lib/ledgerUi';
+import {
+  PAYSLIP_LIST_STATUS_OPTIONS,
+  payslipMatchesListOrgAndStatus,
+  payslipMatchesSearch,
+  summarizePayslipRelease,
+  formatPayslipReleaseMessage,
+  canReleasePayslipRecord,
+  isPayslipReleased,
+  getPayslipEmployeeViewLabel,
+} from '@/lib/payslipListUi';
+import { auth } from '@/lib/auth';
+import {
+  canViewScopedPayslips,
+  canReleasePayslips,
+  hasAnyRole,
+  type User as PermUser,
+} from '@/lib/permissions';
+
+const SELF_PAYSLIP_PAGE_SIZE = 6;
+
+const payslipLedgerStatus = (status: string): LedgerUiStatus => {
+  if (status === 'processed' || status === 'approved') return 'approved';
+  if (status === 'calculated') return 'pending';
+  return 'neutral';
+};
 
 function PayslipEmployeeBlock({
   employee,
@@ -32,7 +81,10 @@ function PayslipEmployeeBlock({
       {d.profilePhoto ? (
         <img src={d.profilePhoto} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700" />
       ) : (
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-[10px] font-semibold text-white">
+        <div
+          className="flex h-8 w-8 shrink-0 items-center justify-center text-[10px] font-semibold text-white"
+          style={{ backgroundColor: 'var(--ps-accent)' }}
+        >
           {initial}
         </div>
       )}
@@ -107,6 +159,13 @@ interface PayrollRecord {
   };
   netSalary: number;
   status: string;
+  isReleased?: boolean;
+  payrollBatchId?: {
+    _id?: string;
+    status?: string;
+    batchNumber?: string;
+    month?: string;
+  } | string;
   arrearsAmount?: number;
   totalDaysInMonth?: number;
   totalPayableShifts?: number;
@@ -115,176 +174,227 @@ interface PayrollRecord {
   endDate?: string;
 }
 
-export default function PayslipsPage() {
+export function PayslipsContent({
+  basePath = '/superadmin/payslips',
+  showDivisionFilter = true,
+}: {
+  basePath?: string;
+  showDivisionFilter?: boolean;
+}) {
   const router = useRouter();
+  const currentUser = auth.getUser() as PermUser | null;
+  const viewMode = useMemo(() => {
+    if (!currentUser) return 'self' as const;
+    if (basePath.includes('superadmin') && hasAnyRole(currentUser, ['super_admin', 'sub_admin', 'hr'])) {
+      return 'admin' as const;
+    }
+    if (canViewScopedPayslips(currentUser)) return 'scoped' as const;
+    return 'self' as const;
+  }, [currentUser, basePath]);
+  const isSelfView = viewMode === 'self';
+  const canRelease = Boolean(currentUser && canReleasePayslips(currentUser) && viewMode !== 'self');
+
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [releasing, setReleasing] = useState(false);
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [filteredRecords, setFilteredRecords] = useState<PayrollRecord[]>([]);
+  const [selfPage, setSelfPage] = useState(1);
+  const [selfHasMore, setSelfHasMore] = useState(false);
+  const [selfTotal, setSelfTotal] = useState(0);
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
 
   // Filters
   const [selectedMonth, setSelectedMonth] = useState('');
-  const [selectedDivision, setSelectedDivision] = useState('');
-  const [selectedDepartment, setSelectedDepartment] = useState('');
-  const [selectedDesignation, setSelectedDesignation] = useState('');
-  const [selectedEmployee, setSelectedEmployee] = useState('');
+  const [listFilterDivisions, setListFilterDivisions] = useState<string[]>([]);
+  const [listFilterDepartments, setListFilterDepartments] = useState<string[]>([]);
+  const [listFilterDesignations, setListFilterDesignations] = useState<string[]>([]);
+  const [listFilterStatuses, setListFilterStatuses] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
 
   // PDF Generation
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const [generatingBulkPDF, setGeneratingBulkPDF] = useState(false);
   const [selectedRecords, setSelectedRecords] = useState<Set<string>>(new Set());
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
+  const [payrollOutputColumns, setPayrollOutputColumns] = useState<PayrollOutputColumn[]>([]);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const recordsPerPage = 20;
 
   useEffect(() => {
-    const today = new Date();
-    const day = today.getDate();
-    let defaultMonth = '';
-    if (day > 15) {
-      // Current month (YYYY-MM)
-      defaultMonth = today.toISOString().substring(0, 7);
-    } else {
-      // Previous month
-      const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      defaultMonth = prevMonth.toISOString().substring(0, 7);
+    if (!isSelfView) {
+      const today = new Date();
+      const day = today.getDate();
+      let defaultMonth = '';
+      if (day > 15) {
+        defaultMonth = today.toISOString().substring(0, 7);
+      } else {
+        const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        defaultMonth = prevMonth.toISOString().substring(0, 7);
+      }
+      setSelectedMonth(defaultMonth);
     }
-    setSelectedMonth(defaultMonth);
 
-    setSelectedMonth(defaultMonth);
-
-    fetchDivisions();
-    fetchDepartments();
-    fetchEmployees();
+    loadFilterData();
     fetchCompanyProfile().then(setCompanyProfile);
-  }, []);
+    api.getPayrollConfig().then((res) => {
+      const cols = (res as { data?: { outputColumns?: PayrollOutputColumn[] } })?.data?.outputColumns;
+      if (Array.isArray(cols)) setPayrollOutputColumns(cols);
+    }).catch(() => {});
+  }, [isSelfView]);
 
   useEffect(() => {
-    if (selectedMonth) {
+    if (isSelfView) {
+      setSelfPage(1);
+      fetchPayrollRecords({ page: 1, append: false });
+    } else if (selectedMonth) {
       fetchPayrollRecords();
-      if (selectedDepartment) {
-        fetchDesignations(selectedDepartment);
-      } else {
-        setDesignations([]);
-        setSelectedDesignation('');
-      }
     }
-  }, [selectedMonth, selectedDepartment, selectedDivision]);
+  }, [selectedMonth, isSelfView]);
 
   useEffect(() => {
     applyFilters();
-  }, [payrollRecords, searchQuery, selectedDesignation, selectedEmployee, statusFilter]);
+  }, [
+    payrollRecords,
+    searchQuery,
+    listFilterDivisions,
+    listFilterDepartments,
+    listFilterDesignations,
+    listFilterStatuses,
+    divisions,
+    departments,
+  ]);
 
-  const fetchDivisions = async () => {
+  const loadFilterData = async () => {
     try {
-      const response = await api.getDivisions();
-      if (response.success) {
-        setDivisions(response.data || []);
+      const requests: Promise<unknown>[] = [
+        api.getDepartments(),
+        api.getAllDesignations(),
+      ];
+      if (showDivisionFilter) requests.unshift(api.getDivisions());
+
+      const results = await Promise.all(requests);
+      let idx = 0;
+      if (showDivisionFilter) {
+        const divRes = results[idx++] as Awaited<ReturnType<typeof api.getDivisions>>;
+        if (divRes.success) setDivisions(divRes.data || []);
       }
+      const deptRes = results[idx++] as Awaited<ReturnType<typeof api.getDepartments>>;
+      const desigRes = results[idx] as Awaited<ReturnType<typeof api.getAllDesignations>>;
+      if (deptRes.success) setDepartments(deptRes.data || []);
+      if (desigRes.success) setDesignations(desigRes.data || []);
     } catch (error) {
-      console.error('Error fetching divisions:', error);
+      console.error('Error loading filter options:', error);
     }
   };
 
-  const fetchDepartments = async () => {
+  const fetchPayrollRecords = async (opts?: { page?: number; append?: boolean }) => {
+    if (!isSelfView && !selectedMonth) return;
+
+    const page = opts?.page ?? (isSelfView ? selfPage : 1);
+    const append = opts?.append ?? false;
+
+    if (append) setLoadingMore(true);
+    else setLoading(true);
+
     try {
-      const response = await api.getDepartments();
+      const response = await api.getPayrollRecords({
+        month: selectedMonth || undefined,
+        page: isSelfView ? page : undefined,
+        limit: isSelfView ? SELF_PAYSLIP_PAGE_SIZE : undefined,
+      });
       if (response.success) {
-        setDepartments(response.data || []);
-      }
-    } catch (error) {
-      console.error('Error fetching departments:', error);
-    }
-  };
-
-  const fetchDesignations = async (deptId: string) => {
-    try {
-      const response = await api.getDesignations(deptId);
-      if (response.success) {
-        setDesignations(response.data || []);
-      }
-    } catch (error) {
-      console.error('Error fetching designations:', error);
-    }
-  };
-
-  const fetchEmployees = async () => {
-    try {
-      const response = await api.getEmployees();
-      if (response.success) {
-        setEmployees(response.data || []);
-      }
-    } catch (error) {
-      console.error('Error fetching employees:', error);
-    }
-  };
-
-  const fetchPayrollRecords = async () => {
-    if (!selectedMonth) return;
-
-    setLoading(true);
-    try {
-      const params: any = { month: selectedMonth };
-      if (selectedDivision) params.divisionId = selectedDivision;
-      if (selectedDepartment) params.departmentId = selectedDepartment;
-
-      const response = await api.getPayrollRecords(params);
-      if (response.success) {
-        setPayrollRecords(response.data || []);
+        const rows = (response.data || []) as PayrollRecord[];
+        if (isSelfView && append) {
+          setPayrollRecords((prev) => [...prev, ...rows]);
+        } else {
+          setPayrollRecords(rows);
+        }
+        if (isSelfView) {
+          setSelfHasMore(Boolean(response.hasMore));
+          setSelfTotal(response.total ?? rows.length);
+          setSelfPage(page);
+        }
       }
     } catch (error: any) {
       console.error('Error fetching payroll records:', error);
       toast.error(error.message || 'Failed to fetch payroll records');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
+    }
+  };
+
+  const handleLoadMoreSelf = () => {
+    if (!selfHasMore || loadingMore) return;
+    fetchPayrollRecords({ page: selfPage + 1, append: true });
+  };
+
+  const handleReleaseFiltered = async () => {
+    if (!selectedMonth) {
+      toast.error('Select a pay period before releasing payslips');
+      return;
+    }
+
+    const releaseSummary = summarizePayslipRelease(filteredRecords);
+    const toRelease = filteredRecords.filter((r) => canReleasePayslipRecord(r));
+
+    if (toRelease.length === 0) {
+      toast.warning(formatPayslipReleaseMessage(releaseSummary), { autoClose: 6000 });
+      return;
+    }
+
+    const divisionId = showDivisionFilter && listFilterDivisions.length === 1
+      ? listFilterDivisions[0]
+      : undefined;
+    const departmentId = listFilterDepartments.length === 1 ? listFilterDepartments[0] : undefined;
+
+    try {
+      setReleasing(true);
+      const response = await api.releasePayslips({
+        month: selectedMonth,
+        divisionId,
+        departmentId,
+        recordIds: filteredRecords.map((r) => r._id),
+      });
+      if (response.success) {
+        const newlyReleased = response.stats?.newlyReleased ?? response.modifiedCount ?? response.count ?? 0;
+        const msg = response.message
+          || formatPayslipReleaseMessage(response.stats ?? releaseSummary, newlyReleased);
+        if (newlyReleased > 0) {
+          toast.success(msg, { autoClose: 6000 });
+        } else {
+          toast.warning(msg, { autoClose: 6000 });
+        }
+        await fetchPayrollRecords();
+      } else {
+        toast.error(response.message || 'Failed to release payslips');
+      }
+    } catch (error: any) {
+      console.error('Error releasing payslips:', error);
+      toast.error(error.message || 'Failed to release payslips');
+    } finally {
+      setReleasing(false);
     }
   };
 
   const applyFilters = () => {
-    let filtered = [...payrollRecords];
-
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(record => {
-        const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
-        return (
-          record.emp_no.toLowerCase().includes(query) ||
-          employee?.employee_name.toLowerCase().includes(query)
-        );
-      });
-    }
-
-    // Designation filter
-    if (selectedDesignation) {
-      filtered = filtered.filter(record => {
-        const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
-        const designationId = typeof employee?.designation_id === 'object'
-          ? employee.designation_id._id
-          : employee?.designation_id;
-        return designationId === selectedDesignation;
-      });
-    }
-
-    // Employee filter
-    if (selectedEmployee) {
-      filtered = filtered.filter(record => {
-        const empId = typeof record.employeeId === 'object' ? record.employeeId._id : record.employeeId;
-        return empId === selectedEmployee;
-      });
-    }
-
-    // Status filter
-    if (statusFilter) {
-      filtered = filtered.filter(record => record.status === statusFilter);
-    }
+    const filtered = payrollRecords.filter((record) => (
+      payslipMatchesSearch(record, searchQuery)
+      && payslipMatchesListOrgAndStatus(
+        record,
+        divisions,
+        departments,
+        showDivisionFilter ? listFilterDivisions : [],
+        listFilterDepartments,
+        listFilterDesignations,
+        listFilterStatuses,
+      )
+    ));
 
     setFilteredRecords(filtered);
     setCurrentPage(1);
@@ -306,222 +416,25 @@ export default function PayslipsPage() {
     const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
     if (!employee) return false;
 
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const primaryColor: [number, number, number] = [30, 41, 59];
-    const lightBg: [number, number, number] = [248, 250, 252];
-    const borderColor: [number, number, number] = [226, 232, 240];
+    const sections = resolvePayslipSections(record, payrollOutputColumns);
+    if (!sections.hasConfiguredSections) return false;
+
+    const loans = resolvePayslipLoans(record);
     const profile = companyProfile ?? (await fetchCompanyProfile());
-
-    const formatCurr = (amount: number) => `Rs. ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    const formatValue = (val: number) => `Rs. ${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-
-    let periodLabel = `${record.monthName} ${record.year}`;
-    if (record.startDate && record.endDate) {
-      const startStr = new Date(record.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-      const endStr = new Date(record.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-      periodLabel += ` | ${startStr} - ${endStr}`;
-    }
-
-    let yPos = await drawPayslipCompanyHeader(doc, profile, {
-      periodLabel,
-      refId: record._id.toString().slice(-8).toUpperCase(),
+    await drawDynamicPayslipPdf(doc, {
+      payroll: record,
+      employee: {
+        employee_name: employee.employee_name,
+        emp_no: record.emp_no || employee.emp_no,
+        designation_id: getDesigName(employee.designation_id),
+        department_id: getDeptName(employee.department_id),
+        bank_account_no: employee.bank_account_no,
+        location: employee.location,
+      },
+      sections,
+      loans,
+      profile,
     });
-    const cardWidth = (pageWidth - 30) / 3;
-    const cardHeight = 20;
-    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
-    doc.roundedRect(10, yPos, cardWidth, cardHeight, 2, 2, 'F');
-    doc.setFontSize(7);
-    doc.setTextColor(100, 116, 139);
-    doc.text('GROSS EARNINGS', 14, yPos + 7);
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.text(formatValue(record.earnings.grossSalary), 14, yPos + 15);
-
-    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
-    doc.roundedRect(15 + cardWidth, yPos, cardWidth, cardHeight, 2, 2, 'F');
-    doc.setFontSize(7);
-    doc.setTextColor(100, 116, 139);
-    doc.text('TOTAL DEDUCTIONS', 15 + cardWidth + 4, yPos + 7);
-    doc.setFontSize(11);
-    doc.setTextColor(190, 18, 60);
-    doc.text(formatValue(record.deductions.totalDeductions), 15 + cardWidth + 4, yPos + 15);
-
-    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.roundedRect(20 + cardWidth * 2, yPos, cardWidth, cardHeight, 2, 2, 'F');
-    doc.setFontSize(7);
-    doc.setTextColor(209, 213, 219);
-    doc.text('NET PAYABLE', 20 + cardWidth * 2 + 4, yPos + 7);
-    doc.setFontSize(11);
-    doc.setTextColor(255, 255, 255);
-    doc.text(formatValue(record.netSalary), 20 + cardWidth * 2 + 4, yPos + 15);
-
-    // EMPLOYEE DETAILS
-    yPos += 35;
-    doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
-    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
-    doc.rect(10, yPos - 5, pageWidth - 20, 8, 'F');
-    doc.setFontSize(8);
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.setFont('helvetica', 'bold');
-    doc.text('EMPLOYEE DETAILS', 14, yPos);
-    yPos += 10;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(71, 85, 105);
-    const col1 = 14, col2 = 70, col3 = 120;
-    doc.text(`Name ${employee.employee_name || 'N/A'}`, col1, yPos);
-    doc.text(`Employee ID ${record.emp_no || 'N/A'}`, col2, yPos);
-    doc.text(`Designation ${getDesigName(employee.designation_id)}`, col3, yPos);
-    yPos += 5;
-    doc.text(`Department ${getDeptName(employee.department_id)}`, col1, yPos);
-    doc.text(`Bank Account ${employee.bank_account_no || 'N/A'}`, col2, yPos);
-    doc.text(`Location ${employee.location || 'N/A'}`, col3, yPos);
-    yPos += 5;
-    doc.text(`PAN Number ${(employee as any).pan_number || 'N/A'}`, col1, yPos);
-    doc.text(`UAN Number ${(employee as any).uan_number || 'N/A'}`, col2, yPos);
-
-    // ATTENDANCE SUMMARY (no background, bold title and labels)
-    yPos += 12;
-    doc.setFontSize(11);
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.setFont('helvetica', 'bold');
-    doc.text('ATTENDANCE SUMMARY', 14, yPos);
-
-    yPos += 8;
-    const attDedDays = record.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0;
-    const totalPaid = record.attendance?.totalPaidDays ?? 0;
-    const finalPaid = Math.max(0, totalPaid - attDedDays);
-    const monthDays = record.totalDaysInMonth || record.attendance?.totalDaysInMonth || 0;
-    const presentDays = record.attendance?.presentDays || 0;
-    const paidLeaves = record.attendance?.paidLeaveDays || 0;
-    const totalLeaves = (record.attendance as any)?.totalLeaveDays ?? paidLeaves + ((record.attendance as any)?.totalLopDays ?? 0);
-    const absents = record.attendance?.absentDays ?? 0;
-    doc.setFontSize(9);
-    doc.setTextColor(71, 85, 105);
-    let x = 14;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Month Days: ', x, yPos); x += doc.getTextWidth('Month Days: ');
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(monthDays), x, yPos); x += doc.getTextWidth(String(monthDays)) + 6;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Present Days: ', x, yPos); x += doc.getTextWidth('Present Days: ');
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(presentDays), x, yPos); x += doc.getTextWidth(String(presentDays)) + 6;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Paid Leaves: ', x, yPos); x += doc.getTextWidth('Paid Leaves: ');
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(paidLeaves), x, yPos); x += doc.getTextWidth(String(paidLeaves)) + 6;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Total Paid Days: ', x, yPos); x += doc.getTextWidth('Total Paid Days: ');
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(totalPaid), x, yPos);
-    yPos += 6;
-    x = 14;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Total Leaves: ', x, yPos); x += doc.getTextWidth('Total Leaves: ');
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(totalLeaves), x, yPos); x += doc.getTextWidth(String(totalLeaves)) + 6;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Absents: ', x, yPos); x += doc.getTextWidth('Absents: ');
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(absents), x, yPos);
-    yPos += 7;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(185, 28, 28);
-    doc.text('Attendance Deduction Days (Late): ', 14, yPos);
-    const attDedX = doc.getTextWidth('Attendance Deduction Days (Late): ') + 14;
-    doc.setFont('helvetica', 'bold');
-    doc.text(String(attDedDays), attDedX, yPos);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(22, 101, 52);
-    doc.text(`    |    Final Paid Days: ${finalPaid}`, attDedX + 12, yPos);
-
-    // EARNINGS & DEDUCTIONS TABLES (with totals)
-    yPos += 12;
-    const earningsBody = [
-      ['Basic Pay', formatCurr(record.earnings.basicPay)],
-      ['Earned Basic', formatCurr(record.attendance?.earnedSalary || 0)],
-      ...(record.earnings.allowances || []).map(a => [a.name, formatCurr(a.amount)]),
-      ['Extra Days Pay', formatCurr(record.earnings.incentive)],
-      ['OT Pay', formatCurr(record.earnings.otPay)],
-      ['Arrears', formatCurr(record.arrearsAmount || 0)],
-    ];
-    autoTable(doc, {
-      startY: yPos,
-      head: [['EARNINGS', 'AMOUNT']],
-      body: earningsBody,
-      foot: [['TOTAL EARNINGS', formatCurr(record.earnings.grossSalary)]],
-      theme: 'plain',
-      headStyles: { fontStyle: 'bold', textColor: primaryColor, fontSize: 8, cellPadding: 2 },
-      bodyStyles: { fontSize: 8, textColor: [51, 65, 85], cellPadding: 2 },
-      footStyles: { fontStyle: 'bold', textColor: primaryColor, fontSize: 9, cellPadding: 3, fillColor: [248, 250, 252] },
-      columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
-      margin: { left: 10, right: pageWidth / 2 + 2 },
-    });
-
-    const deductionsBody = [
-      ['Attendance Deduction', formatCurr(record.deductions.attendanceDeduction)],
-      ['Permission Deduction', formatCurr(record.deductions.permissionDeduction)],
-      ['Leave Deduction', formatCurr(record.deductions.leaveDeduction)],
-      ...(record.deductions.otherDeductions || []).map(d => [d.name, formatCurr(d.amount)]),
-      ['EMI Deduction', formatCurr(record.loanAdvance.totalEMI)],
-      ['Advance Deduction', formatCurr(record.loanAdvance.advanceDeduction)],
-    ];
-    autoTable(doc, {
-      startY: yPos,
-      head: [['DEDUCTIONS', 'AMOUNT']],
-      body: deductionsBody,
-      foot: [['TOTAL DEDUCTIONS', formatCurr(record.deductions.totalDeductions)]],
-      theme: 'plain',
-      headStyles: { fontStyle: 'bold', textColor: [190, 18, 60], fontSize: 8, cellPadding: 2 },
-      bodyStyles: { fontSize: 8, textColor: [51, 65, 85], cellPadding: 2 },
-      footStyles: { fontStyle: 'bold', textColor: [190, 18, 60], fontSize: 9, cellPadding: 3, fillColor: [255, 241, 242] },
-      columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
-      margin: { left: pageWidth / 2 + 2, right: 10 },
-    });
-
-    yPos = Math.max((doc as any).lastAutoTable.finalY + 15, yPos + 60);
-
-    // NET PAYABLE IN WORDS
-    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
-    doc.roundedRect(10, yPos, pageWidth - 20, 25, 2, 2, 'F');
-    doc.setTextColor(100, 116, 139);
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text('NET PAYABLE IN WORDS', 16, yPos + 8);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.text(`Total amount of: ${formatValue(record.netSalary)} (Approx INR)`, 16, yPos + 16);
-    if (record.roundOff !== 0 && record.roundOff !== undefined) {
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'italic');
-      doc.setTextColor(148, 163, 184);
-      doc.text(`* Adjusted by ${formatValue(record.roundOff)} round-off`, pageWidth - 15, yPos + 22, { align: 'right' });
-    }
-
-    // Signature blocks
-    yPos += 45;
-    doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
-    doc.setLineWidth(0.5);
-    doc.line(20, yPos, 70, yPos);
-    doc.line(pageWidth - 70, yPos, pageWidth - 20, yPos);
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.text('Employee Signature', 45, yPos + 5, { align: 'center' });
-    doc.text('Authorized Signatory', pageWidth - 45, yPos + 5, { align: 'center' });
-
-    // Footer
-    drawPayslipFooter(doc, profile, yPos);
-    doc.setFontSize(7);
-    doc.setTextColor(148, 163, 184);
-    doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, pageWidth / 2, pageHeight - 6, { align: 'center' });
-
     return true;
   };
 
@@ -535,7 +448,7 @@ export default function PayslipsPage() {
         doc.save(`Payslip_${record.emp_no}_${record.month}.pdf`);
         toast.success('Payslip PDF generated successfully!');
       } else {
-        toast.error('Employee data not found');
+        toast.error('Configure payslip sections in Payroll Configuration or employee data missing');
       }
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -604,303 +517,344 @@ export default function PayslipsPage() {
   // Pagination
   const indexOfLastRecord = currentPage * recordsPerPage;
   const indexOfFirstRecord = indexOfLastRecord - recordsPerPage;
-  const currentRecords = filteredRecords.slice(indexOfFirstRecord, indexOfLastRecord);
+  const currentRecords = isSelfView
+    ? filteredRecords
+    : filteredRecords.slice(indexOfFirstRecord, indexOfLastRecord);
   const totalPages = Math.ceil(filteredRecords.length / recordsPerPage);
 
+  const listDepartmentOptions = useMemo(() => {
+    if (!showDivisionFilter || listFilterDivisions.length === 0) return departments;
+    const allowed = new Set<string>();
+    for (const divId of listFilterDivisions) {
+      const div = divisions.find((d) => String(d._id) === String(divId));
+      const deptIds = ((div?.departments ?? []) as unknown[]).map((d) => (typeof d === 'string' ? d : (d as { _id?: string })?._id));
+      if (deptIds.length) {
+        deptIds.forEach((id) => { if (id) allowed.add(String(id)); });
+      } else {
+        departments
+          .filter((d: Department & { division_id?: string; division?: string }) => String(d.division_id || d.division) === String(divId))
+          .forEach((d) => allowed.add(String(d._id)));
+      }
+    }
+    if (allowed.size === 0) return departments;
+    return departments.filter((d) => allowed.has(String(d._id)));
+  }, [showDivisionFilter, listFilterDivisions, divisions, departments]);
+
+  const tableColSpan = isSelfView ? 6 : canRelease ? 10 : 9;
+
+  const releaseSummary = useMemo(
+    () => summarizePayslipRelease(filteredRecords),
+    [filteredRecords],
+  );
+
+  const payslipStats = useMemo(() => ({
+    total: filteredRecords.length,
+    selected: selectedRecords.size,
+    processed: filteredRecords.filter((r) => r.status === 'processed').length,
+    calculated: filteredRecords.filter((r) => r.status === 'calculated').length,
+    pendingRelease: releaseSummary.pendingRelease,
+    alreadyReleased: releaseSummary.alreadyReleased,
+    batchNotReady: releaseSummary.batchNotReady,
+    noBatch: releaseSummary.noBatch,
+    notEligible: releaseSummary.notEligible,
+  }), [filteredRecords, selectedRecords, releaseSummary]);
+
+  const anyListFilterActive =
+    searchQuery.trim() !== ''
+    || listFilterDivisions.length > 0
+    || listFilterDepartments.length > 0
+    || listFilterDesignations.length > 0
+    || listFilterStatuses.length > 0;
+
+  const clearListFilters = () => {
+    setSearchQuery('');
+    setListFilterDivisions([]);
+    setListFilterDepartments([]);
+    setListFilterDesignations([]);
+    setListFilterStatuses([]);
+  };
+
   return (
-    <div className="min-h-screen p-6">
-      <div className="w-full">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-slate-800 dark:text-white mb-2">
-            Employee Payslips
-          </h1>
-          <p className="text-slate-600 dark:text-slate-300">
-            View, search, and export employee payslips
-          </p>
-        </div>
+    <LoansPageShell>
+      <ToastContainer position="top-right" autoClose={3000} />
 
-        {/* Filters Section */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm p-6 mb-6 border border-slate-200 dark:border-slate-700">
-          <div className="flex flex-col lg:flex-row lg:items-end gap-4">
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-4 lg:grid-cols-7 gap-4">
-              {/* Month Filter */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Month
-                </label>
-                <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm"
-                  required
-                />
-              </div>
+      <LoansPageHeader
+        badge="Payroll payslips"
+        title={isSelfView ? 'My payslips' : 'Employee payslips'}
+        subtitle={
+          isSelfView
+            ? 'View your released payslips — newest first. Load more to see older months.'
+            : 'View, search, and release payslips after the payment batch is frozen or completed'
+        }
+      />
 
-              {/* Division Filter */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Division
-                </label>
-                <select
-                  value={selectedDivision}
-                  onChange={(e) => {
-                    setSelectedDivision(e.target.value);
-                    setSelectedDepartment(''); // Reset department
-                    setSelectedDesignation(''); // Reset designation
-                  }}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
-                >
-                  <option value="">All Divisions</option>
-                  {divisions.map(div => (
-                    <option key={div._id} value={div._id}>{div.name}</option>
-                  ))}
-                </select>
-              </div>
+      <LoansStatGrid
+        stats={[
+          { label: isSelfView ? 'Payslips loaded' : 'Payslips found', value: isSelfView ? payrollRecords.length : payslipStats.total, accent: true },
+          ...(isSelfView
+            ? [
+                { label: 'Total available', value: selfTotal },
+                { label: 'Showing', value: `${payrollRecords.length} of ${selfTotal || payrollRecords.length}` },
+              ]
+            : [
+                { label: 'Selected', value: payslipStats.selected },
+                { label: 'Ready to release', value: payslipStats.pendingRelease, accent: payslipStats.pendingRelease > 0 },
+                { label: 'Awaiting batch', value: payslipStats.batchNotReady },
+                { label: 'Already released', value: payslipStats.alreadyReleased },
+              ]),
+        ]}
+      />
 
-              {/* Department Filter */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Department
-                </label>
-                <select
-                  value={selectedDepartment}
-                  onChange={(e) => setSelectedDepartment(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
-                >
-                  <option value="">All Departments</option>
-                  {departments
-                    .filter(dept => {
-                      if (!selectedDivision) return true;
-                      const currentDiv = divisions.find(d => d._id === selectedDivision);
-                      return currentDiv?.departments?.some((d: any) => d === dept._id || d._id === dept._id);
-                    })
-                    .map(dept => (
-                      <option key={dept._id} value={dept._id}>{dept.name}</option>
-                    ))}
-                </select>
-              </div>
+      <LoansToolbar>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[150px]">
+            <LoanFormLabel>{isSelfView ? 'Filter by month (optional)' : 'Pay period *'}</LoanFormLabel>
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className={loansFormInputClass()}
+              style={loansFormInputStyle()}
+              required={!isSelfView}
+            />
+          </div>
 
-              {/* Designation Filter */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Designation
-                </label>
-                <select
-                  value={selectedDesignation}
-                  onChange={(e) => setSelectedDesignation(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
-                >
-                  <option value="">All Designations</option>
-                  {designations.map(desig => (
-                    <option key={desig._id} value={desig._id}>{desig.name}</option>
-                  ))}
-                </select>
-              </div>
+          {!isSelfView && (
+            <button
+              type="button"
+              onClick={() => fetchPayrollRecords()}
+              disabled={!selectedMonth || loading}
+              className={`flex h-10 items-center gap-2 ${loansPrimaryButtonClass()}`}
+              style={loansPrimaryButtonStyle()}
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Load payslips
+            </button>
+          )}
 
-              {/* Employee Filter */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Employee
-                </label>
-                <select
-                  value={selectedEmployee}
-                  onChange={(e) => setSelectedEmployee(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
-                >
-                  <option value="">All Employees</option>
-                  {employees.map(emp => (
-                    <option key={emp._id} value={emp._id}>
-                      {emp.emp_no} - {emp.employee_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          {isSelfView && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelfPage(1);
+                fetchPayrollRecords({ page: 1, append: false });
+              }}
+              disabled={loading}
+              className={`flex h-10 items-center gap-2 ${loansPrimaryButtonClass()}`}
+              style={loansPrimaryButtonStyle()}
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Refresh
+            </button>
+          )}
 
-              {/* Status Filter */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Status
-                </label>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
-                >
-                  <option value="">All Status</option>
-                  <option value="calculated">Calculated</option>
-                  <option value="approved">Approved</option>
-                  <option value="processed">Processed</option>
-                </select>
-              </div>
+          {!isSelfView && showDivisionFilter && (
+            <MultiSelect
+              variant="ledger"
+              label="Division"
+              options={divisions.map((d) => ({ id: String(d._id), name: d.name ?? 'Division' }))}
+              selectedIds={listFilterDivisions}
+              onChange={(vals) => {
+                setListFilterDivisions(vals);
+                setListFilterDepartments([]);
+              }}
+              placeholder="All divisions"
+              className="w-full sm:w-40 md:w-44"
+            />
+          )}
 
-              {/* Search Bar */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Search
-                </label>
+          {!isSelfView && (
+            <>
+              <MultiSelect
+                variant="ledger"
+                label="Department"
+                options={listDepartmentOptions.map((d) => ({
+                  id: String(d._id),
+                  name: d.name ?? 'Department',
+                }))}
+                selectedIds={listFilterDepartments}
+                onChange={setListFilterDepartments}
+                placeholder="All departments"
+                className="w-full sm:w-40 md:w-44"
+              />
+
+              <MultiSelect
+                variant="ledger"
+                label="Designation"
+                options={designations.map((d) => ({
+                  id: String(d._id),
+                  name: d.name ?? (d as Designation & { title?: string }).title ?? 'Designation',
+                }))}
+                selectedIds={listFilterDesignations}
+                onChange={setListFilterDesignations}
+                placeholder="All designations"
+                className="w-full sm:w-40 md:w-44"
+              />
+
+              <MultiSelect
+                variant="ledger"
+                label="Status"
+                options={PAYSLIP_LIST_STATUS_OPTIONS}
+                selectedIds={listFilterStatuses}
+                onChange={setListFilterStatuses}
+                placeholder="All statuses"
+                className="w-full sm:w-48 md:w-56"
+              />
+
+              <div className="flex w-full flex-col gap-1.5 sm:w-44 md:w-52">
+                <LoanFormLabel>Search</LoanFormLabel>
                 <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
                   <input
                     type="text"
-                    placeholder="Emp ID or Name"
+                    placeholder="Emp ID or name…"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm"
+                    className={`h-10 pl-9 pr-3 ${loansFormInputClass()}`}
+                    style={loansFormInputStyle()}
                   />
-                  <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
                 </div>
               </div>
-            </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-2 min-w-fit">
-              <button
-                onClick={fetchPayrollRecords}
-                disabled={!selectedMonth || loading}
-                className="h-10 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm hover:shadow-md transition-all flex items-center gap-2 text-sm font-medium disabled:opacity-50"
-              >
-                {loading ? (
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                )}
-                Fetch
-              </button>
+              {anyListFilterActive && (
+                <button
+                  type="button"
+                  onClick={clearListFilters}
+                  className="h-10 rounded-md border px-3 text-xs font-semibold uppercase tracking-wider transition hover:opacity-80"
+                  style={{ borderColor: 'var(--ps-accent-border)', color: 'var(--ps-accent)' }}
+                >
+                  Clear filters
+                </button>
+              )}
+            </>
+          )}
 
-              <button
-                onClick={generateBulkPayslipsPDF}
-                disabled={selectedRecords.size === 0 || generatingBulkPDF}
-                className="h-10 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm hover:shadow-md transition-all flex items-center gap-2 text-sm font-medium disabled:opacity-50"
-              >
-                {generatingBulkPDF ? (
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                )}
-                Export ({selectedRecords.size})
-              </button>
+          {canRelease && (
+            <button
+              type="button"
+              onClick={handleReleaseFiltered}
+              disabled={!selectedMonth || releasing || loading}
+              className={`flex h-10 items-center gap-2 ${loansPrimaryButtonClass()}`}
+              style={loansPrimaryButtonStyle()}
+              title={
+                releaseSummary.pendingRelease > 0
+                  ? `Release ${releaseSummary.pendingRelease} payslip(s) whose payment batch is frozen or completed.`
+                  : formatPayslipReleaseMessage(releaseSummary)
+              }
+            >
+              {releasing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+              Release ({releaseSummary.pendingRelease} ready)
+            </button>
+          )}
 
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setSelectedDivision('');
-                  setSelectedDepartment('');
-                  setSelectedDesignation('');
-                  setSelectedEmployee('');
-                  setStatusFilter('');
-                }}
-                className="h-10 w-10 flex items-center justify-center bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl transition-all"
-                title="Clear Filters"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          </div>
+          {!isSelfView && (
+            <button
+              type="button"
+              onClick={generateBulkPayslipsPDF}
+              disabled={selectedRecords.size === 0 || generatingBulkPDF}
+              className={`ml-auto flex h-10 items-center gap-2 ${loansPrimaryButtonClass()}`}
+              style={loansPrimaryButtonStyle()}
+            >
+              {generatingBulkPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Export PDF ({selectedRecords.size})
+            </button>
+          )}
         </div>
+      </LoansToolbar>
 
-        {/* Results Summary */}
-        {filteredRecords.length > 0 && (
-          <div className="bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 mb-6 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg">
-                <svg className="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                Found {filteredRecords.length} payslip(s) • {selectedRecords.size} selected
+      {(filteredRecords.length > 0 || isSelfView) && !isSelfView && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-2 border bg-white px-5 py-3 text-sm dark:bg-stone-950" style={{ borderColor: 'var(--ps-accent-border)' }}>
+          <span className="text-stone-600 dark:text-stone-400">
+            <FileText className="mr-2 inline h-4 w-4" style={{ color: 'var(--ps-accent)' }} />
+            {filteredRecords.length} payslip(s) · {selectedRecords.size} selected
+            {canRelease && (
+              <span className="ml-3 text-xs text-stone-500">
+                · {releaseSummary.pendingRelease} ready to release
+                · {releaseSummary.batchNotReady} awaiting batch freeze/complete
+                · {releaseSummary.alreadyReleased} already released
+                {releaseSummary.noBatch > 0 ? ` · ${releaseSummary.noBatch} no batch` : ''}
               </span>
-            </div>
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
-              Page {currentPage} of {totalPages}
-            </div>
-          </div>
-        )}
+            )}
+          </span>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+            Page {currentPage} of {totalPages || 1}
+          </span>
+        </div>
+      )}
 
-        {/* Payslips Table */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden border border-slate-200 dark:border-slate-700">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+      <LoansContentPanel>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[960px] border-collapse text-left text-sm">
+            <thead>
+              <tr className={loansTableHeadClass()} style={loansTableHeadStyle()}>
+                {!isSelfView && (
+                  <th className="px-4 py-3">
                     <input
                       type="checkbox"
                       checked={selectedRecords.size === currentRecords.length && currentRecords.length > 0}
                       onChange={toggleSelectAll}
-                      className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                      className="h-4 w-4 cursor-pointer"
+                      style={{ accentColor: 'var(--ps-accent)' }}
                     />
                   </th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Employee</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Dept / Desig</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Month</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Earnings</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Deductions</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Net Salary</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center">Status</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center">Actions</th>
+                )}
+                {!isSelfView && <th className="px-4 py-3 font-semibold">Employee</th>}
+                {!isSelfView && <th className="px-4 py-3 font-semibold">Dept / designation</th>}
+                <th className="px-4 py-3 font-semibold">Month</th>
+                <th className="px-4 py-3 text-right font-semibold">Earnings</th>
+                <th className="px-4 py-3 text-right font-semibold">Deductions</th>
+                <th className="px-4 py-3 text-right font-semibold">Net salary</th>
+                <th className="px-4 py-3 text-center font-semibold">Status</th>
+                {canRelease && <th className="px-4 py-3 text-center font-semibold">Employee view</th>}
+                <th className="px-4 py-3 text-center font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={tableColSpan} className="px-4 py-16 text-center">
+                    <Spinner />
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
-                {loading ? (
-                  <tr>
-                    <td colSpan={10} className="px-6 py-12 text-center text-slate-400">
-                      <div className="flex flex-col items-center gap-2">
-                        <svg className="animate-spin h-8 w-8 text-emerald-500" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <span>Loading records...</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : currentRecords.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="px-6 py-12 text-center text-slate-400">
-                      <div className="flex flex-col items-center gap-2">
-                        <svg className="w-12 h-12 text-slate-200 dark:text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span>{selectedMonth ? 'No payslips found.' : 'Select a month to begin.'}</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  currentRecords.map((record) => {
-                    const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
-                    return (
-                      <tr
-                        key={record._id}
-                        onClick={() => router.push(`/superadmin/payslips/${record._id}`)}
-                        className="hover:bg-emerald-50/50 dark:hover:bg-slate-700/30 transition-colors group cursor-pointer"
-                      >
-                        <td className="px-6 py-4">
+              ) : currentRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={tableColSpan} className="px-4 py-16 text-center text-stone-500">
+                    <FileText className="mx-auto mb-3 h-10 w-10 opacity-30" />
+                    {isSelfView
+                      ? 'No released payslips available yet. Payslips appear here after the payment batch is frozen/completed and HR releases them.'
+                      : selectedMonth
+                        ? 'No payslips match your filters.'
+                        : 'Select a pay period to begin.'}
+                  </td>
+                </tr>
+              ) : (
+                currentRecords.map((record) => {
+                  const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
+                  const sections = buildPayslipSections(payrollOutputColumns, record);
+                  return (
+                    <tr
+                      key={record._id}
+                      onClick={() => router.push(`${basePath}/${record._id}`)}
+                      className="cursor-pointer border-b transition-colors hover:bg-stone-50 dark:hover:bg-stone-900/40"
+                      style={{ borderColor: 'var(--ps-accent-border)' }}
+                    >
+                      {!isSelfView && (
+                        <td className="px-4 py-3">
                           <input
                             type="checkbox"
                             checked={selectedRecords.has(record._id)}
                             onChange={(e) => {
-                              e.stopPropagation(); // Prevent row click when clicking checkbox
+                              e.stopPropagation();
                               toggleSelectRecord(record._id);
                             }}
-                            className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                            className="h-4 w-4 cursor-pointer"
+                            style={{ accentColor: 'var(--ps-accent)' }}
                           />
                         </td>
-                        <td className="px-6 py-4">
+                      )}
+                      {!isSelfView && (
+                        <td className="px-4 py-3">
                           <PayslipEmployeeBlock
                             employee={employee}
                             empNo={record.emp_no}
@@ -908,115 +862,174 @@ export default function PayslipsPage() {
                             designations={designations}
                           />
                         </td>
-                        <td className="px-6 py-4">
+                      )}
+                      {!isSelfView && (
+                        <td className="px-4 py-3">
                           <div className="flex flex-col">
-                            <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">
+                            <span className="font-medium text-stone-800 dark:text-stone-200">
                               {getDeptName(employee?.department_id)}
                             </span>
-                            <span className="text-xs text-slate-500">
-                              {getDesigName(employee?.designation_id)}
-                            </span>
+                            <span className="text-xs text-stone-500">{getDesigName(employee?.designation_id)}</span>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                            {record.monthName} {record.year}
+                      )}
+                      <td className="px-4 py-3 font-medium text-stone-700 dark:text-stone-300">
+                        {record.monthName} {record.year}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {sections.hasConfiguredSections ? (
+                          <span className={`text-sm font-semibold ${ledgerMoneyClass()}`}>
+                            ₹{(sections.totalEarnings ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                            ₹{record.earnings.grossSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        ) : (
+                          <span className="text-xs text-stone-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {sections.hasConfiguredSections ? (
+                          <span className={`text-sm font-semibold ${ledgerMoneyClass(true)}`}>
+                            ₹{(sections.totalDeductions ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <span className="text-sm font-semibold text-rose-600 dark:text-rose-400">
-                            ₹{record.deductions.totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        ) : (
+                          <span className="text-xs text-stone-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {sections.hasConfiguredSections ? (
+                          <span className={`text-sm font-bold ${ledgerMoneyClass()}`}>
+                            ₹{(sections.netPayable ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </span>
+                        ) : (
+                          <span className="text-xs text-stone-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={ledgerStatusBadgeClass(payslipLedgerStatus(record.status))}>
+                          {record.status}
+                        </span>
+                      </td>
+                      {canRelease && (
+                        <td className="px-4 py-3 text-center">
+                          {(() => {
+                            const view = getPayslipEmployeeViewLabel(record);
+                            const toneClass =
+                              view.tone === 'released'
+                                ? ledgerStatusBadgeClass('approved')
+                                : view.tone === 'pending'
+                                  ? ledgerStatusBadgeClass('pending')
+                                  : view.tone === 'waiting'
+                                    ? ledgerStatusBadgeClass('neutral')
+                                    : 'text-xs text-stone-400';
+                            return (
+                              <span
+                                className={view.tone === 'neutral' ? toneClass : toneClass}
+                                title={
+                                  view.tone === 'waiting'
+                                    ? 'Payment batch must be frozen or completed before employees can see this payslip'
+                                    : undefined
+                                }
+                              >
+                                {view.label}
+                              </span>
+                            );
+                          })()}
                         </td>
-                        <td className="px-6 py-4 text-right text-emerald-600 dark:text-emerald-400">
-                          <span className="text-sm font-bold">
-                            ₹{record.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${record.status === 'processed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
-                            record.status === 'approved' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
-                              'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                            }`}>
-                            {record.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-center gap-2">
-                            <Link
-                              href={`/superadmin/payslips/${record._id}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="p-2 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 rounded-lg transition-all"
-                              title="View Details"
-                            >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                              </svg>
-                            </Link>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                generatePayslipPDF(record);
-                              }}
-                              disabled={generatingPDF}
-                              className="p-2 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 rounded-lg transition-all"
-                              title="Download PDF"
-                            >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                              </svg>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className="px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-700 shadow-sm text-sm font-medium transition-all"
-              >
-                Previous
-              </button>
-              <div className="flex gap-1 md:gap-2">
-                {[...Array(totalPages)].map((_, i) => (
-                  <button
-                    key={i + 1}
-                    onClick={() => setCurrentPage(i + 1)}
-                    className={`min-w-[40px] h-10 px-2 rounded-xl text-sm font-medium transition-all ${currentPage === i + 1
-                      ? 'bg-emerald-600 text-white shadow-md'
-                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
-                      }`}
-                  >
-                    {i + 1}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className="px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-700 shadow-sm text-sm font-medium transition-all"
-              >
-                Next
-              </button>
-            </div>
-          )}
+                      )}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-1">
+                          <Link
+                            href={`${basePath}/${record._id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="p-2 text-stone-400 transition-colors hover:text-stone-800 dark:hover:text-stone-200"
+                            title="View details"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              generatePayslipPDF(record);
+                            }}
+                            disabled={generatingPDF}
+                            className="p-2 text-stone-400 transition-colors hover:text-stone-800 disabled:opacity-50 dark:hover:text-stone-200"
+                            title="Download PDF"
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
-      </div>
-    </div>
+
+        {isSelfView && selfHasMore && (
+          <div className="flex justify-center border-t px-4 py-4" style={{ borderColor: 'var(--ps-accent-border)' }}>
+            <button
+              type="button"
+              onClick={handleLoadMoreSelf}
+              disabled={loadingMore}
+              className={`flex h-10 items-center gap-2 ${loansPrimaryButtonClass()}`}
+              style={loansPrimaryButtonStyle()}
+            >
+              {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Load more payslips
+            </button>
+          </div>
+        )}
+
+        {!isSelfView && totalPages > 1 && (
+          <div
+            className="flex items-center justify-between border-t px-4 py-3"
+            style={{ borderColor: 'var(--ps-accent-border)' }}
+          >
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className={loansDialogOutlineButtonClass()}
+              style={loansDialogOutlineButtonStyle()}
+            >
+              Previous
+            </button>
+            <div className="flex gap-1">
+              {[...Array(totalPages)].map((_, i) => (
+                <button
+                  key={i + 1}
+                  type="button"
+                  onClick={() => setCurrentPage(i + 1)}
+                  className={`min-w-[36px] px-2 py-1.5 text-sm font-medium ${
+                    currentPage === i + 1 ? loansPrimaryButtonClass() : loansDialogOutlineButtonClass()
+                  }`}
+                  style={currentPage === i + 1 ? loansPrimaryButtonStyle() : loansDialogOutlineButtonStyle()}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className={loansDialogOutlineButtonClass()}
+              style={loansDialogOutlineButtonStyle()}
+            >
+              Next
+            </button>
+          </div>
+        )}
+      </LoansContentPanel>
+    </LoansPageShell>
   );
 }
+
+export default function PayslipsPage() {
+  return <PayslipsContent />;
+}
+
+
+

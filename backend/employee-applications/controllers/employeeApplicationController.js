@@ -16,9 +16,9 @@ const {
 const {
   transformApplicationToEmployee,
 } = require('../services/fieldMappingService');
-const sqlHelper = require('../../employees/config/sqlHelper');
 const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
-const s3UploadService = require('../../shared/services/s3UploadService');
+const fileStorageService = require('../../shared/services/fileStorageService');
+const { resolveRequestOrigin } = require('../../shared/utils/fileStorageConfig');
 const { resolveQualificationLabels } = require('../services/fieldMappingService');
 const { applicationQueue } = require('../../shared/jobs/queueManager');
 const Settings = require('../../settings/model/Settings');
@@ -255,11 +255,12 @@ exports.createApplication = async (req, res) => {
           const file = fileMap[`qualification_cert_${i}`];
           if (file) {
             try {
-              const uploadResult = await s3UploadService.uploadToS3(
+              const uploadResult = await fileStorageService.upload(
                 file.buffer,
                 file.originalname,
                 file.mimetype,
-                'hrms/certificates'
+                'hrms/certificates',
+                { origin: resolveRequestOrigin(req) }
               );
               applicationData.qualifications[i].certificateUrl = uploadResult;
             } catch (err) {
@@ -542,17 +543,17 @@ exports.updateApplication = async (req, res) => {
 
           try {
             // Upload new
-            const uploadResult = await s3UploadService.uploadToS3(
+            const uploadResult = await fileStorageService.upload(
               file.buffer,
               file.originalname,
               file.mimetype,
-              'hrms/certificates'
+              'hrms/certificates',
+              { origin: resolveRequestOrigin(req) }
             );
 
             // Delete old if exists
             if (oldUrl) {
-              // We perform delete asynchronously or await it. Await is safer.
-              await s3UploadService.deleteFromS3(oldUrl).catch(err => console.error('Failed to delete old cert:', err));
+              await fileStorageService.deleteFile(oldUrl).catch(err => console.error('Failed to delete old cert:', err));
             }
 
             applicationData.qualifications[i].certificateUrl = uploadResult;
@@ -810,7 +811,7 @@ const verifySingleApplicationInternal = async (applicationId, approver) => {
     verifiedAt: new Date(),
   };
 
-  const results = { mongodb: false, mssql: false };
+  const results = { mongodb: false };
   let leaveInitialization = null;
   let createdEmployee = null;
 
@@ -917,20 +918,6 @@ const verifySingleApplicationInternal = async (applicationId, approver) => {
     throw new Error(`Failed to create employee record: ${mongoError.message}`);
   }
 
-  // Create in MSSQL (OPTIONAL)
-  const { isHRMSConnected, employeeExistsMSSQL, createEmployeeMSSQL } = sqlHelper;
-  if (isHRMSConnected && isHRMSConnected()) {
-    try {
-      const existsInMSSQL = await employeeExistsMSSQL(employeeData.emp_no);
-      if (!existsInMSSQL) {
-        await createEmployeeMSSQL(employeeData);
-        results.mssql = true;
-      }
-    } catch (mssqlError) {
-      console.error(`[VerifyApplication] MSSQL error:`, mssqlError.message);
-    }
-  }
-
   // Send credentials
   let notificationResults = null;
   try {
@@ -1028,12 +1015,6 @@ const approveSalaryInternal = async (applicationId, salaryData, approver) => {
     if (deductAbsent !== undefined) employee.deductAbsent = deductAbsent;
 
     await employee.save();
-
-    // Sync to MSSQL if needed (Salary update)
-    const { isHRMSConnected, updateEmployeeMSSQL } = sqlHelper;
-    if (isHRMSConnected && isHRMSConnected()) {
-      await updateEmployeeMSSQL(employee.emp_no, employee.toObject()).catch(e => console.error('MSSQL update failed:', e.message));
-    }
   }
 
   // Log History
@@ -1371,16 +1352,6 @@ exports.rejectApplication = async (req, res) => {
       if (employee) {
         await employee.deleteOne();
         console.log(`[rejectApplication] Deleted employee record for ${application.emp_no} (application rejected after ${application.status})`);
-
-        // Also remove from MSSQL if connected
-        const { isHRMSConnected, deleteEmployeeMSSQL } = sqlHelper;
-        if (isHRMSConnected && isHRMSConnected() && typeof deleteEmployeeMSSQL === 'function') {
-          try {
-            await deleteEmployeeMSSQL(application.emp_no);
-          } catch (mssqlErr) {
-            console.error(`[rejectApplication] MSSQL delete failed for ${application.emp_no}:`, mssqlErr.message);
-          }
-        }
       }
     }
 

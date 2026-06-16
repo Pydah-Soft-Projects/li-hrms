@@ -269,7 +269,7 @@ export default function EmployeeBirthdaysPage() {
     }
     setError(null);
     try {
-      const response = await api.getBirthdaysSummary({ cache: 'no-store' });
+      const response = await api.getBirthdaysSummary(undefined, { cache: 'no-store' });
       if (response?.success) {
         const list = Array.isArray(response.data) ? response.data : [];
         setEmployees(list);

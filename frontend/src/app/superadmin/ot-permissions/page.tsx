@@ -921,7 +921,7 @@ export default function OTAndPermissionsPage() {
   const loadReferenceData = async () => {
     try {
       const [employeesRes, shiftsRes] = await Promise.all([
-        !isEmployee ? api.getEmployees({ is_active: true, page: 1, limit: 10000 }) : Promise.resolve({ success: true, data: [] }),
+        !isEmployee ? api.getEmployeesSummary({ is_active: true, page: 1, limit: 100 }) : Promise.resolve({ success: true, data: [] }),
         api.getShifts(),
       ]);
 

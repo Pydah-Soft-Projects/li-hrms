@@ -446,7 +446,7 @@ export default function AssetManagementPage() {
           metadataPromise,
           api.getAssets(),
           api.getAssetAssignments(),
-          api.getEmployees({ includeLeft: false, limit: 500, page: 1 }),
+          api.getEmployeesSummary({ includeLeft: false, limit: 500, page: 1 }),
           myAssignmentsPromise,
         ]);
 

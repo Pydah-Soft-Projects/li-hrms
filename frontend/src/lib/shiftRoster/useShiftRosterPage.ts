@@ -200,7 +200,7 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
       const rosterParams = buildRosterApiParams(listQuery);
 
       const [empRes, rosterRes] = await Promise.all([
-        api.getEmployees(empParams) as Promise<{
+        api.getEmployeesSummary(empParams) as Promise<{
           data: Employee[];
           pagination?: { totalPages: number; total: number };
         }>,
@@ -762,10 +762,25 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
         ? divisions.find((d) => d._id === selectedDivision)?.name || 'Division'
         : 'All';
       const deptName = selectedDept ? departments.find((d) => d._id === selectedDept)?.name || 'Dept' : 'All';
-      const exportQuery: RosterListQuery = { ...listQuery, page: 1, limit: 10000 };
+      const exportEmpParams = buildEmployeeListParams({ ...listQuery, page: 1, limit: 500 });
       const [allEmpsRes, allRosterRes, xlsxMod] = await Promise.all([
-        api.getEmployees(buildEmployeeListParams(exportQuery)),
-        api.getRoster(month, buildRosterApiParams(exportQuery, { paginate: false })),
+        (async () => {
+          const all: Employee[] = [];
+          let exportPage = 1;
+          let exportTotalPages = 1;
+          do {
+            const res = (await api.getEmployeesSummary({
+              ...exportEmpParams,
+              page: exportPage,
+              limit: 500,
+            })) as { data?: Employee[]; pagination?: { totalPages: number } };
+            if (res.data?.length) all.push(...res.data);
+            exportTotalPages = res.pagination?.totalPages || 1;
+            exportPage += 1;
+          } while (exportPage <= exportTotalPages);
+          return { data: all };
+        })(),
+        api.getRoster(month, buildRosterApiParams({ ...listQuery, page: 1, limit: 500 }, { paginate: false })),
         import('xlsx'),
       ]);
       const XLSX: typeof import('xlsx') = (xlsxMod as { default?: typeof import('xlsx') }).default ?? xlsxMod;

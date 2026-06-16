@@ -2,6 +2,22 @@
 
 import React from 'react';
 import { ShieldCheck, Plus, Trash2, ArrowRight, UserCheck, LucideIcon } from 'lucide-react';
+import {
+  SettingsOutlineButton,
+  SettingsToggleRow,
+} from '@/components/settings/SettingsPageShell';
+import {
+  settingsFieldHelpClass,
+  settingsInputClass,
+  settingsInputStyle,
+  settingsLedgerBorder,
+  settingsSectionTitleClass,
+  settingsThemeAccentStyle,
+  settingsThemeInkStyle,
+  settingsThemeSoftStyle,
+  settingsToggleThumbClass,
+  settingsToggleTrackClass,
+} from '@/lib/settingsUi';
 
 export interface WorkflowStep {
     stepOrder: number;
@@ -99,58 +115,76 @@ const WorkflowManager = ({
     };
 
     return (
-        <div className="space-y-8 animate-in fade-in zoom-in-95 duration-300">
-            <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-gray-800">
+        <div className="space-y-6">
+            <div className="flex items-center justify-between border-b pb-4" style={settingsLedgerBorder}>
                 <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
+                    <div
+                        className="flex h-10 w-10 items-center justify-center"
+                        style={{ ...settingsLedgerBorder, ...settingsThemeSoftStyle, ...settingsThemeAccentStyle }}
+                    >
                         <Icon className="h-5 w-5" />
                     </div>
                     <div>
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-widest">{title}</h3>
-                        <p className="text-xs text-gray-500">{description}</p>
+                        <h3 className={settingsSectionTitleClass}>{title}</h3>
+                        <p className={settingsFieldHelpClass}>{description}</p>
                     </div>
                 </div>
             </div>
 
             <div className="space-y-4">
-                {/* Visual Progression Path */}
-                <div className="flex flex-wrap items-center gap-3 mb-8 overflow-x-auto pb-2 scrollbar-none">
-                    <div className="px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-[10px] font-bold text-gray-400 uppercase whitespace-nowrap">Employee Application</div>
-                    <ArrowRight className="h-3 w-3 text-gray-300 shrink-0" />
+                <div className="mb-6 flex flex-wrap items-center gap-3 overflow-x-auto pb-2 scrollbar-none">
+                    <div className="whitespace-nowrap border px-3 py-1.5 text-[10px] font-semibold uppercase text-stone-400" style={settingsLedgerBorder}>
+                        Employee Application
+                    </div>
+                    <ArrowRight className="h-3 w-3 shrink-0 text-stone-300" />
                     {steps.map((step, idx) => (
                         <React.Fragment key={idx}>
-                            <div className="px-3 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/30 text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase flex items-center gap-2 whitespace-nowrap">
+                            <div
+                                className="flex items-center gap-2 whitespace-nowrap border px-3 py-1.5 text-[10px] font-semibold uppercase"
+                                style={{ ...settingsLedgerBorder, ...settingsThemeSoftStyle, ...settingsThemeInkStyle }}
+                            >
                                 {step.stepName || `Level ${step.stepOrder}`}
                             </div>
-                            <ArrowRight className="h-3 w-3 text-gray-300 shrink-0" />
+                            <ArrowRight className="h-3 w-3 shrink-0 text-stone-300" />
                         </React.Fragment>
                     ))}
-                    <div className="px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase whitespace-nowrap">Final Approval</div>
+                    <div className="whitespace-nowrap border px-3 py-1.5 text-[10px] font-semibold uppercase text-emerald-700 dark:text-emerald-400" style={settingsLedgerBorder}>
+                        Final Approval
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4">
                     {steps.map((step, idx) => (
-                        <div key={idx} className="flex items-center gap-6 p-5 rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm relative group">
-                            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400 font-bold">
+                        <div
+                            key={idx}
+                            className="group relative flex items-center gap-6 border p-4 sm:p-5"
+                            style={settingsLedgerBorder}
+                        >
+                            <div
+                                className="flex h-10 w-10 shrink-0 items-center justify-center font-bold"
+                                style={{ ...settingsLedgerBorder, ...settingsThemeSoftStyle, ...settingsThemeAccentStyle }}
+                            >
                                 {step.stepOrder}
                             </div>
-                            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-8">
-                                <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 uppercase font-bold tracking-tighter">Step Label</label>
+                            <div className="grid flex-1 grid-cols-1 gap-6 md:grid-cols-2">
+                                <div className="space-y-2">
+                                    <label className={settingsSectionTitleClass}>Step Label</label>
                                     <input
                                         type="text"
                                         value={step.stepName}
                                         onChange={(e) => updateStep(idx, 'stepName', e.target.value)}
-                                        className="w-full bg-transparent border-b border-gray-100 dark:border-gray-800 py-1 text-sm outline-none font-medium dark:text-white focus:border-purple-500 transition-colors"
+                                        className={settingsInputClass()}
+                                        style={settingsInputStyle()}
                                         placeholder="e.g. HOD Approval"
                                     />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 uppercase font-bold tracking-tighter">Approver Role</label>
+                                <div className="space-y-2">
+                                    <label className={settingsSectionTitleClass}>Approver Role</label>
                                     <select
                                         value={step.approverRole}
                                         onChange={(e) => updateStep(idx, 'approverRole', e.target.value)}
-                                        className="w-full bg-transparent border-b border-gray-100 dark:border-gray-800 py-1 text-sm outline-none font-bold text-purple-600 dark:text-purple-400 cursor-pointer"
+                                        className={settingsInputClass()}
+                                        style={settingsInputStyle()}
                                     >
                                         <option value="reporting_manager">Reporting Manager</option>
                                         <option value="manager">Division Manager</option>
@@ -159,82 +193,76 @@ const WorkflowManager = ({
                                         <option value="super_admin">Admin</option>
                                     </select>
                                     {step.approverRole === 'reporting_manager' && (
-                                        <p className="text-[9px] text-gray-400 mt-1 italic leading-tight">* Falls back to HOD if no manager is assigned</p>
+                                        <p className={settingsFieldHelpClass}>* Falls back to HOD if no manager is assigned</p>
                                     )}
                                 </div>
                                 {isResignationWorkflow && (
-                                    <div className="flex flex-col justify-center gap-1">
-                                        <label className="text-[10px] text-gray-400 uppercase font-bold tracking-tighter">Can Edit LWD</label>
+                                    <div className="flex flex-col justify-center gap-2">
+                                        <label className={settingsSectionTitleClass}>Can Edit LWD</label>
                                         <div className="flex items-center gap-2">
                                             <button
                                                 type="button"
                                                 onClick={() => updateStep(idx, 'canEditLWD', !step.canEditLWD)}
-                                                className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${step.canEditLWD ? 'bg-purple-600' : 'bg-gray-200 dark:bg-gray-700'}`}
+                                                className={settingsToggleTrackClass(!!step.canEditLWD)}
                                             >
-                                                <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${step.canEditLWD ? 'translate-x-5' : 'translate-x-1'}`} />
+                                                <span className={settingsToggleThumbClass(!!step.canEditLWD)} />
                                             </button>
-                                            <span className="text-[10px] font-medium text-gray-500 uppercase">{step.canEditLWD ? 'Yes' : 'No'}</span>
+                                            <span className="text-[10px] font-medium uppercase text-stone-500">{step.canEditLWD ? 'Yes' : 'No'}</span>
                                         </div>
                                     </div>
                                 )}
                             </div>
                             <button
+                                type="button"
                                 onClick={() => removeStep(idx)}
-                                className="p-2 text-gray-300 hover:text-red-500 transition-colors"
+                                className="p-2 text-stone-300 transition-colors hover:text-rose-500"
                             >
                                 <Trash2 className="h-5 w-5" />
                             </button>
                         </div>
                     ))}
-                    <button
-                        onClick={addStep}
-                        className="flex items-center justify-center gap-2 text-xs font-bold text-gray-400 hover:text-purple-600 py-6 border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-3xl transition-all hover:bg-purple-50/10"
-                    >
+                    <SettingsOutlineButton onClick={addStep} className="w-full justify-center py-4">
                         <Plus className="h-4 w-4" /> {addStepLabel}
-                    </button>
+                    </SettingsOutlineButton>
                 </div>
 
-                {/* Allow higher authority to approve lower levels */}
-                <div className="flex items-center justify-between p-5 rounded-2xl bg-gray-50/50 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-800">
-                    <div>
-                        <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Allow higher authority to approve lower levels</h4>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">When ON, approvers later in the chain (e.g. HR) can approve or reject even when the request is still at an earlier step (e.g. waiting for HOD).</p>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={() => update('allowHigherAuthorityToApproveLowerLevels', !(workflow?.allowHigherAuthorityToApproveLowerLevels ?? false))}
-                        className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${(workflow?.allowHigherAuthorityToApproveLowerLevels ?? false) ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-700'}`}
-                    >
-                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${(workflow?.allowHigherAuthorityToApproveLowerLevels ?? false) ? 'translate-x-6' : 'translate-x-1'}`} />
-                    </button>
-                </div>
+                <SettingsToggleRow
+                    id="workflow-higher-authority"
+                    label="Allow higher authority to approve lower levels"
+                    description="When ON, approvers later in the chain (e.g. HR) can approve or reject even when the request is still at an earlier step (e.g. waiting for HOD)."
+                    checked={workflow?.allowHigherAuthorityToApproveLowerLevels ?? false}
+                    onChange={(next) => update('allowHigherAuthorityToApproveLowerLevels', next)}
+                />
 
-                {/* Final Authority Summary Card */}
-                <div className="mt-8 p-6 rounded-3xl bg-gray-50/50 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-800">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="mt-4 border p-4 sm:p-6" style={settingsLedgerBorder}>
+                    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
                         <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+                            <div
+                                className="flex h-10 w-10 items-center justify-center text-emerald-600 dark:text-emerald-400"
+                                style={{ ...settingsLedgerBorder, backgroundColor: 'rgba(16,185,129,0.08)' }}
+                            >
                                 <UserCheck className="h-5 w-5" />
                             </div>
                             <div>
-                                <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Final Authority</h4>
-                                <p className="text-xs font-black text-gray-900 dark:text-white uppercase transition-all">
+                                <h4 className={settingsSectionTitleClass}>Final Authority</h4>
+                                <p className="text-xs font-semibold uppercase text-stone-900 dark:text-stone-100">
                                     {steps.length > 0
                                         ? formatRoleName(steps[steps.length - 1].approverRole)
                                         : 'Admin'}
                                 </p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-3 bg-white dark:bg-gray-800 p-2 sm:p-3 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase whitespace-nowrap">Any HR can approve</span>
+                        <div className="flex items-center gap-3 border p-2 sm:p-3" style={settingsLedgerBorder}>
+                            <span className="whitespace-nowrap text-[10px] font-semibold uppercase text-stone-400">Any HR can approve</span>
                             <button
+                                type="button"
                                 onClick={() => update('finalAuthority', {
                                     role: workflow?.finalAuthority?.role || 'admin',
                                     anyHRCanApprove: !workflow?.finalAuthority?.anyHRCanApprove
                                 })}
-                                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${workflow?.finalAuthority?.anyHRCanApprove ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-700'}`}
+                                className={settingsToggleTrackClass(!!workflow?.finalAuthority?.anyHRCanApprove)}
                             >
-                                <div className={`h-3 w-3 bg-white rounded-full transition-transform ${workflow?.finalAuthority?.anyHRCanApprove ? 'translate-x-6' : 'translate-x-1'}`} />
+                                <span className={settingsToggleThumbClass(!!workflow?.finalAuthority?.anyHRCanApprove)} />
                             </button>
                         </div>
                     </div>

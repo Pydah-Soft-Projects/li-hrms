@@ -1,55 +1,133 @@
 import Swal, { type SweetAlertOptions } from 'sweetalert2';
 import { getCachedCompanyAccentColor } from '@/lib/companyProfile';
+import { PAYSLIP_ACCENT_FALLBACK, payslipAccentCssVars } from '@/lib/payslipTheme';
 
-const CONFIRM_BTN =
-  'swal2-confirm rounded-xl px-6 py-2.5 text-white font-semibold shadow-sm transition-all duration-200 focus:ring-2 focus:ring-offset-2';
-const CANCEL_BTN =
-  'swal2-cancel rounded-xl px-6 py-2.5 bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-200 font-semibold border border-gray-200 dark:border-slate-600 shadow-sm hover:bg-gray-50 dark:hover:bg-slate-600 transition-all duration-200 focus:ring-2 focus:ring-gray-300 focus:ring-offset-2 ml-3';
+export type LedgerSwalConfirmVariant = 'primary' | 'danger' | 'success';
+
+export type LedgerSwalSize = 'sm' | 'md' | 'lg';
+
+export type LedgerSwalOptions = SweetAlertOptions & {
+  /** Primary (accent), danger (rose delete), or success (emerald) */
+  confirmVariant?: LedgerSwalConfirmVariant;
+  /** sm = confirm toasts · md = default · lg = tables / wide content */
+  size?: LedgerSwalSize;
+};
+
+const LEDGER_CONFIRM_BASE =
+  'swal2-confirm ledger-swal-btn inline-flex items-center justify-center gap-1.5 uppercase tracking-wider';
+const LEDGER_CANCEL_BASE =
+  'swal2-cancel ledger-swal-btn ledger-swal-btn-outline inline-flex items-center justify-center gap-1.5 uppercase tracking-wider ml-2';
 
 export const customSwal = Swal.mixin({
   customClass: {
-    confirmButton: CONFIRM_BTN,
-    cancelButton: CANCEL_BTN,
-    popup: 'rounded-3xl border-0 shadow-2xl p-8 bg-white dark:bg-[#1E293B]',
-    title: 'text-2xl font-bold text-gray-900 dark:text-white',
-    htmlContainer: 'text-gray-600 dark:text-gray-300 font-medium leading-relaxed',
-    icon: 'border-0 scale-110 mb-2',
+    container: 'ledger-swal-container',
+    popup: 'ledger-swal-popup',
+    title: 'ledger-swal-title',
+    htmlContainer: 'ledger-swal-html',
+    actions: 'ledger-swal-actions',
+    confirmButton: LEDGER_CONFIRM_BASE,
+    cancelButton: LEDGER_CANCEL_BASE,
+    icon: 'ledger-swal-icon',
   },
   buttonsStyling: false,
+  backdrop: 'ledger-swal-backdrop',
   showClass: {
-    popup: 'animate__animated animate__fadeInDown animate__faster',
+    popup: 'ledger-swal-show',
   },
   hideClass: {
-    popup: 'animate__animated animate__fadeOutUp animate__faster',
+    popup: 'ledger-swal-hide',
   },
 });
 
-function applyCompanyAccentToPopup(popup: HTMLElement, accent: string, icon?: SweetAlertOptions['icon']) {
+function resolveConfirmVariant(
+  options: LedgerSwalOptions,
+): LedgerSwalConfirmVariant {
+  if (options.confirmVariant) return options.confirmVariant;
+  if (options.icon === 'error') return 'danger';
+  if (options.icon === 'success') return 'success';
+  return 'primary';
+}
+
+function applyLedgerPopupStyles(popup: HTMLElement, options: LedgerSwalOptions) {
+  const accentHex = getCachedCompanyAccentColor() || PAYSLIP_ACCENT_FALLBACK;
+  const vars = payslipAccentCssVars(accentHex);
+  for (const [key, value] of Object.entries(vars)) {
+    popup.style.setProperty(key, value);
+  }
+
+  const header = popup.querySelector<HTMLElement>('.swal2-header');
+  if (header) {
+    header.classList.add('ledger-swal-header');
+    header.style.borderBottom = '1px solid var(--ps-accent-border)';
+    header.style.backgroundImage =
+      'linear-gradient(180deg, var(--ps-accent-soft) 0%, transparent 100%)';
+  }
+
+  const actions = popup.querySelector<HTMLElement>('.swal2-actions');
+  if (actions) {
+    actions.style.borderTop = '1px solid var(--ps-accent-border)';
+  }
+
   const confirm = popup.querySelector<HTMLElement>('.swal2-confirm');
   if (confirm) {
-    confirm.style.backgroundColor = accent;
-    confirm.style.borderColor = accent;
-    confirm.style.setProperty('--tw-ring-color', accent);
+    confirm.classList.remove(
+      'ledger-swal-btn-primary',
+      'ledger-swal-btn-danger',
+      'ledger-swal-btn-success',
+    );
+    const variant = resolveConfirmVariant(options);
+    confirm.classList.add(
+      variant === 'danger'
+        ? 'ledger-swal-btn-danger'
+        : variant === 'success'
+          ? 'ledger-swal-btn-success'
+          : 'ledger-swal-btn-primary',
+    );
   }
+
+  popup.classList.remove('ledger-swal-popup-sm', 'ledger-swal-popup-md', 'ledger-swal-popup-lg');
+  const size = options.size ?? (options.html ? 'lg' : 'sm');
+  popup.classList.add(
+    size === 'lg' ? 'ledger-swal-popup-lg' : size === 'md' ? 'ledger-swal-popup-md' : 'ledger-swal-popup-sm',
+  );
+
   const iconEl = popup.querySelector<HTMLElement>('.swal2-icon');
-  if (iconEl && icon && icon !== 'error' && icon !== 'warning') {
-    iconEl.style.color = accent;
-    iconEl.style.borderColor = accent;
+  if (iconEl && options.icon) {
+    if (size === 'lg') {
+      iconEl.style.transform = 'scale(0.72)';
+      iconEl.style.margin = '0.25rem auto 0 !important';
+    }
+    if (options.icon === 'warning') {
+      iconEl.style.color = '#d97706';
+      iconEl.style.borderColor = 'rgba(217, 119, 6, 0.35)';
+    } else if (options.icon === 'error') {
+      iconEl.style.color = '#e11d48';
+      iconEl.style.borderColor = 'rgba(225, 29, 72, 0.35)';
+    } else if (options.icon === 'success') {
+      iconEl.style.color = '#059669';
+      iconEl.style.borderColor = 'rgba(5, 150, 105, 0.35)';
+    } else {
+      iconEl.style.color = 'var(--ps-accent)';
+      iconEl.style.borderColor = 'var(--ps-accent-border)';
+    }
   }
 }
 
-function fireWithAccent(options: SweetAlertOptions) {
-  const accent = getCachedCompanyAccentColor();
-  const icon = options.icon;
-  const iconColor =
-    options.iconColor ??
-    (icon === 'error' ? '#ef4444' : icon === 'warning' ? '#f59e0b' : accent);
+function resolveIconColor(options: LedgerSwalOptions): string | undefined {
+  if (options.iconColor) return options.iconColor as string;
+  if (options.icon === 'error') return '#e11d48';
+  if (options.icon === 'warning') return '#d97706';
+  if (options.icon === 'success') return '#059669';
+  return getCachedCompanyAccentColor() || PAYSLIP_ACCENT_FALLBACK;
+}
 
+/** Ledger-styled SweetAlert — use instead of raw `Swal.fire` for app-wide consistency. */
+export function ledgerSwalFire(options: LedgerSwalOptions) {
   return customSwal.fire({
     ...options,
-    iconColor,
+    iconColor: resolveIconColor(options),
     didOpen: (popup) => {
-      applyCompanyAccentToPopup(popup, accent, icon);
+      applyLedgerPopupStyles(popup, options);
       if (typeof options.didOpen === 'function') {
         options.didOpen(popup);
       }
@@ -58,43 +136,49 @@ function fireWithAccent(options: SweetAlertOptions) {
 }
 
 export const alertSuccess = (title: string, text?: string) => {
-  return fireWithAccent({
+  return ledgerSwalFire({
     icon: 'success',
     title,
     text,
-    confirmButtonText: 'Got it',
+    confirmButtonText: 'Done',
+    confirmVariant: 'success',
+    size: 'sm',
   });
 };
 
 export const alertError = (title: string, text?: string) => {
-  return fireWithAccent({
+  return ledgerSwalFire({
     icon: 'error',
     title,
     text,
     confirmButtonText: 'Close',
+    confirmVariant: 'danger',
+    size: 'sm',
   });
 };
 
 export const alertConfirm = (title: string, text: string, confirmText: string = 'Confirm') => {
-  return fireWithAccent({
+  return ledgerSwalFire({
     icon: 'question',
     title,
     text,
     showCancelButton: true,
     confirmButtonText: confirmText,
     cancelButtonText: 'Cancel',
+    confirmVariant: 'primary',
+    size: 'sm',
   });
 };
 
 export const alertLoading = (title: string, text?: string) => {
-  const accent = getCachedCompanyAccentColor();
-  return fireWithAccent({
+  return ledgerSwalFire({
     title,
     text,
     allowOutsideClick: false,
     showConfirmButton: false,
+    size: 'sm',
     didOpen: (popup) => {
-      applyCompanyAccentToPopup(popup, accent);
+      applyLedgerPopupStyles(popup, { size: 'sm' });
       Swal.showLoading();
     },
   });

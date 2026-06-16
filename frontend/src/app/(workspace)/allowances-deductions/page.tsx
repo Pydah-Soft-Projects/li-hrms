@@ -18,6 +18,38 @@ import Swal from 'sweetalert2';
 import Spinner from '@/components/Spinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { canManagePayRegister } from '@/lib/permissions'; // Reuse Pay Register permission for this payroll setting
+import {
+  LoansPageShell,
+  LoansPageHeader,
+  LoansTabBar,
+  LoansToolbar,
+  LoansContentPanel,
+  loansPrimaryButtonClass,
+  loansPrimaryButtonStyle,
+  loansTableHeadClass,
+  loansTableHeadStyle,
+} from '@/components/loans/LoansPageShell';
+import {
+  LoanDetailDialog,
+  LoanDetailDialogHeader,
+  LoanDetailDialogBody,
+  LoanDialogFooter,
+  LoanFormLabel,
+  LoanFormPanel,
+  loansFormInputClass,
+  loansFormInputStyle,
+  loansFormSelectClass,
+  loansFormTextareaClass,
+  loansDialogOutlineButtonClass,
+  loansDialogOutlineButtonStyle,
+  loansDialogDangerButtonClass,
+} from '@/components/loans/LoanDetailDialogShell';
+import {
+  ledgerPayComponentBadgeClass,
+  ledgerPayComponentCardClass,
+  ledgerPayComponentStripClass,
+  ledgerStatusBadgeClass,
+} from '@/lib/ledgerUi';
 
 interface Department {
   _id: string;
@@ -599,117 +631,93 @@ export default function AllowancesDeductionsPage() {
     return true;
   });
 
+  const closeFormDialog = () => {
+    setShowCreateDialog(false);
+    setShowEditDialog(false);
+    setSelectedItem(null);
+    resetForm();
+  };
+
+  const allowanceCount = items.filter((i) => i.category === 'allowance').length;
+  const deductionCount = items.filter((i) => i.category === 'deduction').length;
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 pb-10">
-      {/* Sticky Header */}
-      <div className="sticky top-0 sm:top-4 z-40 px-0 sm:px-4 mb-4 sm:mb-8">
-        <div className="w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-none sm:rounded-[2.5rem] border-b sm:border border-slate-200/60 dark:border-slate-800 shadow-lg sm:shadow-2xl shadow-slate-200/50 dark:shadow-none min-h-[4.5rem] flex flex-row items-center justify-between gap-2 px-4 sm:px-8 py-3 sm:py-2">
-          <div className="flex items-center gap-4">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
-              <Wallet className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-lg sm:text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 uppercase tracking-tight">
-                Allowances & Deductions
-              </h1>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                Payroll <span className="h-1 w-1 rounded-full bg-slate-300"></span> Configuration
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto overflow-x-auto hide-scrollbar">
-
-
-            {hasManagePermission && (
-              <button
-                onClick={handleCreate}
-                className="group h-8 sm:h-9 px-3 sm:px-4 rounded-lg sm:rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[9px] sm:text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10 shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Create Component</span>
-                <span className="sm:hidden">Create</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="w-full px-4 sm:px-6">
-
-        {/* Tab Navigation */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6 px-1">
-          <div className="flex w-full md:w-auto items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm shadow-inner">
-            {[
-              { id: 'all', label: 'All', icon: Layers, count: items.length, activeColor: 'slate' },
-              { id: 'allowances', label: 'Allowances', icon: ArrowUp, count: items.filter(i => i.category === 'allowance').length, activeColor: 'green' },
-              { id: 'deductions', label: 'Deductions', icon: ArrowDown, count: items.filter(i => i.category === 'deduction').length, activeColor: 'red' }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`group relative flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-1.5 sm:px-6 py-2 rounded-lg text-[10px] sm:text-xs font-bold transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
-                  ? `bg-white dark:bg-slate-700 text-${tab.activeColor === 'slate' ? 'slate-900' : tab.activeColor + '-600'} dark:text-${tab.activeColor === 'slate' ? 'white' : tab.activeColor + '-400'} shadow-sm ring-1 ring-slate-200/50 dark:ring-0`
-                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
-              >
-                <tab.icon className={`w-3.5 h-3.5 ${activeTab === tab.id
-                  ? `text-${tab.activeColor === 'slate' ? 'slate-900' : tab.activeColor + '-600'} dark:text-${tab.activeColor === 'slate' ? 'white' : tab.activeColor + '-400'}`
-                  : 'text-slate-400 group-hover:text-slate-600'}`} />
-                <span>{tab.label}</span>
-                {tab.count > 0 && (
-                  <span className={`flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-md text-[10px] font-black ${activeTab === tab.id
-                    ? `bg-${tab.activeColor}-50 text-${tab.activeColor}-600 dark:bg-${tab.activeColor}-900/30 dark:text-${tab.activeColor}-300`
-                    : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                    }`}>
-                    {tab.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {/* View Toggle */}
-          <div className="flex items-center gap-1 bg-slate-100/50 dark:bg-slate-800/50 p-1 rounded-xl border border-slate-200/50 dark:border-slate-700/50 self-start sm:self-center">
+    <LoansPageShell>
+      <LoansPageHeader
+        badge="Payroll configuration"
+        title="Allowances & deductions"
+        subtitle="Manage salary components with global rules and department overrides"
+        action={
+          hasManagePermission ? (
             <button
-              onClick={() => setViewMode('list')}
-              className={`p-2 rounded-lg transition-all ${viewMode === 'list'
-                ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
-                : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-                }`}
-              title="List View"
+              type="button"
+              onClick={handleCreate}
+              className={`flex items-center gap-2 ${loansPrimaryButtonClass()}`}
+              style={loansPrimaryButtonStyle()}
             >
-              <LayoutList className="w-4 h-4" />
+              <Plus className="h-4 w-4" />
+              Create component
             </button>
-            <button
-              onClick={() => setViewMode('card')}
-              className={`p-2 rounded-lg transition-all ${viewMode === 'card'
-                ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
-                : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-                }`}
-              title="Card View"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-          </div>
+          ) : undefined
+        }
+      />
+
+      <LoansTabBar
+        tabs={[
+          { id: 'all', label: 'All', count: items.length },
+          { id: 'allowances', label: 'Allowances', count: allowanceCount },
+          { id: 'deductions', label: 'Deductions', count: deductionCount },
+        ]}
+        activeTab={activeTab}
+        onChange={(id) => setActiveTab(id as 'all' | 'allowances' | 'deductions')}
+      />
+
+      <LoansToolbar>
+        <div className="flex items-center justify-end gap-1">
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className="rounded-md border p-2 transition"
+            style={
+              viewMode === 'list'
+                ? { borderColor: 'var(--ps-accent-border)', backgroundColor: 'var(--ps-accent-soft)', color: 'var(--ps-accent)' }
+                : { borderColor: 'var(--ps-accent-border)', color: 'rgb(120 113 108)' }
+            }
+            title="List view"
+          >
+            <LayoutList className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('card')}
+            className="rounded-md border p-2 transition"
+            style={
+              viewMode === 'card'
+                ? { borderColor: 'var(--ps-accent-border)', backgroundColor: 'var(--ps-accent-soft)', color: 'var(--ps-accent)' }
+                : { borderColor: 'var(--ps-accent-border)', color: 'rgb(120 113 108)' }
+            }
+            title="Card view"
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </button>
         </div>
+      </LoansToolbar>
 
         {/* Items Grid (Card-based) */}
         {/* Items Grid/List */}
         {viewMode === 'list' ? (
-          /* List View (Table) */
-          <div className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="overflow-x-auto scrollbar-hide">
+          <LoansContentPanel>
+            <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-slate-800">
-                    <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Name</th>
-                    <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Type</th>
-                    <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Value (Global)</th>
-                    <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Range</th>
-                    <th className="px-6 py-4 text-center text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Overrides</th>
-                    <th className="px-6 py-4 text-center text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Status</th>
-                    {hasManagePermission && <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Actions</th>}
+                  <tr className="border-b" style={{ borderColor: 'var(--ps-accent-border)' }}>
+                    <th className={`px-6 py-4 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Name</th>
+                    <th className={`px-6 py-4 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Type</th>
+                    <th className={`px-6 py-4 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Value (global)</th>
+                    <th className={`px-6 py-4 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Range</th>
+                    <th className={`px-6 py-4 text-center ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Overrides</th>
+                    <th className={`px-6 py-4 text-center ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Status</th>
+                    {hasManagePermission && <th className={`px-6 py-4 text-right ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -766,11 +774,8 @@ export default function AllowancesDeductionsPage() {
                           <div>
                             <p className="text-sm font-bold text-slate-900 dark:text-white">{item.name}</p>
                             <div className="flex items-center gap-2 mt-1">
-                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${item.category === 'allowance'
-                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                }`}>
-                                {item.category}
+                              <span className={ledgerPayComponentBadgeClass(item.category)}>
+                                {item.category === 'allowance' ? 'Allowance' : 'Deduction'}
                               </span>
                               {item.description && (
                                 <span className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[200px]" title={item.description}>
@@ -891,9 +896,10 @@ export default function AllowancesDeductionsPage() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </LoansContentPanel>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <LoansContentPanel>
+          <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-3 md:p-6">
             {loading ? (
               [...Array(6)].map((_, i) => (
                 <div key={i} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 animate-pulse">
@@ -923,14 +929,11 @@ export default function AllowancesDeductionsPage() {
                 <div
                   key={item._id}
                   onClick={() => hasManagePermission && handleEdit(item)}
-                  className={`group relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-4 sm:p-5 shadow-sm transition-all dark:border-slate-800 dark:bg-slate-900
-                  ${hasManagePermission ? 'cursor-pointer hover:shadow-md hover:border-blue-200/60 dark:hover:border-blue-900/50' : 'cursor-default'}`}
+                  className={`group relative border p-4 transition-all sm:p-5 ${ledgerPayComponentCardClass(item.category)} ${hasManagePermission ? 'cursor-pointer hover:opacity-95' : 'cursor-default'}`}
                 >
-                  {/* Status Strip */}
-                  <div className={`absolute top-0 left-0 w-1 h-full rounded-l-2xl transition-all group-hover:w-1.5 ${item.category === 'allowance'
-                    ? 'bg-emerald-500/80'
-                    : 'bg-rose-500/80'
-                    }`}></div>
+                  <div
+                    className={`absolute left-0 top-0 h-full w-1 ${ledgerPayComponentStripClass(item.category)}`}
+                  />
 
                   <div className="mb-3 flex items-start justify-between">
                     <div className="flex-1">
@@ -940,26 +943,18 @@ export default function AllowancesDeductionsPage() {
                       )}
                     </div>
                     <div className="ml-2 flex flex-col gap-1.5">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${item.category === 'allowance'
-                          ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
-                          : 'bg-red-100 text-red-700 shadow-sm dark:bg-red-900/30 dark:text-red-400'
-                          }`}
-                      >
+                      <span className={ledgerPayComponentBadgeClass(item.category)}>
                         {item.category === 'allowance' ? 'Allowance' : 'Deduction'}
                       </span>
                       {!item.isActive && (
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                          Inactive
-                        </span>
+                        <span className={ledgerStatusBadgeClass('pending')}>Inactive</span>
                       )}
                     </div>
                   </div>
 
-                  {/* Global Rule */}
-                  <div className="mb-3 rounded-xl border border-slate-200 bg-linear-to-br from-slate-50 to-slate-100/50 p-3 dark:border-slate-700 dark:from-slate-900/50 dark:to-slate-800/50">
-                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                      Global Rule
+                  <LoanFormPanel soft className="mb-3 !p-3">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--ps-accent-ink)' }}>
+                      Global rule
                     </p>
                     <div className="space-y-1">
                       {item.globalRule.type === 'fixed' ? (
@@ -1007,13 +1002,12 @@ export default function AllowancesDeductionsPage() {
                         </div>
                       )}
                     </div>
-                  </div>
+                  </LoanFormPanel>
 
-                  {/* Department Rules */}
                   {item.departmentRules && item.departmentRules.length > 0 && (
-                    <div className="mb-3">
-                      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        Department Overrides ({item.departmentRules.length})
+                    <LoanFormPanel soft className="mb-3 !p-3">
+                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--ps-accent-ink)' }}>
+                        Department overrides ({item.departmentRules.length})
                       </p>
                       <div className="space-y-1.5 max-h-24 overflow-y-auto">
                         {item.departmentRules.slice(0, 2).map((rule, idx) => {
@@ -1026,7 +1020,8 @@ export default function AllowancesDeductionsPage() {
                           return (
                             <div
                               key={idx}
-                              className="rounded-lg border border-green-200 bg-linear-to-r from-green-50 to-green-50 p-2 dark:border-green-800 dark:from-green-900/20 dark:to-green-900/20"
+                              className="border p-2"
+                              style={{ borderColor: 'var(--ps-accent-border)', backgroundColor: 'rgba(var(--ps-accent-rgb), 0.03)' }}
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex-1 min-w-0">
@@ -1065,7 +1060,8 @@ export default function AllowancesDeductionsPage() {
                                         e.stopPropagation();
                                         handleEditDeptRule(item, deptId);
                                       }}
-                                      className="rounded-md border border-blue-200 bg-white px-3 py-0.5 text-[9px] font-bold text-blue-600 transition-all hover:bg-blue-50 dark:border-blue-800 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-slate-800"
+                                      className={loansDialogOutlineButtonClass()}
+                                      style={loansDialogOutlineButtonStyle()}
                                       title="Edit this override"
                                     >
                                       Edit
@@ -1075,7 +1071,7 @@ export default function AllowancesDeductionsPage() {
                                         e.stopPropagation();
                                         handleDeleteDeptRule(item._id, deptId, divId);
                                       }}
-                                      className="rounded-md border border-red-200 bg-white px-2 py-0.5 text-[9px] font-bold text-red-600 transition-all hover:bg-red-50 dark:border-red-800 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-slate-800"
+                                      className={loansDialogDangerButtonClass()}
                                       title="Delete this override"
                                     >
                                       Del
@@ -1092,17 +1088,17 @@ export default function AllowancesDeductionsPage() {
                           </p>
                         )}
                       </div>
-                    </div>
+                    </LoanFormPanel>
                   )}
 
-                  {/* Action Buttons */}
-                  <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
+                  <div className="flex flex-wrap gap-2 border-t pt-3" style={{ borderColor: 'var(--ps-accent-border)' }}>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleEdit(item);
                       }}
-                      className="group flex-1 rounded-xl border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-600 transition-all hover:bg-blue-50 hover:shadow-md dark:border-blue-800 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-slate-800"
+                      className={`flex-1 ${loansDialogOutlineButtonClass()}`}
+                      style={loansDialogOutlineButtonStyle()}
                     >
                       Edit
                     </button>
@@ -1111,7 +1107,8 @@ export default function AllowancesDeductionsPage() {
                         e.stopPropagation();
                         handleAddDeptRule(item);
                       }}
-                      className="group flex-1 rounded-xl border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-600 transition-all hover:bg-blue-50 hover:shadow-md dark:border-blue-800 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-slate-800"
+                      className={`flex-1 ${loansDialogOutlineButtonClass()}`}
+                      style={loansDialogOutlineButtonStyle()}
                     >
                       Override
                     </button>
@@ -1120,7 +1117,7 @@ export default function AllowancesDeductionsPage() {
                         e.stopPropagation();
                         handleDelete(item._id);
                       }}
-                      className="rounded-xl border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 transition-all hover:bg-red-50 hover:shadow-md dark:border-red-800 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-slate-800"
+                      className={loansDialogDangerButtonClass()}
                     >
                       Delete
                     </button>
@@ -1129,58 +1126,43 @@ export default function AllowancesDeductionsPage() {
               ))
             )}
           </div>
+          </LoansContentPanel>
         )}
-      </div>
 
-      {/* Create/Edit Dialog */}
-      {
-        (showCreateDialog || showEditDialog) && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div
-              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
-              onClick={() => {
-                setShowCreateDialog(false);
-                setShowEditDialog(false);
-                setSelectedItem(null);
-                resetForm();
-              }}
-            />
-            <div className="relative z-50 w-full max-w-2xl rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-2xl shadow-green-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                    {selectedItem ? 'Edit' : 'Create'} {formData.category === 'allowance' ? 'Allowance' : 'Deduction'}
-                  </h2>
-                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                    {selectedItem ? 'Update the allowance/deduction details' : 'Add a new allowance or deduction to your payroll system'}
-                  </p>
+      {(showCreateDialog || showEditDialog) && (
+        <LoanDetailDialog open onClose={closeFormDialog} maxWidth="max-w-2xl">
+          <LoanDetailDialogHeader
+            badge={selectedItem ? 'Edit' : 'Create'}
+            title={`${selectedItem ? 'Edit' : 'Create'} ${formData.category === 'allowance' ? 'allowance' : 'deduction'}`}
+            subtitle={
+              selectedItem
+                ? 'Update the allowance or deduction details'
+                : 'Add a new salary component to your payroll system'
+            }
+            onClose={closeFormDialog}
+          />
+          <LoanDetailDialogBody>
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2 border-b pb-4" style={{ borderColor: 'var(--ps-accent-border)' }}>
+                  <span className={ledgerPayComponentBadgeClass(formData.category)}>
+                    {formData.category === 'allowance' ? 'Allowance' : 'Deduction'}
+                  </span>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">
+                    {formData.category === 'allowance' ? 'Adds to employee pay' : 'Deducts from employee pay'}
+                  </span>
                 </div>
-                <button
-                  onClick={() => {
-                    setShowCreateDialog(false);
-                    setShowEditDialog(false);
-                    setSelectedItem(null);
-                    resetForm();
-                  }}
-                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
 
-              <div className="max-h-[70vh] space-y-4 overflow-y-auto">
                 {/* Name */}
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  <LoanFormLabel>
                     Name <span className="text-red-500">*</span>
-                  </label>
+                  </LoanFormLabel>
                   <input
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className={loansFormInputClass()}
+                    style={loansFormInputStyle()}
                     placeholder="e.g., House Rent Allowance, PF Contribution"
                   />
                 </div>
@@ -1188,37 +1170,48 @@ export default function AllowancesDeductionsPage() {
                 {/* Category (only for create) */}
                 {!selectedItem && (
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    <LoanFormLabel>
                       Category <span className="text-red-500">*</span>
-                    </label>
+                    </LoanFormLabel>
                     <select
                       value={formData.category}
                       onChange={(e) => setFormData({ ...formData, category: e.target.value as 'allowance' | 'deduction' })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className={loansFormSelectClass()}
+                      style={loansFormInputStyle()}
                     >
-                      <option value="allowance">Allowance</option>
-                      <option value="deduction">Deduction</option>
+                      <option value="allowance">Allowance — adds to pay</option>
+                      <option value="deduction">Deduction — subtracts from pay</option>
                     </select>
+                  </div>
+                )}
+
+                {selectedItem && (
+                  <div className="rounded border px-3 py-2 text-xs text-stone-600 dark:text-stone-400" style={{ borderColor: 'var(--ps-accent-border)' }}>
+                    Category cannot be changed after creation. This item is a{' '}
+                    <span className="font-semibold text-stone-800 dark:text-stone-200">
+                      {formData.category === 'allowance' ? 'allowance' : 'deduction'}
+                    </span>.
                   </div>
                 )}
 
                 {/* Description */}
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Description</label>
+                  <LoanFormLabel>Description</LoanFormLabel>
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     rows={2}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className={loansFormTextareaClass()}
+                    style={loansFormInputStyle()}
                     placeholder="Optional description"
                   />
                 </div>
 
                 {/* Type */}
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  <LoanFormLabel>
                     Calculation Type <span className="text-red-500">*</span>
-                  </label>
+                  </LoanFormLabel>
                   <select
                     value={formData.type}
                     onChange={(e) => {
@@ -1230,7 +1223,8 @@ export default function AllowancesDeductionsPage() {
                         percentage: newType === 'percentage' ? formData.percentage : null,
                       });
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className={loansFormInputClass()}
+                    style={loansFormInputStyle()}
                   >
                     <option value="fixed">Fixed Amount</option>
                     <option value="percentage">Percentage</option>
@@ -1240,16 +1234,17 @@ export default function AllowancesDeductionsPage() {
                 {/* Fixed Amount */}
                 {formData.type === 'fixed' && (
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    <LoanFormLabel>
                       Amount (₹) <span className="text-red-500">*</span>
-                    </label>
+                    </LoanFormLabel>
                     <input
                       type="number"
                       min="0"
                       step="0.01"
                       value={formData.amount ?? ''}
                       onChange={(e) => setFormData({ ...formData, amount: e.target.value ? parseFloat(e.target.value) : null })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className={loansFormInputClass()}
+                      style={loansFormInputStyle()}
                       placeholder="e.g., 2000"
                     />
                   </div>
@@ -1274,9 +1269,9 @@ export default function AllowancesDeductionsPage() {
                 {formData.type === 'percentage' && (
                   <>
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                      <LoanFormLabel>
                         Percentage (%) <span className="text-red-500">*</span>
-                      </label>
+                      </LoanFormLabel>
                       <input
                         type="number"
                         min="0"
@@ -1284,19 +1279,21 @@ export default function AllowancesDeductionsPage() {
                         step="0.01"
                         value={formData.percentage ?? ''}
                         onChange={(e) => setFormData({ ...formData, percentage: e.target.value ? parseFloat(e.target.value) : null })}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        className={loansFormInputClass()}
+                        style={loansFormInputStyle()}
                         placeholder="e.g., 12, 40"
                       />
                     </div>
 
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                      <LoanFormLabel>
                         Percentage Base <span className="text-red-500">*</span>
-                      </label>
+                      </LoanFormLabel>
                       <select
                         value={formData.percentageBase}
                         onChange={(e) => setFormData({ ...formData, percentageBase: e.target.value as 'basic' | 'gross' })}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        className={loansFormSelectClass()}
+                    style={loansFormInputStyle()}
                       >
                         <option value="basic">Basic Salary</option>
                         <option value="gross">Gross Salary</option>
@@ -1308,26 +1305,28 @@ export default function AllowancesDeductionsPage() {
                 {/* Min/Max Amount */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Min Amount (₹)</label>
+                    <LoanFormLabel>Min Amount (₹)</LoanFormLabel>
                     <input
                       type="number"
                       min="0"
                       step="0.01"
                       value={formData.minAmount ?? ''}
                       onChange={(e) => setFormData({ ...formData, minAmount: e.target.value ? parseFloat(e.target.value) : null })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className={loansFormInputClass()}
+                    style={loansFormInputStyle()}
                       placeholder="Optional"
                     />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Max Amount (₹)</label>
+                    <LoanFormLabel>Max Amount (₹)</LoanFormLabel>
                     <input
                       type="number"
                       min="0"
                       step="0.01"
                       value={formData.maxAmount ?? ''}
                       onChange={(e) => setFormData({ ...formData, maxAmount: e.target.value ? parseFloat(e.target.value) : null })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className={loansFormInputClass()}
+                    style={loansFormInputStyle()}
                       placeholder="Optional"
                     />
                   </div>
@@ -1347,78 +1346,48 @@ export default function AllowancesDeductionsPage() {
                 </div>
               </div>
 
-              <div className="flex gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCreateDialog(false);
-                    setShowEditDialog(false);
-                    setSelectedItem(null);
-                    resetForm();
-                  }}
-                  className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  className="flex-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:bg-blue-700 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
-                >
-                  {selectedItem ? 'Update' : 'Create'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      }
-
-      {/* Department Rule Dialog */}
-      {
-        showDeptRuleDialog && selectedItem && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div
-              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
-              onClick={() => {
-                setShowDeptRuleDialog(false);
-                setSelectedItem(null);
-                resetDeptRuleForm();
-              }}
+            <LoanDialogFooter
+              onCancel={closeFormDialog}
+              submitLabel={selectedItem ? 'Update' : 'Create'}
+              submitType="button"
+              onSubmit={handleSave}
             />
-            <div className="relative z-50 w-full max-w-lg rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-2xl shadow-green-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                    {selectedDeptForRule ? 'Edit' : 'Add'} Department Override
-                  </h2>
-                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                    Override global rule for <span className="font-medium text-green-600 dark:text-green-400">{selectedItem.name}</span>
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowDeptRuleDialog(false);
-                    setSelectedItem(null);
-                    resetDeptRuleForm();
-                  }}
-                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+          </LoanDetailDialogBody>
+        </LoanDetailDialog>
+      )}
 
+      {showDeptRuleDialog && selectedItem && (
+        <LoanDetailDialog
+          open
+          onClose={() => {
+            setShowDeptRuleDialog(false);
+            setSelectedDeptForRule('');
+            resetDeptRuleForm();
+          }}
+          maxWidth="max-w-lg"
+        >
+          <LoanDetailDialogHeader
+            badge="Department override"
+            title={`${selectedDeptForRule ? 'Edit' : 'Add'} override`}
+            subtitle={`Override global rule for ${selectedItem.name}`}
+            onClose={() => {
+              setShowDeptRuleDialog(false);
+              setSelectedDeptForRule('');
+              resetDeptRuleForm();
+            }}
+          />
+          <LoanDetailDialogBody>
               <div className="space-y-4">
                 {/* Division (Optional) */}
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  <LoanFormLabel>
                     Division <span className="text-slate-400">(Optional)</span>
-                  </label>
+                  </LoanFormLabel>
                   <select
                     value={deptRuleForm.divisionId}
                     onChange={(e) => setDeptRuleForm({ ...deptRuleForm, divisionId: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className={loansFormSelectClass()}
+                    style={loansFormInputStyle()}
                   >
                     <option value="">All Divisions (Department-wide)</option>
                     {divisions
@@ -1436,14 +1405,15 @@ export default function AllowancesDeductionsPage() {
 
                 {/* Department Selection */}
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  <LoanFormLabel>
                     Department <span className="text-red-500">*</span>
-                  </label>
+                  </LoanFormLabel>
                   <select
                     value={deptRuleForm.departmentId}
                     onChange={(e) => setDeptRuleForm({ ...deptRuleForm, departmentId: e.target.value })}
                     disabled={!!selectedDeptForRule}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-600"
+                    className={loansFormSelectClass()}
+                    style={loansFormInputStyle()}
                   >
                     <option value="">-- Select Department --</option>
                     {departments
@@ -1464,9 +1434,9 @@ export default function AllowancesDeductionsPage() {
 
                 {/* Type */}
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  <LoanFormLabel>
                     Calculation Type <span className="text-red-500">*</span>
-                  </label>
+                  </LoanFormLabel>
                   <select
                     value={deptRuleForm.type}
                     onChange={(e) => {
@@ -1478,7 +1448,8 @@ export default function AllowancesDeductionsPage() {
                         percentage: newType === 'percentage' ? deptRuleForm.percentage : null,
                       });
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className={loansFormSelectClass()}
+                    style={loansFormInputStyle()}
                   >
                     <option value="fixed">Fixed Amount</option>
                     <option value="percentage">Percentage</option>
@@ -1488,16 +1459,17 @@ export default function AllowancesDeductionsPage() {
                 {/* Fixed Amount */}
                 {deptRuleForm.type === 'fixed' && (
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    <LoanFormLabel>
                       Amount (₹) <span className="text-red-500">*</span>
-                    </label>
+                    </LoanFormLabel>
                     <input
                       type="number"
                       min="0"
                       step="0.01"
                       value={deptRuleForm.amount ?? ''}
                       onChange={(e) => setDeptRuleForm({ ...deptRuleForm, amount: e.target.value ? parseFloat(e.target.value) : null })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className={loansFormSelectClass()}
+                    style={loansFormInputStyle()}
                       placeholder="e.g., 5000"
                     />
                   </div>
@@ -1522,9 +1494,9 @@ export default function AllowancesDeductionsPage() {
                 {deptRuleForm.type === 'percentage' && (
                   <>
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                      <LoanFormLabel>
                         Percentage (%) <span className="text-red-500">*</span>
-                      </label>
+                      </LoanFormLabel>
                       <input
                         type="number"
                         min="0"
@@ -1532,19 +1504,21 @@ export default function AllowancesDeductionsPage() {
                         step="0.01"
                         value={deptRuleForm.percentage ?? ''}
                         onChange={(e) => setDeptRuleForm({ ...deptRuleForm, percentage: e.target.value ? parseFloat(e.target.value) : null })}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        className={loansFormSelectClass()}
+                    style={loansFormInputStyle()}
                         placeholder="e.g., 30"
                       />
                     </div>
 
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                      <LoanFormLabel>
                         Percentage Base <span className="text-red-500">*</span>
-                      </label>
+                      </LoanFormLabel>
                       <select
                         value={deptRuleForm.percentageBase}
                         onChange={(e) => setDeptRuleForm({ ...deptRuleForm, percentageBase: e.target.value as 'basic' | 'gross' })}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        className={loansFormSelectClass()}
+                    style={loansFormInputStyle()}
                       >
                         <option value="basic">Basic Salary</option>
                         <option value="gross">Gross Salary</option>
@@ -1556,57 +1530,48 @@ export default function AllowancesDeductionsPage() {
                 {/* Min/Max Amount */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Min Amount (₹)</label>
+                    <LoanFormLabel>Min Amount (₹)</LoanFormLabel>
                     <input
                       type="number"
                       min="0"
                       step="0.01"
                       value={deptRuleForm.minAmount ?? ''}
                       onChange={(e) => setDeptRuleForm({ ...deptRuleForm, minAmount: e.target.value ? parseFloat(e.target.value) : null })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className={loansFormInputClass()}
+                    style={loansFormInputStyle()}
                       placeholder="Optional"
                     />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Max Amount (₹)</label>
+                    <LoanFormLabel>Max Amount (₹)</LoanFormLabel>
                     <input
                       type="number"
                       min="0"
                       step="0.01"
                       value={deptRuleForm.maxAmount ?? ''}
                       onChange={(e) => setDeptRuleForm({ ...deptRuleForm, maxAmount: e.target.value ? parseFloat(e.target.value) : null })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className={loansFormInputClass()}
+                    style={loansFormInputStyle()}
                       placeholder="Optional"
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="flex gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDeptRuleDialog(false);
-                    setSelectedItem(null);
-                    resetDeptRuleForm();
-                  }}
-                  className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveDeptRule}
-                  className="flex-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:bg-blue-700 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
-                >
-                  {selectedDeptForRule ? 'Update' : 'Add'} Override
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      }
-    </div >
+            <LoanDialogFooter
+              onCancel={() => {
+                setShowDeptRuleDialog(false);
+                setSelectedDeptForRule('');
+                resetDeptRuleForm();
+              }}
+              submitLabel={`${selectedDeptForRule ? 'Update' : 'Add'} override`}
+              submitType="button"
+              onSubmit={handleSaveDeptRule}
+            />
+          </LoanDetailDialogBody>
+        </LoanDetailDialog>
+      )}
+    </LoansPageShell>
   );
 }
 

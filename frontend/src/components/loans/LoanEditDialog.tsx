@@ -9,6 +9,20 @@ import {
   payPeriodSelectValueToMonthKey,
   payrollMonthKeyToPayPeriodSelectValue,
 } from '@/lib/payPeriodRange';
+import {
+  LoanDetailDialog,
+  LoanDetailDialogHeader,
+  LoanDetailDialogBody,
+  LoanDialogFooter,
+  LoanDialogModeTabs,
+  LoanFormInfo,
+  LoanFormLabel,
+  LoanFormPanel,
+  loansFormInputClass,
+  loansFormInputStyle,
+  loansFormSelectClass,
+  loansFormTextareaClass,
+} from '@/components/loans/LoanDetailDialogShell';
 
 export interface LoanEditTarget {
   _id: string;
@@ -379,70 +393,49 @@ export default function LoanEditDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-[61] w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">
-          Edit {loan.requestType === 'loan' ? 'Loan' : 'Salary Advance'}
-        </h2>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mb-3 capitalize">
-          Status: {loan.status.replace(/_/g, ' ')}
-        </p>
-
+    <LoanDetailDialog open={open} onClose={onClose} maxWidth="max-w-lg" layerClass="z-[60]">
+      <LoanDetailDialogHeader
+        badge="Edit request"
+        title={`Edit ${loan.requestType === 'loan' ? 'Loan' : 'Salary Advance'}`}
+        subtitle={`Status: ${loan.status.replace(/_/g, ' ')}`}
+        onClose={onClose}
+      />
+      <LoanDetailDialogBody>
         {canRepaymentCorrection && (
-          <div className="flex gap-1 p-1 mb-4 rounded-xl bg-slate-100 dark:bg-slate-800">
-            <button
-              type="button"
-              onClick={() => setEditMode('repayment')}
-              className={`flex-1 px-3 py-2 text-xs font-semibold rounded-lg transition-colors ${
-                editMode === 'repayment'
-                  ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              Repayment status
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditMode('terms')}
-              className={`flex-1 px-3 py-2 text-xs font-semibold rounded-lg transition-colors ${
-                editMode === 'terms'
-                  ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              Loan terms
-            </button>
-          </div>
+          <LoanDialogModeTabs
+            value={editMode}
+            onChange={(v) => setEditMode(v as 'terms' | 'repayment')}
+            options={[
+              { value: 'repayment', label: 'Repayment status' },
+              { value: 'terms', label: 'Loan terms' },
+            ]}
+          />
         )}
 
         {editMode === 'repayment' && canRepaymentCorrection ? (
           <form onSubmit={handleRepaymentSubmit} className="space-y-4">
-            <div className="p-3 rounded-xl border border-indigo-200 bg-indigo-50/80 dark:border-indigo-800/50 dark:bg-indigo-900/10 text-xs text-indigo-900 dark:text-indigo-100">
-              <p className="font-semibold mb-1">Opening balance / migration</p>
-              <p>
+            <LoanFormInfo title="Opening balance / migration">
+              <p className="text-xs leading-relaxed">
                 Use this after disbursement to set how much is already paid, remaining balance, and installments
                 completed — without changing EMI or loan amount. For new companies entering old loans.
               </p>
-            </div>
+            </LoanFormInfo>
 
-            <div className="grid grid-cols-2 gap-3 text-xs p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+            <LoanFormPanel soft className="grid grid-cols-2 gap-3 text-xs">
               <div>
-                <span className="text-slate-500">Total to recover</span>
-                <p className="font-bold text-slate-900 dark:text-white">₹{totalRecoverable.toLocaleString()}</p>
+                <span className="text-stone-500">Total to recover</span>
+                <p className="font-bold text-stone-900 dark:text-white">₹{totalRecoverable.toLocaleString()}</p>
               </div>
               <div>
-                <span className="text-slate-500">Installments left (calc)</span>
-                <p className="font-bold text-slate-900 dark:text-white">
+                <span className="text-stone-500">Installments left (calc)</span>
+                <p className="font-bold text-stone-900 dark:text-white">
                   {installmentsRemaining != null ? installmentsRemaining : '—'}
                 </p>
               </div>
-            </div>
+            </LoanFormPanel>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Total paid so far (₹)
-              </label>
+              <LoanFormLabel>Total paid so far (₹)</LoanFormLabel>
               <input
                 type="number"
                 step="0.01"
@@ -450,116 +443,105 @@ export default function LoanEditDialog({
                 max={totalRecoverable}
                 value={repaymentForm.totalPaid}
                 onChange={(e) => setRepaymentForm({ ...repaymentForm, totalPaid: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className={loansFormInputClass()}
+                style={loansFormInputStyle()}
                 placeholder="Amount already deducted"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Remaining balance (₹)
-              </label>
+              <LoanFormLabel>Remaining balance (₹)</LoanFormLabel>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={repaymentForm.remainingBalance}
                 onChange={(e) => setRepaymentForm({ ...repaymentForm, remainingBalance: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className={loansFormInputClass()}
+                style={loansFormInputStyle()}
                 placeholder="Outstanding amount"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  {loan.requestType === 'loan' ? 'EMIs' : 'Cycles'} paid
-                </label>
+                <LoanFormLabel>{loan.requestType === 'loan' ? 'EMIs' : 'Cycles'} paid</LoanFormLabel>
                 <input
                   type="number"
                   min="0"
                   value={repaymentForm.installmentsPaid}
                   onChange={(e) => setRepaymentForm({ ...repaymentForm, installmentsPaid: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Total {loan.requestType === 'loan' ? 'EMIs' : 'cycles'}
-                </label>
+                <LoanFormLabel>Total {loan.requestType === 'loan' ? 'EMIs' : 'cycles'}</LoanFormLabel>
                 <input
                   type="number"
                   min="1"
                   value={repaymentForm.totalInstallments}
                   onChange={(e) => setRepaymentForm({ ...repaymentForm, totalInstallments: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remarks (optional)</label>
+              <LoanFormLabel>Remarks (optional)</LoanFormLabel>
               <textarea
                 value={repaymentForm.remarks}
                 onChange={(e) => setRepaymentForm({ ...repaymentForm, remarks: e.target.value })}
                 rows={2}
-                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className={loansFormTextareaClass()}
+                style={loansFormInputStyle()}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Reason for correction *
-              </label>
+              <LoanFormLabel>Reason for correction *</LoanFormLabel>
               <input
                 type="text"
                 required
                 value={repaymentForm.changeReason}
                 onChange={(e) => setRepaymentForm({ ...repaymentForm, changeReason: e.target.value })}
                 placeholder="e.g. Opening balance from old payroll — 4 EMIs already paid"
-                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className={loansFormInputClass()}
+                style={loansFormInputStyle()}
               />
             </div>
 
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 disabled:opacity-50"
-              >
-                {saving ? 'Saving...' : 'Update repayment status'}
-              </button>
-            </div>
+            <LoanDialogFooter
+              onCancel={onClose}
+              submitLabel="Update repayment status"
+              loading={saving}
+              submitDisabled={saving}
+            />
           </form>
         ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           {loan.requestType === 'salary_advance' && eligibilityData && (
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-4 rounded-xl border border-blue-200 dark:border-blue-800">
-              <h5 className="font-semibold text-sm mb-2 text-blue-900 dark:text-blue-100">Eligibility</h5>
+            <LoanFormInfo title="Eligibility">
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
-                  <span className="text-gray-600 dark:text-gray-400">Eligible </span>
-                  <span className="font-bold text-green-600">₹{eligibilityData.eligibleAmount.toLocaleString()}</span>
+                  <span className="text-stone-500">Eligible </span>
+                  <span className="font-bold" style={{ color: 'var(--ps-accent)' }}>
+                    ₹{eligibilityData.eligibleAmount.toLocaleString()}
+                  </span>
                 </div>
                 <div>
-                  <span className="text-gray-600 dark:text-gray-400">Max </span>
-                  <span className="font-bold text-purple-600">₹{eligibilityData.finalMaxAllowed.toLocaleString()}</span>
+                  <span className="text-stone-500">Max </span>
+                  <span className="font-bold text-stone-800 dark:text-stone-200">
+                    ₹{eligibilityData.finalMaxAllowed.toLocaleString()}
+                  </span>
                 </div>
               </div>
-            </div>
+            </LoanFormInfo>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Amount (₹) {financialEditable ? '*' : ''}
-            </label>
+            <LoanFormLabel>Amount (₹) {financialEditable ? '*' : ''}</LoanFormLabel>
             <input
               type="number"
               step="0.01"
@@ -568,14 +550,15 @@ export default function LoanEditDialog({
               disabled={!financialEditable}
               onChange={(e) => setForm({ ...form, amount: e.target.value })}
               required={financialEditable}
-              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:opacity-60"
+              className={loansFormInputClass()}
+              style={loansFormInputStyle()}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+            <LoanFormLabel>
               Duration ({loan.requestType === 'loan' ? 'months' : 'cycles'}) {financialEditable ? '*' : ''}
-            </label>
+            </LoanFormLabel>
             <input
               type="number"
               min="1"
@@ -583,35 +566,34 @@ export default function LoanEditDialog({
               disabled={!financialEditable}
               onChange={(e) => setForm({ ...form, duration: e.target.value })}
               required={financialEditable}
-              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:opacity-60"
+              className={loansFormInputClass()}
+              style={loansFormInputStyle()}
             />
           </div>
 
           {loan.requestType === 'loan' && financialEditable && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Interest rate (% p.a.)
-              </label>
+              <LoanFormLabel>Interest rate (% p.a.)</LoanFormLabel>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={form.interestRate}
                 onChange={(e) => setForm({ ...form, interestRate: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className={loansFormInputClass()}
+                style={loansFormInputStyle()}
               />
             </div>
           )}
 
           {loan.requestType === 'loan' && financialEditable && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                First deduction pay period
-              </label>
+              <LoanFormLabel>First deduction pay period</LoanFormLabel>
               <select
                 value={form.firstDeductionPayrollMonth}
                 onChange={(e) => setForm({ ...form, firstDeductionPayrollMonth: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className={loansFormSelectClass()}
+                style={loansFormInputStyle()}
               >
                 {periodOpts.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -624,13 +606,12 @@ export default function LoanEditDialog({
 
           {loan.requestType === 'salary_advance' && financialEditable && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Deduction start cycle
-              </label>
+              <LoanFormLabel>Deduction start cycle</LoanFormLabel>
               <select
                 value={form.deductionStartCycle}
                 onChange={(e) => setForm({ ...form, deductionStartCycle: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className={loansFormSelectClass()}
+                style={loansFormInputStyle()}
               >
                 {periodOpts.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -642,50 +623,54 @@ export default function LoanEditDialog({
           )}
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Reason / purpose *</label>
+            <LoanFormLabel>Reason / purpose *</LoanFormLabel>
             <textarea
               value={form.reason}
               onChange={(e) => setForm({ ...form, reason: e.target.value })}
               required
               rows={2}
-              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              className={loansFormTextareaClass()}
+              style={loansFormInputStyle()}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remarks</label>
+            <LoanFormLabel>Remarks</LoanFormLabel>
             <textarea
               value={form.remarks}
               onChange={(e) => setForm({ ...form, remarks: e.target.value })}
               rows={2}
-              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              className={loansFormTextareaClass()}
+              style={loansFormInputStyle()}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Reason for change {financialTouched ? '*' : '(for audit)'}
-            </label>
+            <LoanFormLabel>Reason for change {financialTouched ? '*' : '(for audit)'}</LoanFormLabel>
             <input
               type="text"
               value={form.changeReason}
               onChange={(e) => setForm({ ...form, changeReason: e.target.value })}
               placeholder="e.g. Corrected tenure per HR approval"
-              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              className={loansFormInputClass()}
+              style={loansFormInputStyle()}
             />
           </div>
 
           {financialEditable && (
-            <label className="flex items-start gap-3 p-3 rounded-xl border border-amber-200 bg-amber-50/80 dark:border-amber-800/50 dark:bg-amber-900/10 cursor-pointer">
+            <label
+              className="flex cursor-pointer items-start gap-3 border p-3"
+              style={{ borderColor: 'var(--ps-accent-border)', backgroundColor: 'rgba(var(--ps-accent-rgb), 0.04)' }}
+            >
               <input
                 type="checkbox"
                 checked={form.recalculate}
                 onChange={(e) => setForm({ ...form, recalculate: e.target.checked })}
                 className="mt-1"
               />
-              <span className="text-sm text-amber-900 dark:text-amber-100">
+              <span className="text-sm text-stone-800 dark:text-stone-200">
                 <span className="font-semibold">Re-evaluate schedule & balances</span>
-                <span className="block text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+                <span className="mt-0.5 block text-xs text-stone-500">
                   Recalculates EMI / per-cycle deduction and remaining balance. Payments already recorded are kept.
                 </span>
               </span>
@@ -693,37 +678,42 @@ export default function LoanEditDialog({
           )}
 
           {preview && (
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-800/50 space-y-2 text-xs">
+            <LoanFormPanel soft className="space-y-2 text-xs">
               <div className="flex justify-between">
-                <span className="text-slate-500">Monthly deduction (est)</span>
-                <span className="font-bold text-blue-700 dark:text-blue-300">₹{Math.round(preview.emi).toLocaleString()}</span>
+                <span className="text-stone-500">Monthly deduction (est)</span>
+                <span className="font-bold" style={{ color: 'var(--ps-accent)' }}>
+                  ₹{Math.round(preview.emi).toLocaleString()}
+                </span>
               </div>
               {preview.totalInterest > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Total interest</span>
+                  <span className="text-stone-500">Total interest</span>
                   <span>₹{Math.round(preview.totalInterest).toLocaleString()}</span>
                 </div>
               )}
               <div className="flex justify-between">
-                <span className="text-slate-500">Total to recover</span>
+                <span className="text-stone-500">Total to recover</span>
                 <span className="font-bold">₹{Math.round(preview.totalAmount).toLocaleString()}</span>
               </div>
               {isActiveLoan && (
-                <div className="flex justify-between pt-1 border-t border-blue-100 dark:border-blue-800/50">
-                  <span className="text-slate-600 font-medium">Remaining after edit</span>
-                  <span className="font-bold text-slate-900 dark:text-white">₹{Math.round(preview.remaining).toLocaleString()}</span>
+                <div className="flex justify-between border-t pt-1" style={{ borderColor: 'var(--ps-accent-border)' }}>
+                  <span className="font-medium text-stone-600">Remaining after edit</span>
+                  <span className="font-bold text-stone-900 dark:text-white">
+                    ₹{Math.round(preview.remaining).toLocaleString()}
+                  </span>
                 </div>
               )}
-            </div>
+            </LoanFormPanel>
           )}
 
           {isSuperAdmin && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Status (super admin)</label>
+              <LoanFormLabel>Status (super admin)</LoanFormLabel>
               <select
                 value={form.status}
                 onChange={(e) => setForm({ ...form, status: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className={loansFormSelectClass()}
+                style={loansFormInputStyle()}
               >
                 <option value="pending">Pending</option>
                 <option value="hod_approved">HOD Approved</option>
@@ -740,39 +730,29 @@ export default function LoanEditDialog({
           )}
 
           {loan.changeHistory && loan.changeHistory.length > 0 && (
-            <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3">
-              <p className="text-xs font-semibold uppercase text-slate-400 mb-2">Recent changes</p>
-              <ul className="space-y-2 max-h-28 overflow-y-auto">
+            <LoanFormPanel soft>
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-400">Recent changes</p>
+              <ul className="max-h-28 space-y-2 overflow-y-auto">
                 {[...loan.changeHistory].reverse().slice(0, 5).map((ch, i) => (
-                  <li key={i} className="text-xs text-slate-600 dark:text-slate-400">
+                  <li key={i} className="text-xs text-stone-600 dark:text-stone-400">
                     <span className="font-medium">{ch.field}</span>: {String(ch.originalValue)} → {String(ch.newValue)}
-                    {ch.modifiedByName && <span className="text-slate-400"> — {ch.modifiedByName}</span>}
+                    {ch.modifiedByName && <span className="text-stone-400"> — {ch.modifiedByName}</span>}
                   </li>
                 ))}
               </ul>
-            </div>
+            </LoanFormPanel>
           )}
 
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Save changes'}
-            </button>
-          </div>
+          <LoanDialogFooter
+            onCancel={onClose}
+            submitLabel="Save changes"
+            loading={saving}
+            submitDisabled={saving}
+          />
         </form>
         )}
-      </div>
-    </div>
+      </LoanDetailDialogBody>
+    </LoanDetailDialog>
   );
 }
 

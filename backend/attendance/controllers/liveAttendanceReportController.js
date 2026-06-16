@@ -10,6 +10,17 @@ const Shift = require('../../shifts/model/Shift');
 const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
 const Division = require('../../departments/model/Division');
+const { parseQueryIdList } = require('../../pay-register/services/payRegisterEmployeeFilter');
+
+function parseIdStringList(raw) {
+  return parseQueryIdList(raw).map((id) => String(id));
+}
+
+function matchesShiftFilter(shiftIds, shiftId) {
+  if (!shiftIds.length) return true;
+  if (!shiftId) return false;
+  return shiftIds.includes(String(shiftId));
+}
 
 // Helper function to format date to YYYY-MM-DD
 const formatDate = (date) => {
@@ -40,6 +51,10 @@ exports.getLiveAttendanceReport = async (req, res) => {
     // Use current date if not provided
     const targetDate = date ? date : formatDate(new Date());
 
+    const divisionIds = parseQueryIdList(division);
+    const departmentIds = parseQueryIdList(department);
+    const shiftIds = parseIdStringList(shift);
+
     // ── Detect processing mode ──────────────────────────────────────────────────
     const AttendanceSettings = require('../model/AttendanceSettings');
     const settings = await AttendanceSettings.getSettings();
@@ -47,8 +62,8 @@ exports.getLiveAttendanceReport = async (req, res) => {
 
     // 1. Build employee base query
     const employeeQuery = { is_active: { $ne: false } };
-    if (division) employeeQuery.division_id = division;
-    if (department) employeeQuery.department_id = department;
+    if (divisionIds.length) employeeQuery.division_id = { $in: divisionIds };
+    if (departmentIds.length) employeeQuery.department_id = { $in: departmentIds };
 
     // Fetch applicable active employees
     const activeEmployees = await Employee.find(employeeQuery)
@@ -78,8 +93,8 @@ exports.getLiveAttendanceReport = async (req, res) => {
 
     // 3. Departmental Stats aggregation
     const aggMatch = { is_active: { $ne: false } };
-    if (division) aggMatch.division_id = division;
-    if (department) aggMatch.department_id = department;
+    if (divisionIds.length) aggMatch.division_id = { $in: divisionIds };
+    if (departmentIds.length) aggMatch.department_id = { $in: departmentIds };
 
     const divDeptStats = await Employee.aggregate([
       { $match: aggMatch },
@@ -132,10 +147,12 @@ exports.getLiveAttendanceReport = async (req, res) => {
       if (isMultiShift && record.shifts && record.shifts.length > 0) {
         const segments = record.shifts;
 
-        // Shift-level filter: if user filtered by specific shift, only include records
+        // Shift-level filter: if user filtered by specific shift(s), only include records
         // where at least one segment matches
-        if (shift) {
-          const hasMatchingShift = segments.some(seg => seg.shiftId?._id?.toString() === shift);
+        if (shiftIds.length) {
+          const hasMatchingShift = segments.some((seg) =>
+            matchesShiftFilter(shiftIds, seg.shiftId?._id?.toString())
+          );
           if (!hasMatchingShift) return;
         }
 
@@ -146,7 +163,7 @@ exports.getLiveAttendanceReport = async (req, res) => {
         // Note: segmentDetails is built from the (possibly filtered) list, so we store
         // the computed sId on each item to avoid re-indexing into record.shifts later.
         const segmentDetails = segments
-          .filter(seg => !shift || seg.shiftId?._id?.toString() === shift)
+          .filter((seg) => matchesShiftFilter(shiftIds, seg.shiftId?._id?.toString()))
           .map((seg, idx) => {
             const shiftDoc = seg.shiftId; // populated Shift doc (or null)
             const hasIn = !!seg.inTime;
@@ -245,7 +262,7 @@ exports.getLiveAttendanceReport = async (req, res) => {
         const shiftDoc = lastSegment?.shiftId;
 
         // Filter by shift if requested
-        if (shift && shiftDoc?._id?.toString() !== shift) return;
+        if (shiftIds.length && !matchesShiftFilter(shiftIds, shiftDoc?._id?.toString())) return;
 
         const employeeData = {
           id: employee._id,

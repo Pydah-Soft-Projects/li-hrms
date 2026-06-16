@@ -3,10 +3,17 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
-import Spinner from '@/components/Spinner';
-import { Save, Wallet, Receipt, ChevronRight } from 'lucide-react';
 import { SettingsSkeleton } from './SettingsSkeleton';
 import WorkflowManager, { WorkflowData } from './shared/WorkflowManager';
+import {
+  SettingsPanel,
+  SettingsPanelHeader,
+  SettingsSectionCard,
+  SettingsField,
+  SettingsToggleRow,
+  SettingsSaveBar,
+} from '@/components/settings/SettingsPageShell';
+import { settingsInputClass, settingsInputStyle } from '@/lib/settingsUi';
 
 const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) => {
     const [loanSettings, setLoanSettings] = useState({
@@ -61,102 +68,71 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
     if (loading) return <SettingsSkeleton />;
 
     return (
-        <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex items-end justify-between border-b border-gray-200 dark:border-gray-800 pb-5">
-                <div>
-                    <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">
-                        <span>Settings</span>
-                        <ChevronRight className="h-3 w-3" />
-                        <span className="text-indigo-600">{type.replace('_', ' ')}</span>
-                    </div>
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Capital Disbursement</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Configure loan/advance parameters and authorization gates.</p>
-                </div>
-            </div>
+        <SettingsPanel>
+            <SettingsPanelHeader
+                section={type.replace('_', ' ')}
+                title="Capital Disbursement"
+                subtitle="Configure loan/advance parameters and authorization gates."
+            />
 
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
-                <div className="xl:col-span-1 space-y-8">
-                    {/* Financial Caps */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
-                        <div className="flex items-center gap-3 border-b border-gray-100 dark:border-gray-800 pb-4">
-                            <Wallet className="h-5 w-5 text-indigo-600" />
-                            <h3 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-widest">Financial Caps</h3>
-                        </div>
-
+            <div className="grid grid-cols-1 items-start gap-8 xl:grid-cols-3">
+                <div className="space-y-8 xl:col-span-1">
+                    <SettingsSectionCard title="Financial Caps">
                         <div className="space-y-6">
-                            <div className="space-y-1">
-                                <label className="text-[10px] text-gray-400 font-bold uppercase tracking-widest pl-1">Maximum Amount</label>
+                            <SettingsField label="Maximum Amount">
                                 <div className="relative">
-                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs">₹</div>
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-bold text-stone-400">₹</div>
                                     <input
                                         type="number"
                                         value={loanSettings.maxAmount ?? ''}
                                         onChange={(e) => setLoanSettings({ ...loanSettings, maxAmount: parseInt(e.target.value) })}
-                                        className="w-full bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 rounded-xl pl-8 pr-4 py-3.5 text-sm font-black text-indigo-600 outline-none"
+                                        className={`${settingsInputClass()} pl-8`}
+                                        style={settingsInputStyle()}
                                     />
                                 </div>
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-[10px] text-gray-400 font-bold uppercase tracking-widest pl-1">Max Tenure (Months)</label>
+                            </SettingsField>
+                            <SettingsField label="Max Tenure (Months)">
                                 <input
                                     type="number"
                                     value={loanSettings.maxTenure ?? ''}
                                     onChange={(e) => setLoanSettings({ ...loanSettings, maxTenure: parseInt(e.target.value) })}
-                                    className="w-full bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 rounded-xl px-4 py-3.5 text-sm font-black text-indigo-600 outline-none"
+                                    className={settingsInputClass()}
+                                    style={settingsInputStyle()}
                                 />
-                            </div>
+                            </SettingsField>
                         </div>
-                    </section>
+                    </SettingsSectionCard>
 
-                    {/* Recovery Logic */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
-                        <div className="flex items-center gap-3 border-b border-gray-100 dark:border-gray-800 pb-4">
-                            <Receipt className="h-5 w-5 text-indigo-600" />
-                            <h3 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-widest">Recovery Logic</h3>
-                        </div>
-
+                    <SettingsSectionCard title="Recovery Logic">
                         <div className="space-y-4">
-                            <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-black/10 rounded-xl border border-gray-100 dark:border-gray-800/50 group hover:border-indigo-500/30 transition-all">
-                                <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Apply Interest</label>
-                                    <p className="text-[10px] text-gray-500">Enable interest calculation for this type.</p>
-                                </div>
-                                <div
-                                    onClick={() => setLoanSettings({ ...loanSettings, isInterestApplicable: !loanSettings.isInterestApplicable })}
-                                    className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${loanSettings.isInterestApplicable ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-800'}`}
-                                >
-                                    <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform ${loanSettings.isInterestApplicable ? 'translate-x-6' : 'translate-x-0'}`} />
-                                </div>
-                            </div>
+                            <SettingsToggleRow
+                                id="loan-interest-applicable"
+                                label="Apply Interest"
+                                description="Enable interest calculation for this type."
+                                checked={loanSettings.isInterestApplicable}
+                                onChange={(next) => setLoanSettings({ ...loanSettings, isInterestApplicable: next })}
+                            />
 
-                            <div className={`space-y-1 transition-opacity duration-300 ${!loanSettings.isInterestApplicable ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-                                <label className="text-[10px] text-gray-400 font-bold uppercase tracking-widest pl-1">Interest Rate (%)</label>
+                            <SettingsField label="Interest Rate (%)">
                                 <input
                                     type="number"
                                     disabled={!loanSettings.isInterestApplicable}
                                     value={loanSettings.interestRate ?? ''}
                                     onChange={(e) => setLoanSettings({ ...loanSettings, interestRate: parseFloat(e.target.value) })}
-                                    className="w-full bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 rounded-xl px-4 py-3.5 text-sm font-black text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                    className={`${settingsInputClass()} transition-opacity duration-300 ${!loanSettings.isInterestApplicable ? 'pointer-events-none opacity-50' : 'opacity-100'}`}
+                                    style={settingsInputStyle()}
                                 />
-                            </div>
+                            </SettingsField>
                         </div>
 
-                        <div className="pt-2">
-                            <button
-                                onClick={handleSave}
-                                disabled={saving}
-                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white py-4 text-xs font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-500/20 active:scale-95 disabled:opacity-50"
-                            >
-                                {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                                Commit Settings
-                            </button>
+                        <div className="pt-6">
+                            <SettingsSaveBar onSave={handleSave} saving={saving} label="Commit Settings" />
                         </div>
-                    </section>
+                    </SettingsSectionCard>
                 </div>
 
-                {/* Workflow Column */}
                 <div className="xl:col-span-2">
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
+                    <SettingsSectionCard>
                         <WorkflowManager
                             workflow={workflow}
                             onChange={(newWorkflow: WorkflowData) => setWorkflow(newWorkflow)}
@@ -165,18 +141,13 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
                             addStepLabel="Append Authorization Level"
                         />
 
-                        <button
-                            onClick={handleSave}
-                            disabled={saving}
-                            className="w-full flex items-center justify-center gap-2 rounded-xl bg-purple-600 text-white py-4 text-xs font-bold hover:bg-purple-700 transition-all shadow-xl shadow-purple-500/20 active:scale-95 disabled:opacity-50"
-                        >
-                            {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                            Commit Authorization Chain
-                        </button>
-                    </section>
+                        <div className="pt-6">
+                            <SettingsSaveBar onSave={handleSave} saving={saving} label="Commit Authorization Chain" />
+                        </div>
+                    </SettingsSectionCard>
                 </div>
             </div>
-        </div>
+        </SettingsPanel>
     );
 };
 

@@ -29,6 +29,23 @@ import {
 import WorkflowManager, { WorkflowData } from '@/components/settings/shared/WorkflowManager';
 import { IncludeMissingPayrollComponentsCard } from '@/components/settings/shared/IncludeMissingPayrollComponentsCard';
 import OTSettingsDepartment from '@/components/settings/OTSettingsDepartment';
+import { SettingsAccentShell, SettingsContentPanel } from '@/components/settings/SettingsPageShell';
+import { ledgerPageHeaderStyle } from '@/lib/ledgerUi';
+import {
+  DEPT_CARD,
+  DEPT_CARD_DESC,
+  DEPT_CARD_HEADER,
+  DEPT_CARD_TITLE,
+  DEPT_INPUT,
+  DEPT_LABEL,
+  DEPT_NAV_GROUP,
+  settingsInputClass,
+  settingsInputStyle,
+  settingsLedgerBorder,
+  settingsNavItemActiveClass,
+  settingsNavItemBaseClass,
+  settingsNavItemInactiveClass,
+} from '@/lib/settingsUi';
 
 interface Department {
   _id: string;
@@ -167,21 +184,6 @@ const DEPT_SETTINGS_MENU: {
   { id: 'attendance', label: 'Attendance deductions', icon: AlertTriangle, color: 'text-red-500', group: 'Operations' },
   { id: 'payroll', label: 'Payroll', icon: Receipt, color: 'text-cyan-500', group: 'Finance' },
 ];
-
-const DEPT_CARD =
-  'overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm shadow-slate-200/30 ring-1 ring-slate-950/[0.02] dark:border-slate-800 dark:bg-[#1E293B] dark:shadow-none dark:ring-white/[0.04]';
-const DEPT_CARD_HEADER =
-  'flex flex-col gap-1 border-b border-slate-100 bg-gradient-to-b from-slate-50/90 to-white px-6 py-5 dark:border-slate-800 dark:from-slate-900/50 dark:to-[#1E293B] sm:px-8 sm:py-6';
-const DEPT_CARD_TITLE =
-  'text-base font-bold tracking-tight text-slate-900 dark:text-white';
-const DEPT_CARD_DESC =
-  'text-sm font-normal normal-case tracking-normal text-slate-600 dark:text-slate-400';
-const DEPT_INPUT =
-  'w-full rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-2.5 text-sm font-medium text-slate-900 placeholder:text-slate-400 transition-all focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-600 dark:bg-[#0F172A] dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20';
-const DEPT_LABEL =
-  'mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400';
-const DEPT_NAV_GROUP =
-  'mb-2 px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 sm:px-4';
 
 export default function DepartmentalSettingsPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -922,38 +924,57 @@ export default function DepartmentalSettingsPage() {
   const activeDeptTabLabel = DEPT_SETTINGS_MENU.find((m) => m.id === activeDeptTab)?.label ?? '';
 
   return (
-    <div className="flex min-h-screen items-start bg-[#F8FAFC] dark:bg-[#0F172A] -m-4 sm:-m-5 lg:-m-6">
+    <SettingsAccentShell className="flex min-h-screen items-start -m-4 sm:-m-5 lg:-m-6">
       <button
         type="button"
         onClick={() => setDeptMobileMenuOpen(!deptMobileMenuOpen)}
-        className="fixed bottom-6 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-600 text-white shadow-2xl transition-all hover:scale-110 hover:bg-indigo-700 lg:hidden"
+        className="fixed bottom-6 right-4 z-50 flex h-12 w-12 items-center justify-center border bg-white text-[color:var(--ps-accent)] shadow-lg transition hover:bg-stone-50 sm:right-6 sm:h-14 sm:w-14 lg:hidden dark:bg-stone-950"
+        style={settingsLedgerBorder}
         aria-label={deptMobileMenuOpen ? 'Close menu' : 'Open menu'}
       >
-        {deptMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        {deptMobileMenuOpen ? <X className="h-5 w-5 sm:h-6 sm:w-6" /> : <Menu className="h-5 w-5 sm:h-6 sm:w-6" />}
       </button>
       {deptMobileMenuOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+          className="fixed inset-0 z-30 bg-stone-900/50 lg:hidden"
           onClick={() => setDeptMobileMenuOpen(false)}
           aria-hidden
         />
       )}
 
       <aside
-        className={`fixed top-0 z-40 flex h-screen w-[17.5rem] shrink-0 flex-col overflow-hidden border-r border-slate-200/90 bg-white shadow-xl shadow-slate-300/20 transition-transform duration-300 ease-in-out dark:border-slate-800 dark:bg-[#1E293B] dark:shadow-none sm:w-72 lg:sticky lg:top-0 lg:flex lg:h-[min(100dvh,100vh)] lg:max-h-screen lg:translate-x-0 lg:self-start lg:shadow-none ${
+        className={`fixed top-0 z-40 flex h-screen w-64 shrink-0 flex-col overflow-hidden border-r bg-white transition-transform duration-300 ease-in-out dark:bg-stone-950 sm:w-72 lg:sticky lg:top-0 lg:flex lg:h-[min(100dvh,100vh)] lg:max-h-screen lg:translate-x-0 lg:self-start ${
           deptMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
+        style={settingsLedgerBorder}
       >
-        <div className="border-b border-slate-100 p-4 dark:border-slate-800 sm:p-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-500/30">
-              <Settings className="h-5 w-5 text-white" />
+        <div className="border-b p-3 sm:p-4" style={ledgerPageHeaderStyle()}>
+          <p
+            className="text-[10px] font-semibold uppercase tracking-[0.32em]"
+            style={{ color: 'var(--ps-accent-ink)' }}
+          >
+            Configuration
+          </p>
+          <div className="mt-2 flex items-center gap-2 sm:gap-3">
+            <div
+              className="flex h-8 w-8 shrink-0 items-center justify-center sm:h-10 sm:w-10"
+              style={{ ...settingsLedgerBorder, backgroundColor: 'var(--ps-accent-soft)', color: 'var(--ps-accent)' }}
+            >
+              <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="truncate text-lg font-bold tracking-tight text-slate-900 dark:text-white">Departmental settings</h1>
-              <p className="mt-0.5 truncate text-xs font-medium text-slate-500 dark:text-slate-400">Superadmin · division scope</p>
+              <h1 className="truncate font-serif text-lg font-light tracking-tight text-stone-900 dark:text-stone-100 sm:text-xl">
+                Departmental settings
+              </h1>
+              <p
+                className="truncate text-[9px] font-semibold uppercase tracking-widest sm:text-[10px]"
+                style={{ color: 'var(--ps-accent-ink)' }}
+              >
+                Superadmin · division scope
+              </p>
             </div>
           </div>
+          <div className="mt-3 h-0.5 w-12 rounded-full" style={{ backgroundColor: 'var(--ps-accent)' }} />
 
           <div className="relative mt-5">
             <label className={DEPT_LABEL}>Division (optional)</label>
@@ -965,6 +986,7 @@ export default function DepartmentalSettingsPage() {
                 setDivisionWideDefaultsMode(false);
               }}
               className={`${DEPT_INPUT} mt-1.5 text-sm`}
+              style={settingsInputStyle()}
             >
               <option value="">All divisions</option>
               {divisions.map((div) => (
@@ -1003,6 +1025,7 @@ export default function DepartmentalSettingsPage() {
                 setSelectedDepartmentId(e.target.value);
               }}
               className={`${DEPT_INPUT} mt-1.5 text-sm`}
+              style={settingsInputStyle()}
               disabled={loading}
             >
               <option value="">Select department…</option>
@@ -1028,7 +1051,8 @@ export default function DepartmentalSettingsPage() {
               placeholder="Search sections…"
               value={deptMenuSearch}
               onChange={(e) => setDeptMenuSearch(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/80 py-2.5 pl-10 pr-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-[#0F172A] dark:text-white dark:focus:border-indigo-400"
+              className={`${settingsInputClass()} py-2 pl-10 text-xs sm:pl-9 sm:text-sm`}
+              style={settingsInputStyle()}
             />
           </div>
         </div>
@@ -1046,18 +1070,16 @@ export default function DepartmentalSettingsPage() {
                     setActiveDeptTab(item.id);
                     setDeptMobileMenuOpen(false);
                   }}
-                  className={`group flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-all sm:px-4 sm:py-3 disabled:cursor-not-allowed disabled:opacity-40 ${
-                    activeDeptTab === item.id
-                      ? 'bg-indigo-50 text-indigo-900 shadow-sm ring-1 ring-indigo-200/80 dark:bg-indigo-950/40 dark:text-indigo-100 dark:ring-indigo-800/60'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900/60 dark:hover:text-white'
+                  className={`${settingsNavItemBaseClass} disabled:cursor-not-allowed disabled:opacity-40 ${
+                    activeDeptTab === item.id ? settingsNavItemActiveClass : settingsNavItemInactiveClass
                   }`}
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-3">
                     <item.icon
-                      className={`h-4 w-4 flex-shrink-0 ${
+                      className={`h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4 ${
                         activeDeptTab === item.id
-                          ? item.color
-                          : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'
+                          ? item.color || 'text-[color:var(--ps-accent)]'
+                          : 'text-stone-400 group-hover:text-stone-600'
                       }`}
                     />
                     <span className="truncate">{item.label}</span>
@@ -1073,12 +1095,15 @@ export default function DepartmentalSettingsPage() {
           ))}
         </nav>
 
-        <div className="border-t border-slate-100 p-3 dark:border-slate-800 sm:p-4">
-          <div className="flex gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/90 p-4 dark:border-indigo-900/40 dark:bg-indigo-950/25">
-            <Info className="mt-0.5 h-5 w-5 flex-shrink-0 text-indigo-600 dark:text-indigo-400" aria-hidden />
+        <div className="border-t p-3 sm:p-4" style={settingsLedgerBorder}>
+          <div
+            className="flex gap-3 border p-3 sm:p-4"
+            style={{ ...settingsLedgerBorder, backgroundColor: 'var(--ps-accent-soft)' }}
+          >
+            <Info className="mt-0.5 h-5 w-5 shrink-0 text-[color:var(--ps-accent)]" aria-hidden />
             <div>
-              <p className="text-xs font-bold text-indigo-950 dark:text-indigo-100">Division-aware overrides</p>
-              <p className="mt-1 text-xs leading-relaxed text-indigo-900/75 dark:text-indigo-200/80">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-[color:var(--ps-accent-ink)] sm:text-xs">Division-aware overrides</p>
+              <p className="mt-1 text-[9px] leading-relaxed text-stone-500 sm:text-[10px]">
                 Pick a division to enable <strong>division-wide defaults</strong>, or choose a department. Runtime merge order:{' '}
                 department+division row, then division-wide row, then department default row — so division-wide fills gaps when a
                 department has no division-specific overrides.
@@ -1089,9 +1114,10 @@ export default function DepartmentalSettingsPage() {
       </aside>
 
       <main className="min-w-0 flex-1 overflow-x-hidden">
-        <div className="mx-auto w-full max-w-7xl p-4 sm:p-6 lg:p-10">
+          <SettingsContentPanel>
+          <div className="settings-ledger-scope w-full overflow-x-hidden">
           {!scopeReady ? (
-            <div className={`${DEPT_CARD} animate-in fade-in p-10 text-center duration-500 sm:p-14`}>
+            <div className={`${DEPT_CARD} animate-in fade-in p-10 text-center duration-500 sm:p-14`} style={settingsLedgerBorder}>
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
                 <Building2 className="h-8 w-8 text-slate-400 dark:text-slate-500" aria-hidden />
               </div>
@@ -1977,25 +2003,10 @@ export default function DepartmentalSettingsPage() {
               </div>
             </div>
           )}
-        </div>
+          </div>
+          </SettingsContentPanel>
       </main>
-
-      <style jsx global>{`
-        .custom-scrollbar-dept::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-scrollbar-dept::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar-dept::-webkit-scrollbar-thumb {
-          background: #e2e8f0;
-          border-radius: 10px;
-        }
-        .dark .custom-scrollbar-dept::-webkit-scrollbar-thumb {
-          background: #334155;
-        }
-      `}</style>
-    </div>
+    </SettingsAccentShell>
   );
 }
 

@@ -1,6 +1,15 @@
 'use client';
 
-import { Calculator } from 'lucide-react';
+import { SettingsSectionCard } from './SettingsPageShell';
+import {
+  DEPT_FIELD_HELP,
+  DEPT_INPUT,
+  DEPT_LABEL,
+  settingsInputClass,
+  settingsInputStyle,
+  settingsPrimaryButtonClass,
+  settingsPrimaryButtonStyle,
+} from '@/lib/settingsUi';
 
 /** Form state for department EL overrides (null / empty = inherit global leave policy). */
 export interface DepartmentEarnedLeaveForm {
@@ -125,10 +134,8 @@ function TriBoolSelect({
         const v = e.target.value;
         onChange(v === '' ? null : v === '1');
       }}
-      className={
-        className ??
-        'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
-      }
+      className={className ?? DEPT_INPUT}
+      style={settingsInputStyle()}
     >
       <option value="">Use global default</option>
       <option value="1">Yes</option>
@@ -156,16 +163,10 @@ export function DepartmentEarnedLeaveOverridesSection({
   const er = value;
   const policy = presentation === 'policy';
 
-  const ic =
-    'w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all';
-  const icSlate =
-    'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white';
-  const inputClass = policy ? ic : icSlate;
+  const inputClass = settingsInputClass();
+  const inputStyle = settingsInputStyle();
 
-  const lbl =
-    policy
-      ? 'mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400'
-      : 'mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300';
+  const lbl = DEPT_LABEL;
 
   const patch = (partial: Partial<DepartmentEarnedLeaveForm>) => onChange({ ...er, ...partial });
   const patchAr = (partial: Partial<DepartmentEarnedLeaveForm['attendanceRules']>) =>
@@ -213,27 +214,22 @@ export function DepartmentEarnedLeaveOverridesSection({
         </div>
       )}
 
-      {!policy && (
-        <>
-          <h3 className="mb-1 text-sm font-bold text-slate-900 dark:text-white">Earned leave (EL) — department overrides</h3>
-          <p className="mb-4 text-[11px] text-slate-500 dark:text-slate-400">
-            Overrides merge with the global leave policy. Leave controls on &quot;Use global default&quot; to inherit. Monthly accrual and
-            payroll EL-as-paid use the effective settings for this department (and division-specific row, if any).
-          </p>
-        </>
-      )}
-
-      {policy && (
-        <p className="text-xs text-gray-500 dark:text-gray-400">
+      {policy ? (
+        <p className={DEPT_FIELD_HELP}>
           Values here override the organization leave policy for this department only. Use &quot;Use global default&quot; to inherit each
           field.
+        </p>
+      ) : (
+        <p className={DEPT_FIELD_HELP}>
+          Overrides merge with the global leave policy. Leave controls on &quot;Use global default&quot; to inherit. Monthly accrual and
+          payroll EL-as-paid use the effective settings for this department (and division-specific row, if any).
         </p>
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div>
           <label className={lbl}>EL enabled</label>
-          <TriBoolSelect value={er.enabled} onChange={(v) => patch({ enabled: v })} className={policy ? inputClass : undefined} />
+          <TriBoolSelect value={er.enabled} onChange={(v) => patch({ enabled: v })} className={inputClass} />
         </div>
         <div>
           <label className={lbl}>EL earning type</label>
@@ -241,6 +237,7 @@ export function DepartmentEarnedLeaveOverridesSection({
             value={er.earningType}
             onChange={(e) => patch({ earningType: (e.target.value || '') as '' | 'attendance_based' | 'fixed' })}
             className={inputClass}
+            style={inputStyle}
           >
             <option value="">Use global default</option>
             <option value="attendance_based">Attendance based</option>
@@ -252,7 +249,7 @@ export function DepartmentEarnedLeaveOverridesSection({
           <TriBoolSelect
             value={er.useAsPaidInPayroll}
             onChange={(v) => patch({ useAsPaidInPayroll: v })}
-            className={policy ? inputClass : undefined}
+            className={inputClass}
           />
         </div>
       </div>
@@ -273,6 +270,7 @@ export function DepartmentEarnedLeaveOverridesSection({
               }
               placeholder="Global"
               className={inputClass}
+              style={inputStyle}
             />
           </div>
           <div>
@@ -285,6 +283,7 @@ export function DepartmentEarnedLeaveOverridesSection({
               onChange={(e) => patchAr({ daysPerEL: e.target.value === '' ? null : parseInt(e.target.value, 10) })}
               placeholder="Global"
               className={inputClass}
+              style={inputStyle}
             />
           </div>
           <div>
@@ -299,6 +298,7 @@ export function DepartmentEarnedLeaveOverridesSection({
               }
               placeholder="Global"
               className={inputClass}
+              style={inputStyle}
             />
           </div>
           <div>
@@ -313,6 +313,7 @@ export function DepartmentEarnedLeaveOverridesSection({
               }
               placeholder="Global"
               className={inputClass}
+              style={inputStyle}
             />
           </div>
         </div>
@@ -333,11 +334,8 @@ export function DepartmentEarnedLeaveOverridesSection({
             <button
               type="button"
               onClick={addRange}
-              className={
-                policy
-                  ? 'rounded-xl bg-indigo-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-indigo-700'
-                  : 'rounded-lg bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-800 hover:bg-slate-300 dark:bg-slate-600 dark:text-white dark:hover:bg-slate-500'
-              }
+              className={settingsPrimaryButtonClass()}
+              style={settingsPrimaryButtonStyle()}
             >
               Add range
             </button>
@@ -483,6 +481,7 @@ export function DepartmentEarnedLeaveOverridesSection({
               onChange={(e) => patchFr({ elPerMonth: e.target.value === '' ? null : parseFloat(e.target.value) })}
               placeholder="Global"
               className={inputClass}
+              style={inputStyle}
             />
             {!policy && (
               <p className="mt-1 text-[10px] text-slate-400">
@@ -500,6 +499,7 @@ export function DepartmentEarnedLeaveOverridesSection({
               onChange={(e) => patchFr({ maxELPerYear: e.target.value === '' ? null : parseInt(e.target.value, 10) })}
               placeholder="Global"
               className={inputClass}
+              style={inputStyle}
             />
           </div>
         </div>
@@ -533,22 +533,19 @@ export function DepartmentEarnedLeaveOverridesSection({
 
   if (policy) {
     return (
-      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#1E293B]">
-        <div className="flex items-center gap-3 border-b border-gray-100 px-6 py-6 dark:border-gray-800 sm:px-8">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 dark:border-indigo-800/50 dark:bg-indigo-900/30 dark:text-indigo-400">
-            <Calculator className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold uppercase tracking-wider text-gray-900 dark:text-white">EL Earning Rules</h3>
-            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-              Same structure as global leave policy — department overrides only.
-            </p>
-          </div>
-        </div>
-        <div className="space-y-6 p-6 sm:p-8">{body}</div>
-      </section>
+      <SettingsSectionCard
+        title="EL Earning Rules"
+        description="Same structure as global leave policy — department overrides only."
+        accent
+      >
+        {body}
+      </SettingsSectionCard>
     );
   }
 
-  return <div className="mt-8 border-t border-slate-200 pt-6 dark:border-slate-600">{body}</div>;
+  return (
+    <SettingsSectionCard title="Earned leave (EL)" description="Department overrides merge with the global leave policy.">
+      {body}
+    </SettingsSectionCard>
+  );
 }

@@ -28,6 +28,9 @@ router.post('/leave-policy/reset', authorize('super_admin'), leavePolicySettings
 // Preview EL calculation
 router.post('/leave-policy/preview', authorize('hr', 'sub_admin', 'super_admin'), leavePolicySettingsController.previewELCalculation);
 
+// Test file storage configuration
+router.post('/file-storage/test', authorize('super_admin', 'sub_admin'), settingsController.testFileStorage);
+
 // Get all settings
 router.get('/', settingsController.getAllSettings);
 

@@ -44,7 +44,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       unique: true,
       sparse: true, // Allow null values but enforce uniqueness when present
-    }, // Link to MSSQL employee data
+    }, // Link to employee master record
     employeeRef: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Employee',
@@ -140,6 +140,10 @@ const userSchema = new mongoose.Schema(
     lastLogin: {
       type: Date,
     },
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -171,6 +175,16 @@ const userSchema = new mongoose.Schema(
         },
         userAgent: { type: String, default: null, trim: true },
         createdAt: { type: Date, default: Date.now },
+      },
+    ],
+    /** Expo push tokens (React Native mobile app) */
+    expoPushTokens: [
+      {
+        token: { type: String, required: true, trim: true },
+        deviceName: { type: String, default: null, trim: true },
+        platform: { type: String, enum: ['ios', 'android', 'unknown'], default: 'unknown' },
+        createdAt: { type: Date, default: Date.now },
+        lastSeenAt: { type: Date, default: Date.now },
       },
     ],
   },

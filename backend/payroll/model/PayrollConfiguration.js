@@ -44,6 +44,8 @@ const outputColumnSchema = new mongoose.Schema({
   paysheetEditable: { type: Boolean, default: false },
   /** Storage path on PayrollRecord (e.g. loanAdvance.totalEMI). Defaults to `field` when source=field. */
   paysheetEditableFieldPath: { type: String, default: '' },
+  /** Payslip layout: attendance | earnings | deductions | none (paysheet only). */
+  payslipSection: { type: String, enum: ['none', 'attendance', 'earnings', 'deductions'], default: 'none' },
 }, { _id: false });
 
 const payrollConfigurationSchema = new mongoose.Schema({
@@ -121,6 +123,8 @@ function normalizeConfigPayload(payload = {}) {
       const paysheetEditable = !!c.paysheetEditable;
       const paysheetEditableFieldPath =
         c.paysheetEditableFieldPath != null ? String(c.paysheetEditableFieldPath).trim() : '';
+      const rawSection = String(c.payslipSection || 'none').trim().toLowerCase();
+      const payslipSection = ['attendance', 'earnings', 'deductions'].includes(rawSection) ? rawSection : 'none';
       return {
         header,
         source,
@@ -129,6 +133,7 @@ function normalizeConfigPayload(payload = {}) {
         order,
         paysheetEditable,
         paysheetEditableFieldPath,
+        payslipSection,
       };
     });
   }

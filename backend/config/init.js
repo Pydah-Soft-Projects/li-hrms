@@ -1,20 +1,14 @@
 /**
  * Database Initialization Service
- * This service coordinates the initialization of various database components
- * to avoid circular dependencies between database config and model helpers.
+ * Coordinates database initialization to avoid circular dependencies.
  */
 
-const { initializeDatabases: initBase } = require('./database');
-const { initializeHRMSDatabase: initHRMS } = require('../employees/config/sqlHelper');
+const { initializeDatabases } = require('./database');
 
 const initializeAllDatabases = async () => {
-    // Initialize MongoDB and SQL Connections first
-    await initBase();
-
-    // Then initialize HRMS specific table schemas
-    await initHRMS();
+  await initializeDatabases();
 };
 
 module.exports = {
-    initializeAllDatabases
+  initializeAllDatabases,
 };

@@ -5,8 +5,8 @@ const OD = require('../../leaves/model/OD');
 const OT = require('../../overtime/model/OT');
 const { getMergedOtConfig } = require('../../overtime/services/otConfigResolver');
 const { applyOtHoursPolicy } = require('../../overtime/services/otHoursPolicyService');
-const { calculateMonthlySummary } = require('./summaryCalculationService');
 const { createISTDate, extractISTComponents, getAllDatesInRange } = require('../../shared/utils/dateUtils');
+const { normalizeViewMode } = require('./monthlyAttendanceQueryService');
 const dateCycleService = require('../../leaves/services/dateCycleService');
 const { filterMonthlySummaryForEmploymentBounds } = require('./employmentBoundsSummaryFilter');
 const { buildAttendanceLeaveInfoForDate } = require('../../shared/utils/leaveDayRangeUtils');
@@ -16,6 +16,341 @@ function getSegmentCumulativeExtraHours(record) {
   if (!shifts.length) return 0;
   const total = shifts.reduce((sum, s) => sum + (Number(s?.extraHours) || 0), 0);
   return Math.round(total * 100) / 100;
+}
+
+const DAILY_SELECT_BY_TIER = {
+  minimal:
+    'employeeNumber date status totalLateInMinutes totalEarlyOutMinutes isEdited rosterFirstHalfNonWorking rosterSecondHalfNonWorking',
+  compact:
+    'employeeNumber date status totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount permissionDeduction payableShifts isEdited source rosterFirstHalfNonWorking rosterSecondHalfNonWorking shifts',
+  full:
+    'employeeNumber date status shifts totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount permissionDeduction notes earlyOutDeduction isEdited editHistory policyMeta payableShifts rosterFirstHalfNonWorking rosterSecondHalfNonWorking source',
+};
+
+function normalizeEmpNoKey(empNo) {
+  return String(empNo || '').trim().toUpperCase();
+}
+
+function buildSummaryLookupMaps(summaries) {
+  const byEmployeeId = new Map();
+  const byEmpNo = new Map();
+  for (const row of summaries || []) {
+    if (row?.employeeId) byEmployeeId.set(String(row.employeeId), row);
+    const key = normalizeEmpNoKey(row?.emp_no);
+    if (key) byEmpNo.set(key, row);
+  }
+  return { byEmployeeId, byEmpNo };
+}
+
+function resolveStoredSummary(emp, lookup) {
+  if (!emp) return null;
+  return lookup.byEmployeeId.get(String(emp._id)) || lookup.byEmpNo.get(normalizeEmpNoKey(emp.emp_no)) || null;
+}
+
+function toListSummary(summary, employee, includeContributingDates) {
+  if (!summary) return null;
+  const filtered = filterMonthlySummaryForEmploymentBounds(summary, employee);
+  if (!filtered) return null;
+  if (includeContributingDates) return filtered;
+  if (!filtered.contributingDates) return filtered;
+  const { contributingDates, ...rest } =
+    typeof filtered.toObject === 'function' ? filtered.toObject() : { ...filtered };
+  return rest;
+}
+
+function compactLeaveInfo(leaveInfo) {
+  if (!leaveInfo) return null;
+  return {
+    leaveId: leaveInfo.leaveId,
+    leaveType: leaveInfo.leaveType,
+    leaveNature: leaveInfo.leaveNature,
+    isHalfDay: leaveInfo.isHalfDay,
+    halfDayType: leaveInfo.halfDayType,
+    numberOfDays: leaveInfo.numberOfDays,
+    segmentDaysOnDate: leaveInfo.segmentDaysOnDate,
+    purpose: leaveInfo.purpose,
+  };
+}
+
+function compactOdInfo(odInfo, full = false) {
+  if (!odInfo) return null;
+  const base = {
+    odId: odInfo.odId,
+    odType: odInfo.odType,
+    odType_extended: odInfo.odType_extended,
+    isHalfDay: odInfo.isHalfDay,
+    halfDayType: odInfo.halfDayType,
+    purpose: odInfo.purpose,
+    reason: odInfo.reason,
+    durationHours:
+      odInfo.durationHours != null && !Number.isNaN(Number(odInfo.durationHours))
+        ? Math.round(Number(odInfo.durationHours) * 100) / 100
+        : odInfo.durationHours,
+  };
+  if (!full) return base;
+  return {
+    ...base,
+    odStartTime: odInfo.odStartTime,
+    odEndTime: odInfo.odEndTime,
+    placeVisited: odInfo.placeVisited,
+    photo: odInfo.photo,
+  };
+}
+
+function slimShiftForTable(shift) {
+  if (!shift) return null;
+  const sid = shift.shiftId;
+  const shiftMeta =
+    sid && typeof sid === 'object'
+      ? { _id: sid._id, name: sid.name, startTime: sid.startTime, endTime: sid.endTime, duration: sid.duration }
+      : sid;
+  return {
+    _id: shift._id,
+    shiftId: shiftMeta,
+    inTime: shift.inTime,
+    outTime: shift.outTime,
+    status: shift.status,
+    workingHours: shift.workingHours,
+    otHours: shift.otHours,
+    extraHours: shift.extraHours,
+    earlyOutMinutes: shift.earlyOutMinutes,
+    lateInMinutes: shift.lateInMinutes,
+    payableShift: shift.payableShift,
+  };
+}
+
+async function loadOtConfigByDeptDiv(employees) {
+  const cache = new Map();
+  const keys = new Set();
+  for (const emp of employees) {
+    const deptId = emp.department_id?._id || emp.department_id || '';
+    const divId = emp.division_id?._id || emp.division_id || '';
+    keys.add(`${deptId}:${divId}`);
+  }
+  await Promise.all(
+    [...keys].map(async (key) => {
+      const sep = key.indexOf(':');
+      const deptPart = key.slice(0, sep);
+      const divPart = key.slice(sep + 1);
+      cache.set(key, await getMergedOtConfig(deptPart || null, divPart || null));
+    })
+  );
+  const byEmpNo = {};
+  for (const emp of employees) {
+    const empKey = normalizeEmpNoKey(emp.emp_no);
+    if (!empKey) continue;
+    const deptId = emp.department_id?._id || emp.department_id || '';
+    const divId = emp.division_id?._id || emp.division_id || '';
+    byEmpNo[empKey] = cache.get(`${deptId}:${divId}`) || null;
+  }
+  return byEmpNo;
+}
+
+function modeNeeds(mode) {
+  const m = normalizeViewMode(mode);
+  return {
+    leaves: ['complete', 'present_absent', 'leaves', 'export'].includes(m),
+    od: ['complete', 'present_absent', 'od', 'export'].includes(m),
+    ot: ['complete', 'ot', 'export'].includes(m),
+    otConfig: ['complete', 'ot', 'export'].includes(m),
+    shifts: ['in_out', 'complete', 'export'].includes(m),
+    tier:
+      m === 'export'
+        ? 'full'
+        : m === 'in_out' || m === 'complete' || m === 'ot'
+          ? 'compact'
+          : 'minimal',
+    fullCells: m === 'export',
+  };
+}
+
+function resolveWorkedHoursForCompleteCell(record) {
+  const hours = record?.totalWorkingHours;
+  if (hours == null || Number(hours) <= 0) return null;
+  return hours;
+}
+
+function resolveDayStatus(ctx) {
+  const {
+    dateStr,
+    record,
+    leaveInfo,
+    odInfo,
+    dojStr,
+    leftDateStr,
+    todayStr,
+    isEsiLeaveDay,
+    hasLeave,
+    hasOD,
+  } = ctx;
+  const isBeforeJoining = dojStr && dateStr < dojStr;
+  const isAfterResignation = leftDateStr && dateStr > leftDateStr;
+  const isFutureDate = dateStr > todayStr;
+  if (isBeforeJoining || isAfterResignation) return { status: '', skip: true };
+  if (isFutureDate) return { status: '-' };
+  if (isEsiLeaveDay) return { status: 'LEAVE' };
+  if (record?.status) return { status: record.status };
+  if (hasLeave) return { status: 'LEAVE' };
+  if (hasOD) return { status: 'OD' };
+  return { status: 'ABSENT' };
+}
+
+function buildDailyCell(mode, ctx) {
+  const needs = modeNeeds(mode);
+  const {
+    dateStr,
+    record,
+    leaveInfo,
+    odInfo,
+    hasLeave,
+    hasOD,
+    isEsiLeaveDay,
+    isConflict,
+    approvedOtForDate,
+    mergedPolicyForEmp,
+  } = ctx;
+  const statusInfo = resolveDayStatus(ctx);
+  if (statusInfo.skip) return null;
+
+  const m = normalizeViewMode(mode);
+  const status = statusInfo.status;
+  const base = {
+    date: dateStr,
+    status,
+    hasLeave,
+    hasOD,
+    isConflict: isEsiLeaveDay ? false : isConflict,
+    isEsiLeaveDay,
+  };
+
+  if (m === 'present_absent') {
+    return {
+      ...base,
+      isLateIn: (record?.totalLateInMinutes || 0) > 0,
+      isEarlyOut: (record?.totalEarlyOutMinutes || 0) > 0,
+      leaveInfo: hasLeave ? compactLeaveInfo(leaveInfo) : null,
+      odInfo: hasOD ? compactOdInfo(odInfo) : null,
+      isEdited: record?.isEdited || false,
+    };
+  }
+
+  if (m === 'leaves') {
+    return {
+      ...base,
+      leaveInfo: hasLeave ? compactLeaveInfo(leaveInfo) : null,
+      hasLeave,
+    };
+  }
+
+  if (m === 'od') {
+    return {
+      ...base,
+      odInfo: hasOD ? compactOdInfo(odInfo) : null,
+      hasOD,
+    };
+  }
+
+  if (m === 'in_out') {
+    const shifts = Array.isArray(record?.shifts) ? record.shifts.map(slimShiftForTable).filter(Boolean) : [];
+    return {
+      ...base,
+      shifts,
+      shiftId: shifts[0]?.shiftId || null,
+      totalHours: record?.totalWorkingHours ?? null,
+      isLateIn: (record?.totalLateInMinutes || 0) > 0,
+      isEarlyOut: (record?.totalEarlyOutMinutes || 0) > 0,
+    };
+  }
+
+  if (m === 'ot') {
+    const segmentExtra = getSegmentCumulativeExtraHours(record);
+    const slabPreview =
+      !approvedOtForDate && segmentExtra > 0 && mergedPolicyForEmp
+        ? applyOtHoursPolicy(segmentExtra, mergedPolicyForEmp)
+        : null;
+    return {
+      ...base,
+      otHours: approvedOtForDate?.considered ?? Math.max(record?.otHours || 0, record?.totalOTHours || 0),
+      otActualHours: approvedOtForDate?.actual ?? 0,
+      otSlabHours:
+        approvedOtForDate?.considered ??
+        (slabPreview?.eligible ? Number(slabPreview.finalHours) || 0 : 0),
+      extraHours: record?.extraHours || 0,
+    };
+  }
+
+  if (m === 'export') {
+    const segmentExtra = getSegmentCumulativeExtraHours(record);
+    const slabPreview =
+      !approvedOtForDate && segmentExtra > 0 && mergedPolicyForEmp
+        ? applyOtHoursPolicy(segmentExtra, mergedPolicyForEmp)
+        : null;
+    const shifts = Array.isArray(record?.shifts) ? record.shifts.map(slimShiftForTable).filter(Boolean) : [];
+    return {
+      ...base,
+      totalHours: record?.totalWorkingHours ?? null,
+      lateInMinutes: record?.totalLateInMinutes || 0,
+      earlyOutMinutes: record?.totalEarlyOutMinutes || 0,
+      isLateIn: (record?.totalLateInMinutes || 0) > 0,
+      isEarlyOut: (record?.totalEarlyOutMinutes || 0) > 0,
+      shiftId: shifts[0]?.shiftId || null,
+      shifts,
+      expectedHours: record?.totalExpectedHours || shifts[0]?.shiftId?.duration || 0,
+      otHours: approvedOtForDate?.considered ?? Math.max(record?.otHours || 0, record?.totalOTHours || 0),
+      otActualHours: approvedOtForDate?.actual ?? 0,
+      otSlabHours:
+        approvedOtForDate?.considered ??
+        (slabPreview?.eligible ? Number(slabPreview.finalHours) || 0 : 0),
+      extraHours: record?.extraHours || 0,
+      payableShifts: record?.payableShifts || 0,
+      permissionHours: record?.permissionHours || 0,
+      permissionCount: record?.permissionCount || 0,
+      permissionDeduction: record?.permissionDeduction || 0,
+      leaveInfo: hasLeave ? leaveInfo : null,
+      odInfo: hasOD ? compactOdInfo(odInfo, true) : null,
+      isEdited: record?.isEdited || false,
+      editHistory: record?.editHistory || [],
+      source: record?.source || [],
+      notes: record?.notes || '',
+      rosterFirstHalfNonWorking: record?.rosterFirstHalfNonWorking || null,
+      rosterSecondHalfNonWorking: record?.rosterSecondHalfNonWorking || null,
+    };
+  }
+
+  // complete — at-a-glance day cell (shift, hours, late/early, edit flag) + summary inputs
+  const shifts = Array.isArray(record?.shifts) ? record.shifts.map(slimShiftForTable).filter(Boolean) : [];
+  const segmentExtra = getSegmentCumulativeExtraHours(record);
+  const slabPreview =
+    !approvedOtForDate && segmentExtra > 0 && mergedPolicyForEmp
+      ? applyOtHoursPolicy(segmentExtra, mergedPolicyForEmp)
+      : null;
+  return {
+    ...base,
+    totalHours: resolveWorkedHoursForCompleteCell(record),
+    lateInMinutes: record?.totalLateInMinutes || 0,
+    earlyOutMinutes: record?.totalEarlyOutMinutes || 0,
+    isLateIn: (record?.totalLateInMinutes || 0) > 0,
+    isEarlyOut: (record?.totalEarlyOutMinutes || 0) > 0,
+    shiftId: shifts[0]?.shiftId || null,
+    shifts,
+    expectedHours:
+      record?.totalExpectedHours ||
+      (shifts[0]?.shiftId && typeof shifts[0].shiftId === 'object' ? shifts[0].shiftId.duration : 0),
+    leaveInfo: hasLeave ? compactLeaveInfo(leaveInfo) : null,
+    odInfo: hasOD ? compactOdInfo(odInfo) : null,
+    otHours: approvedOtForDate?.considered ?? Math.max(record?.otHours || 0, record?.totalOTHours || 0),
+    otActualHours: approvedOtForDate?.actual ?? 0,
+    otSlabHours:
+      approvedOtForDate?.considered ??
+      (slabPreview?.eligible ? Number(slabPreview.finalHours) || 0 : 0),
+    extraHours: record?.extraHours || 0,
+    permissionCount: record?.permissionCount || 0,
+    payableShifts: record?.payableShifts || 0,
+    isEdited: record?.isEdited || false,
+    source: record?.source || [],
+    rosterFirstHalfNonWorking: record?.rosterFirstHalfNonWorking || null,
+    rosterSecondHalfNonWorking: record?.rosterSecondHalfNonWorking || null,
+  };
 }
 
 /**
@@ -283,21 +618,34 @@ exports.getCalendarViewData = async (employee, year, month) => {
 
 /**
  * Get attendance data for table view (Multiple Employees)
+ * @param {object[]} employees
+ * @param {number|string} year
+ * @param {number|string} month
+ * @param {string} [startQueryDate]
+ * @param {string} [endQueryDate]
+ * @param {{ mode?: string, includeContributingDates?: boolean }} [options]
  */
-exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate, endQueryDate) => {
-  const targetYear = parseInt(year);
-  const targetMonth = parseInt(month);
+exports.getMonthlyTableViewData = async (
+  employees,
+  year,
+  month,
+  startQueryDate,
+  endQueryDate,
+  options = {}
+) => {
+  const targetYear = parseInt(year, 10);
+  const targetMonth = parseInt(month, 10);
+  const mode = normalizeViewMode(options.mode);
+  const includeContributingDates = Boolean(options.includeContributingDates);
+  const needs = modeNeeds(mode);
 
   let startDate = startQueryDate;
   let endDateStr = endQueryDate;
-
-  // If dates not provided, resolve using payroll cycle
   if (!startDate || !endDateStr) {
-    const anchorDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-15`;
-    const periodInfo = await dateCycleService.getPeriodInfo(new Date(anchorDateStr));
-    
-    if (!startDate) startDate = extractISTComponents(periodInfo.payrollCycle.startDate).dateStr;
-    if (!endDateStr) endDateStr = extractISTComponents(periodInfo.payrollCycle.endDate).dateStr;
+    const { getPayrollPeriodForMonth } = require('../../shared/utils/payrollPeriodCache');
+    const period = await getPayrollPeriodForMonth(targetYear, targetMonth, dateCycleService);
+    if (!startDate) startDate = period.startDateStr;
+    if (!endDateStr) endDateStr = period.endDateStr;
   }
 
   const startYmd =
@@ -311,63 +659,87 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
 
   const startDateObj = createISTDate(startYmd, '00:00');
   const endDateObj = createISTDate(endYmd, '23:59');
-
   const datesInRange = getAllDatesInRange(startYmd, endYmd);
 
-  // Get all attendance records for the month (Using .lean() and projections)
-  const empNos = employees.map(e => e.emp_no);
-  const attendanceRecords = await AttendanceDaily.find({
+  const empNos = employees.map((e) => e.emp_no);
+  const empIds = employees.map((e) => e._id);
+  const empIdToNo = new Map(employees.map((e) => [String(e._id), e.emp_no]));
+  const monthStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+  const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
+
+  const dailySelect = DAILY_SELECT_BY_TIER[needs.tier] || DAILY_SELECT_BY_TIER.minimal;
+  let attendanceQuery = AttendanceDaily.find({
     employeeNumber: { $in: empNos },
     date: { $gte: startYmd, $lte: endYmd },
   })
-    .select('employeeNumber date status shifts totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount permissionDeduction notes earlyOutDeduction isEdited editHistory policyMeta payableShifts rosterFirstHalfNonWorking rosterSecondHalfNonWorking')
-    .populate('shifts.shiftId', 'name startTime endTime duration payableShifts')
+    .select(dailySelect)
     .sort({ employeeNumber: 1, date: 1 })
     .lean();
 
-  const empIds = employees.map(e => e._id);
-  const approvedOTs = await OT.find({
-    employeeId: { $in: empIds },
-    date: { $gte: startYmd, $lte: endYmd },
-    status: 'approved',
-    isActive: true,
-  })
-    .select('employeeId employeeNumber date otHours rawOtHours computedOtHours')
-    .lean();
+  if (needs.shifts) {
+    attendanceQuery = attendanceQuery.populate(
+      'shifts.shiftId',
+      'name startTime endTime duration payableShifts'
+    );
+  }
 
-  // Get all approved leaves
-  const allLeaves = await Leave.find({
-    employeeId: { $in: empIds },
-    status: 'approved',
-    $or: [
-      { fromDate: { $lte: endDateObj }, toDate: { $gte: startDateObj } },
-    ],
-    isActive: true,
-  })
-    .select('employeeId fromDate toDate leaveType purpose isHalfDay halfDayType fromIsHalfDay fromHalfDayType toIsHalfDay toHalfDayType numberOfDays appliedAt createdAt')
-    .populate('employeeId', 'emp_no')
-    .lean();
+  const parallelTasks = [
+    attendanceQuery,
+    needs.ot
+      ? OT.find({
+          employeeId: { $in: empIds },
+          date: { $gte: startYmd, $lte: endYmd },
+          status: 'approved',
+          isActive: true,
+        })
+          .select('employeeId employeeNumber date otHours rawOtHours computedOtHours')
+          .lean()
+      : Promise.resolve([]),
+    needs.leaves
+      ? Leave.find({
+          employeeId: { $in: empIds },
+          status: 'approved',
+          $or: [{ fromDate: { $lte: endDateObj }, toDate: { $gte: startDateObj } }],
+          isActive: true,
+        })
+          .select(
+            'employeeId fromDate toDate leaveType leaveNature purpose isHalfDay halfDayType fromIsHalfDay fromHalfDayType toIsHalfDay toHalfDayType numberOfDays'
+          )
+          .lean()
+      : Promise.resolve([]),
+    needs.od
+      ? OD.find({
+          employeeId: { $in: empIds },
+          status: 'approved',
+          $or: [{ fromDate: { $lte: endDateObj }, toDate: { $gte: startDateObj } }],
+          isActive: true,
+        })
+          .select(
+            'employeeId fromDate toDate odType odType_extended isHalfDay halfDayType odStartTime odEndTime durationHours purpose placeVisited photoEvidence'
+          )
+          .lean()
+      : Promise.resolve([]),
+    MonthlyAttendanceSummary.find({
+      employeeId: { $in: empIds },
+      month: monthStr,
+    }).lean(),
+    needs.otConfig ? loadOtConfigByDeptDiv(employees) : Promise.resolve({}),
+  ];
 
-  // Get all approved ODs
-  const allODs = await OD.find({
-    employeeId: { $in: empIds },
-    status: 'approved',
-    $or: [
-      { fromDate: { $lte: endDateObj }, toDate: { $gte: startDateObj } },
-    ],
-    isActive: true,
-  })
-    .select('employeeId fromDate toDate odType odType_extended isHalfDay halfDayType odStartTime odEndTime purpose placeVisited photoEvidence geoLocation')
-    .populate('employeeId', 'emp_no')
-    .lean();
+  const [
+    attendanceRecords,
+    approvedOTs,
+    allLeaves,
+    allODs,
+    preCalculatedSummaries,
+    employeePolicyMap,
+  ] = await Promise.all(parallelTasks);
 
-  // Create Leave Map
   const leaveMapByEmployee = {};
-  allLeaves.forEach(leave => {
-    const empNo = leave.employeeId?.emp_no || leave.emp_no;
+  allLeaves.forEach((leave) => {
+    const empNo = empIdToNo.get(String(leave.employeeId));
     if (!empNo) return;
     if (!leaveMapByEmployee[empNo]) leaveMapByEmployee[empNo] = {};
-
     const leaveRangeStart = extractISTComponents(leave.fromDate).dateStr;
     const leaveRangeEnd = extractISTComponents(leave.toDate).dateStr;
     for (const dateStr of getAllDatesInRange(leaveRangeStart, leaveRangeEnd)) {
@@ -378,46 +750,45 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
     }
   });
 
-  // Create OD Map
   const odMapByEmployee = {};
-  allODs.forEach(od => {
-    const empNo = od.employeeId?.emp_no || od.emp_no;
+  allODs.forEach((od) => {
+    const empNo = empIdToNo.get(String(od.employeeId));
     if (!empNo) return;
     if (!odMapByEmployee[empNo]) odMapByEmployee[empNo] = {};
-
     const odRangeStart = extractISTComponents(od.fromDate).dateStr;
     const odRangeEnd = extractISTComponents(od.toDate).dateStr;
     for (const dateStr of getAllDatesInRange(odRangeStart, odRangeEnd)) {
       if (dateStr >= startYmd && dateStr <= endYmd) {
-        odMapByEmployee[empNo][dateStr] = {
-          odId: od._id,
-          odType: od.odType,
-          odType_extended: od.odType_extended,
-          isHalfDay: od.isHalfDay,
-          halfDayType: od.halfDayType,
-          odStartTime: od.odStartTime,
-          odEndTime: od.odEndTime,
-          placeVisited: od.placeVisited,
-          reason: od.purpose,
-          purpose: od.purpose,
-          photo: od.photoEvidence?.url,
-          photoEvidence: od.photoEvidence,
-          geoLocation: od.geoLocation,
-        };
+        odMapByEmployee[empNo][dateStr] = compactOdInfo(
+          {
+            odId: od._id,
+            odType: od.odType,
+            odType_extended: od.odType_extended,
+            isHalfDay: od.isHalfDay,
+            halfDayType: od.halfDayType,
+            odStartTime: od.odStartTime,
+            odEndTime: od.odEndTime,
+            durationHours: od.durationHours,
+            placeVisited: od.placeVisited,
+            reason: od.purpose,
+            purpose: od.purpose,
+            photo: od.photoEvidence?.url,
+          },
+          needs.fullCells
+        );
       }
     }
   });
 
-  // Create Attendance Map
   const attendanceMap = {};
-  attendanceRecords.forEach(record => {
+  attendanceRecords.forEach((record) => {
     if (!attendanceMap[record.employeeNumber]) attendanceMap[record.employeeNumber] = {};
     attendanceMap[record.employeeNumber][record.date] = record;
   });
 
   const approvedOtMap = {};
   approvedOTs.forEach((ot) => {
-    const empNo = String(ot.employeeNumber || '').toUpperCase();
+    const empNo = normalizeEmpNoKey(ot.employeeNumber);
     if (!empNo) return;
     if (!approvedOtMap[empNo]) approvedOtMap[empNo] = {};
     approvedOtMap[empNo][ot.date] = {
@@ -426,50 +797,16 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
     };
   });
 
-  const employeePolicyMap = {};
-  await Promise.all(
-    employees.map(async (emp) => {
-      const key = String(emp.emp_no || '').toUpperCase();
-      if (!key) return;
-      employeePolicyMap[key] = await getMergedOtConfig(
-        emp.department_id?._id || emp.department_id || null,
-        emp.division_id?._id || emp.division_id || null
-      );
-    })
-  );
+  const summaryLookup = buildSummaryLookupMaps(preCalculatedSummaries);
+  const todayStr = extractISTComponents(new Date()).dateStr;
 
-  // Optimize Summary Retrieval: Fetch all summaries at once instead of in a loop
-  const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
-  const monthStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
-  const preCalculatedSummaries = await MonthlyAttendanceSummary.find({
-    employeeId: { $in: empIds },
-    month: monthStr
-  }).lean();
-
-  const summaryDataMap = {};
-  preCalculatedSummaries.forEach(s => {
-    summaryDataMap[s.emp_no] = s;
-  });
-
-  // Handle missing summaries (only calculate for those that don't exist)
-  for (const emp of employees) {
-    if (!summaryDataMap[emp.emp_no]) {
-      try {
-        const newSummary = await calculateMonthlySummary(emp._id, emp.emp_no, targetYear, targetMonth);
-        summaryDataMap[emp.emp_no] = newSummary.toObject();
-      } catch (err) {
-        console.error(`Failed to calculate missing summary for ${emp.emp_no}:`, err);
-      }
-    }
-  }
-
-  // Recalculate Summaries (Verification Logic)
-  // The previous summaryPromises block is replaced by the optimized summary retrieval above.
-  // The verification logic is now integrated into the final response mapping or can be done here if needed.
-
-  // Build final response structure
-  return employees.map(emp => {
+  return employees.map((emp) => {
+    const dojStr = emp.doj ? extractISTComponents(emp.doj).dateStr : null;
+    const leftDateStr = emp.leftDate ? extractISTComponents(emp.leftDate).dateStr : null;
+    const empNoKey = normalizeEmpNoKey(emp.emp_no);
+    const mergedPolicyForEmp = employeePolicyMap[empNoKey] || null;
     const dailyAttendance = {};
+
     for (const dateStr of datesInRange) {
       const record = attendanceMap[emp.emp_no]?.[dateStr] || null;
       const leaveInfo = leaveMapByEmployee[emp.emp_no]?.[dateStr] || null;
@@ -485,80 +822,61 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
       const odIsHalfDay = odInfo?.odType_extended === 'half_day' || odInfo?.isHalfDay;
       const isConflict = (hasLeave || (hasOD && !odIsHourBased && !odIsHalfDay)) && hasAttendance;
 
-      const dojStr = emp.doj ? extractISTComponents(emp.doj).dateStr : null;
-      const leftDateStr = emp.leftDate ? extractISTComponents(emp.leftDate).dateStr : null;
-      
-      const isBeforeJoining = dojStr && dateStr < dojStr;
-      const isAfterResignation = leftDateStr && dateStr > leftDateStr;
-
-      // Get today's IST date string for future date comparison
-      const todayIST = new Date();
-      const todayStr = extractISTComponents(todayIST).dateStr;
-      const isFutureDate = dateStr > todayStr;
-
-      let status = 'ABSENT';
-      // Pre-joining, post-resignation and future date checks take priority over any DB record
-      if (isBeforeJoining || isAfterResignation) status = '';
-      else if (isFutureDate) status = '-';
-      else if (isEsiLeaveDay) status = 'LEAVE';
-      else if (record) status = record.status;
-      else if (hasLeave) status = 'LEAVE';
-      else if (hasOD) status = 'OD';
-
-      const approvedOtForDate = approvedOtMap[emp.emp_no]?.[dateStr] || null;
-      const segmentExtra = getSegmentCumulativeExtraHours(record);
-      const mergedPolicyForEmp = employeePolicyMap[String(emp.emp_no || '').toUpperCase()] || null;
-      const slabPreview = segmentExtra > 0 && mergedPolicyForEmp ? applyOtHoursPolicy(segmentExtra, mergedPolicyForEmp) : null;
-      dailyAttendance[dateStr] = {
-        date: dateStr,
-        status: status,
-        // inTime and outTime are now provided within the shifts array for multi-shift support
-        totalHours: record?.totalWorkingHours || null,
-        lateInMinutes: record?.totalLateInMinutes || 0,
-        earlyOutMinutes: record?.totalEarlyOutMinutes || 0,
-        isLateIn: record?.totalLateInMinutes > 0,
-        isEarlyOut: record?.totalEarlyOutMinutes > 0,
-        shiftId: record?.shifts && record.shifts.length > 0 ? record.shifts[0].shiftId : null,
-        shifts: record?.shifts || [],
-        expectedHours: record?.totalExpectedHours || (record?.shifts && record.shifts.length > 0 && record.shifts[0].shiftId ? record.shifts[0].shiftId.duration : 0),
-        otHours: approvedOtForDate?.considered ?? Math.max(record?.otHours || 0, record?.totalOTHours || 0),
-        otActualHours: approvedOtForDate?.actual ?? 0,
-        otSlabHours: approvedOtForDate?.considered ?? (slabPreview?.eligible ? Number(slabPreview.finalHours) || 0 : 0),
-        extraHours: record?.extraHours || 0,
-        payableShifts: record?.payableShifts || 0,
-        permissionHours: record?.permissionHours || 0,
-        permissionCount: record?.permissionCount || 0,
-        permissionDeduction: record?.permissionDeduction || 0,
-        notes: record?.notes || '',
-        earlyOutDeduction: record?.earlyOutDeduction || null,
-        hasLeave,
+      const cell = buildDailyCell(mode, {
+        dateStr,
+        record,
         leaveInfo,
-        hasOD,
         odInfo,
-        isConflict: isEsiLeaveDay ? false : isConflict,
+        hasLeave,
+        hasOD,
         isEsiLeaveDay,
-        isEdited: record?.isEdited || false,
-        editHistory: record?.editHistory || [],
-        source: record?.source || [],
-        policyMeta: record?.policyMeta || null,
-        rosterFirstHalfNonWorking: record?.rosterFirstHalfNonWorking || null,
-        rosterSecondHalfNonWorking: record?.rosterSecondHalfNonWorking || null,
-        notes: record?.notes || '',
-      };
+        isConflict,
+        dojStr,
+        leftDateStr,
+        todayStr,
+        approvedOtForDate: approvedOtMap[empNoKey]?.[dateStr] || null,
+        mergedPolicyForEmp,
+      });
+
+      if (cell) dailyAttendance[dateStr] = cell;
     }
 
-    const rawSummary = summaryDataMap[emp.emp_no] || null;
-    const summaryForClient = rawSummary
-      ? filterMonthlySummaryForEmploymentBounds(rawSummary, emp)
-      : null;
+    const rawSummary = resolveStoredSummary(emp, summaryLookup);
+    const summaryForClient = toListSummary(rawSummary, emp, includeContributingDates);
 
     return {
-      _id: emp._id, // Keep for legacy if needed
+      _id: emp._id,
       employee: emp,
-      dailyAttendance: dailyAttendance,
+      dailyAttendance,
       presentDays: rawSummary?.totalPresentDays || 0,
       payableShifts: rawSummary?.totalPayableShifts || 0,
       summary: summaryForClient,
     };
   });
+};
+
+/** Contributing dates only — for summary-column highlights after list load. */
+exports.getMonthlySummaryContributions = async (employeeId, year, month) => {
+  const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
+  const Employee = require('../../employees/model/Employee');
+  const targetYear = parseInt(year, 10);
+  const targetMonth = parseInt(month, 10);
+  const monthStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+
+  const [employee, summary] = await Promise.all([
+    Employee.findById(employeeId)
+      .select('emp_no doj leftDate')
+      .lean(),
+    MonthlyAttendanceSummary.findOne({ employeeId, month: monthStr }).lean(),
+  ]);
+
+  if (!employee) return null;
+  if (!summary) return { contributingDates: null };
+
+  const filtered = filterMonthlySummaryForEmploymentBounds(summary, employee);
+  return {
+    contributingDates: filtered?.contributingDates || null,
+    emp_no: employee.emp_no,
+    month: monthStr,
+  };
 };

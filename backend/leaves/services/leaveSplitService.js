@@ -4,7 +4,8 @@ const leaveRegisterYearMonthlyApplyService = require('./leaveRegisterYearMonthly
 const LeaveSettings = require('../model/LeaveSettings');
 const Employee = require('../../employees/model/Employee');
 const { getFinancialYear, getLeaveNature } = require('./leaveBalanceService');
-const { expandLeaveToDailySegments } = require('../../shared/utils/leaveDayRangeUtils');
+const { expandLeaveToDailySegments, istDateStr } = require('../../shared/utils/leaveDayRangeUtils');
+const { parseCalendarDateAsIST } = require('../../shared/utils/dateUtils');
 
 /**
  * Get all dates between fromDate and toDate (inclusive), with per-day half boundaries.
@@ -17,11 +18,20 @@ function getDateRange(fromDate, toDate, isHalfDay = false, halfDayType = null, l
     halfDayType,
   };
   return expandLeaveToDailySegments(source).map((seg) => ({
+    dateStr: seg.dateStr,
     date: seg.date,
     isHalfDay: seg.isHalfDay,
     halfDayType: seg.halfDayType,
     numberOfDays: seg.numberOfDays,
   }));
+}
+
+/** Normalize split payload date to YYYY-MM-DD in IST (matches frontend list). */
+function normalizeSplitDateStr(splitDate) {
+  if (splitDate == null || splitDate === '') return null;
+  const raw = String(splitDate).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  return istDateStr(splitDate);
 }
 
 /**
@@ -41,9 +51,12 @@ async function validateSplits(leaveId, splits) {
       return { isValid: false, errors: ['Leave not found'], warnings: [] };
     }
 
-    // Get date range for original leave
+    // Get date range for original leave (IST calendar days)
     const originalDates = getDateRange(leave.fromDate, leave.toDate, leave.isHalfDay, leave.halfDayType, leave);
+    const validDateStrs = new Set(originalDates.map((od) => od.dateStr || istDateStr(od.date)));
     const originalTotalDays = leave.numberOfDays;
+    const leaveFromStr = istDateStr(leave.fromDate);
+    const leaveToStr = istDateStr(leave.toDate || leave.fromDate);
 
     // Validate splits
     let totalSplitDays = 0;
@@ -51,16 +64,17 @@ async function validateSplits(leaveId, splits) {
 
     for (const split of splits) {
       // Validate required fields
-      if (!split.date) {
+      const splitDateStr = normalizeSplitDateStr(split.date);
+      if (!splitDateStr) {
         errors.push('Split missing date');
         continue;
       }
       if (!split.leaveType) {
-        errors.push(`Split for ${split.date} missing leave type`);
+        errors.push(`Split for ${splitDateStr} missing leave type`);
         continue;
       }
       if (split.status !== 'approved' && split.status !== 'rejected') {
-        errors.push(`Split for ${split.date} has invalid status: ${split.status}`);
+        errors.push(`Split for ${splitDateStr} has invalid status: ${split.status}`);
         continue;
       }
 
@@ -70,32 +84,23 @@ async function validateSplits(leaveId, splits) {
         totalSplitDays += splitDays;
       }
 
-      // Check if date is within original leave range
-      const splitDate = new Date(split.date);
-      splitDate.setHours(0, 0, 0, 0);
-      
-      const isInRange = originalDates.some(od => {
-        const odDate = new Date(od.date);
-        odDate.setHours(0, 0, 0, 0);
-        return odDate.getTime() === splitDate.getTime();
-      });
-
-      if (!isInRange) {
-        errors.push(`Split date ${split.date} is outside original leave range (${leave.fromDate.toISOString().split('T')[0]} to ${leave.toDate.toISOString().split('T')[0]})`);
+      // Check if date is within original leave range (IST calendar day)
+      if (!validDateStrs.has(splitDateStr)) {
+        errors.push(`Split date ${splitDateStr} is outside original leave range (${leaveFromStr} to ${leaveToStr})`);
         continue;
       }
 
       // Check for duplicate dates (same date, same half-day)
-      const dateKey = `${split.date}_${split.isHalfDay ? split.halfDayType : 'full'}`;
+      const dateKey = `${splitDateStr}_${split.isHalfDay ? split.halfDayType : 'full'}`;
       if (dateMap.has(dateKey)) {
-        errors.push(`Duplicate split for ${split.date}${split.isHalfDay ? ` (${split.halfDayType})` : ''}`);
+        errors.push(`Duplicate split for ${splitDateStr}${split.isHalfDay ? ` (${split.halfDayType})` : ''}`);
         continue;
       }
       dateMap.set(dateKey, split);
 
       // Validate half-day logic
       if (split.isHalfDay && !split.halfDayType) {
-        errors.push(`Split for ${split.date} is marked as half-day but missing halfDayType`);
+        errors.push(`Split for ${splitDateStr} is marked as half-day but missing halfDayType`);
         continue;
       }
 
@@ -103,7 +108,7 @@ async function validateSplits(leaveId, splits) {
       if (split.status === 'approved') {
         const balanceCheck = await checkLeaveBalance(leave.employeeId, split.leaveType, splitDays);
         if (!balanceCheck.hasBalance) {
-          warnings.push(`Insufficient balance for ${split.leaveType} on ${split.date}: ${balanceCheck.message}`);
+          warnings.push(`Insufficient balance for ${split.leaveType} on ${splitDateStr}: ${balanceCheck.message}`);
         }
       }
     }
@@ -115,23 +120,26 @@ async function validateSplits(leaveId, splits) {
 
     // Check if all original dates are covered
     const coveredDates = new Set();
-    splits.forEach(split => {
-      const dateKey = `${new Date(split.date).toISOString().split('T')[0]}_${split.isHalfDay ? split.halfDayType : 'full'}`;
+    splits.forEach((split) => {
+      const splitDateStr = normalizeSplitDateStr(split.date);
+      if (!splitDateStr) return;
+      const dateKey = `${splitDateStr}_${split.isHalfDay ? split.halfDayType : 'full'}`;
       coveredDates.add(dateKey);
     });
 
     // For half-day original leave, check if the specific half is covered
     if (leave.isHalfDay) {
-      const originalDateKey = `${leave.fromDate.toISOString().split('T')[0]}_${leave.halfDayType}`;
+      const originalDateKey = `${leaveFromStr}_${leave.halfDayType}`;
       if (!coveredDates.has(originalDateKey)) {
         warnings.push('Original half-day is not covered in splits');
       }
     } else {
       // For full-day leaves, check if all dates are covered
-      originalDates.forEach(od => {
-        const dateKey = `${od.date.toISOString().split('T')[0]}_${od.isHalfDay ? od.halfDayType : 'full'}`;
+      originalDates.forEach((od) => {
+        const odStr = od.dateStr || istDateStr(od.date);
+        const dateKey = `${odStr}_${od.isHalfDay ? od.halfDayType : 'full'}`;
         if (!coveredDates.has(dateKey)) {
-          warnings.push(`Date ${od.date.toISOString().split('T')[0]} is not covered in splits`);
+          warnings.push(`Date ${odStr} is not covered in splits`);
         }
       });
     }
@@ -271,8 +279,10 @@ async function createSplits(leaveId, splits, approver) {
     const financialYear = await getFinancialYear(new Date());
 
     for (const splitData of splits) {
-      const splitDate = new Date(splitData.date);
-      splitDate.setHours(0, 0, 0, 0);
+      const splitDate = parseCalendarDateAsIST(splitData.date);
+      if (!splitDate) {
+        return { success: false, errors: [`Invalid split date: ${splitData.date}`] };
+      }
 
       const year = splitDate.getFullYear();
       const monthNum = splitDate.getMonth() + 1;
@@ -561,6 +571,7 @@ async function getSplitSummary(leaveId) {
 
 module.exports = {
   getDateRange,
+  normalizeSplitDateStr,
   validateSplits,
   checkLeaveBalance,
   createSplits,

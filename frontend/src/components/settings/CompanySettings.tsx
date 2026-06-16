@@ -3,17 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
-import Spinner from '@/components/Spinner';
 import { SettingsSkeleton } from './SettingsSkeleton';
-import {
-  Building2,
-  ChevronRight,
-  FileText,
-  Globe,
-  Mail,
-  MapPin,
-  Save,
-} from 'lucide-react';
 import {
   type CompanyProfile,
   DEFAULT_COMPANY_PROFILE,
@@ -22,11 +12,15 @@ import {
   invalidateCompanyProfileCache,
   mergeCompanyProfile,
 } from '@/lib/companyProfile';
-
-const inputClass =
-  'w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white transition-all';
-
-const labelClass = 'block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5';
+import {
+  SettingsPanel,
+  SettingsPanelHeader,
+  SettingsSectionCard,
+  SettingsField,
+  SettingsSaveBar,
+  SettingsOutlineButton,
+} from '@/components/settings/SettingsPageShell';
+import { settingsInputClass, settingsInputStyle, settingsLedgerBorder } from '@/lib/settingsUi';
 
 const TIMEZONES = [
   'Asia/Kolkata',
@@ -121,48 +115,28 @@ const CompanySettings = () => {
   const registeredFormatted = formatAddressBlock(profile.addresses.registered);
 
   return (
-    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="border-b border-gray-200 dark:border-gray-800 pb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">
-            <span>Settings</span>
-            <ChevronRight className="h-3 w-3" />
-            <span className="text-indigo-600">Company</span>
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Organization &amp; brand</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Company identity used in navigation, exports, and system branding.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 text-white px-5 py-2.5 text-xs font-bold hover:bg-black dark:bg-emerald-600 dark:hover:bg-emerald-700 disabled:opacity-50"
-        >
-          {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-          Save company settings
-        </button>
-      </div>
+    <SettingsPanel>
+      <SettingsPanelHeader
+        section="Company"
+        title="Organization & brand"
+        subtitle="Company identity used in navigation, exports, and system branding."
+      />
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
-        <div className="xl:col-span-2 space-y-8">
-          {/* Legal identity + logo */}
-          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-            <div className="px-8 py-5 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-              <Building2 className="h-5 w-5 text-indigo-500" />
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Legal identity &amp; logo</h3>
-            </div>
-            <div className="p-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-                <div className="space-y-4">
-                  <p className={labelClass}>Company logo</p>
-                  <div className="flex h-24 w-24 items-center justify-center rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#0F172A] overflow-hidden">
+      <div className="grid grid-cols-1 gap-10 xl:grid-cols-3">
+        <div className="space-y-8 xl:col-span-2">
+          <SettingsSectionCard title="Legal identity & logo">
+            <div className="grid grid-cols-1 items-start gap-8 md:grid-cols-2">
+              <div className="space-y-4">
+                <SettingsField label="Company logo">
+                  <div
+                    className="flex h-24 w-24 items-center justify-center overflow-hidden border bg-stone-50 dark:bg-stone-900"
+                    style={settingsLedgerBorder}
+                  >
                     {profile.branding.logoUrl ? (
                       <img src={profile.branding.logoUrl} alt="Logo" className="h-full w-full object-contain p-1" />
                     ) : (
                       <span
-                        className="text-2xl font-bold text-white rounded-xl w-full h-full flex items-center justify-center"
+                        className="flex h-full w-full items-center justify-center text-2xl font-bold text-white"
                         style={{ background: profile.branding.primaryColor }}
                       >
                         {getBrandInitials(profile)}
@@ -180,97 +154,91 @@ const CompanySettings = () => {
                       e.target.value = '';
                     }}
                   />
-                  <button
-                    type="button"
-                    disabled={uploadingLogo}
-                    onClick={() => fileRef.current?.click()}
-                    className="w-full rounded-xl border border-indigo-200 dark:border-indigo-800 px-4 py-2.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-50"
+                  <SettingsOutlineButton
+                    className={`w-full justify-center ${uploadingLogo ? 'pointer-events-none opacity-50' : ''}`}
+                    onClick={() => {
+                      if (!uploadingLogo) fileRef.current?.click();
+                    }}
                   >
                     {uploadingLogo ? 'Uploading…' : 'Upload logo (PNG/JPG)'}
-                  </button>
-                  <div>
-                    <label className={labelClass}>Logo URL (optional)</label>
+                  </SettingsOutlineButton>
+                </SettingsField>
+                <SettingsField label="Logo URL (optional)">
+                  <input
+                    className={settingsInputClass()}
+                    style={settingsInputStyle()}
+                    value={profile.branding.logoUrl}
+                    onChange={(e) =>
+                      setProfile((p) => ({
+                        ...p,
+                        branding: { ...p.branding, logoUrl: e.target.value },
+                      }))
+                    }
+                    placeholder="https://..."
+                  />
+                </SettingsField>
+              </div>
+
+              <div className="space-y-4">
+                <SettingsField label="Legal name" required>
+                  <input
+                    className={settingsInputClass()}
+                    style={settingsInputStyle()}
+                    value={profile.legalName}
+                    onChange={(e) => update('legalName', e.target.value)}
+                    placeholder="ABC Industries Pvt Ltd"
+                  />
+                </SettingsField>
+                <SettingsField label="Display name" help="Shown in sidebar and app header." required>
+                  <input
+                    className={settingsInputClass()}
+                    style={settingsInputStyle()}
+                    value={profile.displayName}
+                    onChange={(e) => update('displayName', e.target.value)}
+                    placeholder="ABC HRMS"
+                  />
+                </SettingsField>
+                <SettingsField label="Short name" help="Used for initials when no logo is uploaded.">
+                  <input
+                    className={settingsInputClass()}
+                    style={settingsInputStyle()}
+                    value={profile.shortName}
+                    onChange={(e) => update('shortName', e.target.value)}
+                    placeholder="ABC"
+                  />
+                </SettingsField>
+                <SettingsField label="Primary accent color">
+                  <div className="flex items-center gap-3">
                     <input
-                      className={inputClass}
-                      value={profile.branding.logoUrl}
+                      type="color"
+                      value={profile.branding.primaryColor}
                       onChange={(e) =>
                         setProfile((p) => ({
                           ...p,
-                          branding: { ...p.branding, logoUrl: e.target.value },
+                          branding: { ...p.branding, primaryColor: e.target.value },
                         }))
                       }
-                      placeholder="https://..."
+                      className="h-10 w-14 flex-shrink-0 cursor-pointer border border-stone-200"
                     />
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className={labelClass}>Legal name <span className="text-red-500">*</span></label>
                     <input
-                      className={inputClass}
-                      value={profile.legalName}
-                      onChange={(e) => update('legalName', e.target.value)}
-                      placeholder="ABC Industries Pvt Ltd"
+                      className={settingsInputClass()}
+                      style={settingsInputStyle()}
+                      value={profile.branding.primaryColor}
+                      onChange={(e) =>
+                        setProfile((p) => ({
+                          ...p,
+                          branding: { ...p.branding, primaryColor: e.target.value },
+                        }))
+                      }
                     />
                   </div>
-                  <div>
-                    <label className={labelClass}>Display name <span className="text-red-500">*</span></label>
-                    <input
-                      className={inputClass}
-                      value={profile.displayName}
-                      onChange={(e) => update('displayName', e.target.value)}
-                      placeholder="ABC HRMS"
-                    />
-                    <p className="text-[10px] text-gray-400 mt-1">Shown in sidebar and app header.</p>
-                  </div>
-                  <div>
-                    <label className={labelClass}>Short name</label>
-                    <input
-                      className={inputClass}
-                      value={profile.shortName}
-                      onChange={(e) => update('shortName', e.target.value)}
-                      placeholder="ABC"
-                    />
-                    <p className="text-[10px] text-gray-400 mt-1">Used for initials when no logo is uploaded.</p>
-                  </div>
-                  <div>
-                    <label className={labelClass}>Primary accent color</label>
-                    <div className="flex gap-3 items-center">
-                      <input
-                        type="color"
-                        value={profile.branding.primaryColor}
-                        onChange={(e) =>
-                          setProfile((p) => ({
-                            ...p,
-                            branding: { ...p.branding, primaryColor: e.target.value },
-                          }))
-                        }
-                        className="h-10 w-14 rounded-lg border border-gray-200 cursor-pointer flex-shrink-0"
-                      />
-                      <input
-                        className={inputClass}
-                        value={profile.branding.primaryColor}
-                        onChange={(e) =>
-                          setProfile((p) => ({
-                            ...p,
-                            branding: { ...p.branding, primaryColor: e.target.value },
-                          }))
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
+                </SettingsField>
               </div>
             </div>
-          </section>
+          </SettingsSectionCard>
 
-          {/* Registration */}
-          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-            <div className="px-8 py-5 border-b border-gray-100 dark:border-gray-800">
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Registration</h3>
-            </div>
-            <div className="p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <SettingsSectionCard title="Registration">
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {(
                 [
                   ['pan', 'PAN'],
@@ -280,10 +248,10 @@ const CompanySettings = () => {
                   ['esicCode', 'ESIC code'],
                 ] as const
               ).map(([key, label]) => (
-                <div key={key}>
-                  <label className={labelClass}>{label}</label>
+                <SettingsField key={key} label={label}>
                   <input
-                    className={inputClass}
+                    className={settingsInputClass()}
+                    style={settingsInputStyle()}
                     value={profile.registration[key]}
                     onChange={(e) =>
                       setProfile((p) => ({
@@ -292,32 +260,22 @@ const CompanySettings = () => {
                       }))
                     }
                   />
-                </div>
+                </SettingsField>
               ))}
             </div>
-          </section>
+          </SettingsSectionCard>
 
-          {/* Addresses */}
-          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-            <div className="px-8 py-5 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-              <MapPin className="h-5 w-5 text-emerald-500" />
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Registered address</h3>
-            </div>
+          <SettingsSectionCard title="Registered address">
             <AddressFields
               address={profile.addresses.registered}
               onChange={(registered) =>
                 setProfile((p) => ({ ...p, addresses: { ...p.addresses, registered } }))
               }
             />
-          </section>
+          </SettingsSectionCard>
 
-          {/* Contact */}
-          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-            <div className="px-8 py-5 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-              <Mail className="h-5 w-5 text-blue-500" />
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Contact</h3>
-            </div>
-            <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <SettingsSectionCard title="Contact">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               {(
                 [
                   ['hrEmail', 'HR email'],
@@ -326,10 +284,10 @@ const CompanySettings = () => {
                   ['website', 'Website'],
                 ] as const
               ).map(([key, label]) => (
-                <div key={key}>
-                  <label className={labelClass}>{label}</label>
+                <SettingsField key={key} label={label}>
                   <input
-                    className={inputClass}
+                    className={settingsInputClass()}
+                    style={settingsInputStyle()}
                     value={profile.contact[key]}
                     onChange={(e) =>
                       setProfile((p) => ({
@@ -338,50 +296,48 @@ const CompanySettings = () => {
                       }))
                     }
                   />
-                </div>
+                </SettingsField>
               ))}
             </div>
-          </section>
+          </SettingsSectionCard>
 
-
-          {/* Documents */}
-          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-            <div className="px-8 py-5 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-              <FileText className="h-5 w-5 text-amber-500" />
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Document defaults</h3>
-            </div>
-            <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <SettingsSectionCard title="Document defaults">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div className="md:col-span-2">
-                <label className={labelClass}>Report header line</label>
-                <input
-                  className={inputClass}
-                  value={profile.documents.reportHeaderLine}
-                  onChange={(e) =>
-                    setProfile((p) => ({
-                      ...p,
-                      documents: { ...p.documents, reportHeaderLine: e.target.value },
-                    }))
-                  }
-                  placeholder="Optional subtitle on exports"
-                />
+                <SettingsField label="Report header line">
+                  <input
+                    className={settingsInputClass()}
+                    style={settingsInputStyle()}
+                    value={profile.documents.reportHeaderLine}
+                    onChange={(e) =>
+                      setProfile((p) => ({
+                        ...p,
+                        documents: { ...p.documents, reportHeaderLine: e.target.value },
+                      }))
+                    }
+                    placeholder="Optional subtitle on exports"
+                  />
+                </SettingsField>
               </div>
               <div className="md:col-span-2">
-                <label className={labelClass}>Document footer</label>
-                <textarea
-                  className={`${inputClass} min-h-[72px]`}
-                  value={profile.documents.footerText}
-                  onChange={(e) =>
-                    setProfile((p) => ({
-                      ...p,
-                      documents: { ...p.documents, footerText: e.target.value },
-                    }))
-                  }
-                />
+                <SettingsField label="Document footer">
+                  <textarea
+                    className={`${settingsInputClass()} min-h-[72px]`}
+                    style={settingsInputStyle()}
+                    value={profile.documents.footerText}
+                    onChange={(e) =>
+                      setProfile((p) => ({
+                        ...p,
+                        documents: { ...p.documents, footerText: e.target.value },
+                      }))
+                    }
+                  />
+                </SettingsField>
               </div>
-              <div>
-                <label className={labelClass}>Signatory name</label>
+              <SettingsField label="Signatory name">
                 <input
-                  className={inputClass}
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
                   value={profile.documents.signatory.name}
                   onChange={(e) =>
                     setProfile((p) => ({
@@ -393,11 +349,11 @@ const CompanySettings = () => {
                     }))
                   }
                 />
-              </div>
-              <div>
-                <label className={labelClass}>Signatory designation</label>
+              </SettingsField>
+              <SettingsField label="Signatory designation">
                 <input
-                  className={inputClass}
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
                   value={profile.documents.signatory.designation}
                   onChange={(e) =>
                     setProfile((p) => ({
@@ -409,21 +365,16 @@ const CompanySettings = () => {
                     }))
                   }
                 />
-              </div>
+              </SettingsField>
             </div>
-          </section>
+          </SettingsSectionCard>
 
-          {/* Locale */}
-          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-            <div className="px-8 py-5 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-              <Globe className="h-5 w-5 text-cyan-500" />
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Regional</h3>
-            </div>
-            <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className={labelClass}>Timezone</label>
+          <SettingsSectionCard title="Regional">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <SettingsField label="Timezone">
                 <select
-                  className={inputClass}
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
                   value={profile.locale.timezone}
                   onChange={(e) =>
                     setProfile((p) => ({
@@ -438,11 +389,11 @@ const CompanySettings = () => {
                     </option>
                   ))}
                 </select>
-              </div>
-              <div>
-                <label className={labelClass}>Date format</label>
+              </SettingsField>
+              <SettingsField label="Date format">
                 <select
-                  className={inputClass}
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
                   value={profile.locale.dateFormat}
                   onChange={(e) =>
                     setProfile((p) => ({
@@ -455,11 +406,11 @@ const CompanySettings = () => {
                   <option value="MM/DD/YYYY">MM/DD/YYYY</option>
                   <option value="YYYY-MM-DD">YYYY-MM-DD</option>
                 </select>
-              </div>
-              <div>
-                <label className={labelClass}>Currency</label>
+              </SettingsField>
+              <SettingsField label="Currency">
                 <input
-                  className={inputClass}
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
                   value={profile.locale.currency}
                   onChange={(e) =>
                     setProfile((p) => ({
@@ -468,11 +419,11 @@ const CompanySettings = () => {
                     }))
                   }
                 />
-              </div>
-              <div>
-                <label className={labelClass}>Financial year starts (month)</label>
+              </SettingsField>
+              <SettingsField label="Financial year starts (month)">
                 <select
-                  className={inputClass}
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
                   value={profile.locale.financialYearStartMonth}
                   onChange={(e) =>
                     setProfile((p) => ({
@@ -490,50 +441,49 @@ const CompanySettings = () => {
                     </option>
                   ))}
                 </select>
-              </div>
+              </SettingsField>
             </div>
-          </section>
+          </SettingsSectionCard>
         </div>
 
-        {/* Preview */}
         <div className="space-y-6">
-          <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm p-6 sticky top-6">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-4">Live preview</p>
-            <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-[#0F172A]">
+          <div className="sticky top-6 border bg-white p-6 dark:bg-stone-950" style={settingsLedgerBorder}>
+            <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-stone-400">Live preview</p>
+            <div
+              className="border bg-stone-50 p-4 dark:bg-stone-900"
+              style={settingsLedgerBorder}
+            >
               <div className="flex items-center gap-3">
                 {profile.branding.logoUrl ? (
-                  <img src={profile.branding.logoUrl} alt="" className="h-10 w-10 object-contain rounded-lg" />
+                  <img src={profile.branding.logoUrl} alt="" className="h-10 w-10 rounded-lg object-contain" />
                 ) : (
                   <div
-                    className="h-10 w-10 rounded-lg flex items-center justify-center text-white text-sm font-bold"
+                    className="flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold text-white"
                     style={{ background: profile.branding.primaryColor }}
                   >
                     {getBrandInitials(profile)}
                   </div>
                 )}
                 <div>
-                  <p className="font-bold text-sm text-gray-900 dark:text-white">{profile.displayName || 'HRMS'}</p>
-                  <p className="text-[10px] text-gray-500">{profile.legalName || 'Legal name not set'}</p>
+                  <p className="text-sm font-semibold text-stone-900 dark:text-stone-100">{profile.displayName || 'HRMS'}</p>
+                  <p className="text-[10px] text-stone-500">{profile.legalName || 'Legal name not set'}</p>
                 </div>
               </div>
               {registeredFormatted && (
-                <p className="text-[10px] text-gray-500 mt-3 leading-relaxed border-t border-dashed border-gray-300 dark:border-gray-600 pt-3">
+                <p
+                  className="mt-3 border-t border-dashed pt-3 text-[10px] leading-relaxed text-stone-500"
+                  style={settingsLedgerBorder}
+                >
                   {registeredFormatted}
                 </p>
               )}
             </div>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="w-full mt-6 py-3 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {saving ? 'Saving…' : 'Save company settings'}
-            </button>
           </div>
         </div>
       </div>
-    </div>
+
+      <SettingsSaveBar onSave={handleSave} saving={saving} label="Save company settings" />
+    </SettingsPanel>
   );
 };
 
@@ -546,13 +496,13 @@ function AddressFields({
 }) {
   const lines = address.lines.length ? address.lines : [''];
   return (
-    <div className="p-8 space-y-4">
-      <div>
-        <label className={labelClass}>Address lines</label>
+    <div className="space-y-4">
+      <SettingsField label="Address lines">
         {lines.map((line, idx) => (
           <input
             key={idx}
-            className={`${inputClass} mt-2`}
+            className={`${settingsInputClass()} mt-2`}
+            style={settingsInputStyle()}
             value={line}
             onChange={(e) => {
               const next = [...lines];
@@ -565,14 +515,14 @@ function AddressFields({
         {lines.length < 3 && (
           <button
             type="button"
-            className="mt-2 text-[10px] font-bold text-indigo-600 uppercase"
+            className="mt-2 text-[10px] font-semibold uppercase text-[color:var(--ps-accent)]"
             onClick={() => onChange({ ...address, lines: [...lines, ''] })}
           >
             + Add address line
           </button>
         )}
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      </SettingsField>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {(
           [
             ['city', 'City'],
@@ -581,14 +531,14 @@ function AddressFields({
             ['country', 'Country'],
           ] as const
         ).map(([key, label]) => (
-          <div key={key}>
-            <label className={labelClass}>{label}</label>
+          <SettingsField key={key} label={label}>
             <input
-              className={inputClass}
+              className={settingsInputClass()}
+              style={settingsInputStyle()}
               value={address[key]}
               onChange={(e) => onChange({ ...address, [key]: e.target.value })}
             />
-          </div>
+          </SettingsField>
         ))}
       </div>
     </div>

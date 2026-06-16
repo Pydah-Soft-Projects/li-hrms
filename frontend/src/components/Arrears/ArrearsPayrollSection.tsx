@@ -1,6 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
+import {
+  LoansContentPanel,
+  loansTableHeadClass,
+  loansTableHeadStyle,
+} from '@/components/loans/LoansPageShell';
+import {
+  loansFormInputClass,
+  loansFormInputStyle,
+} from '@/components/loans/LoanDetailDialogShell';
+import { ledgerMoneyClass } from '@/lib/ledgerUi';
 
 // Define the API response type for getArrearsForPayroll
 interface ArrearsForPayrollResponse {
@@ -135,89 +145,81 @@ export const ArrearsPayrollSection: React.FC<ArrearsPayrollSectionProps> = ({
   };
 
   if (loading) {
-    return <div className="p-4">Loading arrears data...</div>;
+    return <p className="text-sm text-stone-500">Loading arrears…</p>;
   }
 
-  // Check based on FILTERED list
   if (filteredArrears.length === 0) {
-    return <div className="p-4 text-gray-500">No pending arrears found for the selected period{(divisionId || departmentId) ? ' matching the selected filter' : ''}.</div>;
+    return (
+      <p className="text-sm text-stone-500">
+        No pending arrears for this period
+        {(divisionId || departmentId) ? ' with the current filter' : ''}.
+      </p>
+    );
   }
 
   return (
-    <div className="mt-6">
-      <h3 className="text-lg font-medium mb-4">Arrears for Payroll</h3>
+    <LoansContentPanel>
       <div className="overflow-x-auto">
-        <table className="min-w-full bg-white dark:bg-gray-800 rounded-lg overflow-hidden">
-          <thead className="bg-gray-50 dark:bg-gray-700">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Include
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Employee
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Period
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Total Amount
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Settled
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Remaining
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Amount to Settle
-              </th>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className={loansTableHeadClass()} style={loansTableHeadStyle()}>
+              <th className="px-4 py-3 text-left font-semibold">Include</th>
+              <th className="px-4 py-3 text-left font-semibold">Employee</th>
+              <th className="px-4 py-3 text-left font-semibold">Period</th>
+              <th className="px-4 py-3 text-right font-semibold">Total</th>
+              <th className="px-4 py-3 text-right font-semibold">Settled</th>
+              <th className="px-4 py-3 text-right font-semibold">Remaining</th>
+              <th className="px-4 py-3 text-right font-semibold">Amount to settle</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+          <tbody>
             {filteredArrears.map((arr) => {
               const remaining = arr.totalAmount - (arr.settledAmount || 0);
               const isSelected = selectedArrears.hasOwnProperty(arr._id);
 
               return (
-                <tr key={arr._id} className={isSelected ? 'bg-blue-50 dark:bg-blue-900/30' : ''}>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                <tr
+                  key={arr._id}
+                  className="border-b transition hover:bg-stone-50 dark:hover:bg-stone-900/40"
+                  style={{
+                    borderColor: 'var(--ps-accent-border)',
+                    backgroundColor: isSelected ? 'var(--ps-accent-soft)' : undefined,
+                  }}
+                >
+                  <td className="px-4 py-3">
                     <input
                       type="checkbox"
                       checked={isSelected}
                       onChange={(e) => toggleArrear(arr._id, e.target.checked)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      className="h-4 w-4 rounded"
                     />
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-stone-900 dark:text-stone-100">
                       {arr.employee.first_name} {arr.employee.last_name}
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {arr.employee.emp_no}
-                    </div>
+                    <div className="text-xs text-stone-500">{arr.employee.emp_no}</div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900 dark:text-white">
-                      {arr.type === 'direct' ? '—' : `${arr.startMonth ? new Date(arr.startMonth).toLocaleDateString() : '—'} - ${arr.endMonth ? new Date(arr.endMonth).toLocaleDateString() : '—'}`}
+                  <td className="px-4 py-3">
+                    <div className="text-stone-900 dark:text-stone-100">
+                      {arr.type === 'direct'
+                        ? '—'
+                        : `${arr.startMonth ? new Date(arr.startMonth).toLocaleDateString() : '—'} – ${arr.endMonth ? new Date(arr.endMonth).toLocaleDateString() : '—'}`}
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {arr.reason}
-                    </div>
+                    <div className="text-xs text-stone-500">{arr.reason}</div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                  <td className={`px-4 py-3 text-right tabular-nums ${ledgerMoneyClass()}`}>
                     ₹{arr.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                  <td className="px-4 py-3 text-right tabular-nums">
                     ₹{(arr.settledAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <span className={remaining > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-500'}>
-                      ₹{remaining.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </span>
+                  <td className={`px-4 py-3 text-right tabular-nums ${ledgerMoneyClass()}`}>
+                    ₹{remaining.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <span className="mr-2">₹</span>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-2">
+                      <span>₹</span>
                       <input
                         type="number"
                         min="0"
@@ -226,9 +228,10 @@ export const ArrearsPayrollSection: React.FC<ArrearsPayrollSectionProps> = ({
                         value={isSelected ? (selectedArrears[arr._id] || '') : ''}
                         onChange={(e) => handleAmountChange(arr._id, e.target.value)}
                         disabled={!isSelected}
-                        className="w-32 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
+                        className={`w-28 ${loansFormInputClass()}`}
+                        style={loansFormInputStyle()}
                       />
-                      <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
+                      <span className="text-xs text-stone-500">
                         / {remaining.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </span>
                     </div>
@@ -239,7 +242,7 @@ export const ArrearsPayrollSection: React.FC<ArrearsPayrollSectionProps> = ({
           </tbody>
         </table>
       </div>
-    </div>
+    </LoansContentPanel>
   );
 };
 

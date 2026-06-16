@@ -1,10 +1,9 @@
 /**
  * Attendance Settings Controller
- * Handles attendance settings (MSSQL config, sync settings)
+ * Handles attendance settings (processing mode, feature flags, summary columns)
  */
 
 const AttendanceSettings = require('../model/AttendanceSettings');
-const { isSQLAvailable } = require('../config/attendanceSQLHelper');
 const { normalizeCompleteSummaryColumns } = require('../constants/completeSummaryColumns');
 
 /**
@@ -21,25 +20,12 @@ exports.getSettings = async (req, res) => {
     }
     const completeSummaryColumns = normalizeCompleteSummaryColumns(rawCompleteCols);
 
-    // Check MSSQL availability if configured
-    let mssqlAvailable = false;
-    if (settings.mssqlConfig.databaseName && settings.mssqlConfig.tableName) {
-      try {
-        mssqlAvailable = await isSQLAvailable(settings);
-      } catch (error) {
-        // Ignore error
-      }
-    }
-
     const dataObj = settings.toObject();
     dataObj.completeSummaryColumns = completeSummaryColumns;
 
     res.status(200).json({
       success: true,
-      data: {
-        ...dataObj,
-        mssqlAvailable,
-      },
+      data: dataObj,
     });
 
   } catch (error) {
@@ -68,8 +54,6 @@ exports.updateSettings = async (req, res) => {
 
     const {
       dataSource,
-      mssqlConfig,
-      syncSettings,
       previousDayLinking,
       processingMode,
       featureFlags,
@@ -78,41 +62,8 @@ exports.updateSettings = async (req, res) => {
 
     const settings = await AttendanceSettings.getSettings();
 
-    // Update fields
     if (dataSource !== undefined) {
       settings.dataSource = dataSource;
-    }
-
-    if (mssqlConfig) {
-      if (mssqlConfig.databaseName !== undefined) {
-        settings.mssqlConfig.databaseName = mssqlConfig.databaseName;
-      }
-      if (mssqlConfig.tableName !== undefined) {
-        settings.mssqlConfig.tableName = mssqlConfig.tableName;
-      }
-      if (mssqlConfig.columnMapping) {
-        if (mssqlConfig.columnMapping.employeeNumberColumn !== undefined) {
-          settings.mssqlConfig.columnMapping.employeeNumberColumn = mssqlConfig.columnMapping.employeeNumberColumn;
-        }
-        if (mssqlConfig.columnMapping.timestampColumn !== undefined) {
-          settings.mssqlConfig.columnMapping.timestampColumn = mssqlConfig.columnMapping.timestampColumn;
-        }
-        if (mssqlConfig.columnMapping.typeColumn !== undefined) {
-          settings.mssqlConfig.columnMapping.typeColumn = mssqlConfig.columnMapping.typeColumn;
-        }
-        if (mssqlConfig.columnMapping.hasTypeColumn !== undefined) {
-          settings.mssqlConfig.columnMapping.hasTypeColumn = mssqlConfig.columnMapping.hasTypeColumn;
-        }
-      }
-    }
-
-    if (syncSettings) {
-      if (syncSettings.autoSyncEnabled !== undefined) {
-        settings.syncSettings.autoSyncEnabled = syncSettings.autoSyncEnabled;
-      }
-      if (syncSettings.syncIntervalHours !== undefined) {
-        settings.syncSettings.syncIntervalHours = syncSettings.syncIntervalHours;
-      }
     }
 
     if (previousDayLinking) {
@@ -191,12 +142,6 @@ exports.updateSettings = async (req, res) => {
 
     await settings.save();
 
-    // Restart sync job if auto-sync settings changed
-    if (syncSettings && (syncSettings.autoSyncEnabled !== undefined || syncSettings.syncIntervalHours !== undefined)) {
-      const { restartSyncJob } = require('../services/attendanceSyncJob');
-      await restartSyncJob();
-    }
-
     res.status(200).json({
       success: true,
       message: 'Attendance settings updated successfully',
@@ -211,4 +156,3 @@ exports.updateSettings = async (req, res) => {
     });
   }
 };
-

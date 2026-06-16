@@ -16,9 +16,8 @@ jest.mock('../../../users/model/User', () => ({
   findById: jest.fn(),
 }));
 jest.mock('../../../settings/model/Settings', () => ({}));
-jest.mock('../../../employees/config/sqlHelper', () => ({
-  isHRMSConnected: jest.fn().mockReturnValue(false),
-  getEmployeeByIdMSSQL: jest.fn(),
+jest.mock('../../services/leaveApprovalSideEffectsService', () => ({
+  scheduleLeaveStatusSideEffects: jest.fn(),
 }));
 jest.mock('../../../departments/controllers/departmentSettingsController', () => ({
   getResolvedLeaveSettings: jest.fn().mockResolvedValue(null),

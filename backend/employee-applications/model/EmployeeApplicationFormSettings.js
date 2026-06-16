@@ -259,13 +259,70 @@ const SALARIES_GROUP_TEMPLATE = {
   fields: [],
 };
 
+const PF_NUMBER_FIELD_TEMPLATE = {
+  id: 'pf_number',
+  label: 'PF Number',
+  type: 'text',
+  dataType: 'string',
+  isRequired: false,
+  isSystem: true,
+  placeholder: 'PF account number',
+  order: 5,
+  isEnabled: true,
+};
+
+const ESI_NUMBER_FIELD_TEMPLATE = {
+  id: 'esi_number',
+  label: 'ESI Number',
+  type: 'text',
+  dataType: 'string',
+  isRequired: false,
+  isSystem: true,
+  placeholder: 'ESI number',
+  order: 6,
+  isEnabled: true,
+};
+
+/** Ensure optional PF/ESI fields exist in bank_details (new installs + existing DBs). */
+function ensureBankDetailsPfEsiFields(groups) {
+  if (!Array.isArray(groups)) return false;
+  const bankDetailsGroup = groups.find((g) => g && g.id === 'bank_details');
+  if (!bankDetailsGroup || !Array.isArray(bankDetailsGroup.fields)) return false;
+
+  let changed = false;
+  if (!bankDetailsGroup.fields.some((f) => f && f.id === 'pf_number')) {
+    bankDetailsGroup.fields.push({ ...PF_NUMBER_FIELD_TEMPLATE });
+    changed = true;
+  }
+  if (!bankDetailsGroup.fields.some((f) => f && f.id === 'esi_number')) {
+    bankDetailsGroup.fields.push({ ...ESI_NUMBER_FIELD_TEMPLATE });
+    changed = true;
+  }
+  if (changed) {
+    const salaryMode = bankDetailsGroup.fields.find((f) => f && f.id === 'salary_mode');
+    if (salaryMode) salaryMode.order = 7;
+    bankDetailsGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
+  }
+  return changed;
+}
+
+EmployeeApplicationFormSettingsSchema.statics.ensureBankDetailsPfEsiFields = ensureBankDetailsPfEsiFields;
+
 // Static method to get active settings (ensures salaries system group exists like basic_info on fresh DB)
 EmployeeApplicationFormSettingsSchema.statics.getActiveSettings = async function () {
   const doc = await this.findOne({ isActive: true }).sort({ createdAt: -1 });
   if (!doc || !Array.isArray(doc.groups)) return doc;
+
+  let changed = false;
   const hasSalaries = doc.groups.some((g) => g && g.id === 'salaries');
   if (!hasSalaries) {
     doc.groups.push({ ...SALARIES_GROUP_TEMPLATE });
+    changed = true;
+  }
+  if (ensureBankDetailsPfEsiFields(doc.groups)) {
+    changed = true;
+  }
+  if (changed) {
     doc.groups.sort((a, b) => (a.order || 0) - (b.order || 0));
     await doc.save();
   }
@@ -544,6 +601,8 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
             order: 4,
             isEnabled: true,
           },
+          { ...PF_NUMBER_FIELD_TEMPLATE },
+          { ...ESI_NUMBER_FIELD_TEMPLATE },
           {
             id: 'salary_mode',
             label: 'Salary Mode',
@@ -556,7 +615,7 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
               { label: 'Bank', value: 'Bank' },
               { label: 'Cash', value: 'Cash' },
             ],
-            order: 5,
+            order: 7,
             isEnabled: true,
           },
         ],
@@ -612,9 +671,16 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
     return this.create(defaultSettings);
   }
 
+  let settingsChanged = false;
   // Ensure 'salaries' group is present for existing settings (same as getActiveSettings migration)
   if (!settings.groups.some((g) => g && g.id === 'salaries')) {
     settings.groups.push({ ...SALARIES_GROUP_TEMPLATE });
+    settingsChanged = true;
+  }
+  if (ensureBankDetailsPfEsiFields(settings.groups)) {
+    settingsChanged = true;
+  }
+  if (settingsChanged) {
     settings.groups.sort((a, b) => (a.order || 0) - (b.order || 0));
     await settings.save();
   }

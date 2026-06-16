@@ -18,6 +18,26 @@ import {
   ArrowUp,
   ArrowDown,
 } from 'lucide-react';
+import {
+  SettingsPanel,
+  SettingsPanelHeader,
+  SettingsOutlineButton,
+} from '@/components/settings/SettingsPageShell';
+import {
+  settingsInputClass,
+  settingsInputStyle,
+  settingsLedgerBorder,
+  settingsSaveButtonClass,
+  settingsSaveButtonStyle,
+  settingsCardClass,
+} from '@/lib/settingsUi';
+import {
+  LoanDetailDialog,
+  LoanDetailDialogHeader,
+  LoanDetailDialogBody,
+  LoanDialogFooter,
+  LoanFormLabel,
+} from '@/components/loans/LoanDetailDialogShell';
 
 export interface FormField {
   id: string;
@@ -468,88 +488,79 @@ export default function FormSettingsBuilder() {
   const sortedGroups = [...(settings.groups || [])].sort((a, b) => a.order - b.order);
 
   return (
-    <div className="w-full space-y-8 rounded-2xl bg-slate-50/60 p-6 dark:bg-slate-900/30 md:p-8">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-800 dark:text-white">Form builder</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Configure sections and questions for the employee application form.
-          </p>
-        </div>
+    <SettingsPanel>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <SettingsPanelHeader
+          section="Employees"
+          title="Form builder"
+          subtitle="Configure sections and questions for the employee application form."
+        />
         <button
           type="button"
           onClick={() => setShowAddSection(true)}
-          className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+          className={`inline-flex shrink-0 items-center gap-2 ${settingsSaveButtonClass()}`}
+          style={settingsSaveButtonStyle()}
         >
           <Plus className="h-4 w-4" />
           Add section
         </button>
       </div>
 
-      {/* Add Section modal */}
-      {showAddSection && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4" onClick={() => setShowAddSection(false)}>
-          <div
-            className="w-full max-w-md rounded-2xl border border-slate-100 bg-white p-6 shadow-lg dark:border-slate-700 dark:bg-slate-900"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-semibold text-slate-800 dark:text-white">New section</h3>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Sections group related questions (e.g. Personal info, Contact).</p>
-            <div className="mt-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300">Section title</label>
-                <input
-                  type="text"
-                  value={newSection.label}
-                  onChange={(e) => setNewSection({ ...newSection, label: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-800 shadow-sm focus:border-violet-400 focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                  placeholder="e.g. Personal information"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300">Description (optional)</label>
-                <input
-                  type="text"
-                  value={newSection.description}
-                  onChange={(e) => setNewSection({ ...newSection, description: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-800 shadow-sm focus:border-violet-400 focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                  placeholder="Brief description for this section"
-                />
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={newSection.isArray}
-                  onChange={(e) => setNewSection({ ...newSection, isArray: e.target.checked })}
-                  className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                />
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Tabular Section (Array)</span>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">Allows multiple rows of data entry in a table format.</span>
-                </div>
-              </label>
+      <LoanDetailDialog open={showAddSection} onClose={() => setShowAddSection(false)} maxWidth="max-w-md">
+        <LoanDetailDialogHeader
+          badge="Section"
+          title="New section"
+          subtitle="Sections group related questions (e.g. Personal info, Contact)."
+          onClose={() => setShowAddSection(false)}
+        />
+        <LoanDetailDialogBody>
+          <div className="space-y-4">
+            <div>
+              <LoanFormLabel>Section title</LoanFormLabel>
+              <input
+                type="text"
+                value={newSection.label}
+                onChange={(e) => setNewSection({ ...newSection, label: e.target.value })}
+                className={settingsInputClass()}
+                style={settingsInputStyle()}
+                placeholder="e.g. Personal information"
+              />
             </div>
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => { setShowAddSection(false); setNewSection({ label: '', description: '', isArray: false }); }}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleAddSection}
-                disabled={saving || !newSection.label.trim()}
-                className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-              >
-                {saving ? 'Adding…' : 'Add section'}
-              </button>
+            <div>
+              <LoanFormLabel>Description (optional)</LoanFormLabel>
+              <input
+                type="text"
+                value={newSection.description}
+                onChange={(e) => setNewSection({ ...newSection, description: e.target.value })}
+                className={settingsInputClass()}
+                style={settingsInputStyle()}
+                placeholder="Brief description for this section"
+              />
             </div>
+            <label className="flex cursor-pointer items-center gap-2 border p-3" style={settingsLedgerBorder}>
+              <input
+                type="checkbox"
+                checked={newSection.isArray}
+                onChange={(e) => setNewSection({ ...newSection, isArray: e.target.checked })}
+                className="h-4 w-4 rounded border-stone-300 text-[var(--ps-accent)] focus:ring-[var(--ps-accent)]"
+              />
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-stone-800 dark:text-stone-200">Tabular section (array)</span>
+                <span className="text-xs text-stone-500">Allows multiple rows of data entry in a table format.</span>
+              </div>
+            </label>
           </div>
-        </div>
-      )}
+        </LoanDetailDialogBody>
+        <LoanDialogFooter
+          onCancel={() => {
+            setShowAddSection(false);
+            setNewSection({ label: '', description: '', isArray: false });
+          }}
+          submitLabel={saving ? 'Adding…' : 'Add section'}
+          onSubmit={handleAddSection}
+          submitDisabled={saving || !newSection.label.trim()}
+        />
+      </LoanDetailDialog>
 
       {/* Add Qualification Field modal */}
       {showAddQualField && (
@@ -629,7 +640,8 @@ export default function FormSettingsBuilder() {
         {sortedGroups.map((group) => (
           <div
             key={group.id}
-            className="overflow-hidden rounded-2xl border border-slate-100 bg-white/90 shadow-sm dark:border-slate-700/50 dark:bg-slate-900/80"
+            className={`${settingsCardClass} overflow-hidden`}
+            style={settingsLedgerBorder}
           >
             {/* Section header */}
             <div
@@ -1636,6 +1648,6 @@ export default function FormSettingsBuilder() {
           )}
         </div>
       )}
-    </div>
+    </SettingsPanel>
   );
 }

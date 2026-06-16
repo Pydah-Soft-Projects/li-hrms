@@ -1,0 +1,1274 @@
+﻿[dotenv@17.2.3] injecting env (54) from .env -- tip: ≡ƒöæ add access controls to secrets: https://dotenvx.com/ops
+
+=== LEAVE APPROVAL RELIABILITY: OLD vs NEW (data comparison) ===
+
+Each case: snapshot DB ΓåÆ run OLD heavy path ΓåÆ fingerprint ΓåÆ restore ΓåÆ run NEW path ΓåÆ compare ΓåÆ restore
+
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ≡ƒôí add observability to secrets: https://dotenvx.com/ops
+node : (node:18148) [MONGOOSE] Warning: Duplicate schema index on {"date":1} found. This is often due to declaring an 
+index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+At C:\Users\ADMIN\AppData\Local\Temp\ps-script-3b8c1e70-bd46-4bda-b568-7fbe1bfef424.ps1:78 char:24
++ ... ms/backend; node scripts/simulate_leave_approval_reliability.js 2>&1  ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:18148) [M...dex definition.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:18148) [MONGOOSE] Warning: Duplicate schema index on {"date":1} found. This is often due to declaring an index 
+using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:18148) [MONGOOSE] Warning: Duplicate schema index on {"name":1} found. This is often due to declaring an index 
+using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:18148) [MONGOOSE] Warning: mongoose: the method name "validate" is used by mongoose internally, overwriting it 
+may cause bugs. If you're sure you know what you're doing, you can suppress this error by using 
+`schema.method('validate', fn, { suppressWarning: true })`.
+Successfully connected to Redis
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b529fa26faa3ecdc7f0',
+  emp_no: '5003',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5003', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 18, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 4.5 days (combined: 19, free: 0, effective: 19).
+[Deduction] Absent extra: 1 absent ├ù (2 - 1) = 1 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5003', month: '2026-02' }
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b529fa26faa3ecdc7f0',
+  emp_no: '5003',
+  year: 2026,
+  monthNumber: 1,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5003', period: '2025-12-26..2026-01-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 1, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 0.5 days (combined: 2, free: 0, effective: 2).
+[Deduction] Absent extra: 6.5 absent ├ù (2 - 1) = 6.5 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5003', month: '2026-01' }
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 1, Early: 1 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 0.5 days (combined: 2, free: 0, effective: 2).
+[Deduction] Absent extra: 6.5 absent ├ù (2 - 1) = 6.5 days
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b529fa26faa3ecdc7f0',
+  emp_no: '5003',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5003', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 18, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 4.5 days (combined: 19, free: 0, effective: 19).
+[Deduction] Absent extra: 1 absent ├ù (2 - 1) = 1 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5003', month: '2026-02' }
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 18, Early: 1 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 4.5 days (combined: 19, free: 0, effective: 19).
+[Deduction] Absent extra: 1 absent ├ù (2 - 1) = 1 days
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b529fa26faa3ecdc7f0',
+  emp_no: '5003',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5003', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 18, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 4.5 days (combined: 19, free: 0, effective: 19).
+[Deduction] Absent extra: 1 absent ├ù (2 - 1) = 1 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5003', month: '2026-02' }
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b529fa26faa3ecdc7f0',
+  emp_no: '5003',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5003', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 18, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 4.5 days (combined: 19, free: 0, effective: 19).
+[Deduction] Absent extra: 1 absent ├ù (2 - 1) = 1 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5003', month: '2026-02' }
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b529fa26faa3ecdc7f0',
+  emp_no: '5003',
+  year: 2026,
+  monthNumber: 1,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5003', period: '2025-12-26..2026-01-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 1, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 0.5 days (combined: 2, free: 0, effective: 2).
+[Deduction] Absent extra: 6.5 absent ├ù (2 - 1) = 6.5 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5003', month: '2026-01' }
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 1, Early: 1 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 0.5 days (combined: 2, free: 0, effective: 2).
+[Deduction] Absent extra: 6.5 absent ├ù (2 - 1) = 6.5 days
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b529fa26faa3ecdc7f0',
+  emp_no: '5003',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5003', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 18, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 4.5 days (combined: 19, free: 0, effective: 19).
+[Deduction] Absent extra: 1 absent ├ù (2 - 1) = 1 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5003', month: '2026-02' }
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 18, Early: 1 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 4.5 days (combined: 19, free: 0, effective: 19).
+[Deduction] Absent extra: 1 absent ├ù (2 - 1) = 1 days
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b529fa26faa3ecdc7f0',
+  emp_no: '5003',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5003', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 18, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 4.5 days (combined: 19, free: 0, effective: 19).
+[Deduction] Absent extra: 1 absent ├ù (2 - 1) = 1 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5003', month: '2026-02' }
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b529fa26faa3ecdc7f0',
+  emp_no: '5003',
+  year: 2026,
+  monthNumber: 1,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5003', period: '2025-12-26..2026-01-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 1, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 0.5 days (combined: 2, free: 0, effective: 2).
+[Deduction] Absent extra: 6.5 absent ├ù (2 - 1) = 6.5 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5003', month: '2026-01' }
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 1, Early: 1 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 0.5 days (combined: 2, free: 0, effective: 2).
+[Deduction] Absent extra: 6.5 absent ├ù (2 - 1) = 6.5 days
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b529fa26faa3ecdc7f0',
+  emp_no: '5003',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5003', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 18, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 4.5 days (combined: 19, free: 0, effective: 19).
+[Deduction] Absent extra: 1 absent ├ù (2 - 1) = 1 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5003', month: '2026-02' }
+[Deduction] Employee 695b8b529fa26faa3ecdc7f0 - Lates: 18, Early: 1 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 4.5 days (combined: 19, free: 0, effective: 19).
+[Deduction] Absent extra: 1 absent ├ù (2 - 1) = 1 days
+Γ£ù 1_final_approved_CL: ERROR ΓÇö baseline is not defined
+
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8bd79fa26faa3ecdcb91',
+  emp_no: '2156',
+  year: 2026,
+  monthNumber: 6,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '2156', period: '2026-05-26..2026-06-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8bd79fa26faa3ecdcb91 - Lates: 1, Early: 0 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 1 is below threshold 2
+[Deduction] Absent extra: 6 absent ├ù (2 - 1) = 6 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '2156', month: '2026-06' }
+[Deduction] Employee 695b8bd79fa26faa3ecdcb91 - Lates: 1, Early: 0 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 1 is below threshold 2
+[Deduction] Absent extra: 6 absent ├ù (2 - 1) = 6 days
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8bd79fa26faa3ecdcb91',
+  emp_no: '2156',
+  year: 2026,
+  monthNumber: 7,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '2156', period: '2026-06-26..2026-07-25', count: 0 }
+[Deduction] Employee 695b8bd79fa26faa3ecdcb91 - Lates: 0, Early: 0 (Source: pay_register_summary)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '2156', month: '2026-07' }
+[Deduction] Employee 695b8bd79fa26faa3ecdcb91 - Lates: 0, Early: 0 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+Γ£ù 3_hod_approved_intermediate: ERROR ΓÇö baseline is not defined
+
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b519fa26faa3ecdc7eb',
+  emp_no: '5009',
+  year: 2026,
+  monthNumber: 1,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5009', period: '2025-12-26..2026-01-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b519fa26faa3ecdc7eb - Lates: 0, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 1 is below threshold 2
+[Deduction] Absent extra: 4.5 absent ├ù (2 - 1) = 4.5 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5009', month: '2026-01' }
+[Deduction] Employee 695b8b519fa26faa3ecdc7eb - Lates: 0, Early: 1 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 1 is below threshold 2
+[Deduction] Absent extra: 4.5 absent ├ù (2 - 1) = 4.5 days
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b519fa26faa3ecdc7eb',
+  emp_no: '5009',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5009', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b519fa26faa3ecdc7eb - Lates: 3, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1 days (combined: 4, free: 0, effective: 4).
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5009', month: '2026-02' }
+[Deduction] Employee 695b8b519fa26faa3ecdc7eb - Lates: 3, Early: 1 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1 days (combined: 4, free: 0, effective: 4).
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b519fa26faa3ecdc7eb',
+  emp_no: '5009',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5009', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b519fa26faa3ecdc7eb - Lates: 3, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1 days (combined: 4, free: 0, effective: 4).
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5009', month: '2026-02' }
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b519fa26faa3ecdc7eb',
+  emp_no: '5009',
+  year: 2026,
+  monthNumber: 3,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5009', period: '2026-02-26..2026-03-25', count: 27 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b519fa26faa3ecdc7eb - Lates: 1, Early: 3 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1 days (combined: 4, free: 0, effective: 4).
+[Deduction] Absent extra: 3 absent ├ù (2 - 1) = 3 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5009', month: '2026-03' }
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b519fa26faa3ecdc7eb',
+  emp_no: '5009',
+  year: 2026,
+  monthNumber: 1,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5009', period: '2025-12-26..2026-01-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b519fa26faa3ecdc7eb - Lates: 0, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 1 is below threshold 2
+[Deduction] Absent extra: 4.5 absent ├ù (2 - 1) = 4.5 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5009', month: '2026-01' }
+[Deduction] Employee 695b8b519fa26faa3ecdc7eb - Lates: 0, Early: 1 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 1 is below threshold 2
+[Deduction] Absent extra: 4.5 absent ├ù (2 - 1) = 4.5 days
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b519fa26faa3ecdc7eb',
+  emp_no: '5009',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '5009', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b519fa26faa3ecdc7eb - Lates: 3, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1 days (combined: 4, free: 0, effective: 4).
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '5009', month: '2026-02' }
+[Deduction] Employee 695b8b519fa26faa3ecdc7eb - Lates: 3, Early: 1 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1 days (combined: 4, free: 0, effective: 4).
+Γ£ù 5_rejected_final: ERROR ΓÇö baseline is not defined
+
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '69aeae037ed47927ce2b1569',
+  emp_no: '147',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '147', period: '2026-01-26..2026-02-25', count: 26 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 69aeae037ed47927ce2b1569 - Lates: 9, Early: 7 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 4 days (combined: 16, free: 0, effective: 16).
+[Deduction] Absent extra: 9 absent ├ù (2 - 1) = 9 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '147', month: '2026-02' }
+[Deduction] Employee 69aeae037ed47927ce2b1569 - Lates: 9, Early: 7 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 4 days (combined: 16, free: 0, effective: 16).
+[Deduction] Absent extra: 9 absent ├ù (2 - 1) = 9 days
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '69aeae037ed47927ce2b1569',
+  emp_no: '147',
+  year: 2026,
+  monthNumber: 3,
+  periodOverride: false
+}
+Error reversing leave debit: MissingSchemaError: Schema hasn't been registered for model "Department".
+Use mongoose.model(name, schema)
+    at NativeConnection.model (D:\li-hrms\backend\node_modules\mongoose\lib\connection.js:1503:13)
+    at _getModelFromConn 
+(D:\li-hrms\backend\node_modules\mongoose\lib\helpers\populate\getModelsMapForPopulate.js:590:15)
+    at addModelNamesToMap 
+(D:\li-hrms\backend\node_modules\mongoose\lib\helpers\populate\getModelsMapForPopulate.js:518:17)
+    at getModelsMapForPopulate 
+(D:\li-hrms\backend\node_modules\mongoose\lib\helpers\populate\getModelsMapForPopulate.js:211:7)
+    at _populatePath (D:\li-hrms\backend\node_modules\mongoose\lib\model.js:4308:21)
+    at Function.populate (D:\li-hrms\backend\node_modules\mongoose\lib\model.js:4275:21)
+    at D:\li-hrms\backend\node_modules\mongoose\lib\query.js:2661:11
+    at _init (D:\li-hrms\backend\node_modules\mongoose\lib\query.js:3339:5)
+    at Document.init (D:\li-hrms\backend\node_modules\mongoose\lib\document.js:658:5)
+    at Document.$init (D:\li-hrms\backend\node_modules\mongoose\lib\document.js:671:42)
+[leaveAttendanceReconciliation] reverse failed MissingSchemaError: Schema hasn't been registered for model 
+"Department".
+Use mongoose.model(name, schema)
+    at NativeConnection.model (D:\li-hrms\backend\node_modules\mongoose\lib\connection.js:1503:13)
+    at _getModelFromConn 
+(D:\li-hrms\backend\node_modules\mongoose\lib\helpers\populate\getModelsMapForPopulate.js:590:15)
+    at addModelNamesToMap 
+(D:\li-hrms\backend\node_modules\mongoose\lib\helpers\populate\getModelsMapForPopulate.js:518:17)
+    at getModelsMapForPopulate 
+(D:\li-hrms\backend\node_modules\mongoose\lib\helpers\populate\getModelsMapForPopulate.js:211:7)
+    at _populatePath (D:\li-hrms\backend\node_modules\mongoose\lib\model.js:4308:21)
+    at Function.populate (D:\li-hrms\backend\node_modules\mongoose\lib\model.js:4275:21)
+    at D:\li-hrms\backend\node_modules\mongoose\lib\query.js:2661:11
+    at _init (D:\li-hrms\backend\node_modules\mongoose\lib\query.js:3339:5)
+    at Document.init (D:\li-hrms\backend\node_modules\mongoose\lib\document.js:658:5)
+    at Document.$init (D:\li-hrms\backend\node_modules\mongoose\lib\document.js:671:42)
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '147', period: '2026-02-26..2026-03-25', count: 28 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 69aeae037ed47927ce2b1569 - Lates: 1, Early: 0 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 1 is below threshold 2
+[Deduction] Absent extra: 2 absent ├ù (2 - 1) = 2 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '147', month: '2026-03' }
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '69aeae037ed47927ce2b1569',
+  emp_no: '147',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '147', period: '2026-01-26..2026-02-25', count: 26 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 69aeae037ed47927ce2b1569 - Lates: 9, Early: 7 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 4 days (combined: 16, free: 0, effective: 16).
+[Deduction] Absent extra: 9 absent ├ù (2 - 1) = 9 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '147', month: '2026-02' }
+[Deduction] Employee 69aeae037ed47927ce2b1569 - Lates: 9, Early: 7 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 4 days (combined: 16, free: 0, effective: 16).
+[Deduction] Absent extra: 9 absent ├ù (2 - 1) = 9 days
+Γ£ù 6_cancelled: ERROR ΓÇö baseline is not defined
+
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b419fa26faa3ecdc782',
+  emp_no: '9016',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '9016', period: '2026-01-26..2026-02-25', count: 31 }
+resolved null
+ after cache resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 5, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1.5 days (combined: 6, free: 0, effective: 6).
+[Deduction] Absent extra: 7 absent ├ù (2 - 1) = 7 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '9016', month: '2026-02' }
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b419fa26faa3ecdc782',
+  emp_no: '9016',
+  year: 2026,
+  monthNumber: 1,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '9016', period: '2025-12-26..2026-01-25', count: 28 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 0, Early: 3 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 0.5 days (combined: 3, free: 0, effective: 3).
+[Deduction] Absent extra: 12.5 absent ├ù (2 - 1) = 12.5 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '9016', month: '2026-01' }
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 0, Early: 3 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 0.5 days (combined: 3, free: 0, effective: 3).
+[Deduction] Absent extra: 12.5 absent ├ù (2 - 1) = 12.5 days
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b419fa26faa3ecdc782',
+  emp_no: '9016',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '9016', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 5, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1.5 days (combined: 6, free: 0, effective: 6).
+[Deduction] Absent extra: 7 absent ├ù (2 - 1) = 7 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '9016', month: '2026-02' }
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 5, Early: 1 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1.5 days (combined: 6, free: 0, effective: 6).
+[Deduction] Absent extra: 7 absent ├ù (2 - 1) = 7 days
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b419fa26faa3ecdc782',
+  emp_no: '9016',
+  year: 2026,
+  monthNumber: 3,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '9016', period: '2026-02-26..2026-03-25', count: 5 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 0, Early: 0 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '9016', month: '2026-03' }
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 0, Early: 0 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b419fa26faa3ecdc782',
+  emp_no: '9016',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '9016', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 5, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1.5 days (combined: 6, free: 0, effective: 6).
+[Deduction] Absent extra: 7 absent ├ù (2 - 1) = 7 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '9016', month: '2026-02' }
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b419fa26faa3ecdc782',
+  emp_no: '9016',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '9016', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 5, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1.5 days (combined: 6, free: 0, effective: 6).
+[Deduction] Absent extra: 7 absent ├ù (2 - 1) = 7 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '9016', month: '2026-02' }
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b419fa26faa3ecdc782',
+  emp_no: '9016',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '9016', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 5, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1.5 days (combined: 6, free: 0, effective: 6).
+[Deduction] Absent extra: 7 absent ├ù (2 - 1) = 7 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '9016', month: '2026-02' }
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b419fa26faa3ecdc782',
+  emp_no: '9016',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '9016', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 5, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1.5 days (combined: 6, free: 0, effective: 6).
+[Deduction] Absent extra: 7 absent ├ù (2 - 1) = 7 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '9016', month: '2026-02' }
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b419fa26faa3ecdc782',
+  emp_no: '9016',
+  year: 2026,
+  monthNumber: 1,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '9016', period: '2025-12-26..2026-01-25', count: 28 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 0, Early: 3 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 0.5 days (combined: 3, free: 0, effective: 3).
+[Deduction] Absent extra: 12.5 absent ├ù (2 - 1) = 12.5 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '9016', month: '2026-01' }
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 0, Early: 3 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 0.5 days (combined: 3, free: 0, effective: 3).
+[Deduction] Absent extra: 12.5 absent ├ù (2 - 1) = 12.5 days
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b419fa26faa3ecdc782',
+  emp_no: '9016',
+  year: 2026,
+  monthNumber: 2,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '9016', period: '2026-01-26..2026-02-25', count: 31 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 5, Early: 1 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1.5 days (combined: 6, free: 0, effective: 6).
+[Deduction] Absent extra: 7 absent ├ù (2 - 1) = 7 days
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '9016', month: '2026-02' }
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 5, Early: 1 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Calculated deduction: 1.5 days (combined: 6, free: 0, effective: 6).
+[Deduction] Absent extra: 7 absent ├ù (2 - 1) = 7 days
+[OD-FLOW] calculateMonthlySummary called {
+  employeeId: '695b8b419fa26faa3ecdc782',
+  emp_no: '9016',
+  year: 2026,
+  monthNumber: 3,
+  periodOverride: false
+}
+[OD-FLOW] calculateMonthlySummary loaded dailies { emp_no: '9016', period: '2026-02-26..2026-03-25', count: 5 }
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 0, Early: 0 (Source: attendance_logs)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+[OD-FLOW] calculateMonthlySummary saved { emp_no: '9016', month: '2026-03' }
+[Deduction] Employee 695b8b419fa26faa3ecdc782 - Lates: 0, Early: 0 (Source: pay_register_grid_totals)
+resolved {
+  freeAllowedPerMonth: null,
+  combinedCountThreshold: 2,
+  deductionType: 'half_day',
+  deductionDays: null,
+  deductionAmount: null,
+  minimumDuration: null,
+  calculationMode: 'floor'
+}
+[Deduction] Effective count 0 is below threshold 2
+Γ£ù 7_edit_approved_date_range
+   Leave: 69873758ef89d6f8e0c12480  emp: 9016  type: CL  status: approved
+   Payroll months: 2026-02
+   OLD (full duplicate path): 5fbd7251f1f814e0  (79563ms)
+   NEW (present system):      988daac262a7cdc9  (59307ms)
+   OLD full vs NEW: NO  ΓåÆ  FAIL
+   Note: OLD: recalc current + old range + duplicate. NEW: recalc old + new snapshots once each + PR.
+
+=== SUMMARY ===
+
+PASS (data matches):        0
+EXPECTED_DIFF (by design):  0
+WARN (review):              0
+FAIL (data mismatch):       1
+ERROR:                      4
+SKIPPED:                    2
+  - 2_final_approved_ESI: No matching leave in DB (unique employee)
+  - 4_hr_approved_intermediate: No matching leave in DB (unique employee)
+
+=== OLD vs NEW behavior (leave only) ===
+
+Scenario               | Previous version                       | Present version                        | Data should match?                    
+Final approve          | 2├ù monthly recalc + 1├ù pay register + 2├ù ESI (if ESI) | 1├ù recalc + 1├ù pay register + 1├ù ESI (deferred) | Yes                                   
+HOD / HR intermediate  | Pay register full rebuild              | Balance only ΓÇö no pay register rebuild | No (intentional fix)                  
+Rejected / cancelled   | Pay register sync only                 | Recalc + pay register sync             | May differ                            
+Edit approved dates    | Recalc old + new + hook duplicate      | Recalc old + new snapshots once        | Yes                                   
+HTTP response          | Blocked until all heavy work done      | Returns after save; heavy work in background | N/A                                   
+
+Done.
+

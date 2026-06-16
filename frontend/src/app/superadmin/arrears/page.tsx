@@ -1,85 +1,52 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { format } from 'date-fns';
+import React, { useState, useEffect, useMemo } from 'react';
 import { toast, ToastContainer } from 'react-toastify';
-import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
 import { api, Department, Division, Designation } from '@/lib/api';
 import ArrearsDetailDialog from '@/components/Arrears/ArrearsDetailDialog';
 import ArrearsForm from '@/components/Arrears/ArrearsForm';
 import Spinner from '@/components/Spinner';
-
+import { Plus, Search, Eye, AlertCircle, Users, Loader2 } from 'lucide-react';
 import {
-  Plus,
-  Search,
-  Eye,
-  CheckCircle,
-  Clock,
-  TrendingUp,
-  XCircle,
-  AlertCircle,
-  Filter,
-  ArrowRight,
-  IndianRupee,
-  LayoutDashboard,
-  Calendar,
-  History,
-  FileText,
-  ShieldCheck,
-  Users,
-  Loader2
-} from 'lucide-react';
+  LoansPageShell,
+  LoansPageHeader,
+  LoansStatGrid,
+  LoansTabBar,
+  LoansToolbar,
+  LoansContentPanel,
+  loansPrimaryButtonClass,
+  loansPrimaryButtonStyle,
+  loansTableHeadClass,
+  loansTableHeadStyle,
+} from '@/components/loans/LoansPageShell';
+import {
+  LoanFormLabel,
+  LoanFormPanel,
+  loansDialogOutlineButtonClass,
+  loansDialogOutlineButtonStyle,
+  loansDialogSuccessButtonClass,
+  loansFormInputClass,
+  loansFormInputStyle,
+  loansFormSelectClass,
+} from '@/components/loans/LoanDetailDialogShell';
+import { LedgerCollapsiblePanel } from '@/components/ledger';
+import { MultiSelect } from '@/components/MultiSelect';
+import { ledgerMoneyClass, ledgerStatusBadgeClass, type LedgerUiStatus } from '@/lib/ledgerUi';
+import {
+  DEDUCTION_LIST_STATUS_OPTIONS,
+  deductionMatchesListOrgAndStatus,
+  deductionMatchesSearch,
+  deductionMatchesTab,
+  departmentsForDivisionFilter,
+} from '@/lib/manualDeductionListUi';
 
-// Custom Stat Card for Arrears
-const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass: string, trend?: { value: string, positive: boolean } }) => (
-  <div className="relative overflow-hidden rounded-3xl border border-slate-300 bg-slate-50/90 p-6 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900 shadow-sm">
-    <div className="relative z-10 flex items-center justify-between gap-4">
-      <div className="flex-1">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400">{title}</p>
-        <div className="mt-2 flex items-baseline gap-2">
-          <h3 className="text-3xl font-bold tracking-tight text-slate-950 dark:text-white">{value}</h3>
-          {trend && (
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${trend.positive ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-700 dark:text-rose-400'}`}>
-              {trend.value}
-            </span>
-          )}
-        </div>
-      </div>
-      <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${bgClass} ${iconClass} shadow-inner`}>
-        <Icon className="h-7 w-7" />
-      </div>
-    </div>
-    <div className={`absolute -right-4 -bottom-4 h-24 w-24 rounded-full opacity-30 ${dekorClass} blur-2xl`} />
-  </div>
-);
-
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case 'approved':
-      return 'bg-emerald-100 border-emerald-300 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400';
-    case 'pending_hod':
-    case 'pending_hr':
-    case 'pending_admin':
-      return 'bg-amber-100 border-amber-300 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400';
-    case 'rejected':
-      return 'bg-rose-100 border-rose-300 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400';
-    case 'partially_settled':
-      return 'bg-blue-100 border-blue-300 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400';
-    case 'settled':
-      return 'bg-violet-100 border-violet-300 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400';
-    default:
-      return 'bg-slate-100 border-slate-300 text-slate-800 dark:bg-slate-900/30 dark:text-slate-400';
-  }
-};
-
-const getStatusIcon = (status: string) => {
-  switch (status) {
-    case 'approved': return <CheckCircle className="h-3.5 w-3.5" />;
-    case 'rejected': return <XCircle className="h-3.5 w-3.5" />;
-    case 'settled': return <TrendingUp className="h-3.5 w-3.5" />;
-    default: return <Clock className="h-3.5 w-3.5" />;
-  }
+const arrearLedgerStatus = (status: string): LedgerUiStatus => {
+  if (status === 'approved' || status === 'settled' || status === 'partially_settled') return 'approved';
+  if (status === 'rejected') return 'rejected';
+  if (status === 'pending_hod' || status === 'pending_hr' || status === 'pending_admin') return 'current';
+  if (status === 'draft') return 'pending';
+  return 'neutral';
 };
 
 const getStatusLabel = (status: string) => {
@@ -116,7 +83,7 @@ interface BulkArrearRow {
   remarks: string;
 }
 
-export default function ArrearsPage() {
+export function ArrearsContent() {
   const [arrears, setArrears] = useState<Arrears[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
@@ -129,27 +96,18 @@ export default function ArrearsPage() {
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
-  const [selectedDivisionFilter, setSelectedDivisionFilter] = useState('');
-  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
-  const [selectedDesignationFilter, setSelectedDesignationFilter] = useState('');
+  const [listFilterDivisions, setListFilterDivisions] = useState<string[]>([]);
+  const [listFilterDepartments, setListFilterDepartments] = useState<string[]>([]);
+  const [listFilterDesignations, setListFilterDesignations] = useState<string[]>([]);
+  const [listFilterStatuses, setListFilterStatuses] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [bulkSearchQuery, setBulkSearchQuery] = useState('');
   const [bulkDivisionId, setBulkDivisionId] = useState('');
   const [bulkDepartmentId, setBulkDepartmentId] = useState('');
   const [bulkRows, setBulkRows] = useState<BulkArrearRow[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkSectionOpen, setBulkSectionOpen] = useState(false);
-
-  // Derived state to get departments under the selected division
-  const filteredDepartments = React.useMemo(() => {
-    if (selectedDivisionFilter) {
-      const divId = String(selectedDivisionFilter);
-      const div = divisions.find((d) => String(d._id) === divId);
-      const depts = (div?.departments ?? []) as (string | Department)[];
-      return depts.map((d) => (typeof d === 'string' ? { _id: d, name: d } : { _id: (d as any)._id, name: (d as any).name, code: (d as any).code }));
-    }
-    return departments;
-  }, [selectedDivisionFilter, divisions, departments]);
 
   useEffect(() => {
     loadData();
@@ -179,7 +137,7 @@ export default function ArrearsPage() {
   };
 
   const loadEmployees = () => {
-    Promise.resolve(api.getEmployees({ is_active: true }))
+    Promise.resolve(api.getEmployeesSummary({ is_active: true, limit: 500, page: 1 }))
       .then((response: any) => {
         if (response.success) {
           setEmployees(response.data || []);
@@ -243,37 +201,87 @@ export default function ArrearsPage() {
     }
   };
 
-  const getEntityId = (value: any) => {
-    if (value && typeof value === 'object') {
-      return String((value as any)._id || (value as any).id || '');
-    }
-    return String(value || '');
+  const listDepartmentOptions = useMemo(
+    () => departmentsForDivisionFilter(divisions, departments, listFilterDivisions),
+    [listFilterDivisions, divisions, departments],
+  );
+
+  useEffect(() => {
+    if (listFilterDepartments.length === 0) return;
+    const allowed = new Set(listDepartmentOptions.map((d: any) => String(d._id)));
+    setListFilterDepartments((prev) => prev.filter((id) => allowed.has(id)));
+  }, [listDepartmentOptions, listFilterDivisions]);
+
+  const arrearForFilter = (ar: Arrears) => {
+    const master = getEmployeeMasterRecord(ar.employee);
+    return {
+      status: ar.status,
+      reason: ar.reason,
+      employee: {
+        ...ar.employee,
+        employee_name: getEmployeeName(master),
+        emp_no: master.emp_no,
+        division_id: master.division_id,
+        department_id: master.department_id,
+        designation_id: master.designation_id,
+      },
+    };
   };
 
-  const filteredArrears = arrears.filter(ar => {
-    // Search Term Match
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
-      const empName = getEmployeeName(ar.employee).toLowerCase();
-      const empNo = ar.employee.emp_no?.toLowerCase() || '';
-      if (!empName.includes(searchLower) && !empNo.includes(searchLower)) {
-        return false;
-      }
-    }
+  const filteredArrears = useMemo(
+    () =>
+      arrears.filter((ar) => {
+        const row = arrearForFilter(ar);
+        return (
+          deductionMatchesTab(row, activeTab)
+          && deductionMatchesSearch(row, searchTerm)
+          && deductionMatchesListOrgAndStatus(
+            row,
+            listFilterDivisions,
+            listFilterDepartments,
+            listFilterDesignations,
+            listFilterStatuses,
+          )
+        );
+      }),
+    [
+      arrears,
+      activeTab,
+      searchTerm,
+      listFilterDivisions,
+      listFilterDepartments,
+      listFilterDesignations,
+      listFilterStatuses,
+      employees,
+      divisions,
+      departments,
+      designations,
+    ],
+  );
 
-    // Role Filters Match
-    const employeeSource = getEmployeeMasterRecord(ar.employee);
-    if (selectedDivisionFilter && getEntityId(employeeSource?.division_id) !== String(selectedDivisionFilter)) return false;
-    if (selectedDepartmentFilter && getEntityId(employeeSource?.department_id) !== String(selectedDepartmentFilter)) return false;
-    if (selectedDesignationFilter && getEntityId(employeeSource?.designation_id) !== String(selectedDesignationFilter)) return false;
+  const anyListFilterActive =
+    listFilterDivisions.length > 0
+    || listFilterDepartments.length > 0
+    || listFilterDesignations.length > 0
+    || listFilterStatuses.length > 0;
 
-    // Tab Match
-    if (activeTab === 'pending') {
-      return ['pending_hod', 'pending_hr', 'pending_admin'].includes(ar.status);
-    }
-    if (activeTab === 'all') return true;
-    return ar.status === activeTab;
-  });
+  const clearListFilters = () => {
+    setListFilterDivisions([]);
+    setListFilterDepartments([]);
+    setListFilterDesignations([]);
+    setListFilterStatuses([]);
+  };
+
+  const filteredBulkRows = useMemo(() => {
+    if (!bulkSearchQuery.trim()) return bulkRows;
+    const q = bulkSearchQuery.toLowerCase().trim();
+    return bulkRows.filter((row) => {
+      const emp = row.employee;
+      const name = (emp.employee_name || [emp.first_name, emp.last_name].filter(Boolean).join(' ') || '').toLowerCase();
+      const code = (emp.emp_no || '').toLowerCase();
+      return name.includes(q) || code.includes(q);
+    });
+  }, [bulkRows, bulkSearchQuery]);
 
   const stats = {
     pending: arrears.filter(ar => ['pending_hod', 'pending_hr', 'pending_admin'].includes(ar.status)).length,
@@ -348,6 +356,7 @@ export default function ArrearsPage() {
 
   const loadBulkEmployees = async () => {
     setBulkLoading(true);
+    setBulkSearchQuery('');
     try {
       const filters: any = { is_active: true, limit: 500 };
       if (bulkDivisionId) filters.division_id = bulkDivisionId;
@@ -414,111 +423,51 @@ export default function ArrearsPage() {
   };
 
   return (
-    <div className=" md:p-8">
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        toastClassName="rounded-2xl border-none shadow-2xl dark:bg-slate-900 dark:text-white"
+    <LoansPageShell>
+      <ToastContainer position="top-right" autoClose={3000} />
+
+      <LoansPageHeader
+        badge="Payroll arrears"
+        title="Arrears"
+        subtitle="Additional pay owed to employees — provision, approval, and settlement"
+        action={
+          <button
+            type="button"
+            onClick={() => setFormOpen(true)}
+            className={`flex items-center gap-2 ${loansPrimaryButtonClass()}`}
+            style={loansPrimaryButtonStyle()}
+          >
+            <Plus className="h-4 w-4" /> Provision arrear
+          </button>
+        }
       />
 
-      {/* Refined Professional Header */}
-      <div className="relative mb-10 overflow-hidden rounded-[2rem] border border-slate-300 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 shadow-sm">
-        <div className="absolute right-0 top-0 h-48 w-48 -translate-y-12 translate-x-12 rounded-full bg-blue-500/[0.05] blur-3xl" />
+      <LoansStatGrid
+        stats={[
+          { label: 'Pending review', value: stats.pending, accent: true },
+          { label: 'Approved', value: stats.approved },
+          { label: 'Settled', value: stats.settled },
+          { label: 'Rejected', value: stats.rejected, muted: true },
+        ]}
+      />
 
-        <div className="relative z-10 flex flex-col gap-6 px-8 py-8">
-          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100/50 text-blue-700 shadow-sm dark:bg-white/10 dark:text-blue-400 border border-blue-200">
-                <History className="h-6 w-6" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">Arrears</h1>
-                  <span className="rounded-full bg-blue-600/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-blue-700 dark:text-blue-400 border border-blue-200/50">
-                    System Hub
-                  </span>
-                </div>
-                <p className="text-sm font-medium text-slate-600">Payroll Calculation & Arrearage Protocols</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => setFormOpen(true)}
-                className="group relative flex items-center justify-center gap-3 overflow-hidden rounded-xl bg-slate-950 px-6 py-3 text-xs font-bold uppercase tracking-widest text-white transition-all hover:bg-blue-700 active:scale-[0.98] dark:bg-white dark:text-slate-900 shadow-lg"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Provision Arrear</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Premium Statistics Cards */}
-      <div className="mb-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="Pending Review"
-          value={stats.pending}
-          icon={Clock}
-          bgClass="bg-amber-500/10"
-          iconClass="text-amber-700 dark:text-amber-400"
-          dekorClass="bg-amber-500/10"
-        />
-        <StatCard
-          title="Approved Arrears"
-          value={stats.approved}
-          icon={CheckCircle}
-          bgClass="bg-emerald-500/10"
-          iconClass="text-emerald-700 dark:text-emerald-400"
-          dekorClass="bg-emerald-500/10"
-          trend={{ value: "+8%", positive: true }}
-        />
-        <StatCard
-          title="Total Settled"
-          value={stats.settled}
-          icon={TrendingUp}
-          bgClass="bg-violet-500/10"
-          iconClass="text-violet-700 dark:text-violet-400"
-          dekorClass="bg-violet-500/10"
-        />
-        <StatCard
-          title="Rejected / Void"
-          value={stats.rejected}
-          icon={XCircle}
-          bgClass="bg-rose-500/10"
-          iconClass="text-rose-700 dark:text-rose-400"
-          dekorClass="bg-rose-500/10"
-        />
-      </div>
-
-      {/* Bulk create section */}
-      <div className="mb-10 rounded-2xl border border-slate-300 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setBulkSectionOpen((o) => !o)}
-          className="flex w-full items-center justify-between p-6 text-left"
+      <div className="mb-5">
+        <LedgerCollapsiblePanel
+          title="Bulk create requests"
+          subtitle="Filter employees, set amount and remarks, then save to create one direct arrear per row (amount > 0)"
+          icon={<Users className="h-5 w-5" />}
+          open={bulkSectionOpen}
+          onToggle={() => setBulkSectionOpen((o) => !o)}
         >
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-200 dark:bg-slate-700">
-              <Users className="h-5 w-5 text-slate-700 dark:text-slate-300" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-950 dark:text-white">Bulk create arrears</h2>
-              <p className="text-sm text-slate-600 dark:text-slate-400">Filter employees, enter amount and remarks, then create one direct arrears request per row (amount &gt; 0)</p>
-            </div>
-          </div>
-          <span className="text-slate-500">{bulkSectionOpen ? '▼' : '▶'}</span>
-        </button>
-        {bulkSectionOpen && (
-          <div className="border-t border-slate-200 dark:border-slate-700 p-6 space-y-4">
+          <LoanFormPanel soft className="!p-4">
             <div className="flex flex-wrap items-end gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Division</label>
+              <div className="min-w-[180px]">
+                <LoanFormLabel>Division</LoanFormLabel>
                 <select
                   value={bulkDivisionId}
                   onChange={(e) => { setBulkDivisionId(e.target.value); setBulkDepartmentId(''); }}
-                  className="rounded-lg border border-slate-300 bg-white dark:bg-slate-800 dark:border-slate-600 dark:text-white px-3 py-2 text-sm min-w-[180px]"
+                  className={loansFormSelectClass()}
+                  style={loansFormInputStyle()}
                 >
                   <option value="">All divisions</option>
                   {divisions.map((d: any) => (
@@ -526,12 +475,13 @@ export default function ArrearsPage() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Department</label>
+              <div className="min-w-[180px]">
+                <LoanFormLabel>Department</LoanFormLabel>
                 <select
                   value={bulkDepartmentId}
                   onChange={(e) => setBulkDepartmentId(e.target.value)}
-                  className="rounded-lg border border-slate-300 bg-white dark:bg-slate-800 dark:border-slate-600 dark:text-white px-3 py-2 text-sm min-w-[180px]"
+                  className={loansFormSelectClass()}
+                  style={loansFormInputStyle()}
                 >
                   <option value="">All departments</option>
                   {filteredBulkDepartments.map((d: any) => (
@@ -543,33 +493,50 @@ export default function ArrearsPage() {
                 type="button"
                 onClick={loadBulkEmployees}
                 disabled={bulkLoading}
-                className="rounded-xl bg-slate-800 dark:bg-slate-700 text-white px-4 py-2 text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+                className={`flex items-center gap-2 ${loansPrimaryButtonClass()}`}
+                style={loansPrimaryButtonStyle()}
               >
                 {bulkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4" />}
                 Load employees
               </button>
+              {bulkRows.length > 0 && (
+                <div className="relative min-w-[220px] flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+                  <input
+                    type="text"
+                    value={bulkSearchQuery}
+                    onChange={(e) => setBulkSearchQuery(e.target.value)}
+                    placeholder="Search loaded employees…"
+                    className={`${loansFormInputClass()} pl-10`}
+                    style={loansFormInputStyle()}
+                  />
+                </div>
+              )}
             </div>
-            {bulkRows.length > 0 && (
-              <>
-                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-slate-100 dark:bg-slate-800/50 text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
-                        <th className="px-4 py-3 text-left">Employee</th>
-                        <th className="px-4 py-3 text-left">Code / Dept</th>
-                        <th className="px-4 py-3 text-right w-32">Amount (₹)</th>
-                        <th className="px-4 py-3 text-left min-w-[200px]">Remarks</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                      {bulkRows.map((row, idx) => (
-                        <tr key={row.employee._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+          </LoanFormPanel>
+
+          {bulkRows.length > 0 && (
+            <>
+              <LoansContentPanel>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b" style={{ borderColor: 'var(--ps-accent-border)' }}>
+                      <th className={`px-4 py-3 text-left ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Employee</th>
+                      <th className={`px-4 py-3 text-left ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Department</th>
+                      <th className={`px-4 py-3 text-right ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Amount (₹)</th>
+                      <th className={`px-4 py-3 text-left ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y" style={{ borderColor: 'var(--ps-accent-border)' }}>
+                    {filteredBulkRows.map((row) => {
+                      const originalIndex = bulkRows.findIndex((r) => r.employee._id === row.employee._id);
+                      return (
+                        <tr key={row.employee._id} className="hover:opacity-95" style={{ backgroundColor: 'rgba(var(--ps-accent-rgb), 0.01)' }}>
                           <td className="px-4 py-2 font-medium text-slate-950 dark:text-white">
                             {row.employee.employee_name || [row.employee.first_name, row.employee.last_name].filter(Boolean).join(' ') || row.employee.emp_no || '—'}
                           </td>
                           <td className="px-4 py-2 text-slate-600 dark:text-slate-400">
-                            {row.employee.emp_no || '—'}
-                            {(row.employee.department_id as any)?.name && ` / ${(row.employee.department_id as any).name}`}
+                            {(row.employee.department_id as any)?.name || '—'}
                           </td>
                           <td className="px-4 py-2 text-right">
                             <input
@@ -577,8 +544,9 @@ export default function ArrearsPage() {
                               min={0}
                               step={0.01}
                               value={row.amount === 0 ? '' : row.amount}
-                              onChange={(e) => updateBulkRow(idx, 'amount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                              className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5 text-right"
+                              onChange={(e) => updateBulkRow(originalIndex, 'amount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                              className={`${loansFormInputClass()} text-right`}
+                              style={loansFormInputStyle()}
                               placeholder="0"
                             />
                           </td>
@@ -586,235 +554,191 @@ export default function ArrearsPage() {
                             <input
                               type="text"
                               value={row.remarks}
-                              onChange={(e) => updateBulkRow(idx, 'remarks', e.target.value)}
-                              className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5"
+                              onChange={(e) => updateBulkRow(originalIndex, 'remarks', e.target.value)}
+                              className={loansFormInputClass()}
+                              style={loansFormInputStyle()}
                               placeholder="Remarks"
                             />
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    {bulkRows.filter((r) => Number(r.amount) > 0).length} row(s) with amount &gt; 0 will create arrears requests
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleBulkSave}
-                    disabled={bulkSaving || bulkRows.every((r) => Number(r.amount) <= 0)}
-                    className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 text-sm font-bold uppercase flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
-                  >
-                    {bulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    Save (create requests)
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </LoansContentPanel>
+              <div className="mt-4 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: 'var(--ps-accent-border)' }}>
+                <p className="text-sm text-stone-600 dark:text-stone-400">
+                  {bulkRows.filter((r) => Number(r.amount) > 0).length} row(s) with amount &gt; 0 will create arrear requests
+                </p>
+                <button
+                  type="button"
+                  onClick={handleBulkSave}
+                  disabled={bulkSaving || bulkRows.every((r) => Number(r.amount) <= 0)}
+                  className={`flex items-center gap-2 ${loansDialogSuccessButtonClass()}`}
+                >
+                  {bulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Save (create requests)
+                </button>
+              </div>
+            </>
+          )}
+        </LedgerCollapsiblePanel>
       </div>
 
-      {/* Main Content Area */}
-      <div className="rounded-[2.5rem] border border-slate-300 bg-slate-50 shadow-xl dark:border-slate-800 dark:bg-slate-900/50 overflow-hidden">
-        {/* Navigation & Search Bar */}
-        <div className="border-b border-slate-200 bg-slate-100/50 p-6 dark:border-slate-800 dark:bg-slate-900/80">
-          <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
-            <div className="grid w-full grid-cols-5 gap-1.5 rounded-2xl bg-slate-200/80 p-1.5 dark:bg-slate-800/50 backdrop-blur-sm shadow-inner xl:w-auto">
-              {['all', 'pending', 'approved', 'settled', 'rejected'].map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`w-full rounded-xl px-3 py-2.5 text-[11px] font-bold uppercase tracking-wide transition-all duration-300 ${activeTab === tab
-                    ? 'bg-white text-slate-950 shadow-md dark:bg-slate-700 dark:text-white'
-                    : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-                    }`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
+      <LoansTabBar
+        tabs={[
+          { id: 'all', label: 'All' },
+          { id: 'pending', label: 'Pending' },
+          { id: 'approved', label: 'Approved' },
+          { id: 'settled', label: 'Settled' },
+          { id: 'rejected', label: 'Rejected' },
+        ]}
+        activeTab={activeTab}
+        onChange={setActiveTab}
+      />
 
-            <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {/* Division Filter */}
-              <select
-                value={selectedDivisionFilter}
-                onChange={(e) => {
-                  setSelectedDivisionFilter(e.target.value);
-                  setSelectedDepartmentFilter(''); // Reset department when division changes
-                }}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-              >
-                <option value="">All Divisions</option>
-                {divisions.map((div) => (
-                  <option key={div._id} value={div._id}>
-                    {div.name}
-                  </option>
-                ))}
-              </select>
-
-              {/* Department Filter */}
-              <select
-                value={selectedDepartmentFilter}
-                onChange={(e) => setSelectedDepartmentFilter(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-              >
-                <option value="">All Departments</option>
-                {filteredDepartments.map((dept) => (
-                  <option key={(dept as any)._id} value={(dept as any)._id}>
-                    {(dept as any).name}
-                  </option>
-                ))}
-              </select>
-
-              {/* Designation Filter */}
-              <select
-                value={selectedDesignationFilter}
-                onChange={(e) => setSelectedDesignationFilter(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-              >
-                <option value="">All Designations</option>
-                {designations.map((desig) => (
-                  <option key={desig._id} value={desig._id}>
-                    {desig.name}
-                  </option>
-                ))}
-              </select>
-
-              <div className="relative group w-full">
-                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600 transition-colors group-hover:text-blue-600" />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search by employee or ID..."
-                  className="w-full rounded-2xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm font-semibold text-slate-950 transition-all focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-                />
-              </div>
+      <LoansToolbar>
+        <div className="flex flex-wrap items-end gap-3">
+          <MultiSelect
+            variant="ledger"
+            label="Division"
+            options={divisions.map((d) => ({ id: String(d._id), name: d.name ?? d.code ?? 'Division' }))}
+            selectedIds={listFilterDivisions}
+            onChange={(vals) => {
+              setListFilterDivisions(vals);
+              setListFilterDepartments([]);
+            }}
+            placeholder="All divisions"
+            className="w-full sm:w-40 md:w-44"
+          />
+          <MultiSelect
+            variant="ledger"
+            label="Department"
+            options={listDepartmentOptions.map((d: any) => ({
+              id: String(d._id),
+              name: d.name ?? 'Department',
+            }))}
+            selectedIds={listFilterDepartments}
+            onChange={setListFilterDepartments}
+            placeholder="All departments"
+            className="w-full sm:w-40 md:w-44"
+          />
+          <MultiSelect
+            variant="ledger"
+            label="Designation"
+            options={designations.map((d) => ({
+              id: String(d._id),
+              name: d.name ?? (d as { title?: string }).title ?? 'Designation',
+            }))}
+            selectedIds={listFilterDesignations}
+            onChange={setListFilterDesignations}
+            placeholder="All designations"
+            className="w-full sm:w-40 md:w-44"
+          />
+          <MultiSelect
+            variant="ledger"
+            label="Status"
+            options={DEDUCTION_LIST_STATUS_OPTIONS}
+            selectedIds={listFilterStatuses}
+            onChange={setListFilterStatuses}
+            placeholder="All statuses"
+            className="w-full sm:w-48 md:w-56"
+          />
+          <div className="flex w-full flex-col gap-1.5 sm:w-44 md:w-52">
+            <label
+              className="text-[10px] font-semibold uppercase tracking-[0.2em]"
+              style={{ color: 'var(--ps-accent-ink)' }}
+            >
+              Search
+            </label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Name, ID, reason…"
+                className={`h-10 pl-9 pr-3 ${loansFormInputClass()}`}
+                style={loansFormInputStyle()}
+              />
             </div>
           </div>
+          {anyListFilterActive && (
+            <button
+              type="button"
+              onClick={clearListFilters}
+              className={`h-10 ${loansDialogOutlineButtonClass()}`}
+              style={loansDialogOutlineButtonStyle()}
+            >
+              Clear filters
+            </button>
+          )}
         </div>
+      </LoansToolbar>
 
-        {/* Table Content */}
+      <LoansContentPanel>
         <div className="overflow-x-auto">
           {loading ? (
-            <div className="flex h-96 flex-col items-center justify-center gap-4">
-              <div className="h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600 dark:border-slate-800 dark:border-t-blue-400" />
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-600">Synchronizing Data...</p>
-            </div>
+            <div className="flex h-64 items-center justify-center"><Spinner /></div>
           ) : filteredArrears.length === 0 ? (
-            <div className="flex h-96 flex-col items-center justify-center text-center">
-              <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-slate-100 dark:bg-slate-800 border border-slate-200">
-                <AlertCircle className="h-10 w-10 text-slate-500" />
-              </div>
-              <h3 className="text-xl font-bold text-slate-950 dark:text-white">No Records Found</h3>
-              <p className="mt-2 text-sm font-semibold text-slate-600">There are no arrears matching the selected filter criteria.</p>
+            <div className="flex h-64 flex-col items-center justify-center text-center">
+              <AlertCircle className="mb-4 h-12 w-12 text-slate-400" />
+              <h3 className="text-lg font-bold text-slate-950 dark:text-white">No arrears found</h3>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Create an arrear or adjust filters.</p>
             </div>
           ) : (
             <table className="w-full border-collapse">
               <thead>
-                <tr className="bg-slate-100 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-700 dark:bg-slate-900/50 border-b border-slate-200">
-                  <th className="px-8 py-6 text-left">Employee</th>
-                  <th className="px-8 py-6 text-left">Division</th>
-                  <th className="px-8 py-6 text-left">Department</th>
-                  <th className="px-8 py-6 text-left">Fiscal Period</th>
-                  <th className="px-8 py-6 text-right">Agreed Value</th>
-                  <th className="px-8 py-6 text-right">Outstanding</th>
-                  <th className="px-8 py-6 text-left">Processing State</th>
-                  <th className="px-8 py-6 text-center">Operations</th>
+                <tr className="border-b" style={{ borderColor: 'var(--ps-accent-border)' }}>
+                  <th className={`px-6 py-4 text-left ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Employee</th>
+                  <th className={`px-6 py-4 text-left ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Division / Dept</th>
+                  <th className={`px-6 py-4 text-left ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Period / Type</th>
+                  <th className={`px-6 py-4 text-right ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Total</th>
+                  <th className={`px-6 py-4 text-right ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Remaining</th>
+                  <th className={`px-6 py-4 text-left ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Status</th>
+                  <th className={`px-6 py-4 text-left ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+              <tbody className="divide-y" style={{ borderColor: 'var(--ps-accent-border)' }}>
                 {filteredArrears.map((ar) => (
-                  <tr
-                    key={ar._id}
-                    className="group transition-colors hover:bg-slate-100/60 dark:hover:bg-slate-800/50"
-                  >
-                    <td className="px-8 py-6">
-                      <div className="flex items-center gap-4">
-                        <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-700 to-slate-900 font-bold text-white shadow-lg transition-transform group-hover:scale-110">
-                          {getEmployeeName(ar.employee).charAt(0).toUpperCase()}
-                          <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-white bg-emerald-500 dark:border-slate-900" />
-                        </div>
-                        <div className="min-w-0 min-w-0" title={[String(getEmployeeName(ar.employee) || '—'), getDesignationName(ar.employee), String(ar.employee?.emp_no || '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {getEmployeeName(ar.employee) || '—'}
-  </div>
-  {getDesignationName(ar.employee) ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {getDesignationName(ar.employee)}
-    </div>
-  ) : null}
-  {ar.employee?.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{ar.employee?.emp_no}</div>
-  ) : null}
-  {ar.employee?.leftDate ? (
-    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
-      Left{' '}
-      {new Date(ar.employee.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-    </div>
-  ) : null}
-</div>
+                  <tr key={ar._id} className="hover:opacity-95" style={{ backgroundColor: 'rgba(var(--ps-accent-rgb), 0.01)' }}>
+                    <td className="px-6 py-4 text-sm">
+                      <div className="min-w-0" title={[getEmployeeName(ar.employee), getDesignationName(ar.employee), ar.employee?.emp_no].filter(Boolean).join(' · ')}>
+                        <div className="truncate font-semibold text-slate-900 dark:text-white">{getEmployeeName(ar.employee) || '—'}</div>
+                        {getDesignationName(ar.employee) ? (
+                          <div className="mt-1 truncate text-[9px] italic text-slate-600 dark:text-slate-400">{getDesignationName(ar.employee)}</div>
+                        ) : null}
+                        {ar.employee?.emp_no ? (
+                          <div className="mt-1 truncate text-[9px] text-slate-500">{ar.employee.emp_no}</div>
+                        ) : null}
                       </div>
                     </td>
-                    <td className="px-8 py-6 text-sm font-semibold text-slate-800 dark:text-slate-200">
+                    <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">
                       {getDivisionName(ar.employee) || '—'}
-                    </td>
-                    <td className="px-8 py-6 text-sm font-semibold text-slate-800 dark:text-slate-200">
+                      <span className="text-slate-400"> / </span>
                       {getDepartmentName(ar.employee) || '—'}
                     </td>
-                    <td className="px-8 py-6">
-                      {ar.type === 'direct' ? (
-                        <span className="text-slate-500 dark:text-slate-400">—</span>
-                      ) : (
-                        <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
-                          <Calendar className="h-3.5 w-3.5 text-slate-600" />
-                          <span>{ar.startMonth ?? '—'}</span>
-                          <ArrowRight className="h-3 w-3 text-slate-500" />
-                          <span>{ar.endMonth ?? '—'}</span>
-                        </div>
-                      )}
+                    <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">
+                      {ar.type === 'direct' ? 'Direct' : (ar.startMonth && ar.endMonth ? `${ar.startMonth} – ${ar.endMonth}` : '—')}
                     </td>
-                    <td className="px-8 py-6 text-right">
-                      <div className="flex flex-col items-end">
-                        <span className="text-sm font-bold text-slate-950 dark:text-white">
-                          ₹{ar.totalAmount.toLocaleString('en-IN')}
-                        </span>
-                        <span className="text-[10px] font-bold tracking-widest text-slate-600 uppercase">Total Commitment</span>
-                      </div>
+                    <td className={`px-6 py-4 text-right text-sm ${ledgerMoneyClass()}`}>
+                      ₹{Number(ar.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="px-8 py-6 text-right">
-                      <div className={`inline-flex flex-col items-end rounded-xl px-3 py-1.5 border shadow-sm ${ar.remainingAmount > 0
-                        ? 'bg-amber-100 border-amber-300 text-amber-800 dark:text-amber-400'
-                        : 'bg-emerald-100 border-emerald-300 text-emerald-800 dark:text-emerald-400'
-                        }`}>
-                        <span className="text-sm font-bold">
-                          ₹{ar.remainingAmount.toLocaleString('en-IN')}
-                        </span>
-                        <span className="text-[9px] font-bold uppercase tracking-tighter opacity-80">
-                          {ar.remainingAmount > 0 ? 'Residual Balance' : 'Fully Liquidated'}
-                        </span>
-                      </div>
+                    <td className={`px-6 py-4 text-right text-sm ${ledgerMoneyClass()}`}>
+                      ₹{Number(ar.remainingAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="px-8 py-6">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider border shadow-sm ${getStatusColor(ar.status)}`}>
-                        {getStatusIcon(ar.status)}
-                        {getStatusLabel(ar.status)}
-                      </span>
+                    <td className="px-6 py-4">
+                      <span className={ledgerStatusBadgeClass(arrearLedgerStatus(ar.status))}>{getStatusLabel(ar.status)}</span>
                     </td>
-                    <td className="px-8 py-6">
-                      <div className="flex items-center justify-center">
-                        <button
-                          onClick={() => handleViewDetails(ar._id)}
-                          className="group/btn relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-white shadow-sm transition-all hover:border-blue-600 hover:bg-blue-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-blue-400 dark:hover:bg-blue-400/10"
-                        >
-                          <Eye className="h-4 w-4 text-slate-700 transition-colors group-hover/btn:text-blue-600 dark:text-slate-400 dark:group-hover/btn:text-blue-400" />
-                          <div className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-950 px-2 py-1 text-[10px] font-bold text-white opacity-0 transition-opacity group-hover/btn:opacity-100">
-                            View Details
-                          </div>
-                        </button>
-                      </div>
+                    <td className="px-6 py-4">
+                      <button
+                        type="button"
+                        onClick={() => handleViewDetails(ar._id)}
+                        className={loansDialogOutlineButtonClass()}
+                        style={loansDialogOutlineButtonStyle()}
+                      >
+                        <Eye className="h-3.5 w-3.5" /> View
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -822,9 +746,8 @@ export default function ArrearsPage() {
             </table>
           )}
         </div>
-      </div>
+      </LoansContentPanel>
 
-      {/* Dialogs */}
       <ArrearsDetailDialog
         open={detailDialogOpen}
         onClose={() => setDetailDialogOpen(false)}
@@ -840,6 +763,10 @@ export default function ArrearsPage() {
           employees={employees}
         />
       )}
-    </div>
+    </LoansPageShell>
   );
+}
+
+export default function ArrearsPage() {
+  return <ArrearsContent />;
 }

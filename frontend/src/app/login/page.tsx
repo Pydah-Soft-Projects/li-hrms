@@ -30,7 +30,7 @@ function LoginContent() {
       // Only logout if there is actually something to clear
       if (currentToken) {
         console.log("SSO Token detected in URL. Clearing existing local sessions to prioritize new login.");
-        auth.logout();
+        void auth.logout();
       }
       setChecking(false);
       return;
@@ -62,7 +62,10 @@ function LoginContent() {
       .ssoLogin(ssoToken)
       .then((response) => {
         if (response.success && response.data) {
-          auth.setToken(response.data.token);
+          auth.setAuthSession(
+            response.data.accessToken || response.data.token,
+            response.data.refreshToken
+          );
           auth.setUser(response.data.user);
           if (response.data.user.role !== "super_admin") {
             setWorkspaceDataFromLogin({
@@ -95,8 +98,10 @@ function LoginContent() {
       const response = await api.login(identifier, password);
 
       if (response.success && response.data) {
-        // Store token and user data
-        auth.setToken(response.data.token);
+        auth.setAuthSession(
+          response.data.accessToken || response.data.token,
+          response.data.refreshToken
+        );
         auth.setUser(response.data.user);
 
         // Navigate based on role

@@ -1,6 +1,7 @@
 const EmployeeGroup = require('../model/EmployeeGroup');
 const Employee = require('../model/Employee');
 const { buildRosterEmployeeFilters } = require('../../shifts/services/rosterEmployeeFilter');
+const { EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 
 /**
  * @desc    Distinct employee groups used by employees matching roster filters (lightweight)
@@ -146,15 +147,64 @@ exports.updateEmployeeGroup = async (req, res) => {
 };
 
 /**
+ * @desc    Employees assigned to an employee group
+ * @route   GET /api/employee-groups/:id/employees
+ */
+exports.getEmployeeGroupEmployees = async (req, res) => {
+  try {
+    const group = await EmployeeGroup.findById(req.params.id).select('name');
+    if (!group) {
+      return res.status(404).json({ success: false, message: 'Employee group not found' });
+    }
+
+    const employees = await Employee.find({ employee_group_id: group._id })
+      .select('emp_no employee_name department_id division_id is_active left_date')
+      .populate('department_id', 'name code')
+      .populate('division_id', 'name code')
+      .sort(EMP_NO_SORT)
+      .collation(EMP_NO_COLLATION)
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: employees.length,
+      data: employees,
+    });
+  } catch (error) {
+    console.error('getEmployeeGroupEmployees:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching employee group members',
+      error: error.message,
+    });
+  }
+};
+
+/**
  * @desc    Delete employee group
  * @route   DELETE /api/employee-groups/:id
  */
 exports.deleteEmployeeGroup = async (req, res) => {
   try {
-    const group = await EmployeeGroup.findByIdAndDelete(req.params.id);
+    const group = await EmployeeGroup.findById(req.params.id);
     if (!group) {
       return res.status(404).json({ success: false, message: 'Employee group not found' });
     }
+
+    const activeEmployeeCount = await Employee.countDocuments({
+      employee_group_id: group._id,
+      is_active: true,
+    });
+
+    if (activeEmployeeCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete employee group. It is assigned to ${activeEmployeeCount} active employee(s). Please reassign employees first.`,
+      });
+    }
+
+    await group.deleteOne();
+
     res.status(200).json({ success: true, message: 'Employee group deleted', data: {} });
   } catch (error) {
     console.error('deleteEmployeeGroup:', error);

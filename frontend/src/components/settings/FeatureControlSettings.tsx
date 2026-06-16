@@ -5,7 +5,34 @@ import { api, Role, User } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
 import { SettingsSkeleton } from './SettingsSkeleton';
-import { Save, User as UserIcon, Users, Briefcase, ChevronRight, UserCog, Edit, Plus, Trash2, Shield, Info, X, CheckCircle, ShieldAlert } from 'lucide-react';
+import { User as UserIcon, Users, Briefcase, UserCog, Edit, Plus, Trash2, Shield, CheckCircle, ShieldAlert } from 'lucide-react';
+import {
+  SettingsOutlineButton,
+  SettingsPanel,
+  SettingsPanelHeader,
+  SettingsSaveBar,
+  SettingsSectionCard,
+} from './SettingsPageShell';
+import {
+  settingsFieldHelpClass,
+  settingsInputClass,
+  settingsInputStyle,
+  settingsLedgerBorder,
+  settingsOutlineButtonClass,
+  settingsOutlineButtonStyle,
+  settingsSectionTitleClass,
+} from '@/lib/settingsUi';
+import {
+  getAccessLevelLabel,
+} from '@/lib/modulePermissionLabels';
+import {
+  LoanDetailDialog,
+  LoanDetailDialogBody,
+  LoanDetailDialogHeader,
+  LoanDialogFooter,
+  LoanFormLabel,
+  loansDialogDangerButtonClass,
+} from '@/components/loans/LoanDetailDialogShell';
 
 const availableModules: { id: string; label: string }[] = [
   { id: 'DASHBOARD', label: 'Dashboard' },
@@ -296,16 +323,14 @@ const FeatureControlSettings = () => {
   if (loading) return <SettingsSkeleton />;
 
   const RoleCard = ({ role, title, icon: Icon, colorClass, state }: { role: FeatureControlRole; title: string; icon: React.ComponentType<{ className?: string }>; colorClass: string; state: string[] }) => (
-    <section className="bg-white dark:bg-slate-900/80 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col group">
-      <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-700/80 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${colorClass}`}>
-            <Icon className="h-4 w-4" />
-          </div>
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{title}</h3>
+    <SettingsSectionCard title={title} className="flex flex-col group">
+      <div className="-mt-2 mb-4 flex items-center justify-between gap-3 border-b pb-3" style={settingsLedgerBorder}>
+        <div className={`flex h-8 w-8 shrink-0 items-center justify-center border ${colorClass}`} style={settingsLedgerBorder}>
+          <Icon className="h-4 w-4" />
         </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <button
+            type="button"
             onClick={() => setEditingRole({ 
               _id: role, 
               name: roleMetadata[role].name, 
@@ -313,14 +338,14 @@ const FeatureControlSettings = () => {
               activeModules: state,
               isSystemRole: true 
             } as any)}
-            className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-md transition-all"
+            className="p-1.5 text-stone-400 transition-all hover:bg-[var(--ps-accent-soft)] hover:text-[color:var(--ps-accent)]"
             title="Edit Role Label/Description"
           >
             <Edit className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
-      <div className="p-4 flex-1">
+      <div className="flex-1">
         <div className="grid grid-cols-2 gap-2">
           {availableModules.map((mod) => {
             const tileState = getModuleState(state, mod.id);
@@ -329,7 +354,7 @@ const FeatureControlSettings = () => {
                 key={mod.id}
                 type="button"
                 onClick={() => cycleModule(role, mod.id)}
-                title={`${mod.label} — ${tileState === 'disabled' ? 'Off' : tileState === 'read' ? 'Read' : 'Write'} (click to cycle)`}
+                title={`${mod.label} — ${getAccessLevelLabel(mod.id, tileState)} (click to cycle)`}
                 className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-xs font-medium transition-all ${
                   tileState === 'write'
                     ? 'border-emerald-500/80 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-600/60'
@@ -351,36 +376,38 @@ const FeatureControlSettings = () => {
           })}
         </div>
       </div>
-    </section>
+    </SettingsSectionCard>
   );
 
   const CustomRoleCard = ({ role }: { role: Role }) => (
-    <section className="bg-white dark:bg-slate-900/80 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col group relative">
-      <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-700/80 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
-            <Shield className="h-4 w-4" />
-          </div>
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-white truncate max-w-[150px]">{role.name}</h3>
+    <SettingsSectionCard title={role.name} className="relative flex flex-col group">
+      <div className="-mt-2 mb-4 flex items-center justify-between gap-3 border-b pb-3" style={settingsLedgerBorder}>
+        <div
+          className="flex h-8 w-8 shrink-0 items-center justify-center border text-[color:var(--ps-accent)]"
+          style={{ ...settingsLedgerBorder, backgroundColor: 'var(--ps-accent-soft)' }}
+        >
+          <Shield className="h-4 w-4" />
         </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <button
+            type="button"
             onClick={() => setEditingRole(role)}
-            className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-md transition-all"
+            className="p-1.5 text-stone-400 transition-all hover:bg-[var(--ps-accent-soft)] hover:text-[color:var(--ps-accent)]"
             title="Edit Role"
           >
             <Edit className="h-3.5 w-3.5" />
           </button>
           <button
+            type="button"
             onClick={() => initiateDelete(role)}
-            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-md transition-all"
+            className="p-1.5 text-stone-400 transition-all hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
             title="Delete Role"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
-      <div className="p-4 flex-1">
+      <div className="flex-1">
         <div className="grid grid-cols-2 gap-2">
           {availableModules.map((mod) => {
             const tileState = getModuleState(role.activeModules || [], mod.id);
@@ -410,56 +437,40 @@ const FeatureControlSettings = () => {
           })}
         </div>
       </div>
-    </section>
+    </SettingsSectionCard>
   );
 
   return (
-    <div className="w-full max-w-[1600px] space-y-6 animate-in fade-in duration-300">
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-700">
-        <div>
-          <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 mb-1">
-            <span>Settings</span>
-            <ChevronRight className="h-3.5 w-3.5 opacity-70" />
-            <span className="text-indigo-600 dark:text-indigo-400 font-medium">Feature Control</span>
-          </div>
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Permissions by role</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Control which modules each role can see and whether they have read or write access.</p>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            type="button"
-            onClick={loadSettings}
-            className="px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-          >
-            Reset
-          </button>
-          <button
-            type="button"
-            onClick={handleCreateRole}
-            disabled={creatingRole}
-            className="inline-flex items-center gap-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm"
-          >
-            {creatingRole ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-            Create Role
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
-          >
-            {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-            Save
-          </button>
-        </div>
+    <SettingsPanel>
+      <SettingsPanelHeader
+        section="Feature Control"
+        title="Permissions by role"
+        subtitle="Control which modules each role can access. Most modules use Read/Write; Payslips uses Self, Scoped, and Release (per user)."
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <SettingsOutlineButton onClick={loadSettings}>Reset</SettingsOutlineButton>
+        <SettingsOutlineButton onClick={handleCreateRole}>
+          {creatingRole ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+          Create Role
+        </SettingsOutlineButton>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-        <span className="font-medium text-slate-600 dark:text-slate-300">Legend:</span>
-        <span><span className="inline-block h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-500 align-middle mr-1" />Off</span>
-        <span><span className="inline-block h-2 w-2 rounded-full bg-blue-500 align-middle mr-1" />Read</span>
-        <span><span className="inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle mr-1" />Write</span>
-        <span className="text-slate-400 dark:text-slate-500">— Click a tile to cycle.</span>
+      <div className={`flex flex-col gap-2 text-xs ${settingsFieldHelpClass}`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-stone-600 dark:text-stone-300">Legend:</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-500 align-middle mr-1" />Off</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-blue-500 align-middle mr-1" />Read</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle mr-1" />Write</span>
+          <span className="text-slate-400 dark:text-slate-500">— Click a tile to cycle.</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-stone-500 dark:text-stone-400">
+          <span className="font-medium text-stone-600 dark:text-stone-300">Payslips:</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-blue-500 align-middle mr-1" />Self</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle mr-1" />Scoped</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-teal-500 align-middle mr-1" />Release</span>
+          <span className="text-slate-400">— Release is set per user under Users.</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
@@ -469,186 +480,202 @@ const FeatureControlSettings = () => {
         <RoleCard role="hr" title={roleMetadata.hr.name} icon={Users} colorClass="bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400" state={featureControlHR} />
       </div>
 
-      {(customRoles.length > 0) && (
-        <div className="space-y-6 pt-6 border-t border-slate-200 dark:border-slate-700">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-md font-semibold text-slate-900 dark:text-white">Dynamic Roles</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Custom roles created for specific user permissions.</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
+      {customRoles.length > 0 ? (
+        <SettingsSectionCard title="Dynamic Roles" description="Custom roles created for specific user permissions.">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
             {customRoles.map((role) => (
               <CustomRoleCard key={role._id} role={role} />
             ))}
           </div>
+        </SettingsSectionCard>
+      ) : (
+        <div
+          className="flex flex-col items-center border border-dashed p-12 text-center"
+          style={settingsLedgerBorder}
+        >
+          <div
+            className="mb-4 flex h-12 w-12 items-center justify-center"
+            style={{ ...settingsLedgerBorder, backgroundColor: 'var(--ps-accent-soft)', color: 'var(--ps-accent)' }}
+          >
+            <Shield className="h-6 w-6" />
+          </div>
+          <h4 className="font-medium text-stone-900 dark:text-stone-100">No dynamic roles yet</h4>
+          <p className={`mt-1 max-w-xs text-sm ${settingsFieldHelpClass}`}>
+            Create custom roles to give grouped permissions to specific employees.
+          </p>
+          <button
+            type="button"
+            onClick={handleCreateRole}
+            className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-[color:var(--ps-accent)] hover:underline"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Create your first role
+          </button>
         </div>
       )}
 
-      {customRoles.length === 0 && (
-          <div className="mt-8 p-12 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl flex flex-col items-center text-center">
-              <div className="h-12 w-12 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center mb-4">
-                  <Shield className="h-6 w-6 text-slate-400" />
-              </div>
-              <h4 className="text-slate-900 dark:text-white font-medium">No dynamic roles yet</h4>
-              <p className="text-slate-500 dark:text-slate-400 text-sm max-w-xs mt-1">Create custom roles to give grouped permissions to specific employees.</p>
-              <button
-                  type="button"
-                  onClick={handleCreateRole}
-                  className="mt-4 text-indigo-600 dark:text-indigo-400 text-sm font-medium hover:underline flex items-center gap-1"
-              >
-                  <Plus className="h-3.5 w-3.5" />
-                  Create your first role
-              </button>
-          </div>
-      )}
+      <SettingsSaveBar onSave={handleSave} saving={saving} label="Save permissions" />
 
-      {/* Create Role Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden scale-in duration-200">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Create New Role</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><X className="h-5 w-5" /></button>
-            </div>
-            <form onSubmit={handleConfirmCreateRole} className="p-6 space-y-4">
+      <LoanDetailDialog open={showCreateModal} onClose={() => setShowCreateModal(false)} maxWidth="max-w-md" layerClass="z-[100]">
+        <form onSubmit={handleConfirmCreateRole} className="flex min-h-0 flex-1 flex-col">
+          <LoanDetailDialogHeader
+            badge="Role"
+            title="Create new role"
+            subtitle="Define name and description for a custom permission group"
+            onClose={() => setShowCreateModal(false)}
+          />
+          <LoanDetailDialogBody>
+            <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1.5">Role Name</label>
-                <input 
-                  type="text" 
-                  value={newRoleData.name} 
-                  onChange={e => setNewRoleData({...newRoleData, name: e.target.value})}
+                <LoanFormLabel>Role name</LoanFormLabel>
+                <input
+                  type="text"
+                  value={newRoleData.name}
+                  onChange={(e) => setNewRoleData({ ...newRoleData, name: e.target.value })}
                   placeholder="e.g. Specialized Auditor"
-                  className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                  className={settingsInputClass()}
+                  style={settingsInputStyle()}
                   required
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1.5">Description (Optional)</label>
-                <textarea 
-                  value={newRoleData.description} 
-                  onChange={e => setNewRoleData({...newRoleData, description: e.target.value})}
+                <LoanFormLabel>Description (optional)</LoanFormLabel>
+                <textarea
+                  value={newRoleData.description}
+                  onChange={(e) => setNewRoleData({ ...newRoleData, description: e.target.value })}
                   placeholder="Describe the responsibilities of this role..."
-                  className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all min-h-[100px]"
+                  className={`${settingsInputClass()} min-h-[100px]`}
+                  style={settingsInputStyle()}
                 />
               </div>
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800">Cancel</button>
-                <button type="submit" disabled={creatingRole} className="flex-1 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 disabled:opacity-50">
-                  {creatingRole ? <Spinner className="h-4 w-4 mx-auto" /> : 'Create Role'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Role Modal */}
-      {editingRole && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden scale-in duration-200">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Edit Role Details</h3>
-              <button onClick={() => setEditingRole(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><X className="h-5 w-5" /></button>
             </div>
-            <form onSubmit={handleUpdateRoleDetails} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1.5">Role Name</label>
-                <input 
-                  type="text" 
-                  value={editingRole.name} 
-                  onChange={e => setEditingRole({...editingRole, name: e.target.value})}
-                  className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1.5">Description (Optional)</label>
-                <textarea 
-                  value={editingRole.description || ''} 
-                  onChange={e => setEditingRole({...editingRole, description: e.target.value})}
-                  className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all min-h-[100px]"
-                />
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setEditingRole(null)} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800">Cancel</button>
-                <button type="submit" disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 disabled:opacity-50">
-                  {saving ? <Spinner className="h-4 w-4 mx-auto" /> : 'Save Changes'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+          </LoanDetailDialogBody>
+          <LoanDialogFooter
+            onCancel={() => setShowCreateModal(false)}
+            submitLabel="Create role"
+            loading={creatingRole}
+          />
+        </form>
+      </LoanDetailDialog>
 
-      {/* Delete Role Modal (Impact Analysis) */}
-      {deletingRole && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg overflow-hidden scale-in duration-200">
-            <div className="p-6 text-center">
-              <div className="h-14 w-14 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto mb-4">
-                <Trash2 className="h-7 w-7" />
+      <LoanDetailDialog open={!!editingRole} onClose={() => setEditingRole(null)} maxWidth="max-w-md" layerClass="z-[100]">
+        <form onSubmit={handleUpdateRoleDetails} className="flex min-h-0 flex-1 flex-col">
+          <LoanDetailDialogHeader
+            badge="Role"
+            title="Edit role details"
+            subtitle="Update display name and description"
+            onClose={() => setEditingRole(null)}
+          />
+          <LoanDetailDialogBody>
+            {editingRole ? (
+              <div className="space-y-4">
+                <div>
+                  <LoanFormLabel>Role name</LoanFormLabel>
+                  <input
+                    type="text"
+                    value={editingRole.name}
+                    onChange={(e) => setEditingRole({ ...editingRole, name: e.target.value })}
+                    className={settingsInputClass()}
+                    style={settingsInputStyle()}
+                    required
+                  />
+                </div>
+                <div>
+                  <LoanFormLabel>Description (optional)</LoanFormLabel>
+                  <textarea
+                    value={editingRole.description || ''}
+                    onChange={(e) => setEditingRole({ ...editingRole, description: e.target.value })}
+                    className={`${settingsInputClass()} min-h-[100px]`}
+                    style={settingsInputStyle()}
+                  />
+                </div>
               </div>
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white">Delete Role?</h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-                Are you sure you want to delete <span className="font-bold text-slate-900 dark:text-white">"{deletingRole.name}"</span>? 
-                This action cannot be undone.
-              </p>
+            ) : null}
+          </LoanDetailDialogBody>
+          <LoanDialogFooter
+            onCancel={() => setEditingRole(null)}
+            submitLabel="Save changes"
+            loading={saving}
+          />
+        </form>
+      </LoanDetailDialog>
 
-              <div className="mt-6 text-left">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Linked Employees</h4>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${assignedUsers.length > 0 ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'}`}>
-                    {loadingUsers ? 'Checking...' : `${assignedUsers.length} Users Affected`}
+      <LoanDetailDialog open={!!deletingRole} onClose={() => setDeletingRole(null)} maxWidth="max-w-lg" layerClass="z-[100]">
+        <LoanDetailDialogHeader
+          badge="Role"
+          title="Delete role?"
+          subtitle={deletingRole ? `Remove "${deletingRole.name}" and its permissions` : undefined}
+          onClose={() => setDeletingRole(null)}
+        />
+        <LoanDetailDialogBody>
+          {deletingRole ? (
+            <div className="space-y-4">
+              <p className={`text-sm ${settingsFieldHelpClass}`}>This action cannot be undone.</p>
+              <div>
+                <div className="mb-3 flex items-center justify-between">
+                  <h4 className={settingsSectionTitleClass}>Linked employees</h4>
+                  <span
+                    className="px-2 py-0.5 text-[10px] font-bold"
+                    style={
+                      assignedUsers.length > 0
+                        ? { backgroundColor: 'var(--ps-accent-soft)', color: 'var(--ps-accent-ink)' }
+                        : undefined
+                    }
+                  >
+                    {loadingUsers ? 'Checking...' : `${assignedUsers.length} users affected`}
                   </span>
                 </div>
-
                 {loadingUsers ? (
-                  <div className="py-8 flex justify-center"><Spinner className="h-6 w-6" /></div>
+                  <div className="flex justify-center py-8">
+                    <Spinner className="h-6 w-6" />
+                  </div>
                 ) : assignedUsers.length > 0 ? (
-                  <div className="max-h-[200px] overflow-y-auto rounded-xl border border-slate-100 dark:border-slate-800 divide-y divide-slate-50 dark:divide-slate-800">
-                    {assignedUsers.map(u => (
-                      <div key={u._id} className="p-3 flex items-center justify-between">
+                  <div className="max-h-[200px] divide-y overflow-y-auto border" style={settingsLedgerBorder}>
+                    {assignedUsers.map((u) => (
+                      <div key={u._id} className="flex items-center justify-between p-3">
                         <div>
-                          <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{u.name}</p>
-                          <p className="text-[10px] text-slate-400 lowercase">{u.email}</p>
+                          <p className="text-sm font-semibold text-stone-800 dark:text-stone-200">{u.name}</p>
+                          <p className="text-[10px] lowercase text-stone-400">{u.email}</p>
                         </div>
-                        <span className="text-[10px] font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">{u.employeeId}</span>
+                        <span className="bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] text-stone-500 dark:bg-stone-900">
+                          {u.employeeId}
+                        </span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="py-6 text-center border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-xl">
-                    <CheckCircle className="h-5 w-5 text-emerald-500 mx-auto mb-2" />
-                    <p className="text-xs text-slate-500">No users are currently assigned to this role.</p>
+                  <div className="border border-dashed py-6 text-center" style={settingsLedgerBorder}>
+                    <CheckCircle className="mx-auto mb-2 h-5 w-5 text-emerald-500" />
+                    <p className={`text-xs ${settingsFieldHelpClass}`}>No users are currently assigned to this role.</p>
                   </div>
                 )}
               </div>
-
-              {assignedUsers.length > 0 && (
-                <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/50 rounded-xl flex gap-3 text-left">
-                  <ShieldAlert className="h-5 w-5 text-amber-600 shrink-0" />
-                  <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-normal font-medium">
-                    Note: Deleting this role will remove all associated permissions from these users. They will fall back to their default system role permissions.
+              {assignedUsers.length > 0 ? (
+                <div className="flex gap-3 border p-3" style={{ ...settingsLedgerBorder, backgroundColor: 'var(--ps-accent-soft)' }}>
+                  <ShieldAlert className="h-5 w-5 shrink-0 text-amber-600" />
+                  <p className="text-[11px] font-medium leading-normal text-amber-800 dark:text-amber-300">
+                    Deleting this role removes associated permissions; users fall back to default system role permissions.
                   </p>
                 </div>
-              )}
+              ) : null}
             </div>
-
-            <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex gap-3">
-              <button onClick={() => setDeletingRole(null)} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800">Cancel</button>
-              <button 
-                onClick={handleConfirmDelete} 
-                disabled={saving || (assignedUsers.length > 0 && deletingRole.isSystemRole)} 
-                className="flex-1 px-4 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 shadow-lg shadow-rose-600/20 disabled:opacity-50"
-              >
-                {saving ? <Spinner className="h-4 w-4 mx-auto" /> : 'Yes, Delete Role'}
-              </button>
-            </div>
-          </div>
+          ) : null}
+        </LoanDetailDialogBody>
+        <div className="flex gap-3 border-t px-5 py-4 sm:px-6" style={settingsLedgerBorder}>
+          <button type="button" onClick={() => setDeletingRole(null)} className={`flex-1 ${settingsOutlineButtonClass()}`} style={settingsOutlineButtonStyle()}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirmDelete}
+            disabled={saving || (assignedUsers.length > 0 && !!deletingRole?.isSystemRole)}
+            className={`flex-1 ${loansDialogDangerButtonClass()}`}
+          >
+            {saving ? <Spinner className="h-4 w-4" /> : 'Yes, delete role'}
+          </button>
         </div>
-      )}
-    </div>
+      </LoanDetailDialog>
+    </SettingsPanel>
   );
 };
 

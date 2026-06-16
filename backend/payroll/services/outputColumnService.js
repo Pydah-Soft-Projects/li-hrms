@@ -109,6 +109,19 @@ function headerToKey(header) {
   return header.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || 'col';
 }
 
+/** Mongoose subdocs omit payslipSection etc. when spread — always plain objects for column pipelines. */
+function toPlainOutputColumn(col) {
+  if (!col || typeof col !== 'object') return {};
+  if (typeof col.toObject === 'function') return col.toObject();
+  if (col._doc && typeof col._doc === 'object') return { ...col._doc };
+  return { ...col };
+}
+
+function toPlainOutputColumns(outputColumns) {
+  if (!Array.isArray(outputColumns)) return [];
+  return outputColumns.map(toPlainOutputColumn);
+}
+
 // Allow formula to use: numbers, +-*/(),., comma, identifiers, and ? : for ternary
 // extraKeys: Set or Array of allowed variable names (e.g. context keys)
 function isFormulaSafe(formula, extraKeys = null) {
@@ -398,7 +411,7 @@ function expandOutputColumnsWithBreakdown(outputColumns, allAllowanceNames = [],
     return String(a).localeCompare(String(b));
   });
 
-  const sorted = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const sorted = toPlainOutputColumns(outputColumns).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const expanded = [];
   const seenHeaders = new Set();
   let nextOrder = 0;
@@ -465,7 +478,12 @@ function expandOutputColumnsWithBreakdown(outputColumns, allAllowanceNames = [],
 module.exports = {
   buildRowFromOutputColumns,
   expandOutputColumnsWithBreakdown,
+  toPlainOutputColumn,
+  toPlainOutputColumns,
   getValueByPath,
   getContextFromPayslip,
   safeEvalFormula,
+  isAllowancesCumulativeColumn,
+  isDeductionsCumulativeColumn,
+  isStatutoryCumulativeColumn,
 };

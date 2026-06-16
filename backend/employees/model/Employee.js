@@ -1,6 +1,6 @@
 /**
  * MongoDB Employee Model
- * Mirrors the MSSQL employees table for dual database storage
+ * Employee master record (MongoDB)
  */
 
 const mongoose = require('mongoose');
@@ -284,6 +284,10 @@ const employeeSchema = new mongoose.Schema(
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     lastLogin: Date,
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
     // Second Salary fixed amount for calculation
     second_salary: {
       type: Number,
@@ -334,6 +338,16 @@ const employeeSchema = new mongoose.Schema(
         },
         userAgent: { type: String, default: null, trim: true },
         createdAt: { type: Date, default: Date.now },
+      },
+    ],
+    /** Expo push tokens (React Native mobile app) */
+    expoPushTokens: [
+      {
+        token: { type: String, required: true, trim: true },
+        deviceName: { type: String, default: null, trim: true },
+        platform: { type: String, enum: ['ios', 'android', 'unknown'], default: 'unknown' },
+        createdAt: { type: Date, default: Date.now },
+        lastSeenAt: { type: Date, default: Date.now },
       },
     ],
   },
@@ -439,7 +453,7 @@ employeeSchema.methods.getUnifiedData = function () {
   };
 };
 
-// Method to get only permanent fields (for MSSQL sync)
+// Method to get only permanent fields for persistence/export
 employeeSchema.methods.getPermanentFields = function () {
   const allFields = this.toObject({ virtuals: false });
   const { dynamicFields, _id, __v, ...permanentFields } = allFields;

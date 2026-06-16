@@ -1,6 +1,11 @@
 'use client';
 
 import {
+  LoanFormLabel,
+  loansFormSelectClass,
+  loansFormInputStyle,
+} from '@/components/loans/LoanDetailDialogShell';
+import {
   MAX_PAY_REGISTER_SHIFTS_PER_DAY,
   PayRegisterShiftOption,
   PayRegisterShiftSelection,
@@ -97,13 +102,13 @@ export default function PayRegisterShiftField({
   if (isMultiShiftMode) {
     return (
       <div className={className}>
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-          Shifts{' '}
-          <span className="font-normal text-slate-500">
-            (up to {MAX_PAY_REGISTER_SHIFTS_PER_DAY}; mark each full or half)
-          </span>
-        </label>
-        <div className="flex flex-col gap-2 max-h-52 overflow-y-auto rounded-md border border-slate-300 dark:border-slate-600 p-2 dark:bg-slate-700/50">
+        <LoanFormLabel>
+          Shifts (up to {MAX_PAY_REGISTER_SHIFTS_PER_DAY}; full or half)
+        </LoanFormLabel>
+        <div
+          className="mt-1.5 flex max-h-52 flex-col gap-2 overflow-y-auto border p-2"
+          style={{ borderColor: 'var(--ps-accent-border)', backgroundColor: 'var(--ps-accent-soft)' }}
+        >
           {shifts.map((shift) => {
             const sel = selections.find((s) => s.shiftId === shift._id);
             const checked = Boolean(sel);
@@ -115,10 +120,13 @@ export default function PayRegisterShiftField({
               <div
                 key={shift._id}
                 className={`rounded-md border px-2 py-1.5 ${
-                  checked
-                    ? 'border-indigo-200 bg-indigo-50/80 dark:border-indigo-800 dark:bg-indigo-950/30'
-                    : 'border-transparent'
+                  checked ? '' : 'border-transparent'
                 } ${disabled ? 'opacity-50' : ''}`}
+                style={
+                  checked
+                    ? { borderColor: 'var(--ps-accent-border)', backgroundColor: 'rgba(var(--ps-accent-rgb), 0.08)' }
+                    : undefined
+                }
               >
                 <label
                   className={`flex items-center gap-2 text-sm ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
@@ -181,9 +189,7 @@ export default function PayRegisterShiftField({
   const singleSel = selections[0];
   return (
     <div className={className}>
-      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-        Shift
-      </label>
+      <LoanFormLabel>Shift</LoanFormLabel>
       <select
         value={value.shiftId || ''}
         onChange={(e) => {
@@ -196,7 +202,8 @@ export default function PayRegisterShiftField({
             buildValueFromSelections([{ shiftId: id, isHalf: singleSel?.isHalf || false }], shifts)
           );
         }}
-        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white mb-2"
+        className={`mt-1.5 mb-2 ${loansFormSelectClass()}`}
+        style={loansFormInputStyle()}
       >
         <option value="">Select Shift</option>
         {shifts.map((shift) => (

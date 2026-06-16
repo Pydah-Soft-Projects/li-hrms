@@ -1,21 +1,103 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, EmployeeGroup } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
 import { Layers, Plus, Pencil, Trash2 } from 'lucide-react';
+import {
+  LoansPageShell,
+  LoansPageHeader,
+  LoansStatGrid,
+  LoansContentPanel,
+  LoansSectionTitle,
+  loansPrimaryButtonClass,
+  loansPrimaryButtonStyle,
+  loansTableHeadClass,
+  loansTableHeadStyle,
+} from '@/components/loans/LoansPageShell';
+import {
+  LoanDetailDialog,
+  LoanDetailDialogHeader,
+  LoanDetailDialogBody,
+  LoanDialogFooter,
+  LoanFormLabel,
+  LoanFormPanel,
+  loansFormInputClass,
+  loansFormInputStyle,
+} from '@/components/loans/LoanDetailDialogShell';
+import { ledgerActionButtonClass, ledgerStatusBadgeClass } from '@/lib/ledgerUi';
+import {
+  confirmDeleteWithAssignedEmployees,
+  showDeleteError,
+  showDeleteSuccess,
+} from '@/lib/assignedEmployeesDeleteSwal';
+
+const ledgerBorder = { borderColor: 'var(--ps-accent-border)' };
+
+function GroupRowActions({
+  group,
+  onEdit,
+  onDelete,
+}: {
+  group: EmployeeGroup;
+  onEdit: (g: EmployeeGroup) => void;
+  onDelete: (g: EmployeeGroup) => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => onEdit(group)}
+        className={ledgerActionButtonClass('sky')}
+        aria-label="Edit"
+      >
+        <Pencil className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => void onDelete(group)}
+        className={ledgerActionButtonClass('rose')}
+        aria-label="Delete"
+      >
+        <Trash2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+      </button>
+    </>
+  );
+}
+
+function GroupStatusToggle({
+  group,
+  onToggle,
+}: {
+  group: EmployeeGroup;
+  onToggle: (g: EmployeeGroup) => void;
+}) {
+  const active = group.isActive !== false;
+  return (
+    <button
+      type="button"
+      onClick={() => void onToggle(group)}
+      className={ledgerStatusBadgeClass(active ? 'approved' : 'neutral')}
+    >
+      {active ? 'Active' : 'Inactive'}
+    </button>
+  );
+}
 
 export default function EmployeeGroupsClient() {
   const [groups, setGroups] = useState<EmployeeGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [enabled, setEnabled] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [formOpen, setFormOpen] = useState(false);
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [description, setDescription] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const isEditing = !!editingId;
 
   const load = useCallback(async () => {
     try {
@@ -53,11 +135,38 @@ export default function EmployeeGroupsClient() {
     }
   }, [checking, load]);
 
+  const stats = useMemo(() => {
+    const active = groups.filter((g) => g.isActive !== false).length;
+    return {
+      total: groups.length,
+      active,
+      inactive: groups.length - active,
+    };
+  }, [groups]);
+
   const resetForm = () => {
     setName('');
     setCode('');
     setDescription('');
     setEditingId(null);
+  };
+
+  const closeFormDialog = () => {
+    setFormOpen(false);
+    resetForm();
+  };
+
+  const openCreateDialog = () => {
+    resetForm();
+    setFormOpen(true);
+  };
+
+  const openEditDialog = (g: EmployeeGroup) => {
+    setEditingId(g._id);
+    setName(g.name);
+    setCode(g.code || '');
+    setDescription(g.description || '');
+    setFormOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,7 +185,7 @@ export default function EmployeeGroupsClient() {
         });
         if (res.success) {
           toast.success('Group updated');
-          resetForm();
+          closeFormDialog();
           await load();
         } else {
           toast.error(res.message || 'Update failed');
@@ -89,7 +198,7 @@ export default function EmployeeGroupsClient() {
         });
         if (res.success) {
           toast.success('Group created');
-          resetForm();
+          closeFormDialog();
           await load();
         } else {
           toast.error(res.message || 'Create failed');
@@ -98,13 +207,6 @@ export default function EmployeeGroupsClient() {
     } finally {
       setSaving(false);
     }
-  };
-
-  const startEdit = (g: EmployeeGroup) => {
-    setEditingId(g._id);
-    setName(g.name);
-    setCode(g.code || '');
-    setDescription(g.description || '');
   };
 
   const toggleActive = async (g: EmployeeGroup) => {
@@ -118,159 +220,243 @@ export default function EmployeeGroupsClient() {
   };
 
   const handleDelete = async (g: EmployeeGroup) => {
-    if (!confirm(`Delete group "${g.name}"? Employees will keep employee_group_id until cleared manually.`)) return;
-    const res = await api.deleteEmployeeGroup(g._id);
-    if (res.success) {
-      toast.success('Group deleted');
-      if (editingId === g._id) resetForm();
-      await load();
-    } else {
-      toast.error(res.message || 'Delete failed');
+    try {
+      const employeesResponse = await api.getEmployeeGroupEmployees(g._id);
+      const employees: Array<{
+        emp_no?: string;
+        employee_name?: string;
+        is_active?: boolean;
+        department_id?: { name?: string };
+        division_id?: { name?: string };
+      }> = Array.isArray(employeesResponse?.data) ? employeesResponse.data : [];
+
+      const confirmed = await confirmDeleteWithAssignedEmployees(g.name, employees, {
+        entityLabel: 'Employee group',
+        deleteConfirmButton: 'Delete group',
+      });
+      if (!confirmed) return;
+
+      const res = await api.deleteEmployeeGroup(g._id);
+      if (res.success) {
+        if (editingId === g._id) closeFormDialog();
+        await load();
+        await showDeleteSuccess('Employee group');
+      } else {
+        await showDeleteError(res.message || 'Failed to delete employee group');
+      }
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'An error occurred while deleting employee group';
+      await showDeleteError(message);
     }
   };
 
   if (checking) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <Spinner />
-      </div>
+      <LoansPageShell>
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <Spinner />
+        </div>
+      </LoansPageShell>
     );
   }
 
   if (!enabled) {
     return (
-      <div className="mx-auto max-w-2xl rounded-2xl border border-amber-200 bg-amber-50/80 p-8 text-center dark:border-amber-900/40 dark:bg-amber-950/30">
-        <Layers className="mx-auto mb-4 h-10 w-10 text-amber-600 dark:text-amber-400" />
-        <h2 className="text-lg font-bold text-slate-900 dark:text-white">Custom employee grouping is off</h2>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-          Turn on <strong>Enable custom employee grouping</strong> in General Settings, then return here to manage groups.
-        </p>
-      </div>
+      <LoansPageShell>
+        <LoansPageHeader
+          badge="Workforce"
+          title="Employee groups"
+          subtitle="Custom cohorts for employees and applications"
+        />
+        <LoanFormPanel soft className="mx-auto max-w-2xl text-center !py-10">
+          <Layers className="mx-auto mb-4 h-10 w-10" style={{ color: 'var(--ps-accent)' }} />
+          <h2 className="font-serif text-xl font-light text-stone-900 dark:text-stone-50">
+            Custom employee grouping is off
+          </h2>
+          <p className="mt-2 text-sm text-stone-600 dark:text-stone-400">
+            Turn on <strong>Enable custom employee grouping</strong> in General Settings, then return here to manage groups.
+          </p>
+        </LoanFormPanel>
+      </LoansPageShell>
     );
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-300">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Employee groups</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Cross-cutting cohorts (teams, batches, etc.) assigned to employees and applications.
-          </p>
-        </div>
-      </div>
-
-      <form
-        onSubmit={handleSubmit}
-        className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-      >
-        <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-          {editingId ? 'Edit group' : 'New group'}
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs font-bold uppercase text-slate-400">Name *</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-bold uppercase text-slate-400">Code</label>
-            <input
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="mb-1 block text-xs font-bold uppercase text-slate-400">Description</label>
-            <input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-            />
-          </div>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
+    <LoansPageShell>
+      <LoansPageHeader
+        badge="Workforce"
+        title="Employee groups"
+        subtitle="Cross-cutting cohorts (teams, batches) assigned to employees and applications"
+        action={
           <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-50"
+            type="button"
+            onClick={openCreateDialog}
+            className={`inline-flex shrink-0 items-center gap-1 ${loansPrimaryButtonClass()}`}
+            style={loansPrimaryButtonStyle()}
           >
-            {editingId ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-            {editingId ? 'Save changes' : 'Create group'}
+            <Plus className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+            <span className="sm:hidden">New</span>
+            <span className="hidden sm:inline">New group</span>
           </button>
-          {editingId && (
-            <button
-              type="button"
-              onClick={resetForm}
-              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-300"
-            >
-              Cancel
-            </button>
-          )}
-        </div>
-      </form>
+        }
+      />
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <LoansStatGrid
+        columns={3}
+        stats={[
+          { label: 'Total groups', value: stats.total, accent: true },
+          { label: 'Active', value: stats.active, highlight: true },
+          { label: 'Inactive', value: stats.inactive, muted: true },
+        ]}
+      />
+
+      <LoansContentPanel>
+        <div className="border-b px-3 py-2 sm:px-4 sm:py-2.5" style={ledgerBorder}>
+          <LoansSectionTitle>All groups</LoansSectionTitle>
+        </div>
         {loading ? (
-          <div className="flex justify-center py-16">
+          <div className="flex justify-center py-10 sm:py-16">
             <Spinner />
           </div>
         ) : groups.length === 0 ? (
-          <p className="py-12 text-center text-sm text-slate-500">No groups yet. Create one above.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-100 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-950/50">
-                <tr>
-                  <th className="px-4 py-3 font-bold text-slate-500">Name</th>
-                  <th className="px-4 py-3 font-bold text-slate-500">Code</th>
-                  <th className="px-4 py-3 font-bold text-slate-500">Active</th>
-                  <th className="px-4 py-3 text-right font-bold text-slate-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {groups.map((g) => (
-                  <tr key={g._id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                    <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">{g.name}</td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{g.code || '—'}</td>
-                    <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => void toggleActive(g)}
-                        className={`rounded-full px-2 py-0.5 text-xs font-bold ${g.isActive !== false ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}
-                      >
-                        {g.isActive !== false ? 'Yes' : 'No'}
-                      </button>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => startEdit(g)}
-                        className="mr-2 inline-flex rounded-lg p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
-                        aria-label="Edit"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDelete(g)}
-                        className="inline-flex rounded-lg p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-                        aria-label="Delete"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="flex flex-col items-center px-4 py-10 text-center sm:py-16">
+            <Layers className="mb-2 h-8 w-8 text-stone-300 sm:mb-3 sm:h-10 sm:w-10" />
+            <p className="font-serif text-base font-light text-stone-800 dark:text-stone-100 sm:text-lg">
+              No groups yet
+            </p>
+            <p className="mt-1 text-xs text-stone-500 sm:text-sm">Use New group in the header to create one.</p>
           </div>
+        ) : (
+          <>
+            {/* Desktop / tablet: table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className={loansTableHeadClass()} style={loansTableHeadStyle()}>
+                    <th className="px-3 py-2 text-left">Name</th>
+                    <th className="px-3 py-2 text-left">Code</th>
+                    <th className="px-3 py-2 text-left">Description</th>
+                    <th className="px-3 py-2 text-left">Status</th>
+                    <th className="px-3 py-2 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y dark:divide-stone-800" style={ledgerBorder}>
+                  {groups.map((g) => (
+                    <tr key={g._id} className="transition-colors hover:bg-[var(--ps-accent-soft)]/30">
+                      <td className="px-3 py-2 font-medium text-stone-900 dark:text-stone-100">{g.name}</td>
+                      <td className="px-3 py-2 font-mono text-[11px] text-stone-600 dark:text-stone-400">
+                        {g.code || '—'}
+                      </td>
+                      <td className="max-w-[200px] truncate px-3 py-2 text-stone-600 dark:text-stone-400">
+                        {g.description || '—'}
+                      </td>
+                      <td className="px-3 py-2">
+                        <GroupStatusToggle group={g} onToggle={toggleActive} />
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <GroupRowActions group={g} onEdit={openEditDialog} onDelete={handleDelete} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile: compact cards */}
+            <div className="md:hidden divide-y" style={ledgerBorder}>
+              {groups.map((g) => (
+                <article
+                  key={g._id}
+                  className="flex items-start gap-2 px-3 py-2.5 transition-colors hover:bg-[var(--ps-accent-soft)]/25"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-1.5">
+                      <h3 className="truncate text-xs font-medium text-stone-900 dark:text-stone-100">
+                        {g.name}
+                      </h3>
+                      {g.code ? (
+                        <span className="shrink-0 font-mono text-[10px] text-stone-500 dark:text-stone-400">
+                          {g.code}
+                        </span>
+                      ) : null}
+                    </div>
+                    {g.description ? (
+                      <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-stone-500 dark:text-stone-400">
+                        {g.description}
+                      </p>
+                    ) : null}
+                    <div className="mt-1.5">
+                      <GroupStatusToggle group={g} onToggle={toggleActive} />
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
+                    <GroupRowActions group={g} onEdit={openEditDialog} onDelete={handleDelete} />
+                  </div>
+                </article>
+              ))}
+            </div>
+          </>
         )}
-      </div>
-    </div>
+      </LoansContentPanel>
+
+      <LoanDetailDialog open={formOpen} onClose={closeFormDialog} maxWidth="max-w-lg">
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <LoanDetailDialogHeader
+            badge="Employee group"
+            title={isEditing ? 'Edit group' : 'New group'}
+            subtitle={
+              isEditing
+                ? 'Update name, code, or description'
+                : 'Create a cohort for employees and applications'
+            }
+            onClose={closeFormDialog}
+          />
+          <LoanDetailDialogBody>
+            <div className="space-y-4">
+              <div>
+                <LoanFormLabel>Name *</LoanFormLabel>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
+                  placeholder="e.g. Night shift batch A"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <LoanFormLabel>Code</LoanFormLabel>
+                <input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
+                  placeholder="Optional short code"
+                />
+              </div>
+              <div>
+                <LoanFormLabel>Description</LoanFormLabel>
+                <input
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
+                  placeholder="Optional notes"
+                />
+              </div>
+            </div>
+          </LoanDetailDialogBody>
+          <LoanDialogFooter
+            onCancel={closeFormDialog}
+            submitLabel={isEditing ? 'Save changes' : 'Create group'}
+            submitDisabled={saving || !name.trim()}
+            loading={saving}
+          />
+        </form>
+      </LoanDetailDialog>
+    </LoansPageShell>
   );
 }

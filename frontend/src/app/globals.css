@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 @import "../styles/responsive.css";
 
@@ -37,8 +36,8 @@ body {
   --color-accent: #10b981; /* emerald-500 */
   --color-accent-dark: #059669; /* emerald-600 */
   
-  --font-sans: 'Inter', system-ui, sans-serif;
-  --font-display: 'Outfit', sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   /* Status Colors */
   --status-positive: #10b981;
@@ -621,4 +620,379 @@ input[type="number"],
   .nf-dots span {
     animation: none !important;
   }
+}
+
+/* ── Ledger UI · SweetAlert2 (compact + responsive) ─────────────────── */
+.ledger-swal-container {
+  padding: 0.75rem !important;
+}
+
+.ledger-swal-backdrop {
+  background: rgba(28, 25, 23, 0.45) !important;
+  backdrop-filter: blur(2px);
+}
+
+.ledger-swal-popup {
+  border: 1px solid var(--ps-accent-border, rgba(5, 150, 105, 0.22)) !important;
+  border-radius: 0 !important;
+  box-shadow: 0 16px 32px -12px rgba(0, 0, 0, 0.15) !important;
+  padding: 0 !important;
+  background: #fff !important;
+  width: 100% !important;
+  max-width: calc(100vw - 1.5rem) !important;
+  margin: 0 auto !important;
+}
+
+.ledger-swal-popup-sm {
+  max-width: min(20rem, calc(100vw - 1.5rem)) !important;
+}
+
+.ledger-swal-popup-md {
+  max-width: min(24rem, calc(100vw - 1.5rem)) !important;
+}
+
+.ledger-swal-popup-lg {
+  max-width: min(36rem, calc(100vw - 1.5rem)) !important;
+}
+
+.dark .ledger-swal-popup {
+  background: #0c0a09 !important;
+}
+
+.ledger-swal-header {
+  padding: 0.75rem 1rem 0.5rem !important;
+}
+
+.ledger-swal-popup-lg .ledger-swal-header {
+  padding: 0.625rem 0.875rem 0.375rem !important;
+}
+
+.ledger-swal-title {
+  font-family: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif !important;
+  font-size: 1rem !important;
+  font-weight: 300 !important;
+  line-height: 1.3 !important;
+  letter-spacing: -0.01em !important;
+  color: #1c1917 !important;
+  padding: 0 !important;
+}
+
+.ledger-swal-popup-lg .ledger-swal-title {
+  font-size: 0.9375rem !important;
+}
+
+.dark .ledger-swal-title {
+  color: #fafaf9 !important;
+}
+
+.ledger-swal-html {
+  font-size: 0.75rem !important;
+  line-height: 1.45 !important;
+  color: #57534e !important;
+  text-align: left !important;
+  padding: 0 1rem 0.375rem !important;
+  margin: 0 !important;
+  max-height: min(58vh, 24rem);
+  overflow-y: auto;
+}
+
+.ledger-swal-popup-lg .ledger-swal-html {
+  padding: 0 0.875rem 0.375rem !important;
+  max-height: min(52vh, 20rem);
+}
+
+.dark .ledger-swal-html {
+  color: #a8a29e !important;
+}
+
+.ledger-swal-popup .swal2-html-container > p {
+  font-size: 0.75rem !important;
+  line-height: 1.45 !important;
+  margin: 0.25rem 0 0 !important;
+}
+
+.ledger-swal-actions {
+  width: 100% !important;
+  padding: 0.5rem 0.875rem 0.625rem !important;
+  margin: 0.375rem 0 0 !important;
+  justify-content: flex-end !important;
+  flex-wrap: wrap !important;
+  gap: 0.375rem !important;
+}
+
+.ledger-swal-icon {
+  transform: scale(0.65) !important;
+  width: 2.5rem !important;
+  height: 2.5rem !important;
+  margin: 0.25rem auto 0 !important;
+  border-width: 2px !important;
+}
+
+.ledger-swal-btn {
+  border-radius: 0.25rem !important;
+  padding: 0.375rem 0.625rem !important;
+  font-size: 0.5625rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.1em !important;
+  transition: opacity 0.15s ease !important;
+  box-shadow: none !important;
+  min-height: 1.75rem !important;
+}
+
+.ledger-swal-btn:hover {
+  opacity: 0.88;
+}
+
+.ledger-swal-btn-primary {
+  color: #fff !important;
+  background-color: var(--ps-accent, #059669) !important;
+  border: 1px solid var(--ps-accent, #059669) !important;
+}
+
+.ledger-swal-btn-danger {
+  color: #fff !important;
+  background-color: #e11d48 !important;
+  border: 1px solid #be123c !important;
+}
+
+.ledger-swal-btn-success {
+  color: #fff !important;
+  background-color: #059669 !important;
+  border: 1px solid #047857 !important;
+}
+
+.ledger-swal-btn-outline {
+  color: var(--ps-accent, #059669) !important;
+  background: #fff !important;
+  border: 1px solid var(--ps-accent-border, rgba(5, 150, 105, 0.22)) !important;
+}
+
+.dark .ledger-swal-btn-outline {
+  background: #0c0a09 !important;
+  color: var(--ps-accent-ink, #6ee7b7) !important;
+}
+
+.ledger-swal-show {
+  animation: ledger-swal-in 0.2s ease-out;
+}
+
+.ledger-swal-hide {
+  animation: ledger-swal-out 0.15s ease-in forwards;
+}
+
+@keyframes ledger-swal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes ledger-swal-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+.ledger-swal-prose {
+  text-align: left;
+}
+
+.ledger-swal-lead {
+  margin: 0 0 0.25rem;
+  color: #44403c;
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.dark .ledger-swal-lead {
+  color: #d6d3d1;
+}
+
+.ledger-swal-sub {
+  margin: 0 0 0.5rem;
+  color: #78716c;
+  font-size: 0.625rem;
+  line-height: 1.4;
+}
+
+.ledger-swal-table-wrap {
+  border: 1px solid var(--ps-accent-border, rgba(5, 150, 105, 0.22));
+  border-radius: 0;
+  overflow-x: auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  max-height: min(40vh, 11rem);
+  background: #fff;
+}
+
+.dark .ledger-swal-table-wrap {
+  background: #0c0a09;
+}
+
+.ledger-swal-table {
+  width: 100%;
+  min-width: 28rem;
+  border-collapse: collapse;
+  font-size: 0.6875rem;
+  table-layout: fixed;
+}
+
+.ledger-swal-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ps-accent-soft, rgba(5, 150, 105, 0.08));
+}
+
+.ledger-swal-table th {
+  text-align: left;
+  padding: 0.375rem 0.5rem;
+  border-bottom: 1px solid var(--ps-accent-border, rgba(5, 150, 105, 0.22));
+  font-size: 0.5625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ps-accent-ink, #047857);
+  white-space: nowrap;
+}
+
+.ledger-swal-th-mono {
+  width: 4.5rem;
+}
+
+.ledger-swal-th-status {
+  width: 4.25rem;
+}
+
+.ledger-swal-td {
+  padding: 0.375rem 0.5rem;
+  border-bottom: 1px solid #e7e5e4;
+  color: #44403c;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ledger-swal-td-name {
+  max-width: 7rem;
+}
+
+.ledger-swal-td-status {
+  width: 4.25rem;
+}
+
+.dark .ledger-swal-td {
+  border-bottom-color: #292524;
+  color: #d6d3d1;
+}
+
+.ledger-swal-td-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #1c1917;
+}
+
+.dark .ledger-swal-td-mono {
+  color: #fafaf9;
+}
+
+.ledger-swal-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 0.125rem;
+  padding: 0.0625rem 0.375rem;
+  font-size: 0.5rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.ledger-swal-badge-active {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.1);
+  color: #047857;
+}
+
+.ledger-swal-badge-neutral {
+  border-color: #e7e5e4;
+  background: #fafaf9;
+  color: #57534e;
+}
+
+.dark .ledger-swal-badge-neutral {
+  border-color: #44403c;
+  background: #1c1917;
+  color: #a8a29e;
+}
+
+.ledger-swal-more {
+  margin: 0.375rem 0 0;
+  font-size: 0.625rem;
+  color: #78716c;
+}
+
+/* Narrow screens: hide org columns; table scrolls horizontally if needed */
+@media (max-width: 520px) {
+  .ledger-swal-col-org {
+    display: none;
+  }
+
+  .ledger-swal-table {
+    min-width: 16rem;
+  }
+
+  .ledger-swal-popup-lg {
+    max-width: calc(100vw - 1rem) !important;
+  }
+
+  .ledger-swal-actions {
+    justify-content: stretch !important;
+  }
+
+  .ledger-swal-actions .ledger-swal-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+/* Ledger UI — settings module scope */
+.settings-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.settings-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.settings-scrollbar::-webkit-scrollbar-thumb {
+  background: #d6d3d1;
+  border-radius: 10px;
+}
+.dark .settings-scrollbar::-webkit-scrollbar-thumb {
+  background: #44403c;
+}
+
+.settings-ledger-scope input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']),
+.settings-ledger-scope select,
+.settings-ledger-scope textarea {
+  border-color: var(--ps-accent-border);
+  border-radius: 0;
+}
+.settings-ledger-scope input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):focus,
+.settings-ledger-scope select:focus,
+.settings-ledger-scope textarea:focus {
+  outline: none;
+  ring: 1px;
+  --tw-ring-color: var(--ps-accent);
 }

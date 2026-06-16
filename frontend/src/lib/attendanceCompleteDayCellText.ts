@@ -4,6 +4,15 @@
  * Used by monthly Excel export so single-shift exports match the on-screen grid.
  */
 
+import { formatOdDurationHoursParen } from '@/lib/formatOdDuration';
+
+/** Show worked hours when > 0 (any day type: present, leave, OD, WO, holiday). Hide 0:00 only. */
+export function shouldShowWorkedHoursInCompleteCell(record: any | null): boolean {
+  if (!record) return false;
+  const hours = Number(record.totalHours ?? record.totalWorkingHours ?? 0);
+  return Number.isFinite(hours) && hours > 0;
+}
+
 export function hasRosterHalfNonWorking(record: any | null): boolean {
   if (!record) return false;
   const f = record.rosterFirstHalfNonWorking;
@@ -225,7 +234,7 @@ export function formatCompleteDayCellForExcel(record: any | null): string {
   const payBit = pay != null ? `(${pay})` : '';
   let odh = '';
   if (record?.odInfo?.odType_extended === 'hours') {
-    odh = `ODh${record.odInfo.durationHours != null ? `(${record.odInfo.durationHours}h)` : ''}`;
+    odh = `ODh${record.odInfo.durationHours != null ? formatOdDurationHoursParen(record.odInfo.durationHours) : ''}`;
   }
   const tail = [shiftBit, payBit, odh].filter(Boolean).join(' ');
   if (tail) text += `\n${tail}`;

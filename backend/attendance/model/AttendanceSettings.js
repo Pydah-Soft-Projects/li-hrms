@@ -1,81 +1,18 @@
 /**
  * Attendance Settings Model
- * Stores MSSQL configuration and sync settings
+ * Stores attendance processing and feature configuration
  */
 
 const mongoose = require('mongoose');
 
 const attendanceSettingsSchema = new mongoose.Schema(
   {
-    // Data Source Selection
     dataSource: {
       type: String,
-      enum: ['mssql', 'mongodb'],
+      enum: ['mongodb'],
       default: 'mongodb',
     },
-    
-    // MSSQL Configuration
-    mssqlConfig: {
-      databaseName: {
-        type: String,
-        trim: true,
-        default: null,
-      },
-      tableName: {
-        type: String,
-        trim: true,
-        default: null,
-      },
-      columnMapping: {
-        employeeNumberColumn: {
-          type: String,
-          trim: true,
-          default: null,
-        },
-        timestampColumn: {
-          type: String,
-          trim: true,
-          default: null,
-        },
-        typeColumn: {
-          type: String,
-          trim: true,
-          default: null, // Optional: column that indicates IN/OUT
-        },
-        hasTypeColumn: {
-          type: Boolean,
-          default: false, // Does table have separate IN/OUT type column?
-        },
-      },
-    },
-    
-    // Sync Settings
-    syncSettings: {
-      autoSyncEnabled: {
-        type: Boolean,
-        default: false,
-      },
-      syncIntervalHours: {
-        type: Number,
-        default: 1, // Default: sync every 1 hour
-        min: 0.5, // Minimum: 30 minutes
-        max: 24, // Maximum: 24 hours
-      },
-      lastSyncAt: {
-        type: Date,
-        default: null,
-      },
-      lastSyncStatus: {
-        type: String,
-        enum: ['success', 'failed', 'pending'],
-        default: null,
-      },
-      lastSyncMessage: {
-        type: String,
-        default: null,
-      },
-    },
-    
+
     // Previous Day Linking (Settings enabled)
     previousDayLinking: {
       enabled: {
@@ -187,4 +124,3 @@ attendanceSettingsSchema.statics.getProcessingMode = function(doc) {
 };
 
 module.exports = mongoose.models.AttendanceSettings || mongoose.model('AttendanceSettings', attendanceSettingsSchema);
-

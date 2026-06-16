@@ -3,6 +3,7 @@ const User = require('../../users/model/User');
 const Employee = require('../../employees/model/Employee');
 const { sendNotification, getIO } = require('../../shared/services/socketService');
 const { sendWebPushToRecipientIds, resolveOpenUrl } = require('../../shared/services/pushNotificationService');
+const { sendExpoPushToRecipientIds } = require('../../shared/services/expoPushNotificationService');
 
 const uniqueIds = (ids = []) => [...new Set(ids.map((id) => String(id)).filter(Boolean))];
 const isObjectIdLike = (v) => /^[a-f0-9]{24}$/i.test(String(v || ''));
@@ -213,6 +214,15 @@ async function createNotifications({
     url: resolveOpenUrl(actionUrl || '/'),
     tag: `${module}:${eventType}`,
   }).catch((e) => console.warn('[createNotifications] Web push batch failed:', e.message));
+
+  sendExpoPushToRecipientIds(ids, {
+    title,
+    body: message,
+    actionUrl: actionUrl || '/',
+    module,
+    entityId: entityId || null,
+    priority: priority === 'urgent' ? 'high' : 'default',
+  }).catch((e) => console.warn('[createNotifications] Expo push batch failed:', e.message));
 
   // Realtime emit + toast for online users.
   for (const n of created) {

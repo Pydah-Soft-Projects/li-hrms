@@ -1,9 +1,28 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { api, PayrollConfig, PayrollConfigStep, PayrollOutputColumn, PayrollStepComponent, StatutoryDeductionConfig } from '@/lib/api';
+import { api, PayrollConfig, PayrollConfigStep, PayrollOutputColumn, PayrollStepComponent, PayslipSectionType, StatutoryDeductionConfig } from '@/lib/api';
+import { inferPayslipSectionFromField } from '@/lib/payslipSections';
 import { toast } from 'react-toastify';
-import { FileSpreadsheet, Save, Plus, Trash2, ChevronDown, ChevronRight, HelpCircle, ArrowRight, GripVertical } from 'lucide-react';
+import { FileSpreadsheet, Save, Plus, Trash2, ChevronDown, ChevronUp, HelpCircle, ArrowRight, GripVertical, Loader2 } from 'lucide-react';
+import {
+  LoansPageShell,
+  LoansPageHeader,
+  loansPrimaryButtonClass,
+  loansPrimaryButtonStyle,
+} from '@/components/loans/LoansPageShell';
+import {
+  LoanDetailSection,
+  LoanDetailSectionTitle,
+  LoanFormLabel,
+  loansFormInputClass,
+  loansFormInputStyle,
+  loansFormCompactInputClass,
+  loansFormSelectClass,
+  loansDialogOutlineButtonClass,
+  loansDialogOutlineButtonStyle,
+} from '@/components/loans/LoanDetailDialogShell';
+import { LedgerCollapsiblePanel } from '@/components/ledger/LedgerCollapsiblePanel';
 
 const DEFAULT_STEP_TYPES: { type: string; label: string }[] = [
   { type: 'attendance', label: 'Attendance & paid days' },
@@ -134,7 +153,13 @@ export default function PayrollConfigPage() {
         );
       }
       if (Array.isArray(data?.outputColumns) && data.outputColumns.length > 0) {
-        setOutputColumns(data.outputColumns.map((c, i) => ({ ...c, order: c.order ?? i })));
+        setOutputColumns(
+          data.outputColumns.map((c, i) => ({
+            ...c,
+            order: c.order ?? i,
+            payslipSection: c.payslipSection || 'none',
+          }))
+        );
       } else {
         setOutputColumns([]);
       }
@@ -216,7 +241,10 @@ export default function PayrollConfigPage() {
   };
 
   const addOutputColumn = () => {
-    setOutputColumns((prev) => [...prev, { header: '', source: 'field', field: 'employee.emp_no', order: prev.length }]);
+    setOutputColumns((prev) => [
+      ...prev,
+      { header: '', source: 'field', field: 'employee.emp_no', payslipSection: 'none', order: prev.length },
+    ]);
   };
 
   /** Add only the cumulative column for a step. Components (allowances, deductions, PF/ESI/PT) are calculated by payroll services and stored; we only expose the cumulative so the engine/Excel shows the sum. */
@@ -224,11 +252,11 @@ export default function PayrollConfigPage() {
     const nextOrder = outputColumns.length;
     let newCol: PayrollOutputColumn | null = null;
     if (stepType === 'allowances') {
-      newCol = { header: 'Allowances cumulative', source: 'field', field: 'earnings.allowancesCumulative', formula: '', order: nextOrder };
+      newCol = { header: 'Allowances cumulative', source: 'field', field: 'earnings.allowancesCumulative', formula: '', payslipSection: 'earnings', order: nextOrder };
     } else if (stepType === 'other_deductions') {
-      newCol = { header: 'Deductions cumulative', source: 'field', field: 'deductions.deductionsCumulative', formula: '', order: nextOrder };
+      newCol = { header: 'Deductions cumulative', source: 'field', field: 'deductions.deductionsCumulative', formula: '', payslipSection: 'deductions', order: nextOrder };
     } else if (stepType === 'statutory_deductions') {
-      newCol = { header: 'Statutory cumulative', source: 'field', field: 'deductions.statutoryCumulative', formula: '', order: nextOrder };
+      newCol = { header: 'Statutory cumulative', source: 'field', field: 'deductions.statutoryCumulative', formula: '', payslipSection: 'deductions', order: nextOrder };
     }
     if (newCol) {
       const withOrder = { ...newCol, order: newCol.order ?? nextOrder };
@@ -303,37 +331,32 @@ export default function PayrollConfigPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/80 dark:bg-slate-950/50">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-8">
-        {/* Header – static */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight">
-              Payroll configuration
-            </h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              The paysheet flow (columns in order) is the payroll flow configuration. Field values (OT pay, attendance deduction, etc.) come from the dedicated functions in the services and controllers—for the respective employee we get those values from them. Add cumulative columns to place allowances/deductions/statutory sums. Enabled components from the employee form <strong>Salaries</strong> group appear under the field dropdown as <code className="text-xs">employee.salaries.&lt;field id&gt;</code>.
-            </p>
-          </div>
+    <LoansPageShell>
+      <LoansPageHeader
+        badge="Payroll configuration"
+        title="Payroll configuration"
+        subtitle="Set paysheet columns, payroll engine steps, and Excel export."
+        action={
           <button
+            type="button"
             onClick={handleSave}
             disabled={saving || loading}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none transition-colors"
+            className={`inline-flex items-center gap-2 ${loansPrimaryButtonClass()}`}
+            style={loansPrimaryButtonStyle()}
           >
-            <Save className="h-4 w-4" />
-            {saving ? 'Saving...' : 'Save changes'}
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {saving ? 'Saving…' : 'Save changes'}
           </button>
-        </div>
+        }
+      />
 
-        {/* Payroll flow – flowchart + step detail */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/80 shadow-sm overflow-hidden">
-          <div className="px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-700/80">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Payroll flow (internal steps)</h2>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              Execution order of the engine. The actual payroll flow you configure is the paysheet columns below (order, fields, formulas). Here you can add components (allowances / deductions) per step.
-            </p>
-          </div>
-          <div className="p-4 sm:p-6">
+      <div className="space-y-5">
+        {/* Payroll flow */}
+        <LoanDetailSection>
+          <LoanDetailSectionTitle>Payroll flow (engine steps)</LoanDetailSectionTitle>
+          <p className="mb-4 text-sm text-stone-500 dark:text-stone-400">
+            Steps run in this order. Add allowance or deduction components on the matching steps.
+          </p>
             {loading ? (
               <>
                 <div className="flex flex-wrap items-center gap-2">
@@ -359,7 +382,16 @@ export default function PayrollConfigPage() {
                         <button
                           type="button"
                           onClick={() => setSelectedStepIndex(stepIndex)}
-                          className={`px-3 py-2 rounded-xl text-left text-sm font-medium transition-all border min-w-[100px] sm:min-w-[120px] ${isSelected ? 'border-violet-500 bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300 ring-2 ring-violet-500/50' : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 hover:border-violet-300 dark:hover:border-violet-700'}`}
+                          className="min-w-[100px] border px-3 py-2 text-left text-sm font-medium transition sm:min-w-[120px]"
+                          style={
+                            isSelected
+                              ? {
+                                  borderColor: 'var(--ps-accent)',
+                                  backgroundColor: 'var(--ps-accent-soft)',
+                                  color: 'var(--ps-accent-ink)',
+                                }
+                              : { borderColor: 'var(--ps-accent-border)' }
+                          }
                         >
                           <span className="block truncate">{step.label || step.type}</span>
                           {STEP_TYPES_WITH_COMPONENTS.includes(step.type) && compCount > 0 && (
@@ -376,26 +408,27 @@ export default function PayrollConfigPage() {
 
                 {/* Step detail: components or formula */}
                 {selectedStepIndex !== null && steps[selectedStepIndex] && (
-                  <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-700/80">
+                  <div className="mt-6 border-t pt-6" style={{ borderColor: 'var(--ps-accent-border)' }}>
                     {(() => {
                       const step = steps[selectedStepIndex];
                       const hasComponents = STEP_TYPES_WITH_COMPONENTS.includes(step.type);
                       const comps = step.components ?? [];
                       return (
                         <>
-                          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">
+                          <h3 className="mb-3 text-sm font-semibold text-stone-800 dark:text-stone-200">
                             {step.label || step.type}
                           </h3>
                           {hasComponents ? (
                             <>
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-                                Add {step.type === 'allowances' ? 'allowances' : 'deductions'} (fixed amount, percentage of basic/gross, or formula).
+                              <p className="mb-4 text-xs text-stone-500 dark:text-stone-400">
+                                Fixed amount, percentage, or formula.
                               </p>
-                              <div className="space-y-3">
+                              <div className="space-y-2">
                                 {comps.map((comp, cIdx) => (
                                   <div
                                     key={comp.id}
-                                    className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50/50 dark:bg-slate-800/30"
+                                    className="flex flex-col gap-3 border p-3 sm:flex-row sm:items-center"
+                                    style={{ borderColor: 'var(--ps-accent-border)', backgroundColor: 'var(--ps-accent-soft)' }}
                                   >
                                     <div className="flex items-center gap-2 shrink-0">
                                       <GripVertical className="h-4 w-4 text-slate-400" />
@@ -408,16 +441,22 @@ export default function PayrollConfigPage() {
                                       value={comp.name ?? ''}
                                       onChange={(e) => updateStepComponent(selectedStepIndex, cIdx, { name: e.target.value })}
                                       placeholder="Name"
-                                      className="flex-1 min-w-0 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                                      className={`min-w-0 flex-1 ${loansFormInputClass()}`}
+                                      style={loansFormInputStyle()}
                                     />
                                     <div className="flex flex-wrap gap-2">
-                                      <div className="flex rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden p-0.5 bg-slate-100 dark:bg-slate-700/30">
+                                      <div className="flex overflow-hidden border p-0.5" style={{ borderColor: 'var(--ps-accent-border)' }}>
                                         {(['fixed', 'percentage', 'formula'] as const).map((t) => (
                                           <button
                                             key={t}
                                             type="button"
                                             onClick={() => updateStepComponent(selectedStepIndex, cIdx, { type: t })}
-                                            className={`px-2 py-1 text-xs font-medium capitalize ${comp.type === t ? 'bg-white dark:bg-slate-600 text-violet-600 dark:text-violet-400 shadow' : 'text-slate-500'}`}
+                                            className="px-2 py-1 text-xs font-medium capitalize"
+                                            style={
+                                              comp.type === t
+                                                ? { backgroundColor: 'var(--ps-accent-soft)', color: 'var(--ps-accent)' }
+                                                : { color: 'rgb(120 113 108)' }
+                                            }
                                           >
                                             {t}
                                           </button>
@@ -429,7 +468,8 @@ export default function PayrollConfigPage() {
                                           value={comp.amount ?? 0}
                                           onChange={(e) => updateStepComponent(selectedStepIndex, cIdx, { amount: Number(e.target.value) || 0 })}
                                           placeholder="Amount"
-                                          className="w-24 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                                          className={`w-24 ${loansFormCompactInputClass()}`}
+                                          style={loansFormInputStyle()}
                                         />
                                       )}
                                       {comp.type === 'percentage' && (
@@ -439,12 +479,14 @@ export default function PayrollConfigPage() {
                                             value={comp.percentage ?? 0}
                                             onChange={(e) => updateStepComponent(selectedStepIndex, cIdx, { percentage: Number(e.target.value) || 0 })}
                                             placeholder="%"
-                                            className="w-16 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                                            className={`w-16 ${loansFormCompactInputClass()}`}
+                                            style={loansFormInputStyle()}
                                           />
                                           <select
                                             value={comp.base ?? 'basic'}
                                             onChange={(e) => updateStepComponent(selectedStepIndex, cIdx, { base: e.target.value as 'basic' | 'gross' })}
-                                            className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                                            className={loansFormSelectClass()}
+                                            style={loansFormInputStyle()}
                                           >
                                             <option value="basic">of basic</option>
                                             <option value="gross">of gross</option>
@@ -457,7 +499,8 @@ export default function PayrollConfigPage() {
                                           value={comp.formula ?? ''}
                                           onChange={(e) => updateStepComponent(selectedStepIndex, cIdx, { formula: e.target.value })}
                                           placeholder="e.g. Math.min(basicPay * 0.12, 1800)"
-                                          className="flex-1 min-w-[200px] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm font-mono"
+                                          className={`min-w-[200px] flex-1 font-mono ${loansFormInputClass()}`}
+                                          style={loansFormInputStyle()}
                                         />
                                       )}
                                     </div>
@@ -467,7 +510,8 @@ export default function PayrollConfigPage() {
                               <button
                                 type="button"
                                 onClick={() => addStepComponent(selectedStepIndex)}
-                                className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-violet-500 hover:text-violet-600 dark:hover:text-violet-400 text-sm"
+                                className={`mt-3 inline-flex items-center gap-2 border border-dashed px-3 py-2 text-sm ${loansDialogOutlineButtonClass()}`}
+                                style={loansDialogOutlineButtonStyle()}
                               >
                                 <Plus className="h-4 w-4" />
                                 Add component
@@ -475,17 +519,15 @@ export default function PayrollConfigPage() {
                             </>
                           ) : (
                             <div>
-                              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Formula (optional)</label>
+                              <LoanFormLabel>Formula (optional)</LoanFormLabel>
                               <input
                                 type="text"
                                 value={step.formula ?? ''}
                                 onChange={(e) => updateStepFormula(selectedStepIndex, e.target.value)}
                                 placeholder="e.g. perDayBasicPay * totalPaidDays"
-                                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm font-mono text-slate-900 dark:text-white placeholder:text-slate-400"
+                                className={`mt-1.5 font-mono ${loansFormInputClass()}`}
+                                style={loansFormInputStyle()}
                               />
-                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                Variables: basicPay, perDayBasicPay, totalPaidDays, presentDays, grossSalary, netSalary, allowancesCumulative, deductionsCumulative, statutoryCumulative, attendanceDeductionDays, etc.
-                              </p>
                             </div>
                           )}
                         </>
@@ -495,95 +537,76 @@ export default function PayrollConfigPage() {
                 )}
               </>
             )}
-          </div>
-        </div>
+        </LoanDetailSection>
 
-        {/* Use for Excel – card */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/80 shadow-sm overflow-hidden">
-          <div className="p-5 sm:p-6">
-            {loading ? (
-              <div className="flex items-start gap-3">
-                <div className="mt-1 h-4 w-4 rounded border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 animate-pulse shrink-0" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 w-48 rounded bg-slate-200 dark:bg-slate-700 animate-pulse" />
-                  <div className="h-3 w-full max-w-sm rounded bg-slate-100 dark:bg-slate-800 animate-pulse" />
-                </div>
+        {/* Excel export toggle */}
+        <LoanDetailSection soft>
+          {loading ? (
+            <div className="flex items-start gap-3">
+              <div className="mt-1 h-4 w-4 shrink-0 animate-pulse border bg-stone-100" style={{ borderColor: 'var(--ps-accent-border)' }} />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-48 animate-pulse bg-stone-200 dark:bg-stone-700" />
+                <div className="h-3 max-w-sm animate-pulse bg-stone-100 dark:bg-stone-800" />
               </div>
-            ) : (
-              <label className="flex items-start gap-3 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={enabled}
-                  onChange={(e) => setEnabled(e.target.checked)}
-                  className="mt-1 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                />
-                <div>
-                  <span className="text-sm font-medium text-slate-900 dark:text-white group-hover:text-slate-700">
-                    Use this design for Excel export
-                  </span>
-                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                    When on, the payroll Excel file will show exactly the columns you define below. When off, the default layout is used.
-                  </p>
-                </div>
-              </label>
-            )}
-          </div>
-        </div>
-
-        {/* Formula help – collapsible card */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/80 shadow-sm overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setFormulaHelpOpen((o) => !o)}
-            className="w-full flex items-center justify-between gap-3 px-5 sm:px-6 py-4 text-left hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors"
-          >
-            <span className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-              <HelpCircle className="h-4 w-4 text-violet-500" />
-              Formula help
-            </span>
-            {formulaHelpOpen ? (
-              <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
-            ) : (
-              <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />
-            )}
-          </button>
-          {formulaHelpOpen && (
-            <div className="px-5 sm:px-6 pb-5 pt-0 border-t border-slate-100 dark:border-slate-700/80">
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                In formulas you can use numbers, + - * / ( ) and variables like basicPay, grossSalary, netSalary, presentDays, payableShifts, monthDays, weeklyOffs, holidays, paidLeaveDays, elUsedInPayroll, lopDays, attendanceDeductionDays, allowancesCumulative, deductionsCumulative, statutoryCumulative, etc. You can reference earlier columns by header in lowercase with spaces as underscores (e.g. &quot;PF Basic&quot; → pf_basic). Math: Math.min, Math.max, Math.round, Math.floor, Math.ceil, Math.abs.
-              </p>
-              <p className="mt-2 text-xs font-mono text-slate-500 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/60 rounded-lg px-3 py-2">
-                Math.min(basicPay, 15000) &nbsp; basicPay * 0.5 &nbsp; (basicPay / monthDays) * presentDays
-              </p>
             </div>
+          ) : (
+            <label className="group flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(e) => setEnabled(e.target.checked)}
+                className="mt-1"
+                style={{ accentColor: 'var(--ps-accent)' }}
+              />
+              <div>
+                <span className="text-sm font-medium text-stone-900 dark:text-stone-100">
+                  Use this layout for Excel export
+                </span>
+                <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
+                  When on, Excel uses the columns defined below.
+                </p>
+              </div>
+            </label>
           )}
-        </div>
+        </LoanDetailSection>
 
-        {/* Paysheet columns – modern list */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/80 shadow-sm overflow-hidden">
-          <div className="px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-700/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        {/* Formula help */}
+        <LedgerCollapsiblePanel
+          title="Formula help"
+          subtitle="Variables and examples"
+          icon={<HelpCircle className="h-5 w-5" />}
+          open={formulaHelpOpen}
+          onToggle={() => setFormulaHelpOpen((o) => !o)}
+        >
+          <p className="text-sm text-stone-600 dark:text-stone-400">
+            Use numbers, + − × ÷, parentheses, and variables like basicPay, presentDays, allowancesCumulative.
+            Reference earlier columns by header (spaces → underscores). Math: min, max, round, floor, ceil, abs.
+          </p>
+          <p className="mt-2 font-mono text-xs text-stone-500 dark:text-stone-400 border px-3 py-2" style={{ borderColor: 'var(--ps-accent-border)', backgroundColor: 'var(--ps-accent-soft)' }}>
+            Math.min(basicPay, 15000) &nbsp;·&nbsp; basicPay * 0.5 &nbsp;·&nbsp; (basicPay / monthDays) * presentDays
+          </p>
+        </LedgerCollapsiblePanel>
+
+        {/* Paysheet columns */}
+        <LoanDetailSection className="!p-0 overflow-hidden">
+          <div className="flex flex-col gap-3 border-b px-5 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-6" style={{ borderColor: 'var(--ps-accent-border)' }}>
             <div>
-              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                Paysheet flow (payroll flow configuration)
-              </h2>
-              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                This is the actual payroll flow: add columns in order. Field values (OT pay, attendance deduction, basic pay, etc.) come from the dedicated functions in the services and controllers—for the respective employee we get those values from them. Use &quot;Add cumulative from step&quot; to place Allowances cumulative, Deductions cumulative, or Statutory cumulative for that employee. <strong>Include a &quot;Paid Days&quot; or &quot;Present days&quot; column before those cumulatives</strong> so statutory, allowances and deductions use it for proration (see section below).
+              <LoanDetailSectionTitle className="mb-1">Paysheet columns</LoanDetailSectionTitle>
+              <p className="text-sm text-stone-500 dark:text-stone-400">
+                Add columns in order. Use cumulative shortcuts for allowance, deduction, or statutory totals.
               </p>
-              <label className="mt-3 inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+              <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                Payslip shows columns tagged Attendance, Earnings, or Deductions only.
+              </p>
+              <label className="mt-3 inline-flex cursor-pointer items-center gap-2 text-sm text-stone-700 dark:text-stone-300">
                 <input
                   type="checkbox"
                   checked={allowPaysheetModification}
                   onChange={(e) => setAllowPaysheetModification(e.target.checked)}
-                  className="rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                  style={{ accentColor: 'var(--ps-accent)' }}
                 />
-                Allow paysheet modification requests (mark columns below — field or formula — superadmin approval)
+                Allow paysheet edit requests (approval required)
               </label>
-              {allowPaysheetModification && (
-                <p className="mt-1 text-[11px] text-violet-700/90 dark:text-violet-300/90 max-w-3xl">
-                  For each paysheet column you want to edit, check &quot;Editable on paysheet&quot; and choose the payroll
-                  record field to store the change. Formula columns need a storage field explicitly; then save this page.
-                </p>
-              )}
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               {loading ? (
@@ -600,20 +623,22 @@ export default function PayrollConfigPage() {
                         e.target.value = '';
                         if (v) addColumnsFromStep(v);
                       }}
-                      className="appearance-none inline-flex items-center gap-2 pl-4 pr-8 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent cursor-pointer"
+                      className={`appearance-none pl-4 pr-8 ${loansFormSelectClass()}`}
+                      style={loansFormInputStyle()}
                       value=""
                     >
-                      <option value="" disabled>Add cumulative from step...</option>
+                      <option value="" disabled>Add cumulative…</option>
                       <option value="allowances">Allowances cumulative</option>
                       <option value="other_deductions">Deductions cumulative</option>
                       <option value="statutory_deductions">Statutory cumulative</option>
                     </select>
-                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
                   </div>
                   <button
                     type="button"
                     onClick={addOutputColumn}
-                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300 text-sm font-medium hover:bg-violet-100 dark:hover:bg-violet-900/30 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 transition-colors"
+                    className={`inline-flex items-center gap-2 ${loansPrimaryButtonClass()}`}
+                    style={loansPrimaryButtonStyle()}
                   >
                     <Plus className="h-4 w-4" />
                     Add column
@@ -623,7 +648,7 @@ export default function PayrollConfigPage() {
             </div>
           </div>
 
-          <div className="divide-y divide-slate-100 dark:divide-slate-700/80">
+          <div className="divide-y" style={{ borderColor: 'var(--ps-accent-border)' }}>
             {loading ? (
               [...Array(4)].map((_, i) => (
                 <div key={i} className="px-5 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
@@ -639,20 +664,18 @@ export default function PayrollConfigPage() {
                 </div>
               ))
             ) : outputColumns.length === 0 ? (
-              <div className="px-5 sm:px-6 py-12 text-center">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 mb-4">
-                  <FileSpreadsheet className="h-6 w-6" />
+              <div className="px-5 py-12 text-center sm:px-6">
+                <div className="mb-4 inline-flex h-12 w-12 items-center justify-center text-stone-400" style={{ backgroundColor: 'var(--ps-accent-soft)' }}>
+                  <FileSpreadsheet className="h-6 w-6" style={{ color: 'var(--ps-accent)' }} />
                 </div>
-                <p className="text-sm text-slate-600 dark:text-slate-400">
-                  No columns yet. Add columns in flow order; field values come from the dedicated functions in the services and controllers for the respective employee.
-                </p>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                  Add columns in flow order. Fields get values from the payroll record (OT pay, attendance deduction, etc.). Use &quot;Add cumulative from step&quot; for Allowances / Deductions / Statutory cumulative. Or add a column and pick a field or formula.
+                <p className="text-sm text-stone-600 dark:text-stone-400">
+                  No columns yet. Add a column or use a cumulative shortcut above.
                 </p>
                 <button
                   type="button"
                   onClick={addOutputColumn}
-                  className="mt-5 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 transition-colors"
+                  className={`mt-5 inline-flex items-center gap-2 ${loansPrimaryButtonClass()}`}
+                  style={loansPrimaryButtonStyle()}
                 >
                   <Plus className="h-4 w-4" />
                   Add your first column
@@ -662,30 +685,32 @@ export default function PayrollConfigPage() {
               outputColumns.map((col, index) => (
                 <div
                   key={index}
-                  className="px-5 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-4 bg-white dark:bg-slate-900/80 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
+                  className="flex flex-col gap-4 px-5 py-4 transition-colors hover:bg-stone-50/50 dark:hover:bg-stone-900/30 sm:flex-row sm:items-center sm:px-6"
                 >
-                  <div className="flex items-center gap-2 shrink-0 order-2 sm:order-1">
-                    <span className="text-xs font-medium text-slate-400 dark:text-slate-500 w-6">
+                  <div className="flex shrink-0 items-center gap-2 order-2 sm:order-1">
+                    <span className="w-6 text-xs font-medium text-stone-400 dark:text-stone-500">
                       {index + 1}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => moveOutputColumn(index, -1)}
-                      disabled={index === 0}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none transition-colors"
-                      title="Move left"
-                    >
-                      <ChevronRight className="h-4 w-4 rotate-180" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveOutputColumn(index, 1)}
-                      disabled={index === outputColumns.length - 1}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none transition-colors"
-                      title="Move right"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
+                    <div className="flex flex-col gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => moveOutputColumn(index, -1)}
+                        disabled={index === 0}
+                        className="p-1 text-stone-400 transition hover:bg-stone-100 hover:text-stone-600 disabled:pointer-events-none disabled:opacity-30 dark:hover:bg-stone-800"
+                        title="Move up"
+                      >
+                        <ChevronUp className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveOutputColumn(index, 1)}
+                        disabled={index === outputColumns.length - 1}
+                        className="p-1 text-stone-400 transition hover:bg-stone-100 hover:text-stone-600 disabled:pointer-events-none disabled:opacity-30 dark:hover:bg-stone-800"
+                        title="Move down"
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                      </button>
+                    </div>
                     <button
                       type="button"
                       onClick={() => removeOutputColumn(index)}
@@ -695,11 +720,9 @@ export default function PayrollConfigPage() {
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
-                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-0 order-1 sm:order-2">
+                  <div className="order-1 grid min-w-0 flex-1 grid-cols-1 gap-4 sm:order-2 sm:grid-cols-4">
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
-                        Column name
-                      </label>
+                      <LoanFormLabel>Column name</LoanFormLabel>
                       <input
                         type="text"
                         value={col.header}
@@ -709,15 +732,34 @@ export default function PayrollConfigPage() {
                           )
                         }
                         placeholder="e.g. Employee Code"
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-shadow"
+                        className={loansFormInputClass()}
+                        style={loansFormInputStyle()}
                       />
                     </div>
+                    <div>
+                      <LoanFormLabel>Payslip section</LoanFormLabel>
+                      <select
+                        value={col.payslipSection || 'none'}
+                        onChange={(e) =>
+                          setOutputColumns((prev) =>
+                            prev.map((c, i) =>
+                              i === index ? { ...c, payslipSection: e.target.value as PayslipSectionType } : c
+                            )
+                          )
+                        }
+                        className={loansFormSelectClass()}
+                        style={loansFormInputStyle()}
+                      >
+                        <option value="none">Paysheet only</option>
+                        <option value="attendance">Attendance</option>
+                        <option value="earnings">Earnings</option>
+                        <option value="deductions">Deductions</option>
+                      </select>
+                    </div>
                     <div className="sm:col-span-2">
-                      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
-                        Data source
-                      </label>
-                      <div className="flex gap-2">
-                        <div className="flex rounded-xl border border-slate-200 dark:border-slate-600 overflow-hidden bg-slate-50/50 dark:bg-slate-800/30 p-0.5">
+                      <LoanFormLabel>Data source</LoanFormLabel>
+                      <div className="mt-1.5 flex gap-2">
+                        <div className="flex overflow-hidden border p-0.5" style={{ borderColor: 'var(--ps-accent-border)' }}>
                           <button
                             type="button"
                             onClick={() =>
@@ -725,7 +767,12 @@ export default function PayrollConfigPage() {
                                 prev.map((c, i) => (i === index ? { ...c, source: 'field' as const } : c))
                               )
                             }
-                            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${col.source === 'field' ? 'bg-white dark:bg-slate-700 text-violet-600 dark:text-violet-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                            className="px-3 py-1.5 text-xs font-medium"
+                            style={
+                              col.source === 'field'
+                                ? { backgroundColor: 'var(--ps-accent-soft)', color: 'var(--ps-accent)' }
+                                : { color: 'rgb(120 113 108)' }
+                            }
                           >
                             Field
                           </button>
@@ -736,7 +783,12 @@ export default function PayrollConfigPage() {
                                 prev.map((c, i) => (i === index ? { ...c, source: 'formula' as const } : c))
                               )
                             }
-                            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${col.source === 'formula' ? 'bg-white dark:bg-slate-700 text-violet-600 dark:text-violet-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                            className="px-3 py-1.5 text-xs font-medium"
+                            style={
+                              col.source === 'formula'
+                                ? { backgroundColor: 'var(--ps-accent-soft)', color: 'var(--ps-accent)' }
+                                : { color: 'rgb(120 113 108)' }
+                            }
                           >
                             Formula
                           </button>
@@ -744,12 +796,20 @@ export default function PayrollConfigPage() {
                         {col.source === 'field' ? (
                           <select
                             value={col.field ?? ''}
-                            onChange={(e) =>
+                            onChange={(e) => {
+                              const field = e.target.value;
                               setOutputColumns((prev) =>
-                                prev.map((c, i) => (i === index ? { ...c, field: e.target.value } : c))
-                              )
-                            }
-                            className="flex-1 min-w-0 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                                prev.map((c, i) => {
+                                  if (i !== index) return c;
+                                  const suggested = inferPayslipSectionFromField(field);
+                                  const payslipSection =
+                                    c.payslipSection == null ? suggested : c.payslipSection;
+                                  return { ...c, field, payslipSection };
+                                })
+                              );
+                            }}
+                            className={`min-w-0 flex-1 ${loansFormSelectClass()}`}
+                            style={loansFormInputStyle()}
                           >
                             <option value="">Select field...</option>
                             {outputFieldOptions.map((opt) => (
@@ -768,14 +828,18 @@ export default function PayrollConfigPage() {
                               )
                             }
                             placeholder="e.g. Math.min(basicPay, 15000)"
-                            className="flex-1 min-w-0 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm font-mono text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                            className={`min-w-0 flex-1 font-mono ${loansFormInputClass()}`}
+                            style={loansFormInputStyle()}
                           />
                         )}
                       </div>
                     </div>
                     {allowPaysheetModification && (
-                      <div className="sm:col-span-3 mt-1 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-violet-200 dark:border-violet-800/60 bg-violet-50/40 dark:bg-violet-950/20 px-3 py-2">
-                        <label className="inline-flex items-center gap-2 text-xs font-medium text-violet-800 dark:text-violet-200 cursor-pointer">
+                      <div
+                        className="mt-1 flex flex-wrap items-center gap-3 border border-dashed px-3 py-2 sm:col-span-4"
+                        style={{ borderColor: 'var(--ps-accent-border)', backgroundColor: 'var(--ps-accent-soft)' }}
+                      >
+                        <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium" style={{ color: 'var(--ps-accent-ink)' }}>
                           <input
                             type="checkbox"
                             checked={!!col.paysheetEditable}
@@ -797,36 +861,30 @@ export default function PayrollConfigPage() {
                                 )
                               )
                             }
-                            className="rounded border-violet-300 text-violet-600 focus:ring-violet-500"
+                            style={{ accentColor: 'var(--ps-accent)' }}
                           />
-                          Editable on paysheet (requires approval)
+                          Editable on paysheet
                         </label>
                         {col.paysheetEditable && (
-                          <>
-                            <select
-                              value={col.paysheetEditableFieldPath || col.field || ''}
-                              onChange={(e) =>
-                                setOutputColumns((prev) =>
-                                  prev.map((c, i) =>
-                                    i === index ? { ...c, paysheetEditableFieldPath: e.target.value } : c
-                                  )
+                          <select
+                            value={col.paysheetEditableFieldPath || col.field || ''}
+                            onChange={(e) =>
+                              setOutputColumns((prev) =>
+                                prev.map((c, i) =>
+                                  i === index ? { ...c, paysheetEditableFieldPath: e.target.value } : c
                                 )
-                              }
-                              className="text-xs rounded-lg border border-violet-200 dark:border-violet-700 bg-white dark:bg-slate-800 px-2 py-1.5 min-w-[12rem]"
-                            >
-                              <option value="">Select storage field…</option>
-                              {paysheetStorageFieldOptions.map((o) => (
-                                <option key={o.value} value={o.value}>
-                                  {o.label}
-                                </option>
-                              ))}
-                            </select>
-                            {col.source === 'formula' && (
-                              <span className="text-[10px] text-violet-700/90 dark:text-violet-300/90">
-                                Formula column: choose the payroll record field to update when approved.
-                              </span>
-                            )}
-                          </>
+                              )
+                            }
+                            className={`min-w-[12rem] text-xs ${loansFormSelectClass()}`}
+                            style={loansFormInputStyle()}
+                          >
+                            <option value="">Select storage field…</option>
+                            {paysheetStorageFieldOptions.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
                         )}
                       </div>
                     )}
@@ -837,11 +895,12 @@ export default function PayrollConfigPage() {
           </div>
 
           {!loading && outputColumns.length > 0 && (
-            <div className="px-5 sm:px-6 py-3 border-t border-slate-100 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-800/30">
+            <div className="border-t px-5 py-3 sm:px-6" style={{ borderColor: 'var(--ps-accent-border)', backgroundColor: 'var(--ps-accent-soft)' }}>
               <button
                 type="button"
                 onClick={addOutputColumn}
-                className="inline-flex items-center gap-2 text-sm text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 font-medium transition-colors"
+                className="inline-flex items-center gap-2 text-sm font-medium hover:opacity-80"
+                style={{ color: 'var(--ps-accent)' }}
               >
                 <Plus className="h-4 w-4" />
                 Add another column
@@ -849,42 +908,26 @@ export default function PayrollConfigPage() {
             </div>
           )}
           {loading && (
-            <div className="px-5 sm:px-6 py-3 border-t border-slate-100 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-800/30">
-              <div className="h-8 w-36 rounded-lg bg-slate-200 dark:bg-slate-700 animate-pulse" />
+            <div className="border-t px-5 py-3 sm:px-6" style={{ borderColor: 'var(--ps-accent-border)' }}>
+              <div className="h-8 w-36 animate-pulse bg-stone-200 dark:bg-stone-700" />
             </div>
           )}
-        </div>
+        </LoanDetailSection>
 
-        {/* Required column for proration: statutory, allowances, deductions all use this paid days column when present */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/80 shadow-sm overflow-hidden">
-          <div className="px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-700/80">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-              Required column for proration (statutory, allowances, deductions)
-            </h2>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              The <strong>paid days</strong> (or working days) column value is used to prorate <strong>statutory deductions</strong> (ESI, PF, Profession Tax), <strong>allowances</strong>, and <strong>other deductions</strong>. You can select a column here, or leave empty: <strong>the system auto-detects by column name</strong> (e.g. &quot;Paid Days&quot;, &quot;Present days&quot;, &quot;Working Days&quot;, &quot;Month days&quot;). The chosen or detected column must appear <strong>before</strong> Allowances cumulative, Deductions cumulative, and Statutory cumulative in the list above.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
-                Statutory (ESI, PF, PT)
-              </span>
-              <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
-                Allowances
-              </span>
-              <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
-                Other deductions
-              </span>
-            </div>
-          </div>
-          <div className="px-5 sm:px-6 py-4 space-y-4">
+        {/* Proration & advanced column links */}
+        <LoanDetailSection>
+          <LoanDetailSectionTitle>Proration &amp; column links</LoanDetailSectionTitle>
+          <p className="mb-4 text-sm text-stone-500 dark:text-stone-400">
+            Paid days prorate statutory, allowances, and deductions. Place the paid-days column before cumulative columns.
+          </p>
+          <div className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
-                Paid days column (header)
-              </label>
+              <LoanFormLabel>Paid days column</LoanFormLabel>
               <select
                 value={statutoryProratePaidDaysColumnHeader}
                 onChange={(e) => setStatutoryProratePaidDaysColumnHeader(e.target.value)}
-                className="w-full max-w-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                className={`mt-1.5 max-w-md ${loansFormSelectClass()}`}
+                style={loansFormInputStyle()}
               >
                 <option value="">Auto-detect by name (Paid Days, Present days, …)</option>
                 {[...outputColumns]
@@ -900,13 +943,12 @@ export default function PayrollConfigPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
-                Total days column (optional)
-              </label>
+              <LoanFormLabel>Total days column (optional)</LoanFormLabel>
               <select
                 value={statutoryProrateTotalDaysColumnHeader}
                 onChange={(e) => setStatutoryProrateTotalDaysColumnHeader(e.target.value)}
-                className="w-full max-w-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                className={`mt-1.5 max-w-md ${loansFormSelectClass()}`}
+                style={loansFormInputStyle()}
               >
                 <option value="">Auto-detect by name (Month days, Total days, …)</option>
                 {[...outputColumns]
@@ -922,16 +964,15 @@ export default function PayrollConfigPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
-                Profession Tax slab — earnings column (optional)
-              </label>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 max-w-xl">
-                Dynamic payroll only. If you pick a column here, the <strong>numeric value of that column</strong> (after it is calculated) is used to choose the Profession Tax slab. Leave empty to keep the default: slab from <strong>prorated basic pay</strong>. The column must appear <strong>before</strong> Statutory cumulative in the output column list, and the header must match exactly.
+              <LoanFormLabel>Profession Tax slab column (optional)</LoanFormLabel>
+              <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                Column value used for PT slab. Default: prorated basic pay.
               </p>
               <select
                 value={professionTaxSlabEarningsColumnHeader}
                 onChange={(e) => setProfessionTaxSlabEarningsColumnHeader(e.target.value)}
-                className="w-full max-w-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                className={`mt-1.5 max-w-md ${loansFormSelectClass()}`}
+                style={loansFormInputStyle()}
               >
                 <option value="">Use prorated basic pay for PT slab</option>
                 {[...outputColumns]
@@ -947,20 +988,15 @@ export default function PayrollConfigPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
-                Loan &amp; salary advance — payable cap column (optional)
-              </label>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 max-w-xl">
-                Dynamic payroll only. When <strong>empty</strong>, the engine uses full scheduled salary advance and loan EMI
-                values (no cap) — same as before.
-                When a column is selected, its numeric value is the recovery pool: salary advance is deducted first
-                (up to the pool), then loan EMI from whatever remains. Only the actual deducted amounts appear on the payslip.
-                The column must appear <strong>before</strong> Loan EMI / Salary advance columns in the output list.
+              <LoanFormLabel>Loan &amp; advance recovery cap (optional)</LoanFormLabel>
+              <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                Column value limits how much loan/advance can be recovered this month.
               </p>
               <select
                 value={loanAdvancePayableColumnHeader}
                 onChange={(e) => setLoanAdvancePayableColumnHeader(e.target.value)}
-                className="w-full max-w-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                className={`mt-1.5 max-w-md ${loansFormSelectClass()}`}
+                style={loansFormInputStyle()}
               >
                 <option value="">No cap — use full scheduled loan/advance values</option>
                 {[...outputColumns]
@@ -976,8 +1012,8 @@ export default function PayrollConfigPage() {
               </select>
             </div>
           </div>
-        </div>
+        </LoanDetailSection>
       </div>
-    </div>
+    </LoansPageShell>
   );
 }

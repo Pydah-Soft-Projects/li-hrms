@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { WorkspaceProvider } from "@/contexts/WorkspaceContext";
@@ -9,10 +8,6 @@ import "react-toastify/dist/ReactToastify.css";
 import InstallPrompt from "@/components/InstallPrompt";
 import PushNotificationRegistrar from "@/components/PushNotificationRegistrar";
 import PushNotificationPrompt from "@/components/PushNotificationPrompt";
-const plusJakartaSans = Plus_Jakarta_Sans({
-  variable: "--font-sans",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "HRMS Application",
@@ -50,7 +45,7 @@ export default function RootLayout({
   return (
     <html lang="en-GB" suppressHydrationWarning>
       <body
-        className={`${plusJakartaSans.variable} antialiased font-sans`}
+        className="antialiased font-sans"
         suppressHydrationWarning
       >
         <AuthProvider>

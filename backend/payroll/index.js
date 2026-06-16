@@ -21,6 +21,9 @@ router.post('/recalculate', authorize('manager', 'super_admin', 'sub_admin', 'hr
 // Get payslip (with scope filtering)
 router.get('/payslip/:employeeId/:month', applyScopeFilter, payrollController.getPayslip);
 
+// Release payslips for scoped employees (must be before /:employeeId/:month)
+router.put('/release', applyScopeFilter, payrollController.releasePayslips);
+
 // Get payroll records (with scope filtering)
 router.get('/', applyScopeFilter, payrollController.getPayrollRecords);
 

@@ -5,7 +5,15 @@ import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
 import { SettingsSkeleton } from './SettingsSkeleton';
-import { Save, Clock, ChevronRight } from 'lucide-react';
+import { SettingsPanel, SettingsPanelHeader, SettingsSaveBar, SettingsSectionCard } from './SettingsPageShell';
+import {
+  DEPT_INPUT,
+  DEPT_LABEL,
+  settingsInputClass,
+  settingsInputStyle,
+  settingsPrimaryButtonClass,
+  settingsPrimaryButtonStyle,
+} from '@/lib/settingsUi';
 import { minutesToHHMM, hhmmToMinutes, hoursToHHMM, hhmmToHours } from './otTimeHelpers';
 
 export type DepartmentOtDraft = {
@@ -244,29 +252,17 @@ export default function OTSettingsDepartment({
     setDraft((prev) => ({ ...prev, [key]: v }));
   };
 
+  const inputClass = settingsInputClass();
+  const inputStyle = settingsInputStyle();
+  const compactInput = `${inputClass} py-2 text-xs`;
+  const compactInputStyle = inputStyle;
+
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-end justify-between border-b border-gray-200 pb-5 dark:border-gray-800">
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
-            <span>Settings</span>
-            <ChevronRight className="h-3 w-3" />
-            <span className="text-indigo-600">Overtime</span>
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Overtime (OT)</h2>
-        </div>
-      </div>
+    <SettingsPanel>
+      <SettingsPanelHeader section="Overtime" title="Overtime (OT)" subtitle="Department-level OT recognition, hours, and pay basis overrides." />
 
-      <div className="max-w-5xl">
-        <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#1E293B] lg:sticky lg:top-24">
-            <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-4 dark:border-gray-800">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 dark:border-indigo-800/50 dark:bg-indigo-900/30 dark:text-indigo-400">
-                <Clock className="h-5 w-5" />
-              </div>
-              <h3 className="text-sm font-bold uppercase tracking-wider text-gray-900 dark:text-white">Parameters</h3>
-            </div>
-
-            <div className="space-y-6 p-5">
+      <SettingsSectionCard title="Parameters" accent className="lg:sticky lg:top-24">
+            <div className="space-y-6">
               <div className="grid grid-cols-1 gap-3 border-t border-gray-100 pt-2 dark:border-gray-800 sm:grid-cols-2">
                 <p className="text-[10px] font-bold uppercase tracking-tighter text-gray-500 sm:col-span-2">Department hours</p>
                 <div className="space-y-1">
@@ -283,7 +279,8 @@ export default function OTSettingsDepartment({
                       }))
                     }
                     placeholder="Inherit"
-                    className="w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs dark:border-gray-700 dark:bg-slate-900"
+                    className={compactInput}
+                    style={compactInputStyle}
                   />
                 </div>
                 <div className="space-y-2 border-t border-gray-100 pt-3 sm:col-span-2 dark:border-gray-800">
@@ -301,7 +298,8 @@ export default function OTSettingsDepartment({
                           next[idx] = { ...next[idx], employeeGroupId: e.target.value };
                           setDraft((p) => ({ ...p, groupWorkingHours: next }));
                         }}
-                        className="min-w-[180px] rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm dark:border-gray-700 dark:bg-slate-900 dark:text-white"
+                        className={`min-w-[180px] ${DEPT_INPUT}`}
+                        style={inputStyle}
                       >
                         <option value="">Select group</option>
                         {employeeGroups.map((g) => (
@@ -321,7 +319,8 @@ export default function OTSettingsDepartment({
                           next[idx] = { ...next[idx], hoursPerDay: e.target.value ? parseFloat(e.target.value) : 0 };
                           setDraft((p) => ({ ...p, groupWorkingHours: next }));
                         }}
-                        className="w-28 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm dark:border-gray-700 dark:bg-slate-900 dark:text-white"
+                        className={`w-28 ${DEPT_INPUT}`}
+                        style={inputStyle}
                       />
                       <button
                         type="button"
@@ -406,7 +405,8 @@ export default function OTSettingsDepartment({
                   <select
                     value={draft.autoCreateOtRequest === null || draft.autoCreateOtRequest === undefined ? '' : String(draft.autoCreateOtRequest)}
                     onChange={(e) => setTriBool('autoCreateOtRequest', e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs dark:border-gray-700 dark:bg-slate-900"
+                    className={compactInput}
+                    style={compactInputStyle}
                   >
                     <option value="">Inherit organization</option>
                     <option value="true">Enabled</option>
@@ -420,7 +420,8 @@ export default function OTSettingsDepartment({
                     <select
                       value={draft.allowBackdated === null || draft.allowBackdated === undefined ? '' : String(draft.allowBackdated)}
                       onChange={(e) => setTriBool('allowBackdated', e.target.value)}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs dark:border-gray-700 dark:bg-slate-900"
+                      className={compactInput}
+                    style={compactInputStyle}
                     >
                       <option value="">Inherit organization</option>
                       <option value="true">Yes</option>
@@ -448,7 +449,8 @@ export default function OTSettingsDepartment({
                     <select
                       value={draft.allowFutureDated === null || draft.allowFutureDated === undefined ? '' : String(draft.allowFutureDated)}
                       onChange={(e) => setTriBool('allowFutureDated', e.target.value)}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs dark:border-gray-700 dark:bg-slate-900"
+                      className={compactInput}
+                    style={compactInputStyle}
                     >
                       <option value="">Inherit organization</option>
                       <option value="true">Yes</option>
@@ -579,21 +581,11 @@ export default function OTSettingsDepartment({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleSaveParams}
-                disabled={saving}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3.5 text-xs font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-700 active:scale-95 disabled:opacity-50"
-              >
-                {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                Commit Parameters
-              </button>
+              <SettingsSaveBar onSave={handleSaveParams} saving={saving} label="Commit parameters" />
             </div>
-          </section>
-      </div>
+          </SettingsSectionCard>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1E293B] sm:p-8">
-        <h3 className="mb-4 text-sm font-bold uppercase tracking-wider text-gray-900 dark:text-white">Policy simulator</h3>
+      <SettingsSectionCard title="Policy simulator" description="Preview OT recognition for sample extra hours.">
         {variant === 'divisionWide' || !departmentId ? (
           <p className="text-xs text-gray-500 dark:text-gray-400">
             Simulator is available when editing a specific department. Division-wide OT still applies in payroll and OT flows.
@@ -602,21 +594,23 @@ export default function OTSettingsDepartment({
           <>
             <div className="flex flex-wrap items-end gap-3">
               <div>
-                <label className="mb-1 block text-[10px] font-bold uppercase text-gray-500">Raw OT (HH:MM)</label>
+                <label className={DEPT_LABEL}>Raw OT (HH:MM)</label>
                 <input
                   type="time"
                   lang="en-GB"
                   step={60}
                   value={simRawHours}
                   onChange={(e) => setSimRawHours(e.target.value)}
-                  className="w-28 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-slate-900"
+                  className={`w-28 ${DEPT_INPUT}`}
+                  style={inputStyle}
                 />
               </div>
               <button
                 type="button"
                 onClick={handleSimulatePolicy}
                 disabled={simLoading}
-                className="rounded-xl bg-slate-800 px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 dark:bg-slate-600"
+                className={settingsPrimaryButtonClass()}
+                style={settingsPrimaryButtonStyle()}
               >
                 {simLoading ? 'Running…' : 'Run simulation'}
               </button>
@@ -639,7 +633,7 @@ export default function OTSettingsDepartment({
             )}
           </>
         )}
-      </section>
-    </div>
+      </SettingsSectionCard>
+    </SettingsPanel>
   );
 }

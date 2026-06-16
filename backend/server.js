@@ -3,9 +3,10 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
+const compression = require('compression');
 const { initSocket } = require('./shared/services/socketService');
 const { initializeAllDatabases } = require('./config/init');
-const { checkConnection: checkS3Connection } = require('./shared/services/s3UploadService');
+const { checkConnection: checkStorageConnection } = require('./shared/services/fileStorageService');
 const {
   isWebPushConfigured,
   ensureVapid,
@@ -14,6 +15,8 @@ const {
 const app = express();
 module.exports = app;
 const PORT = process.env.PORT || 5000;
+
+app.set('trust proxy', 1);
 
 // Middleware
 const logger = require('./middleware/logger');
@@ -36,6 +39,8 @@ app.use(cors({
   origin: allowedOrigins,
   credentials: true,
 }));
+
+app.use(compression());
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -139,9 +144,13 @@ app.use('/api/permissions', permissionRoutes);
 const securityRoutes = require('./security/routes/securityRoutes.js');
 app.use('/api/security', securityRoutes);
 
-// Upload routes (S3 file uploads)
+// Upload routes (S3 or local file uploads)
 const uploadRoutes = require('./shared/routes/uploadRoutes');
 app.use('/api/upload', uploadRoutes);
+
+// Serve locally stored files (when local provider is active)
+const fileRoutes = require('./shared/routes/fileRoutes');
+app.use('/api/files', fileRoutes);
 
 // Allowances & Deductions routes
 const allowanceDeductionRoutes = require('./allowances-deductions/index.js');
@@ -226,12 +235,8 @@ const startServer = async () => {
     // Initialize database connections
     await initializeAllDatabases();
 
-    // Check S3 Connection
-    await checkS3Connection();
-
-    // Start attendance sync job
-    const { startSyncJob } = require('./attendance/services/attendanceSyncJob');
-    await startSyncJob();
+    // Check file storage connection (S3 or local)
+    await checkStorageConnection();
 
     // Monthly leave accrual cron (00:10 IST daily – runs EL/CCL leave register entries on payroll cycle end date)
     try {
@@ -364,8 +369,7 @@ const startServer = async () => {
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
-  const { closeMongoDB, closeMSSQL } = require('./config/database');
-  await closeMSSQL();
+  const { closeMongoDB } = require('./config/database');
   await closeMongoDB();
   process.exit(0);
 });

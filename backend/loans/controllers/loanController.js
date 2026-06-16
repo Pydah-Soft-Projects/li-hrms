@@ -3,7 +3,6 @@ const Loan = require('../model/Loan');
 const LoanSettings = require('../model/LoanSettings');
 const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
-const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const { getResolvedLoanSettings } = require('../../departments/controllers/departmentSettingsController');
 const { resolveLoanWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
@@ -25,6 +24,17 @@ const {
   repairOpenLoanForHistory,
   repairOpenSalaryAdvanceForHistory,
 } = require('../services/loanHistoryRepairService');
+const {
+  buildLoanReport,
+  buildLoanQuery,
+  computeGroupedSummaries,
+  computeLifetimeStats,
+  computePeriodStats,
+  fetchLoanRecords,
+  loanToExportRow,
+  summaryToExportRow,
+  round2,
+} = require('../services/loanReportService');
 
 /** Write calculateEMI schedule fields onto loan document. */
 function applyCalculatedEmiToLoan(loan, emiResult) {
@@ -68,22 +78,6 @@ const {
 // ============================================
 
 /**
- * Get employee settings from database
- */
-const getEmployeeSettings = async () => {
-  try {
-    const Settings = require('../../settings/model/Settings');
-    const dataSourceSetting = await Settings.findOne({ key: 'employee_data_source' });
-    return {
-      dataSource: dataSourceSetting?.value || 'mongodb', // 'mongodb' | 'mssql' | 'both'
-    };
-  } catch (error) {
-    console.error('Error getting employee settings:', error);
-    return { dataSource: 'mongodb' };
-  }
-};
-
-/**
  * Internal helper to cast ids to ObjectId for aggregation pipelines
  */
 const toObjectId = (id) => {
@@ -101,65 +95,11 @@ const toObjectId = (id) => {
 
 
 /**
- * Find employee by emp_no - respects employee settings
+ * Find employee by emp_no (MongoDB only)
  */
 const findEmployeeByEmpNo = async (empNo) => {
   if (!empNo) return null;
-
-  // Always try MongoDB first
-  let employee = await Employee.findOne({ emp_no: empNo });
-
-  if (employee) {
-    return employee;
-  }
-
-  // If not in MongoDB, check if MSSQL is available and try there
-  const settings = await getEmployeeSettings();
-
-  if ((settings.dataSource === 'mssql' || settings.dataSource === 'both') && isHRMSConnected()) {
-    try {
-      const mssqlEmployee = await getEmployeeByIdMSSQL(empNo);
-      if (mssqlEmployee) {
-        console.log(`Syncing employee ${empNo} from MSSQL to MongoDB...`);
-
-        const newEmployee = new Employee({
-          emp_no: mssqlEmployee.emp_no,
-          employee_name: mssqlEmployee.employee_name,
-          department_id: mssqlEmployee.department_id || null,
-          designation_id: mssqlEmployee.designation_id || null,
-          doj: mssqlEmployee.doj || null,
-          dob: mssqlEmployee.dob || null,
-          gross_salary: mssqlEmployee.gross_salary || null,
-          gender: mssqlEmployee.gender || null,
-          marital_status: mssqlEmployee.marital_status || null,
-          blood_group: mssqlEmployee.blood_group || null,
-          qualifications: mssqlEmployee.qualifications || null,
-          experience: mssqlEmployee.experience || null,
-          address: mssqlEmployee.address || null,
-          location: mssqlEmployee.location || null,
-          aadhar_number: mssqlEmployee.aadhar_number || null,
-          phone_number: mssqlEmployee.phone_number || null,
-          alt_phone_number: mssqlEmployee.alt_phone_number || null,
-          email: mssqlEmployee.email || null,
-          pf_number: mssqlEmployee.pf_number || null,
-          esi_number: mssqlEmployee.esi_number || null,
-          bank_account_no: mssqlEmployee.bank_account_no || null,
-          bank_name: mssqlEmployee.bank_name || null,
-          bank_place: mssqlEmployee.bank_place || null,
-          ifsc_code: mssqlEmployee.ifsc_code || null,
-          is_active: mssqlEmployee.is_active !== false,
-        });
-
-        await newEmployee.save();
-        console.log(`✅ Employee ${empNo} synced to MongoDB`);
-        return newEmployee;
-      }
-    } catch (error) {
-      console.error('Error fetching/syncing from MSSQL:', error);
-    }
-  }
-
-  return null;
+  return Employee.findOne({ emp_no: empNo });
 };
 
 // Helper to find employee by ID or emp_no
@@ -561,12 +501,65 @@ exports.calculateEligibility = async (req, res) => {
 // @desc    Get single loan
 // @route   GET /api/loans/:id
 // @access  Private
+async function ensureLoanApplicationFormNumber(loan) {
+  if (loan.applicationFormNumber) return loan.applicationFormNumber;
+  loan.applicationFormNumber = await nextLoanApplicationFormNumber();
+  await loan.save();
+  return loan.applicationFormNumber;
+}
+
+async function buildLoanApplicationPdfContext(loan) {
+  const employeeId = loan.employeeId?._id || loan.employeeId;
+  let previousAdvance = null;
+
+  if (employeeId) {
+    const prev = await Loan.findOne({
+      employeeId,
+      _id: { $ne: loan._id },
+      isActive: true,
+      status: { $in: ['disbursed', 'active', 'completed'] },
+      appliedAt: { $lt: loan.appliedAt || loan.createdAt },
+    })
+      .sort({ appliedAt: -1 })
+      .select('amount requestType disbursement.disbursedAt appliedAt')
+      .lean();
+
+    if (prev) {
+      previousAdvance = {
+        amount: prev.amount,
+        drawnOnDate: prev.disbursement?.disbursedAt || prev.appliedAt,
+        requestType: prev.requestType,
+      };
+    }
+  }
+
+  const division =
+    loan.division_id && typeof loan.division_id === 'object'
+      ? loan.division_id.name || ''
+      : '';
+
+  const grossSalary =
+    loan.employeeId && typeof loan.employeeId === 'object'
+      ? loan.employeeId.gross_salary
+      : null;
+
+  return {
+    previousAdvance,
+    grossSalary: grossSalary != null ? Number(grossSalary) : null,
+    divisionName: division || null,
+  };
+}
+
 exports.getLoan = async (req, res) => {
   try {
     const loan = await Loan.findById(req.params.id)
-      .populate('employeeId', 'employee_name emp_no gross_salary email phone_number')
+      .populate(
+        'employeeId',
+        'employee_name emp_no gross_salary email phone_number bank_account_no bank_name bank_place ifsc_code',
+      )
       .populate('department', 'name code')
       .populate('designation', 'name')
+      .populate('division_id', 'name code')
       .populate('appliedBy', 'name email')
       .populate('workflow.history.actionBy', 'name email')
       .populate('approvals.hod.approvedBy', 'name email')
@@ -576,7 +569,11 @@ exports.getLoan = async (req, res) => {
       .populate('disbursement.disbursedBy', 'name email')
       .populate('cancellation.cancelledBy', 'name email')
       .populate('changeHistory.modifiedBy', 'name email')
-      .populate('guarantors.employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id');
+      .populate({
+        path: 'guarantors.employeeId',
+        select: 'employee_name emp_no profilePhoto department_id designation_id division_id',
+        populate: { path: 'department_id', select: 'name code' },
+      });
 
     if (!loan) {
       return res.status(404).json({
@@ -597,11 +594,14 @@ exports.getLoan = async (req, res) => {
     loan.markModified('workflow');
 
     const presentPayPeriod = await getPresentPayPeriod();
+    await ensureLoanApplicationFormNumber(loan);
+    const applicationPdfContext = await buildLoanApplicationPdfContext(loan);
 
     res.status(200).json({
       success: true,
       data: loan,
       presentPayPeriod,
+      applicationPdfContext,
     });
   } catch (error) {
     console.error('Error fetching loan:', error);
@@ -906,6 +906,7 @@ exports.applyLoan = async (req, res) => {
       loanPayload.loanConfig = loanConfig;
     }
     const loan = new Loan(loanPayload);
+    loan.applicationFormNumber = await nextLoanApplicationFormNumber();
 
     const wfSettings = await resolveLoanWorkflowSettings(requestType, employee.division_id?._id || employee.division_id);
     const approvalChain = buildLoanApprovalChain(wfSettings);
@@ -2673,146 +2674,18 @@ exports.getTransactions = async (req, res) => {
 // @access  Private
 exports.getLoanReportSummary = async (req, res) => {
   try {
-    const { divisionId, departmentId, employeeId, groupBy, requestType, status } = req.query;
-
-    const query = { isActive: true, ...(req.scopeFilter || {}) };
-
-    if (requestType) query.requestType = requestType;
-    if (status) query.status = status;
-    else query.status = { $in: ['disbursed', 'active', 'completed'] }; // Default to shown active/completed loans
-
-    // Filter by Division/Department/Employee
-    if (employeeId && employeeId !== 'all') {
-      const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
-      if (empIds.length > 0) {
-        query.employeeId = { $in: empIds.map(toObjectId) };
-      }
-    } else if (departmentId && departmentId !== 'all') {
-      const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
-      if (deptIds.length > 0) {
-        query.department = { $in: deptIds.map(toObjectId) };
-      }
-    } else if (divisionId && divisionId !== 'all') {
-      const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
-      if (divIds.length > 0) {
-        query.division_id = { $in: divIds.map(toObjectId) };
-      }
-    }
-
-    // Calculate overall stats
-    const statsData = await Loan.aggregate([
-      { $match: query },
-      {
-        $group: {
-          _id: null,
-          totalDistributed: { $sum: "$amount" },
-          totalRecovered: { $sum: "$repayment.totalPaid" },
-          totalOutstanding: { $sum: "$repayment.remainingBalance" },
-          totalInterest: { $sum: "$loanConfig.totalInterest" }
-        }
-      }
-    ]);
-
-    const stats = statsData[0] || {
-      totalDistributed: 0,
-      totalRecovered: 0,
-      totalOutstanding: 0,
-      totalInterest: 0
-    };
-
-    // Grouped summaries
-    let summaries = [];
-    if (groupBy === 'division' || groupBy === 'department' || groupBy === 'employee') {
-      let children = [];
-      if (groupBy === 'division') {
-        const divQuery = { isActive: { $ne: false } };
-        if (divisionId && divisionId !== 'all') {
-          const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
-          divQuery._id = { $in: divIds.map(toObjectId) };
-        }
-        children = await Division.find(divQuery).select('name').lean();
-      } else if (groupBy === 'department') {
-        const deptQuery = { isActive: { $ne: false } };
-        if (departmentId && departmentId !== 'all') {
-          const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
-          deptQuery._id = { $in: deptIds.map(toObjectId) };
-        } else if (divisionId && divisionId !== 'all') {
-          const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
-          deptQuery.divisions = { $in: divIds.map(toObjectId) };
-        }
-        children = await Department.find(deptQuery).select('name').lean();
-      } else if (groupBy === 'employee') {
-        const empQuery = { is_active: { $ne: false } };
-        if (employeeId && employeeId !== 'all') {
-          const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
-          empQuery._id = { $in: empIds.map(toObjectId) };
-        } else if (departmentId && departmentId !== 'all') {
-          const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
-          empQuery.department_id = { $in: deptIds.map(toObjectId) };
-        } else if (divisionId && divisionId !== 'all') {
-          const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
-          empQuery.division_id = { $in: divIds.map(toObjectId) };
-        }
-        const emps = await Employee.find(empQuery).select('employee_name emp_no profilePhoto department_id designation_id division_id').lean();
-        children = emps.map(e => ({ _id: e._id, name: `${e.employee_name} (${e.emp_no})` }));
-      }
-
-      for (const child of children) {
-        const childQuery = { ...query };
-        if (groupBy === 'division') childQuery.division_id = toObjectId(child._id);
-        else if (groupBy === 'department') childQuery.department = toObjectId(child._id);
-        else if (groupBy === 'employee') childQuery.employeeId = toObjectId(child._id);
-
-        const childStatsResult = await Loan.aggregate([
-          { $match: childQuery },
-          {
-            $group: {
-              _id: null,
-              distributed: { $sum: "$amount" },
-              recovered: { $sum: "$repayment.totalPaid" },
-              outstanding: { $sum: "$repayment.remainingBalance" },
-              interest: { $sum: "$loanConfig.totalInterest" },
-              count: { $sum: 1 }
-            }
-          }
-        ]);
-
-        const cStats = childStatsResult[0] || { distributed: 0, recovered: 0, outstanding: 0, interest: 0, count: 0 };
-        if (cStats.count > 0) {
-          summaries.push({
-            id: child._id,
-            name: child.name,
-            ...cStats
-          });
-        }
-      }
-    }
-
-    // Detailed records for current view (paginated)
-    const limit = parseInt(req.query.limit) || 50;
-    const page = parseInt(req.query.page) || 1;
-    const skip = (page - 1) * limit;
-
-    const [loans, total] = await Promise.all([
-      Loan.find(query)
-        .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
-        .populate('department', 'name')
-        .populate('division_id', 'name')
-        .sort({ appliedAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Loan.countDocuments(query)
-    ]);
-
+    const report = await buildLoanReport(req.query, req.scopeFilter || {});
     res.status(200).json({
       success: true,
-      stats,
-      summaries,
-      data: loans,
-      total,
-      page,
-      totalPages: Math.ceil(total / limit)
+      stats: report.stats,
+      periodStats: report.periodStats,
+      personalStats: report.personalStats,
+      payPeriod: report.payPeriod,
+      summaries: report.summaries,
+      data: report.data,
+      total: report.total,
+      page: report.page,
+      totalPages: report.totalPages,
     });
   } catch (error) {
     console.error('Error in getLoanReportSummary:', error);
@@ -2827,58 +2700,47 @@ exports.getLoanReportSummary = async (req, res) => {
  */
 exports.exportLoanReport = async (req, res) => {
   try {
-    const { divisionId, departmentId, employeeId, requestType, status } = req.query;
+    const { exportMode, groupBy, startDate, endDate } = req.query;
+    const query = await buildLoanQuery(req.query, req.scopeFilter || {});
+    const requestType = req.query.requestType;
 
-    const query = { isActive: true, ...(req.scopeFilter || {}) };
-    if (requestType) query.requestType = requestType;
-    if (status) query.status = status;
-    else query.status = { $in: ['disbursed', 'active', 'completed'] };
+    let rows = [];
+    let sheetName = 'Loans Report';
 
-    if (employeeId && employeeId !== 'all') {
-      const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
-      query.employeeId = { $in: empIds.map(toObjectId) };
-    } else if (departmentId && departmentId !== 'all') {
-      const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
-      query.department = { $in: deptIds.map(toObjectId) };
-    } else if (divisionId && divisionId !== 'all') {
-      const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
-      query.division_id = { $in: divIds.map(toObjectId) };
+    if (exportMode === 'summary' && groupBy) {
+      const summaries = await computeGroupedSummaries(query, groupBy);
+      rows = summaries.map((item, index) => summaryToExportRow(item, index));
+      const groupLabels = {
+        division: 'Division',
+        department: 'Department',
+        designation: 'Designation',
+        employee_group: 'Employee Group',
+        employee: 'Employee',
+      };
+      sheetName = `${groupLabels[groupBy] || 'Summary'} Report`;
+    } else {
+      const { loans } = await fetchLoanRecords(query, {
+        page: 1,
+        limit: 100000,
+        startDate,
+        endDate,
+      });
+      rows = loans.map((loan, index) => loanToExportRow(loan, index));
+      sheetName = requestType === 'salary_advance' ? 'Salary Advance Report' : 'Loans Report';
     }
-
-    const loans = await Loan.find(query)
-      .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
-      .populate('department', 'name')
-      .populate('division_id', 'name')
-      .populate('designation', 'name')
-      .sort({ appliedAt: -1 })
-      .lean();
-
-    const rows = loans.map((loan, index) => ({
-      'S.No': index + 1,
-      'Emp No': loan.employeeId?.emp_no || loan.emp_no,
-      'Employee Name': loan.employeeId?.employee_name || 'N/A',
-      'Division': loan.division_id?.name || 'N/A',
-      'Department': loan.department?.name || 'N/A',
-      'Designation': loan.designation?.name || 'N/A',
-      'Type': loan.requestType === 'loan' ? 'Loan' : 'Salary Advance',
-      'Amount': loan.amount,
-      'Recovered': loan.repayment?.totalPaid || 0,
-      'Outstanding': loan.repayment?.remainingBalance || 0,
-      'Interest': loan.loanConfig?.totalInterest || 0,
-      'Total Payable': (loan.amount || 0) + (loan.loanConfig?.totalInterest || 0),
-      'Status': loan.status,
-      'Applied Date': loan.appliedAt ? dayjs(loan.appliedAt).format('DD-MMM-YYYY') : 'N/A',
-      'Disbursed Date': loan.disbursement?.disbursedAt ? dayjs(loan.disbursement.disbursedAt).format('DD-MMM-YYYY') : 'N/A'
-    }));
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, 'Loans Report');
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
+    const prefix = requestType === 'salary_advance' ? 'salary_advance' : 'loan';
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=loans_report_${dayjs().format('YYYYMMDD')}.xlsx`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=${prefix}_report_${dayjs().format('YYYYMMDD')}.xlsx`
+    );
     res.status(200).send(buffer);
   } catch (error) {
     console.error('Error in exportLoanReport:', error);
@@ -2893,168 +2755,233 @@ exports.exportLoanReport = async (req, res) => {
  */
 exports.exportLoanReportPDF = async (req, res) => {
   try {
-    const { divisionId, departmentId, employeeId, requestType, status } = req.query;
+    const { exportMode, groupBy, startDate, endDate, requestType } = req.query;
+    const report = await buildLoanReport(
+      { ...req.query, page: 1, limit: 100000 },
+      req.scopeFilter || {}
+    );
 
-    const query = { isActive: true, ...(req.scopeFilter || {}) };
-    if (requestType) query.requestType = requestType;
-    if (status) query.status = status;
-    else query.status = { $in: ['disbursed', 'active', 'completed'] };
+    const query = await buildLoanQuery(req.query, req.scopeFilter || {});
+    const isAdvance = requestType === 'salary_advance';
+    const reportTitle = isAdvance ? 'Salary Advance Report' : 'Loans Report';
 
-    if (employeeId && employeeId !== 'all') {
-      const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
-      query.employeeId = { $in: empIds.map(toObjectId) };
-    } else if (departmentId && departmentId !== 'all') {
-      const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
-      query.department = { $in: deptIds.map(toObjectId) };
-    } else if (divisionId && divisionId !== 'all') {
-      const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
-      query.division_id = { $in: divIds.map(toObjectId) };
+    const groupLabels = {
+      division: 'Division',
+      department: 'Department',
+      designation: 'Designation',
+      employee_group: 'Employee Group',
+      employee: 'Employee',
+    };
+
+    let exportLabel = 'Overall';
+    if (exportMode === 'summary' && groupBy) {
+      exportLabel = `By ${groupLabels[groupBy] || groupBy}`;
+    } else if (req.query.employeeId) {
+      exportLabel = 'Personal';
+    } else if (req.query.departmentId) {
+      exportLabel = 'Department';
+    } else if (req.query.divisionId) {
+      exportLabel = 'Division';
+    } else if (req.query.designationId) {
+      exportLabel = 'Designation';
+    } else if (req.query.employeeGroupId) {
+      exportLabel = 'Employee Group';
     }
 
-    const loans = await Loan.find(query)
-      .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id')
-      .populate('department', 'name')
-      .populate('division_id', 'name')
-      .sort({ appliedAt: -1 })
-      .lean();
-
-    const doc = new PDFDocument({ 
-      margin: { top: 30, bottom: 0, left: 30, right: 30 }, 
-      size: 'A4', 
+    const doc = new PDFDocument({
+      margin: { top: 30, bottom: 0, left: 30, right: 30 },
+      size: 'A4',
       layout: 'landscape',
-      bufferPages: true
+      bufferPages: true,
     });
 
+    const prefix = isAdvance ? 'salary_advance' : 'loan';
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=loans_report_${dayjs().format('YYYYMMDD')}.pdf`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=${prefix}_report_${dayjs().format('YYYYMMDD')}.pdf`
+    );
     doc.pipe(res);
 
     const MARGIN = 30;
     const innerW = doc.page.width - MARGIN * 2;
-    const formatINR = (val) => Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    const formatINR = (val) =>
+      Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
-    const drawCard = (x, y, w, h, title, value, color) => {
+    const drawCard = (x, y, w, h, title, value, color, subtitle) => {
       doc.save();
-      doc.roundedRect(x, y, w, h, 8).fill(`${color}10`); // Light fill
+      doc.roundedRect(x, y, w, h, 8).fill(`${color}10`);
       doc.roundedRect(x, y, w, h, 8).lineWidth(0.5).strokeColor(color).stroke();
-
-      doc.fontSize(8).font('Helvetica-Bold').fillColor(color).text(title.toUpperCase(), x + 10, y + 10);
-      doc.fontSize(14).font('Helvetica-Bold').fillColor('#1e293b').text(`₹${formatINR(value)}`, x + 10, y + 22);
+      doc.fontSize(7).font('Helvetica-Bold').fillColor(color).text(title.toUpperCase(), x + 8, y + 8, { width: w - 16 });
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#1e293b').text(`₹${formatINR(value)}`, x + 8, y + 18, { width: w - 16 });
+      if (subtitle) {
+        doc.fontSize(6).font('Helvetica').fillColor('#64748b').text(subtitle, x + 8, y + 34, { width: w - 16 });
+      }
       doc.restore();
     };
 
-    // Header
-    doc.fontSize(18).font('Helvetica-Bold').fillColor('#1e1b4b').text('Loans & Salary Advances Report', MARGIN, MARGIN);
-    doc.fontSize(8).font('Helvetica').fillColor('#64748b').text(`Generated on: ${dayjs().format('DD MMM YYYY, HH:mm')}`, MARGIN, MARGIN + 22);
+    doc.fontSize(16).font('Helvetica-Bold').fillColor('#1e1b4b').text(reportTitle, MARGIN, MARGIN);
+    doc
+      .fontSize(8)
+      .font('Helvetica')
+      .fillColor('#64748b')
+      .text(`Scope: ${exportLabel}  |  Generated: ${dayjs().format('DD MMM YYYY, HH:mm')}`, MARGIN, MARGIN + 20);
 
-    // Summary Cards
-    const stats = {
-      distributed: loans.reduce((sum, l) => sum + (l.amount || 0), 0),
-      recovered: loans.reduce((sum, l) => sum + (l.repayment?.totalPaid || 0), 0),
-      outstanding: loans.reduce((sum, l) => sum + (l.repayment?.remainingBalance || 0), 0),
-      interest: loans.reduce((sum, l) => sum + (l.loanConfig?.totalInterest || 0), 0)
+    if (startDate && endDate) {
+      doc.text(`Period: ${dayjs(startDate).format('DD MMM YYYY')} – ${dayjs(endDate).format('DD MMM YYYY')}`, MARGIN, MARGIN + 32);
+    }
+
+    const stats = report.stats || {};
+    const periodStats = report.periodStats || {};
+    const cardW = (innerW - 36) / 4;
+    let cardX = MARGIN;
+    let cardY = startDate && endDate ? MARGIN + 48 : MARGIN + 40;
+
+    drawCard(cardX, cardY, cardW, 48, 'Total Distributed', stats.totalDistributed, '#4f46e5');
+    cardX += cardW + 12;
+    drawCard(cardX, cardY, cardW, 48, 'Total Recovered', stats.totalRecovered, '#059669');
+    cardX += cardW + 12;
+    drawCard(cardX, cardY, cardW, 48, 'Outstanding', stats.totalOutstanding, '#e11d48');
+    cardX += cardW + 12;
+    if (!isAdvance) {
+      drawCard(cardX, cardY, cardW, 48, 'Interest (Active)', stats.activeOutstandingInterest || 0, '#0284c7');
+    } else {
+      drawCard(cardX, cardY, cardW, 48, 'Active / Closed', stats.activeCount || 0, '#0284c7', `${stats.completedCount || 0} closed`);
+    }
+
+    cardY += 58;
+    cardX = MARGIN;
+    drawCard(cardX, cardY, cardW, 48, 'Disbursed (Period)', periodStats.disbursedAmount, '#7c3aed', `${periodStats.disbursedCount || 0} loans`);
+    cardX += cardW + 12;
+    drawCard(cardX, cardY, cardW, 48, 'Recovered (Period)', periodStats.recoveredInPeriod, '#10b981');
+    cardX += cardW + 12;
+    drawCard(
+      cardX,
+      cardY,
+      cardW,
+      48,
+      isAdvance ? 'Advance Due (Current)' : 'EMI Due (Current)',
+      isAdvance ? report.payPeriod?.current?.totalAdvanceDue : report.payPeriod?.current?.totalEmiDue,
+      '#f59e0b',
+      report.payPeriod?.currentPayMonth
+    );
+    cardX += cardW + 12;
+    const last = report.payPeriod?.last || {};
+    drawCard(
+      cardX,
+      cardY,
+      cardW,
+      48,
+      'Last Period Shortfall',
+      last.shortfallTotal,
+      '#dc2626',
+      last.payPeriodMonth
+    );
+
+    let currentY = cardY + 65;
+
+    const drawTable = (columns, colWidths, colAligns, tableRows, startY) => {
+      let y = startY;
+      doc.save();
+      doc.roundedRect(MARGIN, y, innerW, 18, 4).fill('#4f46e5');
+      doc.fontSize(7).font('Helvetica-Bold').fillColor('#ffffff');
+      let x = MARGIN + 4;
+      columns.forEach((col, i) => {
+        doc.text(col, x, y + 5, { width: colWidths[i] - 8, align: colAligns[i] });
+        x += colWidths[i];
+      });
+      doc.restore();
+      y += 18;
+      doc.font('Helvetica').fontSize(7).fillColor('#334155');
+
+      tableRows.forEach((cells, index) => {
+        if (y > 520) {
+          doc.addPage({ layout: 'landscape', margin: { top: 30, bottom: 0, left: 30, right: 30 } });
+          y = 40;
+        }
+        if (index % 2 === 1) {
+          doc.save().fillColor('#f8fafc').rect(MARGIN, y, innerW, 16).fill().restore();
+        }
+        x = MARGIN + 4;
+        cells.forEach((cell, i) => {
+          doc.text(String(cell ?? ''), x, y + 4, { width: colWidths[i] - 8, align: colAligns[i], ellipsis: true });
+          x += colWidths[i];
+        });
+        y += 16;
+      });
+      return y + 10;
     };
 
-    const cardW = (innerW - 40) / 4;
-    let cardX = MARGIN;
-    let cardY = MARGIN + 45;
+    if (exportMode === 'summary' && groupBy && report.summaries?.length) {
+      doc.fontSize(9).font('Helvetica-Bold').fillColor('#1e293b').text(`Summary by ${groupLabels[groupBy] || groupBy}`, MARGIN, currentY);
+      currentY += 14;
+      const cols = ['#', 'Name', 'Distributed', 'Recovered', 'Outstanding', 'Active', 'Closed', 'Count'];
+      const widths = [25, 160, 80, 80, 80, 50, 50, 45];
+      const aligns = ['center', 'left', 'right', 'right', 'right', 'center', 'center', 'center'];
+      const rows = report.summaries.map((s, i) => [
+        i + 1,
+        s.name,
+        formatINR(s.distributed),
+        formatINR(s.recovered),
+        formatINR(s.outstanding),
+        s.activeCount,
+        s.completedCount,
+        s.count,
+      ]);
+      currentY = drawTable(cols, widths, aligns, rows, currentY);
+    } else {
+      const { loans } = await fetchLoanRecords(query, { page: 1, limit: 100000, startDate, endDate });
+      doc.fontSize(9).font('Helvetica-Bold').fillColor('#1e293b').text('Detailed Records', MARGIN, currentY);
+      currentY += 14;
+      const cols = ['#', 'Emp No', 'Employee', 'Dept', 'Amount', 'Paid', 'Balance', 'Status'];
+      const widths = [25, 55, 130, 100, 70, 70, 70, 70];
+      const aligns = ['center', 'left', 'left', 'left', 'right', 'right', 'right', 'center'];
+      const rows = loans.map((loan, i) => [
+        i + 1,
+        loan.employeeId?.emp_no || loan.emp_no,
+        loan.employeeId?.employee_name || 'N/A',
+        loan.department?.name || 'N/A',
+        formatINR(loan.amount),
+        formatINR(loan.repayment?.totalPaid || 0),
+        formatINR(loan.repayment?.remainingBalance || 0),
+        (loan.status || '').toUpperCase(),
+      ]);
+      currentY = drawTable(cols, widths, aligns, rows, currentY);
+    }
 
-    drawCard(cardX, cardY, cardW, 50, 'Total Distributed', stats.distributed, '#4f46e5');
-    cardX += cardW + 13.3;
-    drawCard(cardX, cardY, cardW, 50, 'Total Recovered', stats.recovered, '#059669');
-    cardX += cardW + 13.3;
-    drawCard(cardX, cardY, cardW, 50, 'Total Outstanding', stats.outstanding, '#e11d48');
-    cardX += cardW + 13.3;
-    drawCard(cardX, cardY, cardW, 50, 'Total Interest', stats.interest, '#0284c7');
-
-    // Table
-    const tableTop = cardY + 70;
-    const colWidths = [25, 50, 140, 100, 70, 70, 70, 70, 90, 70];
-    const columns = ['#', 'Emp No', 'Employee Name', 'Department', 'Principal', 'Interest', 'Total', 'Paid', 'Balance', 'Status'];
-    const colAligns = ['center', 'left', 'left', 'left', 'right', 'right', 'right', 'right', 'right', 'center'];
-
-    let currentY = tableTop;
-
-    // Header Row
-    doc.save();
-    doc.roundedRect(MARGIN, currentY, innerW, 20, 4).fill('#4f46e5');
-    doc.fontSize(8).font('Helvetica-Bold').fillColor('#ffffff');
-
-    let currentX = MARGIN + 5;
-    columns.forEach((col, i) => {
-      doc.text(col, currentX, currentY + 6, { width: colWidths[i] - 10, align: colAligns[i] });
-      currentX += colWidths[i];
-    });
-    doc.restore();
-
-    currentY += 20;
-    doc.font('Helvetica').fontSize(8).fillColor('#334155');
-
-    loans.forEach((loan, index) => {
-      if (currentY > 530) {
-        doc.addPage({ 
-          layout: 'landscape', 
-          margin: { top: 30, bottom: 0, left: 30, right: 30 } 
-        });
+    const underpaid = report.payPeriod?.last?.underpaidEmployees || [];
+    if (underpaid.length > 0) {
+      if (currentY > 480) {
+        doc.addPage({ layout: 'landscape', margin: { top: 30, bottom: 0, left: 30, right: 30 } });
         currentY = 40;
-
-        // Redraw Header on new page
-        doc.save();
-        doc.roundedRect(MARGIN, currentY, innerW, 20, 4).fill('#4f46e5');
-        doc.fontSize(8).font('Helvetica-Bold').fillColor('#ffffff');
-        let hX = MARGIN + 5;
-        columns.forEach((col, i) => {
-          doc.text(col, hX, currentY + 6, { width: colWidths[i] - 10, align: colAligns[i] });
-          hX += colWidths[i];
-        });
-        doc.restore();
-        currentY += 20;
-        doc.font('Helvetica').fontSize(7.5).fillColor('#334155');
       }
+      doc.fontSize(9).font('Helvetica-Bold').fillColor('#dc2626').text('Underpaid Last Pay Period', MARGIN, currentY);
+      currentY += 14;
+      const cols = ['Emp No', 'Employee', 'Scheduled EMI', 'Recovered EMI', 'Scheduled Adv', 'Recovered Adv', 'Shortfall'];
+      const widths = [55, 130, 75, 75, 75, 75, 70];
+      const aligns = ['left', 'left', 'right', 'right', 'right', 'right', 'right'];
+      const rows = underpaid.slice(0, 50).map((u) => [
+        u.emp_no,
+        u.employee_name,
+        formatINR(u.scheduledEmi),
+        formatINR(u.recoveredEmi),
+        formatINR(u.scheduledAdvance),
+        formatINR(u.recoveredAdvance),
+        formatINR(u.shortfall),
+      ]);
+      drawTable(cols, widths, aligns, rows, currentY);
+    }
 
-      // Zebra striping
-      if (index % 2 === 1) {
-        doc.save().fillColor('#f8fafc').rect(MARGIN, currentY, innerW, 18).fill().restore();
-      }
-
-      currentX = MARGIN + 5;
-      doc.text(index + 1, currentX, currentY + 5, { width: colWidths[0] - 10, align: colAligns[0] });
-      currentX += colWidths[0];
-      doc.text(loan.employeeId?.emp_no || loan.emp_no, currentX, currentY + 5, { width: colWidths[1] - 10, align: colAligns[1] });
-      currentX += colWidths[1];
-      doc.text(loan.employeeId?.employee_name || 'N/A', currentX, currentY + 5, { width: colWidths[2] - 10, align: colAligns[2], ellipsis: true });
-      currentX += colWidths[2];
-      doc.text(loan.department?.name || 'N/A', currentX, currentY + 5, { width: colWidths[3] - 10, align: colAligns[3], ellipsis: true });
-      currentX += colWidths[3];
-      doc.text(formatINR(loan.amount), currentX, currentY + 5, { width: colWidths[4] - 10, align: colAligns[4] });
-      currentX += colWidths[4];
-      doc.text(formatINR(loan.loanConfig?.totalInterest || 0), currentX, currentY + 5, { width: colWidths[5] - 10, align: colAligns[5] });
-      currentX += colWidths[5];
-      doc.text(formatINR((loan.amount || 0) + (loan.loanConfig?.totalInterest || 0)), currentX, currentY + 5, { width: colWidths[6] - 10, align: colAligns[6] });
-      currentX += colWidths[6];
-      doc.text(formatINR(loan.repayment?.totalPaid || 0), currentX, currentY + 5, { width: colWidths[7] - 10, align: colAligns[7] });
-      currentX += colWidths[7];
-      doc.text(formatINR(loan.repayment?.remainingBalance || 0), currentX, currentY + 5, { width: colWidths[8] - 10, align: colAligns[8] });
-      currentX += colWidths[8];
-
-      // Status Badge in PDF
-      const s = loan.status;
-      const sColor = s === 'completed' ? '#059669' : (s === 'active' || s === 'disbursed' ? '#2563eb' : '#64748b');
-      doc.save().font('Helvetica-Bold').fillColor(sColor).text(s.toUpperCase(), currentX, currentY + 5, { width: colWidths[9] - 10, align: colAligns[9] }).restore();
-
-      currentY += 18;
-    });
-
-    // Footer
     const pages = doc.bufferedPageRange();
     for (let i = 0; i < pages.count; i++) {
       doc.switchToPage(i);
-      doc.fontSize(7).fillColor('#94a3b8').text(
-        `Page ${i + 1} of ${pages.count}  |  Generated by HRMS System`,
-        MARGIN,
-        doc.page.height - 20,
-        { align: 'center', width: innerW }
-      );
+      doc
+        .fontSize(7)
+        .fillColor('#94a3b8')
+        .text(`Page ${i + 1} of ${pages.count}  |  Generated by HRMS System`, MARGIN, doc.page.height - 20, {
+          align: 'center',
+          width: innerW,
+        });
     }
 
     doc.end();

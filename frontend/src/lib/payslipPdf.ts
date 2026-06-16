@@ -1,6 +1,7 @@
 import type { jsPDF } from 'jspdf';
 import type { CompanyProfile } from '@/lib/companyProfile';
 import { formatAddressBlock } from '@/lib/companyProfile';
+import { resolvePayslipAccentRgb } from '@/lib/payslipTheme';
 
 function loadImage(url: string): Promise<HTMLImageElement | null> {
   if (!url || typeof window === 'undefined') return Promise.resolve(null);
@@ -29,7 +30,7 @@ export async function drawPayslipCompanyHeader(
 ): Promise<number> {
   const pageWidth = doc.internal.pageSize.getWidth();
   const primaryColor: [number, number, number] = [30, 41, 59];
-  const accentColor: [number, number, number] = [5, 150, 105];
+  const accentColor = resolvePayslipAccentRgb(profile);
   const borderColor: [number, number, number] = [226, 232, 240];
   const pageHeight = doc.internal.pageSize.getHeight();
 
@@ -83,7 +84,7 @@ export async function drawPayslipCompanyHeader(
     doc.text(regParts.join('  |  '), headerLeft, companyLine ? 28 : 23);
   }
 
-  doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
   doc.rect(10, 32, 2, 12, 'F');
 
   const title = profile.documents.payslipTitle || 'PAYSLIP';

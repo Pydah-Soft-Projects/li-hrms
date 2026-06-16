@@ -3,13 +3,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
-import Spinner from '@/components/Spinner';
-import { Save, ChevronRight } from 'lucide-react';
 import { SettingsSkeleton } from './SettingsSkeleton';
+import {
+    SettingsPanel,
+    SettingsPanelHeader,
+    SettingsSaveBar,
+    SettingsSectionCard,
+} from './SettingsPageShell';
 
 import LeaveTypesManager from './leave/LeaveTypesManager';
 import LeavePolicy from './leave/LeavePolicy';
 import LeaveWorkflow from './leave/LeaveWorkflow';
+import { leaveSettingsLabels, normalizeLeaveTypeItem, serializeLeaveTypesForSave } from './leave/leaveSettingsLabels';
 
 const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) => {
     const [loading, setLoading] = useState(false);
@@ -48,10 +53,14 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) =>
             setLoading(true);
             const res = await api.getLeaveSettings(type);
             if (res.success && res.data) {
+                const loadedTypes = Array.isArray(res.data.types)
+                    ? res.data.types.map((t: Record<string, unknown>) => normalizeLeaveTypeItem(t, type))
+                    : [];
+
                 setSettings(prev => ({
                     ...prev,
                     ...res.data,
-                    // Deeply merge nested objects to ensure properties like finalAuthority exist
+                    types: loadedTypes,
                     workflow: {
                         ...prev.workflow,
                         ...(res.data.workflow || {})
@@ -64,7 +73,7 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) =>
             }
         } catch (err) {
             console.error(`Error loading leave settings:`, err);
-            toast.error('Failed to load leave settings');
+            toast.error(`Failed to load ${type === 'od' ? 'OD' : type === 'ccl' ? 'CCL' : 'leave'} settings`);
         } finally {
             setLoading(false);
         }
@@ -77,7 +86,11 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) =>
     const handleSave = async () => {
         try {
             setSaving(true);
-            const res = await api.saveLeaveSettings(type, settings);
+            const payload = {
+                ...settings,
+                types: serializeLeaveTypesForSave(settings.types || [], type),
+            };
+            const res = await api.saveLeaveSettings(type, payload);
             if (res.success) toast.success(`${type.toUpperCase()} settings updated successfully`);
             else toast.error(res.message || 'Failed to save settings');
         } catch {
@@ -91,7 +104,11 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) =>
     const handleSettingsChange = async (newSettings: typeof settings) => {
         setSettings(newSettings);
         try {
-            await api.saveLeaveSettings(type, newSettings);
+            const payload = {
+                ...newSettings,
+                types: serializeLeaveTypesForSave(newSettings.types || [], type),
+            };
+            await api.saveLeaveSettings(type, payload);
             toast.success('Settings updated');
         } catch {
             toast.error('Failed to update settings');
@@ -100,79 +117,49 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) =>
 
     if (loading) return <SettingsSkeleton />;
 
-    return (
-        <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* Header */}
-            <div className="flex items-end justify-between border-b border-gray-200 dark:border-gray-800 pb-5">
-                <div>
-                    <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">
-                        <span>Settings</span>
-                        <ChevronRight className="h-3 w-3" />
-                        <span className="text-indigo-600">{type.toUpperCase()}</span>
-                    </div>
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white capitalize">
-                        {type === 'leave' ? 'Leave Management' : type === 'od' ? 'On Duty (OD)' : 'Compensatory Casual Leave (CCL)'}
-                    </h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Configure {type} categories, eligibility policies, and approval workflows.
-                    </p>
-                </div>
-            </div>
+    const copy = leaveSettingsLabels(type);
 
-            {/* Two-Column Kanban Layout - Responsive */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 md:gap-8 items-start">
-                {/* Left Column - Types & Policy */}
+    return (
+        <SettingsPanel>
+            <SettingsPanelHeader
+                section={type === 'od' ? 'OD' : type === 'ccl' ? 'CCL' : 'Leave'}
+                title={copy.panelTitle}
+                subtitle={copy.panelSubtitle}
+            />
+
+            <div className="grid grid-cols-1 items-start gap-6 md:gap-8 xl:grid-cols-2">
                 <div className="space-y-6 md:space-y-8">
-                    {/* Leave Types - Hidden for CCL as it is a single category */}
                     {type !== 'ccl' && (
-                        <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-6 md:p-8">
+                        <SettingsSectionCard title={copy.typesSectionTitle} accent>
                             <LeaveTypesManager
+                                kind={type}
                                 types={settings.types || []}
                                 onChange={(ts) => setSettings({ ...settings, types: ts })}
                             />
-
-                            {/* Save Button for Types */}
-                            <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-800">
-                                <button
-                                    onClick={handleSave}
-                                    disabled={saving}
-                                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white py-4 text-xs font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-500/20 active:scale-95 disabled:opacity-50"
-                                >
-                                    {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                                    Save {type.toUpperCase()} Types
-                                </button>
+                            <div className="mt-6">
+                                <SettingsSaveBar
+                                    onSave={handleSave}
+                                    saving={saving}
+                                    label={copy.saveTypesLabel}
+                                />
                             </div>
-                        </section>
+                        </SettingsSectionCard>
                     )}
 
-                    {/* Policy - No wrapper, auto-save */}
                     <LeavePolicy
+                        kind={type}
                         settings={settings}
                         onChange={handleSettingsChange}
                     />
                 </div>
 
-                {/* Right Column - Workflow */}
-                <div>
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
-                        <LeaveWorkflow
-                            workflow={settings.workflow}
-                            onChange={(wf) => setSettings({ ...settings, workflow: wf })}
-                        />
-
-                        {/* Save Button for Workflow */}
-                        <button
-                            onClick={handleSave}
-                            disabled={saving}
-                            className="w-full flex items-center justify-center gap-2 rounded-xl bg-purple-600 text-white py-4 text-xs font-bold hover:bg-purple-700 transition-all shadow-xl shadow-purple-500/20 active:scale-95 disabled:opacity-50"
-                        >
-                            {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                            Save Workflow
-                        </button>
-                    </section>
-                </div>
+                <LeaveWorkflow
+                    workflow={settings.workflow}
+                    onChange={(wf) => setSettings({ ...settings, workflow: wf })}
+                />
+                <SettingsSaveBar onSave={handleSave} saving={saving} label="Save Workflow" />
             </div>
-        </div>
+        </SettingsPanel>
     );
 };
 

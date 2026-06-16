@@ -458,6 +458,7 @@ export default function EmployeesPage() {
   const [loading, setLoading] = useState(true);
   const [loadingApplications, setLoadingApplications] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
+  const [editFormLoading, setEditFormLoading] = useState(false);
   const [showApplicationDialog, setShowApplicationDialog] = useState(false);
   const [showApprovalDialog, setShowApprovalDialog] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<EmployeeApplication | null>(null);
@@ -1777,7 +1778,7 @@ export default function EmployeesPage() {
     try {
       setLoading(true);
 
-      const response = await api.getEmployees({
+      const response = await api.getEmployeesList({
         includeLeft: includeLeftEmployees,
         search: searchQuery,
         division_id: selectedDivisionFilter,
@@ -1789,17 +1790,17 @@ export default function EmployeesPage() {
       });
 
       if (response.success) {
-        // Normalize employee data
         const employeesData = (response.data || []).map((emp: any) => ({
           ...emp,
           division: emp.division || (typeof emp.division_id === 'object' ? emp.division_id : null),
           department: emp.department || (typeof emp.department_id === 'object' ? emp.department_id : null),
           designation: emp.designation || (typeof emp.designation_id === 'object' ? emp.designation_id : null),
+          employee_group: emp.employee_group || (typeof emp.employee_group_id === 'object' ? emp.employee_group_id : null),
+          status: emp.leftDate ? 'Left' : ((emp.is_active === false || emp.is_active === 'false' || emp.is_active === 0) ? 'Inactive' : 'Active'),
         }));
 
         setEmployees(employeesData);
         setDataSource(response.dataSource || 'mongodb');
-        void loadQualificationStatusesSetting();
 
         // Update pagination state
         const pagination = (response as any).pagination;
@@ -2271,7 +2272,7 @@ export default function EmployeesPage() {
     }
   };
 
-  const handleEdit = (record: any) => {
+  const handleEdit = async (record: any) => {
     // Determine if we are editing an Employee or an Application based on activeTab
     if (activeTab === 'applications') {
       // --- APPLICATION EDIT LOGIC ---
@@ -2310,8 +2311,34 @@ export default function EmployeesPage() {
       return;
     }
 
-    // --- EMPLOYEE EDIT LOGIC (Existing) ---
-    const employee = record as Employee;
+    // --- EMPLOYEE EDIT LOGIC ---
+    let employee = record as Employee;
+    setError('');
+    setEditFormLoading(true);
+    setShowDialog(true);
+    setEditingEmployee(employee);
+    setEditingApplicationID(null);
+
+    try {
+      if (employee.emp_no) {
+        const response = await api.getEmployee(employee.emp_no);
+        if (response.success && response.data) {
+          employee = response.data as Employee;
+          setEditingEmployee(employee);
+        } else {
+          setError('Failed to load employee details. Please try again.');
+          setShowDialog(false);
+          setEditFormLoading(false);
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('Error loading employee for edit:', err);
+      setError('Failed to load employee details. Please try again.');
+      setShowDialog(false);
+      setEditFormLoading(false);
+      return;
+    }
 
     // Clone employee to avoid mutation during transformation
     const empData = { ...employee };
@@ -2337,8 +2364,7 @@ export default function EmployeesPage() {
       });
     }
 
-    setEditingEmployee(empData as Employee); // Use transform data
-    setEditingApplicationID(null);
+    setEditingEmployee(empData as Employee);
 
     // Extract paidLeaves
     let paidLeavesValue = 0;
@@ -2526,7 +2552,6 @@ export default function EmployeesPage() {
     }
 
     setFormData(newFormData);
-    setShowDialog(true);
 
     // Pre-populate override state from existing employee overrides
     if (Array.isArray(employee.employeeAllowances) && employee.employeeAllowances.length > 0) {
@@ -2567,6 +2592,7 @@ export default function EmployeesPage() {
         fetchComponentDefaults(deptId as string, Number(gross), employee.emp_no, true);
       }
     }, 100);
+    setEditFormLoading(false);
   };
 
   const handleDeactivate = async (empNo: string, currentStatus: boolean) => {
@@ -2594,8 +2620,7 @@ export default function EmployeesPage() {
       console.log(`API response for ${action} employee ${empNo}:`, response);
 
       if (response.success) {
-        const syncMessage = response.syncError ? ' (MSSQL sync failed, but local update succeeded)' : '';
-        setSuccess(`Employee ${action}d successfully!${syncMessage}`);
+        setSuccess(`Employee ${action}d successfully!`);
         // Update with actual server data if available to ensure consistency
         if (response.data) {
           setEmployees((prev) =>
@@ -2681,8 +2706,7 @@ export default function EmployeesPage() {
           leftDateForm.leftReason || undefined
         );
         if (response.success) {
-          const syncMessage = response.syncError ? ' (MSSQL sync failed, but local update succeeded)' : '';
-          setSuccess(`Employee left date set successfully!${syncMessage}`);
+          setSuccess('Employee left date set successfully!');
           setShowLeftDateModal(false);
           setSelectedEmployeeForLeftDate(null);
           setLeftDateForm({ leftDate: '', leftReason: '' });
@@ -5581,6 +5605,13 @@ export default function EmployeesPage() {
                   </div>
                 )}
 
+                {editFormLoading ? (
+                  <div className="flex min-h-[240px] flex-col items-center justify-center gap-3 text-sm text-slate-500 dark:text-slate-400">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                    Loading employee details…
+                  </div>
+                ) : (
+                <>
                 {!editingEmployee && addFormAutoGenerateEmpNo && (
                   <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
                     <svg className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -5909,6 +5940,8 @@ export default function EmployeesPage() {
                     </button>
                   </div>
                 </form>
+                </>
+                )}
               </div>
             </div>
           )
@@ -6567,7 +6600,7 @@ export default function EmployeesPage() {
                             </p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('esi_number', formSettings) || 'ESI Number'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                               {(viewingEmployee as any).esi_number ||
                                 (viewingEmployee as any).dynamicFields?.esi_number ||

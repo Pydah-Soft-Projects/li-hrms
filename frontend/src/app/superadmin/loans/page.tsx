@@ -15,6 +15,52 @@ import {
 } from '@/lib/loanListUi';
 import { LoanListEmployeeCell } from '@/components/LoanListEmployeeCell';
 import LoanEditDialog, { canShowLoanEditButton } from '@/components/loans/LoanEditDialog';
+import {
+  LoansPageShell,
+  LoansPageHeader,
+  LoansStatGrid,
+  LoansTabBar,
+  LoansToolbar,
+  LoansContentPanel,
+  loansPrimaryButtonClass,
+  loansPrimaryButtonStyle,
+  loansTableHeadClass,
+  loansTableHeadStyle,
+} from '@/components/loans/LoansPageShell';
+import {
+  LoanDetailDialog,
+  LoanDetailDialogHeader,
+  LoanDetailDialogBody,
+  LoanDetailSection,
+  LoanDetailSectionTitle,
+  LoanDetailField,
+  loansDialogOutlineButtonClass,
+  loansDialogOutlineButtonStyle,
+  loansDialogPrimaryButtonClass,
+  loansDialogPrimaryButtonStyle,
+  loansDialogSecondaryButtonClass,
+  loansDialogSecondaryButtonStyle,
+  loansDialogDangerButtonClass,
+  loansDialogSuccessButtonClass,
+  LoanDialogFooter,
+  LoanDialogTypeToggle,
+  LoanFormLabel,
+  LoanFormPanel,
+  loansFormInputClass,
+  loansFormInputStyle,
+  loansFormSelectClass,
+  loansFormTextareaClass,
+} from '@/components/loans/LoanDetailDialogShell';
+import {
+  LedgerApprovalPanel,
+  LedgerApprovalTimeline,
+  LedgerFinalApprovalPayPeriod,
+  LedgerLoanRecalculationPreview,
+  LedgerTransactionHistory,
+  LedgerWaitingBanner,
+  LedgerReleaseFundsPanel,
+  LedgerRecordPaymentPanel,
+} from '@/components/ledger';
 import { downloadLoanAdvanceRequestPdf, type LoanAdvancePdfLoan } from '@/lib/loanAdvanceRequestPdf';
 import { Department, Division, Designation } from '@/lib/api';
 import {
@@ -947,7 +993,10 @@ export default function LoansPage() {
       }
       const txns = txnRes.data.transactions || [];
       const summary = txnRes.data.summary;
-      downloadLoanAdvanceRequestPdf(loanRes.data as LoanAdvancePdfLoan, txns, { summary });
+      await downloadLoanAdvanceRequestPdf(loanRes.data as LoanAdvancePdfLoan, txns, {
+        summary,
+        applicationPdfContext: loanRes.applicationPdfContext,
+      });
       toast.success('PDF downloaded');
     } catch (err: any) {
       toast.error(err?.message || 'Failed to generate PDF');
@@ -1174,7 +1223,7 @@ export default function LoansPage() {
         }
       } else {
         // For HOD/HR/Admin: Load all employees
-        const response = await api.getEmployees({ is_active: true, limit: 10000 });
+        const response = await api.getEmployeesSummary({ is_active: true, limit: 100, page: 1 });
         if (response.success && response.data) {
           setEmployees(response.data || []);
         }
@@ -1386,133 +1435,54 @@ export default function LoansPage() {
     </svg>
   );
 
+  const pendingCount = pendingLoans.length + pendingAdvances.length;
+  const disbursedCount =
+    loans.filter((l) => l.status === 'approved').length
+    + advances.filter((a) => a.status === 'approved').length;
+
   return (
-    <div className="max-w-[1920px] mx-auto">
-      {/* Header Section */}
-      <div className="mb-8 flex flex-col gap-4 rounded-3xl border border-slate-200/60 bg-white/80 p-6 shadow-[0_20px_50px_rgba(148,163,184,0.1)] backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-950/80 sm:flex-row sm:items-center sm:justify-between sm:p-8">
-        <div className="flex items-center gap-5">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 shadow-lg shadow-emerald-500/20">
-            <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-              Loan & Salary <span className="text-emerald-600 dark:text-emerald-400">Advance</span>
-            </h1>
-            <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
-              Manage employee financial assistance requests and repayment tracking
-            </p>
-          </div>
-        </div>
-
-        <button
-          onClick={() => openApplyDialog('loan')}
-          className="group relative inline-flex items-center gap-2 overflow-hidden rounded-2xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-xl shadow-emerald-500/30 transition-all hover:bg-emerald-700 hover:shadow-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 active:scale-95"
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700" />
-          <svg className="h-5 w-5 transition-transform group-hover:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-          <span>Apply Request</span>
-        </button>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          {
-            label: 'Total Active Loans',
-            value: loans.length,
-            icon: <LoanIcon />,
-            color: 'emerald',
-            gradient: 'from-emerald-500 to-emerald-600',
-            shadow: 'shadow-emerald-500/20'
-          },
-          {
-            label: 'Active Salary Advances',
-            value: advances.length,
-            icon: <AdvanceIcon />,
-            color: 'teal',
-            gradient: 'from-teal-500 to-teal-600',
-            shadow: 'shadow-teal-500/20'
-          },
-          {
-            label: 'Pending Approvals',
-            value: pendingLoans.length + pendingAdvances.length,
-            icon: <ClockIcon />,
-            color: 'amber',
-            gradient: 'from-amber-500 to-amber-600',
-            shadow: 'shadow-amber-500/20',
-            isWarning: true
-          },
-          {
-            label: 'Total Disbursed (Approved)',
-            value: loans.filter(l => l.status === 'approved').length + advances.filter(a => a.status === 'approved').length,
-            icon: <CheckIcon />,
-            color: 'green',
-            gradient: 'from-green-500 to-green-600',
-            shadow: 'shadow-green-500/20'
-          }
-        ].map((stat, idx) => (
-          <div
-            key={idx}
-            className="group relative overflow-hidden rounded-3xl border border-slate-200/60 bg-white/80 p-6 shadow-[0_10px_30px_rgba(148,163,184,0.05)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_40px_rgba(148,163,184,0.1)] dark:border-slate-800/60 dark:bg-slate-950/80"
+    <LoansPageShell>
+      <LoansPageHeader
+        badge="Finance"
+        title="Loans & Salary Advances"
+        subtitle="Manage employee financial assistance requests and repayment tracking"
+        action={
+          <button
+            type="button"
+            onClick={() => openApplyDialog('loan')}
+            className={`inline-flex items-center gap-2 ${loansPrimaryButtonClass()}`}
+            style={loansPrimaryButtonStyle()}
           >
-            <div className="flex items-center gap-4">
-              <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${stat.gradient} ${stat.shadow} text-white transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3`}>
-                {stat.icon}
-              </div>
-              <div>
-                <div className={`text-2xl font-bold tracking-tight ${stat.isWarning ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white'}`}>
-                  {stat.value}
-                </div>
-                <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  {stat.label}
-                </div>
-              </div>
-            </div>
-            <div className={`absolute -right-4 -bottom-4 h-16 w-16 opacity-[0.03] transition-transform duration-700 group-hover:scale-150 group-hover:rotate-12 dark:opacity-[0.05]`}>
-              {stat.icon}
-            </div>
-          </div>
-        ))}
-      </div>
+            <PlusIcon />
+            <span>Apply request</span>
+          </button>
+        }
+      />
 
-      {/* Premium Tabs and Filters */}
-      <div className="mb-6 flex flex-col xl:flex-row gap-4">
-        <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
-          <div className="flex gap-1 rounded-2xl bg-slate-100/80 p-1.5 dark:bg-slate-900/80 w-full sm:w-auto overflow-x-auto">
-            {[
-              { id: 'loans', label: 'Loans', count: loans.length },
-              { id: 'advances', label: 'Advances', count: advances.length },
-              { id: 'pending', label: 'Pending Approvals', count: pendingLoans.length + pendingAdvances.length }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`relative flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
-                  ? 'bg-white text-emerald-600 shadow-md ring-1 ring-slate-200/50 dark:bg-slate-800 dark:text-emerald-400 dark:ring-slate-700'
-                  : 'text-slate-500 hover:bg-white/50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200'
-                  }`}
-              >
-                <span>{tab.label}</span>
-                <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] ${activeTab === tab.id
-                  ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400'
-                  : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                  }`}>
-                  {tab.count}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
+      <LoansStatGrid
+        stats={[
+          { label: 'Active loans', value: loans.length, accent: true },
+          { label: 'Salary advances', value: advances.length, accent: true },
+          { label: 'Pending approvals', value: pendingCount, muted: true },
+          { label: 'Approved total', value: disbursedCount, highlight: true },
+        ]}
+      />
 
-        {/* Filters and Search Input */}
-        {(activeTab === 'loans' || activeTab === 'advances' || activeTab === 'pending') && (
-          <div className="flex flex-col gap-3 flex-1 min-w-0">
-            <div className="flex flex-wrap items-end gap-3">
+      <LoansTabBar
+        activeTab={activeTab}
+        onChange={(id) => setActiveTab(id as 'loans' | 'advances' | 'pending')}
+        tabs={[
+          { id: 'loans', label: 'Loans', count: loans.length },
+          { id: 'advances', label: 'Salary advances', count: advances.length },
+          { id: 'pending', label: 'Pending', count: pendingCount },
+        ]}
+      />
+
+      {(activeTab === 'loans' || activeTab === 'advances' || activeTab === 'pending') && (
+        <LoansToolbar>
+          <div className="flex flex-wrap items-end gap-3">
               <MultiSelect
+                variant="ledger"
                 label="Division"
                 options={divisions.map((d: any) => ({ id: String(d._id), name: d.name ?? d.code ?? 'Division' }))}
                 selectedIds={listFilterDivisions}
@@ -1524,6 +1494,7 @@ export default function LoansPage() {
                 className="w-full sm:w-40 md:w-44"
               />
               <MultiSelect
+                variant="ledger"
                 label="Department"
                 options={loanListDepartmentOptions.map((d: any) => ({
                   id: String(d._id),
@@ -1535,6 +1506,7 @@ export default function LoansPage() {
                 className="w-full sm:w-40 md:w-44"
               />
               <MultiSelect
+                variant="ledger"
                 label="Designation"
                 options={designations.map((d: any) => ({
                   id: String(d._id),
@@ -1546,6 +1518,7 @@ export default function LoansPage() {
                 className="w-full sm:w-40 md:w-44"
               />
               <MultiSelect
+                variant="ledger"
                 label="Status"
                 options={LOAN_LIST_STATUS_OPTIONS}
                 selectedIds={listFilterStatuses}
@@ -1553,56 +1526,67 @@ export default function LoansPage() {
                 placeholder="All statuses"
                 className="w-full sm:w-48 md:w-56"
               />
+              <div className="flex w-full flex-col gap-1.5 sm:w-44 md:w-52">
+                <label
+                  className="text-[10px] font-semibold uppercase tracking-[0.2em]"
+                  style={{ color: 'var(--ps-accent-ink)' }}
+                >
+                  Search
+                </label>
+                <div className="relative">
+                  <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-400">
+                    <SearchIcon />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Name, ID, reason…"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className={`h-10 pl-9 pr-3 ${loansFormInputClass()}`}
+                    style={loansFormInputStyle()}
+                  />
+                </div>
+              </div>
               {anyListFilterActive && (
                 <button
                   type="button"
                   onClick={clearLoanListFilters}
-                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-emerald-600 hover:bg-emerald-50 dark:border-slate-600 dark:bg-slate-800 dark:text-emerald-400 dark:hover:bg-slate-700"
+                  className="h-10 rounded-md border px-3 text-xs font-semibold uppercase tracking-wider transition hover:opacity-80"
+                  style={{ borderColor: 'var(--ps-accent-border)', color: 'var(--ps-accent)' }}
                 >
                   Clear filters
                 </button>
               )}
-            </div>
-            <div className="relative w-full min-w-[200px] max-w-xl">
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-                <SearchIcon />
-              </div>
-              <input
-                type="text"
-                placeholder="Search by employee name, ID, or reason..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full rounded-xl border border-slate-200/60 bg-white/80 py-2.5 pl-11 pr-4 text-sm font-medium transition-all focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/10 dark:border-slate-800/60 dark:bg-slate-950/80 dark:text-white"
-              />
-            </div>
           </div>
-        )}
-      </div>
+        </LoansToolbar>
+      )}
 
-      {/* Messages */}
       {message && (
-        <div className={`mb-6 rounded-xl border px-4 py-3 flex items-center justify-between ${message.type === 'success'
-          ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-          : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
-          }`}>
+        <div
+          className={`mb-5 flex items-center justify-between border px-4 py-3 text-sm ${
+            message.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300'
+              : 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300'
+          }`}
+        >
           <span>{message.text}</span>
-          <button onClick={() => setMessage(null)} className="text-current hover:opacity-70">×</button>
+          <button type="button" onClick={() => setMessage(null)} className="text-current hover:opacity-70">
+            ×
+          </button>
         </div>
       )}
 
-
-      {/* Content */}
-      <div className="rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800 overflow-hidden">
+      <LoansContentPanel>
         {activeTab === 'loans' && (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-slate-50 dark:bg-slate-900">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Employee</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Amount</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Duration</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Date</th>
+                  <th className={`px-4 py-3 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Employee</th>
+                  <th className={`px-4 py-3 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Amount</th>
+                  <th className={`px-4 py-3 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Duration</th>
+                  <th className={`px-4 py-3 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Status</th>
+                  <th className={`px-4 py-3 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -1670,12 +1654,12 @@ export default function LoansPage() {
         {activeTab === 'advances' && (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-slate-50 dark:bg-slate-900">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Employee</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Amount</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Date</th>
+                  <th className={`px-4 py-3 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Employee</th>
+                  <th className={`px-4 py-3 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Amount</th>
+                  <th className={`px-4 py-3 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Status</th>
+                  <th className={`px-4 py-3 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -1868,57 +1852,50 @@ export default function LoansPage() {
             )}
           </div>
         )}
-      </div>
+      </LoansContentPanel>
 
       {/* Detail Dialog */}
-      {showDetailDialog && selectedLoan && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => {
-            setShowDetailDialog(false);
-            setSelectedLoan(null);
-            setTransactions([]);
-            setShowPaymentForm(false);
-            setShowDisbursementDialog(false);
-            setSettlementPreview(null);
-          }} />
-          <div className="relative z-50 w-full max-w-2xl rounded-2xl bg-white shadow-2xl dark:bg-slate-900 max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Header */}
-              <div className={`p-6 bg-gradient-to-r ${selectedLoan.requestType === 'loan'
-              ? 'from-blue-500 to-indigo-600'
-              : 'from-purple-500 to-red-600'
-              } text-white`}>
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-xl font-bold">
-                  {selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'} Details
-                </h2>
-                <div className="flex shrink-0 items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleDownloadRequestPdf()}
-                    disabled={exportingPdf}
-                    className="inline-flex items-center gap-2 rounded-lg border border-white/40 bg-white/15 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/25 disabled:opacity-50"
-                    title="Download PDF: summary, ledger, and one slip per transaction"
-                  >
-                    <PrintIcon />
-                    {exportingPdf ? '…' : 'Print PDF'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowDetailDialog(false);
-                      setSelectedLoan(null);
-                      setTransactions([]);
-                      setShowPaymentForm(false);
-                      setShowDisbursementDialog(false);
-                    }}
-                    className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors"
-                  >
-                    <XIcon />
-                  </button>
-                </div>
-              </div>
-            </div>
+      <LoanDetailDialog
+        open={showDetailDialog && !!selectedLoan}
+        onClose={() => {
+          setShowDetailDialog(false);
+          setSelectedLoan(null);
+          setTransactions([]);
+          setShowPaymentForm(false);
+          setShowDisbursementDialog(false);
+          setSettlementPreview(null);
+        }}
+      >
+        {selectedLoan && (
+          <>
+            <LoanDetailDialogHeader
+              badge={selectedLoan.requestType === 'loan' ? 'Loan request' : 'Salary advance'}
+              title={`${selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'} Details`}
+              subtitle={selectedLoan.emp_no || selectedLoan.employeeId?.emp_no || undefined}
+              onClose={() => {
+                setShowDetailDialog(false);
+                setSelectedLoan(null);
+                setTransactions([]);
+                setShowPaymentForm(false);
+                setShowDisbursementDialog(false);
+                setSettlementPreview(null);
+              }}
+              actions={
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadRequestPdf()}
+                  disabled={exportingPdf}
+                  className={loansDialogOutlineButtonClass()}
+                  style={loansDialogOutlineButtonStyle()}
+                  title="Download PDF: application form; after disbursement includes statement, ledger, and slips"
+                >
+                  <PrintIcon />
+                  {exportingPdf ? '…' : 'Print PDF'}
+                </button>
+              }
+            />
 
-            <div className="p-6 space-y-6 overflow-y-auto">
+            <LoanDetailDialogBody>
               {/* Status Badge & Dates */}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className={`px-4 py-2 text-sm font-semibold rounded-xl capitalize ${getStatusColor(selectedLoan.status)}`}>
@@ -1934,8 +1911,9 @@ export default function LoansPage() {
               </div>
 
               {presentPayPeriod && (
-                <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40 text-xs text-slate-600 dark:text-slate-300 space-y-1.5">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current pay period (today)</p>
+                <LoanDetailSection soft>
+                  <LoanDetailSectionTitle>Current pay period (today)</LoanDetailSectionTitle>
+                  <div className="space-y-1.5 text-xs text-stone-600 dark:text-stone-300">
                   <p>
                     <span className="font-medium text-slate-800 dark:text-slate-200">Last day of period:</span>{' '}
                     {new Date(`${presentPayPeriod.lastDate}T12:00:00`).toLocaleDateString('en-IN', {
@@ -1955,15 +1933,18 @@ export default function LoansPage() {
                     Salary advance deductions (and loan EMI) are included when payroll is calculated or completed for that month key; each deduction line stores the same value as{' '}
                     <code className="rounded bg-slate-200 px-1 text-[10px] dark:bg-slate-700">payrollCycle</code> on the advance or loan transaction.
                   </p>
-                </div>
+                  </div>
+                </LoanDetailSection>
               )}
 
               {/* Employee Info */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50">
-                <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-3 uppercase tracking-wide">Employee Details</h3>
+              <LoanDetailSection soft>
+                <LoanDetailSectionTitle>Employee Details</LoanDetailSectionTitle>
                 <div className="flex items-start gap-4">
-                  <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0 ${selectedLoan.requestType === 'loan' ? 'bg-blue-500' : 'bg-purple-500'
-                    }`}>
+                  <div
+                    className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white"
+                    style={{ backgroundColor: 'var(--ps-accent)' }}
+                  >
                     {(selectedLoan.employeeId?.employee_name || selectedLoan.emp_no || 'E')[0].toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -1993,91 +1974,67 @@ export default function LoansPage() {
                     )}
                   </div>
                 </div>
-              </div>
+              </LoanDetailSection>
 
               {/* Eligibility Information - For Salary Advance (View Only) */}
               {selectedLoan.requestType === 'salary_advance' && eligibilityData && (
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800">
-                  <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3 uppercase tracking-wide flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    </svg>
-                    Eligibility Information
-                  </h3>
+                <LoanDetailSection highlight>
+                  <LoanDetailSectionTitle>Eligibility Information</LoanDetailSectionTitle>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-white/70 dark:bg-slate-800/70 p-3 rounded-xl">
-                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Attendance</div>
-                      <div className="font-bold text-lg text-green-600 dark:text-green-400">{eligibilityData.attendancePercentage}%</div>
-                    </div>
-                    <div className="bg-white/70 dark:bg-slate-800/70 p-3 rounded-xl">
-                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Days Worked</div>
-                      <div className="font-bold text-lg text-slate-900 dark:text-white">{eligibilityData.daysWorked} / {eligibilityData.daysElapsedInMonth}</div>
-                    </div>
-                    <div className="bg-white/70 dark:bg-slate-800/70 p-3 rounded-xl">
-                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Prorated Amount</div>
-                      <div className="font-bold text-lg text-blue-600 dark:text-blue-400">₹{eligibilityData.proratedAmount.toLocaleString()}</div>
-                    </div>
-                    <div className="bg-white/70 dark:bg-slate-800/70 p-3 rounded-xl">
-                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Eligible Amount</div>
-                      <div className="font-bold text-lg text-green-600 dark:text-green-400">₹{eligibilityData.eligibleAmount.toLocaleString()}</div>
-                    </div>
-                    <div className="bg-white/70 dark:bg-slate-800/70 p-3 rounded-xl">
-                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Max Limit</div>
-                      <div className="font-bold text-lg text-purple-600 dark:text-purple-400">₹{eligibilityData.maxLimitAmount.toLocaleString()}</div>
-                    </div>
-                    <div className="bg-white/70 dark:bg-slate-800/70 p-3 rounded-xl">
-                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Final Max Allowed</div>
-                      <div className="font-bold text-lg text-indigo-600 dark:text-indigo-400">₹{eligibilityData.finalMaxAllowed.toLocaleString()}</div>
-                    </div>
+                    <LoanDetailField label="Attendance">
+                      <span className="font-mono tabular-nums">{eligibilityData.attendancePercentage}%</span>
+                    </LoanDetailField>
+                    <LoanDetailField label="Days Worked">
+                      <span className="font-mono tabular-nums">{eligibilityData.daysWorked} / {eligibilityData.daysElapsedInMonth}</span>
+                    </LoanDetailField>
+                    <LoanDetailField label="Prorated Amount">
+                      <span className="font-mono tabular-nums">₹{eligibilityData.proratedAmount.toLocaleString()}</span>
+                    </LoanDetailField>
+                    <LoanDetailField label="Eligible Amount">
+                      <span className="font-mono tabular-nums">₹{eligibilityData.eligibleAmount.toLocaleString()}</span>
+                    </LoanDetailField>
+                    <LoanDetailField label="Max Limit">
+                      <span className="font-mono tabular-nums">₹{eligibilityData.maxLimitAmount.toLocaleString()}</span>
+                    </LoanDetailField>
+                    <LoanDetailField label="Final Max Allowed">
+                      <span className="font-mono tabular-nums">₹{eligibilityData.finalMaxAllowed.toLocaleString()}</span>
+                    </LoanDetailField>
                   </div>
-                </div>
+                </LoanDetailSection>
               )}
 
               {/* Details Grid */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs text-slate-500 uppercase font-semibold mb-1">Type</p>
-                  <p className="text-sm font-medium text-slate-900 dark:text-white capitalize">
-                    {selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'}
-                  </p>
-                </div>
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs text-slate-500 uppercase font-semibold mb-1">Amount</p>
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">₹{selectedLoan.amount.toLocaleString()}</p>
-                </div>
+              <div className="grid grid-cols-2 gap-3">
+                <LoanDetailField label="Type">
+                  <span className="capitalize">{selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'}</span>
+                </LoanDetailField>
+                <LoanDetailField label="Amount">
+                  <span className="font-mono tabular-nums">₹{selectedLoan.amount.toLocaleString()}</span>
+                </LoanDetailField>
                 {selectedLoan.requestType === 'loan' && (
-                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <p className="text-xs text-slate-500 uppercase font-semibold mb-1">Duration</p>
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">
-                      {selectedLoan.duration} months
-                    </p>
-                  </div>
+                  <LoanDetailField label="Duration">
+                    {selectedLoan.duration} months
+                  </LoanDetailField>
                 )}
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs text-slate-500 uppercase font-semibold mb-1">Status</p>
-                  <span className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-lg capitalize ${getStatusColor(selectedLoan.status)}`}>
+                <LoanDetailField label="Status">
+                  <span className={`inline-flex px-2 py-0.5 text-xs font-medium capitalize ${getStatusColor(selectedLoan.status)}`}>
                     {selectedLoan.status?.replace('_', ' ') || '-'}
                   </span>
-                </div>
+                </LoanDetailField>
               </div>
 
               {/* Reason */}
-              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                <p className="text-xs text-slate-500 uppercase font-semibold mb-2">Reason</p>
-                <p className="text-sm text-slate-700 dark:text-slate-300">
+              <LoanDetailSection>
+                <LoanDetailSectionTitle>Reason</LoanDetailSectionTitle>
+                <p className="text-sm text-stone-700 dark:text-stone-300">
                   {selectedLoan.reason || 'Not specified'}
                 </p>
-              </div>
+              </LoanDetailSection>
 
               {/* Guarantors */}
               {selectedLoan.guarantors && selectedLoan.guarantors.length > 0 && (
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs text-indigo-500 uppercase font-semibold tracking-wide mb-3 flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                    Guarantors ({selectedLoan.guarantors.length})
-                  </p>
+                <LoanDetailSection>
+                  <LoanDetailSectionTitle>Guarantors ({selectedLoan.guarantors.length})</LoanDetailSectionTitle>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {selectedLoan.guarantors.map((guarantor, idx) => (
                       <div key={idx} className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
@@ -2101,15 +2058,13 @@ export default function LoansPage() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </LoanDetailSection>
               )}
 
               {/* Change History */}
               {selectedLoan.changeHistory && selectedLoan.changeHistory.length > 0 && (
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs text-blue-500 uppercase font-semibold tracking-wide mb-3">
-                    Change History ({selectedLoan.changeHistory.length})
-                  </p>
+                <LoanDetailSection>
+                  <LoanDetailSectionTitle>Change History ({selectedLoan.changeHistory.length})</LoanDetailSectionTitle>
                   <div className="space-y-3">
                     {selectedLoan.changeHistory.map((change: any, idx: number) => (
                       <div key={idx} className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
@@ -2146,91 +2101,18 @@ export default function LoansPage() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </LoanDetailSection>
               )}
 
 
-              {/* Approval Timeline */}
-              {timelineSteps.length > 0 && (
-                <div className="p-4 sm:p-6 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 shadow-sm scrollbar-hide">
-                  <p className="text-xs uppercase font-black text-slate-400 mb-6 tracking-widest">Approval Timeline</p>
-                  
-                  {/* Progress bar */}
-                  <div className="mb-8">
-                    <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">
-                       <span>{timelineSteps.filter(s => s.status === 'approved' || s.status === 'rejected').length} of {timelineSteps.length} processed</span>
-                       <span>{Math.round((timelineSteps.filter(s => s.status === 'approved' || s.status === 'rejected').length / timelineSteps.length) * 100)}%</span>
-                    </div>
-                    <div className="h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner">
-                      <div
-                        className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-500 ease-out shadow-lg"
-                        style={{ width: `${(timelineSteps.filter(s => s.status === 'approved' || s.status === 'rejected').length / timelineSteps.length) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Vertical steps */}
-                  <div className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-800 ml-1.5">
-                    {timelineSteps.map((step: any, idx: number) => {
-                      const isApproved = step.status === 'approved';
-                      const isRejected = step.status === 'rejected';
-                      const isCurrent = step.status === 'current';
-                      const isPending = step.status === 'pending';
-                      
-                      let nodeColor = 'bg-slate-200 dark:bg-slate-800';
-                      if (isApproved) nodeColor = 'bg-green-500 ring-4 ring-green-100 dark:ring-green-900/30';
-                      else if (isRejected) nodeColor = 'bg-red-500 ring-4 ring-red-100 dark:ring-red-900/30';
-                      else if (isCurrent) nodeColor = 'bg-blue-600 ring-4 ring-blue-100 dark:ring-blue-900/30 animate-pulse';
-
-                      return (
-                        <div key={idx} className="relative pb-8 last:pb-0">
-                          {/* Circle node */}
-                          <div className={`absolute -left-[31px] top-0 w-4 h-4 rounded-full ${nodeColor} border-2 border-white dark:border-slate-900 shadow-md z-10`} />
-                          
-                          <div className="ml-2">
-                            <div className="flex items-center gap-3">
-                              <span className={`text-sm font-black uppercase tracking-tight ${isPending ? 'text-slate-400' : 'text-slate-900 dark:text-white'}`}>
-                                {step.label}
-                              </span>
-                              
-                              {isApproved && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 shadow-sm border border-green-200/50">✓ Processed</span>}
-                              {isRejected && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 shadow-sm border border-red-200/50">✗ Rejected</span>}
-                              {isCurrent && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shadow-sm border border-blue-200/50">⏳ Your Turn</span>}
-                              {isPending && !isCurrent && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 shadow-sm border border-slate-200/50">○ Pending</span>}
-                            </div>
-
-                            {(isApproved || isRejected) && (
-                              <div className="mt-2 space-y-1">
-                                <div className="text-[11px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-tight flex items-center gap-2">
-                                  <span className="p-0.5 rounded bg-slate-100 dark:bg-slate-800">{step.actionByName}</span>
-                                  <span className="text-slate-300 dark:text-slate-600">({step.actionByRole})</span>
-                                  {step.timestamp && (
-                                    <span className="text-[10px] text-slate-400 font-medium">
-                                      · {new Date(step.timestamp).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                                    </span>
-                                  )}
-                                </div>
-                                {step.comments && (
-                                  <p className="text-[11px] text-slate-500 italic font-medium bg-white dark:bg-slate-800/80 p-2.5 rounded-xl border border-slate-100 dark:border-slate-700/50 leading-relaxed shadow-sm">
-                                    "{step.comments}"
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+              <LedgerApprovalTimeline steps={timelineSteps} />
 
 
               {/* Loan Calculation */}
               {
                 selectedLoan.requestType === 'loan' && selectedLoan.loanConfig && (
-                  <div className="p-4 rounded-xl border-2 border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
-                    <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">Loan Calculation</h3>
+                  <LoanDetailSection highlight>
+                    <LoanDetailSectionTitle>Loan Calculation</LoanDetailSectionTitle>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">EMI Amount</p>
@@ -2249,21 +2131,16 @@ export default function LoansPage() {
                         <p className="text-sm font-bold text-slate-900 dark:text-slate-100">₹{selectedLoan.loanConfig.totalAmount?.toLocaleString()}</p>
                       </div>
                     </div>
-                  </div>
+                  </LoanDetailSection>
                 )
               }
 
               {/* Early Settlement Calculator - Only for active/disbursed loans */}
               {
                 selectedLoan.requestType === 'loan' && ['disbursed', 'active'].includes(selectedLoan.status) && (
-                  <div className="p-4 rounded-xl border-2 border-green-200 bg-gradient-to-br from-green-50 to-green-50 dark:from-green-900/20 dark:to-green-900/20 dark:border-green-800">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 flex items-center gap-2">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-5m-3 5h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                        </svg>
-                        Early Settlement Calculator
-                      </h3>
+                  <LoanDetailSection highlight>
+                    <div className="mb-4 flex items-center justify-between">
+                      <LoanDetailSectionTitle className="mb-0">Early Settlement Calculator</LoanDetailSectionTitle>
                       {loadingSettlement && (
                         <div className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></div>
                       )}
@@ -2323,7 +2200,8 @@ export default function LoansPage() {
                         <button
                           onClick={() => setShowSettlementDialog(true)}
                           disabled={saving}
-                          className="w-full px-4 py-3 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-green-600 rounded-xl hover:from-green-700 hover:to-green-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                          className={loansDialogPrimaryButtonClass(true)}
+                          style={loansDialogPrimaryButtonStyle()}
                         >
                           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -2334,33 +2212,31 @@ export default function LoansPage() {
                     ) : !loadingSettlement ? (
                       <p className="text-xs text-slate-500 text-center py-2">Unable to calculate settlement preview</p>
                     ) : null}
-                  </div>
+                  </LoanDetailSection>
                 )
               }
 
               {/* Advance Config */}
               {
                 selectedLoan.requestType === 'salary_advance' && selectedLoan.advanceConfig && (
-                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <p className="text-xs text-slate-500 uppercase font-semibold mb-2">Deduction Details</p>
-                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                  <LoanDetailSection>
+                    <LoanDetailSectionTitle>Deduction Details</LoanDetailSectionTitle>
+                    <p className="text-sm text-stone-700 dark:text-stone-300">
                       ₹{selectedLoan.advanceConfig.deductionPerCycle?.toLocaleString()} per cycle
                     </p>
-                  </div>
+                  </LoanDetailSection>
                 )
               }
 
               {/* Repayment Status */}
-              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs text-slate-500 uppercase font-semibold">Repayment Status</p>
+              <LoanDetailSection>
+                <div className="mb-3 flex items-center justify-between">
+                  <LoanDetailSectionTitle className="mb-0">Repayment Status</LoanDetailSectionTitle>
                   {['disbursed', 'active', 'approved'].includes(selectedLoan.status) && (
                     <button
                       onClick={togglePaymentForm}
-                      className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all shadow-md hover:shadow-lg flex items-center gap-2 ${showPaymentForm
-                        ? 'text-slate-700 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300'
-                        : 'text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700'
-                        }`}
+                      className={showPaymentForm ? loansDialogSecondaryButtonClass() : loansDialogPrimaryButtonClass()}
+                      style={showPaymentForm ? loansDialogSecondaryButtonStyle() : loansDialogPrimaryButtonStyle()}
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -2453,485 +2329,171 @@ export default function LoansPage() {
                     <p className="text-xs text-slate-400 mt-1">No payments recorded yet</p>
                   </div>
                 )}
-              </div>
+              </LoanDetailSection>
 
-              {/* Payment Form Section - Inline */}
-              {
-                showPaymentForm && ['disbursed', 'active', 'approved'].includes(selectedLoan.status) && (
-                  <div className="p-4 rounded-xl border-2 border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-900/20">
-                    <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-4 flex items-center gap-2">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      {selectedLoan.requestType === 'loan' ? 'Record EMI Payment' : 'Record Advance Payment'}
-                    </h3>
+              {showPaymentForm && ['disbursed', 'active', 'approved'].includes(selectedLoan.status) && (
+                <LedgerRecordPaymentPanel
+                  requestType={selectedLoan.requestType}
+                  paymentData={paymentData}
+                  onChange={setPaymentData}
+                  onSubmit={handlePayment}
+                  onCancel={togglePaymentForm}
+                  saving={saving}
+                  emiHint={selectedLoan.loanConfig?.emiAmount}
+                  deductionPerCycleHint={selectedLoan.advanceConfig?.deductionPerCycle}
+                />
+              )}
 
-                    <form onSubmit={handlePayment} className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                            Amount *
-                          </label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            required
-                            value={paymentData.amount}
-                            onChange={(e) => setPaymentData({ ...paymentData, amount: e.target.value })}
-                            placeholder="Enter payment amount"
-                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                          {selectedLoan.requestType === 'loan' && selectedLoan.loanConfig?.emiAmount && (
-                            <p className="text-xs text-slate-500 mt-1">
-                              EMI Amount: ₹{selectedLoan.loanConfig.emiAmount.toLocaleString()}
-                            </p>
-                          )}
-                          {selectedLoan.requestType === 'salary_advance' && selectedLoan.advanceConfig?.deductionPerCycle && (
-                            <p className="text-xs text-slate-500 mt-1">
-                              Deduction per cycle: ₹{selectedLoan.advanceConfig.deductionPerCycle.toLocaleString()}
-                            </p>
-                          )}
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                            Payment Date *
-                          </label>
-                          <input
-                            type="date"
-                            required
-                            value={paymentData.paymentDate}
-                            onChange={(e) => setPaymentData({ ...paymentData, paymentDate: e.target.value })}
-                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                          Payroll Cycle (Optional)
-                        </label>
-                        <input
-                          type="text"
-                          value={paymentData.payrollCycle}
-                          onChange={(e) => setPaymentData({ ...paymentData, payrollCycle: e.target.value })}
-                          placeholder="e.g., 2024-11"
-                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                          Remarks (Optional)
-                        </label>
-                        <textarea
-                          value={paymentData.remarks}
-                          onChange={(e) => setPaymentData({ ...paymentData, remarks: e.target.value })}
-                          placeholder="Add any remarks for this transaction..."
-                          rows={3}
-                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-                        />
-                      </div>
-
-                      <div className="flex gap-3 pt-2">
-                        <button
-                          type="button"
-                          onClick={togglePaymentForm}
-                          className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-200 rounded-lg hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={saving}
-                          className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                          {saving ? (
-                            <>
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              Processing...
-                            </>
-                          ) : (
-                            <>
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                              </svg>
-                              Record Payment
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                )
-              }
-
-              {/* Transaction History */}
-              {
-                selectedLoan.status !== 'pending' && selectedLoan.status !== 'draft' && (
-                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-xs text-slate-500 uppercase font-semibold">Transaction History</p>
-                      <button
-                        onClick={() => loadTransactions(selectedLoan._id)}
-                        className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                      >
-                        Refresh
-                      </button>
-                    </div>
-                    {loadingTransactions ? (
-                      <div className="text-center py-4 text-slate-500">
-                        <div className="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                        <span className="ml-2">Loading transactions...</span>
-                      </div>
-                    ) : transactions.length > 0 ? (
-                      <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {transactions.map((txn, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className={`px-2 py-0.5 text-xs font-semibold rounded capitalize ${txn.transactionType === 'disbursement'
-                                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                  : txn.transactionType === 'emi_payment'
-                                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                                    : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                  }`}>
-                                  {txn.transactionType?.replace('_', ' ')}
-                                </span>
-                              </div>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {new Date(txn.transactionDate || txn.createdAt).toLocaleDateString('en-IN', {
-                                  day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </p>
-                              {txn.remarks && (
-                                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 italic">{txn.remarks}</p>
-                              )}
-                              {txn.payrollCycle && (
-                                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Cycle: {txn.payrollCycle}</p>
-                              )}
-                            </div>
-                            <div className="text-right ml-4">
-                              <p className={`text-base font-bold ${txn.transactionType === 'disbursement' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
-                                }`}>
-                                {txn.transactionType === 'disbursement' ? '-' : '+'}₹{txn.amount?.toLocaleString()}
-                              </p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-6 text-slate-500 text-sm">
-                        <svg className="w-12 h-12 mx-auto mb-2 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <p>No transactions yet</p>
-                      </div>
-                    )}
-                  </div>
-                )
-              }
+              {selectedLoan.status !== 'pending' && selectedLoan.status !== 'draft' && (
+                <LedgerTransactionHistory
+                  transactions={transactions}
+                  loading={loadingTransactions}
+                  onRefresh={() => loadTransactions(selectedLoan._id)}
+                />
+              )}
 
               {canShowLoanEditButton(selectedLoan.status, true) && (
                 <button
                   type="button"
                   onClick={handleEdit}
-                  className="w-full px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors mb-4"
+                  className={`mb-4 w-full ${loansDialogPrimaryButtonClass()}`}
+                  style={loansDialogPrimaryButtonStyle()}
                 >
                   Edit {selectedLoan.requestType === 'loan' ? 'Loan' : 'Advance'}
                 </button>
               )}
 
-              {/* Release Funds Section - For Approved Loans */}
-              {
-                selectedLoan.status === 'approved' && (
-                  <div className="p-4 rounded-xl border-2 border-green-200 bg-green-50/50 dark:border-green-900/20">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 flex items-center gap-2">
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          Release Funds
-                        </h3>
-                        <p className="text-xs text-green-700 dark:text-green-300 mt-1">
-                          Transfer ₹{(selectedLoan.amount ?? 0).toLocaleString()} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no} (approved principal).
-                        </p>
-                        {selectedLoan.requestType === 'loan' &&
-                          selectedLoan.loanConfig?.totalAmount != null &&
-                          Number(selectedLoan.loanConfig.totalAmount) !== Number(selectedLoan.amount) && (
-                          <p className="text-xs text-green-600/90 dark:text-green-400/80 mt-0.5">
-                            Total to be recovered (principal + interest): ₹{Number(selectedLoan.loanConfig.totalAmount).toLocaleString()}
-                          </p>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => setShowDisbursementDialog(true)}
-                        className="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-lg hover:from-green-600 hover:to-green-700 transition-all shadow-md hover:shadow-lg flex items-center gap-2"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Release Funds
-                      </button>
-                    </div>
-                  </div>
-                )
-              }
+              {selectedLoan.status === 'approved' && (
+                <LedgerReleaseFundsPanel
+                  amount={selectedLoan.amount ?? 0}
+                  employeeName={selectedLoan.employeeId?.employee_name || selectedLoan.emp_no || 'Employee'}
+                  totalRecovery={
+                    selectedLoan.requestType === 'loan' ? selectedLoan.loanConfig?.totalAmount : undefined
+                  }
+                  onRelease={() => setShowDisbursementDialog(true)}
+                />
+              )}
 
-              {/* Action Section */}
-              {
-                !['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) &&
+              {!['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) &&
                 !canActOnSelectedLoan &&
                 (selectedLoan as any).workflow?.nextApprover && (
-                  <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/80 dark:border-amber-800/50 dark:bg-amber-900/10">
-                    <p className="text-sm text-amber-900 dark:text-amber-100">
-                      Waiting for{' '}
-                      <span className="font-semibold capitalize">
-                        {(selectedLoan as any).workflow?.nextApprover === 'final_authority'
-                          ? 'Final Approval'
-                          : String((selectedLoan as any).workflow?.nextApprover || '').replace(/_/g, ' ')}
-                      </span>
-                      . You cannot act on this step yet.
-                    </p>
-                  </div>
+                  <LedgerWaitingBanner>
+                    Waiting for{' '}
+                    <span className="font-semibold capitalize">
+                      {(selectedLoan as any).workflow?.nextApprover === 'final_authority'
+                        ? 'final approval'
+                        : String((selectedLoan as any).workflow?.nextApprover || '').replace(/_/g, ' ')}
+                    </span>
+                    . You cannot act on this step yet.
+                  </LedgerWaitingBanner>
                 )}
-              {
-                !['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) &&
+              {!['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) &&
                 canActOnSelectedLoan && (
-                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
-                    {/* Approval Amount Modification */}
-                    {(selectedLoan.requestType === 'salary_advance' || (selectedLoan.requestType === 'loan' && ['super_admin', 'hr', 'sub_admin'].includes(currentUser?.role))) && (
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Approval Amount (₹)
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={approvalAmount}
-                          onChange={(e) => setApprovalAmount(e.target.value)}
-                          className={`w-full rounded-xl border px-4 py-2.5 text-sm dark:bg-slate-900 dark:text-white ${approvalValidation?.level === 'error'
-                            ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
-                            : approvalValidation?.level === 'warning'
-                              ? 'border-yellow-500 ring-2 ring-yellow-200 dark:ring-yellow-900'
-                              : 'border-slate-200 dark:border-slate-700'
-                            }`}
-                        />
-                        {approvalValidation && (
-                          <p className={`text-xs mt-1.5 font-medium flex items-center gap-1 ${approvalValidation.level === 'error' ? 'text-red-500' : 'text-yellow-600'
-                            }`}>
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            </svg>
-                            {approvalValidation.message}
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Interest Rate Modification (Loans only) */}
-                    {selectedLoan.requestType === 'loan' && ['super_admin', 'hr', 'sub_admin'].includes(currentUser?.role) && (
-                      <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Approval Interest Rate (%)
-                          </label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={approvalInterestRate}
-                            onChange={(e) => setApprovalInterestRate(e.target.value)}
-                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm dark:bg-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 transition-all"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Duration (Months)
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={approvalDuration}
-                            onChange={(e) => setApprovalDuration(e.target.value)}
-                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm dark:bg-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 transition-all"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Dynamic Recalculation for Loan Approvals */}
-                    {selectedLoan.requestType === 'loan' && approvalAmount && (
-                      (() => {
-                        const principal = parseFloat(approvalAmount);
-                        const rate = parseFloat(approvalInterestRate) || 0;
-                        const duration = parseInt(approvalDuration) || selectedLoan.duration || 1;
-
-                        let emi = principal / duration;
-                        let totalAmt = principal;
-
-                        if (rate > 0) {
-                          // Simple Interest: SI = (P × R × T) / 100
-                          const totalInterest = (principal * rate * (duration / 12)) / 100;
-                          totalAmt = principal + totalInterest;
-                          emi = totalAmt / duration;
-                        }
-
-                        return (
-                          <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl space-y-2 border border-blue-100 dark:border-blue-800/50 mb-4 animate-in fade-in duration-300">
-                            <div className="flex justify-between items-center text-xs">
-                              <span className="text-slate-500 dark:text-slate-400">Monthly EMI (approx)</span>
-                              <span className="font-bold text-blue-700 dark:text-blue-300">₹{Math.round(emi).toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-xs">
-                              <span className="text-slate-500 dark:text-slate-400">Total Interest</span>
-                              <span className="font-semibold text-slate-700 dark:text-slate-300">₹{Math.round(totalAmt - principal).toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-xs pt-1 border-t border-blue-100 dark:border-blue-800/50 mt-1">
-                              <span className="text-slate-600 dark:text-slate-300 font-medium">Total Repayment</span>
-                              <span className="font-bold text-slate-900 dark:text-white">₹{Math.round(totalAmt).toLocaleString()}</span>
-                            </div>
-                          </div>
-                        );
-                      })()
-                    )}
-
-                    {/* Update Loan Button */}
-                    {(approvalAmount !== selectedLoan.amount.toString() ||
+                  <LedgerApprovalPanel
+                    showAmount={
+                      selectedLoan.requestType === 'salary_advance' ||
+                      (selectedLoan.requestType === 'loan' &&
+                        ['super_admin', 'hr', 'sub_admin'].includes(currentUser?.role || ''))
+                    }
+                    amount={approvalAmount}
+                    onAmountChange={setApprovalAmount}
+                    amountValidation={approvalValidation}
+                    showLoanTerms={
+                      selectedLoan.requestType === 'loan' &&
+                      ['super_admin', 'hr', 'sub_admin'].includes(currentUser?.role || '')
+                    }
+                    interestRate={approvalInterestRate}
+                    onInterestRateChange={setApprovalInterestRate}
+                    duration={approvalDuration}
+                    onDurationChange={setApprovalDuration}
+                    recalculationPreview={
+                      selectedLoan.requestType === 'loan' && approvalAmount
+                        ? (() => {
+                            const principal = parseFloat(approvalAmount);
+                            const rate = parseFloat(approvalInterestRate) || 0;
+                            const duration = parseInt(approvalDuration, 10) || selectedLoan.duration || 1;
+                            let emi = principal / duration;
+                            let totalAmt = principal;
+                            if (rate > 0) {
+                              const totalInterest = (principal * rate * (duration / 12)) / 100;
+                              totalAmt = principal + totalInterest;
+                              emi = totalAmt / duration;
+                            }
+                            return (
+                              <LedgerLoanRecalculationPreview
+                                emi={emi}
+                                totalInterest={totalAmt - principal}
+                                totalRepayment={totalAmt}
+                              />
+                            );
+                          })()
+                        : undefined
+                    }
+                    showUpdateWarning={
+                      approvalAmount !== selectedLoan.amount.toString() ||
                       approvalInterestRate !== selectedLoan.loanConfig?.interestRate?.toString() ||
-                      approvalDuration !== selectedLoan.duration?.toString()) && (
-                        <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/10 rounded-xl border border-yellow-200 dark:border-yellow-800">
-                          <p className="text-xs text-yellow-700 dark:text-yellow-400 mb-2 font-medium">
-                            ⚠️ You have modified the loan details. Update the loan first to see the changes reflected.
-                          </p>
-                          <button
-                            onClick={() => handleUpdateLoan(selectedLoan._id)}
-                            disabled={saving}
-                            className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-yellow-500 rounded-xl hover:bg-yellow-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                          >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                            Update Loan with Modified Values
-                          </button>
-                        </div>
-                      )}
-
-                    {isFinalApprovalStep && (
-                      <div className="mb-4 p-3 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-800/50 space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
-                          Final approval
-                        </p>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                          First deduction pay period *
-                        </label>
-                        <select
+                      approvalDuration !== selectedLoan.duration?.toString()
+                    }
+                    onUpdateLoan={() => handleUpdateLoan(selectedLoan._id)}
+                    updating={saving}
+                    finalApprovalBlock={
+                      isFinalApprovalStep ? (
+                        <LedgerFinalApprovalPayPeriod
                           value={finalApprovalPayPeriod}
-                          onChange={(e) => setFinalApprovalPayPeriod(e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm dark:bg-slate-900 dark:text-white"
-                        >
-                          {finalApprovalPayPeriodOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label} ({opt.range.from} → {opt.range.to})
-                            </option>
-                          ))}
-                        </select>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          Next payment due date will be the end of the selected pay period
-                          {selectedFinalPayPeriodPreview ? ` (${selectedFinalPayPeriodPreview})` : ''}.
-                          Payroll will deduct from this period onward.
-                        </p>
-                      </div>
-                    )}
-
-                    <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
-
-                    {/* Comment */}
-                    <textarea
-                      value={actionComment}
-                      onChange={(e) => setActionComment(e.target.value)}
-                      placeholder="Add a comment (optional)..."
-                      rows={2}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                    />
-
-                    {/* Action Buttons */}
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => handleAction(selectedLoan._id, 'approve')}
-                        disabled={saving}
-                        className="px-4 py-2.5 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2 disabled:opacity-50"
-                      >
-                        <CheckIcon /> Approve
-                      </button>
-                      <button
-                        onClick={() => handleAction(selectedLoan._id, 'reject')}
-                        disabled={saving}
-                        className="px-4 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2 disabled:opacity-50"
-                      >
-                        <XIcon /> Reject
-                      </button>
-                    </div>
-                  </div>
-                )
-              }
+                          onChange={setFinalApprovalPayPeriod}
+                          options={finalApprovalPayPeriodOptions}
+                          previewLabel={selectedFinalPayPeriodPreview ?? undefined}
+                        />
+                      ) : undefined
+                    }
+                    comment={actionComment}
+                    onCommentChange={setActionComment}
+                    onApprove={() => handleAction(selectedLoan._id, 'approve')}
+                    onReject={() => handleAction(selectedLoan._id, 'reject')}
+                    saving={saving}
+                    approveIcon={<CheckIcon />}
+                    rejectIcon={<XIcon />}
+                  />
+                )}
 
 
-            </div >
-          </div >
-        </div >
-      )
-      }
+            </LoanDetailDialogBody>
+          </>
+        )}
+      </LoanDetailDialog>
 
       {/* Disbursement Dialog */}
       {
         showDisbursementDialog && selectedLoan && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDisbursementDialog(false)} />
-            <div className="relative z-50 w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                    Release Funds
-                  </h2>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                    Transfer ₹{(selectedLoan.amount ?? 0).toLocaleString()} (approved principal) to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}.
+          <LoanDetailDialog open onClose={() => setShowDisbursementDialog(false)} maxWidth="max-w-md">
+            <LoanDetailDialogHeader
+              badge="Disbursement"
+              title="Release funds"
+              subtitle={`Transfer ₹${(selectedLoan.amount ?? 0).toLocaleString()} (approved principal) to ${selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}.`}
+              onClose={() => setShowDisbursementDialog(false)}
+            />
+            <LoanDetailDialogBody>
+              {selectedLoan.requestType === 'loan' &&
+                selectedLoan.loanConfig?.totalAmount != null &&
+                Number(selectedLoan.loanConfig.totalAmount) !== Number(selectedLoan.amount) && (
+                  <p className="text-xs text-stone-500 dark:text-stone-400">
+                    Total to be recovered (principal + interest): ₹
+                    {Number(selectedLoan.loanConfig.totalAmount).toLocaleString()}
                   </p>
-                  {selectedLoan.requestType === 'loan' &&
-                    selectedLoan.loanConfig?.totalAmount != null &&
-                    Number(selectedLoan.loanConfig.totalAmount) !== Number(selectedLoan.amount) && (
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      Total to be recovered (principal + interest): ₹{Number(selectedLoan.loanConfig.totalAmount).toLocaleString()}
-                    </p>
-                  )}
-                </div>
-                <button
-                  onClick={() => setShowDisbursementDialog(false)}
-                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                >
-                  <XIcon />
-                </button>
-              </div>
-
+                )}
               <form onSubmit={handleDisburse} className="space-y-4">
                 {needsDisbursementPayPeriod && (
-                  <div className="p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-800/50 space-y-2">
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      First deduction pay period *
-                    </label>
-                    <p className="text-xs text-amber-800 dark:text-amber-200/90">
+                  <LoanFormPanel soft className="space-y-2">
+                    <LoanFormLabel>First deduction pay period *</LoanFormLabel>
+                    <p className="text-xs text-stone-600 dark:text-stone-400">
                       This record was approved before EMI scheduling was added. Choose when payroll should start deducting.
                     </p>
                     <select
                       required
                       value={disbursementPayPeriod}
                       onChange={(e) => setDisbursementPayPeriod(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm dark:bg-slate-800 dark:text-white"
+                      className={loansFormSelectClass()}
+                      style={loansFormInputStyle()}
                     >
                       {disbursementPayPeriodOptions.map((opt) => (
                         <option key={opt.value} value={opt.value}>
@@ -2939,21 +2501,20 @@ export default function LoansPage() {
                         </option>
                       ))}
                     </select>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                    <p className="text-xs text-stone-500 dark:text-stone-400">
                       Next payment due = end of selected period
                       {selectedDisbursementPayPeriodPreview ? ` (${selectedDisbursementPayPeriodPreview})` : ''}.
                     </p>
-                  </div>
+                  </LoanFormPanel>
                 )}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Disbursement Method *
-                  </label>
+                  <LoanFormLabel>Disbursement method *</LoanFormLabel>
                   <select
                     required
                     value={disbursementData.disbursementMethod}
                     onChange={(e) => setDisbursementData({ ...disbursementData, disbursementMethod: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className={loansFormSelectClass()}
+                    style={loansFormInputStyle()}
                   >
                     <option value="bank_transfer">Bank Transfer</option>
                     <option value="cash">Cash</option>
@@ -2963,71 +2524,51 @@ export default function LoansPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Transaction Reference
-                  </label>
+                  <LoanFormLabel>Transaction reference</LoanFormLabel>
                   <input
                     type="text"
                     value={disbursementData.transactionReference}
                     onChange={(e) => setDisbursementData({ ...disbursementData, transactionReference: e.target.value })}
                     placeholder="e.g., TXN123456789"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className={loansFormInputClass()}
+                    style={loansFormInputStyle()}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Remarks
-                  </label>
+                  <LoanFormLabel>Remarks</LoanFormLabel>
                   <textarea
                     value={disbursementData.remarks}
                     onChange={(e) => setDisbursementData({ ...disbursementData, remarks: e.target.value })}
                     placeholder="Add any remarks for this disbursement..."
                     rows={3}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white resize-none"
+                    className={loansFormTextareaClass()}
+                    style={loansFormInputStyle()}
                   />
                 </div>
 
                 {message && (
-                  <div className={`rounded-lg px-4 py-2 text-sm ${message.type === 'success'
-                    ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
-                    : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
-                    }`}>
+                  <div
+                    className={`border px-4 py-2 text-sm ${
+                      message.type === 'success'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300'
+                        : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300'
+                    }`}
+                  >
                     {message.text}
                   </div>
                 )}
 
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowDisbursementDialog(false)}
-                    className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {saving ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                        Release Funds
-                      </>
-                    )}
-                  </button>
-                </div>
+                <LoanDialogFooter
+                  onCancel={() => setShowDisbursementDialog(false)}
+                  submitLabel="Release funds"
+                  loading={saving}
+                  submitDisabled={saving}
+                  variant="success"
+                />
               </form>
-            </div>
-          </div>
+            </LoanDetailDialogBody>
+          </LoanDetailDialog>
         )
       }
 
@@ -3051,30 +2592,19 @@ export default function LoansPage() {
       {/* Early Settlement Confirmation Dialog */}
       {
         showSettlementDialog && selectedLoan && settlementPreview && settlementPreview.current && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowSettlementDialog(false)} />
-            <div className="relative z-50 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                    Confirm Early Settlement
-                  </h2>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                    Pay full amount and save on interest
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowSettlementDialog(false)}
-                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                >
-                  <XIcon />
-                </button>
-              </div>
-
+          <LoanDetailDialog open onClose={() => setShowSettlementDialog(false)} maxWidth="max-w-lg">
+            <LoanDetailDialogHeader
+              badge="Settlement"
+              title="Confirm early settlement"
+              subtitle="Pay full amount and save on interest"
+              onClose={() => setShowSettlementDialog(false)}
+            />
+            <LoanDetailDialogBody>
               <div className="space-y-4">
-                {/* Settlement Breakdown */}
-                <div className="p-4 rounded-xl border-2 border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20">
-                  <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 mb-3">Settlement Breakdown</h3>
+                <LoanFormPanel highlight>
+                  <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--ps-accent-ink)' }}>
+                    Settlement breakdown
+                  </h3>
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-slate-600 dark:text-slate-400">Remaining Principal:</span>
@@ -3084,33 +2614,28 @@ export default function LoansPage() {
                       <span className="text-sm text-slate-600 dark:text-slate-400">Interest (for {settlementPreview.current.actualMonthsUsed} months):</span>
                       <span className="text-sm font-semibold text-slate-900 dark:text-white">₹{settlementPreview.current.settlementInterest.toLocaleString()}</span>
                     </div>
-                    <div className="pt-2 border-t border-green-200 dark:border-green-700">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-base font-semibold text-green-700 dark:text-green-300">Total Settlement Amount:</span>
-                        <span className="text-xl font-bold text-green-700 dark:text-green-300">₹{settlementPreview.current.settlementAmount.toLocaleString()}</span>
+                    <div className="border-t pt-2" style={{ borderColor: 'var(--ps-accent-border)' }}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-base font-semibold" style={{ color: 'var(--ps-accent-ink)' }}>
+                          Total settlement amount
+                        </span>
+                        <span className="text-xl font-bold" style={{ color: 'var(--ps-accent)' }}>
+                          ₹{settlementPreview.current.settlementAmount.toLocaleString()}
+                        </span>
                       </div>
                     </div>
                   </div>
-                </div>
+                </LoanFormPanel>
 
-                {/* Savings Highlight */}
-                <div className="p-4 rounded-xl border border-green-200 bg-gradient-to-r from-green-50 to-green-50 dark:from-green-900/30 dark:to-green-900/30 dark:border-green-700">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center">
-                      <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">You will save</p>
-                      <p className="text-2xl font-bold text-green-600 dark:text-green-400">₹{settlementPreview.current.interestSavings.toLocaleString()}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-500">in interest by paying early</p>
-                    </div>
-                  </div>
-                </div>
+                <LoanFormPanel soft>
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-500">Interest savings</p>
+                  <p className="font-mono text-2xl font-bold tabular-nums" style={{ color: 'var(--ps-accent)' }}>
+                    ₹{settlementPreview.current.interestSavings.toLocaleString()}
+                  </p>
+                  <p className="mt-1 text-xs text-stone-500">Saved by paying early</p>
+                </LoanFormPanel>
 
-                {/* Loan Details */}
-                <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                <LoanFormPanel soft>
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div>
                       <p className="text-slate-500 dark:text-slate-400 mb-1">Original Duration:</p>
@@ -3129,88 +2654,45 @@ export default function LoansPage() {
                       <p className="font-semibold text-slate-900 dark:text-white">{settlementPreview.current.remainingMonths} months</p>
                     </div>
                   </div>
-                </div>
+                </LoanFormPanel>
 
-                {/* Action Buttons */}
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowSettlementDialog(false)}
-                    className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleEarlySettlement}
-                    disabled={saving}
-                    className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-green-600 rounded-xl hover:from-green-700 hover:to-green-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {saving ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                        Confirm Settlement
-                      </>
-                    )}
-                  </button>
-                </div>
+                <LoanDialogFooter
+                  onCancel={() => setShowSettlementDialog(false)}
+                  submitLabel="Confirm settlement"
+                  submitType="button"
+                  onSubmit={handleEarlySettlement}
+                  loading={saving}
+                  submitDisabled={saving}
+                  variant="success"
+                />
               </div>
-            </div>
-          </div>
+            </LoanDetailDialogBody>
+          </LoanDetailDialog>
         )
       }
 
       {/* Apply Dialog */}
       {
         showApplyDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApplyDialog(false)} />
-            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-              {/* Type Toggle */}
-              <div className="flex gap-2 mb-6">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setApplyType('loan');
-                    setInterestCalculation(null);
-                  }}
-                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'loan'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                    }`}
-                >
-                  <span className="flex items-center justify-center gap-2">
-                    <LoanIcon />
-                    Loan
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setApplyType('salary_advance');
-                    setInterestCalculation(null);
-                  }}
-                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'salary_advance'
-                    ? 'bg-purple-500 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                    }`}
-                >
-                  <span className="flex items-center justify-center gap-2">
-                    <AdvanceIcon />
-                    Salary Advance
-                  </span>
-                </button>
-              </div>
-
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
-                Apply for {applyType === 'loan' ? 'Loan' : 'Salary Advance'}
-              </h2>
+          <LoanDetailDialog open onClose={() => setShowApplyDialog(false)} maxWidth="max-w-lg">
+            <LoanDetailDialogHeader
+              badge="New request"
+              title={`Apply for ${applyType === 'loan' ? 'Loan' : 'Salary Advance'}`}
+              subtitle="Submit a request for approval and disbursement"
+              onClose={() => setShowApplyDialog(false)}
+            />
+            <LoanDetailDialogBody>
+              <LoanDialogTypeToggle
+                value={applyType}
+                onChange={(next) => {
+                  setApplyType(next);
+                  setInterestCalculation(null);
+                }}
+                options={[
+                  { value: 'loan', label: 'Loan', icon: <LoanIcon /> },
+                  { value: 'salary_advance', label: 'Salary Advance', icon: <AdvanceIcon /> },
+                ]}
+              />
 
               <form onSubmit={handleApply} className="space-y-4">
                 {/* Employee Selection */}
@@ -3611,29 +3093,15 @@ export default function LoansPage() {
                   />
                 </div>
 
-                {/* Buttons */}
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowApplyDialog(false)}
-                    className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl transition-all disabled:opacity-50 ${applyType === 'loan'
-                      ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
-                      : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
-                      }`}
-                  >
-                    {saving ? 'Submitting...' : `Apply ${applyType === 'loan' ? 'Loan' : 'Salary Advance'}`}
-                  </button>
-                </div>
+                <LoanDialogFooter
+                  onCancel={() => setShowApplyDialog(false)}
+                  submitLabel={`Apply ${applyType === 'loan' ? 'loan' : 'salary advance'}`}
+                  loading={saving}
+                  submitDisabled={saving}
+                />
               </form>
-            </div>
-          </div>
+            </LoanDetailDialogBody>
+          </LoanDetailDialog>
         )
       }
 
@@ -3650,7 +3118,7 @@ export default function LoansPage() {
         pauseOnHover
         theme="light"
       />
-    </div >
+    </LoansPageShell>
   );
 }
 

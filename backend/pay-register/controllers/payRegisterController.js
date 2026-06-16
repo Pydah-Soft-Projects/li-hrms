@@ -16,7 +16,7 @@ const {
 } = require('../services/totalsCalculationService');
 const { updateDailyRecord } = require('../services/dailyRecordUpdateService');
 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
-const { manualSyncPayRegister } = require('../services/autoSyncService');
+const { manualSyncPayRegister, bulkManualSyncPayRegister } = require('../services/autoSyncService');
 const { processSummaryBulkUpload } = require('../services/summaryUploadService');
 const {
   applyContributingDatesFromMonthlySummary,
@@ -564,8 +564,23 @@ exports.syncPayRegister = async (req, res) => {
     if (!(await ensureEmployeeInScope(req, res, employeeId))) return;
     await assertEmployeeMonthEditable(employeeId, month, employeeId);
     const force = req.body && req.body.force === true;
+    const minimal = req.body && req.body.minimal === true;
+    const payRegister = await manualSyncPayRegister(employeeId, month, {
+      force,
+    });
 
-    const payRegister = await manualSyncPayRegister(employeeId, month, { force });
+    if (minimal) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          _id: payRegister._id,
+          employeeId: payRegister.employeeId,
+          emp_no: payRegister.emp_no,
+          month: payRegister.month,
+        },
+        message: 'Pay register synced successfully',
+      });
+    }
 
     await payRegister.populate([
       { path: 'employeeId', select: 'employee_name emp_no department_id designation_id' },
@@ -721,14 +736,9 @@ exports.getLockedSummaryEmployees = async (req, res) => {
       })
       .lean();
 
-    let divFilter = null;
-    if (divisionId && mongoose.Types.ObjectId.isValid(String(divisionId))) {
-      divFilter = new mongoose.Types.ObjectId(String(divisionId));
-    }
-    let deptFilter = null;
-    if (departmentId && mongoose.Types.ObjectId.isValid(String(departmentId))) {
-      deptFilter = new mongoose.Types.ObjectId(String(departmentId));
-    }
+    const { parseQueryIdList } = require('../services/payRegisterEmployeeFilter');
+    const divFilters = parseQueryIdList(divisionId);
+    const deptFilters = parseQueryIdList(departmentId);
     let groupFilter = null;
     if (employeeGroupId && mongoose.Types.ObjectId.isValid(String(employeeGroupId))) {
       groupFilter = new mongoose.Types.ObjectId(String(employeeGroupId));
@@ -745,13 +755,13 @@ exports.getLockedSummaryEmployees = async (req, res) => {
       const emp = d.employeeId;
       if (!emp || typeof emp !== 'object') continue;
 
-      if (divFilter) {
+      if (divFilters.length) {
         const divIdVal = refId(emp.division_id);
-        if (!divIdVal || divIdVal !== String(divFilter)) continue;
+        if (!divIdVal || !divFilters.some((id) => String(id) === divIdVal)) continue;
       }
-      if (deptFilter) {
+      if (deptFilters.length) {
         const deptIdVal = refId(emp.department_id);
-        if (!deptIdVal || deptIdVal !== String(deptFilter)) continue;
+        if (!deptIdVal || !deptFilters.some((id) => String(id) === deptIdVal)) continue;
       }
       if (groupFilter) {
         const groupIdVal = refId(emp.employee_group_id);
@@ -842,21 +852,73 @@ exports.getEditHistory = async (req, res) => {
 // @desc    Get all employees with pay registers for a month
 // @route   GET /api/pay-register/employees/:month
 // @access  Private (exclude employee)
+const PAY_REGISTER_LIST_FIELDS =
+  'employeeId emp_no month status totals lastEditedAt startDate endDate totalDaysInMonth summaryLocked summaryLockedAt totalAttendanceDeductionDays attendanceDeductionBreakdown attendanceDeductionCalculatedAt totalPermissionHours totalPermissionCount totalPermissionDeductionDays totalPermissionDeductionAmount permissionDeductionBreakdown';
+
+const buildStubPayRegisterRow = (employee, month, startDate, endDate, totalDays, payrollId) => ({
+  _id: `stub_${employee._id}`,
+  employeeId: employee,
+  emp_no: employee.emp_no,
+  month,
+  status: 'draft',
+  totals: {
+    presentDays: 0,
+    presentHalfDays: 0,
+    totalPresentDays: 0,
+    absentDays: 0,
+    absentHalfDays: 0,
+    totalAbsentDays: 0,
+    paidLeaveDays: 0,
+    paidLeaveHalfDays: 0,
+    totalPaidLeaveDays: 0,
+    unpaidLeaveDays: 0,
+    unpaidLeaveHalfDays: 0,
+    totalUnpaidLeaveDays: 0,
+    lopDays: 0,
+    lopHalfDays: 0,
+    totalLopDays: 0,
+    totalLeaveDays: 0,
+    odDays: 0,
+    odHalfDays: 0,
+    totalODDays: 0,
+    totalOTHours: 0,
+    totalPayableShifts: 0,
+  },
+  dailyRecords: [],
+  lastEditedAt: null,
+  payrollId: payrollId || null,
+  isStub: true,
+  startDate,
+  endDate,
+  totalDaysInMonth: totalDays,
+  summaryLocked: false,
+  summaryLockedAt: null,
+  totalAttendanceDeductionDays: 0,
+  attendanceDeductionBreakdown: null,
+  attendanceDeductionCalculatedAt: null,
+  totalPermissionHours: 0,
+  totalPermissionCount: 0,
+  totalPermissionDeductionDays: 0,
+  totalPermissionDeductionAmount: 0,
+  permissionDeductionBreakdown: null,
+});
+
 exports.getEmployeesWithPayRegister = async (req, res) => {
   try {
     const { month } = req.params;
-    const { departmentId, divisionId, employeeGroupId, status, page, limit, search } = req.query;
-
-    console.log('[Pay Register Controller] getEmployeesWithPayRegister called:', {
-      month,
+    const {
       departmentId,
       divisionId,
       employeeGroupId,
       status,
-      search: search ? '(set)' : undefined,
-    });
+      page,
+      limit,
+      search,
+      includeDailyRecords,
+    } = req.query;
 
-    // Validate month format
+    const withDailyRecords = includeDailyRecords !== 'false';
+
     if (!/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
         success: false,
@@ -864,20 +926,16 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       });
     }
 
-    const Employee = require('../../employees/model/Employee');
     const PayrollRecord = require('../../payroll/model/PayrollRecord');
 
-    // Parse month
     const [year, monthNum] = month.split('-').map(Number);
-    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
     const { startDate, endDate, totalDays } = await getPayrollDateRange(year, monthNum);
 
     const pageNum = parseInt(page, 10) || 1;
     const limitRaw = limit !== undefined && limit !== '' ? parseInt(limit, 10) : NaN;
-    const limitNum = Number.isFinite(limitRaw) ? limitRaw : 50; // Default limit 50; use -1 for all
+    const limitNum = Number.isFinite(limitRaw) ? limitRaw : 50;
     const skip = limitNum === -1 ? 0 : (pageNum - 1) * limitNum;
 
-    // Use UTC boundaries so "left in period" matches payroll calculation (excludes e.g. 25 Dec when period is 26 Dec–25 Jan).
     const rangeStart = new Date(startDate + 'T00:00:00.000Z');
     const rangeEnd = new Date(endDate + 'T23:59:59.999Z');
 
@@ -889,28 +947,30 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       scopeFilter: req.scopeFilter,
     });
 
-    // 1. Bulk Fetch Employees
-    const totalEmployees = await Employee.countDocuments(employeeQuery);
-
-    let employeeFetch = Employee.find(employeeQuery)
+    let employeeQueryExec = Employee.find(employeeQuery)
       .select('_id employee_name emp_no department_id designation_id leftDate leftReason')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
       .sort(EMP_NO_SORT)
-      .collation(EMP_NO_COLLATION);
+      .collation(EMP_NO_COLLATION)
+      .lean();
 
-    // Bypass pagination if limit is -1
     if (limitNum !== -1) {
-      employeeFetch = employeeFetch.skip(skip).limit(limitNum);
+      employeeQueryExec = employeeQueryExec.skip(skip).limit(limitNum);
     }
 
-    const employees = await employeeFetch;
+    const [totalEmployees, employees] = await Promise.all([
+      Employee.countDocuments(employeeQuery),
+      employeeQueryExec,
+    ]);
 
     if (employees.length === 0) {
       return res.status(200).json({
         success: true,
         count: 0,
         data: [],
+        startDate,
+        endDate,
         pagination: {
           page: pageNum,
           limit: limitNum === -1 ? totalEmployees : limitNum,
@@ -920,41 +980,38 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       });
     }
 
-    const employeeIds = employees.map(e => e._id);
+    const employeeIds = employees.map((e) => e._id);
+    const employeeById = new Map(employees.map((e) => [e._id.toString(), e]));
 
-    // 2. Bulk Fetch Existing Pay Registers (Include dailyRecords); include leftDate/leftReason so frontend can show "Left" employees
-    const payRegisters = await PayRegisterSummary.find({
-      employeeId: { $in: employeeIds },
-      month
-    })
-      .populate({
-        path: 'employeeId',
-        select: 'employee_name emp_no department_id designation_id leftDate leftReason',
-        populate: [
-          { path: 'department_id', select: 'name' },
-          { path: 'designation_id', select: 'name' },
-        ],
+    const payRegisterSelect = withDailyRecords
+      ? `${PAY_REGISTER_LIST_FIELDS} dailyRecords`
+      : PAY_REGISTER_LIST_FIELDS;
+
+    const [payRegisters, payrollRecords] = await Promise.all([
+      PayRegisterSummary.find({
+        employeeId: { $in: employeeIds },
+        month,
       })
-      .select('employeeId emp_no month status totals lastEditedAt dailyRecords startDate endDate totalDaysInMonth summaryLocked summaryLockedAt totalAttendanceDeductionDays attendanceDeductionBreakdown attendanceDeductionCalculatedAt totalPermissionHours totalPermissionCount totalPermissionDeductionDays totalPermissionDeductionAmount permissionDeductionBreakdown');
+        .select(payRegisterSelect)
+        .lean(),
+      PayrollRecord.find({
+        employeeId: { $in: employeeIds },
+        month,
+      })
+        .select('employeeId _id')
+        .lean(),
+    ]);
 
-    // Map for O(1) Access
     const prMap = new Map();
-    payRegisters.forEach(pr => {
-      const eId = pr.employeeId._id ? pr.employeeId._id.toString() : pr.employeeId.toString();
-      prMap.set(eId, pr);
+    payRegisters.forEach((pr) => {
+      const eId = pr.employeeId ? pr.employeeId.toString() : '';
+      if (eId) prMap.set(eId, pr);
     });
 
-    // 3. Bulk Fetch Payroll Records (Context)
-    const payrollRecords = await PayrollRecord.find({
-      employeeId: { $in: employeeIds },
-      month
-    }).select('employeeId _id');
-
     const payrollMap = new Map();
-    payrollRecords.forEach(pr => payrollMap.set(pr.employeeId.toString(), pr._id));
+    payrollRecords.forEach((pr) => payrollMap.set(pr.employeeId.toString(), pr._id));
 
-    // 4. Construct Response (Merge & Stub)
-    const results = employees.map(employee => {
+    const results = employees.map((employee) => {
       const eId = employee._id.toString();
       const existingPR = prMap.get(eId);
       const payrollId = payrollMap.get(eId);
@@ -967,7 +1024,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
           month: existingPR.month,
           status: existingPR.status,
           totals: existingPR.totals,
-          dailyRecords: existingPR.dailyRecords || [],
+          dailyRecords: withDailyRecords ? (existingPR.dailyRecords || []) : [],
           lastEditedAt: existingPR.lastEditedAt,
           payrollId: payrollId || null,
           startDate: existingPR.startDate || startDate,
@@ -984,60 +1041,12 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
           totalPermissionDeductionAmount: existingPR.totalPermissionDeductionAmount ?? 0,
           permissionDeductionBreakdown: existingPR.permissionDeductionBreakdown ?? null,
         };
-      } else {
-        // Return In-Memory Stub (Fast!)
-        return {
-          _id: `stub_${eId}`,
-          employeeId: employee, // Full populated employee doc
-          emp_no: employee.emp_no,
-          month,
-          status: 'draft',
-          totals: {
-            presentDays: 0,
-            presentHalfDays: 0,
-            totalPresentDays: 0,
-            absentDays: 0,
-            absentHalfDays: 0,
-            totalAbsentDays: 0,
-            paidLeaveDays: 0,
-            paidLeaveHalfDays: 0,
-            totalPaidLeaveDays: 0,
-            unpaidLeaveDays: 0,
-            unpaidLeaveHalfDays: 0,
-            totalUnpaidLeaveDays: 0,
-            lopDays: 0,
-            lopHalfDays: 0,
-            totalLopDays: 0,
-            totalLeaveDays: 0,
-            odDays: 0,
-            odHalfDays: 0,
-            totalODDays: 0,
-            totalOTHours: 0,
-            totalPayableShifts: 0
-          },
-          dailyRecords: [], // Empty for stubs
-          lastEditedAt: null,
-          payrollId: payrollId || null,
-          isStub: true,
-          startDate,
-          endDate,
-          totalDaysInMonth: totalDays,
-          summaryLocked: false,
-          summaryLockedAt: null,
-          totalAttendanceDeductionDays: 0,
-          attendanceDeductionBreakdown: null,
-          attendanceDeductionCalculatedAt: null,
-          totalPermissionHours: 0,
-          totalPermissionCount: 0,
-          totalPermissionDeductionDays: 0,
-          totalPermissionDeductionAmount: 0,
-          permissionDeductionBreakdown: null,
-        };
       }
+
+      return buildStubPayRegisterRow(employee, month, startDate, endDate, totalDays, payrollId);
     });
 
-    // Filter by status if requested (Note: Status filtering across pages is tricky without aggregation, doing post-filter for now but pagination applies to employees mainly)
-    const finalResults = status ? results.filter(r => r.status === status) : results;
+    const finalResults = status ? results.filter((r) => r.status === status) : results;
 
     res.status(200).json({
       success: true,
@@ -1045,6 +1054,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       data: finalResults,
       startDate,
       endDate,
+      includeDailyRecords: withDailyRecords,
       pagination: {
         page: pageNum,
         limit: limitNum === -1 ? totalEmployees : limitNum,
@@ -1052,12 +1062,110 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
         totalPages: limitNum === -1 ? 1 : Math.max(1, Math.ceil(totalEmployees / limitNum)),
       },
     });
-
   } catch (error) {
     console.error('[Pay Register Controller] Error getting employees with pay register:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to get employees with pay register',
+    });
+  }
+};
+
+// @desc    Bulk sync pay registers for a month (parallel per-employee rebuild from MongoDB sources)
+// @route   POST /api/pay-register/bulk-sync/:month
+// @access  Private (exclude employee)
+exports.bulkSyncPayRegister = async (req, res) => {
+  try {
+    const { month } = req.params;
+    const {
+      departmentId,
+      divisionId,
+      employeeGroupId,
+      search,
+      forceEmployeeIds,
+      concurrency,
+      employeeIds,
+      streamProgress,
+    } = req.body || {};
+
+    const useStream = Boolean(streamProgress);
+
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ success: false, error: 'Month must be in YYYY-MM format' });
+    }
+
+    const [year, monthNum] = month.split('-').map(Number);
+    const { startDate, endDate } = await getPayrollDateRange(year, monthNum);
+    const rangeStart = new Date(startDate + 'T00:00:00.000Z');
+    const rangeEnd = new Date(endDate + 'T23:59:59.999Z');
+
+    const deptRaw = departmentId
+      || (Array.isArray(req.body?.departmentIds) ? req.body.departmentIds.join(',') : undefined);
+    const divRaw = divisionId
+      || (Array.isArray(req.body?.divisionIds) ? req.body.divisionIds.join(',') : undefined);
+
+    const employeeQuery = await buildPayRegisterEmployeeFilter(rangeStart, rangeEnd, {
+      departmentId: deptRaw,
+      divisionId: divRaw,
+      employeeGroupId,
+      search,
+      scopeFilter: req.scopeFilter,
+    });
+
+    const writeProgress = (payload) => {
+      if (!useStream) return;
+      res.write(`${JSON.stringify(payload)}\n`);
+      if (typeof res.flush === 'function') {
+        res.flush();
+      }
+    };
+
+    if (useStream) {
+      res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.status(200);
+      if (typeof res.flushHeaders === 'function') {
+        res.flushHeaders();
+      }
+      writeProgress({ phase: 'prepare', completed: 0, total: 0 });
+    }
+
+    const data = await bulkManualSyncPayRegister(month, {
+      employeeQuery: employeeIds?.length ? null : employeeQuery,
+      employeeIds: employeeIds?.length ? employeeIds : undefined,
+      forceEmployeeIds: forceEmployeeIds || [],
+      concurrency: concurrency || 20,
+      onProgress: (p) => writeProgress(p),
+    });
+
+    const message = `Bulk sync complete: ${data.synced} synced, ${data.skippedLocked} locked skipped, ${data.failed.length} failed`;
+
+    if (useStream) {
+      writeProgress({ phase: 'done', success: true, data, message });
+      res.end();
+    } else {
+      res.status(200).json({
+        success: true,
+        data,
+        message,
+      });
+    }
+  } catch (error) {
+    console.error('[Pay Register] bulk sync error:', error);
+    if (req.body?.streamProgress && res.headersSent) {
+      res.write(`${JSON.stringify({
+        phase: 'error',
+        success: false,
+        message: error.message || 'Bulk sync failed',
+      })}\n`);
+      res.end();
+      return;
+    }
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Bulk sync failed',
     });
   }
 };

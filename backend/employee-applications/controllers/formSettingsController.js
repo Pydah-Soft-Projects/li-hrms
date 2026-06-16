@@ -112,25 +112,28 @@ exports.getSettings = async (req, res) => {
       contactInfoGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
     }
 
-    // Ensure Salary Mode is present in bank_details for existing settings
+    // Ensure bank_details has salary mode + optional PF/ESI fields for existing settings
     const bankDetailsGroup = settingsObj.groups.find((g) => g.id === 'bank_details');
-    if (bankDetailsGroup && !bankDetailsGroup.fields.some((f) => f.id === 'salary_mode')) {
-      const salaryModeField = {
-        id: 'salary_mode',
-        label: 'Salary Mode',
-        type: 'select',
-        dataType: 'string',
-        isRequired: true,
-        isSystem: true,
-        defaultValue: 'Bank',
-        options: [
-          { label: 'Bank', value: 'Bank' },
-          { label: 'Cash', value: 'Cash' },
-        ],
-        order: 5,
-        isEnabled: true,
-      };
-      bankDetailsGroup.fields.push(salaryModeField);
+    if (bankDetailsGroup) {
+      if (!bankDetailsGroup.fields.some((f) => f.id === 'salary_mode')) {
+        const salaryModeField = {
+          id: 'salary_mode',
+          label: 'Salary Mode',
+          type: 'select',
+          dataType: 'string',
+          isRequired: true,
+          isSystem: true,
+          defaultValue: 'Bank',
+          options: [
+            { label: 'Bank', value: 'Bank' },
+            { label: 'Cash', value: 'Cash' },
+          ],
+          order: 7,
+          isEnabled: true,
+        };
+        bankDetailsGroup.fields.push(salaryModeField);
+      }
+      EmployeeApplicationFormSettings.ensureBankDetailsPfEsiFields(settingsObj.groups);
       bankDetailsGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
     }
 

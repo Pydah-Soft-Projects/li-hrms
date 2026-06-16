@@ -304,6 +304,8 @@ export interface PayrollConfigStep {
   config?: Record<string, unknown>;
 }
 
+export type PayslipSectionType = 'none' | 'attendance' | 'earnings' | 'deductions';
+
 export interface PayrollOutputColumn {
   header: string;
   source: 'field' | 'formula';
@@ -313,6 +315,49 @@ export interface PayrollOutputColumn {
   /** Paysheet: allow modification requests for this column when global toggle is on. */
   paysheetEditable?: boolean;
   paysheetEditableFieldPath?: string;
+  /** Payslip layout section: attendance, earnings, or deductions. */
+  payslipSection?: PayslipSectionType;
+}
+
+export interface PayslipSectionItem {
+  header: string;
+  value: string | number;
+  order?: number;
+}
+
+export interface PayslipSections {
+  attendance: PayslipSectionItem[];
+  earnings: PayslipSectionItem[];
+  deductions: PayslipSectionItem[];
+  hasConfiguredSections: boolean;
+  totalEarnings?: number;
+  totalDeductions?: number;
+  netPayable?: number;
+}
+
+export interface PayslipLoanItem {
+  loanId?: string;
+  label: string;
+  balanceBefore: number;
+  emiDeducted: number;
+  balanceAfter: number;
+}
+
+export interface PayslipLoanDetail {
+  loanId?: string;
+  /** Loan reason (display label) */
+  label: string;
+  principalAmount?: number;
+  emiAmount: number;
+  takenDate?: string | null;
+}
+
+export interface PayslipLoans {
+  items: PayslipLoanItem[];
+  loanDetails?: PayslipLoanDetail[];
+  totalEmiDeducted: number;
+  totalBalanceAfter: number;
+  hasLoans: boolean;
 }
 
 export interface PaysheetEditableColumn {
@@ -428,8 +473,13 @@ export interface ApiResponse<T> {
   total?: number;
   page?: number;
   totalPages?: number;
+  hasMore?: boolean;
+  modifiedCount?: number;
   count?: number;
   stats?: any;
+  periodStats?: any;
+  personalStats?: any;
+  payPeriod?: any;
   // For backward compatibility with various response formats
   durations?: any[];
   warnings?: string[];
@@ -440,7 +490,6 @@ export interface ApiResponse<T> {
   qrSecret?: string;
   waitTime?: number;
   newPassword?: string;
-  syncError?: any;
   identifier?: string;
   generatedPassword?: string;
   summaries?: any[];
@@ -479,6 +528,18 @@ export interface ApiResponse<T> {
     endDate: string;
     lastDate: string;
     totalDays?: number;
+  };
+  /** GET /loans/:id includes PDF context for loan application form alongside `data`. */
+  applicationPdfContext?: {
+    previousAdvance?: {
+      amount: number;
+      drawnOnDate?: string;
+      requestType?: string;
+    } | null;
+    grossSalary?: number | null;
+    /** @deprecated use divisionName */
+    sectionName?: string | null;
+    divisionName?: string | null;
   };
   /** Payroll batch approve failure (400, code MISSING_PAYROLL) */
   missingEmployees?: {
@@ -582,6 +643,9 @@ export interface WorkspaceDashboardStats {
 
 export interface LoginResponse {
   token: string;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresIn?: number;
   user: {
     id: string;
     email: string;
@@ -602,15 +666,81 @@ export interface LoginResponse {
   activeWorkspace?: Workspace;
 }
 
+const AUTH_SKIP_REFRESH_PATHS = ['/auth/login', '/auth/sso-login', '/auth/refresh', '/auth/logout'];
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  if (refreshInFlight) {
+    return refreshInFlight;
+  }
+
+  refreshInFlight = (async () => {
+    const refreshToken = auth.getRefreshToken();
+    if (!refreshToken) return false;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data?.success || !data?.data?.accessToken) {
+        return false;
+      }
+
+      auth.setAuthSession(data.data.accessToken || data.data.token, data.data.refreshToken);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+
+  return refreshInFlight;
+}
+
+function shouldAttemptTokenRefresh(endpoint: string, code?: string): boolean {
+  if (!AUTH_SKIP_REFRESH_PATHS.some((path) => endpoint.includes(path))) {
+    return code === 'TOKEN_EXPIRED';
+  }
+  return false;
+}
+
+function handleAuthFailure(endpoint: string, code?: string) {
+  if (AUTH_SKIP_REFRESH_PATHS.some((path) => endpoint.includes(path))) {
+    return;
+  }
+
+  const reason =
+    code === 'SESSION_REPLACED'
+      ? 'SESSION_REPLACED'
+      : code === 'TOKEN_VERSION_MISMATCH'
+        ? 'TOKEN_VERSION_MISMATCH'
+        : 'SESSION_EXPIRED';
+
+  auth.clearLocalSession(reason);
+}
+
 export async function apiRequest<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  retryOnRefresh = true
 ): Promise<ApiResponse<T>> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
+
+  if (typeof window !== 'undefined') {
+    headers['X-Device-Id'] = auth.getDeviceId();
+  }
 
   // Merge existing headers if any
   if (options.headers) {
@@ -628,8 +758,6 @@ export async function apiRequest<T>(
 
   try {
     const url = `${API_BASE_URL}${endpoint}`;
-    // console.log(`[API Request] ${options.method || 'GET'} ${url}`, options.body instanceof FormData ? 'FormData' : (options.body ? JSON.parse(options.body as string) : ''));
-
 
     const response = await fetch(url, {
       ...options,
@@ -640,10 +768,22 @@ export async function apiRequest<T>(
     console.log(`[API Response] ${response.status} ${url}`, data);
 
     if (!response.ok) {
-      // Handle unauthorized (expired token)
+      const errorCode = typeof data === 'object' && data !== null ? (data as { code?: string }).code : undefined;
+
+      if (
+        response.status === 401 &&
+        retryOnRefresh &&
+        shouldAttemptTokenRefresh(endpoint, errorCode)
+      ) {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) {
+          return apiRequest<T>(endpoint, options, false);
+        }
+      }
+
       if (response.status === 401 && !endpoint.includes('/auth/login')) {
-        console.warn(`[API 401] Unauthorized access to ${endpoint}. Triggering logout.`);
-        auth.logout();
+        console.warn(`[API 401] Unauthorized access to ${endpoint}.`, errorCode);
+        handleAuthFailure(endpoint, errorCode);
       }
 
       return {
@@ -652,7 +792,7 @@ export async function apiRequest<T>(
         statusCode: response.status,
         message: (typeof data === 'object' && data !== null && data.message) || 'An error occurred',
         error: (typeof data === 'object' && data !== null && (data.error || data.message)) || `HTTP ${response.status}`,
-        code: typeof data === 'object' && data !== null ? (data as any).code : undefined,
+        code: errorCode,
         reason: typeof data === 'object' && data !== null ? (data as any).reason : undefined,
         data: typeof data === 'object' && data !== null ? (data as any).data : undefined,
       };
@@ -1169,6 +1309,29 @@ export interface HolidayHistoryRow {
   timestamp: string;
 }
 
+export type PayRegisterBulkSyncProgressCallback = (event: {
+  phase: 'prepare' | 'sync' | 'done' | 'error';
+  completed?: number;
+  total?: number;
+  synced?: number;
+  skippedLocked?: number;
+  skippedPayrollCompleted?: number;
+  failedCount?: number;
+  success?: boolean;
+  message?: string;
+  data?: {
+    month: string;
+    total: number;
+    synced: number;
+    skippedLocked: number;
+    skippedPayrollCompleted: number;
+    failed: Array<{ employeeId: string; error: string }>;
+    perEmployeeMs: number;
+    durationMs: number;
+    avgMsPerEmployee: number;
+  };
+}) => void;
+
 export type HolidaySaveProgressCallback = (event: {
   phase: 'saved' | 'cleanup' | 'apply' | 'done' | 'error';
   completed?: number;
@@ -1193,8 +1356,34 @@ export const api = {
   login: async (identifier: string, password: string) => {
     return apiRequest<LoginResponse>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ identifier, email: identifier, password }),
+      body: JSON.stringify({
+        identifier,
+        email: identifier,
+        password,
+        deviceId: auth.getDeviceId(),
+        deviceName: auth.getDeviceName(),
+      }),
     });
+  },
+
+  refreshToken: async () => {
+    const refreshToken = auth.getRefreshToken();
+    if (!refreshToken) {
+      return { success: false, message: 'No refresh token available' };
+    }
+    return apiRequest<{
+      token: string;
+      accessToken: string;
+      refreshToken: string;
+      expiresIn: number;
+    }>('/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+    });
+  },
+
+  logout: async () => {
+    return apiRequest<{ message: string }>('/auth/logout', { method: 'POST' });
   },
 
   forgotPassword: async (identifier: string) => {
@@ -1222,7 +1411,11 @@ export const api = {
   ssoLogin: async (encryptedToken: string) => {
     return apiRequest<LoginResponse>('/auth/sso-login', {
       method: 'POST',
-      body: JSON.stringify({ encryptedToken }),
+      body: JSON.stringify({
+        encryptedToken,
+        deviceId: auth.getDeviceId(),
+        deviceName: auth.getDeviceName(),
+      }),
     });
   },
 
@@ -1801,6 +1994,10 @@ export const api = {
     return apiRequest<EmployeeGroup>(`/employee-groups/${id}`, { method: 'GET' });
   },
 
+  getEmployeeGroupEmployees: async (id: string) => {
+    return apiRequest<any[]>(`/employee-groups/${id}/employees`, { method: 'GET' });
+  },
+
   createEmployeeGroup: async (data: Partial<EmployeeGroup>) => {
     return apiRequest<EmployeeGroup>('/employee-groups', {
       method: 'POST',
@@ -2074,6 +2271,13 @@ export const api = {
     });
   },
 
+  testFileStorage: async (config?: Record<string, unknown>) => {
+    return apiRequest<{ ok?: boolean; basePath?: string; bucket?: string }>('/settings/file-storage/test', {
+      method: 'POST',
+      body: JSON.stringify(config ? { config } : {}),
+    });
+  },
+
   // Permission Deduction Settings
   getPermissionDeductionSettings: async () => {
     return apiRequest<any>('/permissions/settings/deduction', { method: 'GET' });
@@ -2210,12 +2414,27 @@ export const api = {
   },
 
   getEmployees: async (
-    filters?: { is_active?: boolean; department_id?: string; division_id?: string; designation_id?: string; employee_group_id?: string; includeLeft?: boolean; search?: string; startDate?: string; endDate?: string; page?: number; limit?: number },
+    filters?: {
+      is_active?: boolean;
+      department_id?: string;
+      department_ids?: string;
+      division_id?: string;
+      designation_id?: string;
+      employee_group_id?: string;
+      includeLeft?: boolean;
+      search?: string;
+      startDate?: string;
+      endDate?: string;
+      page?: number;
+      limit?: number;
+      view?: 'full' | 'summary' | 'list';
+    },
     fetchInit?: RequestInit
   ) => {
     const params = new URLSearchParams();
     if (filters?.is_active !== undefined) params.append('is_active', String(filters.is_active));
     if (filters?.department_id) params.append('department_id', filters.department_id);
+    if (filters?.department_ids) params.append('department_ids', filters.department_ids);
     if (filters?.division_id) params.append('division_id', filters.division_id);
     if (filters?.designation_id) params.append('designation_id', filters.designation_id);
     if (filters?.employee_group_id) params.append('employee_group_id', filters.employee_group_id);
@@ -2224,14 +2443,76 @@ export const api = {
     if (filters?.startDate) params.append('startDate', filters.startDate);
     if (filters?.endDate) params.append('endDate', filters.endDate);
     if (filters?.page) params.append('page', String(filters.page));
-    if (filters?.limit) params.append('limit', String(filters.limit));
+    if (filters?.limit !== undefined) params.append('limit', String(filters.limit));
+    if (filters?.view) params.append('view', filters.view);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/employees${query}`, { method: 'GET', ...fetchInit });
+  },
+
+  /** Lean employee list for the employees grid (table columns only, fast). */
+  getEmployeesList: async (
+    filters?: {
+      is_active?: boolean;
+      department_id?: string;
+      department_ids?: string;
+      division_id?: string;
+      designation_id?: string;
+      employee_group_id?: string;
+      includeLeft?: boolean;
+      search?: string;
+      startDate?: string;
+      endDate?: string;
+      page?: number;
+      limit?: number;
+    },
+    fetchInit?: RequestInit
+  ) => {
+    return api.getEmployees({ ...filters, view: 'list' }, fetchInit);
+  },
+
+  /** Lean employee list for dropdowns and reports (minimal fields, fast). */
+  getEmployeesSummary: async (
+    filters?: {
+      is_active?: boolean;
+      department_id?: string;
+      department_ids?: string;
+      division_id?: string;
+      designation_id?: string;
+      employee_group_id?: string;
+      includeLeft?: boolean;
+      search?: string;
+      startDate?: string;
+      endDate?: string;
+      page?: number;
+      limit?: number;
+    },
+    fetchInit?: RequestInit
+  ) => {
+    const params = new URLSearchParams();
+    params.append('view', 'summary');
+    if (filters?.is_active !== undefined) params.append('is_active', String(filters.is_active));
+    if (filters?.department_id) params.append('department_id', filters.department_id);
+    if (filters?.department_ids) params.append('department_ids', filters.department_ids);
+    if (filters?.division_id) params.append('division_id', filters.division_id);
+    if (filters?.designation_id) params.append('designation_id', filters.designation_id);
+    if (filters?.employee_group_id) params.append('employee_group_id', filters.employee_group_id);
+    if (filters?.includeLeft !== undefined) params.append('includeLeft', String(filters.includeLeft));
+    if (filters?.search) params.append('search', filters.search);
+    if (filters?.startDate) params.append('startDate', filters.startDate);
+    if (filters?.endDate) params.append('endDate', filters.endDate);
+    if (filters?.page) params.append('page', String(filters.page));
+    if (filters?.limit !== undefined) params.append('limit', String(filters.limit));
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/employees${query}`, { method: 'GET', ...fetchInit });
   },
 
   /** Scoped lean payload for birthday calendar (DOB + org refs only). */
-  getBirthdaysSummary: async (fetchInit?: RequestInit) => {
-    return apiRequest<any>('/employees/birthdays-summary', { method: 'GET', ...fetchInit });
+  getBirthdaysSummary: async (options?: { today?: boolean; includeLeft?: boolean }, fetchInit?: RequestInit) => {
+    const params = new URLSearchParams();
+    if (options?.today) params.append('today', 'true');
+    if (options?.includeLeft !== undefined) params.append('includeLeft', String(options.includeLeft));
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/employees/birthdays-summary${query}`, { method: 'GET', ...fetchInit });
   },
 
   getEmployee: async (empNo: string) => {
@@ -3735,7 +4016,21 @@ export const api = {
     return apiRequest<any>(`/attendance/employees${q ? `?${q}` : ''}`, { method: 'GET' });
   },
 
-  getMonthlyAttendance: async (year: number, month: number, filters?: { page?: number; limit?: number; search?: string; divisionId?: string; departmentId?: string; designationId?: string; startDate?: string; endDate?: string }) => {
+  getMonthlyAttendance: async (
+    year: number,
+    month: number,
+    filters?: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      divisionId?: string;
+      departmentId?: string;
+      designationId?: string;
+      startDate?: string;
+      endDate?: string;
+      mode?: 'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot';
+    }
+  ) => {
     const params = new URLSearchParams();
     params.append('year', String(year));
     params.append('month', String(month));
@@ -3748,11 +4043,77 @@ export const api = {
     if (filters?.designationId) params.append('designationId', filters.designationId);
     if (filters?.startDate) params.append('startDate', filters.startDate);
     if (filters?.endDate) params.append('endDate', filters.endDate);
+    if (filters?.mode) params.append('mode', filters.mode);
 
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/attendance/monthly${query}`, {
       method: 'GET',
     });
+  },
+
+  getMonthlySummaryContributions: async (employeeId: string, year: number, month: number) => {
+    const params = new URLSearchParams({
+      employeeId,
+      year: String(year),
+      month: String(month),
+    });
+    return apiRequest<{ contributingDates: Record<string, unknown> | null; emp_no?: string; month?: string }>(
+      `/attendance/monthly/summary-detail?${params.toString()}`,
+      { method: 'GET' }
+    );
+  },
+
+  downloadMonthlyAttendanceExport: async (filters: {
+    year: number;
+    month: number;
+    search?: string;
+    divisionId?: string;
+    departmentId?: string;
+    designationId?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const params = new URLSearchParams();
+    params.append('year', String(filters.year));
+    params.append('month', String(filters.month));
+    if (filters.search) params.append('search', filters.search);
+    if (filters.divisionId) params.append('divisionId', filters.divisionId);
+    if (filters.departmentId) params.append('departmentId', filters.departmentId);
+    if (filters.designationId) params.append('designationId', filters.designationId);
+    if (filters.startDate) params.append('startDate', filters.startDate);
+    if (filters.endDate) params.append('endDate', filters.endDate);
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE_URL}/attendance/monthly/export?${params.toString()}`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!res.ok) {
+      let message = 'Failed to export attendance';
+      try {
+        const body = await res.json();
+        message = body.message || message;
+      } catch {
+        /* binary error body */
+      }
+      throw new Error(message);
+    }
+
+    const blob = await res.blob();
+    const monthStr = `${filters.year}-${String(filters.month).padStart(2, '0')}`;
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `attendance_${monthStr}.xlsx`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    return { success: true };
   },
 
   // Attendance Settings
@@ -3765,18 +4126,6 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     });
-  },
-
-  // Attendance Sync
-  manualSyncAttendance: async (fromDate?: string, toDate?: string) => {
-    return apiRequest<any>('/attendance/sync', {
-      method: 'POST',
-      body: JSON.stringify({ fromDate, toDate }),
-    });
-  },
-
-  getAttendanceSyncStatus: async () => {
-    return apiRequest<any>('/attendance/sync/status', { method: 'GET' });
   },
 
   // Attendance Upload
@@ -4374,15 +4723,59 @@ export const api = {
     return apiRequest<any>(`/payroll/payslip/${employeeId}/${month}`, { method: 'GET' });
   },
 
-  getPayrollRecords: async (params: { month?: string; employeeId?: string; departmentId?: string; divisionId?: string; status?: string }) => {
+  getPayrollRecords: async (params: {
+    month?: string;
+    employeeId?: string;
+    departmentId?: string;
+    divisionId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) => {
     const queryParams = new URLSearchParams();
     if (params.month) queryParams.append('month', params.month);
     if (params.employeeId) queryParams.append('employeeId', params.employeeId);
     if (params.departmentId) queryParams.append('departmentId', params.departmentId);
     if (params.divisionId) queryParams.append('divisionId', params.divisionId);
     if (params.status) queryParams.append('status', params.status);
+    if (params.page) queryParams.append('page', String(params.page));
+    if (params.limit) queryParams.append('limit', String(params.limit));
     const query = queryParams.toString();
-    return apiRequest<any>(`/payroll${query ? `?${query}` : ''}`, { method: 'GET' });
+    return apiRequest<{
+      success: boolean;
+      data?: unknown[];
+      count?: number;
+      total?: number;
+      hasMore?: boolean;
+      page?: number;
+      message?: string;
+    }>(`/payroll${query ? `?${query}` : ''}`, { method: 'GET' });
+  },
+
+  releasePayslips: async (body: {
+    month: string;
+    departmentId?: string;
+    divisionId?: string;
+    recordIds?: string[];
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      count?: number;
+      modifiedCount?: number;
+      message?: string;
+      stats?: {
+        total: number;
+        alreadyReleased: number;
+        pendingRelease: number;
+        batchNotReady: number;
+        noBatch: number;
+        notEligible: number;
+        newlyReleased?: number;
+      };
+    }>(
+      '/payroll/release',
+      { method: 'PUT', body: JSON.stringify(body) }
+    );
   },
 
   /** Paysheet table data: headers + rows from config output columns (same as Excel export). secondSalary=1 uses saved 2nd salary records (same columns as 2nd salary Excel export). */
@@ -4716,11 +5109,123 @@ export const api = {
     });
   },
 
-  syncPayRegister: async (employeeId: string, month: string, opts?: { force?: boolean }) => {
+  syncPayRegister: async (
+    employeeId: string,
+    month: string,
+    opts?: { force?: boolean; minimal?: boolean }
+  ) => {
+    const body: Record<string, boolean> = {};
+    if (opts?.force) body.force = true;
+    if (opts?.minimal) body.minimal = true;
     return apiRequest<any>(`/pay-register/${employeeId}/${month}/sync`, {
       method: 'POST',
-      body: JSON.stringify(opts?.force ? { force: true } : {}),
+      body: JSON.stringify(body),
     });
+  },
+
+  bulkSyncPayRegister: async (
+    month: string,
+    body?: {
+      divisionIds?: string[];
+      departmentIds?: string[];
+      employeeGroupId?: string;
+      search?: string;
+      forceEmployeeIds?: string[];
+      concurrency?: number;
+    }
+  ) => {
+    return api.bulkSyncPayRegisterWithProgress(month, body);
+  },
+
+  bulkSyncPayRegisterWithProgress: async (
+    month: string,
+    body?: {
+      divisionIds?: string[];
+      departmentIds?: string[];
+      employeeGroupId?: string;
+      search?: string;
+      forceEmployeeIds?: string[];
+      concurrency?: number;
+    },
+    onProgress?: PayRegisterBulkSyncProgressCallback
+  ) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/x-ndjson, application/json',
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const response = await fetch(`${API_BASE_URL}/pay-register/bulk-sync/${month}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ...(body || {}), streamProgress: true }),
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('ndjson')) {
+      const json = await response.json();
+      if (!response.ok) {
+        return {
+          ...(typeof json === 'object' && json !== null ? json : {}),
+          success: false,
+          statusCode: response.status,
+          message: json?.message || json?.error || 'Bulk sync failed',
+        };
+      }
+      return { success: true, ...json };
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return { success: false, message: 'Streaming not supported by browser' };
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalResult: ApiResponse<{
+      month: string;
+      total: number;
+      synced: number;
+      skippedLocked: number;
+      skippedPayrollCompleted: number;
+      failed: Array<{ employeeId: string; error: string }>;
+      perEmployeeMs: number;
+      durationMs: number;
+      avgMsPerEmployee: number;
+    }> = { success: false, message: 'No response' };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const event = JSON.parse(line);
+          onProgress?.(event);
+          if (event.phase === 'done' && event.success) {
+            finalResult = {
+              success: true,
+              data: event.data,
+              message: event.message,
+            };
+          }
+          if (event.phase === 'error' || event.success === false) {
+            finalResult = {
+              success: false,
+              message: event.message || 'Bulk sync failed',
+            };
+          }
+        } catch {
+          // ignore malformed line
+        }
+      }
+    }
+
+    return finalResult;
   },
 
   setPayRegisterSummaryLock: async (month: string, data: { employeeIds: string[]; locked: boolean }) => {
@@ -4733,12 +5238,25 @@ export const api = {
     );
   },
 
-  getPayRegisterLockedEmployees: async (month: string, departmentId?: string, divisionId?: string, search?: string, employeeGroupId?: string) => {
+  getPayRegisterLockedEmployees: async (
+    month: string,
+    filters?: {
+      departmentIds?: string[];
+      divisionIds?: string[];
+      search?: string;
+      employeeGroupId?: string;
+    },
+  ) => {
     const query = new URLSearchParams();
-    if (departmentId) query.append('departmentId', departmentId);
-    if (divisionId) query.append('divisionId', divisionId);
-    if (search) query.append('search', search);
-    if (employeeGroupId) query.append('employeeGroupId', employeeGroupId);
+    const { appendPayRegisterOrgFilters } = await import('@/lib/payRegisterApiFilters');
+    if (filters) {
+      appendPayRegisterOrgFilters(query, {
+        departmentIds: filters.departmentIds,
+        divisionIds: filters.divisionIds,
+      });
+      if (filters.search) query.append('search', filters.search);
+      if (filters.employeeGroupId) query.append('employeeGroupId', filters.employeeGroupId);
+    }
     const qs = query.toString();
     return apiRequest<{
       success: boolean;
@@ -4763,15 +5281,34 @@ export const api = {
     });
   },
 
-  getEmployeesWithPayRegister: async (month: string, departmentId?: string, divisionId?: string, status?: string, page?: number, limit?: number, search?: string, employeeGroupId?: string) => {
+  getEmployeesWithPayRegister: async (
+    month: string,
+    filters?: {
+      departmentIds?: string[];
+      divisionIds?: string[];
+      status?: string;
+      page?: number;
+      limit?: number;
+      search?: string;
+      employeeGroupId?: string;
+      /** Set false for sync/bulk ops — omits heavy dailyRecords from response */
+      includeDailyRecords?: boolean;
+    },
+  ) => {
     const query = new URLSearchParams();
-    if (departmentId) query.append('departmentId', departmentId);
-    if (divisionId) query.append('divisionId', divisionId);
-    if (status) query.append('status', status);
-    if (page) query.append('page', page.toString());
-    if (limit) query.append('limit', limit.toString());
-    if (search) query.append('search', search);
-    if (employeeGroupId) query.append('employeeGroupId', employeeGroupId);
+    const { appendPayRegisterOrgFilters } = await import('@/lib/payRegisterApiFilters');
+    if (filters) {
+      appendPayRegisterOrgFilters(query, {
+        departmentIds: filters.departmentIds,
+        divisionIds: filters.divisionIds,
+      });
+      if (filters.status) query.append('status', filters.status);
+      if (filters.page) query.append('page', filters.page.toString());
+      if (filters.limit !== undefined) query.append('limit', filters.limit.toString());
+      if (filters.search) query.append('search', filters.search);
+      if (filters.employeeGroupId) query.append('employeeGroupId', filters.employeeGroupId);
+      if (filters.includeDailyRecords === false) query.append('includeDailyRecords', 'false');
+    }
     return apiRequest<{ data: any[], pagination?: any, success: boolean, message?: string }>(`/pay-register/employees/${month}${query.toString() ? `?${query.toString()}` : ''}`, {
       method: 'GET',
     });
@@ -4779,17 +5316,13 @@ export const api = {
 
   exportPayRegisterSummary: async (params: {
     month: string;
-    departmentId?: string;
-    divisionId?: string;
+    departmentIds?: string[];
+    divisionIds?: string[];
     search?: string;
     employeeGroupId?: string;
   }) => {
-    const query = new URLSearchParams();
-    query.append('month', params.month);
-    if (params.departmentId) query.append('departmentId', params.departmentId);
-    if (params.divisionId) query.append('divisionId', params.divisionId);
-    if (params.search) query.append('search', params.search);
-    if (params.employeeGroupId) query.append('employeeGroupId', params.employeeGroupId);
+    const { payRegisterExportQueryParams } = await import('@/lib/payRegisterApiFilters');
+    const query = payRegisterExportQueryParams(params);
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
@@ -4814,16 +5347,13 @@ export const api = {
 
   exportPayRegisterSummaryPDF: async (params: {
     month: string;
-    departmentId?: string;
-    divisionId?: string;
+    departmentIds?: string[];
+    divisionIds?: string[];
     search?: string;
     employeeGroupId?: string;
   }) => {
-    const query = new URLSearchParams();
-    if (params.departmentId) query.append('departmentId', params.departmentId);
-    if (params.divisionId) query.append('divisionId', params.divisionId);
-    if (params.search) query.append('search', params.search);
-    if (params.employeeGroupId) query.append('employeeGroupId', params.employeeGroupId);
+    const { payRegisterExportQueryParams } = await import('@/lib/payRegisterApiFilters');
+    const query = payRegisterExportQueryParams(params);
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
@@ -4847,16 +5377,13 @@ export const api = {
 
   exportPayRegisterModifications: async (params: {
     month: string;
-    departmentId?: string;
-    divisionId?: string;
+    departmentIds?: string[];
+    divisionIds?: string[];
     search?: string;
     employeeGroupId?: string;
   }) => {
-    const query = new URLSearchParams();
-    if (params.departmentId) query.append('departmentId', params.departmentId);
-    if (params.divisionId) query.append('divisionId', params.divisionId);
-    if (params.search) query.append('search', params.search);
-    if (params.employeeGroupId) query.append('employeeGroupId', params.employeeGroupId);
+    const { payRegisterExportQueryParams } = await import('@/lib/payRegisterApiFilters');
+    const query = payRegisterExportQueryParams(params);
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
@@ -4879,16 +5406,13 @@ export const api = {
 
   exportPayRegisterModificationsPDF: async (params: {
     month: string;
-    departmentId?: string;
-    divisionId?: string;
+    departmentIds?: string[];
+    divisionIds?: string[];
     search?: string;
     employeeGroupId?: string;
   }) => {
-    const query = new URLSearchParams();
-    if (params.departmentId) query.append('departmentId', params.departmentId);
-    if (params.divisionId) query.append('divisionId', params.divisionId);
-    if (params.search) query.append('search', params.search);
-    if (params.employeeGroupId) query.append('employeeGroupId', params.employeeGroupId);
+    const { payRegisterExportQueryParams } = await import('@/lib/payRegisterApiFilters');
+    const query = payRegisterExportQueryParams(params);
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
@@ -5147,12 +5671,26 @@ export const api = {
   },
 
   // Live Attendance
-  getLiveAttendanceReport: async (params?: { date?: string; division?: string; department?: string; shift?: string }) => {
+  getLiveAttendanceReport: async (params?: {
+    date?: string;
+    divisionIds?: string[];
+    departmentIds?: string[];
+    shiftIds?: string[];
+  }) => {
     const query = new URLSearchParams();
     if (params?.date) query.append('date', params.date);
-    if (params?.division) query.append('division', params.division);
-    if (params?.department) query.append('department', params.department);
-    if (params?.shift) query.append('shift', params.shift);
+    for (const id of params?.divisionIds ?? []) {
+      const s = String(id).trim();
+      if (s) query.append('division', s);
+    }
+    for (const id of params?.departmentIds ?? []) {
+      const s = String(id).trim();
+      if (s) query.append('department', s);
+    }
+    for (const id of params?.shiftIds ?? []) {
+      const s = String(id).trim();
+      if (s) query.append('shift', s);
+    }
     const queryString = query.toString() ? `?${query.toString()}` : '';
     return apiRequest<LiveAttendanceReportData>(`/attendance/reports/live${queryString}`, { method: 'GET' });
   },

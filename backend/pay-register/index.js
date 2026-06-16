@@ -39,6 +39,9 @@ router.get('/locked-employees/:month', payRegisterController.getLockedSummaryEmp
 // Get all employees with pay registers for a month (must come before /:employeeId routes)
 router.get('/employees/:month', payRegisterController.getEmployeesWithPayRegister);
 
+// Bulk sync all matching employees for a month (attendance once + parallel sync)
+router.post('/bulk-sync/:month', payRegisterController.bulkSyncPayRegister);
+
 // Lock/unlock monthly summary for many employees (must come before /:employeeId routes)
 router.post('/summary-lock/:month', payRegisterController.setSummaryLock);
 

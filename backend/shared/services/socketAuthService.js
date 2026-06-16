@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../../users/model/User');
 const Employee = require('../../employees/model/Employee');
+const sessionService = require('../../authentication/services/sessionService');
 
 async function resolveAuthIdentity(decoded) {
   let authUser = await User.findById(decoded.userId).select('-password').lean();
@@ -46,11 +47,37 @@ async function authenticateSocket(rawToken) {
   if (!rawToken) return null;
   const token = String(rawToken).replace(/^Bearer\s+/i, '').trim();
   if (!token) return null;
-  const decoded = jwt.verify(token, process.env.JWT_SECRET);
-  return resolveAuthIdentity(decoded);
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return null;
+  }
+
+  if (decoded.type && decoded.type !== 'access') return null;
+  if (!decoded.sessionId) return null;
+
+  const sessionCheck = await sessionService.validateSession(
+    decoded.userId,
+    decoded.sessionId,
+    decoded.tokenVersion ?? 0
+  );
+  if (!sessionCheck.ok) return null;
+
+  const identity = await resolveAuthIdentity(decoded);
+  if (!identity) return null;
+
+  const authUser = await User.findById(decoded.userId).select('tokenVersion').lean();
+  const authEmployee = authUser
+    ? null
+    : await Employee.findById(decoded.userId).select('tokenVersion').lean();
+  const liveVersion = authUser?.tokenVersion ?? authEmployee?.tokenVersion ?? 0;
+  if (Number(decoded.tokenVersion ?? 0) !== Number(liveVersion)) return null;
+
+  return identity;
 }
 
 module.exports = {
   authenticateSocket,
 };
-

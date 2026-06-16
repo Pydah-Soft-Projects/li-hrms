@@ -70,7 +70,7 @@ export const MODULE_CATEGORIES = [
             { code: 'PAYSHEET', label: 'Paysheet', href: '/payroll-sheet' },
             { code: 'PAYROLL_CONFIG', label: 'Payroll Configuration', href: '/payroll-config' },
             { code: 'STATUTORY_DEDUCTIONS', label: 'Statutory Deductions', href: '/statutory-deductions' },
-            { code: 'PAYSLIPS', label: 'Payslips', href: '/payslips' },
+            { code: 'PAYSLIPS', label: 'Payslips', href: '/payslips', releasable: true },
             { code: 'ARREARS', label: 'Arrears', href: '/arrears' },
             { code: 'MANUAL_DEDUCTIONS', label: 'Manual Deductions', href: '/manual-deductions' },
             { code: 'ALLOWANCES_DEDUCTIONS', label: 'Allowances & Deductions', href: '/allowances-deductions' },
@@ -111,7 +111,8 @@ function hasModulePermission(moduleCode: string, featureControl: string[]): bool
             featureControl.includes(`${code}:read`) ||
             featureControl.includes(`${code}:write`) ||
             featureControl.includes(`${code}:verify`) ||
-            featureControl.includes(`${code}:terminate`)
+            featureControl.includes(`${code}:terminate`) ||
+            featureControl.includes(`${code}:release`)
     );
 }
 

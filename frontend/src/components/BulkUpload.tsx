@@ -25,6 +25,8 @@ interface BulkUploadProps {
   validateRow?: (row: ParsedRow, index: number, allData: ParsedRow[]) => { isValid: boolean; errors: string[]; fieldErrors?: { [key: string]: string }; mappedRow?: ParsedRow };
   onSubmit: (data: ParsedRow[]) => Promise<{ success: boolean; message?: string; failedRows?: Array<{ emp_no: string; message: string }> }>;
   onClose: () => void;
+  /** Ledger UI shell — square borders, accent header */
+  ledgerUi?: boolean;
 }
 
 export default function BulkUpload({
@@ -40,6 +42,7 @@ export default function BulkUpload({
   validateRow,
   onSubmit,
   onClose,
+  ledgerUi = false,
 }: BulkUploadProps) {
   const [step, setStep] = useState<'upload' | 'preview'>('upload');
   const [data, setData] = useState<ParsedRow[]>([]);
@@ -292,12 +295,26 @@ export default function BulkUpload({
   return (
     <div className="fixed inset-0 z-[12000] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-[12000] max-h-[95vh] w-full max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+      <div
+        className={`relative z-[12000] max-h-[95vh] w-full max-w-6xl overflow-hidden border bg-white shadow-2xl dark:bg-stone-950 ${
+          ledgerUi ? '' : 'rounded-3xl border-slate-200 dark:border-slate-800'
+        }`}
+        style={ledgerUi ? { borderColor: 'var(--ps-accent-border)' } : undefined}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-6 py-4 dark:border-slate-700 dark:from-slate-900 dark:to-blue-900/20">
+        <div
+          className={`flex items-center justify-between border-b px-6 py-4 ${
+            ledgerUi
+              ? 'bg-white dark:bg-stone-950'
+              : 'border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 dark:border-slate-700 dark:from-slate-900 dark:to-blue-900/20'
+          }`}
+          style={ledgerUi ? { borderColor: 'var(--ps-accent-border)', backgroundImage: 'linear-gradient(180deg, var(--ps-accent-soft) 0%, transparent 100%)' } : undefined}
+        >
           <div>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            <h2 className={`${ledgerUi ? 'font-serif text-xl font-light tracking-tight' : 'text-xl font-semibold'} text-stone-900 dark:text-stone-100`}>
+              {title}
+            </h2>
+            <p className={`mt-1 text-sm ${ledgerUi ? 'text-stone-500' : 'text-slate-500 dark:text-slate-400'}`}>
               {step === 'upload' ? 'Upload Excel or CSV file' : `Preview and edit ${data.length} records`}
             </p>
           </div>

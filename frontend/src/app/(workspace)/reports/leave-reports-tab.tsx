@@ -115,14 +115,17 @@ export default function LeaveReportsTab() {
 
         if (ids.length > 0) {
             try {
-                const empPromises = ids.map(id => api.getEmployees({ department_id: id, is_active: true }));
-                const results = await Promise.all(empPromises);
-                let allEmps: Employee[] = [];
-                results.forEach(res => {
-                    if (res.success) allEmps = [...allEmps, ...(res.data || [])];
+                const res = await api.getEmployeesSummary({
+                    department_ids: ids.join(','),
+                    is_active: true,
+                    limit: 5000,
+                    page: 1,
                 });
-                const uniqueEmps = Array.from(new Map(allEmps.map(item => [item._id, item])).values());
-                setEmployees(uniqueEmps);
+                if (res.success) {
+                    setEmployees(res.data || []);
+                } else {
+                    setEmployees([]);
+                }
             } catch (error) {
                 console.error('Error loading employees:', error);
             }
