@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Eye, EyeOff, ShieldCheck, ArrowLeft, Lock, Mail, User } from "lucide-react";
+import { Eye, EyeOff, ShieldCheck, ArrowLeft, Lock, User } from "lucide-react";
 import { api } from "@/lib/api";
 import { auth } from "@/lib/auth";
 import { setWorkspaceDataFromLogin } from "@/contexts/WorkspaceContext";
@@ -223,7 +223,7 @@ function LoginContent() {
                   htmlFor="identifier"
                   className="text-sm font-medium text-slate-700 ml-1"
                 >
-                  Email or Employee ID
+                  Username / Employee No / Email
                 </label>
                 <div className="relative group">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors">
@@ -236,7 +236,7 @@ function LoginContent() {
                     onChange={(e) => setIdentifier(e.target.value)}
                     required
                     className="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-sans text-slate-900 placeholder:text-slate-400 shadow-sm"
-                    placeholder="john.doe@company.com"
+                    placeholder="username, EMP001, or john.doe@company.com"
                   />
                 </div>
               </div>

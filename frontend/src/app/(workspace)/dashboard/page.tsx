@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { api, type InAppNotification, type WorkspaceDashboardStats } from '@/lib/api';
 import TodayBirthdayTicker from '@/components/employee-birthdays/TodayBirthdayTicker';
 import HolidayCelebrationOverlay from '@/components/dashboard/HolidayCelebrationOverlay';
+import TicketSupportBubble from '@/components/TicketSupportBubble';
 import Link from 'next/link';
 import {
   Users,
@@ -503,6 +504,7 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+      <TicketSupportBubble />
     </div>
   );
 }
