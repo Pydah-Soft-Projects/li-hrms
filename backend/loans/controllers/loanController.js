@@ -72,6 +72,7 @@ const {
   isLoanFinalApprovalStep,
   syncChainAfterWorkflowAction,
 } = require('../services/loanWorkflowService');
+const { nextLoanApplicationFormNumber } = require('../services/loanApplicationFormSequence');
 
 // ============================================
 // NO HARDCODED BYPASS - Uses database setting: workflow.allowHigherAuthorityToApproveLowerLevels
