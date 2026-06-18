@@ -387,6 +387,14 @@ exports.createUserFromEmployee = async (req, res) => {
       holidayDivisionMapping: Array.isArray(holidayDivisionMapping) ? holidayDivisionMapping : [],
     });
 
+    // Update the employee password if it was newly generated or provided
+    if (autoGeneratePassword || password) {
+      employee.password = userPassword;
+      employee.plain_password = userPassword;
+      await employee.save();
+      console.log(`[UserController] Syncing newly generated/provided password to employee ${employee.emp_no}`);
+    }
+
     await logUserHistory({
       userId: user._id,
       event: 'user_created_from_employee',
@@ -865,6 +873,26 @@ exports.resetPassword = async (req, res) => {
 
     user.password = password;
     await user.save();
+
+    // Update password in the Employee collection if linked
+    if (user.employeeRef || user.employeeId) {
+      try {
+        const employee = await Employee.findOne({
+          $or: [
+            ...(user.employeeRef ? [{ _id: user.employeeRef }] : []),
+            ...(user.employeeId ? [{ emp_no: user.employeeId }] : [])
+          ]
+        });
+        if (employee) {
+          employee.password = password;
+          employee.plain_password = password;
+          await employee.save();
+          console.log(`[UserController] Syncing reset password to employee ${employee.emp_no}`);
+        }
+      } catch (empUpdateErr) {
+        console.error('[UserController] Failed to update password in Employee collection:', empUpdateErr.message);
+      }
+    }
 
     // Send notification
     let notificationSent = false;

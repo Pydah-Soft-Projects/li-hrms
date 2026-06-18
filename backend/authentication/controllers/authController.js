@@ -618,6 +618,27 @@ exports.changePassword = async (req, res) => {
     user.password = newPassword;
     await bumpTokenVersionAndDestroySession(user, userType);
 
+    // Sync to employee record if logged in as user and has a linked employee
+    if (userType === 'user' && (user.employeeRef || user.employeeId)) {
+      try {
+        const Employee = require('../../employees/model/Employee');
+        const employee = await Employee.findOne({
+          $or: [
+            ...(user.employeeRef ? [{ _id: user.employeeRef }] : []),
+            ...(user.employeeId ? [{ emp_no: user.employeeId }] : [])
+          ]
+        });
+        if (employee) {
+          employee.password = newPassword;
+          employee.plain_password = newPassword;
+          await employee.save();
+          console.log(`[AuthController] Syncing changed password to employee ${employee.emp_no}`);
+        }
+      } catch (empUpdateErr) {
+        console.error('[AuthController] Failed to update password in Employee collection:', empUpdateErr.message);
+      }
+    }
+
     res.status(200).json({
       success: true,
       message: 'Password changed successfully. Please login again on all devices.',
@@ -775,6 +796,26 @@ exports.forgotPassword = async (req, res) => {
     // Update password and invalidate existing sessions
     userBase.password = newPassword;
     await bumpTokenVersionAndDestroySession(userBase, userType);
+
+    // Sync to employee record if logged in as user and has a linked employee
+    if (userType === 'user' && (userBase.employeeRef || userBase.employeeId)) {
+      try {
+        const employee = await Employee.findOne({
+          $or: [
+            ...(userBase.employeeRef ? [{ _id: userBase.employeeRef }] : []),
+            ...(userBase.employeeId ? [{ emp_no: userBase.employeeId }] : [])
+          ]
+        });
+        if (employee) {
+          employee.password = newPassword;
+          employee.plain_password = newPassword;
+          await employee.save();
+          console.log(`[AuthController] Syncing forgot password to employee ${employee.emp_no}`);
+        }
+      } catch (empUpdateErr) {
+        console.error('[AuthController] Failed to update password in Employee collection:', empUpdateErr.message);
+      }
+    }
 
     // Prepare notification data
     let notificationEmployee = null;

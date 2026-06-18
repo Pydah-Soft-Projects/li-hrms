@@ -523,6 +523,14 @@ employeeSchema.pre('save', async function () {
     console.log(`[EmployeeModel] Password not modified or missing for ${this.emp_no}, skipping hash.`);
     return;
   }
+
+  // Check if password is already a bcrypt hash (starts with $2a$ or $2b$)
+  // This is important when inheriting or syncing hashed passwords
+  if (this.password && /^\$2[aby]\$\d+\$.{53}$/.test(this.password)) {
+    console.log(`[EmployeeModel] Password for ${this.emp_no} already hashed, skipping.`);
+    return;
+  }
+
   console.log(`[EmployeeModel] Hashing password for employee ${this.emp_no}...`);
   const salt = await bcrypt.genSalt(12);
   this.password = await bcrypt.hash(this.password, salt);

@@ -2038,6 +2038,23 @@ exports.resendEmployeePassword = async (req, res) => {
       employee.password = passwordToSend;
       employee.plain_password = passwordToSend;
       await employee.save();
+
+      // Sync to User if linked
+      try {
+        const linkedUser = await User.findOne({
+          $or: [
+            { employeeRef: employee._id },
+            { employeeId: employee.emp_no }
+          ]
+        });
+        if (linkedUser) {
+          linkedUser.password = passwordToSend;
+          await linkedUser.save();
+          console.log(`[EmployeeController] Syncing resent password to user ${linkedUser.email}`);
+        }
+      } catch (userSyncErr) {
+        console.error('[EmployeeController] Failed to sync password to User collection:', userSyncErr.message);
+      }
     }
 
     const notificationResults = await sendCredentials(
@@ -2105,6 +2122,23 @@ exports.resetEmployeeCredentials = async (req, res) => {
     employee.plain_password = passwordToSend;
     await employee.save();
 
+    // Sync to User if linked
+    try {
+      const linkedUser = await User.findOne({
+        $or: [
+          { employeeRef: employee._id },
+          { employeeId: employee.emp_no }
+        ]
+      });
+      if (linkedUser) {
+        linkedUser.password = passwordToSend;
+        await linkedUser.save();
+        console.log(`[EmployeeController] Syncing reset credentials to user ${linkedUser.email}`);
+      }
+    } catch (userSyncErr) {
+      console.error('[EmployeeController] Failed to sync password to User collection:', userSyncErr.message);
+    }
+
     const notificationResults = await sendCredentials(
       employee,
       passwordToSend,
@@ -2158,6 +2192,23 @@ exports.bulkExportEmployeePasswords = async (req, res) => {
       const newPassword = await generatePassword(emp, passwordMode || null);
       emp.password = newPassword;
       await emp.save();
+
+      // Sync to User if linked
+      try {
+        const linkedUser = await User.findOne({
+          $or: [
+            { employeeRef: emp._id },
+            { employeeId: emp.emp_no }
+          ]
+        });
+        if (linkedUser) {
+          linkedUser.password = newPassword;
+          await linkedUser.save();
+          console.log(`[EmployeeController] Syncing bulk export password to user ${linkedUser.email}`);
+        }
+      } catch (userSyncErr) {
+        console.error('[EmployeeController] Failed to sync password to User collection during bulk export:', userSyncErr.message);
+      }
 
       exportData.push({
         emp_no: emp.emp_no,
@@ -2274,6 +2325,23 @@ exports.bulkResendCredentials = async (req, res) => {
           employee.password = passwordToSend;
           employee.plain_password = passwordToSend;
           await employee.save();
+
+          // Sync to User if linked
+          try {
+            const linkedUser = await User.findOne({
+              $or: [
+                { employeeRef: employee._id },
+                { employeeId: employee.emp_no }
+              ]
+            });
+            if (linkedUser) {
+              linkedUser.password = passwordToSend;
+              await linkedUser.save();
+              console.log(`[EmployeeController] Syncing bulk resent password fallback to user ${linkedUser.email}`);
+            }
+          } catch (userSyncErr) {
+            console.error('[EmployeeController] Failed to sync password to User collection during bulk resend:', userSyncErr.message);
+          }
         }
 
         await sendCredentials(
