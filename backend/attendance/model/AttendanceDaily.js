@@ -590,9 +590,20 @@ attendanceDailySchema.pre('save', async function () {
       totalOT += shift.otHours || 0;
       totalExtra += shift.extraHours || 0;
 
-      // Accumulate minutes
-      if (shift.lateInMinutes > 0) totalLateIn += shift.lateInMinutes;
-      if (shift.earlyOutMinutes > 0) totalEarlyOut += shift.earlyOutMinutes;
+      // Accumulate penalties - ONLY from PRESENT segments for multi-segment days
+      if (shift.shiftSegments && shift.shiftSegments.length > 0) {
+        // Multi-segment day (half-day): only count penalties from PRESENT segments
+        shift.shiftSegments.forEach((seg) => {
+          if (seg.present) {
+            if (seg.lateInMinutes > 0) totalLateIn += seg.lateInMinutes;
+            if (seg.earlyOutMinutes > 0) totalEarlyOut += seg.earlyOutMinutes;
+          }
+        });
+      } else {
+        // Single shift day: use shift-level penalties
+        if (shift.lateInMinutes > 0) totalLateIn += shift.lateInMinutes;
+        if (shift.earlyOutMinutes > 0) totalEarlyOut += shift.earlyOutMinutes;
+      }
 
       // Expected hours (from shift definition if available)
       totalExpected += shift.expectedHours || 8;

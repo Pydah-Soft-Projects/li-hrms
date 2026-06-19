@@ -4750,15 +4750,13 @@ export default function AttendancePage() {
                 <div className="grid grid-cols-2 gap-4 mt-2">
                   {/* Late In Display - Support Multi-Shift */}
                   {(() => {
-                    const shiftsWithLate = attendanceDetail.shifts?.filter((s: any) => s.lateInMinutes && s.lateInMinutes > 0) || [];
-                    const hasRootLate = attendanceDetail.isLateIn && attendanceDetail.lateInMinutes;
-
-                    if (shiftsWithLate.length > 0 || hasRootLate) {
+                    const totalLate = Number(attendanceDetail.totalLateInMinutes || 0);
+                    if (totalLate > 0) {
                       return (
                         <div className="p-3 rounded-xl bg-orange-50/50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/50">
                           <label className="text-[10px] font-black uppercase tracking-widest text-orange-600/70">Late In Aggregate</label>
                           <div className="mt-1 text-sm font-bold text-orange-700 dark:text-orange-400">
-                            +{attendanceDetail.lateInMinutes || 0} minutes
+                            +{totalLate} minutes
                           </div>
                         </div>
                       );
@@ -4768,15 +4766,13 @@ export default function AttendancePage() {
 
                   {/* Early Out Display - Support Multi-Shift */}
                   {(() => {
-                    const shiftsWithEarly = attendanceDetail.shifts?.filter((s: any) => s.earlyOutMinutes && s.earlyOutMinutes > 0) || [];
-                    const hasRootEarly = attendanceDetail.isEarlyOut && attendanceDetail.lateInMinutes;
-
-                    if (shiftsWithEarly.length > 0 || hasRootEarly) {
+                    const totalEarlyOut = Number(attendanceDetail.totalEarlyOutMinutes || 0);
+                    if (totalEarlyOut > 0) {
                       return (
                         <div className="p-3 rounded-xl bg-orange-50/50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/50">
                           <label className="text-[10px] font-black uppercase tracking-widest text-orange-600/70">Early Out Aggregate</label>
                           <div className="mt-1 text-sm font-bold text-orange-700 dark:text-orange-400">
-                            -{attendanceDetail.earlyOutMinutes || 0} minutes
+                            -{totalEarlyOut} minutes
                           </div>
                           {attendanceDetail.earlyOutDeduction?.deductionApplied && (
                             <p className="mt-1 text-[10px] font-bold text-rose-600 italic">
