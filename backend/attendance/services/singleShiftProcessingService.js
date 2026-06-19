@@ -731,6 +731,30 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
       try {
         const { enrichShiftRecordWithSegments, resolveGraceFromSettings } = require('./shiftSegmentAttendanceService');
         await enrichShiftRecordWithSegments(pShift, date, await resolveGraceFromSettings(), { employeeNumber });
+        
+        // CRITICAL: After segments are enriched, recalculate payableShift from final segments (break-aware)
+        if (pShift.shiftSegments && Array.isArray(pShift.shiftSegments) && pShift.shiftSegments.length > 0) {
+          const segmentPayable = pShift.shiftSegments.reduce((sum, seg) => {
+            return sum + (seg.present ? (seg.payableShifts || 0) : 0);
+          }, 0);
+          
+          pShift.payableShift = segmentPayable * basePayable;
+          
+          console.log(`[BreakAware-SingleShift] Segment-based payable: ${segmentPayable}, Final payable: ${pShift.payableShift}`);
+          
+          // Update status based on segment payable
+          if (segmentPayable >= 1) {
+            pShift.status = 'PRESENT';
+          } else if (segmentPayable === 0.5) {
+            pShift.status = 'HALF_DAY';
+          } else if (segmentPayable > 0 && segmentPayable < 0.5) {
+            pShift.status = 'PARTIAL';
+          } else {
+            pShift.status = 'ABSENT';
+          }
+          
+          console.log(`[BreakAware-SingleShift] Updated status to: ${pShift.status}`);
+        }
       } catch (segErr) {
         console.warn('[SingleShift] enrichShiftRecordWithSegments:', segErr.message);
       }

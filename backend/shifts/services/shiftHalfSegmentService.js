@@ -195,6 +195,89 @@ const hasOverlap = (segment, inTime, outTime) => {
   return getOverlapMinutes(segment.range, attendanceRange) > 0;
 };
 
+/**
+ * Calculate presence considering break skip:
+ * If employee works through break (no break taken), count continuous work
+ * @param {Object} segment - Current segment (firstHalf or secondHalf)
+ * @param {Date} inTime - Employee check-in time
+ * @param {Date} outTime - Employee check-out time
+ * @param {Object} breakSegment - Break period info (startTime, endTime, range)
+ * @param {Number} minDuration - Minimum hours needed (in decimal format, e.g. 4 for 4 hours)
+ * @returns {Boolean} - Whether employee is present in this segment
+ */
+const calculateSegmentPresenceWithBreakHandling = (segment, inTime, outTime, breakSegment, minDuration) => {
+  if (!segment || !segment.range) return false;
+  if (!inTime) return false;
+
+  const finalOutTime = outTime || inTime;
+  const attendanceRange = {
+    startDate: new Date(inTime),
+    endDate: new Date(finalOutTime),
+  };
+
+  // Get the overlap within the segment window
+  let overlapMinutes = getOverlapMinutes(segment.range, attendanceRange);
+
+  // If first half and employee worked past first half end into break area:
+  if (segment.segmentName === 'firstHalf' && breakSegment && breakSegment.range) {
+    const firstHalfEnd = segment.range.endDate;
+    const breakStart = breakSegment.range.startDate;
+    const breakEnd = breakSegment.range.endDate;
+
+    // If employee OUT time is after first half ends and within/past break:
+    if (finalOutTime > firstHalfEnd && finalOutTime > breakStart) {
+      // Employee worked through break without taking it
+      // Add the time spent working during break to first half calculation
+      const breakOverlap = getOverlapMinutes(breakSegment.range, attendanceRange);
+      
+      // Count the actual work time in break (employee's punch extends past break start)
+      if (breakOverlap > 0) {
+        const workMinutesInBreak = getOverlapMinutes(
+          {
+            startDate: new Date(Math.max(breakStart.getTime(), new Date(inTime).getTime())),
+            endDate: new Date(Math.min(breakEnd.getTime(), new Date(finalOutTime).getTime()))
+          },
+          attendanceRange
+        );
+        
+        if (workMinutesInBreak > 0) {
+          overlapMinutes += workMinutesInBreak;
+        }
+      }
+    }
+  }
+
+  // If second half and employee worked before break ends (skip break part 1):
+  if (segment.segmentName === 'secondHalf' && breakSegment && breakSegment.range) {
+    const secondHalfStart = segment.range.startDate;
+    const breakEnd = breakSegment.range.endDate;
+
+    // If employee IN time is before break ends (came before break finished):
+    if (inTime < secondHalfStart) {
+      // Employee worked through break without taking it
+      // Count time from when work resumed to segment window
+      const workBeforeSecondHalf = getOverlapMinutes(
+        {
+          startDate: new Date(inTime),
+          endDate: new Date(Math.min(secondHalfStart.getTime(), new Date(finalOutTime).getTime()))
+        },
+        attendanceRange
+      );
+      
+      if (workBeforeSecondHalf > 0) {
+        // This portion doesn't count toward second half since it's before second half starts
+        // Second half presence requires work in the second half window
+      }
+    }
+  }
+
+  // Convert minDuration (in hours) to minutes for comparison
+  const minDurationMinutes = minDuration * 60;
+
+  // Check if overlap meets minimum duration requirement
+  return overlapMinutes >= minDurationMinutes;
+};
+
 const getShiftSegmentAssignment = (shift, dateStr, inTime, outTime, options = {}) => {
   const { globalLateInGrace = null, globalEarlyOutGrace = null } = options;
   const timeline = buildShiftSegmentTimeline(shift, dateStr);
@@ -208,8 +291,15 @@ const getShiftSegmentAssignment = (shift, dateStr, inTime, outTime, options = {}
   }
 
   const segmentDetails = timeline.segments.map((segment) => {
+    // Use break-aware presence calculation
     const present = inTime && outTime
-      ? hasOverlap(segment, inTime, outTime)
+      ? calculateSegmentPresenceWithBreakHandling(
+          segment,
+          inTime,
+          outTime,
+          timeline.breakSegment,
+          segment.minDuration || 0
+        )
       : (inTime && segment.range ? getOverlapMinutes(segment.range, { startDate: new Date(inTime), endDate: new Date(inTime) }) > 0 : false);
 
     const lateInMinutes = present ? calculateSegmentLateIn(segment, inTime, globalLateInGrace, shift.gracePeriod) : null;
@@ -251,4 +341,5 @@ module.exports = {
   calculateSegmentEarlyOut,
   getEffectiveGrace,
   findMatchingSegmentForPunch,
+  calculateSegmentPresenceWithBreakHandling,
 };

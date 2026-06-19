@@ -328,17 +328,60 @@ async function recalculateShiftMetrics(pShift, employeeNumber, date, approvedODs
         pShift.extraHours = Math.round((pShift.workingHours - refDuration) * 100) / 100;
     }
 
-    if (statusDuration >= expectedDuration * 0.9) {
-        pShift.status = 'PRESENT';
-        pShift.payableShift = basePayable;
-    } else if (statusDuration >= expectedDuration * 0.4) {
-        pShift.status = 'HALF_DAY';
-        pShift.payableShift = basePayable * 0.5;
-        pShift.earlyOutMinutes = null;
-        pShift.isEarlyOut = false;
+    // Use segment-based detection for status if shift and times available
+    let segmentPayableShifts = null;
+    if (punchIn && punchOut && assignedShiftDef) {
+        try {
+            const Shift = require('../../shifts/model/Shift');
+            const { getShiftSegmentAssignment } = require('../../shifts/services/shiftHalfSegmentService');
+            
+            const shiftDoc = await Shift.findById(assignedShiftDef._id || shiftAssignment?.assignedShift).lean();
+            if (shiftDoc) {
+                const dateStr = formatDate(date);
+                const segmentResult = getShiftSegmentAssignment(shiftDoc, dateStr, punchIn, punchOut, {
+                    globalLateInGrace: configWithMode?.late_in_grace_time,
+                    globalEarlyOutGrace: configWithMode?.early_out_grace_time
+                });
+                
+                // Store segment information if available
+                if (segmentResult?.shiftSegments && segmentResult.shiftSegments.length > 0) {
+                    pShift.shiftSegments = segmentResult.shiftSegments;
+                    segmentPayableShifts = segmentResult.totalPayableShifts;
+                }
+            }
+        } catch (err) {
+            // Fallback to duration-based detection if segment calculation fails
+            console.warn('Segment detection failed, using duration-based fallback:', err.message);
+        }
+    }
+
+    // Use segment-based payable if available, otherwise fall back to duration-based
+    if (segmentPayableShifts !== null) {
+        pShift.payableShift = segmentPayableShifts * basePayable;
+        if (segmentPayableShifts >= 1) {
+            pShift.status = 'PRESENT';
+        } else if (segmentPayableShifts === 0.5) {
+            pShift.status = 'HALF_DAY';
+            pShift.earlyOutMinutes = null;
+            pShift.isEarlyOut = false;
+        } else {
+            pShift.status = 'ABSENT';
+            pShift.payableShift = 0;
+        }
     } else {
-        pShift.status = 'ABSENT';
-        pShift.payableShift = 0;
+        // Duration-based fallback
+        if (statusDuration >= expectedDuration * 0.9) {
+            pShift.status = 'PRESENT';
+            pShift.payableShift = basePayable;
+        } else if (statusDuration >= expectedDuration * 0.4) {
+            pShift.status = 'HALF_DAY';
+            pShift.payableShift = basePayable * 0.5;
+            pShift.earlyOutMinutes = null;
+            pShift.isEarlyOut = false;
+        } else {
+            pShift.status = 'ABSENT';
+            pShift.payableShift = 0;
+        }
     }
 
     return pShift;
@@ -1025,19 +1068,85 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                     pShift.extraHours = Math.round((pShift.workingHours - refDuration) * 100) / 100;
                 }
 
-                // Thresholds: >= 90% = PRESENT, 40%-90% = HALF_DAY, < 40% = ABSENT
-                if (statusDuration >= (expectedDuration * 0.9)) {
-                    pShift.status = 'PRESENT';
-                    pShift.payableShift = basePayable;
-                } else if (statusDuration >= (expectedDuration * 0.40)) {
-                    pShift.status = 'HALF_DAY';
-                    pShift.payableShift = basePayable * 0.5;
-                    // Half-day loss is the penalty; do not also count early-out in aggregates (avoid double penalty)
-                    pShift.earlyOutMinutes = null;
-                    pShift.isEarlyOut = false;
+                // Calculate segments with break-aware detection
+                if (shiftAssignment && shiftAssignment.success && shiftAssignment.assignedShift) {
+                    try {
+                        const Shift = require('../../shifts/model/Shift');
+                        const { getShiftSegmentAssignment } = require('../../shifts/services/shiftHalfSegmentService');
+                        
+                        const shiftDocForSegments = await Shift.findById(shiftAssignment.assignedShift).lean();
+                        if (shiftDocForSegments) {
+                            const dateStr = formatDate(date);
+                            const punchIn = new Date(pShift.inTime);
+                            const punchOut = pShift.outTime ? new Date(pShift.outTime) : null;
+                            
+                            const segmentResult = getShiftSegmentAssignment(shiftDocForSegments, dateStr, punchIn, punchOut, {
+                                globalLateInGrace: configWithMode?.late_in_grace_time,
+                                globalEarlyOutGrace: configWithMode?.early_out_grace_time
+                            });
+                            
+                            console.log(`[DEBUG] Segments calculated for shift ${shiftCounter}:`, {
+                                employeeNumber,
+                                date: formatDate(date),
+                                totalPayableShifts: segmentResult?.totalPayableShifts,
+                                segments: segmentResult?.shiftSegments?.map(s => ({ 
+                                    name: s.segmentName, 
+                                    present: s.present, 
+                                    payable: s.payableShifts 
+                                }))
+                            });
+                            
+                            if (segmentResult?.shiftSegments && segmentResult.shiftSegments.length > 0) {
+                                pShift.shiftSegments = segmentResult.shiftSegments;
+                            }
+                        }
+                    } catch (err) {
+                        console.warn('[MultiShift] Segment calculation failed:', err.message);
+                    }
+                }
+
+                // Use segment-based detection if available, otherwise fall back to duration-based
+                let finalPayableShifts = null;
+                if (pShift.shiftSegments && Array.isArray(pShift.shiftSegments) && pShift.shiftSegments.length > 0) {
+                    // Calculate payable shifts from segments (break-aware detection)
+                    finalPayableShifts = pShift.shiftSegments.reduce((sum, seg) => {
+                        return sum + (seg.present ? (seg.payableShifts || 0) : 0);
+                    }, 0);
+                    console.log(`[DEBUG] Using segment-based payable: ${finalPayableShifts}`);
+                }
+
+                // Apply status based on segment or duration
+                if (finalPayableShifts !== null) {
+                    pShift.payableShift = finalPayableShifts * basePayable;
+                    console.log(`[DEBUG] Setting payableShift from segments: ${pShift.payableShift}`);
+                    if (finalPayableShifts >= 1) {
+                        pShift.status = 'PRESENT';
+                    } else if (finalPayableShifts === 0.5) {
+                        pShift.status = 'HALF_DAY';
+                        pShift.earlyOutMinutes = null;
+                        pShift.isEarlyOut = false;
+                    } else {
+                        pShift.status = 'ABSENT';
+                        pShift.payableShift = 0;
+                    }
+                    console.log(`[DEBUG] Set status to: ${pShift.status}`);
                 } else {
-                    pShift.status = 'ABSENT';
-                    pShift.payableShift = 0;
+                    // Duration-based fallback: >= 90% = PRESENT, 40%-90% = HALF_DAY, < 40% = ABSENT
+                    console.log(`[DEBUG] Using duration-based fallback. statusDuration=${statusDuration}, expectedDuration=${expectedDuration}`);
+                    if (statusDuration >= (expectedDuration * 0.9)) {
+                        pShift.status = 'PRESENT';
+                        pShift.payableShift = basePayable;
+                    } else if (statusDuration >= (expectedDuration * 0.40)) {
+                        pShift.status = 'HALF_DAY';
+                        pShift.payableShift = basePayable * 0.5;
+                        // Half-day loss is the penalty; do not also count early-out in aggregates (avoid double penalty)
+                        pShift.earlyOutMinutes = null;
+                        pShift.isEarlyOut = false;
+                    } else {
+                        pShift.status = 'ABSENT';
+                        pShift.payableShift = 0;
+                    }
+                    console.log(`[DEBUG] Duration-based status: ${pShift.status}`);
                 }
 
                 console.log(`[MultiShift] Processing segment ${shiftCounter} for ${employeeNumber}: statusDuration=${statusDuration.toFixed(2)}, Expected=${expectedDuration}`);
@@ -1080,6 +1189,32 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                 const row = processedShifts[si];
                 const plain = typeof row.toObject === 'function' ? row.toObject() : { ...row };
                 processedShifts[si] = await enrichShiftRecordWithSegments(plain, date, graceSeg, { employeeNumber });
+                
+                // CRITICAL: After segments are enriched, recalculate payableShift from final segments (break-aware)
+                const pShift = processedShifts[si];
+                if (pShift.shiftSegments && Array.isArray(pShift.shiftSegments) && pShift.shiftSegments.length > 0) {
+                    const segmentPayable = pShift.shiftSegments.reduce((sum, seg) => {
+                        return sum + (seg.present ? (seg.payableShifts || 0) : 0);
+                    }, 0);
+                    
+                    const basePayable = pShift.basePayable || 1;
+                    pShift.payableShift = segmentPayable * basePayable;
+                    
+                    console.log(`[BreakAware] Shift ${si+1} - Segment-based payable: ${segmentPayable}, Final payable: ${pShift.payableShift}`);
+                    
+                    // Update status based on segment payable
+                    if (segmentPayable >= 1) {
+                        pShift.status = 'PRESENT';
+                    } else if (segmentPayable === 0.5) {
+                        pShift.status = 'HALF_DAY';
+                    } else if (segmentPayable > 0 && segmentPayable < 0.5) {
+                        pShift.status = 'PARTIAL';
+                    } else {
+                        pShift.status = 'ABSENT';
+                    }
+                    
+                    console.log(`[BreakAware] Updated status to: ${pShift.status}`);
+                }
             }
         } catch (segErr) {
             console.warn('[MultiShift] enrichShiftRecordWithSegments:', segErr.message);

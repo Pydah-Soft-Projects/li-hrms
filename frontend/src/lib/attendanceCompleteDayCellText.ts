@@ -133,24 +133,45 @@ export function buildSplitCellStatus(record: any | null): { top: string; bottom:
       bottom = 'PT';
     }
   } else if (record.status === 'HALF_DAY') {
-    const eo = Number(record.earlyOutMinutes) || 0;
-    const li = Number(record.lateInMinutes) || 0;
-    let workedHalf: 'first' | 'second' = eo > li ? 'first' : li > eo ? 'second' : 'first';
+    let workedHalf: 'first' | 'second' = 'first'; // default
 
-    if (eo === li && record.shifts && record.shifts.length > 0) {
-      const s = record.shifts[0];
-      const sStart = s.shiftStartTime || (typeof s.shiftId === 'object' ? s.shiftId?.startTime : null);
-      const sEnd = s.shiftEndTime || (typeof s.shiftId === 'object' ? s.shiftId?.endTime : null);
-      if (s.inTime && sStart && s.outTime && sEnd) {
-        const inDiff = Math.max(0, timeToMins(s.inTime) - timeToMins(sStart));
-        const outDiff = Math.max(0, timeToMins(sEnd) - timeToMins(s.outTime));
-        if (inDiff > outDiff) workedHalf = 'second';
-        else if (outDiff > inDiff) workedHalf = 'first';
+    // PRIORITY 1: Check actual shift segments from backend (most accurate)
+    if (record.shifts && record.shifts.length > 0) {
+      const shift = record.shifts[0];
+      if (shift.shiftSegments && Array.isArray(shift.shiftSegments) && shift.shiftSegments.length >= 2) {
+        const firstHalfSegment = shift.shiftSegments[0];
+        const secondHalfSegment = shift.shiftSegments[1];
+        
+        // Check which segment is actually marked as present
+        if (firstHalfSegment.segmentName?.toLowerCase() === 'firsthalf' && firstHalfSegment.present === true) {
+          workedHalf = 'first';
+        } else if (secondHalfSegment.segmentName?.toLowerCase() === 'secondhalf' && secondHalfSegment.present === true) {
+          workedHalf = 'second';
+        }
       }
     }
 
-    if (eo === li && record.odInfo?.halfDayType) {
-      workedHalf = record.odInfo.halfDayType === 'first_half' ? 'second' : 'first';
+    // PRIORITY 2: Fallback to earlyOut vs lateIn heuristic (for backward compatibility)
+    if (!record.shifts?.[0]?.shiftSegments?.length) {
+      const eo = Number(record.earlyOutMinutes) || 0;
+      const li = Number(record.lateInMinutes) || 0;
+      workedHalf = eo > li ? 'first' : li > eo ? 'second' : 'first';
+
+      if (eo === li && record.shifts && record.shifts.length > 0) {
+        const s = record.shifts[0];
+        const sStart = s.shiftStartTime || (typeof s.shiftId === 'object' ? s.shiftId?.startTime : null);
+        const sEnd = s.shiftEndTime || (typeof s.shiftId === 'object' ? s.shiftId?.endTime : null);
+        if (s.inTime && sStart && s.outTime && sEnd) {
+          const inDiff = Math.max(0, timeToMins(s.inTime) - timeToMins(sStart));
+          const outDiff = Math.max(0, timeToMins(sEnd) - timeToMins(s.outTime));
+          if (inDiff > outDiff) workedHalf = 'second';
+          else if (outDiff > inDiff) workedHalf = 'first';
+        }
+      }
+
+      if (eo === li && record.odInfo?.halfDayType) {
+        workedHalf = record.odInfo.halfDayType === 'first_half' ? 'second' : 'first';
+      }
     }
 
     if (workedHalf === 'first') {

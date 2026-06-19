@@ -264,6 +264,31 @@ const getAttendanceCoverageForDate = async (employeeNumber, date) => {
       return out;
     }
     if (st === 'HALF_DAY') {
+      // PRIORITY 1: Check actual shift segments (most accurate, break-aware)
+      if (attendance.shifts && attendance.shifts.length > 0) {
+        const shift = attendance.shifts[0];
+        if (shift.shiftSegments && Array.isArray(shift.shiftSegments) && shift.shiftSegments.length >= 2) {
+          const firstHalf = shift.shiftSegments[0];
+          const secondHalf = shift.shiftSegments[1];
+          
+          // Check which segment is actually marked as present
+          if (firstHalf.segmentName?.toLowerCase() === 'firsthalf' && firstHalf.present === true) {
+            out.firstHalfPresent = true;
+            out.label = 'First-half attendance present';
+          } else if (secondHalf.segmentName?.toLowerCase() === 'secondhalf' && secondHalf.present === true) {
+            out.secondHalfPresent = true;
+            out.label = 'Second-half attendance present';
+          } else {
+            // Fallback to first half if no segments marked as present
+            out.firstHalfPresent = true;
+            out.label = 'First-half attendance present';
+          }
+          if (out.firstHalfPresent && out.secondHalfPresent) out.fullDayPresent = true;
+          return out;
+        }
+      }
+
+      // PRIORITY 2: Fallback to earlyOut vs lateIn heuristic (for backward compatibility)
       const eo = Number(attendance.totalEarlyOutMinutes) || 0;
       const li = Number(attendance.totalLateInMinutes) || 0;
       if (eo > li) {
