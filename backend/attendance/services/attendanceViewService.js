@@ -116,6 +116,7 @@ function slimShiftForTable(shift) {
     earlyOutMinutes: shift.earlyOutMinutes,
     lateInMinutes: shift.lateInMinutes,
     payableShift: shift.payableShift,
+    shiftSegments: shift.shiftSegments,
   };
 }
 
