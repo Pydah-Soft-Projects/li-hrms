@@ -35,6 +35,11 @@ const loginAuditSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    platform: {
+      type: String,
+      enum: ['web', 'mobile', 'unknown'],
+      default: 'unknown',
+    },
   },
   { timestamps: true }
 );

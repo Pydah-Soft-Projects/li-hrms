@@ -11,6 +11,20 @@ async function logLoginAttempt({
   req,
 }) {
   try {
+    // Detect platform: mobile app sends X-App-Platform: mobile header
+    const platformHeader = req.headers['x-app-platform'] || '';
+    const userAgent = req.headers['user-agent'] || '';
+    let platform = 'unknown';
+    if (platformHeader.toLowerCase() === 'mobile') {
+      platform = 'mobile';
+    } else if (platformHeader.toLowerCase() === 'web') {
+      platform = 'web';
+    } else if (/Expo|React-Native|okhttp|Dart/i.test(userAgent)) {
+      platform = 'mobile';
+    } else if (userAgent && /Mozilla|Chrome|Safari|Firefox|Edge/i.test(userAgent)) {
+      platform = 'web';
+    }
+
     await LoginAudit.create({
       identifier: identifier || '',
       userId,
@@ -18,8 +32,9 @@ async function logLoginAttempt({
       success,
       reason,
       ip: req.ip || req.headers['x-forwarded-for'] || '',
-      userAgent: req.headers['user-agent'] || '',
+      userAgent,
       deviceId: req.body?.deviceId || req.headers['x-device-id'] || '',
+      platform,
     });
   } catch (err) {
     console.warn('[LoginAudit] Failed to write audit log:', err.message);

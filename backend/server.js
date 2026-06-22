@@ -196,6 +196,11 @@ app.use('/api/dashboard', dashboardRoutes);
 const notificationRoutes = require('./notifications/index.js');
 app.use('/api/notifications', notificationRoutes);
 
+// Mobile app usage analytics routes
+const mobileAnalyticsRoutes = require('./mobile-analytics/index.js');
+app.use('/api/mobile-analytics', mobileAnalyticsRoutes);
+
+
 // Job routes
 const jobRoutes = require('./shared/routes/jobRoutes');
 app.use('/api/jobs', jobRoutes);
