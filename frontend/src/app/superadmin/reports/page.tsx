@@ -7,9 +7,10 @@ import ThumbReportsTab from '../../(workspace)/reports/thumb-reports-tab';
 import LeaveReportsTab from '../../(workspace)/reports/leave-reports-tab';
 import ODReportsTab from '../../(workspace)/reports/od-reports-tab';
 import LoanReportsTab from '../../(workspace)/reports/loan-reports-tab';
-import { BarChart2, Fingerprint, CreditCard, FileText, Briefcase, Wallet, Banknote } from 'lucide-react';
+import MobileAnalyticsTab from '../../(workspace)/reports/mobile-analytics-tab';
+import { BarChart2, Fingerprint, CreditCard, FileText, Briefcase, Wallet, Banknote, Smartphone } from 'lucide-react';
 
-type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance';
+type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'mobile_app';
 
 const TAB_CONFIG = {
   payroll: { label: 'Payroll', icon: CreditCard, activeBg: 'bg-violet-600' },
@@ -19,9 +20,10 @@ const TAB_CONFIG = {
   od: { label: 'OD', icon: Briefcase, activeBg: 'bg-amber-600' },
   loans: { label: 'Loans', icon: Wallet, activeBg: 'bg-rose-600' },
   salary_advance: { label: 'Salary Advance', icon: Banknote, activeBg: 'bg-amber-600' },
+  mobile_app: { label: 'Mobile App', icon: Smartphone, activeBg: 'bg-cyan-600' },
 };
 
-const ALL_TABS: TabType[] = ['payroll', 'attendance', 'biometric', 'leaves', 'od', 'loans', 'salary_advance'];
+const ALL_TABS: TabType[] = ['payroll', 'attendance', 'biometric', 'leaves', 'od', 'loans', 'salary_advance', 'mobile_app'];
 
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('attendance');
@@ -67,6 +69,7 @@ export default function ReportsPage() {
         {activeTab === 'od' && <ODReportsTab />}
         {activeTab === 'loans' && <LoanReportsTab defaultRequestType="loan" />}
         {activeTab === 'salary_advance' && <LoanReportsTab defaultRequestType="salary_advance" />}
+        {activeTab === 'mobile_app' && <MobileAnalyticsTab />}
       </div>
     </div>
   );
