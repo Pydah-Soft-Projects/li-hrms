@@ -1,8 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { format, parseISO } from 'date-fns';
-import { History, Search, Filter } from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { differenceInCalendarDays, format, parseISO } from 'date-fns';
+import { History, Search, Filter, Printer, Download } from 'lucide-react';
+import { toast } from 'react-toastify';
 import type { Holiday, HolidayGroup } from '@/lib/api';
 
 function formatHolidayDate(d: string | Date | undefined) {
@@ -32,6 +35,114 @@ function mappingSummary(h: Holiday) {
   return `${rows.length} division row${rows.length === 1 ? '' : 's'}`;
 }
 
+function getHolidayCreator(h: Holiday, userNames: Record<string, string>) {
+  if (!h.createdBy) return 'Unknown';
+  if (typeof h.createdBy === 'string') {
+    const id = h.createdBy as string;
+    // Prefer resolved name from cache if available
+    if (userNames && userNames[id]) return userNames[id];
+    // Fallback to raw id while resolving
+    return id || 'Unknown';
+  }
+  return (h.createdBy as any).name || (h.createdBy as any).employee_name || (h.createdBy as any).email || 'Unknown';
+}
+
+function getHolidayDurationDays(h: Holiday) {
+  if (!h.date) return '—';
+  if (!h.endDate) return '1 day';
+
+  try {
+    const start = typeof h.date === 'string' ? parseISO(h.date) : h.date;
+    const end = typeof h.endDate === 'string' ? parseISO(h.endDate) : h.endDate;
+    const days = differenceInCalendarDays(end, start) + 1;
+    return `${days} day${days === 1 ? '' : 's'}`;
+  } catch {
+    return '—';
+  }
+}
+
+function createHolidayReportPdf(holidays: Holiday[], userNames: Record<string, string>) {
+  const doc = new jsPDF('l', 'mm', 'a4');
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const headerHeight = 26;
+
+  doc.setFillColor(15, 23, 42);
+  doc.rect(14, 10, pageWidth - 28, headerHeight, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Holiday Report', 16, 18);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, 16, 24);
+
+  const body = holidays.map((h) => [
+    h.name || '—',
+    formatHolidayDate(h.date),
+    h.endDate ? formatHolidayDate(h.endDate) : '—',
+    getHolidayDurationDays(h),
+    h.type || '—',
+    scopeLabel(h),
+    getHolidayCreator(h, userNames),
+    h.createdAt ? formatHolidayDate(h.createdAt) : '—',
+    mappingSummary(h),
+    h.isActive === false ? 'Deactivated' : 'Active',
+  ]);
+
+  autoTable(doc, {
+    startY: 10 + headerHeight + 6,
+    head: [[
+      'Holiday Name',
+      'Start Date',
+      'End Date',
+      'Duration',
+      'Type',
+      'Scope',
+      'Created By',
+      'Created On',
+      'Mapping',
+      'Status',
+    ]],
+    body,
+    theme: 'grid',
+    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 8 },
+    styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+    margin: { left: 14, right: 14 },
+    columnStyles: {
+      0: { cellWidth: 35 },
+      1: { cellWidth: 22 },
+      2: { cellWidth: 22 },
+      3: { cellWidth: 18 },
+      4: { cellWidth: 20 },
+      5: { cellWidth: 28 },
+      6: { cellWidth: 30 },
+      7: { cellWidth: 22 },
+      8: { cellWidth: 26 },
+      9: { cellWidth: 18 },
+    },
+    didDrawPage: (data) => {
+      if (data?.cursor?.y) {
+        // nothing else required here; autoTable manages pagination
+      }
+    },
+  });
+
+  return doc;
+}
+
+function printPdfDocument(doc: jsPDF) {
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  const printWindow = window.open(url, '_blank');
+  if (printWindow) {
+    printWindow.onload = () => {
+      printWindow.focus();
+      printWindow.print();
+      URL.revokeObjectURL(url);
+    };
+  }
+}
+
 interface HolidayRegistryPanelProps {
   holidays: Holiday[];
   groups?: HolidayGroup[];
@@ -46,9 +157,48 @@ export default function HolidayRegistryPanel({
   onOpenEdit,
   canEdit,
 }: HolidayRegistryPanelProps) {
+  const [userNames, setUserNames] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const idsToFetch = new Set<string>();
+    holidays.forEach((h) => {
+      if (h && typeof h.createdBy === 'string') {
+        const id = h.createdBy as string;
+        if (id && !userNames[id]) idsToFetch.add(id);
+      }
+    });
+    if (idsToFetch.size === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      const entries: Array<[string, string]> = [];
+      await Promise.all(Array.from(idsToFetch).map(async (id) => {
+        try {
+          const res = await (await import('@/lib/api')).api.getUser(id);
+          if (res && res.success && res.data) {
+            const name = res.data.name || res.data.employee_name || res.data.email || id;
+            entries.push([id, name]);
+          } else {
+            entries.push([id, id]);
+          }
+        } catch (e) {
+          entries.push([id, id]);
+        }
+      }));
+      if (cancelled) return;
+      setUserNames((prev) => {
+        const copy = { ...prev };
+        entries.forEach(([id, name]) => { copy[id] = name; });
+        return copy;
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [holidays]);
+
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [scopeFilter, setScopeFilter] = useState<'all' | 'GLOBAL' | 'GROUP' | 'MAPPING'>('all');
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const sorted = useMemo(() => {
     return [...holidays].sort((a, b) => {
@@ -68,7 +218,9 @@ export default function HolidayRegistryPanel({
       return (
         (h.name || '').toLowerCase().includes(q) ||
         (h.type || '').toLowerCase().includes(q) ||
-        scopeLabel(h).toLowerCase().includes(q)
+        scopeLabel(h).toLowerCase().includes(q) ||
+        getHolidayCreator(h, userNames).toLowerCase().includes(q) ||
+        (h.createdAt ? formatHolidayDate(h.createdAt).toLowerCase() : '').includes(q)
       );
     });
   }, [sorted, search, statusFilter, scopeFilter]);
@@ -109,6 +261,55 @@ export default function HolidayRegistryPanel({
             <option value="GROUP">Group</option>
             <option value="MAPPING">Employee scope</option>
           </select>
+          <button
+            type="button"
+            onClick={async () => {
+              if (filtered.length === 0) {
+                toast.info('No holidays to export.');
+                return;
+              }
+              setExportingPdf(true);
+              try {
+                const doc = createHolidayReportPdf(filtered, userNames);
+                doc.save(`Holiday_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
+                toast.success('Holiday PDF exported successfully.');
+              } catch (error) {
+                console.error(error);
+                toast.error('Failed to export holiday PDF.');
+              } finally {
+                setExportingPdf(false);
+              }
+            }}
+            disabled={exportingPdf || filtered.length === 0}
+            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Export PDF</span>
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              if (filtered.length === 0) {
+                toast.info('No holidays to print.');
+                return;
+              }
+              setExportingPdf(true);
+              try {
+                const doc = createHolidayReportPdf(filtered, userNames);
+                printPdfDocument(doc);
+              } catch (error) {
+                console.error(error);
+                toast.error('Failed to prepare holiday PDF for printing.');
+              } finally {
+                setExportingPdf(false);
+              }
+            }}
+            disabled={exportingPdf || filtered.length === 0}
+            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Printer className="h-4 w-4" />
+            <span className="hidden sm:inline">Print PDF</span>
+          </button>
         </div>
       </div>
 
@@ -120,6 +321,8 @@ export default function HolidayRegistryPanel({
               <th className="px-4 py-3">Dates</th>
               <th className="px-4 py-3">Type</th>
               <th className="px-4 py-3">Scope</th>
+              <th className="px-4 py-3">Created By</th>
+              <th className="px-4 py-3">Created</th>
               <th className="px-4 py-3">Mapping</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Actions</th>
@@ -128,7 +331,7 @@ export default function HolidayRegistryPanel({
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
+                <td colSpan={9} className="px-4 py-12 text-center text-slate-500">
                   No holidays match your filters.
                 </td>
               </tr>
@@ -156,6 +359,8 @@ export default function HolidayRegistryPanel({
                         {scopeLabel(h)}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-slate-700 dark:text-slate-200">{getHolidayCreator(h, userNames)}</td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{h.createdAt ? formatHolidayDate(h.createdAt) : '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{mappingSummary(h)}</td>
                     <td className="px-4 py-3">
                       <span

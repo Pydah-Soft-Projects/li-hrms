@@ -14,6 +14,8 @@ import {
 import type { EmployeeGroup } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import { toast, ToastContainer } from 'react-toastify';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -32,6 +34,7 @@ import {
   Plus,
   Calendar,
   Save,
+  Printer,
   LayoutGrid,
   List,
   Pencil,
@@ -267,6 +270,75 @@ const getEmployeeInitials = (req: ResignationRequest) => {
   return (name[0] || 'E').toUpperCase();
 };
 
+const getNocStatus = () => 'N/A';
+
+const getLatestApprovedStep = (req: ResignationRequest) => {
+  return (req.workflow?.approvalChain || [])
+    .filter((step) => (step.status || '').toLowerCase() === 'approved')
+    .sort((a, b) => {
+      const aTime = new Date(a.updatedAt || '').getTime() || 0;
+      const bTime = new Date(b.updatedAt || '').getTime() || 0;
+      return bTime - aTime;
+    })[0];
+};
+
+const getFormattedApprovalDate = (req: ResignationRequest): string => {
+  const step = getLatestApprovedStep(req);
+  if (!step?.updatedAt) return '';
+  return formatDate(step.updatedAt);
+};
+
+const getApprovalStageStatus = (req: ResignationRequest, index: number) => {
+  const step = req.workflow?.approvalChain?.[index];
+  if (!step) return '';
+  const status = (step.status || '').toLowerCase();
+  if (status) return toDisplayCase(status);
+  return String(step.label || step.role || '').trim();
+};
+
+const getWorkflowStageLabel = (req: ResignationRequest, index: number): string => {
+  const step = req.workflow?.approvalChain?.[index];
+  if (!step) return `Stage ${index + 1}`;
+  const label = step.label || step.role || '';
+  return String(label).trim() || `Stage ${index + 1}`;
+};
+
+const getStageContent = (req: ResignationRequest, index: number): string => {
+  const step = req.workflow?.approvalChain?.[index];
+  if (!step) return 'N/A';
+  
+  const status = (step.status || '').toLowerCase();
+  const statusDisplay = toDisplayCase(status) || 'Pending';
+  
+  if (!status || status === 'pending') {
+    return statusDisplay;
+  }
+  
+  const userName = step.actionByName || step.actionByRole || '—';
+  const dateTime = step.updatedAtIST || (step.updatedAt ? formatDateTime(step.updatedAt) : '');
+  
+  return `${statusDisplay}\n${userName}${dateTime ? `\n${dateTime}` : ''}`;
+};
+
+const groupRequestsByDivisionDepartment = (requests: ResignationRequest[]) => {
+  const grouped: Record<string, Record<string, ResignationRequest[]>> = {};
+  
+  requests.forEach((req) => {
+    const division = req.employeeId?.division_id?.name || 'Unknown Division';
+    const department = req.employeeId?.department_id?.name || 'Unknown Department';
+    
+    if (!grouped[division]) {
+      grouped[division] = {};
+    }
+    if (!grouped[division][department]) {
+      grouped[division][department] = [];
+    }
+    grouped[division][department].push(req);
+  });
+  
+  return grouped;
+};
+
 const parseDateSafe = (value: any): Date | null => {
   if (!value) return null;
   const d = new Date(value);
@@ -330,6 +402,7 @@ export default function SuperAdminResignationsPage() {
   const [applyPendingAssets, setApplyPendingAssets] = useState<any[]>([]);
   const [applyPendingAssetsLoading, setApplyPendingAssetsLoading] = useState(false);
   const [resignationSettings, setResignationSettings] = useState<any>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const [filters, setFilters] = useState({
     search: '',
@@ -816,6 +889,139 @@ export default function SuperAdminResignationsPage() {
     });
   }, [baseFiltered, baseFilteredPending, activeTab]);
 
+  const generateResignationPdf = (requests: ResignationRequest[]) => {
+    const doc = new jsPDF('l', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let currentY = 10;
+    let isFirstSection = true;
+
+    const grouped = groupRequestsByDivisionDepartment(requests);
+
+    Object.keys(grouped).sort().forEach((division) => {
+      Object.keys(grouped[division]).sort().forEach((department) => {
+        const divisionalRequests = grouped[division][department];
+
+        if (!isFirstSection) {
+          doc.addPage();
+          currentY = 10;
+        }
+
+        doc.setFillColor(15, 23, 42);
+        doc.rect(14, currentY, pageWidth - 28, 25, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Resignation Report - ${division} / ${department}`, 14, currentY + 8);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, 14, currentY + 16);
+        currentY += 28;
+
+        const stageLabels: string[] = [];
+        if (divisionalRequests.length > 0) {
+          const firstReq = divisionalRequests[0];
+          for (let i = 0; i < 3; i++) {
+            stageLabels.push(getWorkflowStageLabel(firstReq, i));
+          }
+        }
+
+        const body = divisionalRequests.map((req) => [
+          req.emp_no || '—',
+          getEmployeeName(req),
+          ((typeof req.employeeId?.designation_id === 'object' && req.employeeId?.designation_id?.name)
+            ? String(req.employeeId.designation_id.name)
+            : (typeof req.employeeId?.designation === 'object' && req.employeeId?.designation?.name)
+              ? String(req.employeeId.designation.name)
+              : '—'),
+          req.employeeId?.employee_group_id?.name || '—',
+          formatDate(req.createdAt),
+          getFormattedApprovalDate(req) || '—',
+          getStageContent(req, 0),
+          getStageContent(req, 1),
+          getStageContent(req, 2),
+          getNocStatus(),
+        ]);
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [[
+            'EC No',
+            'Name of the Employee',
+            'Designation',
+            'Group',
+            'Date Applied',
+            'Date Approved',
+            stageLabels[0],
+            stageLabels[1],
+            stageLabels[2],
+            'NOC Completed',
+          ]],
+          body,
+          theme: 'grid',
+          headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 8 },
+          styles: { fontSize: 7, cellPadding: 2 },
+          margin: { left: 14, right: 14 },
+          columnStyles: {
+            0: { cellWidth: 18 },
+            1: { cellWidth: 35 },
+            2: { cellWidth: 28 },
+            3: { cellWidth: 22 },
+            4: { cellWidth: 22 },
+            5: { cellWidth: 22 },
+            6: { cellWidth: 28 },
+            7: { cellWidth: 28 },
+            8: { cellWidth: 28 },
+            9: { cellWidth: 18 },
+          },
+          didDrawPage: (data) => {
+            currentY = data.cursor?.y || currentY;
+          },
+        });
+
+        currentY = (doc as any).lastAutoTable?.finalY || currentY + 10;
+        isFirstSection = false;
+      });
+    });
+
+    return doc;
+  };
+
+  const handleExportResignationsPdf = async (requests: ResignationRequest[]) => {
+    if (requests.length === 0) {
+      toast.info('No resignation records to export.');
+      return;
+    }
+    setExportingPdf(true);
+    try {
+      const doc = generateResignationPdf(requests);
+      doc.save(`Resignation_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast.success('Resignation PDF exported successfully.');
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Failed to export resignation PDF.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
+  const printPdfDocument = (doc: jsPDF) => {
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    const printWindow = window.open(url, '_blank');
+    if (printWindow) {
+      printWindow.onload = () => {
+        printWindow.focus();
+        printWindow.print();
+        URL.revokeObjectURL(url);
+      };
+    }
+  };
+
+  const handlePrintResignations = async () => {
+    const doc = await generateResignationPdf(filteredRequests);
+    printPdfDocument(doc);
+  };
+
   const canEditLWDOnRequest = (req: ResignationRequest) =>
     ['pending', 'approved'].includes(String(req.status || '').toLowerCase());
 
@@ -992,6 +1198,25 @@ export default function SuperAdminResignationsPage() {
                 </div>
               </div>
           </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleExportResignationsPdf(filteredRequests)}
+              disabled={exportingPdf}
+              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 text-sm font-bold shadow-lg shadow-slate-900/20 transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Save className="w-4 h-4" />
+              {exportingPdf ? 'Exporting PDF...' : 'Export PDF'}
+            </button>
+            <button
+              type="button"
+              onClick={handlePrintResignations}
+              className="inline-flex items-center gap-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 text-sm font-bold shadow-sm transition active:scale-95 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              <Printer className="w-4 h-4" />
+              Print
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -1047,6 +1272,7 @@ export default function SuperAdminResignationsPage() {
                     <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Applied</th>
                     <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">Organization</th>
                     <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">LWD</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">NOC Completed</th>
                     <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Status</th>
                     <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-right">Actions</th>
                   </tr>
@@ -1110,6 +1336,11 @@ export default function SuperAdminResignationsPage() {
                         <div className="text-xs font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                           {formatDate(req.leftDate)}
                         </div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="inline-flex items-center justify-center rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-tight text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                          N/A
+                        </span>
                       </td>
                       <td className="px-6 py-4 text-center font-bold">
                         <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${getStatusColor(getStatusVisualKey(req))}`}>

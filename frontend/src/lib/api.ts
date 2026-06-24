@@ -1287,7 +1287,7 @@ export interface Holiday {
   isActive?: boolean;
   deactivatedAt?: string | null;
   deactivatedBy?: string | User | null;
-  createdBy?: string;
+  createdBy?: string | { name?: string; email?: string; employee_name?: string };
   createdAt?: string;
   updatedAt?: string;
   rosterFillMode?: 'HOL' | 'WEEK_OFF';
