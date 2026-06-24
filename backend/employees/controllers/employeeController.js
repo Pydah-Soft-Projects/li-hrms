@@ -39,6 +39,7 @@ const {
   stripSalaryKeysFromDynamicField,
   getSalariesGroupFieldIds,
 } = require('../utils/employeeSalariesNormalize');
+const { normalizeNotificationArrayFields } = require('../utils/notificationPayloadNormalization');
 
 /**
  * Normalize web-push subscriptions from multipart/form payloads.
@@ -46,29 +47,8 @@ const {
  * must be converted to an array to avoid Mongoose embedded-cast failures.
  */
 const normalizePushSubscriptionsPayload = (employeeData) => {
-  if (!employeeData || employeeData.pushSubscriptions === undefined) return;
-
-  const { pushSubscriptions } = employeeData;
-  if (Array.isArray(pushSubscriptions)) return;
-
-  if (typeof pushSubscriptions === 'string') {
-    const trimmed = pushSubscriptions.trim();
-    if (!trimmed) {
-      delete employeeData.pushSubscriptions;
-      return;
-    }
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (Array.isArray(parsed)) {
-        employeeData.pushSubscriptions = parsed;
-        return;
-      }
-    } catch (err) {
-      // Ignore invalid string payloads from profile forms instead of failing update.
-    }
-  }
-
-  delete employeeData.pushSubscriptions;
+  if (!employeeData || typeof employeeData !== 'object') return;
+  normalizeNotificationArrayFields(employeeData);
 };
 
 // ============== Helper Functions ==============
