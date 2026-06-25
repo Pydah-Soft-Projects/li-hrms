@@ -44,6 +44,15 @@ function formatStageCell(step) {
   return [statusDisplay, userName, dateTime].filter(Boolean).join('\n');
 }
 
+function getCellAlign(colIndex, stageCount) {
+  const fixedCount = FIXED_HEADERS.length;
+  const statusCol = fixedCount + stageCount;
+  if (colIndex <= 2) return 'left';
+  if (colIndex >= fixedCount && colIndex < statusCol) return 'left';
+  if (colIndex === statusCol) return 'center';
+  return 'center';
+}
+
 function getMaxApprovalStageCount(items) {
   let max = 0;
   for (const item of items || []) {
@@ -159,6 +168,7 @@ function drawMultiHeaderPdfTable(doc, headerConfig, rows, startX, startY, colWid
     cellPaddingX = 3,
     cellPaddingY = 3,
     lineBreak = true,
+    stageCount = Math.max(1, colWidths.length - FIXED_HEADERS.length - 1),
   } = options;
 
   let y = startY;
@@ -214,7 +224,7 @@ function drawMultiHeaderPdfTable(doc, headerConfig, rows, startX, startY, colWid
       row.forEach((cell, index) => {
         const h = doc.heightOfString(String(cell ?? ''), {
           width: Math.max(1, colWidths[index] - cellPaddingX * 2),
-          align: index <= 2 ? 'left' : 'center',
+          align: getCellAlign(index, stageCount),
         });
         rowHeight = Math.max(rowHeight, h + cellPaddingY * 2);
       });
@@ -236,7 +246,7 @@ function drawMultiHeaderPdfTable(doc, headerConfig, rows, startX, startY, colWid
       doc.fillColor('#334155').font('Helvetica').fontSize(fontSize);
       doc.text(String(cell ?? ''), x + cellPaddingX, y + cellPaddingY, {
         width: Math.max(1, colWidth - cellPaddingX * 2),
-        align: index <= 2 ? 'left' : 'center',
+        align: getCellAlign(index, stageCount),
         lineBreak,
       });
       x += colWidth;
