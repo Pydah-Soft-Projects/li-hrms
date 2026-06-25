@@ -214,9 +214,37 @@ const calculateSegmentCoveragePercentage = (segment, inTime, outTime) => {
 };
 
 /**
- * Intelligent break-aware presence: allocates continuous work credit to dominant segment
- * Dominant segment = one with larger coverage percentage
- * Only one segment can be marked PRESENT (the one with best coverage that meets threshold)
+ * Evaluate one half: raw window overlap first, then break credit (+ optional overflow) if work spans the break.
+ */
+const evaluateHalfPresenceWithBreakCredit = ({
+  rawMinutes,
+  minMinutes,
+  workedThroughBreak,
+  fullBreakMinutes,
+  overflowMinutes = 0,
+}) => {
+  if (minMinutes <= 0) {
+    return { present: rawMinutes > 0, credit: rawMinutes };
+  }
+
+  if (rawMinutes >= minMinutes) return { present: true, credit: rawMinutes };
+
+  if (!workedThroughBreak) {
+    return { present: false, credit: rawMinutes };
+  }
+
+  let credit = rawMinutes + fullBreakMinutes;
+  if (credit < minMinutes && overflowMinutes > 0) {
+    const needed = minMinutes - credit;
+    credit += Math.min(overflowMinutes, needed);
+  }
+
+  return { present: credit >= minMinutes, credit };
+};
+
+/**
+ * Break-aware presence: each half is evaluated independently (raw overlap, then break credit).
+ * Dominant-segment fallback runs only when neither half qualifies after those checks.
  */
 const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime) => {
   if (!inTime || !outTime) return { firstHalf: false, secondHalf: false };
@@ -230,7 +258,6 @@ const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime) => {
     return { firstHalf: false, secondHalf: false };
   }
   
-  // Calculate raw overlap for each segment
   const attendanceRange = {
     startDate: new Date(inTime),
     endDate: finalOutTime,
@@ -238,65 +265,73 @@ const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime) => {
   
   const firstHalfRawMinutes = getOverlapMinutes(firstHalf.range, attendanceRange);
   const secondHalfRawMinutes = getOverlapMinutes(secondHalf.range, attendanceRange);
-  const breakRawMinutes = breakSegment ? getOverlapMinutes(breakSegment.range, attendanceRange) : 0;
   
-  // Calculate coverage percentages
   const firstHalfWindowMinutes = Math.round((firstHalf.range.endDate.getTime() - firstHalf.range.startDate.getTime()) / 60000);
   const secondHalfWindowMinutes = Math.round((secondHalf.range.endDate.getTime() - secondHalf.range.startDate.getTime()) / 60000);
   
   const firstHalfCoveragePercent = firstHalfWindowMinutes > 0 ? (firstHalfRawMinutes / firstHalfWindowMinutes) * 100 : 0;
   const secondHalfCoveragePercent = secondHalfWindowMinutes > 0 ? (secondHalfRawMinutes / secondHalfWindowMinutes) * 100 : 0;
   
-  // Determine dominant segment (larger coverage percentage)
   const firstHalfIsDominant = firstHalfCoveragePercent >= secondHalfCoveragePercent;
   
-  // Calculate full continuous work duration
   const totalWorkMinutes = Math.round((finalOutTime.getTime() - new Date(inTime).getTime()) / 60000);
-  const fullBreakMinutes = breakSegment ? Math.round((breakSegment.range.endDate.getTime() - breakSegment.range.startDate.getTime()) / 60000) : 0;
+  const fullBreakMinutes = breakSegment
+    ? Math.round((breakSegment.range.endDate.getTime() - breakSegment.range.startDate.getTime()) / 60000)
+    : 0;
   
-  // Check if work spans across break (continuous work through break)
-  const workedThroughBreak = breakSegment && 
-    new Date(inTime) < breakSegment.range.endDate && 
-    finalOutTime > breakSegment.range.startDate;
+  const workedThroughBreak = breakSegment
+    && new Date(inTime) < breakSegment.range.endDate
+    && finalOutTime > breakSegment.range.startDate;
   
-  // For dominant segment: allocate full continuous work + break credit
-  let dominantSegmentCredit = 0;
-  let recessiveSegmentCredit = 0;
-  
-  if (firstHalfIsDominant) {
-    // First half is dominant: give it all work credit
-    dominantSegmentCredit = totalWorkMinutes;
-    if (workedThroughBreak) {
-      dominantSegmentCredit += fullBreakMinutes; // Add break time if continuous
-    }
-    recessiveSegmentCredit = secondHalfRawMinutes; // Second gets only its raw overlap
-  } else {
-    // Second half is dominant: give it all work credit
-    dominantSegmentCredit = totalWorkMinutes;
-    if (workedThroughBreak) {
-      dominantSegmentCredit += fullBreakMinutes; // Add break time if continuous
-    }
-    recessiveSegmentCredit = firstHalfRawMinutes; // First gets only its raw overlap
-  }
-  
-  // Convert minDuration (hours) to minutes
   const firstHalfMinMinutes = (firstHalf.minDuration || 0) * 60;
   const secondHalfMinMinutes = (secondHalf.minDuration || 0) * 60;
-  
-  // Check presence: dominant segment first, then recessive
-  let firstHalfPresent = false;
-  let secondHalfPresent = false;
-  
-  if (firstHalfIsDominant) {
-    // First half uses dominant credit
-    firstHalfPresent = dominantSegmentCredit >= firstHalfMinMinutes;
-    // Second half uses only its raw overlap
-    secondHalfPresent = !firstHalfPresent && (recessiveSegmentCredit >= secondHalfMinMinutes);
-  } else {
-    // Second half uses dominant credit
-    secondHalfPresent = dominantSegmentCredit >= secondHalfMinMinutes;
-    // First half uses only its raw overlap
-    firstHalfPresent = !secondHalfPresent && (recessiveSegmentCredit >= firstHalfMinMinutes);
+
+  // Overflow into second-half window can help first half when employee skips lunch but leaves early afternoon
+  let firstHalfOverflowMinutes = 0;
+  if (workedThroughBreak && breakSegment?.range && secondHalf?.range && finalOutTime > breakSegment.range.endDate) {
+    firstHalfOverflowMinutes = getOverlapMinutes(
+      {
+        startDate: new Date(Math.max(breakSegment.range.endDate.getTime(), new Date(inTime).getTime())),
+        endDate: new Date(Math.min(secondHalf.range.endDate.getTime(), finalOutTime.getTime())),
+      },
+      attendanceRange
+    );
+  }
+
+  const firstHalfEval = evaluateHalfPresenceWithBreakCredit({
+    rawMinutes: firstHalfRawMinutes,
+    minMinutes: firstHalfMinMinutes,
+    workedThroughBreak,
+    fullBreakMinutes,
+    overflowMinutes: firstHalfOverflowMinutes,
+  });
+
+  const secondHalfEval = evaluateHalfPresenceWithBreakCredit({
+    rawMinutes: secondHalfRawMinutes,
+    minMinutes: secondHalfMinMinutes,
+    workedThroughBreak,
+    fullBreakMinutes,
+  });
+
+  let firstHalfPresent = firstHalfEval.present;
+  let secondHalfPresent = secondHalfEval.present;
+  let firstHalfCredit = firstHalfEval.credit;
+  let secondHalfCredit = secondHalfEval.credit;
+
+  // Dominant fallback: only when neither half met minimum on its own (with break credit)
+  if (!firstHalfPresent && !secondHalfPresent) {
+    const dominantCredit = totalWorkMinutes + (workedThroughBreak ? fullBreakMinutes : 0);
+    const dominantMin = firstHalfIsDominant ? firstHalfMinMinutes : secondHalfMinMinutes;
+
+    if (dominantCredit >= dominantMin) {
+      if (firstHalfIsDominant) {
+        firstHalfPresent = true;
+        firstHalfCredit = dominantCredit;
+      } else {
+        secondHalfPresent = true;
+        secondHalfCredit = dominantCredit;
+      }
+    }
   }
   
   return {
@@ -305,8 +340,8 @@ const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime) => {
     dominantSegment: firstHalfIsDominant ? 'firstHalf' : 'secondHalf',
     firstHalfCoveragePercent,
     secondHalfCoveragePercent,
-    firstHalfCredit: firstHalfIsDominant ? dominantSegmentCredit : recessiveSegmentCredit,
-    secondHalfCredit: firstHalfIsDominant ? recessiveSegmentCredit : dominantSegmentCredit,
+    firstHalfCredit,
+    secondHalfCredit,
   };
 };
 
@@ -451,7 +486,7 @@ const getShiftSegmentAssignment = (shift, dateStr, inTime, outTime, options = {}
     : { firstHalf: false, secondHalf: false };
 
   const segmentDetails = timeline.segments.map((segment) => {
-    // Use intelligent presence calculation (only one segment can be present)
+    // Each half is evaluated independently; both can be present when raw overlap qualifies
     const present = segment.segmentName === 'firstHalf' 
       ? intelligentPresence.firstHalf 
       : intelligentPresence.secondHalf;
@@ -481,10 +516,14 @@ const getShiftSegmentAssignment = (shift, dateStr, inTime, outTime, options = {}
     return sum + ((segment.present ? Number(segment.payableShifts) : 0) || 0);
   }, 0);
 
+  const hasConfiguredHalves = timeline.segments && timeline.segments.length > 0;
+
   return {
     shiftSegments: segmentDetails,
     continuityWarnings: timeline.continuityWarnings,
-    totalPayableShifts: totalPayableShifts > 0 ? Math.round(totalPayableShifts * 100) / 100 : (typeof shift.payableShifts === 'number' ? shift.payableShifts : 0),
+    totalPayableShifts: totalPayableShifts > 0
+      ? Math.round(totalPayableShifts * 100) / 100
+      : (hasConfiguredHalves ? 0 : (typeof shift.payableShifts === 'number' ? shift.payableShifts : 0)),
   };
 };
 

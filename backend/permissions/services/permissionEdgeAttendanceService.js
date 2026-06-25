@@ -6,6 +6,14 @@
 const Permission = require('../model/Permission');
 const { createISTDate } = require('../../shared/utils/dateUtils');
 const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
+const {
+  SHIFT_PRESENT_THRESHOLD,
+  computeStatusDurationHours,
+  meetsShiftLevelPresent,
+  resolveExpectedHours,
+  syncBothHalvesIfShiftLevelPresent,
+  loadEffectiveShiftDoc,
+} = require('../../attendance/services/shiftPresenceResolutionService');
 
 const DEFAULT_GRACE = 0;
 
@@ -172,16 +180,23 @@ async function applyEdgePermissionAdjustmentsToShiftSegment({
 }
 
 /**
- * Recompute shift status thresholds (present / half / absent) using punch + OD + edge hours.
+ * Recompute shift status using shift-level present gate (75% + edge permission hours).
+ * Half-segment logic is not run here — only upgrades/downgrades from effective hours.
  */
-function applyStatusFromDuration(pShift, expectedHours) {
-  const exp = Number(expectedHours) || 8;
-  const statusDuration =
-    (Number(pShift.punchHours) || 0) +
-    (Number(pShift.odHours) || 0) +
-    (Number(pShift.edgePermissionHours) || 0);
+function applyStatusFromDuration(pShift, expectedHours, shiftDoc = null) {
+  const exp = resolveExpectedHours(pShift, shiftDoc);
+  const dateStr = pShift.inTime
+    ? require('../../shared/utils/dateUtils').extractISTComponents(pShift.inTime).dateStr
+    : null;
+  const statusDuration = dateStr ? computeStatusDurationHours(pShift, dateStr) : (
+    (Number(pShift.punchHours) || 0) + (Number(pShift.odHours) || 0) + (Number(pShift.edgePermissionHours) || 0)
+  );
+  const shiftMin = shiftDoc?.minDuration != null && Number(shiftDoc.minDuration) > 0
+    ? Number(shiftDoc.minDuration)
+    : null;
   const basePayable = pShift.basePayable ?? 1;
-  if (statusDuration >= exp * 0.9) {
+
+  if (meetsShiftLevelPresent(statusDuration, exp, shiftMin)) {
     pShift.status = 'PRESENT';
     pShift.payableShift = basePayable;
   } else if (statusDuration >= exp * 0.4) {
@@ -212,12 +227,20 @@ async function refreshAttendanceEdgePermissions(employeeNumber, dateStr) {
   const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
   const Employee = require('../../employees/model/Employee');
   const { calculateMonthlySummary } = require('../../attendance/services/summaryCalculationService');
+  const { resolveGraceFromSettings } = require('../../attendance/services/shiftSegmentAttendanceService');
 
   const empUpper = String(employeeNumber).toUpperCase();
   const daily = await AttendanceDaily.findOne({ employeeNumber: empUpper, date: dateStr });
   if (!daily || !daily.shifts || !daily.shifts.length) {
     return { success: false, message: 'No attendance daily or shifts' };
   }
+
+  const employee = await Employee.findOne({ emp_no: empUpper })
+    .populate('division_id')
+    .select('_id division_id')
+    .lean();
+  const divisionId = employee?.division_id?._id || employee?.division_id || null;
+  const graceOpts = await resolveGraceFromSettings();
 
   const refreshedShifts = [];
   for (const shift of daily.shifts) {
@@ -234,8 +257,16 @@ async function refreshAttendanceEdgePermissions(employeeNumber, dateStr) {
       globalGrace: DEFAULT_GRACE,
     });
 
+    const shiftDoc = pShift.shiftId
+      ? await loadEffectiveShiftDoc(pShift, divisionId)
+      : null;
     const expected = pShift.expectedHours || 8;
-    applyStatusFromDuration(pShift, expected);
+    applyStatusFromDuration(pShift, expected, shiftDoc);
+
+    if (pShift.status === 'PRESENT') {
+      await syncBothHalvesIfShiftLevelPresent(pShift, dateStr, graceOpts, divisionId);
+    }
+
     refreshedShifts.push(pShift);
   }
 
@@ -249,7 +280,6 @@ async function refreshAttendanceEdgePermissions(employeeNumber, dateStr) {
 
   await daily.save();
 
-  const employee = await Employee.findOne({ emp_no: empUpper }).select('_id').lean();
   if (employee?._id) {
     const [y, m] = dateStr.split('-').map(Number);
     await calculateMonthlySummary(employee._id, empUpper, y, m);
@@ -270,4 +300,5 @@ module.exports = {
   timeOnDate,
   shiftOvernight,
   resolvePermittedInstant,
+  SHIFT_PRESENT_THRESHOLD,
 };

@@ -7,13 +7,15 @@ import ThumbReportsTab from '../../(workspace)/reports/thumb-reports-tab';
 import LeaveReportsTab from '../../(workspace)/reports/leave-reports-tab';
 import ODReportsTab from '../../(workspace)/reports/od-reports-tab';
 import LoanReportsTab from '../../(workspace)/reports/loan-reports-tab';
+import DeductionsReportsTab from '../../(workspace)/reports/deductions-reports-tab';
 import MobileAnalyticsTab from '../../(workspace)/reports/mobile-analytics-tab';
-import { BarChart2, Fingerprint, CreditCard, FileText, Briefcase, Wallet, Banknote, Smartphone } from 'lucide-react';
+import { BarChart2, Fingerprint, CreditCard, FileText, Briefcase, Wallet, Banknote, Smartphone, TrendingDown } from 'lucide-react';
 
-type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'mobile_app';
+type TabType = 'payroll' | 'deductions' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'mobile_app';
 
 const TAB_CONFIG = {
   payroll: { label: 'Payroll', icon: CreditCard, activeBg: 'bg-violet-600' },
+  deductions: { label: 'Deductions', icon: TrendingDown, activeBg: 'bg-red-600' },
   attendance: { label: 'Attendance', icon: BarChart2, activeBg: 'bg-indigo-600' },
   biometric: { label: 'Biometric', icon: Fingerprint, activeBg: 'bg-emerald-600' },
   leaves: { label: 'Leaves', icon: FileText, activeBg: 'bg-blue-600' },
@@ -23,7 +25,7 @@ const TAB_CONFIG = {
   mobile_app: { label: 'Mobile App', icon: Smartphone, activeBg: 'bg-cyan-600' },
 };
 
-const ALL_TABS: TabType[] = ['payroll', 'attendance', 'biometric', 'leaves', 'od', 'loans', 'salary_advance', 'mobile_app'];
+const ALL_TABS: TabType[] = ['payroll', 'deductions', 'attendance', 'biometric', 'leaves', 'od', 'loans', 'salary_advance', 'mobile_app'];
 
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('attendance');
@@ -48,8 +50,8 @@ export default function ReportsPage() {
                 key={tabId}
                 onClick={() => setActiveTab(tabId)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 whitespace-nowrap ${isActive
-                    ? `${cfg.activeBg} text-white shadow-md scale-[1.02]`
-                    : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                  ? `${cfg.activeBg} text-white shadow-md scale-[1.02]`
+                  : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
                   }`}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -63,6 +65,7 @@ export default function ReportsPage() {
       {/* Tab Content */}
       <div className="px-4 sm:px-6 md:px-8 py-5">
         {activeTab === 'payroll' && <PayrollTransactionsTab />}
+        {activeTab === 'deductions' && <DeductionsReportsTab />}
         {activeTab === 'attendance' && <AttendanceReportsTab />}
         {activeTab === 'biometric' && <ThumbReportsTab />}
         {activeTab === 'leaves' && <LeaveReportsTab />}

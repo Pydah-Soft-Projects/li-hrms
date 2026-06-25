@@ -30,12 +30,10 @@ const {
   calculateEarlyOut,
 } = require('../../shifts/services/shiftDetectionService');
 const {
-  applyEdgePermissionAdjustmentsToShiftSegment,
-  applyStatusFromDuration,
-} = require('../../permissions/services/permissionEdgeAttendanceService');
-const {
   autoCreateEdgePermissionsForAttendance,
 } = require('../../permissions/services/autoEdgePermissionCreationService');
+const { resolveShiftPresence } = require('./shiftPresenceResolutionService');
+const { resolveGraceFromSettings } = require('./shiftSegmentAttendanceService');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 const formatDate = (date) => extractISTComponents(date).dateStr;
@@ -620,6 +618,9 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
     }
 
     const configWithMode = { ...generalConfig, processingMode };
+    const employeeRow = await Employee.findOne({ emp_no: employeeNumber.toUpperCase() }).select('division_id').lean();
+    const divisionId = employeeRow?.division_id?._id || employeeRow?.division_id || null;
+
     const shiftAssignment = await detectAndAssignShift(
       employeeNumber,
       date,
@@ -717,47 +718,18 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
         pShift.workingHours = Math.round((punchHours + addedOdHours) * 100) / 100;
       }
 
-      await applyEdgePermissionAdjustmentsToShiftSegment({
-        employeeNumber,
-        date,
-        pShift,
-        globalGrace: 15,
-      });
-
       const basePayable = (assignedShiftDef?.payableShifts ?? 1);
       pShift.basePayable = basePayable;
-      applyStatusFromDuration(pShift, expectedHours);
 
-      try {
-        const { enrichShiftRecordWithSegments, resolveGraceFromSettings } = require('./shiftSegmentAttendanceService');
-        await enrichShiftRecordWithSegments(pShift, date, await resolveGraceFromSettings(), { employeeNumber });
-        
-        // CRITICAL: After segments are enriched, recalculate payableShift from final segments (break-aware)
-        if (pShift.shiftSegments && Array.isArray(pShift.shiftSegments) && pShift.shiftSegments.length > 0) {
-          const segmentPayable = pShift.shiftSegments.reduce((sum, seg) => {
-            return sum + (seg.present ? (seg.payableShifts || 0) : 0);
-          }, 0);
-          
-          pShift.payableShift = segmentPayable * basePayable;
-          
-          console.log(`[BreakAware-SingleShift] Segment-based payable: ${segmentPayable}, Final payable: ${pShift.payableShift}`);
-          
-          // Update status based on segment payable
-          if (segmentPayable >= 1) {
-            pShift.status = 'PRESENT';
-          } else if (segmentPayable === 0.5) {
-            pShift.status = 'HALF_DAY';
-          } else if (segmentPayable > 0 && segmentPayable < 0.5) {
-            pShift.status = 'PARTIAL';
-          } else {
-            pShift.status = 'ABSENT';
-          }
-          
-          console.log(`[BreakAware-SingleShift] Updated status to: ${pShift.status}`);
-        }
-      } catch (segErr) {
-        console.warn('[SingleShift] enrichShiftRecordWithSegments:', segErr.message);
-      }
+      const graceOpts = await resolveGraceFromSettings();
+      await resolveShiftPresence({
+        pShift,
+        dateStr: date,
+        employeeNumber,
+        graceOpts,
+        divisionId,
+        applyEdgePermissions: true,
+      });
     } else {
       pShift.status = 'PRESENT';
       pShift.payableShift = 1;

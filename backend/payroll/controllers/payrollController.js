@@ -899,7 +899,7 @@ exports.exportPayrollExcel = async (req, res) => {
           message: 'No employees in scope. Apply filters or select employees to export.',
         });
       }
-      
+
       // Step 1: Try to fetch existing PayrollRecords first
       const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
       const { filterPayrollRecordsByPayPeriodScope } = require('../services/payrollEmployeeQueryHelper');
@@ -934,7 +934,7 @@ exports.exportPayrollExcel = async (req, res) => {
       if (missingEmpIds.length > 0) {
         console.log(`Found ${storedRecords.length} stored payslips, calculating ${missingEmpIds.length} missing employees`);
         const userId = req.user?._id?.toString() || req.user?.id;
-        
+
         for (const empId of missingEmpIds) {
           try {
             let arrearsSettlements = [];
@@ -951,7 +951,7 @@ exports.exportPayrollExcel = async (req, res) => {
             } catch (fetchErr) {
               console.error(`Error fetching arrears/deductions for export (employee ${empId}):`, fetchErr.message);
             }
-            
+
             const result = await payrollCalculationFromOutputColumnsService.calculatePayrollFromOutputColumns(
               empId,
               month,
@@ -1134,6 +1134,28 @@ function recordToPayslip(record) {
   return payrollRecordToPayslipShape(record);
 }
 
+/** Hidden row metadata for exports (deductions PDF, bundle) when column headers vary. */
+function attachPaysheetRowEmployeeMeta(row, record) {
+  if (!row || !record) return row;
+  const emp = record.employeeId || {};
+  const empNo = String(record.emp_no || emp.emp_no || '').trim();
+  const division =
+    (emp.division_id && typeof emp.division_id === 'object' ? emp.division_id.name : null) ||
+    record.division_id?.name ||
+    '';
+  const department =
+    (emp.department_id && typeof emp.department_id === 'object' ? emp.department_id.name : null) ||
+    '';
+  const group =
+    emp.employee_group_id && typeof emp.employee_group_id === 'object' ? emp.employee_group_id.name : '';
+
+  if (empNo) row._exportEmpNo = empNo;
+  if (division) row._exportDivision = String(division).trim();
+  if (department) row._exportDepartment = String(department).trim();
+  if (group) row._employeeGroup = String(group).trim();
+  return row;
+}
+
 /**
  * @desc    Default paysheet month (YYYY-MM): previous payroll period vs the cycle containing today (IST + payroll cycle settings).
  * @route   GET /api/payroll/paysheet/default-month
@@ -1244,11 +1266,12 @@ exports.getPaysheetData = async (req, res) => {
         .populate({
           path: 'employeeId',
           select:
-            'employee_name first_name last_name emp_no department_id division_id designation_id gross_salary second_salary salaries location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate applyPF applyESI applyProfessionTax',
+            'employee_name first_name last_name emp_no department_id division_id designation_id employee_group_id gross_salary second_salary salaries location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate applyPF applyESI applyProfessionTax',
           populate: [
             { path: 'department_id', select: 'name' },
             { path: 'division_id', select: 'name' },
             { path: 'designation_id', select: 'name' },
+            { path: 'employee_group_id', select: 'name' },
           ],
         })
         .populate('division_id', 'name')
@@ -1281,7 +1304,8 @@ exports.getPaysheetData = async (req, res) => {
             const payslipsSnap = filtered.map((r) => secondSalaryRecordToPayslipShape(r));
             let rowsSnap = filtered.map((r, index) => {
               const id = String(r.employeeId?._id || r.employeeId);
-              return { 'S.No': index + 1, ...(snapMap.get(id)?.row || {}) };
+              const row = { 'S.No': index + 1, ...(snapMap.get(id)?.row || {}) };
+              return attachPaysheetRowEmployeeMeta(row, r);
             });
             rowsSnap = refreshEmployeeFieldColumnsOnRows(rowsSnap, payslipsSnap, outputCols2nd);
             return res.status(200).json({
@@ -1384,11 +1408,12 @@ exports.getPaysheetData = async (req, res) => {
         .populate({
           path: 'employeeId',
           select:
-            'employee_name first_name last_name emp_no department_id division_id designation_id location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate salaries',
+            'employee_name first_name last_name emp_no department_id division_id designation_id employee_group_id location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate salaries',
           populate: [
             { path: 'department_id', select: 'name' },
             { path: 'division_id', select: 'name' },
             { path: 'designation_id', select: 'name' },
+            { path: 'employee_group_id', select: 'name' },
           ],
         })
         .sort(EMP_NO_SORT)
@@ -1415,7 +1440,8 @@ exports.getPaysheetData = async (req, res) => {
             const payslipsSnap = filtered.map((r) => recordToPayslip(r));
             let rowsSnap = filtered.map((r, index) => {
               const id = String(r.employeeId?._id || r.employeeId);
-              return { 'S.No': index + 1, ...(snapMap.get(id)?.row || {}) };
+              const row = { 'S.No': index + 1, ...(snapMap.get(id)?.row || {}) };
+              return attachPaysheetRowEmployeeMeta(row, r);
             });
             rowsSnap = refreshEmployeeFieldColumnsOnRows(rowsSnap, payslipsSnap, outputColumns);
             const snapAdj = await attachPaysheetAdjustmentMeta(rowsSnap, filtered, month);
@@ -1466,6 +1492,7 @@ exports.getPaysheetData = async (req, res) => {
       let rows = payslips.map((payslip, index) => {
         const rowData = outputColumnService.buildRowFromOutputColumns(payslip, expandedColumns, index + 1);
         const row = { 'S.No': index + 1, ...rowData };
+        attachPaysheetRowEmployeeMeta(row, filtered[index]);
         if (payslip.employee?.leftDate) row._leftDate = payslip.employee.leftDate;
         return row;
       });
@@ -2685,6 +2712,428 @@ exports.getPayrollTransactionsWithAnalytics = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching payroll transactions with analytics',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Get deductions analytics with breakdown by employee, department, division, and month
+ * @route   GET /api/payroll/deductions/analytics
+ * @access  Private (Super Admin, Sub Admin, HR, Manager)
+ */
+exports.getDeductionsAnalytics = async (req, res) => {
+  try {
+    const {
+      startMonth,
+      endMonth,
+      employeeId,
+      departmentId,
+      divisionId,
+      groupBy = 'employee' // employee, department, division, month
+    } = req.query;
+
+    // Validate required parameters
+    if (!startMonth || !endMonth) {
+      return res.status(400).json({
+        success: false,
+        message: 'Start month and end month are required (YYYY-MM format)',
+      });
+    }
+
+    if (!/^\d{4}-\d{2}$/.test(startMonth) || !/^\d{4}-\d{2}$/.test(endMonth)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Months must be in YYYY-MM format',
+      });
+    }
+
+    // Build employee filter query
+    let employeeQuery = {};
+    if (employeeId) {
+      employeeQuery._id = employeeId;
+    }
+    if (departmentId) {
+      employeeQuery.department_id = departmentId;
+    }
+    if (divisionId) {
+      employeeQuery.division_id = divisionId;
+    }
+
+    // Get employees matching the filter
+    const employees = await Employee.find(employeeQuery)
+      .select('_id employee_name emp_no department_id division_id designation_id employee_group_id')
+      .populate('department_id', 'name')
+      .populate('division_id', 'name')
+      .populate('designation_id', 'name')
+      .populate('employee_group_id', 'name')
+      .lean();
+
+    if (employees.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        summary: {
+          totalDeductions: 0,
+          totalEmployees: 0,
+          monthsAnalyzed: 0,
+          deductionTypes: {},
+        },
+      });
+    }
+
+    const employeeIds = employees.map(emp => emp._id);
+
+    // Generate list of months in range
+    const months = [];
+    let currentMonth = new Date(startMonth + '-01');
+    const endMonthDate = new Date(endMonth + '-01');
+    while (currentMonth <= endMonthDate) {
+      months.push(currentMonth.toISOString().slice(0, 7));
+      currentMonth.setMonth(currentMonth.getMonth() + 1);
+    }
+
+    // Get all payroll records for these employees and months (regular salary)
+    const payrollRecords = await PayrollRecord.find({
+      employeeId: { $in: employeeIds },
+      month: { $in: months },
+    })
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no department_id division_id designation_id employee_group_id',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'division_id', select: 'name' },
+          { path: 'designation_id', select: 'name' },
+          { path: 'employee_group_id', select: 'name' }
+        ]
+      })
+      .select('_id employeeId month')
+      .lean();
+
+    const payrollRecordIds = payrollRecords.map(record => record._id);
+
+    // Get all 2nd salary records for these employees and months
+    const secondSalaryRecords = await SecondSalaryRecord.find({
+      employeeId: { $in: employeeIds },
+      month: { $in: months },
+    })
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no department_id division_id designation_id employee_group_id',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'division_id', select: 'name' },
+          { path: 'designation_id', select: 'name' },
+          { path: 'employee_group_id', select: 'name' }
+        ]
+      })
+      .select('_id employeeId month')
+      .lean();
+
+    const secondSalaryRecordIds = secondSalaryRecords.map(record => record._id);
+
+    // Get all deduction transactions from regular payroll
+    const regularDeductionTransactions = await PayrollTransaction.find({
+      payrollRecordId: { $in: payrollRecordIds },
+      category: 'deduction',
+    })
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no department_id division_id designation_id employee_group_id',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'division_id', select: 'name' },
+          { path: 'designation_id', select: 'name' },
+          { path: 'employee_group_id', select: 'name' }
+        ]
+      })
+      .populate('payrollRecordId', 'month')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Get all deduction transactions from 2nd salary
+    const secondSalaryDeductionTransactions = await PayrollTransaction.find({
+      secondSalaryRecordId: { $in: secondSalaryRecordIds },
+      category: 'deduction',
+    })
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no department_id division_id designation_id employee_group_id',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'division_id', select: 'name' },
+          { path: 'designation_id', select: 'name' },
+          { path: 'employee_group_id', select: 'name' }
+        ]
+      })
+      .populate('secondSalaryRecordId', 'month')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Combine all deduction transactions
+    const deductionTransactions = [...regularDeductionTransactions, ...secondSalaryDeductionTransactions];
+
+    // Build analytics based on groupBy parameter
+    let analyticsData = [];
+    const deductionTypesSummary = {};
+    let totalDeductions = 0;
+
+    if (groupBy === 'employee') {
+      // Group by employee
+      const employeeMap = new Map();
+
+      deductionTransactions.forEach(txn => {
+        const empId = String(txn.employeeId?._id || txn.employeeId);
+        if (!employeeMap.has(empId)) {
+          employeeMap.set(empId, {
+            employeeId: empId,
+            employeeName: txn.employeeId?.employee_name || 'N/A',
+            empNo: txn.emp_no || txn.employeeId?.emp_no || 'N/A',
+            department: txn.employeeId?.department_id?.name || 'N/A',
+            departmentId: txn.employeeId?.department_id?._id ? String(txn.employeeId.department_id._id) : null,
+            division: txn.employeeId?.division_id?.name || 'N/A',
+            divisionId: txn.employeeId?.division_id?._id ? String(txn.employeeId.division_id._id) : null,
+            designation: txn.employeeId?.designation_id?.name || 'N/A',
+            employeeGroup: txn.employeeId?.employee_group_id?.name || 'N/A',
+            employeeGroupId: txn.employeeId?.employee_group_id?._id ? String(txn.employeeId.employee_group_id._id) : null,
+            totalDeductions: 0,
+            deductionsByType: {},
+            deductionsByMonth: {},
+            transactionCount: 0,
+          });
+        }
+
+        const empData = employeeMap.get(empId);
+        const amount = Math.abs(txn.amount);
+        empData.totalDeductions += amount;
+        empData.transactionCount++;
+
+        // By type
+        if (!empData.deductionsByType[txn.transactionType]) {
+          empData.deductionsByType[txn.transactionType] = 0;
+        }
+        empData.deductionsByType[txn.transactionType] += amount;
+
+        // By month - handle both regular and 2nd salary records
+        const month = txn.month || txn.payrollRecordId?.month || txn.secondSalaryRecordId?.month;
+        if (month) {
+          if (!empData.deductionsByMonth[month]) {
+            empData.deductionsByMonth[month] = 0;
+          }
+          empData.deductionsByMonth[month] += amount;
+        }
+
+        // Global summary
+        if (!deductionTypesSummary[txn.transactionType]) {
+          deductionTypesSummary[txn.transactionType] = 0;
+        }
+        deductionTypesSummary[txn.transactionType] += amount;
+        totalDeductions += amount;
+      });
+
+      analyticsData = Array.from(employeeMap.values());
+
+    } else if (groupBy === 'department') {
+      // Group by department
+      const deptMap = new Map();
+
+      deductionTransactions.forEach(txn => {
+        const deptId = String(txn.employeeId?.department_id?._id || txn.employeeId?.department_id || 'unassigned');
+        const deptName = txn.employeeId?.department_id?.name || 'Unassigned';
+
+        if (!deptMap.has(deptId)) {
+          deptMap.set(deptId, {
+            departmentId: deptId,
+            departmentName: deptName,
+            division: txn.employeeId?.division_id?.name || 'N/A',
+            divisionId: txn.employeeId?.division_id?._id ? String(txn.employeeId.division_id._id) : null,
+            totalDeductions: 0,
+            deductionsByType: {},
+            deductionsByMonth: {},
+            employeeCount: new Set(),
+            transactionCount: 0,
+          });
+        }
+
+        const deptData = deptMap.get(deptId);
+        const amount = Math.abs(txn.amount);
+        deptData.totalDeductions += amount;
+        deptData.transactionCount++;
+        deptData.employeeCount.add(String(txn.employeeId?._id || txn.employeeId));
+
+        // By type
+        if (!deptData.deductionsByType[txn.transactionType]) {
+          deptData.deductionsByType[txn.transactionType] = 0;
+        }
+        deptData.deductionsByType[txn.transactionType] += amount;
+
+        // By month - handle both regular and 2nd salary records
+        const month = txn.month || txn.payrollRecordId?.month || txn.secondSalaryRecordId?.month;
+        if (month) {
+          if (!deptData.deductionsByMonth[month]) {
+            deptData.deductionsByMonth[month] = 0;
+          }
+          deptData.deductionsByMonth[month] += amount;
+        }
+
+        // Global summary
+        if (!deductionTypesSummary[txn.transactionType]) {
+          deductionTypesSummary[txn.transactionType] = 0;
+        }
+        deductionTypesSummary[txn.transactionType] += amount;
+        totalDeductions += amount;
+      });
+
+      analyticsData = Array.from(deptMap.values()).map(dept => ({
+        ...dept,
+        employeeCount: dept.employeeCount.size,
+      }));
+
+    } else if (groupBy === 'division') {
+      // Group by division
+      const divMap = new Map();
+
+      deductionTransactions.forEach(txn => {
+        const divId = String(txn.employeeId?.division_id?._id || txn.employeeId?.division_id || 'unassigned');
+        const divName = txn.employeeId?.division_id?.name || 'Unassigned';
+
+        if (!divMap.has(divId)) {
+          divMap.set(divId, {
+            divisionId: divId,
+            divisionName: divName,
+            totalDeductions: 0,
+            deductionsByType: {},
+            deductionsByMonth: {},
+            employeeCount: new Set(),
+            departmentCount: new Set(),
+            transactionCount: 0,
+          });
+        }
+
+        const divData = divMap.get(divId);
+        const amount = Math.abs(txn.amount);
+        divData.totalDeductions += amount;
+        divData.transactionCount++;
+        divData.employeeCount.add(String(txn.employeeId?._id || txn.employeeId));
+        if (txn.employeeId?.department_id?._id) {
+          divData.departmentCount.add(String(txn.employeeId.department_id._id));
+        }
+
+        // By type
+        if (!divData.deductionsByType[txn.transactionType]) {
+          divData.deductionsByType[txn.transactionType] = 0;
+        }
+        divData.deductionsByType[txn.transactionType] += amount;
+
+        // By month - handle both regular and 2nd salary records
+        const month = txn.month || txn.payrollRecordId?.month || txn.secondSalaryRecordId?.month;
+        if (month) {
+          if (!divData.deductionsByMonth[month]) {
+            divData.deductionsByMonth[month] = 0;
+          }
+          divData.deductionsByMonth[month] += amount;
+        }
+
+        // Global summary
+        if (!deductionTypesSummary[txn.transactionType]) {
+          deductionTypesSummary[txn.transactionType] = 0;
+        }
+        deductionTypesSummary[txn.transactionType] += amount;
+        totalDeductions += amount;
+      });
+
+      analyticsData = Array.from(divMap.values()).map(div => ({
+        ...div,
+        employeeCount: div.employeeCount.size,
+        departmentCount: div.departmentCount.size,
+      }));
+
+    } else if (groupBy === 'month') {
+      // Group by month
+      const monthMap = new Map();
+
+      deductionTransactions.forEach(txn => {
+        const month = txn.month || txn.payrollRecordId?.month || txn.secondSalaryRecordId?.month || 'unknown';
+
+        if (!monthMap.has(month)) {
+          monthMap.set(month, {
+            month,
+            totalDeductions: 0,
+            deductionsByType: {},
+            employeeCount: new Set(),
+            transactionCount: 0,
+          });
+        }
+
+        const monthData = monthMap.get(month);
+        const amount = Math.abs(txn.amount);
+        monthData.totalDeductions += amount;
+        monthData.transactionCount++;
+        monthData.employeeCount.add(String(txn.employeeId?._id || txn.employeeId));
+
+        // By type
+        if (!monthData.deductionsByType[txn.transactionType]) {
+          monthData.deductionsByType[txn.transactionType] = 0;
+        }
+        monthData.deductionsByType[txn.transactionType] += amount;
+
+        // Global summary
+        if (!deductionTypesSummary[txn.transactionType]) {
+          deductionTypesSummary[txn.transactionType] = 0;
+        }
+        deductionTypesSummary[txn.transactionType] += amount;
+        totalDeductions += amount;
+      });
+
+      analyticsData = Array.from(monthMap.values())
+        .map(m => ({
+          ...m,
+          employeeCount: m.employeeCount.size,
+        }))
+        .sort((a, b) => a.month.localeCompare(b.month));
+    }
+
+    // Round all monetary values
+    analyticsData = analyticsData.map(item => {
+      const rounded = { ...item };
+      rounded.totalDeductions = Math.round(rounded.totalDeductions * 100) / 100;
+      if (rounded.deductionsByType) {
+        Object.keys(rounded.deductionsByType).forEach(key => {
+          rounded.deductionsByType[key] = Math.round(rounded.deductionsByType[key] * 100) / 100;
+        });
+      }
+      if (rounded.deductionsByMonth) {
+        Object.keys(rounded.deductionsByMonth).forEach(key => {
+          rounded.deductionsByMonth[key] = Math.round(rounded.deductionsByMonth[key] * 100) / 100;
+        });
+      }
+      return rounded;
+    });
+
+    // Round summary values
+    Object.keys(deductionTypesSummary).forEach(key => {
+      deductionTypesSummary[key] = Math.round(deductionTypesSummary[key] * 100) / 100;
+    });
+
+    res.status(200).json({
+      success: true,
+      data: analyticsData,
+      summary: {
+        totalDeductions: Math.round(totalDeductions * 100) / 100,
+        totalEmployees: employees.length,
+        monthsAnalyzed: months.length,
+        deductionTypes: deductionTypesSummary,
+        groupBy,
+        startMonth,
+        endMonth,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching deductions analytics:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching deductions analytics',
       error: error.message,
     });
   }

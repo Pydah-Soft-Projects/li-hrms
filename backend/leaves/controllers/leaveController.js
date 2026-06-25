@@ -24,6 +24,14 @@ const dateCycleService = require('../services/dateCycleService');
 const leaveRegisterYearMonthlyApplyService = require('../services/leaveRegisterYearMonthlyApplyService');
 const monthlyTransferReconciliationService = require('../services/monthlyTransferReconciliationService');
 const { scheduleLeaveStatusSideEffects } = require('../services/leaveApprovalSideEffectsService');
+const {
+  resolveExportStageMeta,
+  buildStageColumnWidths,
+  buildStageHeaderConfig,
+  buildApplicationDetailRow,
+  drawMultiHeaderPdfTable,
+  buildExcelSheetAoA,
+} = require('../services/leaveOdReportExportHelper');
 
 function scheduleLeaveRegisterTransferRebuild(leave, options = {}) {
   monthlyTransferReconciliationService.scheduleTransferRebuildForLeaveChange(leave, options);
@@ -3764,25 +3772,29 @@ exports.exportReportPDF = async (req, res) => {
       return `${emp.first_name || ''} ${emp.last_name || ''} (${emp.emp_no || ''})`.trim();
     };
 
-    // Columns: [S.No(30), Emp ID(60), Employee Name(150), Division(120), Department(120), Type(70), Dates(120), Days(40), Status(70)]
-    const tableHeader = ['S.No', 'Emp ID', 'Employee Name', 'Division', 'Department', 'Type', 'Dates', 'Days', 'Status'];
-    const tableColWidths = [30, 60, 150, 120, 120, 70, 120, 40, 70];
+    const pageContentWidth = pageWidth - margin * 2;
+    const buildDetailRows = (items, isOd, stageCount) => items.map((item, i) => buildApplicationDetailRow(item, {
+      isOd,
+      stageCount,
+      rowIndex: i,
+      formatDate,
+      getCleanEmpName,
+    }));
+
     if (includeLeaves === 'true' && leaves.length > 0) {
-      doc.fontSize(11).font('Helvetica-Bold').text("LEAVE APPLICATIONS", margin, currentY);
-      currentY = drawPDFTable(doc, 
-        tableHeader,
-        leaves.map((l, i) => [
-          i + 1,
-          l.employeeId?.emp_no || '-',
-          getCleanEmpName(l.employeeId),
-          l.employeeId?.division?.name || '-',
-          l.employeeId?.department?.name || '-',
-          l.leaveType,
-          `${formatDate(l.fromDate)}${l.fromDate !== l.toDate ? ' - ' + formatDate(l.toDate) : ''}`,
-          l.numberOfDays,
-          (l.status || '').toUpperCase()
-        ]),
-        margin, currentY + 15, tableColWidths
+      const { stageCount, stageLabels } = await resolveExportStageMeta(leaves, 'leave');
+      const headerConfig = buildStageHeaderConfig(stageCount, stageLabels);
+      const colWidths = buildStageColumnWidths(stageCount, pageContentWidth);
+      const leaveRows = buildDetailRows(leaves, false, stageCount);
+
+      doc.fontSize(11).font('Helvetica-Bold').text('LEAVE APPLICATIONS', margin, currentY);
+      currentY = drawMultiHeaderPdfTable(
+        doc,
+        headerConfig,
+        leaveRows,
+        margin,
+        currentY + 15,
+        colWidths
       );
       currentY += 25;
     }
@@ -3790,22 +3802,19 @@ exports.exportReportPDF = async (req, res) => {
     // --- OD Table ---
     if (includeODs === 'true' && ods.length > 0) {
       if (currentY > 450) { doc.addPage(); currentY = 50; }
-      doc.fontSize(11).font('Helvetica-Bold').text("ON DUTY (OD) APPLICATIONS", margin, currentY);
-      currentY = drawPDFTable(doc, 
-        tableHeader,
-        ods.map((o, i) => [
-          i + 1,
-          o.employeeId?.emp_no || '-',
-          getCleanEmpName(o.employeeId),
-          o.employeeId?.division?.name || '-',
-          o.employeeId?.department?.name || '-',
-          (o.odType || '').replace('_', ' '),
-          `${formatDate(o.fromDate)}${o.fromDate !== o.toDate ? ' - ' + formatDate(o.toDate) : ''}`,
-          o.numberOfDays,
-          (o.status || '').toUpperCase()
-        ]),
-        margin, currentY + 15, tableColWidths,
-        { headerFill: '#8e44ad' }
+      const { stageCount, stageLabels } = await resolveExportStageMeta(ods, 'od');
+      const headerConfig = buildStageHeaderConfig(stageCount, stageLabels);
+      const colWidths = buildStageColumnWidths(stageCount, pageContentWidth);
+      const odRows = buildDetailRows(ods, true, stageCount);
+
+      doc.fontSize(11).font('Helvetica-Bold').text('ON DUTY (OD) APPLICATIONS', margin, currentY);
+      currentY = drawMultiHeaderPdfTable(
+        doc,
+        headerConfig,
+        odRows,
+        margin,
+        currentY + 15,
+        colWidths
       );
       currentY += 25;
     }
@@ -4007,48 +4016,36 @@ exports.exportReportXLSX = async (req, res) => {
       return `${emp.first_name || ''} ${emp.last_name || ''} (${emp.emp_no || ''})`.trim();
     };
 
-    const detailHeaders = ['S.No', 'Emp ID', 'Employee Name', 'Division', 'Department', 'Type', 'Dates', 'Days', 'Status'];
+    const periodLine = `Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${status || 'All'}`;
     const wb = XLSX.utils.book_new();
 
     if (includeLeaves === 'true' && leaves.length > 0) {
-      const leaveRows = leaves.map((l, i) => [
-        i + 1,
-        l.employeeId?.emp_no || '-',
-        getCleanEmpName(l.employeeId),
-        l.employeeId?.division?.name || '-',
-        l.employeeId?.department?.name || '-',
-        l.leaveType,
-        `${formatDate(l.fromDate)}${l.fromDate !== l.toDate ? ` - ${formatDate(l.toDate)}` : ''}`,
-        l.numberOfDays,
-        (l.status || '').toUpperCase(),
-      ]);
-      const wsLeaves = XLSX.utils.aoa_to_sheet([
-        ['LEAVE APPLICATIONS'],
-        [`Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${status || 'All'}`],
-        detailHeaders,
-        ...leaveRows,
-      ]);
+      const { stageCount, stageLabels } = await resolveExportStageMeta(leaves, 'leave');
+      const leaveRows = leaves.map((l, i) => buildApplicationDetailRow(l, {
+        isOd: false,
+        stageCount,
+        rowIndex: i,
+        formatDate,
+        getCleanEmpName,
+      }));
+      const { aoa, merges } = buildExcelSheetAoA('LEAVE APPLICATIONS', periodLine, leaveRows, stageCount, stageLabels);
+      const wsLeaves = XLSX.utils.aoa_to_sheet(aoa);
+      wsLeaves['!merges'] = merges;
       XLSX.utils.book_append_sheet(wb, wsLeaves, 'Leave Applications');
     }
 
     if (includeODs === 'true' && ods.length > 0) {
-      const odRows = ods.map((o, i) => [
-        i + 1,
-        o.employeeId?.emp_no || '-',
-        getCleanEmpName(o.employeeId),
-        o.employeeId?.division?.name || '-',
-        o.employeeId?.department?.name || '-',
-        (o.odType || '').replace('_', ' '),
-        `${formatDate(o.fromDate)}${o.fromDate !== o.toDate ? ` - ${formatDate(o.toDate)}` : ''}`,
-        o.numberOfDays,
-        (o.status || '').toUpperCase(),
-      ]);
-      const wsODs = XLSX.utils.aoa_to_sheet([
-        ['ON DUTY (OD) APPLICATIONS'],
-        [`Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${status || 'All'}`],
-        detailHeaders,
-        ...odRows,
-      ]);
+      const { stageCount, stageLabels } = await resolveExportStageMeta(ods, 'od');
+      const odRows = ods.map((o, i) => buildApplicationDetailRow(o, {
+        isOd: true,
+        stageCount,
+        rowIndex: i,
+        formatDate,
+        getCleanEmpName,
+      }));
+      const { aoa, merges } = buildExcelSheetAoA('ON DUTY (OD) APPLICATIONS', periodLine, odRows, stageCount, stageLabels);
+      const wsODs = XLSX.utils.aoa_to_sheet(aoa);
+      wsODs['!merges'] = merges;
       XLSX.utils.book_append_sheet(wb, wsODs, 'On Duty Applications');
     }
 

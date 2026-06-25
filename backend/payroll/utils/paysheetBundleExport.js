@@ -102,6 +102,7 @@ function payrollRecordToPayslipShape(record) {
       designation: empObj?.designation_id?.name || empObj?.designation_id || '',
       department: empObj?.department_id?.name || empObj?.department_id || 'N/A',
       division: empObj?.division_id?.name || empObj?.division_id || 'N/A',
+      group: empObj?.employee_group_id?.name || empObj?.employee_group_id || '',
       location: empObj?.location || '',
       bank_account_no: empObj?.bank_account_no != null && empObj?.bank_account_no !== '' ? String(empObj.bank_account_no) : '',
       bank_name: empObj?.bank_name || '',

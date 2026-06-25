@@ -7,14 +7,16 @@ import ThumbReportsTab from './thumb-reports-tab';
 import LeaveReportsTab from './leave-reports-tab';
 import ODReportsTab from './od-reports-tab';
 import LoanReportsTab from './loan-reports-tab';
+import DeductionsReportsTab from './deductions-reports-tab';
 import { auth } from '@/lib/auth';
 import { canViewReports, canViewFinancialReports } from '@/lib/permissions';
-import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase, Wallet, Banknote } from 'lucide-react';
+import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase, Wallet, Banknote, TrendingDown } from 'lucide-react';
 
-type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance';
+type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'deductions';
 
 const TAB_CONFIG = {
   payroll: { label: 'Payroll', icon: CreditCard, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30', border: 'border-violet-500', activeBg: 'bg-violet-600' },
+  deductions: { label: 'Deductions', icon: TrendingDown, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-950/30', border: 'border-red-500', activeBg: 'bg-red-600' },
   attendance: { label: 'Attendance', icon: BarChart2, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-950/30', border: 'border-indigo-500', activeBg: 'bg-indigo-600' },
   biometric: { label: 'Biometric', icon: Fingerprint, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/30', border: 'border-emerald-500', activeBg: 'bg-emerald-600' },
   leaves: { label: 'Leaves', icon: FileText, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/30', border: 'border-blue-500', activeBg: 'bg-blue-600' },
@@ -43,7 +45,7 @@ export default function ReportsPage() {
   }
 
   const tabs: TabType[] = [];
-  if (hasFinancialAccess) tabs.push('payroll', 'loans', 'salary_advance');
+  if (hasFinancialAccess) tabs.push('payroll', 'deductions', 'loans', 'salary_advance');
   tabs.push('attendance', 'biometric', 'leaves', 'od');
 
   const currentTab: TabType = tabs.includes(activeTab) ? activeTab : tabs[0];
@@ -70,8 +72,8 @@ export default function ReportsPage() {
                 key={tabId}
                 onClick={() => setActiveTab(tabId)}
                 className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 whitespace-nowrap ${isActive
-                    ? `${cfg.activeBg} text-white shadow-md scale-[1.02]`
-                    : `text-slate-500 hover:${cfg.bg} hover:${cfg.color} dark:text-slate-400`
+                  ? `${cfg.activeBg} text-white shadow-md scale-[1.02]`
+                  : `text-slate-500 hover:${cfg.bg} hover:${cfg.color} dark:text-slate-400`
                   }`}
               >
                 <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-white' : ''}`} />
@@ -85,6 +87,7 @@ export default function ReportsPage() {
       {/* Tab Content */}
       <div className="px-4 sm:px-6 md:px-8 py-5">
         {currentTab === 'payroll' && <PayrollTransactionsTab />}
+        {currentTab === 'deductions' && <DeductionsReportsTab />}
         {currentTab === 'attendance' && <AttendanceReportsTab />}
         {currentTab === 'biometric' && <ThumbReportsTab />}
         {currentTab === 'leaves' && <LeaveReportsTab />}

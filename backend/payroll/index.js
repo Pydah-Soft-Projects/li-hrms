@@ -36,6 +36,9 @@ router.get('/:payrollRecordId/transactions', payrollController.getPayrollTransac
 // Get payroll transactions with analytics for a month
 router.get('/transactions/analytics', payrollController.getPayrollTransactionsWithAnalytics);
 
+// Get deductions analytics with breakdown by employee, department, division, and month
+router.get('/deductions/analytics', applyScopeFilter, payrollController.getDeductionsAnalytics);
+
 // Get attendance data for a range of months
 router.get('/attendance-range', payrollController.getAttendanceDataRange);
 

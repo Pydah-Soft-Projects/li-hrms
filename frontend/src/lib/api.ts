@@ -5082,6 +5082,26 @@ export const api = {
     });
   },
 
+  getDeductionsAnalytics: async (params: {
+    startMonth: string;
+    endMonth: string;
+    employeeId?: string;
+    departmentId?: string;
+    divisionId?: string;
+    groupBy?: 'employee' | 'department' | 'division' | 'month';
+  }) => {
+    const query = new URLSearchParams();
+    query.append('startMonth', params.startMonth);
+    query.append('endMonth', params.endMonth);
+    if (params.employeeId) query.append('employeeId', params.employeeId);
+    if (params.departmentId) query.append('departmentId', params.departmentId);
+    if (params.divisionId) query.append('divisionId', params.divisionId);
+    if (params.groupBy) query.append('groupBy', params.groupBy);
+    return apiRequest<any>(`/payroll/deductions/analytics?${query.toString()}`, {
+      method: 'GET',
+    });
+  },
+
   // Pay Register APIs
   getPayRegister: async (employeeId: string, month: string) => {
     return apiRequest<any>(`/pay-register/${employeeId}/${month}`, {

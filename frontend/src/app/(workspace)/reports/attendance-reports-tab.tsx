@@ -84,12 +84,12 @@ export default function AttendanceReportsTab() {
     const [totalPages, setTotalPages] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
     const [limit] = useState(50);
-    const [reportStats, setReportStats] = useState({ 
-        present: 0, 
-        absent: 0, 
-        late: 0, 
-        onLeave: 0, 
-        daysInRange: 1 
+    const [reportStats, setReportStats] = useState({
+        present: 0,
+        absent: 0,
+        late: 0,
+        onLeave: 0,
+        daysInRange: 1
     });
 
     // Monthly selection states
@@ -108,7 +108,7 @@ export default function AttendanceReportsTab() {
     const [searchQuery, setSearchQuery] = useState('');
     const [payrollStartDay, setPayrollStartDay] = useState<number>(1);
     const [fetchingSettings, setFetchingSettings] = useState(false);
-    
+
     // Drill-down states
     const [drilldownLevel, setDrilldownLevel] = useState<'all' | 'division' | 'department' | 'employee'>('all');
     const [summaries, setSummaries] = useState<AttendanceSummary[]>([]);
@@ -150,7 +150,7 @@ export default function AttendanceReportsTab() {
                 const startDay = payrollStartDay;
                 const year = parseInt(selectedYear);
                 const month = parseInt(selectedMonth);
-                
+
                 // If cycle starts on 1st, it's just the full month
                 if (startDay === 1) {
                     params.startDate = dayjs(`${year}-${month}-01`).format('YYYY-MM-DD');
@@ -264,8 +264,8 @@ export default function AttendanceReportsTab() {
                         });
                     }
                 });
-                
-                const filtered = allDesignations.filter(des => 
+
+                const filtered = allDesignations.filter(des =>
                     linkedDesignationIds.has(des._id) || !des.department
                 );
                 setDesignations(filtered);
@@ -469,11 +469,11 @@ export default function AttendanceReportsTab() {
 
     const getStatusColor = (status: string) => {
         switch (status) {
-            case 'PRESENT': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30' ;
-            case 'HALF_DAY': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30' ;
-            case 'ABSENT': return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30' ;
-            case 'PARTIAL': return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30' ;
-            default: return 'bg-slate-100 text-slate-700 dark:bg-slate-800' ;
+            case 'PRESENT': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30';
+            case 'HALF_DAY': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30';
+            case 'ABSENT': return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30';
+            case 'PARTIAL': return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30';
+            default: return 'bg-slate-100 text-slate-700 dark:bg-slate-800';
         }
     };
 
@@ -513,6 +513,16 @@ export default function AttendanceReportsTab() {
                                         <td colSpan={12} className="py-20 text-center">
                                             <Loader2 className="h-8 w-8 animate-spin text-indigo-500 mx-auto" />
                                             <p className="mt-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Aggregating Data...</p>
+                                        </td>
+                                    </tr>
+                                ) : summaries.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={12} className="py-20 text-center">
+                                            <div className="flex flex-col items-center">
+                                                <Calendar className="h-12 w-12 text-slate-400 mb-4" />
+                                                <h3 className="text-lg font-bold text-slate-900 dark:text-white">No attendance data found</h3>
+                                                <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">Try adjusting your filters or date range</p>
+                                            </div>
                                         </td>
                                     </tr>
                                 ) : summaries.map((item) => (
@@ -564,15 +574,14 @@ export default function AttendanceReportsTab() {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-center">
-                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                                                Number(item.presentPercent) >= 90 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30' :
-                                                    Number(item.presentPercent) >= 75 ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30' :
-                                                        'bg-rose-100 text-rose-700 dark:bg-rose-900/30'
-                                            }`}>
+                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black ${Number(item.presentPercent) >= 90 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30' :
+                                                Number(item.presentPercent) >= 75 ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30' :
+                                                    'bg-rose-100 text-rose-700 dark:bg-rose-900/30'
+                                                }`}>
                                                 {item.presentPercent}%
                                             </span>
                                         </td>
-                                         <td className="px-6 py-4 text-center">
+                                        <td className="px-6 py-4 text-center">
                                             {drilldownLevel !== 'department' ? (
                                                 <button
                                                     onClick={(e) => {
@@ -646,24 +655,24 @@ export default function AttendanceReportsTab() {
                                     <tr key={record._id} className="hover:bg-slate-50/80 transition-all dark:hover:bg-slate-800/50">
                                         <td className="px-4 py-3">
                                             <div className="min-w-0" title={[String(record.employee?.employee_name || '—'), ((typeof record.employee?.designation_id === 'object' && record.employee?.designation_id?.name) ? String(record.employee.designation_id.name) : (typeof record.employee?.designation === 'object' && record.employee?.designation?.name) ? String(record.employee.designation.name) : ''), String(record.employeeNumber || '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {record.employee?.employee_name || '—'}
-  </div>
-  {((typeof record.employee?.designation_id === 'object' && record.employee?.designation_id?.name) ? String(record.employee.designation_id.name) : (typeof record.employee?.designation === 'object' && record.employee?.designation?.name) ? String(record.employee.designation.name) : '') ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {((typeof record.employee?.designation_id === 'object' && record.employee?.designation_id?.name) ? String(record.employee.designation_id.name) : (typeof record.employee?.designation === 'object' && record.employee?.designation?.name) ? String(record.employee.designation.name) : '')}
-    </div>
-  ) : null}
-  {record.employeeNumber ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{record.employeeNumber}</div>
-  ) : null}
-  {record.employee?.leftDate ? (
-    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
-      Left{' '}
-      {new Date(record.employee.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-    </div>
-  ) : null}
-</div>
+                                                <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+                                                    {record.employee?.employee_name || '—'}
+                                                </div>
+                                                {((typeof record.employee?.designation_id === 'object' && record.employee?.designation_id?.name) ? String(record.employee.designation_id.name) : (typeof record.employee?.designation === 'object' && record.employee?.designation?.name) ? String(record.employee.designation.name) : '') ? (
+                                                    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+                                                        {((typeof record.employee?.designation_id === 'object' && record.employee?.designation_id?.name) ? String(record.employee.designation_id.name) : (typeof record.employee?.designation === 'object' && record.employee?.designation?.name) ? String(record.employee.designation.name) : '')}
+                                                    </div>
+                                                ) : null}
+                                                {record.employeeNumber ? (
+                                                    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{record.employeeNumber}</div>
+                                                ) : null}
+                                                {record.employee?.leftDate ? (
+                                                    <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+                                                        Left{' '}
+                                                        {new Date(record.employee.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                    </div>
+                                                ) : null}
+                                            </div>
                                         </td>
                                         <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-bold whitespace-nowrap">
                                             {dayjs(record.date).format('DD MMM, YYYY')}
@@ -900,7 +909,7 @@ export default function AttendanceReportsTab() {
                                     <div className="flex items-start gap-2 p-3 bg-indigo-50/50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100/50 dark:border-indigo-900/20">
                                         <Clock className="h-3.5 w-3.5 text-indigo-500 mt-0.5" />
                                         <p className="text-[10px] font-bold text-slate-500 leading-normal">
-                                            {dateMode === 'pay_cycle' 
+                                            {dateMode === 'pay_cycle'
                                                 ? `Payroll logic applied: Cycle from ${payrollStartDay} of previous month to ${payrollStartDay - 1} of current month.`
                                                 : 'Monthly logic applied: Data shown from 1st to last day of selected month.'}
                                         </p>
@@ -974,7 +983,7 @@ export default function AttendanceReportsTab() {
                 <div className="relative overflow-hidden group rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 shadow-sm">
                     <div className="flex flex-row items-center justify-between pb-2 border-b border-slate-50 dark:border-slate-800 mb-4">
                         <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                             Total A. Days
+                            Total A. Days
                         </span>
                         <div className="p-2 bg-rose-50 dark:bg-rose-900/20 rounded-xl">
                             <XCircle className="h-4 w-4 text-rose-600" />
@@ -1044,7 +1053,7 @@ export default function AttendanceReportsTab() {
                         <p className="text-[11px] text-slate-500 font-medium">Download the current view as a professional PDF document.</p>
                     </div>
                 </div>
-                
+
                 <button
                     onClick={() => handleExport('pdf', true)}
                     disabled={loading}
@@ -1072,18 +1081,18 @@ export default function AttendanceReportsTab() {
                             <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-wider">Configure export parameters</p>
                         </div>
                         <div className="p-6 space-y-4">
-                             <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-black uppercase text-slate-500">Start Date</label>
-                                    <input type="date" value={exportParams.startDate} onChange={e => setExportParams({...exportParams, startDate: e.target.value})} className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs font-bold shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                    <input type="date" value={exportParams.startDate} onChange={e => setExportParams({ ...exportParams, startDate: e.target.value })} className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs font-bold shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-black uppercase text-slate-500">End Date</label>
-                                    <input type="date" value={exportParams.endDate} onChange={e => setExportParams({...exportParams, endDate: e.target.value})} className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs font-bold" />
+                                    <input type="date" value={exportParams.endDate} onChange={e => setExportParams({ ...exportParams, endDate: e.target.value })} className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs font-bold" />
                                 </div>
                             </div>
                             <div className="flex items-center gap-3 p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-2xl border border-indigo-100 dark:border-indigo-900/30">
-                                <input type="checkbox" checked={exportParams.strict} onChange={e => setExportParams({...exportParams, strict: e.target.checked})} className="h-4 w-4 rounded" />
+                                <input type="checkbox" checked={exportParams.strict} onChange={e => setExportParams({ ...exportParams, strict: e.target.checked })} className="h-4 w-4 rounded" />
                                 <label className="text-[10px] font-black uppercase text-indigo-700">Strict HRMS Mapping</label>
                             </div>
                         </div>

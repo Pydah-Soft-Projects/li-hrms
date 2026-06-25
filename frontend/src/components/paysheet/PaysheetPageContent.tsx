@@ -28,7 +28,13 @@ import {
   X,
   Pencil,
   ClipboardList,
+  FileText,
 } from 'lucide-react';
+import {
+  exportDeductionsReportBundle,
+  type DeductionsExportFormat,
+} from '@/lib/paysheetDeductionsPdf';
+import { useCompanyProfile } from '@/hooks/useCompanyProfile';
 
 function orderPaysheetRowsByEmpNo(rows: Record<string, unknown>[]) {
   return sortByEmpNo(rows, (r) => {
@@ -134,6 +140,11 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
   const [editContext, setEditContext] = useState<PaysheetEditContext | null>(null);
   const [approvalPanelOpen, setApprovalPanelOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [exportingDeductions, setExportingDeductions] = useState(false);
+  const [deductionsExportModalOpen, setDeductionsExportModalOpen] = useState(false);
+  const [deductionsExportFormat, setDeductionsExportFormat] =
+    useState<DeductionsExportFormat>('by_department');
+  const { profile } = useCompanyProfile();
 
   const modificationEnabled =
     paysheetKind === 'regular' &&
@@ -467,6 +478,91 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
     }
   };
 
+  const openDeductionsExportModal = () => {
+    if (!selectedMonth) {
+      toast.warning('Please select a month');
+      return;
+    }
+    setDeductionsExportFormat('by_department');
+    setDeductionsExportModalOpen(true);
+  };
+
+  const confirmExportDeductionsPdf = async () => {
+    if (!selectedMonth || !profile) {
+      toast.warning('Please select a month and ensure company profile is loaded');
+      return;
+    }
+
+    setExportingDeductions(true);
+    try {
+      const departmentName = selectedDepartment
+        ? departments.find((d) => d._id === selectedDepartment)?.name
+        : undefined;
+      const divisionName = selectedDivision
+        ? divisions.find((d) => d._id === selectedDivision)?.name
+        : undefined;
+      const designationName = selectedDesignation
+        ? designations.find((d) => d._id === selectedDesignation)?.name
+        : undefined;
+      const groupName = selectedEmployeeGroup
+        ? employeeGroups.find((g) => g._id === selectedEmployeeGroup)?.name
+        : undefined;
+
+      const paysheetQuery = {
+        month: selectedMonth,
+        departmentId: selectedDepartment || undefined,
+        divisionId: selectedDivision || undefined,
+        designationId: selectedDesignation || undefined,
+        employee_group_id: selectedEmployeeGroup || undefined,
+        status: employmentStatus || undefined,
+        search: debouncedSearch || undefined,
+        source: 'existing' as const,
+      };
+
+      const { exported } = await exportDeductionsReportBundle(selectedMonth, profile, {
+        format: deductionsExportFormat,
+        secondSalaryEnabled,
+        filters: {
+          department: departmentName,
+          division: divisionName,
+          designation: designationName,
+          group: groupName,
+        },
+        fetchPaysheet: async (secondSalary) => {
+          const res = await api.getPaysheetData({
+            ...paysheetQuery,
+            secondSalary,
+          });
+          if (!res?.success || !res?.data) {
+            return { headers: [], rows: [] };
+          }
+          return {
+            headers: res.data.headers || [],
+            rows: orderPaysheetRowsByEmpNo(res.data.rows || []),
+          };
+        },
+      });
+
+      setDeductionsExportModalOpen(false);
+
+      if (exported.length === 0) {
+        toast.warning('No paysheet data found for the selected filters');
+        return;
+      }
+
+      toast.success(
+        exported.length === 2
+          ? 'Downloaded Regular and 2nd Salary deductions reports'
+          : `Downloaded ${exported[0]} deductions report`
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Failed to export deductions report';
+      toast.error(msg);
+    } finally {
+      setExportingDeductions(false);
+    }
+  };
+
   const scrollTableHorizontally = (direction: 'left' | 'right') => {
     if (!tableScrollRef.current) return;
     const amount = Math.max(280, Math.floor(tableScrollRef.current.clientWidth * 0.6));
@@ -489,9 +585,8 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
   const paginationBar = (edge: 'top' | 'bottom') =>
     totalRows > 0 ? (
       <div
-        className={`flex-shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3 py-2 border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/30 ${
-          edge === 'top' ? 'border-b' : 'border-t'
-        }`}
+        className={`flex-shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3 py-2 border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/30 ${edge === 'top' ? 'border-b' : 'border-t'
+          }`}
       >
         <p className="text-sm text-slate-600 dark:text-slate-400">
           Showing{' '}
@@ -700,22 +795,20 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
                 <button
                   type="button"
                   onClick={() => setPaysheetKind('regular')}
-                  className={`h-7 px-2.5 rounded-md text-[11px] font-bold transition-colors ${
-                    paysheetKind === 'regular'
-                      ? 'bg-white text-violet-800 shadow-sm dark:bg-slate-900 dark:text-violet-200'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                  }`}
+                  className={`h-7 px-2.5 rounded-md text-[11px] font-bold transition-colors ${paysheetKind === 'regular'
+                    ? 'bg-white text-violet-800 shadow-sm dark:bg-slate-900 dark:text-violet-200'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    }`}
                 >
                   Regular
                 </button>
                 <button
                   type="button"
                   onClick={() => setPaysheetKind('second_salary')}
-                  className={`h-7 px-2 rounded-md text-[11px] font-bold transition-colors ${
-                    paysheetKind === 'second_salary'
-                      ? 'bg-white text-violet-800 shadow-sm dark:bg-slate-900 dark:text-violet-200'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                  }`}
+                  className={`h-7 px-2 rounded-md text-[11px] font-bold transition-colors ${paysheetKind === 'second_salary'
+                    ? 'bg-white text-violet-800 shadow-sm dark:bg-slate-900 dark:text-violet-200'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    }`}
                 >
                   2nd salary
                 </button>
@@ -763,6 +856,16 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
               aria-label="Scroll table right"
             >
               <ChevronRight className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={openDeductionsExportModal}
+              disabled={!selectedMonth || exportingDeductions}
+              className="inline-flex items-center justify-center gap-2 h-9 px-3 rounded-xl bg-rose-600 dark:bg-rose-500 text-white text-xs font-semibold shadow-sm hover:opacity-90 disabled:opacity-50 disabled:pointer-events-none transition-opacity"
+              title="Export Deductions Report PDF"
+            >
+              {exportingDeductions ? <Loader2 className="h-4 w-4 animate-spin shrink-0" /> : <FileText className="h-4 w-4 shrink-0" />}
+              {exportingDeductions ? 'Exporting…' : 'Deductions PDF'}
             </button>
             <button
               type="button"
@@ -879,11 +982,10 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
                       return (
                         <th
                           key={i}
-                          className={`sticky top-0 z-20 text-left px-4 py-3 font-semibold whitespace-nowrap border-b border-slate-200 dark:border-slate-700 border-r border-slate-200 dark:border-slate-700 last:border-r-0 shadow-sm ${
-                            isEditableHeader
-                              ? 'bg-violet-50 dark:bg-violet-950/40 text-violet-900 dark:text-violet-100'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
-                          }`}
+                          className={`sticky top-0 z-20 text-left px-4 py-3 font-semibold whitespace-nowrap border-b border-slate-200 dark:border-slate-700 border-r border-slate-200 dark:border-slate-700 last:border-r-0 shadow-sm ${isEditableHeader
+                            ? 'bg-violet-50 dark:bg-violet-950/40 text-violet-900 dark:text-violet-100'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
+                            }`}
                         >
                           <span className="inline-flex items-center gap-1">
                             {h}
@@ -972,6 +1074,92 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
           </div>
         )}
       </div>
+
+      {deductionsExportModalOpen && (
+        <div
+          className="fixed inset-0 z-[201] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="deductions-export-title"
+          onClick={() => !exportingDeductions && setDeductionsExportModalOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl ring-1 ring-slate-200 dark:ring-slate-700 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 bg-gradient-to-r from-rose-700 to-rose-900 text-white">
+              <h2 id="deductions-export-title" className="text-base font-semibold">
+                Export deductions report
+              </h2>
+              <p className="text-xs text-white/90 mt-1 leading-snug">
+                PDF with employee details and all configured deduction columns.
+                {secondSalaryEnabled
+                  ? ' Downloads Regular and 2nd Salary reports when data exists.'
+                  : ' Downloads Regular salary deductions only.'}
+              </p>
+            </div>
+            <div className="p-5 space-y-3">
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-600 p-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 has-[:checked]:ring-2 has-[:checked]:ring-rose-500/40">
+                <input
+                  type="radio"
+                  name="deductionsExportFormat"
+                  className="mt-0.5"
+                  checked={deductionsExportFormat === 'combined'}
+                  disabled={exportingDeductions}
+                  onChange={() => setDeductionsExportFormat('combined')}
+                />
+                <span>
+                  <span className="text-sm font-medium text-slate-900 dark:text-slate-100">Combined table</span>
+                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    One table for all employees with a single grand total at the end.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-600 p-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 has-[:checked]:ring-2 has-[:checked]:ring-rose-500/40">
+                <input
+                  type="radio"
+                  name="deductionsExportFormat"
+                  className="mt-0.5"
+                  checked={deductionsExportFormat === 'by_department'}
+                  disabled={exportingDeductions}
+                  onChange={() => setDeductionsExportFormat('by_department')}
+                />
+                <span>
+                  <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    By division &amp; department (recommended)
+                  </span>
+                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    First department continues on the header page; each further department starts on a new page with its own department total.
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 px-5 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40">
+              <button
+                type="button"
+                disabled={exportingDeductions}
+                onClick={() => setDeductionsExportModalOpen(false)}
+                className="rounded-lg px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={exportingDeductions}
+                onClick={() => void confirmExportDeductionsPdf()}
+                className="inline-flex items-center gap-2 rounded-lg bg-rose-600 text-white px-4 py-2 text-xs font-semibold hover:opacity-90 disabled:opacity-50"
+              >
+                {exportingDeductions ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FileText className="h-3.5 w-3.5" />
+                )}
+                Download PDF{secondSalaryEnabled ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {bundleExportModalOpen && (
         <div
