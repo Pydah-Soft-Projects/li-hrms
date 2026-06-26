@@ -5,7 +5,6 @@
  */
 
 const AttendanceDaily = require('../model/AttendanceDaily');
-const AttendanceSettings = require('../model/AttendanceSettings');
 const { isSameDay, findNextOut } = require('./multiShiftDetectionService');
 const { processSmartINDetection } = require('./smartINDetectionService');
 const { detectAndAssignShift, getShiftsForEmployee, calculateTimeDifference, calculateLateIn, calculateEarlyOut, timeToMinutes } = require('../../shifts/services/shiftDetectionService');
@@ -416,9 +415,9 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
     const manualOpts = normalizeManualOverrides(options.manualOverrides);
 
     try {
-        // Resolve processing mode and apply punch filtering (strictCheckInOutOnly)
-        const attendanceSettings = await AttendanceSettings.getSettings();
-        const processingMode = AttendanceSettings.getProcessingMode(attendanceSettings);
+        // Resolve processing mode (division override → org default) and apply punch filtering
+        const { getAttendanceContextForEmployee } = require('./processingModeResolutionService');
+        const { settings: attendanceSettings, processingMode } = await getAttendanceContextForEmployee(employeeNumber);
         const filteredRawLogs = getPunchesForPairing((rawLogs || []).filter(l => l && l.timestamp), attendanceSettings);
 
         if (processingMode.mode === 'single_shift') {

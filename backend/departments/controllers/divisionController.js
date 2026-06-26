@@ -9,6 +9,50 @@ const {
     stripEmployeeGroupWhenDisabled,
 } = require('../../shared/utils/customEmployeeGrouping');
 const { flattenShiftConfigsWithGroups } = require('../../shared/utils/shiftAssignmentConfig');
+const {
+    getProcessingModeForDivisionId,
+} = require('../../attendance/services/processingModeResolutionService');
+
+const normalizeDivisionProcessingMode = (raw) => {
+    if (raw === undefined) return undefined;
+    if (!raw || typeof raw !== 'object') {
+        return { useOrgDefault: true };
+    }
+
+    if (raw.useOrgDefault !== false) {
+        return { useOrgDefault: true };
+    }
+
+    const mode = raw.mode === 'single_shift' ? 'single_shift' : 'multi_shift';
+    const normalized = {
+        useOrgDefault: false,
+        mode,
+        strictCheckInOutOnly: mode === 'multi_shift' ? true : raw.strictCheckInOutOnly !== false,
+        rosterStrictWhenPresent: raw.rosterStrictWhenPresent !== false,
+    };
+
+    if (raw.continuousSplitThresholdHours !== undefined && raw.continuousSplitThresholdHours !== null && raw.continuousSplitThresholdHours !== '') {
+        normalized.continuousSplitThresholdHours = Number(raw.continuousSplitThresholdHours);
+    }
+    if (raw.splitMinGapHours !== undefined && raw.splitMinGapHours !== null && raw.splitMinGapHours !== '') {
+        normalized.splitMinGapHours = Number(raw.splitMinGapHours);
+    }
+    if (raw.maxShiftsPerDay !== undefined && raw.maxShiftsPerDay !== null && raw.maxShiftsPerDay !== '') {
+        normalized.maxShiftsPerDay = Number(raw.maxShiftsPerDay);
+    }
+    if (raw.postShiftOutMarginHours !== undefined && raw.postShiftOutMarginHours !== null && raw.postShiftOutMarginHours !== '') {
+        normalized.postShiftOutMarginHours = Number(raw.postShiftOutMarginHours);
+    }
+
+    return normalized;
+};
+
+const attachResolvedProcessingMode = async (divisionLike) => {
+    if (!divisionLike) return divisionLike;
+    const obj = divisionLike.toObject ? divisionLike.toObject() : { ...divisionLike };
+    obj.resolvedProcessingMode = await getProcessingModeForDivisionId(obj._id);
+    return obj;
+};
 
 const normalizeHalfSegment = (segment) => {
     if (segment === undefined) return undefined;
@@ -217,7 +261,7 @@ exports.getDivision = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            data: division,
+            data: await attachResolvedProcessingMode(division),
         });
     } catch (error) {
         console.error('Error in getDivision:', error);
@@ -236,7 +280,11 @@ exports.getDivision = async (req, res, next) => {
  */
 exports.createDivision = async (req, res, next) => {
     try {
-        const division = await Division.create(req.body);
+        const payload = { ...req.body };
+        if (payload.processingMode !== undefined) {
+            payload.processingMode = normalizeDivisionProcessingMode(payload.processingMode);
+        }
+        const division = await Division.create(payload);
 
         if (req.body.departments && Array.isArray(req.body.departments)) {
             await Department.updateMany(
@@ -254,7 +302,7 @@ exports.createDivision = async (req, res, next) => {
 
         res.status(201).json({
             success: true,
-            data: division,
+            data: await attachResolvedProcessingMode(division),
         });
     } catch (error) {
         console.error('Error in createDivision:', error);
@@ -289,7 +337,13 @@ exports.updateDivision = async (req, res, next) => {
         // so comparing it to req.body.manager always matches and User.divisionMapping never syncs (breaks workspace scope).
         const previousManagerId = division.manager ? division.manager.toString() : null;
 
-        division = await Division.findByIdAndUpdate(req.params.id, req.body, {
+        const updatePayload = { ...req.body };
+        if (updatePayload.processingMode !== undefined) {
+            updatePayload.processingMode = normalizeDivisionProcessingMode(updatePayload.processingMode);
+        }
+
+        division = await Division.findByIdAndUpdate(req.params.id, updatePayload, {
+            new: true,
             runValidators: true,
         });
 
@@ -340,7 +394,7 @@ exports.updateDivision = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            data: division,
+            data: await attachResolvedProcessingMode(division),
         });
     } catch (error) {
         console.error('Error in updateDivision:', error);

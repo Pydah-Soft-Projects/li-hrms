@@ -1,0 +1,234 @@
+{
+  "orgMode": "single_shift",
+  "results": [
+    {
+      "division": "DSMODE Inherit Org Default",
+      "divCode": "DSMODE_INH",
+      "config": "inherit",
+      "effectiveMode": "single_shift",
+      "empNo": "DSMODE_INH01",
+      "scenario": "LUNCH_TWO_PAIR",
+      "scenarioLabel": "Lunch split (2 IN + 2 OUT)",
+      "date": "2026-05-26..2026-06-25",
+      "note": "Org single_shift: collapses to 1 shift",
+      "punchCount": 4,
+      "daysFed": 31,
+      "daysProcessed": 31,
+      "success": true,
+      "status": "PRESENT",
+      "totalShifts": 1,
+      "payableShifts": 1,
+      "statusMix": {
+        "PRESENT": 31
+      },
+      "summary": {
+        "_id": "6a3d157c72edf3f359d86043",
+        "totalAbsentDays": 0,
+        "totalPartialDays": 0,
+        "totalPayableShifts": 31,
+        "totalPresentDays": 31
+      }
+    },
+    {
+      "division": "DSMODE Inherit Org Default",
+      "divCode": "DSMODE_INH",
+      "config": "inherit",
+      "effectiveMode": "single_shift",
+      "empNo": "DSMODE_INH02",
+      "scenario": "FULL_DAY",
+      "scenarioLabel": "Single IN/OUT 9–21",
+      "date": "2026-05-26..2026-06-25",
+      "note": "Full day single pair",
+      "punchCount": 2,
+      "daysFed": 31,
+      "daysProcessed": 31,
+      "success": true,
+      "status": "PRESENT",
+      "totalShifts": 1,
+      "payableShifts": 1,
+      "statusMix": {
+        "PRESENT": 31
+      },
+      "summary": {
+        "_id": "6a3d158172edf3f359d86045",
+        "totalAbsentDays": 0,
+        "totalPartialDays": 0,
+        "totalPayableShifts": 31,
+        "totalPresentDays": 31
+      }
+    },
+    {
+      "division": "DSMODE Override Multi-Shift",
+      "divCode": "DSMODE_MULT",
+      "config": "multi_shift",
+      "effectiveMode": "multi_shift",
+      "empNo": "DSMODE_MULT01",
+      "scenario": "LUNCH_TWO_PAIR",
+      "scenarioLabel": "Lunch split (2 IN + 2 OUT)",
+      "date": "2026-05-26..2026-06-25",
+      "note": "Should split into 2 shifts",
+      "punchCount": 4,
+      "daysFed": 31,
+      "daysProcessed": 31,
+      "success": true,
+      "status": "PRESENT",
+      "totalShifts": 2,
+      "payableShifts": 1,
+      "statusMix": {
+        "PRESENT": 31
+      },
+      "summary": {
+        "_id": "6a3d158672edf3f359d86049",
+        "totalAbsentDays": 0,
+        "totalPartialDays": 0,
+        "totalPayableShifts": 31,
+        "totalPresentDays": 31
+      }
+    },
+    {
+      "division": "DSMODE Override Multi-Shift",
+      "divCode": "DSMODE_MULT",
+      "config": "multi_shift",
+      "effectiveMode": "multi_shift",
+      "empNo": "DSMODE_MULT02",
+      "scenario": "FULL_DAY",
+      "scenarioLabel": "Single IN/OUT 9–21",
+      "date": "2026-05-26..2026-06-25",
+      "note": "One continuous shift",
+      "punchCount": 2,
+      "daysFed": 31,
+      "daysProcessed": 31,
+      "success": true,
+      "status": "PRESENT",
+      "totalShifts": 1,
+      "payableShifts": 1,
+      "statusMix": {
+        "PRESENT": 31
+      },
+      "summary": {
+        "_id": "6a3d158b72edf3f359d8604b",
+        "totalAbsentDays": 0,
+        "totalPartialDays": 0,
+        "totalPayableShifts": 31,
+        "totalPresentDays": 31
+      }
+    },
+    {
+      "division": "DSMODE Override Single Strict",
+      "divCode": "DSMODE_SST",
+      "config": "single_shift",
+      "effectiveMode": "single_shift",
+      "empNo": "DSMODE_SST01",
+      "scenario": "LUNCH_TWO_PAIR",
+      "scenarioLabel": "Lunch split (2 IN + 2 OUT)",
+      "date": "2026-05-26..2026-06-25",
+      "note": "Strict single: first IN / last OUT",
+      "punchCount": 4,
+      "daysFed": 31,
+      "daysProcessed": 31,
+      "success": true,
+      "status": "PRESENT",
+      "totalShifts": 1,
+      "payableShifts": 1,
+      "statusMix": {
+        "PRESENT": 31
+      },
+      "summary": {
+        "_id": "6a3d158d72edf3f359d8604f",
+        "totalAbsentDays": 0,
+        "totalPartialDays": 0,
+        "totalPayableShifts": 31,
+        "totalPresentDays": 31
+      }
+    },
+    {
+      "division": "DSMODE Override Single Strict",
+      "divCode": "DSMODE_SST",
+      "config": "single_shift",
+      "effectiveMode": "single_shift",
+      "empNo": "DSMODE_SST02",
+      "scenario": "PARTIAL_IN",
+      "scenarioLabel": "IN only (partial)",
+      "date": "2026-05-26..2026-06-25",
+      "note": "Partial day (no OUT)",
+      "punchCount": 1,
+      "daysFed": 31,
+      "daysProcessed": 31,
+      "success": true,
+      "status": "PARTIAL",
+      "totalShifts": 1,
+      "payableShifts": 0,
+      "statusMix": {
+        "PARTIAL": 31
+      },
+      "summary": {
+        "_id": "6a3d158e72edf3f359d86051",
+        "totalAbsentDays": 0,
+        "totalPartialDays": 15.5,
+        "totalPayableShifts": 15.5,
+        "totalPresentDays": 15.5
+      }
+    },
+    {
+      "division": "DSMODE Override Single Flexible",
+      "divCode": "DSMODE_SFX",
+      "config": "single_shift",
+      "effectiveMode": "single_shift",
+      "empNo": "DSMODE_SFX01",
+      "scenario": "LUNCH_TWO_PAIR",
+      "scenarioLabel": "Lunch split (2 IN + 2 OUT)",
+      "date": "2026-05-26..2026-06-25",
+      "note": "Flexible single-shift pairing",
+      "punchCount": 4,
+      "daysFed": 31,
+      "daysProcessed": 31,
+      "success": true,
+      "status": "PRESENT",
+      "totalShifts": 1,
+      "payableShifts": 1,
+      "statusMix": {
+        "PRESENT": 31
+      },
+      "summary": {
+        "_id": "6a3d158f72edf3f359d86055",
+        "totalAbsentDays": 0,
+        "totalPartialDays": 0,
+        "totalPayableShifts": 31,
+        "totalPresentDays": 31
+      }
+    },
+    {
+      "division": "DSMODE Override Single Flexible",
+      "divCode": "DSMODE_SFX",
+      "config": "single_shift",
+      "effectiveMode": "single_shift",
+      "empNo": "DSMODE_SFX02",
+      "scenario": "HALF_MORNING",
+      "scenarioLabel": "Morning half 9–13",
+      "date": "2026-05-26..2026-06-25",
+      "note": "Short morning block",
+      "punchCount": 2,
+      "daysFed": 31,
+      "daysProcessed": 31,
+      "success": true,
+      "status": "HALF_DAY",
+      "totalShifts": 1,
+      "payableShifts": 0.5,
+      "statusMix": {
+        "HALF_DAY": 31
+      },
+      "summary": {
+        "_id": "6a3d158f72edf3f359d86058",
+        "totalAbsentDays": 15.5,
+        "totalPartialDays": 0,
+        "totalPayableShifts": 15.5,
+        "totalPresentDays": 15.5
+      }
+    }
+  ],
+  "period": {
+    "startDate": "2026-05-26",
+    "endDate": "2026-06-25",
+    "monthStr": "2026-06"
+  }
+}

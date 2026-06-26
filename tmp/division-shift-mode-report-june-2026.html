@@ -1,0 +1,3865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Division Shift Mode Report — 2026-06</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; background: #f8fafc; color: #0f172a; }
+    h1 { margin-bottom: 4px; }
+    .sub { color: #64748b; margin-bottom: 24px; }
+    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 28px; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; }
+    .card b { display: block; font-size: 22px; }
+    .division { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-bottom: 20px; }
+    .division h2 { margin: 0 0 8px; }
+    .code { color: #6366f1; font-weight: normal; }
+    .meta { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: #475569; margin-bottom: 10px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .chip { background: #f1f5f9; border-radius: 999px; padding: 4px 10px; font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; vertical-align: top; }
+    th { background: #f1f5f9; }
+    code { background: #eef2ff; color: #4338ca; padding: 2px 6px; border-radius: 4px; }
+    .legend { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-bottom: 20px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>Division shift-mode report (stored data)</h1>
+  <p class="sub">Generated 2026-06-25T11:38:07.781Z · Pay period 2026-05-26 → 2026-06-25 · Org default: <code>single_shift</code></p>
+  <div class="legend">
+    <b>How to read this</b><br/>
+    Each division shows its <em>effective</em> processing mode (override or org default). Employee rows use stored daily attendance and monthly summary for this pay period.
+    <b>Days &gt;1 shift</b> counts days where AttendanceDaily has multiple shift segments — meaningful mainly under multi-shift rules.
+  </div>
+  <div class="summary">
+    <div class="card">Divisions<b>9</b></div>
+    <div class="card">Employees<b>366</b></div>
+    <div class="card">With summary<b>366</b></div>
+    <div class="card">Override divisions<b>0</b></div>
+    <div class="card">Multi-shift days<b>0</b></div>
+  </div>
+  <section class="division">
+        <h2>PVRT Degree College (Kakinada Campus) <span class="code">(PVRTKKD)</span></h2>
+        <div class="meta">
+          <span><b>Config:</b> Inherit org</span>
+          <span><b>Effective:</b> <code>single_shift</code></span>
+          <span><b>Employees:</b> 33</span>
+          <span><b>Division totals:</b> 159 pres · 22 part · 701.5 abs · 159 pay</span>
+        </div>
+        <div class="chips"><span class="chip">ABSENT: 758</span><span class="chip">PRESENT: 134</span><span class="chip">PARTIAL: 44</span><span class="chip">WEEK_OFF: 37</span><span class="chip">HALF_DAY: 6</span></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Emp#</th><th>Name</th><th>Dept</th><th>Mode</th><th>Days</th>
+              <th>Daily status mix</th><th>Summary pres/part/abs/pay</th><th>Leave/OD</th><th>Days &gt;1 shift</th>
+            </tr>
+          </thead>
+          <tbody><tr>
+            <td>0151</td>
+            <td>KADIMSETTI BHANU PRASAD</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 27 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>108</td>
+            <td>MENDI PADMA</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:26, PRESENT:3, PARTIAL:1, WEEK_OFF:1</td>
+            <td>3.5 / 0.5 / 23 / 3.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111115</td>
+            <td>Nimmakayala Durga Parvathi</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>14</td>
+            <td>PRESENT:8, PARTIAL:2, WEEK_OFF:2, ABSENT:2</td>
+            <td>9 / 1 / 17 / 9</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111144</td>
+            <td>CHUKKANA V V SATYANARAYANAMMA</td>
+            <td>DEPT OF COMPUTERSCIENCE</td>
+            <td><code>single_shift</code></td>
+            <td>4</td>
+            <td>PRESENT:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>3 / 0.5 / 21.5 / 3</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>117</td>
+            <td>KALIKI PRANUSHA k</td>
+            <td>DEPT OF COMPUTERSCIENCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:6, PARTIAL:4, WEEK_OFF:2</td>
+            <td>8 / 2 / 17 / 8</td>
+            <td>2 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>119</td>
+            <td>G.UMA DEVI</td>
+            <td>DEPT OF COMPUTERSCIENCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 27 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>121</td>
+            <td>PYDAH PRAKASH</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:18, PRESENT:10, WEEK_OFF:2, PARTIAL:1</td>
+            <td>10.5 / 0.5 / 16 / 10.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>131</td>
+            <td>P.MANI KUMAR</td>
+            <td>DEPT OF COMMERCE AND MANAGEMENT STUDIES</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:1, HALF_DAY:1</td>
+            <td>1.5 / 0 / 25.5 / 1.5</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>14</td>
+            <td>Dr.G.K.SURYA VISWANADH</td>
+            <td>DEPT OF COMPUTERSCIENCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 18 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>147</td>
+            <td>BILLAKURTHI VENKATALAKSHMI</td>
+            <td>DEPT OF COMPUTERSCIENCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:25, PARTIAL:3, PRESENT:2, WEEK_OFF:1</td>
+            <td>3.5 / 1.5 / 22 / 3.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>151</td>
+            <td>kadimisetty bhanu prakash</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 27 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>155</td>
+            <td>MOHAMMAD AYESHA</td>
+            <td>DEPT OF COMMERCE AND MANAGEMENT STUDIES</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:7, WEEK_OFF:2, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 18.5 / 7.5</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>158</td>
+            <td>NAGAM JYOTHI</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:7, PARTIAL:2, WEEK_OFF:2</td>
+            <td>8 / 1 / 17 / 8</td>
+            <td>2 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>160</td>
+            <td>L.BHAVANI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 27 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>163</td>
+            <td>kunche jagadeeswari</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 27 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>164</td>
+            <td>PATNAM SANDEEP</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:8, PARTIAL:2, WEEK_OFF:2</td>
+            <td>9 / 1 / 17 / 9</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>165</td>
+            <td>SIRIPALLI SATISH</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 27 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>166</td>
+            <td>SATHI RAMYA</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:26, PRESENT:3, WEEK_OFF:1, HALF_DAY:1</td>
+            <td>3.5 / 0 / 23.5 / 3.5</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>168</td>
+            <td>I. BHUVANA PRIYA</td>
+            <td>DEPT OF COMPUTERSCIENCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:6, WEEK_OFF:2, PARTIAL:2</td>
+            <td>7 / 1 / 16 / 7</td>
+            <td>4 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>169</td>
+            <td>YEDDU KIRANTEJA</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 27 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21513</td>
+            <td>BUDDIGA BALA SRI VENKATA SAI MANOJ KUMAR</td>
+            <td>DEPT OF BVOC</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 27 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21514</td>
+            <td>B.S.K.MAHA LAKSHMI</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:3, HALF_DAY:3, PARTIAL:2, WEEK_OFF:1</td>
+            <td>5.5 / 1 / 20.5 / 5.5</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21520</td>
+            <td>KEETHA RAMALAKSHMI</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:6, PARTIAL:3, WEEK_OFF:2</td>
+            <td>7.5 / 1.5 / 18 / 7.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21529</td>
+            <td>KESABOINA BABY</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:18, PRESENT:9, PARTIAL:2, WEEK_OFF:2</td>
+            <td>10 / 1 / 16 / 10</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>41</td>
+            <td>CH.VARALAKSHMI</td>
+            <td>—</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 27 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>51</td>
+            <td>V.S.R SUBRAHMANYAM</td>
+            <td>DEPT OF BVOC</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:25, PRESENT:5, WEEK_OFF:1</td>
+            <td>5 / 0 / 22 / 5</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>53</td>
+            <td>M.APARNA DEVI</td>
+            <td>DEPT OF BVOC</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:7, PARTIAL:3, WEEK_OFF:2</td>
+            <td>8.5 / 1.5 / 17 / 8.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>55</td>
+            <td>NEKKANTI SATYA TULASI</td>
+            <td>DEPT OF COMPUTERSCIENCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:24, PRESENT:5, PARTIAL:1, WEEK_OFF:1</td>
+            <td>5.5 / 0.5 / 21 / 5.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>6</td>
+            <td>B.J.U.N.SUNEETHA</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:7, PARTIAL:2, WEEK_OFF:2</td>
+            <td>8 / 1 / 18 / 8</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>61</td>
+            <td>A  ARUNA KUMARI</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:6, PARTIAL:2, WEEK_OFF:2</td>
+            <td>7 / 1 / 17 / 7</td>
+            <td>3 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>70</td>
+            <td>KAVLU VENKATA RAMANA</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:26, PRESENT:2, PARTIAL:2, WEEK_OFF:1</td>
+            <td>3 / 1 / 23 / 3</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>71</td>
+            <td>KARANAM YAMUNA KUMARI</td>
+            <td>DEPT OF COMMERCE AND MANAGEMENT STUDIES</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:6, PARTIAL:4, WEEK_OFF:2</td>
+            <td>8 / 2 / 17 / 8</td>
+            <td>2 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>95</td>
+            <td>NARALASETTY CHANDRASEKHAR</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:7, PARTIAL:3, WEEK_OFF:2</td>
+            <td>8.5 / 1.5 / 17 / 8.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr></tbody>
+        </table>
+      </section><section class="division">
+        <h2>PYDAH CANTEEN <span class="code">(PYD CAN)</span></h2>
+        <div class="meta">
+          <span><b>Config:</b> Inherit org</span>
+          <span><b>Effective:</b> <code>single_shift</code></span>
+          <span><b>Employees:</b> 17</span>
+          <span><b>Division totals:</b> 75 pres · 5 part · 447 abs · 75 pay</span>
+        </div>
+        <div class="chips"><span class="chip">ABSENT: 440</span><span class="chip">PRESENT: 63</span><span class="chip">PARTIAL: 10</span><span class="chip">HALF_DAY: 14</span></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Emp#</th><th>Name</th><th>Dept</th><th>Mode</th><th>Days</th>
+              <th>Daily status mix</th><th>Summary pres/part/abs/pay</th><th>Leave/OD</th><th>Days &gt;1 shift</th>
+            </tr>
+          </thead>
+          <tbody><tr>
+            <td>146</td>
+            <td>KANDERLA MANGA</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:1, PARTIAL:1</td>
+            <td>1.5 / 0.5 / 29 / 1.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>148</td>
+            <td>CHAVALLA SATYAVATHI</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:10, PARTIAL:2</td>
+            <td>11 / 1 / 19 / 11</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>159</td>
+            <td>ORUGANTI KRISHNA MOHAN</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, HALF_DAY:6, PRESENT:3, PARTIAL:1</td>
+            <td>6.5 / 0.5 / 24 / 6.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>171</td>
+            <td>NARASING PATRO</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 31 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>174</td>
+            <td>PENTAKOTA SRINIVASA RA0</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:10, HALF_DAY:1</td>
+            <td>10.5 / 0 / 20.5 / 10.5</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>9004</td>
+            <td>PYNDA GOVINDA RAJU</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:28, HALF_DAY:2, PARTIAL:1</td>
+            <td>1.5 / 0.5 / 29 / 1.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>9008</td>
+            <td>VENTRU LAXMI</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 31 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>9012</td>
+            <td>PINIPE VIJAYA LAKSHMI</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 31 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>9014</td>
+            <td>MORTHA SUJATHA</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 21 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>9015</td>
+            <td>KOLLU SYAMALA</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 31 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>9018</td>
+            <td>KATADI SATYAVENI</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:11, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 19 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>9021</td>
+            <td>PITHANI SRI VENI</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 31 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>9023</td>
+            <td>BADUGU KRISHNA ARJUN</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:25, HALF_DAY:5, PARTIAL:1</td>
+            <td>3 / 0.5 / 27.5 / 3</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>9024</td>
+            <td>BODDU VARA LAKSHMI</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:11, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 19 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>9025</td>
+            <td>YELLAM LAKSHMI</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 31 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>9026</td>
+            <td>PALEPU SITA RATNAM</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:8, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 22 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>9027</td>
+            <td>GUTTULA RATNAM</td>
+            <td>CANTEEN</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 31 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr></tbody>
+        </table>
+      </section><section class="division">
+        <h2>PYDAH COLLEGE OF ENGG (DIPLOMA) <span class="code">(PYDD)</span></h2>
+        <div class="meta">
+          <span><b>Config:</b> Inherit org</span>
+          <span><b>Effective:</b> <code>single_shift</code></span>
+          <span><b>Employees:</b> 29</span>
+          <span><b>Division totals:</b> 195.5 pres · 10.5 part · 563.5 abs · 195.5 pay</span>
+        </div>
+        <div class="chips"><span class="chip">PRESENT: 183</span><span class="chip">ABSENT: 526</span><span class="chip">WEEK_OFF: 37</span><span class="chip">PARTIAL: 21</span><span class="chip">HALF_DAY: 4</span></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Emp#</th><th>Name</th><th>Dept</th><th>Mode</th><th>Days</th>
+              <th>Daily status mix</th><th>Summary pres/part/abs/pay</th><th>Leave/OD</th><th>Days &gt;1 shift</th>
+            </tr>
+          </thead>
+          <tbody><tr>
+            <td>111119</td>
+            <td>PACHIMALA SRUTHI</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 17 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111120</td>
+            <td>GOLLAVILLI LAKSHMI PRASANNA</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>7</td>
+            <td>PRESENT:6, PARTIAL:1</td>
+            <td>6.5 / 0.5 / 24 / 6.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111126</td>
+            <td>NANDURI HAYAGREEVA KOWSIC</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>10</td>
+            <td>PRESENT:9, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 21 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111129</td>
+            <td>PALEPU VEERA BABU</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>6</td>
+            <td>PRESENT:5, PARTIAL:1</td>
+            <td>5.5 / 0.5 / 19 / 5.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111141</td>
+            <td>MATTA  SATYA PRASANNA</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>4</td>
+            <td>PRESENT:3, PARTIAL:1</td>
+            <td>3.5 / 0.5 / 19 / 3.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1254</td>
+            <td>KOPPISETTI VEERA VENKATA RAMANA</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:26, WEEK_OFF:2, PRESENT:2, PARTIAL:1</td>
+            <td>2.5 / 0.5 / 24 / 2.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1434</td>
+            <td>BASHIR HAMADBABU MD</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:6, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>7 / 0.5 / 19.5 / 7</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1606</td>
+            <td>PAPPULA JAYASRI LAKSHMI</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>0</td>
+            <td>—</td>
+            <td>0 / 0 / 30 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1873</td>
+            <td>PALEPU NAGAMANI</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 17 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1913</td>
+            <td>GARAGA BRAHMARAMBA</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, WEEK_OFF:1</td>
+            <td>9 / 0 / 18 / 9</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1955</td>
+            <td>MUPPALA NAGA SIRISHA</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:7, WEEK_OFF:2, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 19 / 7.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2003</td>
+            <td>KAMIREDDY MANOHAR</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2004</td>
+            <td>ADAPA KRANTHIMALA</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:8, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>9 / 0.5 / 17 / 9</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2014</td>
+            <td>KOYYA OMKAR</td>
+            <td>ME</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 18 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2037</td>
+            <td>RAMULAKONDA HARI RAMA KRISHNA REDDY</td>
+            <td>ME</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:23, PRESENT:7, WEEK_OFF:1</td>
+            <td>7 / 0 / 20 / 7</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2058</td>
+            <td>ADABALA SAI SATYA</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2116</td>
+            <td>PADALA AJAYAKUMAR</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 17 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2119</td>
+            <td>TATIKONDA DIVYA KANAKA MAHALAKSHMI</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2147</td>
+            <td>KAKILETI JANAKI PRATYUSHA</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:7, WEEK_OFF:2, HALF_DAY:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 18 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2150</td>
+            <td>YATHAM DIVYA DURGA</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21515</td>
+            <td>ACHANTA SIRISHA</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2156</td>
+            <td>KATHA CHITI SUBHADHRA</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:8, WEEK_OFF:1</td>
+            <td>8 / 0 / 17 / 8</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2158</td>
+            <td>UDDISA KUSUMA LAKSHMI PRIYA</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:7, WEEK_OFF:2, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 16 / 7.5</td>
+            <td>2.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2181</td>
+            <td>BARRE TRIVALLIKA</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 16 / 8.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2186</td>
+            <td>MIDDI GANGA DURGA BHAVANI</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2202</td>
+            <td>ALLA LOVAKUMARI</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2272</td>
+            <td>BALASA PRATHYUSHA</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2305</td>
+            <td>DIDDI MOHAN NAGA DORAYYA</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2308</td>
+            <td>PITTANA TARA PRAPURNA</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 16 / 8.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr></tbody>
+        </table>
+      </section><section class="division">
+        <h2>PYDAH COLLEGE OF ENGINEERING <span class="code">(PYDE)</span></h2>
+        <div class="meta">
+          <span><b>Config:</b> Inherit org</span>
+          <span><b>Effective:</b> <code>single_shift</code></span>
+          <span><b>Employees:</b> 215</span>
+          <span><b>Division totals:</b> 1308 pres · 78 part · 4324 abs · 1308 pay</span>
+        </div>
+        <div class="chips"><span class="chip">PRESENT: 1208</span><span class="chip">HALF_DAY: 44</span><span class="chip">ABSENT: 4494</span><span class="chip">PARTIAL: 156</span><span class="chip">WEEK_OFF: 187</span></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Emp#</th><th>Name</th><th>Dept</th><th>Mode</th><th>Days</th>
+              <th>Daily status mix</th><th>Summary pres/part/abs/pay</th><th>Leave/OD</th><th>Days &gt;1 shift</th>
+            </tr>
+          </thead>
+          <tbody><tr>
+            <td>1090</td>
+            <td>SAMADHULA GOLLABABU</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:9, HALF_DAY:1, PARTIAL:1</td>
+            <td>10 / 0.5 / 19.5 / 10</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111112</td>
+            <td>ELIPE POORNASUNDAR</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>1</td>
+            <td>PRESENT:1</td>
+            <td>1 / 0 / 29 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111113</td>
+            <td>ANNAPANTHULA SIVA NAGARAM</td>
+            <td>TPO</td>
+            <td><code>single_shift</code></td>
+            <td>9</td>
+            <td>PRESENT:8, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 20 / 8.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111114</td>
+            <td>YESURI DEVI</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>14</td>
+            <td>PRESENT:10, ABSENT:3, PARTIAL:1</td>
+            <td>10.5 / 0.5 / 19 / 10.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111116</td>
+            <td>IMANDI GOWRI VENKATA LAKSHMI PRASANNA KUMARI</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>14</td>
+            <td>PRESENT:8, ABSENT:4, PARTIAL:2</td>
+            <td>9 / 1 / 20 / 9</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111117</td>
+            <td>KOLLABOTHULA DEVA KUMAR</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>1</td>
+            <td>PRESENT:1</td>
+            <td>1 / 0 / 29 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111121</td>
+            <td>VINNAKOTI ANANDARAO</td>
+            <td>SECURITY</td>
+            <td><code>single_shift</code></td>
+            <td>11</td>
+            <td>PRESENT:9, PARTIAL:2</td>
+            <td>10 / 1 / 19 / 10</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111122</td>
+            <td>PITHANI VEERA VENKATA DURGA PRASAD</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>5</td>
+            <td>PRESENT:4, HALF_DAY:1</td>
+            <td>4.5 / 0 / 25.5 / 4.5</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111123</td>
+            <td>MATTA RAMBABU</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111124</td>
+            <td>BADDILA PAVANA JYOTHI</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>8</td>
+            <td>PRESENT:7, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 22 / 7.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111125</td>
+            <td>SANAMPUDI DEVA KARUN</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>1</td>
+            <td>PRESENT:1</td>
+            <td>1 / 0 / 29 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111127</td>
+            <td>ALLADI BALA KRISHNA</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>4</td>
+            <td>PARTIAL:2, PRESENT:2</td>
+            <td>3 / 1 / 26 / 3</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111128</td>
+            <td>GANDEPALLI NAVEEN KUMAR</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>10</td>
+            <td>PRESENT:9, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 20 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111132</td>
+            <td>VAIKANTI SIVASHANKAR</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>4</td>
+            <td>PRESENT:4</td>
+            <td>4 / 0 / 26 / 4</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111133</td>
+            <td>JADA USHA RANI</td>
+            <td>Hostel Dept</td>
+            <td><code>single_shift</code></td>
+            <td>12</td>
+            <td>PRESENT:11, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 18 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111134</td>
+            <td>PASUPULETI MADHURI PRIYA</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>6</td>
+            <td>PRESENT:5, PARTIAL:1</td>
+            <td>5.5 / 0.5 / 18 / 5.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111136</td>
+            <td>VINJAMURI V V S DURGARAO</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>6</td>
+            <td>PRESENT:5, PARTIAL:1</td>
+            <td>5.5 / 0.5 / 18 / 5.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111140</td>
+            <td>KALLA SATTIBABU</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>5</td>
+            <td>PRESENT:3, HALF_DAY:1, PARTIAL:1</td>
+            <td>4 / 0.5 / 19.5 / 4</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1174</td>
+            <td>SAMADHULA KAMALAMMA</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:9, HALF_DAY:1, PARTIAL:1</td>
+            <td>10 / 0.5 / 18.5 / 10</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1198</td>
+            <td>KOMMU VIJAYA PRASAD</td>
+            <td>EXAM CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:8, WEEK_OFF:2, PARTIAL:2</td>
+            <td>9 / 1 / 16 / 9</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>13</td>
+            <td>K RAMESH BABU</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:28, PRESENT:3</td>
+            <td>3 / 0 / 22 / 3</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>138</td>
+            <td>D BHAVANI</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:8, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>9 / 0.5 / 16.5 / 9</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1482</td>
+            <td>MUSIREDDY JYOTHI</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:26, PRESENT:4, WEEK_OFF:1</td>
+            <td>4 / 0 / 22 / 4</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1537</td>
+            <td>LOLLA BHAVANI</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1539</td>
+            <td>BANDI NAGA RAJU</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1551</td>
+            <td>SADGUNA KUMARI V</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1559</td>
+            <td>BALA SARASWATHI THOTAKURA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1564</td>
+            <td>GUMMIDI VEERAVENI</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:26, PRESENT:4, WEEK_OFF:1</td>
+            <td>4 / 0 / 22 / 4</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1565</td>
+            <td>DANDUPROLU YASWANTH ANIL</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:6, HALF_DAY:2, PARTIAL:2, WEEK_OFF:2</td>
+            <td>8 / 1 / 16 / 8</td>
+            <td>2 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1592</td>
+            <td>PINAPOTHU GANESH KUMAR</td>
+            <td>MAINTENANCE-TECHNICAL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 15 / 9.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1605</td>
+            <td>JAKKI SIVA SANKAR</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1613</td>
+            <td>NOOKELLA VEERA DURGA</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:27, PRESENT:3, WEEK_OFF:1</td>
+            <td>3 / 0 / 23 / 3</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1625</td>
+            <td>BORUSU SREE SUDHA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:26, PRESENT:2, WEEK_OFF:2, PARTIAL:1</td>
+            <td>2.5 / 0.5 / 23 / 2.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1644</td>
+            <td>PUCHAKAYALA SATISH REDDY</td>
+            <td>ME</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:23, PRESENT:7, WEEK_OFF:1</td>
+            <td>7 / 0 / 19 / 7</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1676</td>
+            <td>U SRINIVAS</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1695</td>
+            <td>POTABHATULA DAMODHAR</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1697</td>
+            <td>MADIREDDI SUMA</td>
+            <td>TPO</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:28, WEEK_OFF:3</td>
+            <td>0 / 0 / 5 / 0</td>
+            <td>24 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1717</td>
+            <td>DANGETI RAMBABU</td>
+            <td>SECURITY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, PARTIAL:2, HALF_DAY:1</td>
+            <td>9.5 / 1 / 19.5 / 9.5</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1724</td>
+            <td>RAMAVARAPU RAMALAKSHMI</td>
+            <td>ME</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1730</td>
+            <td>KOMMIREDDY VEERABABU</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1737</td>
+            <td>CHINTAPALI SURYA CHANDRA RAJESH</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1740</td>
+            <td>NADIMPALLI USHA RANI</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1746</td>
+            <td>MAKANA SUJANA PRIYADARSHINI</td>
+            <td>CSE AI</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:7, WEEK_OFF:2, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 17 / 7.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1792</td>
+            <td>TALATAM SRAVANI</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1805</td>
+            <td>POTHULA KALYANI SANTHOSHI</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1818</td>
+            <td>SALADI SUBBARAO</td>
+            <td>ME</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1823</td>
+            <td>MUNEENDRA KANNEDI</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:28, PRESENT:1, PARTIAL:1, WEEK_OFF:1</td>
+            <td>1.5 / 0.5 / 24 / 1.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1832</td>
+            <td>A V V S N V PRASAD</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1852</td>
+            <td>MEDISETTI SUSEELA</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:8, PARTIAL:2, WEEK_OFF:2</td>
+            <td>9 / 1 / 16 / 9</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1858</td>
+            <td>THAMMANAPUDI SATHYA</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:7, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>8 / 0.5 / 17.5 / 8</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1869</td>
+            <td>NARALA VENKATA LAKSHMI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 30 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1879</td>
+            <td>KUNCHE JYOTHI RAJU</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1882</td>
+            <td>MANEPALLI PADMAVATHI</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:8, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>9 / 0.5 / 16.5 / 9</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1883</td>
+            <td>CHITTOORY RAMAKRISHNA</td>
+            <td>EXAM CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1889</td>
+            <td>V TATA SAHEB</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1894</td>
+            <td>YANDAMURI SRINIVASA RAO</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:7, WEEK_OFF:2, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 18 / 7.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1908</td>
+            <td>DADALA SUNEETHA</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:7, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>8 / 0.5 / 17.5 / 8</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1922</td>
+            <td>SHAIK BABA ROSHINI BEGUM</td>
+            <td>TPO</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1923</td>
+            <td>PASALAPUDI CHINNA THIMMARAJU</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1935</td>
+            <td>MACHA SAROJINI DEVI</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1941</td>
+            <td>VALLU POORNIMA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1951</td>
+            <td>D.R.K.B.T SATYA PRASAD</td>
+            <td>SECURITY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, PARTIAL:2, HALF_DAY:1</td>
+            <td>9.5 / 1 / 19.5 / 9.5</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1954</td>
+            <td>ANGADI SARITHA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:6, WEEK_OFF:2, PARTIAL:2, HALF_DAY:1</td>
+            <td>7.5 / 1 / 17.5 / 7.5</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1956</td>
+            <td>BOKKA SUNEETHA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:5, PARTIAL:3, WEEK_OFF:2</td>
+            <td>6.5 / 1.5 / 18 / 6.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1961</td>
+            <td>KOTHA SUNEELU</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1962</td>
+            <td>ANUSURI  SRINIVASA RAO</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>198</td>
+            <td>K BABURAO</td>
+            <td>ME</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, WEEK_OFF:1</td>
+            <td>9 / 0 / 17 / 9</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1981</td>
+            <td>KETHA SUBHAKAR</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1982</td>
+            <td>YADLA VARA PRASADRAO</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1992</td>
+            <td>KOTIPALLI LAKSHMI KALA</td>
+            <td>Hostel Dept</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 30 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2</td>
+            <td>P V SURYA PRAKASH</td>
+            <td>ME</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:8, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>9 / 0.5 / 16.5 / 9</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2009</td>
+            <td>TIRUNAGIRI SWAPNA SRI DEVI</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2017</td>
+            <td>VASIREDDY SURYAKALA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2018</td>
+            <td>REDDI SRI VENKATA LAKSHMI LAHARI</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:7, WEEK_OFF:2, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 18 / 7.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2020</td>
+            <td>PERNEEDI CHAKRADHARA RAO</td>
+            <td>CSE AI</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:23, PRESENT:6, PARTIAL:1, WEEK_OFF:1</td>
+            <td>6.5 / 0.5 / 19 / 6.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2023</td>
+            <td>S V KRISHNA PATTAPAGALA</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2028</td>
+            <td>REDDY VENKATA LAKSHMI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 20 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2035</td>
+            <td>KESABOINA NOOKA RAJU</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PARTIAL:1</td>
+            <td>0.5 / 0.5 / 25 / 0.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2036</td>
+            <td>NARKADAMILLI LAKSHMI SATYA</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2043</td>
+            <td>CH SATYAVATHI</td>
+            <td>Hostel Dept</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 20 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2054</td>
+            <td>KOPPISETTI DURGA</td>
+            <td>Hostel Dept</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:8, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 21 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2056</td>
+            <td>RELANGI NAGAMANI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 19 / 9.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2064</td>
+            <td>NARALA NAGAMANI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:10, PARTIAL:1</td>
+            <td>10.5 / 0.5 / 19 / 10.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2065</td>
+            <td>MANTRAVADI RAMA SUBRAHMANYA SASTRY</td>
+            <td>EXAM CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2067</td>
+            <td>NALAM PYDI VENKATA SURYA SUBBARAO</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:6, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>7 / 0.5 / 18.5 / 7</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2068</td>
+            <td>GONIPATI HARSHA VARDHAN</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:5, PARTIAL:3, WEEK_OFF:2, HALF_DAY:1</td>
+            <td>7 / 1.5 / 17.5 / 7</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2074</td>
+            <td>KORUKONDA KANAKA BHASKARA</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:7, WEEK_OFF:1, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 18 / 7.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2075</td>
+            <td>SABBI SATEESH</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2076</td>
+            <td>VIJAYA PALAPARTHI</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2080</td>
+            <td>AKULA NAGESWARA RAO</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:25, PRESENT:4, WEEK_OFF:1, PARTIAL:1</td>
+            <td>4.5 / 0.5 / 21 / 4.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2088</td>
+            <td>CHILAKAMARTHI VSRV SIVA KUMAR</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:8, WEEK_OFF:2, PARTIAL:2</td>
+            <td>9 / 1 / 16 / 9</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2093</td>
+            <td>KODI KANAKALAKSHMI</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:26, PRESENT:3, PARTIAL:1, WEEK_OFF:1</td>
+            <td>3.5 / 0.5 / 22 / 3.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2099</td>
+            <td>RAJ KUMAR VISINIGIRI</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2104</td>
+            <td>HEMALATHA TATAPUDI</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2113</td>
+            <td>TANUJA KANCHUSTHAMBAM</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2118</td>
+            <td>PALIKA RAJU</td>
+            <td>SECURITY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:11, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 18 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2123</td>
+            <td>LOVAKUMAR MENDA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2128</td>
+            <td>KUDIPUDI LAKSHMI DURGA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:6, WEEK_OFF:2, PARTIAL:1</td>
+            <td>6.5 / 0.5 / 18 / 6.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2131</td>
+            <td>NEMMATHI SANTAKUMARI</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:18, PRESENT:10, WEEK_OFF:2, PARTIAL:1</td>
+            <td>10.5 / 0.5 / 15 / 10.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2132</td>
+            <td>NAKKA VENKATESHULU</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PARTIAL:1, PRESENT:1</td>
+            <td>1.5 / 0.5 / 24 / 1.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2137</td>
+            <td>SETTI VIJAYAKUMARI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:10, PARTIAL:1</td>
+            <td>10.5 / 0.5 / 19 / 10.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2138</td>
+            <td>BODDU PAVAN</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:4, WEEK_OFF:2, HALF_DAY:2, PARTIAL:1</td>
+            <td>5.5 / 0.5 / 20 / 5.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2139</td>
+            <td>BH.V.S.R.K AYYAPPA KUMAR</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:23, PRESENT:7, WEEK_OFF:1</td>
+            <td>7 / 0 / 19 / 7</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2140</td>
+            <td>YALLA VENKATESWARA RAO</td>
+            <td>SECURITY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, PARTIAL:2, HALF_DAY:1</td>
+            <td>9.5 / 1 / 19.5 / 9.5</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2141</td>
+            <td>BANGARU MANASA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2149</td>
+            <td>SIDDANTHAPU SARALA</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21511</td>
+            <td>SANKU VAMSI</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>0</td>
+            <td>—</td>
+            <td>0 / 0 / 30 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21516</td>
+            <td>CONIKULA JYOTHIKA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21517</td>
+            <td>TEKUMUDI GIRI SANKAR</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2152</td>
+            <td>CHITTUMENU SOMESWARA RAO</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:26, PRESENT:4, WEEK_OFF:1</td>
+            <td>4 / 0 / 22 / 4</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21522</td>
+            <td>CHINTALAPUDI  ASWINI</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 24 / 1</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2153</td>
+            <td>PUTTA  RAJESH</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:6, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>7 / 0.5 / 18.5 / 7</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21530</td>
+            <td>NURUKURTHI ARJANNA</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21533</td>
+            <td>KARRI SRIHARSHA</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:7, PARTIAL:2</td>
+            <td>8 / 1 / 21 / 8</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21534</td>
+            <td>YELUBANDI RARAJU</td>
+            <td>TPO</td>
+            <td><code>single_shift</code></td>
+            <td>27</td>
+            <td>ABSENT:22, HALF_DAY:3, PRESENT:2</td>
+            <td>3.5 / 0 / 26.5 / 3.5</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21535</td>
+            <td>AKKISETTI  MAHALAKSHMI</td>
+            <td>ME</td>
+            <td><code>single_shift</code></td>
+            <td>22</td>
+            <td>ABSENT:13, PRESENT:8, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 20 / 8.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21536</td>
+            <td>VEERAVELLI  VENKATA BALAJI</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>14</td>
+            <td>PRESENT:9, ABSENT:4, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 20 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21537</td>
+            <td>PUGAKU KALYANESWARI</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>25</td>
+            <td>ABSENT:14, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21539</td>
+            <td>YARLAGADDA NARAYANAMURTHY</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>13</td>
+            <td>ABSENT:12, PRESENT:1</td>
+            <td>1 / 0 / 29 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2154</td>
+            <td>NOOKALA MADHAVILATHA</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, WEEK_OFF:1</td>
+            <td>9 / 0 / 17 / 9</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21541</td>
+            <td>BANDARU SUBBA RAO</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>6</td>
+            <td>PRESENT:4, PARTIAL:2</td>
+            <td>5 / 1 / 24 / 5</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2159</td>
+            <td>BEERA SRINIVAS</td>
+            <td>SECURITY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:6, PARTIAL:3</td>
+            <td>7.5 / 1.5 / 21 / 7.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2160</td>
+            <td>CHINTA CHANTIBABU</td>
+            <td>SECURITY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, HALF_DAY:1</td>
+            <td>9.5 / 0 / 20.5 / 9.5</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2161</td>
+            <td>DIVILI V BRAHMA NARESH KUMAR</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:24, PRESENT:6, WEEK_OFF:1</td>
+            <td>6 / 0 / 20 / 6</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2163</td>
+            <td>TUTTUPU SUREKHA</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 16 / 8.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2170</td>
+            <td>NAKKA GOVINDU</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2174</td>
+            <td>POLAVARAPU BABY NAVYA</td>
+            <td>CSE AI</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2175</td>
+            <td>BATHINA MANASA</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2180</td>
+            <td>SHEIK GALI SAHED</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2182</td>
+            <td>SATTI HEMA SUPRIYA REDDY</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:23, PRESENT:4, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>5 / 0.5 / 20.5 / 5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2183</td>
+            <td>YANDAMURI KEERTHANA</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2185</td>
+            <td>GURUMURTHY TALAGAPU</td>
+            <td>Hostel Dept</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:23, PRESENT:6, HALF_DAY:1, PARTIAL:1</td>
+            <td>7 / 0.5 / 22.5 / 7</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2189</td>
+            <td>PASALAPUDI JAYA LAKSHMI VEERA NAGA VYDEHI</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2192</td>
+            <td>PEETHA RAMAKRISKNA</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2193</td>
+            <td>ADAPA JAHNAVI</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2194</td>
+            <td>PULIDINDI JAMMESWARARAO</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:27, PRESENT:3, WEEK_OFF:1</td>
+            <td>3 / 0 / 23 / 3</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2197</td>
+            <td>VIYYURI VEERA MANIKANTA</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2200</td>
+            <td>PENDEM SRI DURGA SUBRA MALLESWARI</td>
+            <td>ME</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2203</td>
+            <td>KOPPISETTI MANISHA</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:6, WEEK_OFF:2, PARTIAL:1</td>
+            <td>6.5 / 0.5 / 17 / 6.5</td>
+            <td>2.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2204</td>
+            <td>AMBATI JYOTHIBABU</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2205</td>
+            <td>PYNA VEERENDRA</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:6, WEEK_OFF:2, PARTIAL:1</td>
+            <td>6.5 / 0.5 / 19 / 6.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2208</td>
+            <td>MOHAMMAD FARHAD JAHAN</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2211</td>
+            <td>KORAM RAJASEKHAR</td>
+            <td>MAINTENANCE-TECHNICAL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:18, PRESENT:10, WEEK_OFF:2, PARTIAL:1</td>
+            <td>10.5 / 0.5 / 15 / 10.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2212</td>
+            <td>TANALA VEERA VENKATA SATYANNARAYANA</td>
+            <td>MAINTENANCE-TECHNICAL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 15 / 9.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2213</td>
+            <td>GEDDAM CHALAPATHI</td>
+            <td>MAINTENANCE-TECHNICAL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:18, PRESENT:9, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>10 / 0.5 / 15.5 / 10</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2217</td>
+            <td>TEKUMUDI PRASAD</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2218</td>
+            <td>MARRI VISWA RAJU</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2219</td>
+            <td>TATAPUDI RAJABABU</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2221</td>
+            <td>PEDIREDLA G CHAKRADHARA RAO</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2228</td>
+            <td>BAVIRISETTY AVINASH</td>
+            <td>MAINTENANCE-TECHNICAL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:18, PRESENT:9, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>10 / 0.5 / 15.5 / 10</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2235</td>
+            <td>PULAPAKURA GANGA BHAVANI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:11, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 18 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2236</td>
+            <td>GURRAM GOVINDU</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2237</td>
+            <td>ADURI JYOTHI</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:8, WEEK_OFF:1</td>
+            <td>8 / 0 / 18 / 8</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2239</td>
+            <td>GUVVALA VEERA MANIKANTA</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2240</td>
+            <td>GONDESI GOPALA KRISHNA REDDY</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:7, HALF_DAY:2, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2242</td>
+            <td>KATIPALLI SUNNY</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2245</td>
+            <td>MORTHA VENKATA RAMANA</td>
+            <td>SECURITY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 30 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2246</td>
+            <td>DEVARAPALLI CHANDRAPAUL</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2248</td>
+            <td>BOLLI NOOKARATNAM</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:10, PARTIAL:1</td>
+            <td>10.5 / 0.5 / 19 / 10.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2249</td>
+            <td>POLAVARAPU SRINU</td>
+            <td>SECURITY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:6, HALF_DAY:2, PARTIAL:2</td>
+            <td>8 / 1 / 21 / 8</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2253</td>
+            <td>BONTHU LOVA KUMARI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 29 / 0</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2256</td>
+            <td>GUTHURTHI JOSEPH CHRISTOPHER</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2258</td>
+            <td>SINGANAMALLI ADI LAKSHMI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:10, PARTIAL:1</td>
+            <td>10.5 / 0.5 / 19 / 10.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2263</td>
+            <td>PINIPE MANGA DEVI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 20 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2265</td>
+            <td>MATTAPARTHI SAI TEJA</td>
+            <td>TPO</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2267</td>
+            <td>THALATAM ARAVIND SATYA DURGA SAI</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PARTIAL:1, PRESENT:1</td>
+            <td>1.5 / 0.5 / 24 / 1.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2268</td>
+            <td>PALLETI VENKANNA BABU</td>
+            <td>SECURITY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 30 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2269</td>
+            <td>SAHERA BEGAM</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:7, WEEK_OFF:2, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 18 / 7.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2270</td>
+            <td>MADIKI VEGESWARA RAO</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:27, PRESENT:2, PARTIAL:1, WEEK_OFF:1</td>
+            <td>2.5 / 0.5 / 23 / 2.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2271</td>
+            <td>MEDIDI LAKSHMI NAGA LALITHA KUMARI</td>
+            <td>CSE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2275</td>
+            <td>SUNDARAPALLI SANTHOSH</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2280</td>
+            <td>DUNNA LALITHA TIRUMALA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:5, HALF_DAY:4, WEEK_OFF:2, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 18 / 7.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2281</td>
+            <td>KALA MAHA LAKSHMI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:11, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 18 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2282</td>
+            <td>RAYUDU SATYAVATHI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:11, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 18 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2283</td>
+            <td>GUTHULA DEVI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:10, PARTIAL:1</td>
+            <td>10.5 / 0.5 / 19 / 10.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2285</td>
+            <td>GEDELA DURGA VARA PRASAD</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:8, HALF_DAY:1, WEEK_OFF:1</td>
+            <td>8.5 / 0 / 17.5 / 8.5</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2286</td>
+            <td>VADDI SATYANARAYANAMMA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>0</td>
+            <td>—</td>
+            <td>0 / 0 / 0 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2287</td>
+            <td>MURRA LAKSHMI</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>0</td>
+            <td>—</td>
+            <td>0 / 0 / 0 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2288</td>
+            <td>KOMALI DEVI SRI DEVI</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2290</td>
+            <td>MEDISETTY NAGENDRA KUMAR</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:25, PRESENT:4, PARTIAL:1, WEEK_OFF:1</td>
+            <td>4.5 / 0.5 / 20 / 4.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2292</td>
+            <td>V M SATISH KUMAR DANGETI</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:27, PRESENT:2, PARTIAL:1, WEEK_OFF:1</td>
+            <td>2.5 / 0.5 / 23 / 2.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2293</td>
+            <td>SANKU VAMSI</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2294</td>
+            <td>CHAPPIDI RAVI SHANKAR</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2295</td>
+            <td>KAKARAPARTHI DEVI NIKITHA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:8, WEEK_OFF:1</td>
+            <td>8 / 0 / 18 / 8</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2297</td>
+            <td>NAMMI NAVA DURGA KUSUMA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2298</td>
+            <td>MATTA RAMA TULASI</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2299</td>
+            <td>CHINTA KARUNA</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:18, PRESENT:9, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>10 / 0.5 / 15.5 / 10</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2300</td>
+            <td>YANNALA VARA LAKSHMI</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, WEEK_OFF:1</td>
+            <td>9 / 0 / 17 / 9</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2301</td>
+            <td>PILLI VENKATA RAO</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:25, PRESENT:3, WEEK_OFF:2, PARTIAL:1</td>
+            <td>3.5 / 0.5 / 22 / 3.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2302</td>
+            <td>TINNATI SATYANARAYANA</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2303</td>
+            <td>V RAMANA CHANDABATTULA</td>
+            <td>CSE AI</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:7, WEEK_OFF:2, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 18 / 7.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2306</td>
+            <td>VARSALA RAJA RAO</td>
+            <td>SECURITY</td>
+            <td><code>single_shift</code></td>
+            <td>12</td>
+            <td>PRESENT:11, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 18 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2307</td>
+            <td>GADA CHITTESWARI DEVI</td>
+            <td>ADMISSIONS CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2309</td>
+            <td>KAMPA SRINU</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2310</td>
+            <td>SUVARNAM NAGA SATYA NARAYANA</td>
+            <td>Hostel Dept</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:8, WEEK_OFF:2, PARTIAL:2</td>
+            <td>9 / 1 / 16 / 9</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2311</td>
+            <td>MULIKI APPANNA</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2312</td>
+            <td>AKUMARTHI RAJU</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2313</td>
+            <td>BOKKA NAGESWARA RAO</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:8, PARTIAL:1, WEEK_OFF:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>247</td>
+            <td>T LAVANYA</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:18, PRESENT:10, WEEK_OFF:2, PARTIAL:1</td>
+            <td>10.5 / 0.5 / 15 / 10.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>272</td>
+            <td>S KARIMULLA TANESHA</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:7, HALF_DAY:1, WEEK_OFF:1</td>
+            <td>7.5 / 0 / 17 / 7.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>366</td>
+            <td>P V RAMANA</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>5002</td>
+            <td>KAALAA DURGA</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 19 / 9.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>501</td>
+            <td>S.PADAMAVATHI</td>
+            <td>EXAM CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>577</td>
+            <td>AKULA SESHAGIRI RAO</td>
+            <td>EXAM CELL</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>608</td>
+            <td>D.VENKATA RAO</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>628</td>
+            <td>P.D.S.V.PRASAD</td>
+            <td>ECE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:3, HALF_DAY:3, WEEK_OFF:2, PARTIAL:1</td>
+            <td>5 / 0.5 / 20.5 / 5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>630</td>
+            <td>PAILA VENU</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:10, HALF_DAY:1, PARTIAL:1</td>
+            <td>11 / 0.5 / 18.5 / 11</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7001</td>
+            <td>TIRUMADI SIVA RAMA KRISHNA</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, PRESENT:2</td>
+            <td>2 / 0 / 24 / 2</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7024</td>
+            <td>BOKKA APPAYAMMA</td>
+            <td>Hostel Dept</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:11, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 18 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7027</td>
+            <td>NEELAPALA ANNAVARAM</td>
+            <td>Hostel Dept</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:10, PARTIAL:1</td>
+            <td>10.5 / 0.5 / 19 / 10.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7028</td>
+            <td>DEVARAKONDA KRISHNAVENI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:10, PARTIAL:1</td>
+            <td>10.5 / 0.5 / 19 / 10.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>712</td>
+            <td>P.NAGESWARA RAO</td>
+            <td>ADMIN OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:24, PRESENT:6, WEEK_OFF:1</td>
+            <td>6 / 0 / 20 / 6</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>820</td>
+            <td>K. JANAKI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:10, PARTIAL:1</td>
+            <td>10.5 / 0.5 / 18 / 10.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>900</td>
+            <td>T DURGA RAO</td>
+            <td>TRANSPORT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>954</td>
+            <td>V.V.RAMA KRISHNA</td>
+            <td>ME</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:7, WEEK_OFF:1, HALF_DAY:1</td>
+            <td>7.5 / 0 / 17 / 7.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr></tbody>
+        </table>
+      </section><section class="division">
+        <h2>PYDAH COLLEGE OF PHARMACY <span class="code">(PYDE PHARMA)</span></h2>
+        <div class="meta">
+          <span><b>Config:</b> Inherit org</span>
+          <span><b>Effective:</b> <code>single_shift</code></span>
+          <span><b>Employees:</b> 38</span>
+          <span><b>Division totals:</b> 302 pres · 15 part · 706.5 abs · 301.5 pay</span>
+        </div>
+        <div class="chips"><span class="chip">PRESENT: 283</span><span class="chip">ABSENT: 804</span><span class="chip">WEEK_OFF: 44</span><span class="chip">PARTIAL: 31</span><span class="chip">HALF_DAY: 7</span></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Emp#</th><th>Name</th><th>Dept</th><th>Mode</th><th>Days</th>
+              <th>Daily status mix</th><th>Summary pres/part/abs/pay</th><th>Leave/OD</th><th>Days &gt;1 shift</th>
+            </tr>
+          </thead>
+          <tbody><tr>
+            <td>1000</td>
+            <td>PONNAPALLI S S SANKAR</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:23, PRESENT:5, WEEK_OFF:2, PARTIAL:1</td>
+            <td>5.5 / 0.5 / 20 / 5.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1005</td>
+            <td>PALIVELA LAXMI SUMA</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:6, WEEK_OFF:2, PARTIAL:1</td>
+            <td>6.5 / 0.5 / 19 / 6.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>128</td>
+            <td>DANGETI ANURADHA</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1686</td>
+            <td>P MEERABAI</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:8, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>9 / 0.5 / 16.5 / 9</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1715</td>
+            <td>CHODISETTY LALITHA</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, WEEK_OFF:1</td>
+            <td>9 / 0 / 17 / 9</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1847</td>
+            <td>KOTA JANAKI</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21538</td>
+            <td>JUTHUKA SATYAVENI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>22</td>
+            <td>PRESENT:11, ABSENT:10, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 18 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2164</td>
+            <td>MANDAPALLI RAMA LAXMI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:11, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 18 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2231</td>
+            <td>YEDIDA SIVA PRASADA RAO</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>5003</td>
+            <td>MALLADI KUMARI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 20 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>5005</td>
+            <td>DEGALA RAVI PRAKASH</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:23, PRESENT:4, PARTIAL:2, WEEK_OFF:2</td>
+            <td>5 / 1 / 20 / 5</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>5006</td>
+            <td>USHARANI E</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:24, PRESENT:4, PARTIAL:1, WEEK_OFF:1, HALF_DAY:1</td>
+            <td>5 / 0 / 20.5 / 4.5</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>5008</td>
+            <td>MEDISETTY GOVINDA RAJU</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:8, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>9 / 0.5 / 16.5 / 9</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>5009</td>
+            <td>BALASADI DURGA</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 20 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>5010</td>
+            <td>GUTHURTHI CHANDRA SEKHAR</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>5011</td>
+            <td>GABU PRASANNA KUMAR REDDY</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:23, PRESENT:7, WEEK_OFF:1</td>
+            <td>7 / 0 / 19 / 7</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>5012</td>
+            <td>DEVU SURYA TEJASWINI</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:6, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>7 / 0.5 / 18.5 / 7</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>505</td>
+            <td>KOPPISETTI ANASUYA</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:11, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 18 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>550</td>
+            <td>MEDISETTI RAMANA</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:11, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 18 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7015</td>
+            <td>NARALA SUBBALAXMI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:11, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 18 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>804</td>
+            <td>KOPPISETTI KANAKA DURGA</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>812</td>
+            <td>S. VEERA BABU</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>916</td>
+            <td>CHEEPURUPALLI PRASAD</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:24, PRESENT:6, WEEK_OFF:1</td>
+            <td>6 / 0 / 20 / 6</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>924</td>
+            <td>Dr.T.K.V.KESAVA RAO</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>925</td>
+            <td>ADAPA VENKATESWARA RAO</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:8, WEEK_OFF:1</td>
+            <td>8 / 0 / 18 / 8</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>930</td>
+            <td>ARIGELA SATYA ANUSHA</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:25, PRESENT:4, WEEK_OFF:1, PARTIAL:1</td>
+            <td>4.5 / 0.5 / 21 / 4.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>931</td>
+            <td>B.SRAVANA SREE</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:8, WEEK_OFF:1</td>
+            <td>8 / 0 / 18 / 8</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>958</td>
+            <td>PALIVELA UJWALA RAMA CHANDRA</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>965</td>
+            <td>METHRA TANUJA</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, WEEK_OFF:1</td>
+            <td>9 / 0 / 17 / 9</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>967</td>
+            <td>KATTAMURI V S D SESHA SAVITRI TEJASWINI</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:6, HALF_DAY:2, WEEK_OFF:2, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 18 / 7.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>970</td>
+            <td>MEDISETTI GANESH CHANDRA SRAVANI</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:8, WEEK_OFF:2, PARTIAL:2</td>
+            <td>9 / 1 / 16 / 9</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>974</td>
+            <td>Dr. P. ASHOKA CHAKRAVARTHY</td>
+            <td>ANIMAL HUSBANDRY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>981</td>
+            <td>BEEBA JOHN</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:7, HALF_DAY:1, WEEK_OFF:1</td>
+            <td>7.5 / 0 / 18.5 / 7.5</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>983</td>
+            <td>D KANAKA DURGA</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:11, PARTIAL:1</td>
+            <td>11.5 / 0.5 / 18 / 11.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>984</td>
+            <td>D LAKSHMI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:25, PRESENT:5, PARTIAL:1</td>
+            <td>5.5 / 0.5 / 24 / 5.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>989</td>
+            <td>SADANALA SIRISHA SAI DURGA</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:6, WEEK_OFF:2, PARTIAL:1</td>
+            <td>6.5 / 0.5 / 19 / 6.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>990</td>
+            <td>GUBBALA SRIVIDYA</td>
+            <td>PHARMACY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:7, WEEK_OFF:2, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 18 / 7.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>999</td>
+            <td>MARELLA KASI</td>
+            <td>ANIMAL HUSBANDRY</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:23, PRESENT:6, PARTIAL:1, WEEK_OFF:1</td>
+            <td>6.5 / 0.5 / 19 / 6.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr></tbody>
+        </table>
+      </section><section class="division">
+        <h2>PYDAH VRT DEGREE COLLEGE (GREEN CAMPUS) <span class="code">(PYDE DEGREE)</span></h2>
+        <div class="meta">
+          <span><b>Config:</b> Inherit org</span>
+          <span><b>Effective:</b> <code>single_shift</code></span>
+          <span><b>Employees:</b> 24</span>
+          <span><b>Division totals:</b> 167.5 pres · 7.5 part · 451 abs · 167.5 pay</span>
+        </div>
+        <div class="chips"><span class="chip">ABSENT: 540</span><span class="chip">PRESENT: 158</span><span class="chip">WEEK_OFF: 27</span><span class="chip">PARTIAL: 15</span><span class="chip">HALF_DAY: 4</span></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Emp#</th><th>Name</th><th>Dept</th><th>Mode</th><th>Days</th>
+              <th>Daily status mix</th><th>Summary pres/part/abs/pay</th><th>Leave/OD</th><th>Days &gt;1 shift</th>
+            </tr>
+          </thead>
+          <tbody><tr>
+            <td>1496</td>
+            <td>Dr. POTHULA V V SATISH</td>
+            <td>FISHERIES</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:23, PRESENT:5, WEEK_OFF:2, PARTIAL:1</td>
+            <td>5.5 / 0.5 / 19 / 5.5</td>
+            <td>1.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1516</td>
+            <td>G KANAKA MAHA LAKSHMI</td>
+            <td>FISHERIES</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:6, WEEK_OFF:2, PARTIAL:1</td>
+            <td>6.5 / 0.5 / 17 / 6.5</td>
+            <td>2.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1535</td>
+            <td>DEVI B V RAGHAVASWAMY</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:23, PRESENT:6, HALF_DAY:1, WEEK_OFF:1</td>
+            <td>6.5 / 0 / 19.5 / 6.5</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1587</td>
+            <td>S.V.V.N.SURESH KUMAR</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1671</td>
+            <td>P MANIKYAMBA</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:7, WEEK_OFF:2, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 18 / 7.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1890</td>
+            <td>K NAGA DURGA RAO</td>
+            <td>HBS</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 25 / 1</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2016</td>
+            <td>DIVYA GADIRAJU</td>
+            <td>FISHERIES</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:8, WEEK_OFF:1, HALF_DAY:1</td>
+            <td>8.5 / 0 / 17.5 / 8.5</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2108</td>
+            <td>KOPPISETTI  SRI GANESH TRIMURTHULU</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21518</td>
+            <td>DONAM RAMANA</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PRESENT:8, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 19 / 8.5</td>
+            <td>2.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>21519</td>
+            <td>MURUMULLA LAKSHMI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:9, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 20 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7005</td>
+            <td>MERUVA HARSHITHA</td>
+            <td>FOOD &amp; DAIRY TECH</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:26, PRESENT:4, WEEK_OFF:1</td>
+            <td>4 / 0 / 22 / 4</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7018</td>
+            <td>GANJA SATYAVATHI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:11</td>
+            <td>11 / 0 / 19 / 11</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7025</td>
+            <td>G SURYA GOPALAM</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:10, PARTIAL:1</td>
+            <td>10.5 / 0.5 / 19 / 10.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7030</td>
+            <td>KOLA RAMYA</td>
+            <td>AGRICULTURE &amp; HORTICULTURE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:28, PRESENT:3</td>
+            <td>3 / 0 / 23 / 3</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7035</td>
+            <td>DUKKA PRANAV REDDY</td>
+            <td>AGRICULTURE &amp; HORTICULTURE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:23, PRESENT:6, HALF_DAY:1, WEEK_OFF:1</td>
+            <td>6.5 / 0 / 18.5 / 6.5</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7036</td>
+            <td>KURAMDASU VIJAYA SARADHI</td>
+            <td>AGRICULTURE &amp; HORTICULTURE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:30, PRESENT:1</td>
+            <td>1 / 0 / 23 / 1</td>
+            <td>2 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7040</td>
+            <td>BONTHU NAVYA SRI</td>
+            <td>FISHERIES</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7041</td>
+            <td>M S M VENKATESWARA RAO</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:7, WEEK_OFF:2, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 16 / 7.5</td>
+            <td>2.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7043</td>
+            <td>REKADI BALA PUSHPA MADHURI</td>
+            <td>AGRICULTURE &amp; HORTICULTURE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:21, PRESENT:7, WEEK_OFF:2, PARTIAL:1</td>
+            <td>7.5 / 0.5 / 18 / 7.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7044</td>
+            <td>BONTHU SYAMALA</td>
+            <td>AGRICULTURE &amp; HORTICULTURE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7046</td>
+            <td>MULAPARTHI  VIJAY KRISHNA</td>
+            <td>FOOD &amp; DAIRY TECH</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:29, WEEK_OFF:1, HALF_DAY:1</td>
+            <td>0.5 / 0 / 22.5 / 0.5</td>
+            <td>4 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7049</td>
+            <td>BEERA YAMINI DAYAMANI</td>
+            <td>FORENSIC SCIENCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7050</td>
+            <td>BHAGAVATHULA V V SATYA SRINIVASU</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:8, WEEK_OFF:2, PARTIAL:1</td>
+            <td>8.5 / 0.5 / 17 / 8.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7051</td>
+            <td>SHEKUMENU DEVI</td>
+            <td>MAINTENANCE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:24, PRESENT:6, PARTIAL:1</td>
+            <td>6.5 / 0.5 / 18 / 6.5</td>
+            <td>5.5 / 0</td>
+            <td>0</td>
+          </tr></tbody>
+        </table>
+      </section><section class="division">
+        <h2>PYDAHSOFT PVT LTD <span class="code">(PYDAHSOFT)</span></h2>
+        <div class="meta">
+          <span><b>Config:</b> Inherit org</span>
+          <span><b>Effective:</b> <code>single_shift</code></span>
+          <span><b>Employees:</b> 3</span>
+          <span><b>Division totals:</b> 29 pres · 1.5 part · 48.5 abs · 29 pay</span>
+        </div>
+        <div class="chips"><span class="chip">PRESENT: 23</span><span class="chip">ABSENT: 51</span><span class="chip">WEEK_OFF: 6</span><span class="chip">HALF_DAY: 9</span><span class="chip">PARTIAL: 3</span><span class="chip">HOLIDAY: 1</span></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Emp#</th><th>Name</th><th>Dept</th><th>Mode</th><th>Days</th>
+              <th>Daily status mix</th><th>Summary pres/part/abs/pay</th><th>Leave/OD</th><th>Days &gt;1 shift</th>
+            </tr>
+          </thead>
+          <tbody><tr>
+            <td>2144</td>
+            <td>KAKILETI V. V. DURGA PRASAD</td>
+            <td>DEVELOPMENT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:8, WEEK_OFF:2, HALF_DAY:1, PARTIAL:1</td>
+            <td>9 / 0.5 / 16.5 / 9</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2145</td>
+            <td>PENKEY TEJA</td>
+            <td>DEVELOPMENT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:19, PRESENT:9, WEEK_OFF:2, PARTIAL:1</td>
+            <td>9.5 / 0.5 / 16 / 9.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>2146</td>
+            <td>BURAGA RAVI</td>
+            <td>DEVELOPMENT</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:13, HALF_DAY:8, PRESENT:6, WEEK_OFF:2, PARTIAL:1, HOLIDAY:1</td>
+            <td>10.5 / 0.5 / 16 / 10.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr></tbody>
+        </table>
+      </section><section class="division">
+        <h2>Pydah Agriculture Polytechnic, DSRM <span class="code">(AGRIPOLYDSRM)</span></h2>
+        <div class="meta">
+          <span><b>Config:</b> Inherit org</span>
+          <span><b>Effective:</b> <code>single_shift</code></span>
+          <span><b>Employees:</b> 6</span>
+          <span><b>Division totals:</b> 13 pres · 3.5 part · 151.5 abs · 13 pay</span>
+        </div>
+        <div class="chips"><span class="chip">ABSENT: 104</span><span class="chip">PARTIAL: 7</span><span class="chip">HALF_DAY: 1</span><span class="chip">WEEK_OFF: 4</span><span class="chip">PRESENT: 9</span></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Emp#</th><th>Name</th><th>Dept</th><th>Mode</th><th>Days</th>
+              <th>Daily status mix</th><th>Summary pres/part/abs/pay</th><th>Leave/OD</th><th>Days &gt;1 shift</th>
+            </tr>
+          </thead>
+          <tbody><tr>
+            <td>1062</td>
+            <td>CH.PRABHAKARA RAO</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 26 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1068</td>
+            <td>D.APPARAO</td>
+            <td>AGRICULTURE &amp; HORTICULTURE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:31</td>
+            <td>0 / 0 / 30 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>111118</td>
+            <td>JALDANI KOTESWARA RAO</td>
+            <td>OFFICE</td>
+            <td><code>single_shift</code></td>
+            <td>1</td>
+            <td>PARTIAL:1</td>
+            <td>0.5 / 0.5 / 29 / 0.5</td>
+            <td>0.5 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1588</td>
+            <td>ANEESHA DEVU</td>
+            <td>AGRICULTURE &amp; HORTICULTURE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:22, PARTIAL:4, WEEK_OFF:2, PRESENT:2, HALF_DAY:1</td>
+            <td>4.5 / 2 / 19.5 / 4.5</td>
+            <td>2 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>1727</td>
+            <td>PILLI CHINNA APPARAO</td>
+            <td>AGRICULTURE &amp; HORTICULTURE</td>
+            <td><code>single_shift</code></td>
+            <td>0</td>
+            <td>—</td>
+            <td>0 / 0 / 30 / 0</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr><tr>
+            <td>7021</td>
+            <td>TALLURI VIDYA SAGAR</td>
+            <td>AGRICULTURE &amp; HORTICULTURE</td>
+            <td><code>single_shift</code></td>
+            <td>31</td>
+            <td>ABSENT:20, PRESENT:7, PARTIAL:2, WEEK_OFF:2</td>
+            <td>8 / 1 / 17 / 8</td>
+            <td>1 / 0</td>
+            <td>0</td>
+          </tr></tbody>
+        </table>
+      </section><section class="division">
+        <h2>SIMPRS Simulation Division <span class="code">(SIMPRS_DIV)</span></h2>
+        <div class="meta">
+          <span><b>Config:</b> Inherit org</span>
+          <span><b>Effective:</b> <code>single_shift</code></span>
+          <span><b>Employees:</b> 1</span>
+          <span><b>Division totals:</b> 4.5 pres · 0 part · 26.5 abs · 4.5 pay</span>
+        </div>
+        <div class="chips"><span class="chip">PRESENT: 3</span><span class="chip">HALF_DAY: 3</span></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Emp#</th><th>Name</th><th>Dept</th><th>Mode</th><th>Days</th>
+              <th>Daily status mix</th><th>Summary pres/part/abs/pay</th><th>Leave/OD</th><th>Days &gt;1 shift</th>
+            </tr>
+          </thead>
+          <tbody><tr>
+            <td>SIMPRS001</td>
+            <td>SIMPRS Test Employee</td>
+            <td>SIMPRS Simulation Department</td>
+            <td><code>single_shift</code></td>
+            <td>6</td>
+            <td>PRESENT:3, HALF_DAY:3</td>
+            <td>4.5 / 0 / 26.5 / 4.5</td>
+            <td>0 / 0</td>
+            <td>0</td>
+          </tr></tbody>
+        </table>
+      </section>
+</body>
+</html>

@@ -55,10 +55,18 @@ exports.getLiveAttendanceReport = async (req, res) => {
     const departmentIds = parseQueryIdList(department);
     const shiftIds = parseIdStringList(shift);
 
-    // ── Detect processing mode ──────────────────────────────────────────────────
-    const AttendanceSettings = require('../model/AttendanceSettings');
-    const settings = await AttendanceSettings.getSettings();
-    const isMultiShift = settings?.processingMode?.mode === 'multi_shift';
+    // ── Detect processing mode (per-employee: division override → org default) ──
+    const {
+      getOrgAttendanceContext,
+      buildDivisionProcessingModeMap,
+      resolveProcessingModeFromDivisionMap,
+    } = require('../services/processingModeResolutionService');
+    const { processingMode: orgProcessingMode } = await getOrgAttendanceContext();
+    const divisionIdsForMode = activeEmployees
+      .map((e) => e.division_id?._id || e.division_id)
+      .filter(Boolean);
+    const divisionModeMap = await buildDivisionProcessingModeMap(divisionIdsForMode);
+    const defaultIsMultiShift = orgProcessingMode.mode === 'multi_shift';
 
     // 1. Build employee base query
     const employeeQuery = { is_active: { $ne: false } };
@@ -140,6 +148,9 @@ exports.getLiveAttendanceReport = async (req, res) => {
       const divId = employee.division_id?._id?.toString() || 'null';
       const deptId = employee.department_id?._id?.toString() || 'null';
       const dKey = `${divId}_${deptId}`;
+
+      const empProcessingMode = resolveProcessingModeFromDivisionMap(employee, divisionModeMap, orgProcessingMode);
+      const isMultiShift = empProcessingMode.mode === 'multi_shift';
 
       // ────────────────────────────────────────────────────────────────────────
       // MULTI-SHIFT MODE: iterate over every shift segment
@@ -332,7 +343,8 @@ exports.getLiveAttendanceReport = async (req, res) => {
       success: true,
       data: {
         date: targetDate,
-        isMultiShift,
+        isMultiShift: defaultIsMultiShift,
+        processingMode: orgProcessingMode.mode,
         summary: {
           currentlyWorking: currentlyWorking.length,
           completedShift: completedShift.length,

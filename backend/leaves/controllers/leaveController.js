@@ -770,10 +770,9 @@ exports.applyLeave = async (req, res) => {
     // Attendance-first guard: check each leave segment day (boundary halves on multi-day).
     try {
       const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
-      const AttendanceSettings = require('../../attendance/model/AttendanceSettings');
       const { attendanceHalfPresenceFlags } = require('../../attendance/utils/attendanceHalfPresence');
-      const attSettingsDoc = await AttendanceSettings.getSettings();
-      const processingMode = AttendanceSettings.getProcessingMode(attSettingsDoc).mode;
+      const { getProcessingModeForEmployee } = require('../../attendance/services/processingModeResolutionService');
+      const processingMode = (await getProcessingModeForEmployee(employee)).mode;
       const segments = expandLeaveToDailySegments({
         fromDate: from,
         toDate: to,

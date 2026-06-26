@@ -927,10 +927,9 @@ exports.applyOD = async (req, res) => {
           date: fromStr,
         }).select('status totalEarlyOutMinutes totalLateInMinutes shifts inTime outTime');
         if (daily) {
-          const AttendanceSettings = require('../../attendance/model/AttendanceSettings');
           const { attendanceHalfPresenceFlags } = require('../../attendance/utils/attendanceHalfPresence');
-          const attSettingsDoc = await AttendanceSettings.getSettings();
-          const processingMode = AttendanceSettings.getProcessingMode(attSettingsDoc).mode;
+          const { getProcessingModeForEmployee } = require('../../attendance/services/processingModeResolutionService');
+          const processingMode = (await getProcessingModeForEmployee(employee)).mode;
           const { attFirst, attSecond } = attendanceHalfPresenceFlags(daily, processingMode);
           if (!isHalfDayOd && (attFirst || attSecond)) {
             return res.status(400).json({

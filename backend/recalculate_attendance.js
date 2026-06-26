@@ -16,7 +16,6 @@
 
 require('dotenv').config();
 const mongoose = require('mongoose');
-const AttendanceSettings = require('./attendance/model/AttendanceSettings');
 const singleShiftService = require('./attendance/services/singleShiftProcessingService');
 const multiShiftService = require('./attendance/services/multiShiftProcessingService');
 const summaryCalculationService = require('./attendance/services/summaryCalculationService');
@@ -43,8 +42,9 @@ async function run() {
     console.log('Connected to MongoDB');
 
     const AttendanceDaily = require('./attendance/model/AttendanceDaily');
-    const settings = await AttendanceSettings.getSettings();
-    const mode = settings.processingMode?.mode || 'multi_shift';
+    const { getProcessingModeForEmployeeNumber } = require('./attendance/services/processingModeResolutionService');
+    const resolvedMode = await getProcessingModeForEmployeeNumber(empNo);
+    const mode = resolvedMode.mode || 'multi_shift';
 
     // Determine target dates (single day, calendar month, or inclusive range — not argv "range" unless you use ..)
     let dates = [];

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"/><title>DSMODE Shift Mode Test Matrix</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:24px;background:#f8fafc}
+h1{margin:0 0 8px}
+.sub{color:#64748b;margin-bottom:20px}
+table{border-collapse:collapse;width:100%;font-size:12px;background:#fff}
+th,td{border:1px solid #e2e8f0;padding:8px;vertical-align:top;text-align:left}
+th{background:#f1f5f9}
+code{background:#eef2ff;padding:2px 6px;border-radius:4px}
+pre{margin:0;white-space:pre-wrap;font-size:11px}
+.legend{background:#fff;border:1px solid #e2e8f0;padding:14px;border-radius:8px;margin-bottom:16px}
+</style></head><body>
+<h1>DSMODE Division Shift-Mode Test Matrix</h1>
+<p class="sub">Org mode: <code>single_shift</code> · Test dates from 2026-06-22 · Generated 2026-06-26T10:28:12.737Z</p>
+<div class="legend">
+<b>Divisions created</b><br/>
+• <b>DSMODE_INH</b> — DSMODE Inherit Org Default (inherit org)<br/>• <b>DSMODE_MULT</b> — DSMODE Override Multi-Shift (override multi_shift)<br/>• <b>DSMODE_SST</b> — DSMODE Override Single Strict (override single_shift)<br/>• <b>DSMODE_SFX</b> — DSMODE Override Single Flexible (override single_shift)
+</div>
+<table>
+<thead><tr>
+<th>Division</th><th>Config → Effective</th><th>Employee</th><th>Scenario</th><th>Date</th>
+<th>Punches</th><th>Status</th><th>Shifts</th><th>Payable</th><th>Jun summary P/Part/Pay</th><th>Expected</th><th>Shift segments</th>
+</tr></thead>
+<tbody><tr>
+        <td>DSMODE_INH</td>
+        <td><code>inherit</code> → <code>single_shift</code></td>
+        <td>DSMODE_INH01</td>
+        <td>Lunch split (2 IN + 2 OUT)</td>
+        <td>2026-05-26..2026-06-25</td>
+        <td>4</td>
+        <td><b>PRESENT</b></td>
+        <td>1</td>
+        <td>1</td>
+        <td>31/0/31</td>
+        <td>Org single_shift: collapses to 1 shift</td>
+        <td><pre></pre></td>
+      </tr><tr>
+        <td>DSMODE_INH</td>
+        <td><code>inherit</code> → <code>single_shift</code></td>
+        <td>DSMODE_INH02</td>
+        <td>Single IN/OUT 9–21</td>
+        <td>2026-05-26..2026-06-25</td>
+        <td>2</td>
+        <td><b>PRESENT</b></td>
+        <td>1</td>
+        <td>1</td>
+        <td>31/0/31</td>
+        <td>Full day single pair</td>
+        <td><pre></pre></td>
+      </tr><tr>
+        <td>DSMODE_MULT</td>
+        <td><code>multi_shift</code> → <code>multi_shift</code></td>
+        <td>DSMODE_MULT01</td>
+        <td>Lunch split (2 IN + 2 OUT)</td>
+        <td>2026-05-26..2026-06-25</td>
+        <td>4</td>
+        <td><b>PRESENT</b></td>
+        <td>2</td>
+        <td>1</td>
+        <td>31/0/31</td>
+        <td>Should split into 2 shifts</td>
+        <td><pre></pre></td>
+      </tr><tr>
+        <td>DSMODE_MULT</td>
+        <td><code>multi_shift</code> → <code>multi_shift</code></td>
+        <td>DSMODE_MULT02</td>
+        <td>Single IN/OUT 9–21</td>
+        <td>2026-05-26..2026-06-25</td>
+        <td>2</td>
+        <td><b>PRESENT</b></td>
+        <td>1</td>
+        <td>1</td>
+        <td>31/0/31</td>
+        <td>One continuous shift</td>
+        <td><pre></pre></td>
+      </tr><tr>
+        <td>DSMODE_SST</td>
+        <td><code>single_shift</code> → <code>single_shift</code></td>
+        <td>DSMODE_SST01</td>
+        <td>Lunch split (2 IN + 2 OUT)</td>
+        <td>2026-05-26..2026-06-25</td>
+        <td>4</td>
+        <td><b>PRESENT</b></td>
+        <td>1</td>
+        <td>1</td>
+        <td>31/0/31</td>
+        <td>Strict single: first IN / last OUT</td>
+        <td><pre></pre></td>
+      </tr><tr>
+        <td>DSMODE_SST</td>
+        <td><code>single_shift</code> → <code>single_shift</code></td>
+        <td>DSMODE_SST02</td>
+        <td>IN only (partial)</td>
+        <td>2026-05-26..2026-06-25</td>
+        <td>1</td>
+        <td><b>PARTIAL</b></td>
+        <td>1</td>
+        <td>0</td>
+        <td>15.5/15.5/15.5</td>
+        <td>Partial day (no OUT)</td>
+        <td><pre></pre></td>
+      </tr><tr>
+        <td>DSMODE_SFX</td>
+        <td><code>single_shift</code> → <code>single_shift</code></td>
+        <td>DSMODE_SFX01</td>
+        <td>Lunch split (2 IN + 2 OUT)</td>
+        <td>2026-05-26..2026-06-25</td>
+        <td>4</td>
+        <td><b>PRESENT</b></td>
+        <td>1</td>
+        <td>1</td>
+        <td>31/0/31</td>
+        <td>Flexible single-shift pairing</td>
+        <td><pre></pre></td>
+      </tr><tr>
+        <td>DSMODE_SFX</td>
+        <td><code>single_shift</code> → <code>single_shift</code></td>
+        <td>DSMODE_SFX02</td>
+        <td>Morning half 9–13</td>
+        <td>2026-05-26..2026-06-25</td>
+        <td>2</td>
+        <td><b>HALF_DAY</b></td>
+        <td>1</td>
+        <td>0.5</td>
+        <td>15.5/0/15.5</td>
+        <td>Short morning block</td>
+        <td><pre></pre></td>
+      </tr></tbody>
+</table>
+</body></html>

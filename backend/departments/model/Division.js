@@ -60,6 +60,53 @@ const divisionShiftBreakSchema = new mongoose.Schema(
     { _id: false }
 );
 
+const divisionProcessingModeSchema = new mongoose.Schema(
+    {
+        useOrgDefault: {
+            type: Boolean,
+            default: true,
+        },
+        mode: {
+            type: String,
+            enum: ['multi_shift', 'single_shift'],
+            default: 'multi_shift',
+        },
+        strictCheckInOutOnly: {
+            type: Boolean,
+            default: true,
+        },
+        continuousSplitThresholdHours: {
+            type: Number,
+            default: 14,
+            min: 10,
+            max: 24,
+        },
+        splitMinGapHours: {
+            type: Number,
+            default: 3,
+            min: 0,
+            max: 12,
+        },
+        maxShiftsPerDay: {
+            type: Number,
+            default: 3,
+            min: 1,
+            max: 3,
+        },
+        rosterStrictWhenPresent: {
+            type: Boolean,
+            default: true,
+        },
+        postShiftOutMarginHours: {
+            type: Number,
+            default: 4,
+            min: 0,
+            max: 8,
+        },
+    },
+    { _id: false }
+);
+
 const DivisionSchema = new mongoose.Schema({
     name: {
         type: String,
@@ -86,6 +133,10 @@ const DivisionSchema = new mongoose.Schema({
         type: mongoose.Schema.ObjectId,
         ref: 'Department'
     }],
+    processingMode: {
+        type: divisionProcessingModeSchema,
+        default: () => ({ useOrgDefault: true }),
+    },
     shifts: [{
         shiftId: {
             type: mongoose.Schema.ObjectId,

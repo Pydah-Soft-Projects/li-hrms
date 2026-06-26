@@ -1,0 +1,71 @@
+{
+  "period": {
+    "start": "2026-05-26",
+    "end": "2026-06-25"
+  },
+  "rows": [
+    {
+      "code": "PVRTKKD",
+      "name": "PVRT Degree College (Kakinada Campus)",
+      "employees": 33,
+      "multiPunchDays": 1,
+      "employeesAffected": 1
+    },
+    {
+      "code": "PYD CAN",
+      "name": "PYDAH CANTEEN",
+      "employees": 17,
+      "multiPunchDays": 13,
+      "employeesAffected": 3
+    },
+    {
+      "code": "PYDD",
+      "name": "PYDAH COLLEGE OF ENGG (DIPLOMA)",
+      "employees": 29,
+      "multiPunchDays": 121,
+      "employeesAffected": 22
+    },
+    {
+      "code": "PYDE",
+      "name": "PYDAH COLLEGE OF ENGINEERING",
+      "employees": 215,
+      "multiPunchDays": 794,
+      "employeesAffected": 162
+    },
+    {
+      "code": "PYDE PHARMA",
+      "name": "PYDAH COLLEGE OF PHARMACY",
+      "employees": 38,
+      "multiPunchDays": 234,
+      "employeesAffected": 35
+    },
+    {
+      "code": "PYDE DEGREE",
+      "name": "PYDAH VRT DEGREE COLLEGE (GREEN CAMPUS)",
+      "employees": 24,
+      "multiPunchDays": 76,
+      "employeesAffected": 15
+    },
+    {
+      "code": "PYDAHSOFT",
+      "name": "PYDAHSOFT PVT LTD",
+      "employees": 3,
+      "multiPunchDays": 1,
+      "employeesAffected": 1
+    },
+    {
+      "code": "AGRIPOLYDSRM",
+      "name": "Pydah Agriculture Polytechnic, DSRM",
+      "employees": 6,
+      "multiPunchDays": 2,
+      "employeesAffected": 1
+    },
+    {
+      "code": "SIMPRS_DIV",
+      "name": "SIMPRS Simulation Division",
+      "employees": 1,
+      "multiPunchDays": 1,
+      "employeesAffected": 1
+    }
+  ]
+}

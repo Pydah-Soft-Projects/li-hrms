@@ -992,6 +992,27 @@ export interface Department {
   deductAbsent?: boolean;
 }
 
+export interface DivisionProcessingMode {
+  useOrgDefault?: boolean;
+  mode?: 'multi_shift' | 'single_shift';
+  strictCheckInOutOnly?: boolean;
+  continuousSplitThresholdHours?: number;
+  splitMinGapHours?: number;
+  maxShiftsPerDay?: number;
+  rosterStrictWhenPresent?: boolean;
+  postShiftOutMarginHours?: number;
+}
+
+export interface ResolvedProcessingMode {
+  mode: 'multi_shift' | 'single_shift';
+  strictCheckInOutOnly?: boolean;
+  continuousSplitThresholdHours?: number;
+  splitMinGapHours?: number;
+  maxShiftsPerDay?: number;
+  rosterStrictWhenPresent?: boolean;
+  postShiftOutMarginHours?: number;
+}
+
 export interface Division {
   _id: string;
   name: string;
@@ -1000,6 +1021,8 @@ export interface Division {
   manager?: { _id: string; name: string; email: string };
   departments?: (string | Department)[];
   shifts?: (string | { shiftId: string | Shift; gender?: string; employee_group_id?: string | EmployeeGroup | null })[];
+  processingMode?: DivisionProcessingMode;
+  resolvedProcessingMode?: ResolvedProcessingMode;
   isActive?: boolean;
 }
 

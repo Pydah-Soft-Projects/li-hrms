@@ -15,6 +15,8 @@ import {
   highlightBadgeSubtitle,
   hasAttendancePunches,
   isFullDayOdEligibleForConflictRevoke,
+  contributingEntryMatchesDate,
+  resolveAttendanceHighlightDateMap,
 } from '@/lib/attendanceHighlight';
 
 import {
@@ -449,11 +451,6 @@ interface MonthlyAttendanceData {
 
   };
 
-}
-
-function contributingEntryMatchesDate(entry: string | { date?: string }, dStr: string): boolean {
-  if (typeof entry === 'string') return entry === dStr;
-  return entry?.date === dStr;
 }
 
 /** Same shape normalization as superadmin attendance (flat vs nested API rows). */
@@ -960,6 +957,20 @@ export default function AttendancePage() {
     };
     loadFlags();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { resolveAttendanceProcessingModeForView } = await import('@/lib/resolveAttendanceProcessingMode');
+      const mode = await resolveAttendanceProcessingModeForView(selectedDivision || null);
+      if (!cancelled && mode) {
+        setAttendanceProcessingMode(mode);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDivision]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3521,62 +3532,15 @@ export default function AttendancePage() {
   }, [tableType, daysArray.length, visibleWorkspaceCompleteKeys.length, usePayRegisterAllComplete]);
 
   const activeHighlightDates = useMemo(() => {
-
     if (!activeHighlight) return new Map<string, { value: number; label: string }>();
-
     const empData = monthlyData.find((d) => d.employee._id === activeHighlight.employeeId);
-
     if (!empData) return new Map<string, { value: number; label: string }>();
-
-    const map = new Map<string, { value: number; label: string }>();
-
-    const cd = empData.summary?.contributingDates as Record<string, unknown> | undefined;
-
-    const items = cd?.[activeHighlight.category];
-
-    if (Array.isArray(items)) {
-
-      items.forEach((item: unknown) => {
-
-        if (typeof item === 'string') {
-
-          map.set(item, { value: 1, label: '' });
-
-        } else if (item && typeof item === 'object' && 'date' in item && (item as { date: string }).date) {
-
-          const o = item as { date: string; value?: number; label?: string };
-
-          map.set(o.date, { value: o.value ?? 1, label: o.label || '' });
-
-        }
-
-      });
-
-      return map;
-
-    }
-
-    if (activeHighlight.category === 'absent' && empData.dailyAttendance) {
-
-      for (const [dateStr, rec] of Object.entries(empData.dailyAttendance)) {
-
-        if (rec?.status === 'ABSENT') map.set(dateStr, { value: 1, label: '' });
-
-      }
-
-    }
-
-    if (activeHighlight.category === 'partial' && empData.dailyAttendance) {
-      for (const [dateStr, rec] of Object.entries(empData.dailyAttendance)) {
-        if (rec?.status === 'PARTIAL') {
-          const v = getPartialRecordPayableContribution(rec);
-          map.set(dateStr, { value: v, label: v > 0 ? `PT (${v})` : 'PARTIAL' });
-        }
-      }
-    }
-
-    return map;
-
+    return resolveAttendanceHighlightDateMap(
+      empData.summary,
+      empData.dailyAttendance,
+      activeHighlight.category,
+      getPartialRecordPayableContribution
+    );
   }, [activeHighlight, monthlyData]);
 
   useEffect(() => {
@@ -4925,7 +4889,7 @@ export default function AttendancePage() {
                                     >
                                       {isHighlighted && highlightInfo && (
                                         <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none px-0.5">
-                                          <div className="bg-blue-600/90 text-white px-1 py-0.5 rounded-md shadow-md border border-white/30 flex flex-col items-center justify-center gap-0 leading-none min-w-[1.35rem] max-w-[42px]">
+                                          <div className={`${activeHighlight?.category === 'lopLeaves' ? 'bg-rose-600/90' : activeHighlight?.category === 'paidLeaves' ? 'bg-yellow-600/90' : 'bg-blue-600/90'} text-white px-1 py-0.5 rounded-md shadow-md border border-white/30 flex flex-col items-center justify-center gap-0 leading-none min-w-[1.35rem] max-w-[42px]`}>
                                             <span className="text-[10px] font-black tabular-nums tracking-tight">
                                               {formatHighlightContribution(highlightInfo.value)}
                                             </span>

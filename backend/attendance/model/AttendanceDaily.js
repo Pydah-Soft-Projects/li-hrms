@@ -645,28 +645,24 @@ attendanceDailySchema.pre('save', async function () {
       // totalWorkingHours, shifts (punch in/out), late/early etc. are already set above – unchanged
     } else {
       this.payableShifts = Math.round(totalPayableWithOD * 100) / 100;
-      
-      const punchOnlyDuration = this.shifts.reduce((acc, s) => acc + (Number(s.punchHours) || 0), 0);
-      const punchDurationRatio = totalExpected > 0 ? punchOnlyDuration / totalExpected : 0;
-      
-      if (hasPresentShift || (totalPayableWithOD >= 0.95 && punchDurationRatio >= 0.95)) {
-        this.status = 'PRESENT';
-      } else if (odPayableContribution > 0) {
-        // If has approved OD and not fully present physically -> set as OD
-        this.status = 'OD';
-      } else if (totalPayableWithOD >= 0.45) {
-        this.status = 'HALF_DAY';
-      } else {
-        this.status = hasPunches ? 'PARTIAL' : 'ABSENT';
-      }
+
+      // Full-day payable (e.g. two half-segment rows at 0.5 each on a segmented shift) → PRESENT.
+      // Do not gate on punch/expected ratio: multi-shift days sum expected hours per row, which
+      // understates ratio even when both shift halves were worked and payable totals 1.
+      const { resolveDailyStatusFromShiftTotals } = require('../utils/dailyStatusFromShifts');
+      this.status = resolveDailyStatusFromShiftTotals({
+        hasPresentShift,
+        totalPayableWithOD,
+        odPayableContribution,
+        hasPunches,
+      });
     }
     applyRosterHalfNonWorkingToAttendanceDaily(this, rosterEntry, getWorkedHalfFromShifts);
 
     // Single-shift PARTIAL + IN+OUT: below half-day threshold → ABSENT (no present credit)
     try {
-      const AttendanceSettings = require('./AttendanceSettings');
-      const settings = await AttendanceSettings.getSettings();
-      const pm = AttendanceSettings.getProcessingMode(settings);
+      const { getProcessingModeForEmployeeNumber } = require('../services/processingModeResolutionService');
+      const pm = await getProcessingModeForEmployeeNumber(this.employeeNumber);
       if (pm.mode === 'single_shift') {
         const { reconcilePartialDayStatus } = require('../utils/attendanceHalfPresence');
         const override = reconcilePartialDayStatus(this);

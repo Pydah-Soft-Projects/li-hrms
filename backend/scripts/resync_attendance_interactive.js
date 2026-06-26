@@ -19,7 +19,6 @@ const mongoose = require('mongoose');
 const readline = require('readline');
 const AttendanceDaily = require('../attendance/model/AttendanceDaily');
 const AttendanceRawLog = require('../attendance/model/AttendanceRawLog');
-const AttendanceSettings = require('../attendance/model/AttendanceSettings');
 const Employee = require('../employees/model/Employee');
 const Division = require('../departments/model/Division');
 const Department = require('../departments/model/Department');
@@ -305,9 +304,9 @@ async function main() {
   await mongoose.connect(uri);
   console.log('Connected:', uri.replace(/:[^:@]+@/, ':***@'));
 
-  const attendanceSettings = await AttendanceSettings.getSettings();
-  const mode = attendanceSettings.processingMode?.mode || 'multi_shift';
-  console.log(`Attendance processing mode: ${mode}`);
+  const { getOrgAttendanceContext, getProcessingModeForEmployeeNumber } = require('../attendance/services/processingModeResolutionService');
+  const { processingMode: orgPm } = await getOrgAttendanceContext();
+  console.log(`Organization attendance processing mode: ${orgPm.mode} (per-employee division overrides apply during resync)`);
 
   const divisions = await Division.find({ isActive: { $ne: false } }).sort({ name: 1 }).lean();
   const departments = await Department.find({ isActive: { $ne: false } }).sort({ name: 1 }).lean();

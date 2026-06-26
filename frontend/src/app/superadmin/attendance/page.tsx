@@ -10,6 +10,7 @@ import {
   highlightBadgeSubtitle,
   hasAttendancePunches,
   isFullDayOdEligibleForConflictRevoke,
+  resolveAttendanceHighlightDateMap,
 } from '@/lib/attendanceHighlight';
 import {
   normalizeCompleteSummaryColumns,
@@ -603,37 +604,12 @@ export default function AttendancePage() {
     if (!activeHighlight) return new Map<string, { value: number; label: string }>();
     const empData = monthlyData.find(d => d.employee._id === activeHighlight.employeeId);
     if (!empData) return new Map<string, { value: number; label: string }>();
-
-    const map = new Map<string, { value: number; label: string }>();
-    const cd = empData.summary?.contributingDates as Record<string, unknown> | undefined;
-    const items = cd?.[activeHighlight.category];
-
-    if (Array.isArray(items)) {
-      items.forEach((item: any) => {
-        if (typeof item === 'string') {
-          map.set(item, { value: 1, label: '' });
-        } else if (item && item.date) {
-          map.set(item.date, { value: item.value ?? 1, label: item.label || '' });
-        }
-      });
-      return map;
-    }
-
-    // Legacy: summaries without contributingDates.absent (partial absents need recalculated summary)
-    if (activeHighlight.category === 'absent' && empData.dailyAttendance) {
-      for (const [dateStr, rec] of Object.entries(empData.dailyAttendance)) {
-        if (rec?.status === 'ABSENT') map.set(dateStr, { value: 1, label: '' });
-      }
-    }
-    if (activeHighlight.category === 'partial' && empData.dailyAttendance) {
-      for (const [dateStr, rec] of Object.entries(empData.dailyAttendance)) {
-        if (rec?.status === 'PARTIAL') {
-          const v = getPartialRecordPayableContribution(rec);
-          map.set(dateStr, { value: v, label: v > 0 ? `PT (${v})` : 'PARTIAL' });
-        }
-      }
-    }
-    return map;
+    return resolveAttendanceHighlightDateMap(
+      empData.summary,
+      empData.dailyAttendance,
+      activeHighlight.category,
+      getPartialRecordPayableContribution
+    );
   }, [activeHighlight, monthlyData]);
 
   useEffect(() => {
@@ -767,6 +743,20 @@ export default function AttendancePage() {
     };
     loadFlags();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { resolveAttendanceProcessingModeForView } = await import('@/lib/resolveAttendanceProcessingMode');
+      const mode = await resolveAttendanceProcessingModeForView(selectedDivision || null);
+      if (!cancelled && mode) {
+        setAttendanceProcessingMode(mode);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDivision]);
 
   useEffect(() => {
     let cancelled = false;

@@ -16,7 +16,6 @@ const leaveRegisterYearMonthlyApplyService = require('./leaveRegisterYearMonthly
 const { assertEmployeeDateRequestsEditable } = require('../../shared/services/payrollRequestLockService');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 const { isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
-const AttendanceSettings = require('../../attendance/model/AttendanceSettings');
 const {
   computeRawAttendanceHalfCredits,
 } = require('../../attendance/utils/attendanceHalfPresence');
@@ -625,8 +624,8 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
   await reconcileHalfHolidayOdsForDate(employee, dateStr, syncPayRegisterFromOD, results);
   await reconcileHalfHolidayLeavesForDate(employee, dateStr, syncPayRegisterFromLeave, results);
 
-  const attSettingsDoc = await AttendanceSettings.getSettings();
-  const processingMode = AttendanceSettings.getProcessingMode(attSettingsDoc).mode;
+  const { getProcessingModeForEmployee } = require('../../attendance/services/processingModeResolutionService');
+  const processingMode = (await getProcessingModeForEmployee(employee)).mode;
   const { attFirst, attSecond } = await computeRawAttendanceHalfCredits(daily, ods, {
     processingMode,
     dateStr,

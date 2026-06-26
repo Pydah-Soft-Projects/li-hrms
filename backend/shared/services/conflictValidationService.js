@@ -305,10 +305,9 @@ const getAttendanceCoverageForDate = async (employeeNumber, date) => {
       return out;
     }
     if (st === 'PARTIAL') {
-      const AttendanceSettings = require('../../attendance/model/AttendanceSettings');
       const { attendanceHalfPresenceFlags } = require('../../attendance/utils/attendanceHalfPresence');
-      const attSettingsDoc = await AttendanceSettings.getSettings();
-      const processingMode = AttendanceSettings.getProcessingMode(attSettingsDoc).mode;
+      const { getProcessingModeForEmployeeNumber } = require('../../attendance/services/processingModeResolutionService');
+      const processingMode = (await getProcessingModeForEmployeeNumber(employeeNumber)).mode;
       if (processingMode === 'single_shift') {
         const flags = attendanceHalfPresenceFlags(attendance, processingMode);
         out.firstHalfPresent = flags.attFirst;

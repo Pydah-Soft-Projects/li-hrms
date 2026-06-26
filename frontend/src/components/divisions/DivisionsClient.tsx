@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { api, Division, Department, Designation, Shift, EmployeeGroup } from '@/lib/api';
+import { api, Division, Department, Designation, Shift, EmployeeGroup, type DivisionProcessingMode, type ResolvedProcessingMode } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 import { collapseShiftRowsForEditor, expandShiftRowsForApi, type DivisionShiftSelectionRow } from '@/lib/shiftAssignmentGroups';
 import {
@@ -59,6 +59,16 @@ interface Manager {
 }
 
 const ledgerBorder = { borderColor: 'var(--ps-accent-border)' };
+
+const DIVISION_PROCESSING_MODE_DEFAULTS: ResolvedProcessingMode = {
+    mode: 'multi_shift',
+    strictCheckInOutOnly: true,
+    continuousSplitThresholdHours: 14,
+    splitMinGapHours: 3,
+    maxShiftsPerDay: 3,
+    rosterStrictWhenPresent: true,
+    postShiftOutMarginHours: 4,
+};
 
 const ledgerOutlineBtn =
     'inline-flex shrink-0 items-center gap-1 rounded-md border px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-stone-600 transition hover:bg-stone-50 dark:text-stone-300 dark:hover:bg-stone-900 sm:px-3 sm:py-2 sm:text-xs';
@@ -235,6 +245,8 @@ export default function DivisionsClient({
     const [code, setCode] = useState('');
     const [description, setDescription] = useState('');
     const [managerId, setManagerId] = useState('');
+    const [processingModeUseOrgDefault, setProcessingModeUseOrgDefault] = useState(true);
+    const [divisionProcessingMode, setDivisionProcessingMode] = useState<ResolvedProcessingMode>({ ...DIVISION_PROCESSING_MODE_DEFAULTS });
     const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>([]);
     const [linkDeptSearch, setLinkDeptSearch] = useState('');
     const [linkConfirmData, setLinkConfirmData] = useState<{
@@ -376,10 +388,32 @@ export default function DivisionsClient({
         loadExistingShifts();
     }, [targetScope, targetDeptId, targetDesigId, showShiftDialog, departments]);
 
+    const buildProcessingModePayload = (): DivisionProcessingMode => {
+        if (processingModeUseOrgDefault) {
+            return { useOrgDefault: true };
+        }
+        const pm = { ...divisionProcessingMode };
+        return {
+            useOrgDefault: false,
+            mode: pm.mode,
+            strictCheckInOutOnly: pm.mode === 'multi_shift' ? true : pm.strictCheckInOutOnly,
+            continuousSplitThresholdHours: pm.continuousSplitThresholdHours,
+            splitMinGapHours: pm.splitMinGapHours,
+            maxShiftsPerDay: pm.maxShiftsPerDay,
+            rosterStrictWhenPresent: pm.rosterStrictWhenPresent,
+            postShiftOutMarginHours: pm.postShiftOutMarginHours,
+        };
+    };
+
     const handleCreateDivision = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const payload: Partial<Division> = { name, code, description };
+            const payload: Partial<Division> = {
+                name,
+                code,
+                description,
+                processingMode: buildProcessingModePayload(),
+            };
             if (managerId) payload.manager = managerId as any;
             const res = await api.createDivision(payload);
             if (res.success) {
@@ -399,7 +433,12 @@ export default function DivisionsClient({
         e.preventDefault();
         if (!showEditDialog) return;
         try {
-            const payload: Partial<Division> = { name, code, description };
+            const payload: Partial<Division> = {
+                name,
+                code,
+                description,
+                processingMode: buildProcessingModePayload(),
+            };
             if (managerId) payload.manager = managerId as any;
             const res = await api.updateDivision(showEditDialog._id, payload);
             if (res.success) {
@@ -543,13 +582,47 @@ export default function DivisionsClient({
         };
     }, [divisions]);
 
-    const openEditDialog = (div: Division) => {
+    const loadProcessingModeFromDivision = (div: Division) => {
+        const pm = div.processingMode;
+        const useOrg = pm?.useOrgDefault !== false;
+        setProcessingModeUseOrgDefault(useOrg);
+        if (useOrg) {
+            const resolved = div.resolvedProcessingMode;
+            setDivisionProcessingMode({
+                ...DIVISION_PROCESSING_MODE_DEFAULTS,
+                ...(resolved || {}),
+                mode: resolved?.mode === 'single_shift' ? 'single_shift' : 'multi_shift',
+            });
+            return;
+        }
+        setDivisionProcessingMode({
+            ...DIVISION_PROCESSING_MODE_DEFAULTS,
+            mode: pm?.mode === 'single_shift' ? 'single_shift' : 'multi_shift',
+            strictCheckInOutOnly: pm?.strictCheckInOutOnly !== false,
+            continuousSplitThresholdHours: pm?.continuousSplitThresholdHours ?? DIVISION_PROCESSING_MODE_DEFAULTS.continuousSplitThresholdHours,
+            splitMinGapHours: pm?.splitMinGapHours ?? DIVISION_PROCESSING_MODE_DEFAULTS.splitMinGapHours,
+            maxShiftsPerDay: pm?.maxShiftsPerDay ?? DIVISION_PROCESSING_MODE_DEFAULTS.maxShiftsPerDay,
+            rosterStrictWhenPresent: pm?.rosterStrictWhenPresent !== false,
+            postShiftOutMarginHours: pm?.postShiftOutMarginHours ?? DIVISION_PROCESSING_MODE_DEFAULTS.postShiftOutMarginHours,
+        });
+    };
+
+    const openEditDialog = async (div: Division) => {
         setShowEditDialog(div);
         setName(div.name);
         setCode(div.code);
         setDescription(div.description || '');
         setManagerId(typeof div.manager === 'string' ? div.manager : div.manager?._id || '');
+        loadProcessingModeFromDivision(div);
         setError('');
+        try {
+            const res = await api.getDivision(div._id);
+            if (res.success && res.data) {
+                loadProcessingModeFromDivision(res.data);
+            }
+        } catch {
+            // keep list payload
+        }
     };
 
     const openLinkDeptDialog = (div: Division) => {
@@ -588,6 +661,8 @@ export default function DivisionsClient({
         setCode('');
         setDescription('');
         setManagerId('');
+        setProcessingModeUseOrgDefault(true);
+        setDivisionProcessingMode({ ...DIVISION_PROCESSING_MODE_DEFAULTS });
         setError('');
     };
 
@@ -655,6 +730,97 @@ export default function DivisionsClient({
                         </option>
                     ))}
                 </select>
+            </LoanFormPanel>
+            <LoanFormPanel>
+                <LoanFormLabel>Attendance processing mode</LoanFormLabel>
+                <p className="mb-3 text-xs text-stone-500 dark:text-stone-400">
+                    Inherit organization settings, or override multi-shift vs single-shift for this division only.
+                </p>
+                <label className="mb-3 flex cursor-pointer items-center gap-2 text-sm text-stone-700 dark:text-stone-200">
+                    <input
+                        type="checkbox"
+                        checked={processingModeUseOrgDefault}
+                        onChange={(e) => setProcessingModeUseOrgDefault(e.target.checked)}
+                        className="rounded border-stone-300"
+                    />
+                    Use organization default
+                </label>
+                {!processingModeUseOrgDefault ? (
+                    <div className="space-y-3 border p-3" style={ledgerBorder}>
+                        <div>
+                            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-stone-500">Mode</label>
+                            <select
+                                value={divisionProcessingMode.mode}
+                                onChange={(e) => {
+                                    const mode = e.target.value as 'multi_shift' | 'single_shift';
+                                    setDivisionProcessingMode((prev) => ({
+                                        ...prev,
+                                        mode,
+                                        strictCheckInOutOnly: mode === 'multi_shift' ? true : prev.strictCheckInOutOnly,
+                                    }));
+                                }}
+                                className={loansFormInputClass()}
+                                style={loansFormInputStyle()}
+                            >
+                                <option value="multi_shift">Multi-shift (up to 3 per day)</option>
+                                <option value="single_shift">Single-shift (1 per day)</option>
+                            </select>
+                        </div>
+                        {divisionProcessingMode.mode === 'single_shift' ? (
+                            <label className="flex cursor-pointer items-center gap-2 text-sm text-stone-700 dark:text-stone-200">
+                                <input
+                                    type="checkbox"
+                                    checked={divisionProcessingMode.strictCheckInOutOnly}
+                                    onChange={(e) =>
+                                        setDivisionProcessingMode((prev) => ({
+                                            ...prev,
+                                            strictCheckInOutOnly: e.target.checked,
+                                        }))
+                                    }
+                                    className="rounded border-stone-300"
+                                />
+                                Strict check-in / check-out only
+                            </label>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="mb-1 block text-xs text-stone-500">Max shifts / day</label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={3}
+                                        value={divisionProcessingMode.maxShiftsPerDay}
+                                        onChange={(e) =>
+                                            setDivisionProcessingMode((prev) => ({
+                                                ...prev,
+                                                maxShiftsPerDay: Number(e.target.value) || 3,
+                                            }))
+                                        }
+                                        className={loansFormInputClass()}
+                                        style={loansFormInputStyle()}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-xs text-stone-500">Split threshold (hours)</label>
+                                    <input
+                                        type="number"
+                                        min={10}
+                                        max={24}
+                                        value={divisionProcessingMode.continuousSplitThresholdHours}
+                                        onChange={(e) =>
+                                            setDivisionProcessingMode((prev) => ({
+                                                ...prev,
+                                                continuousSplitThresholdHours: Number(e.target.value) || 14,
+                                            }))
+                                        }
+                                        className={loansFormInputClass()}
+                                        style={loansFormInputStyle()}
+                                    />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                ) : null}
             </LoanFormPanel>
             {error ? <p className="text-xs text-rose-600 dark:text-rose-400">{error}</p> : null}
         </div>
@@ -728,7 +894,7 @@ export default function DivisionsClient({
                 ]}
             />
 
-            <LoanDetailDialog open={showCreateDialog} onClose={closeDivisionForm} maxWidth="max-w-md" layerClass="z-[100]">
+            <LoanDetailDialog open={showCreateDialog} onClose={closeDivisionForm} maxWidth="max-w-lg" layerClass="z-[100]">
                 <form onSubmit={handleCreateDivision} className="flex min-h-0 flex-1 flex-col">
                     <LoanDetailDialogHeader
                         badge="Division"
@@ -741,7 +907,7 @@ export default function DivisionsClient({
                 </form>
             </LoanDetailDialog>
 
-            <LoanDetailDialog open={!!showEditDialog} onClose={closeDivisionForm} maxWidth="max-w-md" layerClass="z-[100]">
+            <LoanDetailDialog open={!!showEditDialog} onClose={closeDivisionForm} maxWidth="max-w-lg" layerClass="z-[100]">
                 <form onSubmit={handleUpdateDivision} className="flex min-h-0 flex-1 flex-col">
                     <LoanDetailDialogHeader
                         badge="Division"

@@ -360,11 +360,13 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     summary.totalDaysInMonth = Math.round(periodDays);
     const todayIstStr = extractISTComponents(new Date()).dateStr;
 
+    const employeeDocForMode = await Employee.findById(employeeId).select('division_id emp_no').lean();
+    const { getProcessingModeForEmployee } = require('./processingModeResolutionService');
+    const resolvedProcessingMode = await getProcessingModeForEmployee(employeeDocForMode);
+    const processingModeIsSingleShift = resolvedProcessingMode.mode === 'single_shift';
+    const processingModeIsMultiShift = resolvedProcessingMode.mode === 'multi_shift';
+
     const attendanceSettingsDoc = await AttendanceSettings.getSettings();
-    const processingModeIsSingleShift =
-      attendanceSettingsDoc?.processingMode?.mode === 'single_shift';
-    const processingModeIsMultiShift =
-      attendanceSettingsDoc?.processingMode?.mode === 'multi_shift';
     const partialDaysContributeToPayableShifts =
       processingModeIsSingleShift &&
       attendanceSettingsDoc?.featureFlags?.partialDaysContributeToPayableShifts === true;
