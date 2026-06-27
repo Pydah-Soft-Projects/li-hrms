@@ -1,0 +1,843 @@
+{
+  "month": "2026-06",
+  "period": {
+    "start": "2026-05-26",
+    "end": "2026-06-25"
+  },
+  "total": 408,
+  "unchanged": 392,
+  "mismatches": 16,
+  "singleShiftMismatches": 16,
+  "failed": 0,
+  "restored": true,
+  "mismatchDetails": [
+    {
+      "emp_no": "2226",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 1,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 4,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 1,
+          "recalc": 0,
+          "delta": -1
+        },
+        "totalWeeklyOffs": {
+          "stored": 4,
+          "recalc": 0,
+          "delta": -4
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 27,
+        "payable": 0,
+        "dailyCount": 31
+      }
+    },
+    {
+      "emp_no": "21516",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 1,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 4,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 1,
+          "recalc": 0,
+          "delta": -1
+        },
+        "totalWeeklyOffs": {
+          "stored": 4,
+          "recalc": 0,
+          "delta": -4
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 27,
+        "payable": 0,
+        "dailyCount": 31
+      }
+    },
+    {
+      "emp_no": "2105",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 1,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 4,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 1,
+          "recalc": 0,
+          "delta": -1
+        },
+        "totalWeeklyOffs": {
+          "stored": 4,
+          "recalc": 0,
+          "delta": -4
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 27,
+        "payable": 0,
+        "dailyCount": 31
+      }
+    },
+    {
+      "emp_no": "2111",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 5,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 4,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 5,
+          "recalc": 0,
+          "delta": -5
+        },
+        "totalWeeklyOffs": {
+          "stored": 4,
+          "recalc": 0,
+          "delta": -4
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 27,
+        "payable": 0,
+        "dailyCount": 31
+      }
+    },
+    {
+      "emp_no": "21540",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 1,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 1,
+          "recalc": 0,
+          "delta": -1
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 4,
+        "payable": 0,
+        "dailyCount": 4
+      }
+    },
+    {
+      "emp_no": "2262",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 1,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 4,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 1,
+          "recalc": 0,
+          "delta": -1
+        },
+        "totalWeeklyOffs": {
+          "stored": 4,
+          "recalc": 0,
+          "delta": -4
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 27,
+        "payable": 0,
+        "dailyCount": 31
+      }
+    },
+    {
+      "emp_no": "7042",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 9,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 9,
+          "recalc": 0,
+          "delta": -9
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 31,
+        "payable": 0,
+        "dailyCount": 31
+      }
+    },
+    {
+      "emp_no": "7037",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 1,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 1,
+          "recalc": 0,
+          "delta": -1
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 31,
+        "payable": 0,
+        "dailyCount": 31
+      }
+    },
+    {
+      "emp_no": "2256",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 1,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 4,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 1,
+          "recalc": 0,
+          "delta": -1
+        },
+        "totalWeeklyOffs": {
+          "stored": 4,
+          "recalc": 0,
+          "delta": -4
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 27,
+        "payable": 0,
+        "dailyCount": 31
+      }
+    },
+    {
+      "emp_no": "2069",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 1,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 4,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 1,
+          "recalc": 0,
+          "delta": -1
+        },
+        "totalWeeklyOffs": {
+          "stored": 4,
+          "recalc": 0,
+          "delta": -4
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 27,
+        "payable": 0,
+        "dailyCount": 31
+      }
+    },
+    {
+      "emp_no": "1982",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 1,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 4,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 1,
+          "recalc": 0,
+          "delta": -1
+        },
+        "totalWeeklyOffs": {
+          "stored": 4,
+          "recalc": 0,
+          "delta": -4
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 27,
+        "payable": 0,
+        "dailyCount": 31
+      }
+    },
+    {
+      "emp_no": "2049",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 1,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 4,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 1,
+          "recalc": 0,
+          "delta": -1
+        },
+        "totalWeeklyOffs": {
+          "stored": 4,
+          "recalc": 0,
+          "delta": -4
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 27,
+        "payable": 0,
+        "dailyCount": 31
+      }
+    },
+    {
+      "emp_no": "2266",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 8,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 3,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 8,
+          "recalc": 0,
+          "delta": -8
+        },
+        "totalWeeklyOffs": {
+          "stored": 3,
+          "recalc": 0,
+          "delta": -3
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 28,
+        "payable": 0,
+        "dailyCount": 31
+      }
+    },
+    {
+      "emp_no": "2309",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 1,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 4,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 1,
+          "recalc": 0,
+          "delta": -1
+        },
+        "totalWeeklyOffs": {
+          "stored": 4,
+          "recalc": 0,
+          "delta": -4
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 27,
+        "payable": 0,
+        "dailyCount": 31
+      }
+    },
+    {
+      "emp_no": "2312",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 1,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 4,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 1,
+          "recalc": 0,
+          "delta": -1
+        },
+        "totalWeeklyOffs": {
+          "stored": 4,
+          "recalc": 0,
+          "delta": -4
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 27,
+        "payable": 0,
+        "dailyCount": 31
+      }
+    },
+    {
+      "emp_no": "21511",
+      "mode": "single_shift",
+      "stored": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 1,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "recalc": {
+        "totalDaysInMonth": 31,
+        "totalPresentDays": 0,
+        "totalPartialDays": 0,
+        "totalAbsentDays": 0,
+        "totalPayableShifts": 0,
+        "totalLeaves": 0,
+        "totalODs": 0,
+        "totalWeeklyOffs": 0,
+        "totalHolidays": 0,
+        "lateInCount": 0,
+        "totalLateInMinutes": 0,
+        "earlyOutCount": 0,
+        "totalEarlyOutMinutes": 0
+      },
+      "diff": {
+        "totalAbsentDays": {
+          "stored": 1,
+          "recalc": 0,
+          "delta": -1
+        }
+      },
+      "naiveFromDailies": {
+        "present": 0,
+        "partial": 0,
+        "absent": 0,
+        "payable": 0,
+        "dailyCount": 0
+      }
+    }
+  ]
+}

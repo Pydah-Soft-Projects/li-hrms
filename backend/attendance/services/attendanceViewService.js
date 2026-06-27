@@ -22,7 +22,7 @@ const DAILY_SELECT_BY_TIER = {
   minimal:
     'employeeNumber date status totalLateInMinutes totalEarlyOutMinutes isEdited rosterFirstHalfNonWorking rosterSecondHalfNonWorking',
   compact:
-    'employeeNumber date status totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount permissionDeduction payableShifts isEdited source rosterFirstHalfNonWorking rosterSecondHalfNonWorking shifts',
+    'employeeNumber date status totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount permissionDeduction payableShifts isEdited source policyMeta rosterFirstHalfNonWorking rosterSecondHalfNonWorking shifts',
   full:
     'employeeNumber date status shifts totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount permissionDeduction notes earlyOutDeduction isEdited editHistory policyMeta payableShifts rosterFirstHalfNonWorking rosterSecondHalfNonWorking source',
 };
@@ -171,6 +171,19 @@ function resolveWorkedHoursForCompleteCell(record) {
   return hours;
 }
 
+function resolveSandwichDisplayStatus(record) {
+  const sandwich = record?.policyMeta?.sandwichRule;
+  if (!sandwich?.applied) return null;
+  if (sandwich.effect === 'strip_non_working_add_lop') return 'LEAVE';
+  if (
+    sandwich.effect === 'strip_non_working' ||
+    String(sandwich.effect || '').includes('strip')
+  ) {
+    return 'ABSENT';
+  }
+  return null;
+}
+
 function resolveDayStatus(ctx) {
   const {
     dateStr,
@@ -190,6 +203,8 @@ function resolveDayStatus(ctx) {
   if (isBeforeJoining || isAfterResignation) return { status: '', skip: true };
   if (isFutureDate) return { status: '-' };
   if (isEsiLeaveDay) return { status: 'LEAVE' };
+  const sandwichStatus = resolveSandwichDisplayStatus(record);
+  if (sandwichStatus) return { status: sandwichStatus };
   if (record?.status) return { status: record.status };
   if (hasLeave) return { status: 'LEAVE' };
   if (hasOD) return { status: 'OD' };
@@ -325,6 +340,7 @@ function buildDailyCell(mode, ctx) {
     !approvedOtForDate && segmentExtra > 0 && mergedPolicyForEmp
       ? applyOtHoursPolicy(segmentExtra, mergedPolicyForEmp)
       : null;
+  const sandwichApplied = !!record?.policyMeta?.sandwichRule?.applied;
   return {
     ...base,
     totalHours: resolveWorkedHoursForCompleteCell(record),
@@ -349,8 +365,9 @@ function buildDailyCell(mode, ctx) {
     payableShifts: record?.payableShifts || 0,
     isEdited: record?.isEdited || false,
     source: record?.source || [],
-    rosterFirstHalfNonWorking: record?.rosterFirstHalfNonWorking || null,
-    rosterSecondHalfNonWorking: record?.rosterSecondHalfNonWorking || null,
+    policyMeta: record?.policyMeta || null,
+    rosterFirstHalfNonWorking: sandwichApplied ? null : record?.rosterFirstHalfNonWorking || null,
+    rosterSecondHalfNonWorking: sandwichApplied ? null : record?.rosterSecondHalfNonWorking || null,
   };
 }
 

@@ -680,6 +680,12 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         blockDay.isHOL = false;
         holidayDates.delete(blockDate);
       }
+      // Roster half WO/HOL on AttendanceDaily still credits coverage in absent math unless cleared.
+      blockDay.rosterFirstHalfHOL = false;
+      blockDay.rosterSecondHalfHOL = false;
+      blockDay.rosterFirstHalfWO = false;
+      blockDay.rosterSecondHalfWO = false;
+      blockDay._sandwichStripped = true;
     };
 
     const pushSandwichLopLeave = (blockDay) => {
@@ -903,6 +909,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         for (const sl of policySandwichLeaves) {
           const unit = leaveDailyCreditUnit(sl);
           totalLopLeaveDays += unit;
+          totalLeaveDays += unit;
           const existingLop = contributingDates.lopLeaves.find((cd) => cd.date === dStr);
           if (!existingLop) {
             contributingDates.lopLeaves.push({
@@ -914,17 +921,26 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
             existingLop.value = Math.round((Number(existingLop.value) + unit) * 100) / 100;
             existingLop.label = `LOP (${existingLop.value})`;
           }
+          if (!contributingDates.leaves.some((cd) => cd.date === dStr)) {
+            contributingDates.leaves.push({
+              date: dStr,
+              value: unit,
+              label: `LOP (sandwich) (${unit})`,
+            });
+          }
         }
 
-        const firstLeave = approvedLeaves[0] || day.leaves[0];
-        if (!contributingDates.leaves.some((cd) => cd.date === dStr)) {
-          contributingDates.leaves.push({
-            date: dStr,
-            value: leaveContrib,
-            label: `${firstLeave?.leaveType || 'L'} (${leaveContrib})`,
-          });
+        if (leaveContrib > 0) {
+          const firstLeave = approvedLeaves[0];
+          if (!contributingDates.leaves.some((cd) => cd.date === dStr)) {
+            contributingDates.leaves.push({
+              date: dStr,
+              value: leaveContrib,
+              label: `${firstLeave?.leaveType || 'L'} (${leaveContrib})`,
+            });
+          }
+          totalLeaveDays += leaveContrib;
         }
-        totalLeaveDays += leaveContrib;
       }
 
       // 2. ODs & Attendance Merge (Half-Aware)
@@ -1245,6 +1261,18 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       if (!day.isWO && !day.isHOL && dStr <= todayIstStr) {
         // Boundary Check: If date is before joining or after resignation, it's not "Absent"
         if (!(dojStrBound && dStr < dojStrBound) && !(leftDateStrBound && dStr > leftDateStrBound)) {
+          const sandwichMeta = sandwichPolicyMetaByDate.get(dStr);
+          if (sandwichMeta?.effect === 'strip_non_working') {
+            if (!contributingDates.absent.some((cd) => cd.date === dStr)) {
+              contributingDates.absent.push({
+                date: dStr,
+                value: 1,
+                label: 'Sandwich',
+              });
+            }
+          } else if (sandwichMeta?.effect === 'strip_non_working_add_lop') {
+            // Policy sandwich LOP covers this day — counted in totalLopLeaves / totalLeaveDays, not absent.
+          } else {
           const rosterHolFirst = day.rosterFirstHalfHOL ? 0.5 : 0;
           const rosterHolSecond = day.rosterSecondHalfHOL ? 0.5 : 0;
           const rosterWoFirst = day.rosterFirstHalfWO ? 0.5 : 0;
@@ -1279,6 +1307,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
           if (absentPortion > 0 && !contributingDates.absent.some(cd => cd.date === dStr)) {
             contributingDates.absent.push({ date: dStr, value: absentPortion, label: '' });
+          }
           }
         }
       }
@@ -1614,13 +1643,14 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     summary.contributingDates = contributingDates;
     summary.lastCalculatedAt = new Date();
 
-    // Persist policy-derived partial metadata in AttendanceDaily for auditability.
-    // This does not alter raw attendance status; it only records summary-rule interpretation.
+    // Persist policy-derived metadata in AttendanceDaily (partial + sandwich).
+    // Sandwich write-back sets status ABSENT/LEAVE and clears roster WO/HOL half flags on stripped days.
     try {
       const policyNow = new Date();
       const policyOps = [];
       for (const dStr of allDates) {
         if (!dStr) continue;
+        if (isOutsideEmploymentBound(dStr)) continue;
         const partialMeta = partialPolicyMetaByDate.get(dStr);
         if (partialMeta) {
           policyOps.push({
@@ -1670,6 +1700,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
             // - strip_non_working_add_lop => LEAVE (LOP-style day)
             status: sandwichMeta.effect === 'strip_non_working_add_lop' ? 'LEAVE' : 'ABSENT',
             payableShifts: 0,
+            rosterFirstHalfNonWorking: null,
+            rosterSecondHalfNonWorking: null,
           };
           policyOps.push({
             updateOne: {
@@ -1685,7 +1717,14 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
                   'policyMeta.sandwichRule.updatedAt': policyNow,
                   ...sandwichStatusSet,
                 },
+                $setOnInsert: {
+                  employeeNumber: empNoNorm,
+                  date: dStr,
+                  shifts: [],
+                  source: ['summary-sandwich'],
+                },
               },
+              upsert: true,
             },
           });
         } else {
