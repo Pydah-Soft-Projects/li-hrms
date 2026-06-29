@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, Department, Division } from '@/lib/api';
 import { MultiSelect } from '@/components/MultiSelect';
 import Spinner from '@/components/Spinner';
-import { ShieldCheck, AlertTriangle, CheckCircle2, Info, Loader2 } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, CheckCircle2, Info, Loader2, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AttendanceAuditCompareGrid, type CompareData } from '@/components/attendance/AttendanceAuditCompareGrid';
+import { exportAttendanceAuditPdf } from '@/lib/attendanceAuditPdf';
 
 type OverviewEmployee = CompareData;
 
@@ -36,6 +37,7 @@ export default function AttendanceAuditPage() {
   const [onlyIssues, setOnlyIssues] = useState(true);
   const [loadingFilters, setLoadingFilters] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [overview, setOverview] = useState<OverviewResult | null>(null);
 
   const filteredDepartments = useMemo(() => {
@@ -90,6 +92,35 @@ export default function AttendanceAuditPage() {
     if (!loadingFilters) loadOverview();
   }, [loadOverview, loadingFilters]);
 
+  const handleExportPdf = () => {
+    if (!overview) {
+      toast.error('Load audit data before exporting');
+      return;
+    }
+    setExportingPdf(true);
+    const toastId = toast.loading('Generating PDF…');
+    try {
+      exportAttendanceAuditPdf(
+        {
+          month: overview.month,
+          period: overview.period,
+          total: overview.total,
+          flagged: overview.flagged,
+          shown: overview.shown,
+          onlyIssues: overview.onlyIssues,
+          truncated: overview.truncated,
+        },
+        overview.employees
+      );
+      toast.success('PDF downloaded', { id: toastId });
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to generate PDF', { id: toastId });
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   if (loadingFilters) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
@@ -99,7 +130,7 @@ export default function AttendanceAuditPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-4 pb-24 md:p-6">
+    <div className="w-full max-w-full -mx-4 space-y-6 px-4 pb-24 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6">
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900 dark:text-white">
           <ShieldCheck className="h-7 w-7 text-indigo-600" />
@@ -161,15 +192,27 @@ export default function AttendanceAuditPage() {
               />
               Issues only
             </label>
-            <button
-              type="button"
-              onClick={loadOverview}
-              disabled={loading}
-              className="flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:hover:bg-slate-800"
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Refresh
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={loadOverview}
+                disabled={loading}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:hover:bg-slate-800"
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                disabled={loading || exportingPdf || !overview}
+                title="Export abstract differences as PDF"
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                {exportingPdf ? 'Exporting…' : 'Export PDF'}
+              </button>
+            </div>
           </div>
         </div>
       </div>

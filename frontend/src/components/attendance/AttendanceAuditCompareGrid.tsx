@@ -248,7 +248,7 @@ export function AttendanceAuditCompareGrid({ employeeId, month, data: dataProp, 
         </button>
       </div>
 
-      <div ref={scrollRef} className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+      <div ref={scrollRef} className="w-full overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <table className="min-w-max border-collapse text-xs">
           <thead>
             <tr className="bg-slate-100 dark:bg-slate-800">
