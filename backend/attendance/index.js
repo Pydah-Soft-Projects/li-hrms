@@ -18,6 +18,7 @@ const monthlySummaryController = require('./controllers/monthlySummaryController
 const liveAttendanceReportController = require('./controllers/liveAttendanceReportController');
 const reportsController = require('./controllers/reportsController');
 const attendanceShiftSegmentRefreshController = require('./controllers/attendanceShiftSegmentRefreshController');
+const attendanceAuditController = require('./controllers/attendanceAuditController');
 
 // Configure multer for file uploads (memory storage)
 const upload = multer({
@@ -113,6 +114,27 @@ router.get('/reports/summary', reportsController.getAttendanceReport);
 router.get('/reports/thumb', reportsController.getThumbReports);
 router.get('/reports/export', applyScopeFilter, authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), reportsController.exportAttendanceReport);
 router.get('/reports/export-pdf', applyScopeFilter, authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), reportsController.exportAttendanceReportPDF);
+
+// Attendance audit (pre-payroll validation)
+router.get('/audit/types', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), attendanceAuditController.getAuditTypes);
+router.get(
+  '/audit/compare',
+  authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'),
+  applyScopeFilter,
+  attendanceAuditController.getCompare
+);
+router.get(
+  '/audit/overview',
+  authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'),
+  applyScopeFilter,
+  attendanceAuditController.getOverview
+);
+router.post(
+  '/audit/run',
+  authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'),
+  applyScopeFilter,
+  attendanceAuditController.runAudit
+);
 
 module.exports = router;
 

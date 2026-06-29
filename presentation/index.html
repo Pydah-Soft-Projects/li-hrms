@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LI-HRMS Presentation</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a1628; color: #fff; font-family: system-ui, sans-serif; overflow: hidden; }
+    .slide-container { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .slide-container img { max-width: 96vw; max-height: 92vh; object-fit: contain; border-radius: 8px; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+    .controls { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; background: rgba(0,0,0,.6); padding: 10px 20px; border-radius: 40px; backdrop-filter: blur(8px); }
+    .controls button { background: #1e40af; color: #fff; border: none; padding: 8px 18px; border-radius: 20px; cursor: pointer; font-size: 14px; }
+    .controls button:hover { background: #2563eb; }
+    .controls span { font-size: 14px; min-width: 80px; text-align: center; }
+    .thumbnails { position: fixed; right: 12px; top: 50%; transform: translateY(-50%); max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+    .thumbnails img { width: 72px; cursor: pointer; border-radius: 4px; opacity: .5; border: 2px solid transparent; }
+    .thumbnails img.active { opacity: 1; border-color: #3b82f6; }
+    .title-bar { position: fixed; top: 12px; left: 20px; font-size: 13px; opacity: .7; }
+  </style>
+</head>
+<body>
+  <div class="title-bar">LI-HRMS — 15 Slide Presentation</div>
+  <div class="slide-container"><img id="slide" src="slides/slide-01-title-overview.png" alt="Slide" /></div>
+  <div class="thumbnails" id="thumbs"></div>
+  <div class="controls">
+    <button onclick="prev()">← Prev</button>
+    <span id="counter">1 / 15</span>
+    <button onclick="next()">Next →</button>
+    <button onclick="toggleFullscreen()">Fullscreen</button>
+  </div>
+  <script>
+    const slides = [
+      'slide-01-title-overview.png', 'slide-02-tech-stack.png', 'slide-03-architecture.png',
+      'slide-04-auth-roles.png', 'slide-05-employee-management.png', 'slide-06-organization.png',
+      'slide-07-attendance.png', 'slide-08-leave-od.png', 'slide-09-ot-permissions-ccl.png',
+      'slide-10-shifts-roster-holidays.png', 'slide-11-payroll-payregister.png',
+      'slide-12-payments-payslips.png', 'slide-13-loans-arrears-bonus.png',
+      'slide-14-hr-operations.png', 'slide-15-automation-summary.png'
+    ];
+    let current = 0;
+    const img = document.getElementById('slide');
+    const counter = document.getElementById('counter');
+    const thumbs = document.getElementById('thumbs');
+    slides.forEach((s, i) => {
+      const t = document.createElement('img');
+      t.src = 'slides/' + s;
+      t.onclick = () => go(i);
+      thumbs.appendChild(t);
+    });
+    function go(n) {
+      current = Math.max(0, Math.min(slides.length - 1, n));
+      img.src = 'slides/' + slides[current];
+      counter.textContent = (current + 1) + ' / ' + slides.length;
+      [...thumbs.children].forEach((t, i) => t.classList.toggle('active', i === current));
+    }
+    function next() { go(current + 1); }
+    function prev() { go(current - 1); }
+    function toggleFullscreen() { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); }
+    document.addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next(); }
+      if (e.key === 'ArrowLeft') prev();
+      if (e.key === 'f') toggleFullscreen();
+    });
+    go(0);
+  </script>
+</body>
+</html>
