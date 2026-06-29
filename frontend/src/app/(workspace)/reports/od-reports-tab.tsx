@@ -20,6 +20,14 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import { odStatusFilterFromDefs, type LeaveOdStatusDef } from '@/lib/leaveOdStatus';
+import {
+  downloadLeaveODReportPdf,
+  downloadLeaveODReportXlsx,
+  normalizeLeaveOdTypesForSelect,
+  type LeaveOdTypeOption,
+  type LeaveODReportExportFilters,
+} from '@/lib/leaveOdReportExport';
 
 export default function ODReportsTab() {
     const [loading, setLoading] = useState(false);
@@ -47,6 +55,12 @@ export default function ODReportsTab() {
     const [endDate, setEndDate] = useState(dayjs().endOf('month').format('YYYY-MM-DD'));
     const [payrollStartDay, setPayrollStartDay] = useState<number>(1);
     const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState('');
+    const [odTypeFilter, setOdTypeFilter] = useState('');
+    const [odTypes, setOdTypes] = useState<LeaveOdTypeOption[]>([]);
+    const [statusOptions, setStatusOptions] = useState<{ value: string; label: string }[]>([
+        { value: '', label: 'All Status' },
+    ]);
 
     // Report data states
     const [reportData, setReportData] = useState<any[]>([]);
@@ -67,15 +81,25 @@ export default function ODReportsTab() {
     const loadInitialFilters = async () => {
         setFetchingFilters(true);
         try {
-            const [divRes, desRes, settingRes] = await Promise.all([
+            const [divRes, desRes, settingRes, odSettingsRes] = await Promise.all([
                 api.getDivisions(true),
                 api.getAllDesignations(),
-                api.getSetting('payroll_cycle_start_day')
+                api.getSetting('payroll_cycle_start_day'),
+                api.getLeaveSettings('od'),
             ]);
             if (divRes.success) setDivisions(divRes.data || []);
             if (desRes.success) setDesignations(desRes.data || []);
             if (settingRes?.success && settingRes.data?.value) {
                 setPayrollStartDay(parseInt(settingRes.data.value));
+            }
+            if (odSettingsRes.success && odSettingsRes.data?.types) {
+                const types = normalizeLeaveOdTypesForSelect(odSettingsRes.data.types);
+                setOdTypes(types);
+            }
+            if (odSettingsRes.success && Array.isArray(odSettingsRes.data?.statuses)) {
+                setStatusOptions(
+                    odStatusFilterFromDefs(odSettingsRes.data.statuses as LeaveOdStatusDef[], 'All Status')
+                );
             }
         } catch (error) {
             console.error('Error loading initial filters:', error);
@@ -157,6 +181,18 @@ export default function ODReportsTab() {
         return { start: startDate, end: endDate };
     })();
 
+    const exportFilters: LeaveODReportExportFilters = {
+        fromDate: effectiveDates.start,
+        toDate: effectiveDates.end,
+        search: searchQuery || undefined,
+        division: divisionIds,
+        department: departmentIds,
+        designation: designationIds,
+        employeeId: employeeIds,
+        status: statusFilter || undefined,
+        leaveType: odTypeFilter || undefined,
+    };
+
     const fetchReportData = async () => {
         setLoadingData(true);
         try {
@@ -166,6 +202,8 @@ export default function ODReportsTab() {
                 fromDate: effectiveDates.start,
                 toDate: effectiveDates.end,
                 ...(searchQuery ? { search: searchQuery } : {}),
+                ...(statusFilter ? { status: statusFilter } : {}),
+                ...(odTypeFilter ? { odType: odTypeFilter } : {}),
                 division: divisionIds.join(','),
                 department: departmentIds.join(','),
                 designation: designationIds.join(','),
@@ -211,77 +249,48 @@ export default function ODReportsTab() {
             fetchStats();
         }, 500);
         return () => clearTimeout(timer);
-    }, [divisionIds, departmentIds, designationIds, employeeIds, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery, page, payrollStartDay]);
+    }, [divisionIds, departmentIds, designationIds, employeeIds, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery, statusFilter, odTypeFilter, page, payrollStartDay]);
 
     // Reset pagination on filter change
     useEffect(() => {
         setPage(1);
-    }, [divisionIds, departmentIds, designationIds, employeeIds, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery]);
+    }, [divisionIds, departmentIds, designationIds, employeeIds, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery, statusFilter, odTypeFilter]);
 
     const handleExport = async () => {
-        const toastId = toast.loading('Generating On-Duty (OD) PDF report...');
+        const toastId = toast.loading('Generating PDF report...');
         setLoading(true);
-        
-        try {
-            const blob = await api.downloadLeaveODReportPDF({
-                fromDate: effectiveDates.start,
-                toDate: effectiveDates.end,
-                search: searchQuery || undefined,
-                division: divisionIds,
-                department: departmentIds,
-                designation: designationIds,
-                employeeId: employeeIds,
-                includeLeaves: false, // Strictly OD
-                includeODs: true,
-                includeSummary: true
-            });
 
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `OD_Report_${startDate}_to_${endDate}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            a.remove();
-            
-            toast.success('OD PDF Downloaded Successfully!', { id: toastId });
+        try {
+            await downloadLeaveODReportPdf(
+                exportFilters,
+                { includeLeaves: false, includeODs: true, includeSummary: true },
+                `OD_Report_${effectiveDates.start}_to_${effectiveDates.end}.pdf`
+            );
+            toast.success('PDF downloaded successfully!', { id: toastId });
+        } catch (error: unknown) {
+            console.error('PDF export error:', error);
+            const msg = error instanceof Error ? error.message : 'Failed to export PDF';
+            toast.error(msg, { id: toastId });
         } finally {
             setLoading(false);
         }
     };
 
     const handleExportXLSX = async () => {
-        const toastId = toast.loading('Generating On-Duty (OD) Excel report...');
+        const toastId = toast.loading('Generating Excel report...');
         setLoadingXlsx(true);
-        
-        try {
-            const blob = await api.downloadLeaveODReportXLSX({
-                fromDate: effectiveDates.start,
-                toDate: effectiveDates.end,
-                search: searchQuery || undefined,
-                division: divisionIds,
-                department: departmentIds,
-                designation: designationIds,
-                employeeId: employeeIds,
-                includeLeaves: false,
-                includeODs: true,
-                includeSummary: true,
-            });
 
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `OD_Report_${dayjs().format('YYYY-MM-DD')}.xlsx`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            a.remove();
-            
-            toast.success('OD Excel Downloaded Successfully!', { id: toastId });
-        } catch (error: any) {
+        try {
+            await downloadLeaveODReportXlsx(
+                exportFilters,
+                { includeLeaves: false, includeODs: true, includeSummary: true },
+                `OD_Report_${dayjs().format('YYYY-MM-DD')}.xlsx`
+            );
+            toast.success('Excel downloaded successfully!', { id: toastId });
+        } catch (error: unknown) {
             console.error('Export error:', error);
-            toast.error(error.message || 'Failed to generate Excel', { id: toastId });
+            const msg = error instanceof Error ? error.message : 'Failed to generate Excel';
+            toast.error(msg, { id: toastId });
         } finally {
             setLoadingXlsx(false);
         }
@@ -299,7 +308,7 @@ export default function ODReportsTab() {
                         <div>
                             <h3 className="text-sm font-black text-emerald-900 dark:text-emerald-100 uppercase tracking-wider">On-Duty (OD) Report</h3>
                             <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80 mt-1 font-medium">
-                                Generate detailed PDF reports for On-Duty requests. 
+                                Same PDF &amp; Excel export as the OD page — filtered by your selections below.
                             </p>
                         </div>
                     </div>
@@ -464,6 +473,38 @@ export default function ODReportsTab() {
                                 </div>
                             </div>
                         )}
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Status</label>
+                                <select
+                                    value={statusFilter}
+                                    onChange={(e) => setStatusFilter(e.target.value)}
+                                    className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                                >
+                                    {statusOptions.map((opt) => (
+                                        <option key={opt.value || 'all'} value={opt.value}>
+                                            {opt.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">OD Type</label>
+                                <select
+                                    value={odTypeFilter}
+                                    onChange={(e) => setOdTypeFilter(e.target.value)}
+                                    className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                                >
+                                    <option value="">All Types</option>
+                                    {odTypes.map((t) => (
+                                        <option key={t.code} value={t.code}>
+                                            {t.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
 
                         <div className="space-y-1.5">
                             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Quick Search</label>

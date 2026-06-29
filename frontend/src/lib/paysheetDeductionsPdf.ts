@@ -28,7 +28,7 @@ interface DeductionsReportParams {
     format?: DeductionsExportFormat;
 }
 
-interface EmployeeDeductionRow {
+export interface EmployeeDeductionRow {
     ecNo: string;
     name: string;
     designation: string;
@@ -37,6 +37,13 @@ interface EmployeeDeductionRow {
     group: string;
     deductions: Record<string, number>;
     total: number;
+}
+
+export interface DeductionsReportPreview {
+    deductionColumnHeaders: string[];
+    employees: EmployeeDeductionRow[];
+    columnTotals: Record<string, number>;
+    grandTotal: number;
 }
 
 interface DivisionDepartmentGroup {
@@ -933,6 +940,38 @@ export async function generateDeductionsReportPdf(
         fileName ??
         pdfAscii(`Deductions_Report_${kindSlug}_${params.month}_${params.year}${formatSlug}_${Date.now()}.pdf`);
     doc.save(saveName);
+}
+
+export async function prepareDeductionsReportPreview(
+    rows: Record<string, unknown>[],
+    headers: string[],
+    outputColumns?: PayrollOutputColumn[]
+): Promise<DeductionsReportPreview> {
+    const cols = outputColumns ?? (await loadOutputColumns());
+    const deductionColumns = identifyDeductionColumns(headers, cols);
+
+    if (deductionColumns.length === 0) {
+        return { deductionColumnHeaders: [], employees: [], columnTotals: {}, grandTotal: 0 };
+    }
+
+    const employees = rows.map((row) => extractEmployeeDeductionData(row, deductionColumns, headers));
+    const columnTotals: Record<string, number> = {};
+
+    for (const col of deductionColumns) {
+        columnTotals[col.header] = employees.reduce(
+            (sum, emp) => sum + (emp.deductions[col.header] || 0),
+            0
+        );
+    }
+
+    const grandTotal = employees.reduce((sum, emp) => sum + emp.total, 0);
+
+    return {
+        deductionColumnHeaders: deductionColumns.map((c) => c.header),
+        employees,
+        columnTotals,
+        grandTotal,
+    };
 }
 
 async function loadOutputColumns(): Promise<PayrollOutputColumn[] | undefined> {
