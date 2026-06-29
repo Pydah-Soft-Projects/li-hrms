@@ -6,17 +6,23 @@ import {
   halfDayLabel,
   type ApprovedRecordsPayload,
 } from '@/lib/leaveApplyApprovedRecords';
+import { getHoursOdAttendanceSuggestion } from '@/lib/hoursOdAttendanceSuggestion';
 
 type Props = {
   info: ApprovedRecordsPayload | null | undefined;
   applyType: 'leave' | 'od';
   isHalfDay: boolean;
   halfDayType: 'first_half' | 'second_half' | null;
+  odType_extended?: 'full_day' | 'half_day' | 'hours' | null;
+  odStartTime?: string;
+  odEndTime?: string;
   className?: string;
   /** Apply recommended Half day + half selection in the parent form */
   onApplyHalfDaySuggestion?: (half: 'first_half' | 'second_half') => void;
   /** Scroll/focus the half-day controls in the apply form */
   onFocusHalfDayControls?: () => void;
+  /** Fill hour-based OD window from a suggested gap */
+  onApplyHoursOdSuggestion?: (start: string, end: string) => void;
 };
 
 const variantStyles = {
@@ -126,12 +132,31 @@ export default function LeaveApplyDateCheckBanner({
   applyType,
   isHalfDay,
   halfDayType,
+  odType_extended,
+  odStartTime,
+  odEndTime,
   className = '',
   onApplyHalfDaySuggestion,
   onFocusHalfDayControls,
+  onApplyHoursOdSuggestion,
 }: Props) {
-  const state = getApplyDateCheckBannerState(info, { applyType, isHalfDay, halfDayType });
+  const state = getApplyDateCheckBannerState(info, {
+    applyType,
+    isHalfDay,
+    halfDayType,
+    odType_extended,
+    odStartTime,
+    odEndTime,
+  });
   if (!state) return null;
+
+  const hoursGapSuggestion =
+    applyType === 'od' &&
+    odType_extended === 'hours' &&
+    odStartTime &&
+    odEndTime
+      ? getHoursOdAttendanceSuggestion(info?.attendanceInfo, odStartTime, odEndTime)
+      : null;
 
   const s = variantStyles[state.variant];
   const Icon = s.Icon;
@@ -218,6 +243,23 @@ export default function LeaveApplyDateCheckBanner({
                   Half day and {halfDayLabel(action.recommendHalf)} are already selected.
                 </p>
               )}
+            </div>
+          )}
+
+          {hoursGapSuggestion?.suggestWindow && onApplyHoursOdSuggestion && (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() =>
+                  onApplyHoursOdSuggestion(
+                    hoursGapSuggestion.suggestWindow!.odStartTime,
+                    hoursGapSuggestion.suggestWindow!.odEndTime
+                  )
+                }
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold shadow-sm transition-colors ${s.action}`}
+              >
+                Use suggested gap: {hoursGapSuggestion.suggestWindow.label}
+              </button>
             </div>
           )}
 

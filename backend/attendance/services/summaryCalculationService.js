@@ -2061,6 +2061,123 @@ async function deleteAllMonthlySummaries(options = {}) {
   return { deletedCount: result.deletedCount };
 }
 
+const cycleKeyFromParts = (year, month) => `${year}-${Number(month)}`;
+
+async function getCurrentAndPreviousPayCycles() {
+  const { payrollCycle: currentCycle } = await dateCycleService.getPeriodInfo(new Date());
+  const dayBeforeCurrentStart = new Date(currentCycle.startDate);
+  dayBeforeCurrentStart.setDate(dayBeforeCurrentStart.getDate() - 1);
+  const { payrollCycle: previousCycle } = await dateCycleService.getPeriodInfo(dayBeforeCurrentStart);
+  return { currentCycle, previousCycle };
+}
+
+async function employeeHasSummaryForCycle(employeeId, cycle) {
+  const monthStr = `${cycle.year}-${String(cycle.month).padStart(2, '0')}`;
+  const doc = await MonthlyAttendanceSummary.findOne({ employeeId, month: monthStr }).select('_id').lean();
+  return Boolean(doc);
+}
+
+async function hasWorkedAttendanceInPeriod(empNoNorm, startDateStr, endDateStr) {
+  if (!startDateStr || !endDateStr) return false;
+  const count = await AttendanceDaily.countDocuments({
+    employeeNumber: empNoNorm,
+    date: { $gte: startDateStr, $lte: endDateStr },
+    status: { $in: ['PRESENT', 'PARTIAL', 'HALF_DAY'] },
+  });
+  return count > 0;
+}
+
+/**
+ * After resignation LWD is set or cleared on the employee:
+ * 1) Always recalc the pay period that contains LWD.
+ * 2) Recalc present + previous pay periods when this employee already has summaries there.
+ * 3) When LWD is set: for later pay periods — delete summary if no worked attendance; else recalc.
+ *    (Present/previous are never deleted here; they are only recalculated in step 2.)
+ *
+ * @param {string|Object} employeeId
+ * @param {string} emp_no
+ * @param {Date|string} leftDate - LWD anchor (new LWD on approval, old LWD when cleared on reopen)
+ * @param {{ mode?: 'set'|'clear' }} [options] - 'set' on final approval; 'clear' when employee leftDate removed after LWD edit
+ */
+async function recalculateOnResignationLeftDate(employeeId, emp_no, leftDate, options = {}) {
+  try {
+    const mode = options.mode === 'clear' ? 'clear' : 'set';
+    if (!employeeId || !emp_no || !leftDate) return;
+
+    const leftDateObj = leftDate instanceof Date ? leftDate : new Date(leftDate);
+    if (Number.isNaN(leftDateObj.getTime())) return;
+
+    const empNoNorm = String(emp_no).trim().toUpperCase();
+    const { payrollCycle: lwdCycle } = await dateCycleService.getPeriodInfo(leftDateObj);
+    const { currentCycle, previousCycle } = await getCurrentAndPreviousPayCycles();
+    const lwdEndStr = extractISTComponents(lwdCycle.endDate).dateStr;
+
+    const toRecalc = new Map();
+
+    const queueRecalc = (cycle) => {
+      const key = cycleKeyFromParts(cycle.year, cycle.month);
+      if (!toRecalc.has(key)) {
+        toRecalc.set(key, { year: cycle.year, month: cycle.month });
+      }
+    };
+
+    // 1) Pay period containing LWD — always recalc (leftDate boundary applies here).
+    queueRecalc(lwdCycle);
+
+    // 2) Present + previous — recalc only when a summary row already exists.
+    for (const cycle of [currentCycle, previousCycle]) {
+      if (await employeeHasSummaryForCycle(employeeId, cycle)) {
+        queueRecalc(cycle);
+      }
+    }
+
+    const currentKey = cycleKeyFromParts(currentCycle.year, currentCycle.month);
+    const previousKey = cycleKeyFromParts(previousCycle.year, previousCycle.month);
+
+    // 3) Pay periods entirely after LWD period — cleanup or recalc (set mode only).
+    if (mode === 'set') {
+      const summaries = await MonthlyAttendanceSummary.find({ employeeId })
+        .select('month year monthNumber startDate endDate')
+        .lean();
+
+      for (const summary of summaries) {
+        const periodStart = summary.startDate;
+        if (!periodStart || periodStart <= lwdEndStr) continue;
+
+        const summaryKey = cycleKeyFromParts(summary.year, summary.monthNumber);
+        if (summaryKey === currentKey || summaryKey === previousKey) continue;
+        if (toRecalc.has(summaryKey)) continue;
+
+        const periodEnd = summary.endDate;
+        const hasWorked = await hasWorkedAttendanceInPeriod(empNoNorm, periodStart, periodEnd);
+        if (hasWorked) {
+          queueRecalc({ year: summary.year, month: summary.monthNumber });
+        } else {
+          await MonthlyAttendanceSummary.deleteOne({ employeeId, month: summary.month });
+          console.log('[resignation] removed post-LWD monthly summary (no worked attendance)', {
+            emp_no: empNoNorm,
+            month: summary.month,
+          });
+        }
+      }
+    }
+
+    const recalcList = [...toRecalc.values()];
+    console.log('[resignation] monthly summary updates', {
+      emp_no: empNoNorm,
+      leftDate: extractISTComponents(leftDateObj).dateStr,
+      mode,
+      recalcPeriods: recalcList.map((p) => `${p.year}-${String(p.month).padStart(2, '0')}`),
+    });
+
+    for (const { year, month } of recalcList) {
+      await calculateMonthlySummary(employeeId, emp_no, year, month);
+    }
+  } catch (error) {
+    console.error(`[resignation] Error processing monthly summaries for LWD (${emp_no}):`, error);
+  }
+}
+
 module.exports = {
   calculateMonthlySummary,
   calculateAllEmployeesSummary,
@@ -2068,6 +2185,7 @@ module.exports = {
   recalculateOnAttendanceUpdate,
   recalculateOnLeaveApproval,
   recalculateOnODApproval,
+  recalculateOnResignationLeftDate,
   deleteAllMonthlySummaries,
 };
 

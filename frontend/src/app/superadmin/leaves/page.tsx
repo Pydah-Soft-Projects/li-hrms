@@ -41,6 +41,8 @@ import {
   isDayFullyCovered,
   resolveDayHalfCoverage,
 } from '@/lib/leaveApplyApprovedRecords';
+import { getHoursOdAttendanceSuggestion } from '@/lib/hoursOdAttendanceSuggestion';
+import { computeHoursOdCredit, formatMinsAsHm, timeStringsOverlap } from '@/lib/hoursOdOverlap';
 import LeaveApplyDateCheckBanner from '@/components/leave/LeaveApplyDateCheckBanner';
 import {
   calculateLeaveNumberOfDays,
@@ -723,17 +725,65 @@ const normalizeRequestDate = (value: unknown) => {
 };
 
 const findActiveHalfDayConflict = (
-  existingRequests: Array<{ fromDate?: string; toDate?: string; isHalfDay?: boolean; halfDayType?: string | null; status?: string }>,
+  existingRequests: Array<{
+    fromDate?: string;
+    toDate?: string;
+    isHalfDay?: boolean;
+    halfDayType?: string | null;
+    status?: string;
+    odType_extended?: string | null;
+    odStartTime?: string | null;
+    odEndTime?: string | null;
+  }>,
   requested: {
     fromDate: string;
     toDate: string;
     isHalfDay: boolean;
     halfDayType?: string | null;
     requestLabel: 'leave' | 'od';
+    odType_extended?: string | null;
+    odStartTime?: string | null;
+    odEndTime?: string | null;
   }
 ) => {
   const requestedFrom = normalizeRequestDate(requested.fromDate);
   const requestedTo = normalizeRequestDate(requested.toDate || requested.fromDate);
+  const reqIsHours = requested.odType_extended === 'hours';
+
+  if (reqIsHours && requestedFrom) {
+    for (const item of existingRequests) {
+      if (!ACTIVE_REQUEST_STATUSES.has(String(item?.status || ''))) continue;
+      const existingFrom = normalizeRequestDate(item?.fromDate);
+      const existingTo = normalizeRequestDate(item?.toDate || item?.fromDate);
+      if (!existingFrom || requestedFrom < existingFrom || requestedFrom > existingTo) continue;
+
+      const ext = String(item?.odType_extended || '');
+      const isHoursExisting = ext === 'hours';
+      const isHalfExisting = Boolean(item?.isHalfDay || ext === 'half_day');
+      const isFullExisting = !isHoursExisting && !isHalfExisting;
+
+      if (isFullExisting) {
+        return `An active full-day OD conflicts on ${requestedFrom} with hour-based OD.`;
+      }
+      if (
+        isHoursExisting &&
+        item.odStartTime &&
+        item.odEndTime &&
+        requested.odStartTime &&
+        requested.odEndTime &&
+        timeStringsOverlap(
+          requested.odStartTime,
+          requested.odEndTime,
+          item.odStartTime,
+          item.odEndTime
+        )
+      ) {
+        return `An active hour-based OD (${item.odStartTime}–${item.odEndTime}) overlaps your window on ${requestedFrom}.`;
+      }
+    }
+    return null;
+  }
+
   const requestedHalf = requested.isHalfDay ? (requested.halfDayType || 'first_half') : null;
 
   for (const item of existingRequests) {
@@ -1045,6 +1095,12 @@ function LeavesPageContent() {
     hasOD: boolean;
     leaveInfo: any;
     odInfo: any;
+    hoursOdsOnDate?: Array<{
+      id?: string;
+      odStartTime?: string | null;
+      odEndTime?: string | null;
+      durationHours?: number | null;
+    }>;
     attendanceInfo?: {
       hasAttendance: boolean;
       status: string | null;
@@ -1052,6 +1108,10 @@ function LeavesPageContent() {
       secondHalfPresent: boolean;
       fullDayPresent: boolean;
       label: string | null;
+      punchInTime?: string | null;
+      punchOutTime?: string | null;
+      shiftStartTime?: string | null;
+      shiftEndTime?: string | null;
     } | null;
   } | null>(null);
   const [checkingApprovedRecords, setCheckingApprovedRecords] = useState(false);
@@ -1611,7 +1671,11 @@ function LeavesPageContent() {
 
     // Check if there's a full-day approved record that conflicts
     if (approvedRecordsInfo) {
-      if (isSingleDayRequestEarly && isDayFullyCovered(resolveDayHalfCoverage(approvedRecordsInfo))) {
+      if (
+        isSingleDayRequestEarly &&
+        formData.odType_extended !== 'hours' &&
+        isDayFullyCovered(resolveDayHalfCoverage(approvedRecordsInfo))
+      ) {
         toast.error(
           'This date is already fully covered (attendance and approved record). No new application is needed.'
         );
@@ -1620,21 +1684,25 @@ function LeavesPageContent() {
       }
 
       const hasFullDayLeave = approvedRecordsInfo.hasLeave && !approvedRecordsInfo.leaveInfo?.isHalfDay;
-      const hasFullDayOD = approvedRecordsInfo.hasOD && !approvedRecordsInfo.odInfo?.isHalfDay;
+      const hasFullDayOD =
+        approvedRecordsInfo.hasOD &&
+        approvedRecordsInfo.odInfo?.odType_extended !== 'hours' &&
+        !approvedRecordsInfo.odInfo?.isHalfDay;
 
       if (hasFullDayLeave || hasFullDayOD) {
         toast.error('Cannot create request - Employee has an approved full-day record on this date');
+        setLoading(false);
         return;
       }
 
-      // Check if trying to select the same half that's already approved
-      if (formData.isHalfDay) {
+      if (formData.isHalfDay && formData.odType_extended !== 'hours') {
         const approvedHalf = approvedRecordsInfo.hasLeave
           ? approvedRecordsInfo.leaveInfo?.halfDayType
           : approvedRecordsInfo.odInfo?.halfDayType;
 
         if (approvedHalf === formData.halfDayType) {
           toast.error(`Cannot create request - Employee already has ${approvedHalf === 'first_half' ? 'First Half' : 'Second Half'} approved on this date`);
+          setLoading(false);
           return;
         }
       }
@@ -1662,7 +1730,39 @@ function LeavesPageContent() {
             attendanceGuidance.suggestion ||
               `Attendance already exists for this date. Attendance is preferred over ${requestLabel}.`
           );
+          setLoading(false);
           return;
+        }
+      }
+
+      if (
+        isHoursOdRequest &&
+        isSingleDayRequestEarly &&
+        formData.odStartTime &&
+        formData.odEndTime
+      ) {
+        const hoursGuidance = getHoursOdAttendanceSuggestion(
+          approvedRecordsInfo.attendanceInfo,
+          formData.odStartTime,
+          formData.odEndTime
+        );
+        if (hoursGuidance.blocked) {
+          toast.error(hoursGuidance.suggestion || 'Hour-based OD conflicts with attendance punches.');
+          setLoading(false);
+          return;
+        }
+        for (const h of approvedRecordsInfo.hoursOdsOnDate || []) {
+          if (
+            h.odStartTime &&
+            h.odEndTime &&
+            timeStringsOverlap(formData.odStartTime, formData.odEndTime, h.odStartTime, h.odEndTime)
+          ) {
+            toast.error(
+              `Hour-based OD overlaps existing OD (${h.odStartTime}–${h.odEndTime}) on this date.`
+            );
+            setLoading(false);
+            return;
+          }
         }
       }
     }
@@ -1695,6 +1795,9 @@ function LeavesPageContent() {
             isHalfDay: requestedIsHalfDay,
             halfDayType: requestedIsHalfDay ? formData.halfDayType : null,
             requestLabel: applyType,
+            odType_extended: formData.odType_extended || null,
+            odStartTime: formData.odStartTime || null,
+            odEndTime: formData.odEndTime || null,
           }
         );
 
@@ -2328,6 +2431,12 @@ function LeavesPageContent() {
           ? Boolean(formData.isHalfDay)
           : formData.odType_extended === 'half_day' || Boolean(formData.isHalfDay),
       halfDayType: formData.halfDayType || null,
+      odType_extended:
+        applyType === 'od'
+          ? (formData.odType_extended as 'full_day' | 'half_day' | 'hours' | null)
+          : null,
+      odStartTime: applyType === 'od' ? formData.odStartTime || undefined : undefined,
+      odEndTime: applyType === 'od' ? formData.odEndTime || undefined : undefined,
     });
   }, [
     approvedRecordsInfo,
@@ -2336,6 +2445,8 @@ function LeavesPageContent() {
     formData.isHalfDay,
     formData.odType_extended,
     formData.halfDayType,
+    formData.odStartTime,
+    formData.odEndTime,
   ]);
 
   const applyDateBlocked = Boolean(applyDateCheckState?.blocked);
@@ -2367,6 +2478,17 @@ function LeavesPageContent() {
     },
     [applyType]
   );
+
+  const applyHoursOdSuggestion = useCallback((start: string, end: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      odType_extended: 'hours',
+      isHalfDay: false,
+      odStartTime: start,
+      odEndTime: end,
+      toDate: prev.fromDate || prev.toDate,
+    }));
+  }, []);
 
   const focusHalfDayControls = useCallback(() => {
     halfDayControlsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -4279,7 +4401,7 @@ function LeavesPageContent() {
                     </div>
                   </div>
                   {formData.odStartTime && formData.odEndTime && (
-                    <div className="p-3 rounded-lg bg-white dark:bg-slate-800 border border-fuchsia-200 dark:border-fuchsia-700">
+                    <div className="p-3 rounded-lg bg-white dark:bg-slate-800 border border-fuchsia-200 dark:border-fuchsia-700 space-y-2">
                       {(() => {
                         const [startH, startM] = (formData.odStartTime || '00:00').split(':').map(Number);
                         const [endH, endM] = (formData.odEndTime || '00:00').split(':').map(Number);
@@ -4287,21 +4409,64 @@ function LeavesPageContent() {
                         const endMin = endH * 60 + endM;
 
                         if (startMin >= endMin) {
-                          return <p className="text-sm text-red-600 dark:text-red-400">⚠️ End time must be after start time</p>;
+                          return <p className="text-sm text-red-600 dark:text-red-400">End time must be after start time</p>;
                         }
 
                         const durationMin = endMin - startMin;
-                        const hours = Math.floor(durationMin / 60);
-                        const mins = durationMin % 60;
-
                         if (durationMin > 480) {
-                          return <p className="text-sm text-red-600 dark:text-red-400">⚠️ Maximum duration is 8 hours</p>;
+                          return <p className="text-sm text-red-600 dark:text-red-400">Maximum duration is 8 hours</p>;
                         }
 
+                        const credit = computeHoursOdCredit({
+                          odStartTime: formData.odStartTime!,
+                          odEndTime: formData.odEndTime!,
+                          shiftStartTime: approvedRecordsInfo?.attendanceInfo?.shiftStartTime,
+                          shiftEndTime: approvedRecordsInfo?.attendanceInfo?.shiftEndTime,
+                          punchInTime: approvedRecordsInfo?.attendanceInfo?.punchInTime,
+                          punchOutTime: approvedRecordsInfo?.attendanceInfo?.punchOutTime,
+                        });
+
+                        const att = approvedRecordsInfo?.attendanceInfo;
                         return (
-                          <p className="text-sm font-medium text-fuchsia-700 dark:text-fuchsia-300">
-                            ✓ Duration: {hours}h {mins}m
-                          </p>
+                          <>
+                            <p className="text-sm font-medium text-fuchsia-700 dark:text-fuchsia-300">
+                              Requested: {formatMinsAsHm(durationMin)} · Estimated credit:{' '}
+                              {formatMinsAsHm(credit.creditableMinutes)}
+                            </p>
+                            {(att?.shiftStartTime || att?.punchInTime) && (
+                              <p className="text-xs text-slate-600 dark:text-slate-400">
+                                {[
+                                  att?.shiftStartTime && att?.shiftEndTime
+                                    ? `Shift ${att.shiftStartTime}–${att.shiftEndTime}`
+                                    : null,
+                                  att?.punchInTime || att?.punchOutTime
+                                    ? `Punches ${att.punchInTime || '—'}–${att.punchOutTime || '—'}`
+                                    : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              </p>
+                            )}
+                            {credit.fullyCoveredByPunches && (
+                              <p className="text-sm text-red-600 dark:text-red-400">
+                                Fully covered by punches — no gap to credit.
+                              </p>
+                            )}
+                            {credit.suggestedGaps.length > 0 && credit.fullyCoveredByPunches && (
+                              <div className="flex flex-wrap gap-2">
+                                {credit.suggestedGaps.map((gap) => (
+                                  <button
+                                    key={gap.kind}
+                                    type="button"
+                                    onClick={() => applyHoursOdSuggestion(gap.startTime, gap.endTime)}
+                                    className="text-xs font-semibold rounded-lg px-2.5 py-1.5 bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/40 dark:text-fuchsia-200"
+                                  >
+                                    Use {gap.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </>
                         );
                       })()}
                     </div>
@@ -4512,7 +4677,11 @@ function LeavesPageContent() {
 
               {(approvedRecordsInfo?.hasLeave ||
                 approvedRecordsInfo?.hasOD ||
-                approvedRecordsInfo?.attendanceInfo?.hasAttendance) && (
+                approvedRecordsInfo?.attendanceInfo?.hasAttendance ||
+                (applyType === 'od' &&
+                  formData.odType_extended === 'hours' &&
+                  formData.odStartTime &&
+                  formData.odEndTime)) && (
                 <LeaveApplyDateCheckBanner
                   info={approvedRecordsInfo}
                   applyType={applyType}
@@ -4522,8 +4691,16 @@ function LeavesPageContent() {
                       : formData.odType_extended === 'half_day' || Boolean(formData.isHalfDay)
                   }
                   halfDayType={formData.halfDayType || null}
+                  odType_extended={
+                    applyType === 'od'
+                      ? (formData.odType_extended as 'full_day' | 'half_day' | 'hours' | null)
+                      : undefined
+                  }
+                  odStartTime={formData.odStartTime || undefined}
+                  odEndTime={formData.odEndTime || undefined}
                   onApplyHalfDaySuggestion={applyHalfDaySuggestion}
                   onFocusHalfDayControls={focusHalfDayControls}
+                  onApplyHoursOdSuggestion={applyHoursOdSuggestion}
                 />
               )}
 

@@ -633,6 +633,13 @@ exports.approveResignationRequest = async (req, res) => {
         } catch (err) {
           console.error('Failed to log final resignation approval history:', err.message);
         }
+
+        try {
+          const { recalculateOnResignationLeftDate } = require('../../attendance/services/summaryCalculationService');
+          await recalculateOnResignationLeftDate(emp._id, emp.emp_no, emp.leftDate, { mode: 'set' });
+        } catch (recalcErr) {
+          console.error('Failed to recalculate monthly summary after resignation approval:', recalcErr.message);
+        }
       }
 
       return res.status(200).json({
@@ -908,6 +915,15 @@ exports.updateLWD = async (req, res) => {
             emp.leftDate = null;
             emp.leftReason = null;
             await emp.save();
+
+            try {
+              if (oldDate) {
+                const { recalculateOnResignationLeftDate } = require('../../attendance/services/summaryCalculationService');
+                await recalculateOnResignationLeftDate(emp._id, emp.emp_no, oldDate, { mode: 'clear' });
+              }
+            } catch (recalcErr) {
+              console.error('Failed to recalculate monthly summary after LWD change:', recalcErr.message);
+            }
 
             try {
               await EmployeeHistory.create({

@@ -1,5 +1,7 @@
 /** Apply-dialog checks: approved leave/OD + attendance row for a single date. */
 
+import { getHoursOdApplyDateCheckBannerState } from '@/lib/hoursOdAttendanceSuggestion';
+
 export type AttendancePresenceInfo = {
   hasAttendance?: boolean;
   status?: string | null;
@@ -7,13 +9,35 @@ export type AttendancePresenceInfo = {
   secondHalfPresent?: boolean;
   fullDayPresent?: boolean;
   label?: string | null;
+  punchInTime?: string | null;
+  punchOutTime?: string | null;
+  shiftStartTime?: string | null;
+  shiftEndTime?: string | null;
+  expectedHours?: number | null;
+  punchHours?: number | null;
+};
+
+export type HoursOdOnDateInfo = {
+  id?: string;
+  odStartTime?: string | null;
+  odEndTime?: string | null;
+  durationHours?: number | null;
+  status?: string;
 };
 
 export type ApprovedRecordsPayload = {
   hasLeave?: boolean;
   hasOD?: boolean;
   leaveInfo?: { isHalfDay?: boolean; halfDayType?: string | null } | null;
-  odInfo?: { isHalfDay?: boolean; halfDayType?: string | null } | null;
+  odInfo?: {
+    isHalfDay?: boolean;
+    halfDayType?: string | null;
+    odType_extended?: 'full_day' | 'half_day' | 'hours' | null;
+    odStartTime?: string | null;
+    odEndTime?: string | null;
+    durationHours?: number | null;
+  } | null;
+  hoursOdsOnDate?: HoursOdOnDateInfo[];
   attendanceInfo?: AttendancePresenceInfo | null;
 };
 
@@ -25,6 +49,26 @@ export type AttendanceSuggestion = {
   /** Which half to pick in the dropdown */
   recommendHalf?: 'first_half' | 'second_half';
 };
+
+/** Human-readable attendance line from flags (preferred) or backend label. */
+export function formatAttendancePresenceLine(
+  attendanceInfo: AttendancePresenceInfo | null | undefined
+): string | null {
+  if (!attendanceInfo?.hasAttendance) return null;
+  if (
+    attendanceInfo.fullDayPresent ||
+    (attendanceInfo.firstHalfPresent && attendanceInfo.secondHalfPresent)
+  ) {
+    return 'Full-day attendance present';
+  }
+  if (attendanceInfo.firstHalfPresent && !attendanceInfo.secondHalfPresent) {
+    return 'First-half attendance present';
+  }
+  if (attendanceInfo.secondHalfPresent && !attendanceInfo.firstHalfPresent) {
+    return 'Second-half attendance present';
+  }
+  return attendanceInfo.label || 'Attendance row exists';
+}
 
 export function getLeaveAttendanceSuggestion(
   attendanceInfo: AttendancePresenceInfo | null | undefined,
@@ -165,7 +209,9 @@ export function resolveDayHalfCoverage(info: ApprovedRecordsPayload): DayHalfCov
     }
   }
   if (info.hasOD) {
-    if (info.odInfo?.isHalfDay) stampHalf(info.odInfo.halfDayType, 'od');
+    if (info.odInfo?.odType_extended === 'hours') {
+      // Hour-based OD does not occupy a calendar half
+    } else if (info.odInfo?.isHalfDay) stampHalf(info.odInfo.halfDayType, 'od');
     else {
       first = 'od';
       second = 'od';
@@ -213,9 +259,28 @@ export function getApplyDateCheckBannerState(
     applyType: 'leave' | 'od';
     isHalfDay: boolean;
     halfDayType: 'first_half' | 'second_half' | null;
+    odType_extended?: 'full_day' | 'half_day' | 'hours' | null;
+    odStartTime?: string;
+    odEndTime?: string;
   }
 ): ApplyDateCheckBannerState | null {
   if (!info) return null;
+
+  if (
+    options.applyType === 'od' &&
+    options.odType_extended === 'hours' &&
+    options.odStartTime &&
+    options.odEndTime
+  ) {
+    return getHoursOdApplyDateCheckBannerState(info, options.odStartTime, options.odEndTime);
+  }
+
+  if (
+    options.applyType === 'od' &&
+    options.odType_extended === 'hours'
+  ) {
+    return null;
+  }
 
   const hasLeave = Boolean(info.hasLeave);
   const hasOD = Boolean(info.hasOD);
@@ -225,16 +290,18 @@ export function getApplyDateCheckBannerState(
   const coverage = resolveDayHalfCoverage(info);
   const dateFullyCovered = isDayFullyCovered(coverage);
 
-  const attendanceLabel = info.attendanceInfo?.label || null;
+  const attendanceLabel = formatAttendancePresenceLine(info.attendanceInfo);
   const leaveLine = hasLeave
     ? info.leaveInfo?.isHalfDay
       ? `${info.leaveInfo.halfDayType === 'first_half' ? 'First' : 'Second'} half leave (approved)`
       : 'Full day leave (approved)'
     : null;
   const odLine = hasOD
-    ? info.odInfo?.isHalfDay
-      ? `${info.odInfo.halfDayType === 'first_half' ? 'First' : 'Second'} half OD (approved)`
-      : 'Full day OD (approved)'
+    ? info.odInfo?.odType_extended === 'hours'
+      ? `Hour OD ${info.odInfo.odStartTime || ''}–${info.odInfo.odEndTime || ''} (approved)`
+      : info.odInfo?.isHalfDay
+        ? `${info.odInfo.halfDayType === 'first_half' ? 'First' : 'Second'} half OD (approved)`
+        : 'Full day OD (approved)'
     : null;
 
   if (dateFullyCovered) {
@@ -259,7 +326,8 @@ export function getApplyDateCheckBannerState(
   });
 
   const fullDayConflict =
-    (hasLeave && !info.leaveInfo?.isHalfDay) || (hasOD && !info.odInfo?.isHalfDay);
+    (hasLeave && !info.leaveInfo?.isHalfDay) ||
+    (hasOD && !info.odInfo?.isHalfDay && info.odInfo?.odType_extended !== 'hours');
   const halfDayApproved =
     (hasLeave && info.leaveInfo?.isHalfDay) || (hasOD && info.odInfo?.isHalfDay);
   const sameHalfConflict =

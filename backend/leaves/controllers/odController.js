@@ -859,8 +859,22 @@ exports.applyOD = async (req, res) => {
       numberOfDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
     }
 
-    // Validate against Leave conflicts (with half-day support) - Only check APPROVED records for creation
-    const { validateODRequest } = require('../../shared/services/conflictValidationService');
+    const fromStrEarly = extractISTComponents(from).dateStr;
+    const toStrEarly = extractISTComponents(to).dateStr;
+    if (odType_extended === 'hours') {
+      if (fromStrEarly !== toStrEarly) {
+        return res.status(400).json({
+          success: false,
+          error: 'Hour-based OD must be for a single day (from and to date must match).',
+        });
+      }
+    }
+
+    const resolvedOdTypeExtendedEarly =
+      odType_extended || (isHalfDay ? 'half_day' : 'full_day');
+
+    // Validate against Leave/OD conflicts
+    const { validateODRequest, validateHoursOdAttendance } = require('../../shared/services/conflictValidationService');
     const validation = await validateODRequest(
       employee._id,
       employee.emp_no,
@@ -868,7 +882,11 @@ exports.applyOD = async (req, res) => {
       to,
       isHalfDay || false,
       isHalfDay ? halfDayType : null,
-      true // approvedOnly = true for creation
+      true, // approvedOnly = true for creation
+      null,
+      resolvedOdTypeExtendedEarly === 'hours'
+        ? { odType_extended: 'hours', odStartTime, odEndTime }
+        : null
     );
 
     // Block if there are errors (approved conflicts), but allow if only warnings (non-approved conflicts)
@@ -882,8 +900,25 @@ exports.applyOD = async (req, res) => {
       });
     }
 
-    const fromStr = extractISTComponents(from).dateStr;
-    const toStr = extractISTComponents(to).dateStr;
+    if (resolvedOdTypeExtendedEarly === 'hours' && odStartTime && odEndTime) {
+      const hoursAttendanceValidation = await validateHoursOdAttendance(
+        employee.emp_no,
+        fromStrEarly,
+        odStartTime,
+        odEndTime
+      );
+      if (!hoursAttendanceValidation.isValid) {
+        return res.status(400).json({
+          success: false,
+          error: hoursAttendanceValidation.errors[0] || 'Hour-based OD conflicts with attendance',
+          validationErrors: hoursAttendanceValidation.errors,
+          warnings: [...(validation.warnings || []), ...(hoursAttendanceValidation.warnings || [])],
+        });
+      }
+    }
+
+    const fromStr = fromStrEarly;
+    const toStr = toStrEarly;
     const isSingleDayOd = fromStr === toStr;
 
     let resolvedIsHalfDay = Boolean(isHalfDay);
@@ -1856,10 +1891,34 @@ exports.processODAction = async (req, res) => {
         const isFinalAuth = (userRole === od.workflow.finalAuthority);
 
         if (isFinishingChain || isFinalAuth || userRole === 'hr') {
-          const { validateODRequest } = require('../../shared/services/conflictValidationService');
-          const validation = await validateODRequest(od.employeeId, od.emp_no, od.fromDate, od.toDate, od.isHalfDay || false, od.halfDayType || null, false, od._id);
+          const { validateODRequest, validateHoursOdAttendance } = require('../../shared/services/conflictValidationService');
+          const odOpts =
+            String(od.odType_extended || '') === 'hours'
+              ? { odType_extended: 'hours', odStartTime: od.odStartTime, odEndTime: od.odEndTime }
+              : null;
+          const validation = await validateODRequest(
+            od.employeeId,
+            od.emp_no,
+            od.fromDate,
+            od.toDate,
+            od.isHalfDay || false,
+            od.halfDayType || null,
+            false,
+            od._id,
+            odOpts
+          );
           if (!validation.isValid) {
             return res.status(400).json({ success: false, error: validation.errors[0] || 'Conflict with approved records' });
+          }
+          if (odOpts && od.odStartTime && od.odEndTime) {
+            const dateStr = extractISTComponents(od.fromDate).dateStr;
+            const hoursVal = await validateHoursOdAttendance(od.emp_no, dateStr, od.odStartTime, od.odEndTime);
+            if (!hoursVal.isValid) {
+              return res.status(400).json({
+                success: false,
+                error: hoursVal.errors[0] || 'Hour-based OD conflicts with attendance',
+              });
+            }
           }
         }
 

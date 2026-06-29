@@ -15,6 +15,13 @@ const {
   checkDayHalfCoverageConflict,
   eachDateStrInRange,
 } = require('../utils/leaveDayRangeUtils');
+const {
+  timeStringsOverlap,
+  dateToIstTimeStr,
+  computeHoursOdCredit,
+  formatMinsAsHm,
+  timeStrToMins,
+} = require('../utils/hoursOdOverlapUtils');
 
 /**
  * Inclusive calendar overlap in Asia/Kolkata (string compare on YYYY-MM-DD).
@@ -234,6 +241,35 @@ const checkAttendanceExists = async (employeeNumber, date) => {
 };
 
 /**
+ * Set full-day presence flags on apply-dialog attendance info.
+ */
+const setFullDayAttendancePresence = (out, label = 'Full-day attendance present') => {
+  out.firstHalfPresent = true;
+  out.secondHalfPresent = true;
+  out.fullDayPresent = true;
+  out.label = label;
+};
+
+/**
+ * From first shift's segments: which halves are marked present (break-aware).
+ */
+const presenceFromShiftSegments = (shift) => {
+  const result = { first: false, second: false };
+  if (!shift?.shiftSegments || !Array.isArray(shift.shiftSegments) || shift.shiftSegments.length < 2) {
+    return result;
+  }
+  const firstHalf = shift.shiftSegments[0];
+  const secondHalf = shift.shiftSegments[1];
+  if (firstHalf?.segmentName?.toLowerCase() === 'firsthalf' && firstHalf.present === true) {
+    result.first = true;
+  }
+  if (secondHalf?.segmentName?.toLowerCase() === 'secondhalf' && secondHalf.present === true) {
+    result.second = true;
+  }
+  return result;
+};
+
+/**
  * Detect physical attendance half coverage from AttendanceDaily (same basis used in reconciliation).
  * Returns first/second/full coverage hints for apply dialog.
  */
@@ -245,50 +281,67 @@ const getAttendanceCoverageForDate = async (employeeNumber, date) => {
     secondHalfPresent: false,
     fullDayPresent: false,
     label: null,
+    punchInTime: null,
+    punchOutTime: null,
+    shiftStartTime: null,
+    shiftEndTime: null,
+    expectedHours: null,
+    punchHours: null,
   };
   try {
     const attendance = await AttendanceDaily.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
-    }).select('status totalLateInMinutes totalEarlyOutMinutes shifts inTime outTime');
+    }).select('status totalLateInMinutes totalEarlyOutMinutes shifts inTime outTime totalWorkingHours');
     if (!attendance) return out;
 
     out.hasAttendance = true;
     out.status = attendance.status || null;
+
+    const primaryShift =
+      attendance.shifts && attendance.shifts.length > 0 ? attendance.shifts[0] : null;
+    if (primaryShift) {
+      out.shiftStartTime = primaryShift.shiftStartTime || null;
+      out.shiftEndTime = primaryShift.shiftEndTime || null;
+      out.expectedHours = primaryShift.expectedHours ?? null;
+      out.punchHours = primaryShift.punchHours ?? null;
+      out.punchInTime = dateToIstTimeStr(primaryShift.inTime);
+      out.punchOutTime = dateToIstTimeStr(primaryShift.outTime);
+    }
+    if (!out.punchInTime && attendance.inTime) {
+      out.punchInTime = dateToIstTimeStr(attendance.inTime);
+    }
+    if (!out.punchOutTime && attendance.outTime) {
+      out.punchOutTime = dateToIstTimeStr(attendance.outTime);
+    }
+
     const st = String(attendance.status || '').toUpperCase();
     if (st === 'PRESENT') {
-      out.firstHalfPresent = true;
-      out.secondHalfPresent = true;
-      out.fullDayPresent = true;
-      out.label = 'Full-day attendance present';
+      setFullDayAttendancePresence(out);
       return out;
     }
+
     if (st === 'HALF_DAY') {
-      // PRIORITY 1: Check actual shift segments (most accurate, break-aware)
+      // PRIORITY 1: shift segments (most accurate for half-day rows)
       if (attendance.shifts && attendance.shifts.length > 0) {
-        const shift = attendance.shifts[0];
-        if (shift.shiftSegments && Array.isArray(shift.shiftSegments) && shift.shiftSegments.length >= 2) {
-          const firstHalf = shift.shiftSegments[0];
-          const secondHalf = shift.shiftSegments[1];
-          
-          // Check which segment is actually marked as present
-          if (firstHalf.segmentName?.toLowerCase() === 'firsthalf' && firstHalf.present === true) {
-            out.firstHalfPresent = true;
-            out.label = 'First-half attendance present';
-          } else if (secondHalf.segmentName?.toLowerCase() === 'secondhalf' && secondHalf.present === true) {
-            out.secondHalfPresent = true;
-            out.label = 'Second-half attendance present';
-          } else {
-            // Fallback to first half if no segments marked as present
-            out.firstHalfPresent = true;
-            out.label = 'First-half attendance present';
-          }
-          if (out.firstHalfPresent && out.secondHalfPresent) out.fullDayPresent = true;
+        const seg = presenceFromShiftSegments(attendance.shifts[0]);
+        if (seg.first && seg.second) {
+          setFullDayAttendancePresence(out);
+          return out;
+        }
+        if (seg.first) {
+          out.firstHalfPresent = true;
+          out.label = 'First-half attendance present';
+          return out;
+        }
+        if (seg.second) {
+          out.secondHalfPresent = true;
+          out.label = 'Second-half attendance present';
           return out;
         }
       }
 
-      // PRIORITY 2: Fallback to earlyOut vs lateIn heuristic (for backward compatibility)
+      // PRIORITY 2: early-out vs late-in heuristic (backward compatibility)
       const eo = Number(attendance.totalEarlyOutMinutes) || 0;
       const li = Number(attendance.totalLateInMinutes) || 0;
       if (eo > li) {
@@ -301,9 +354,9 @@ const getAttendanceCoverageForDate = async (employeeNumber, date) => {
         out.firstHalfPresent = true;
         out.label = 'First-half attendance present';
       }
-      if (out.firstHalfPresent && out.secondHalfPresent) out.fullDayPresent = true;
       return out;
     }
+
     if (st === 'PARTIAL') {
       const { attendanceHalfPresenceFlags } = require('../../attendance/utils/attendanceHalfPresence');
       const { getProcessingModeForEmployeeNumber } = require('../../attendance/services/processingModeResolutionService');
@@ -327,6 +380,7 @@ const getAttendanceCoverageForDate = async (employeeNumber, date) => {
       out.label = 'Partial attendance present';
       return out;
     }
+
     out.label = st ? `${st} attendance row exists` : 'Attendance row exists';
     return out;
   } catch (error) {
@@ -572,9 +626,86 @@ const validateLeaveRequest = async (
  * @param {Boolean} approvedOnly - If true, only check approved records (for creation). If false, check all (for approval)
  * @returns {Object} - Validation result
  */
-const validateODRequest = async (employeeId, employeeNumber, fromDate, toDate, isHalfDay = false, halfDayType = null, approvedOnly = true, excludeId = null) => {
+const isFullDayOdRecord = (od) => {
+  if (!od) return false;
+  if (String(od.odType_extended || '') === 'hours') return false;
+  if (od.isHalfDay || String(od.odType_extended || '') === 'half_day') return false;
+  const nd = Number(od.numberOfDays);
+  return !(Number.isFinite(nd) && nd > 0 && nd < 1 - 1e-6);
+};
+
+const isHalfDayOdRecord = (od) => {
+  if (!od) return false;
+  if (String(od.odType_extended || '') === 'hours') return false;
+  return Boolean(od.isHalfDay || String(od.odType_extended || '') === 'half_day');
+};
+
+const isHoursOdRecord = (od) => String(od?.odType_extended || '') === 'hours';
+
+/**
+ * Validate hour-based OD against attendance punches + shift (gap credit only).
+ */
+const validateHoursOdAttendance = async (employeeNumber, dateStr, odStartTime, odEndTime) => {
   const errors = [];
   const warnings = [];
+  const attendanceInfo = await getAttendanceCoverageForDate(employeeNumber, dateStr);
+  const credit = computeHoursOdCredit({
+    odStartTime,
+    odEndTime,
+    shiftStartTime: attendanceInfo.shiftStartTime,
+    shiftEndTime: attendanceInfo.shiftEndTime,
+    punchInTime: attendanceInfo.punchInTime,
+    punchOutTime: attendanceInfo.punchOutTime,
+  });
+
+  if (credit.fullyCoveredByPunches) {
+    errors.push(
+      `OD window ${odStartTime}–${odEndTime} is fully covered by attendance punches (${attendanceInfo.punchInTime}–${attendanceInfo.punchOutTime}). No gap to credit — adjust times or correct attendance first.`
+    );
+  } else if (credit.partialPunchOverlap) {
+    warnings.push(
+      `Only about ${formatMinsAsHm(credit.creditableMinutes)} of ${formatMinsAsHm(credit.requestedMinutes)} will count after punch overlap.`
+    );
+  }
+
+  if (credit.odOutsideShift && attendanceInfo.shiftStartTime && attendanceInfo.shiftEndTime) {
+    warnings.push(
+      `OD is outside assigned shift (${attendanceInfo.shiftStartTime}–${attendanceInfo.shiftEndTime}) and may not improve attendance.`
+    );
+  }
+
+  if (!attendanceInfo.punchInTime && !attendanceInfo.punchOutTime) {
+    warnings.push(
+      'No punches recorded yet. Hour OD will credit when attendance is processed if it falls within the shift window.'
+    );
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    warnings,
+    credit,
+    attendanceInfo,
+  };
+};
+
+const validateODRequest = async (
+  employeeId,
+  employeeNumber,
+  fromDate,
+  toDate,
+  isHalfDay = false,
+  halfDayType = null,
+  approvedOnly = true,
+  excludeId = null,
+  odOptions = null
+) => {
+  const errors = [];
+  const warnings = [];
+
+  const reqIsHours = String(odOptions?.odType_extended || '') === 'hours';
+  const reqOdStart = odOptions?.odStartTime || null;
+  const reqOdEnd = odOptions?.odEndTime || null;
 
   const { start, end } = getIstQueryBounds(fromDate, toDate);
 
@@ -598,28 +729,45 @@ const validateODRequest = async (employeeId, employeeNumber, fromDate, toDate, i
 
   for (const leave of leaves) {
     if (!istYmdRangeOverlaps(fromDate, toDate, leave.fromDate, leave.toDate)) continue;
+    const statusText = leave.status === 'approved' ? 'approved' : 'pending';
+
+    if (reqIsHours && isSameDay(fromDate, toDate)) {
+      if (isSameDay(fromDate, leave.fromDate) && isSameDay(fromDate, leave.toDate) && !leave.isHalfDay) {
+        conflictingLeaves.push(leave);
+        errors.push(
+          `Employee has a ${statusText} full-day leave on ${formatIstErrorDate(leave.fromDate)} that conflicts with hour-based OD.`
+        );
+      } else if (leave.isHalfDay) {
+        warnings.push(
+          `Employee has a ${statusText} half-day leave on ${formatIstErrorDate(leave.fromDate)}. Confirm OD times do not overlap the leave half.`
+        );
+      } else if (!isSameDay(fromDate, leave.fromDate) || !isSameDay(fromDate, leave.toDate)) {
+        conflictingLeaves.push(leave);
+        errors.push(
+          `Employee has a ${statusText} leave from ${formatIstErrorDate(leave.fromDate)} to ${formatIstErrorDate(leave.toDate)} that conflicts with this OD period`
+        );
+      }
+      continue;
+    }
+
     if (isSameDay(fromDate, toDate) && isHalfDay) {
       if (isSameDay(fromDate, leave.fromDate) && isSameDay(fromDate, leave.toDate)) {
         if (checkHalfDayConflict(isHalfDay, halfDayType, leave.isHalfDay, leave.halfDayType)) {
           conflictingLeaves.push(leave);
-          const statusText = leave.status === 'approved' ? 'approved' : 'pending';
           errors.push(`Employee has a ${statusText} leave on ${formatIstErrorDate(leave.fromDate)} that conflicts with this OD (${isHalfDay ? (halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'} vs ${leave.isHalfDay ? (leave.halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'})`);
         }
       } else {
         conflictingLeaves.push(leave);
-        const statusText = leave.status === 'approved' ? 'approved' : 'pending';
         errors.push(`Employee has a ${statusText} leave from ${formatIstErrorDate(leave.fromDate)} to ${formatIstErrorDate(leave.toDate)} that conflicts with this OD period`);
       }
     } else {
       if (isSameDay(fromDate, toDate) && !isHalfDay) {
         if (isSameDay(fromDate, leave.fromDate) && isSameDay(fromDate, leave.toDate)) {
           conflictingLeaves.push(leave);
-          const statusText = leave.status === 'approved' ? 'approved' : 'pending';
           errors.push(`Employee has a ${statusText} leave on ${formatIstErrorDate(leave.fromDate)} that conflicts with this full-day OD`);
         }
       } else {
         conflictingLeaves.push(leave);
-        const statusText = leave.status === 'approved' ? 'approved' : 'pending';
         errors.push(`Employee has a ${statusText} leave from ${formatIstErrorDate(leave.fromDate)} to ${formatIstErrorDate(leave.toDate)} that conflicts with this OD period`);
       }
     }
@@ -640,19 +788,55 @@ const validateODRequest = async (employeeId, employeeNumber, fromDate, toDate, i
 
   const conflictingODs = [];
 
+  let existingHoursOdMinutes = 0;
+
   for (const od of ods) {
     if (excludeId && String(od._id) === String(excludeId)) continue;
     if (!istYmdRangeOverlaps(fromDate, toDate, od.fromDate, od.toDate)) continue;
+    const statusText = od.status === 'approved' ? 'approved' : 'pending';
+
+    if (reqIsHours && isSameDay(fromDate, toDate) && isSameDay(fromDate, od.fromDate) && isSameDay(fromDate, od.toDate)) {
+      if (isFullDayOdRecord(od)) {
+        conflictingODs.push(od);
+        errors.push(`Employee has a ${statusText} full-day OD on ${formatIstErrorDate(od.fromDate)} that conflicts with hour-based OD.`);
+        continue;
+      }
+      if (isHalfDayOdRecord(od)) {
+        warnings.push(
+          `Employee has a ${statusText} half-day OD on ${formatIstErrorDate(od.fromDate)}. Hour OD can still apply for a different time window.`
+        );
+        continue;
+      }
+      if (isHoursOdRecord(od) && od.odStartTime && od.odEndTime && reqOdStart && reqOdEnd) {
+        if (timeStringsOverlap(reqOdStart, reqOdEnd, od.odStartTime, od.odEndTime)) {
+          conflictingODs.push(od);
+          errors.push(
+            `Employee has a ${statusText} hour-based OD (${od.odStartTime}–${od.odEndTime}) that overlaps this window (${reqOdStart}–${reqOdEnd}).`
+          );
+        } else {
+          const existMins = timeStrToMins(od.odEndTime) - timeStrToMins(od.odStartTime);
+          if (existMins > 0) existingHoursOdMinutes += existMins;
+        }
+        continue;
+      }
+      continue;
+    }
+
     if (isSameDay(fromDate, toDate) && od.isHalfDay && isHalfDay) {
       if (checkHalfDayConflict(isHalfDay, halfDayType, od.isHalfDay, od.halfDayType)) {
         conflictingODs.push(od);
-        const statusText = od.status === 'approved' ? 'approved' : 'pending';
         errors.push(`Employee has a ${statusText} OD on ${formatIstErrorDate(od.fromDate)} that conflicts with this request (${isHalfDay ? (halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'} vs ${od.isHalfDay ? (od.halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'})`);
       }
     } else {
       conflictingODs.push(od);
-      const statusText = od.status === 'approved' ? 'approved' : 'pending';
       errors.push(`Employee has a ${statusText} OD from ${formatIstErrorDate(od.fromDate)} to ${formatIstErrorDate(od.toDate)} that conflicts with this request period`);
+    }
+  }
+
+  if (reqIsHours && reqOdStart && reqOdEnd) {
+    const reqMins = timeStrToMins(reqOdEnd) - timeStrToMins(reqOdStart);
+    if (reqMins > 0 && existingHoursOdMinutes + reqMins > 8 * 60) {
+      errors.push('Total hour-based OD on this date would exceed 8 hours. Use half day or full day OD instead.');
     }
   }
 
@@ -715,17 +899,30 @@ const getApprovedRecordsForDate = async (employeeId, employeeNumber, date) => {
     });
 
     let odInfo = null;
+    const hoursOdsOnDate = [];
     for (const od of ods) {
-      if (isDateInRange(checkDateStr, od.fromDate, od.toDate)) {
-        odInfo = {
-          id: od._id,
-          status: od.status,
-          isHalfDay: od.isHalfDay,
-          halfDayType: od.halfDayType,
-          fromDate: od.fromDate,
-          toDate: od.toDate,
-        };
-        break;
+      if (!isDateInRange(checkDateStr, od.fromDate, od.toDate)) continue;
+      const entry = {
+        id: od._id,
+        status: od.status,
+        isHalfDay: od.isHalfDay,
+        halfDayType: od.halfDayType,
+        odType_extended: od.odType_extended || null,
+        odStartTime: od.odStartTime || null,
+        odEndTime: od.odEndTime || null,
+        durationHours: od.durationHours ?? null,
+        fromDate: od.fromDate,
+        toDate: od.toDate,
+      };
+      if (isHoursOdRecord(od)) {
+        hoursOdsOnDate.push(entry);
+      }
+      if (!odInfo) {
+        odInfo = entry;
+      } else if (isFullDayOdRecord(od)) {
+        odInfo = entry;
+      } else if (isHalfDayOdRecord(od) && !isFullDayOdRecord(odInfo) && !isHalfDayOdRecord(odInfo)) {
+        odInfo = entry;
       }
     }
 
@@ -735,6 +932,7 @@ const getApprovedRecordsForDate = async (employeeId, employeeNumber, date) => {
       hasOD: odInfo !== null,
       leaveInfo: leaveInfo,
       odInfo: odInfo,
+      hoursOdsOnDate,
       attendanceInfo,
     };
   } catch (error) {
@@ -758,6 +956,8 @@ module.exports = {
   validatePermissionRequest,
   validateLeaveRequest,
   validateODRequest,
+  validateHoursOdAttendance,
+  getAttendanceCoverageForDate,
   getApprovedRecordsForDate,
 };
 
