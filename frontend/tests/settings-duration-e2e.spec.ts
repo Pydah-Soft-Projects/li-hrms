@@ -37,33 +37,37 @@ test.describe('Settings duration inputs E2E', () => {
     await loginAsAdmin(page);
   });
 
-  test('global OT settings use 24h text duration inputs for slabs', async ({ page }) => {
+  test('global OT settings use 24h duration selectors for slabs', async ({ page }) => {
     await page.goto('/superadmin/settings?tab=ot');
     await expect(page.getByText('Ranges (HH:MM)')).toBeVisible({ timeout: 20000 });
 
     await page.getByRole('button', { name: '+ Add range' }).click();
 
-    const durationInputs = page.locator('input[title*="24-hour"]');
-    await expect(durationInputs.first()).toBeVisible();
-    await expect(durationInputs.first()).toHaveAttribute('type', 'text');
+    const hourSelects = page.locator('[data-duration-time="hours"]');
+    const minuteSelects = page.locator('[data-duration-time="minutes"]');
+    await expect(hourSelects.first()).toBeVisible();
 
-    const first = durationInputs.nth(0);
-    const second = durationInputs.nth(1);
-    const third = durationInputs.nth(2);
+    const firstHours = hourSelects.nth(0);
+    const firstMinutes = minuteSelects.nth(0);
+    const secondHours = hourSelects.nth(1);
+    const secondMinutes = minuteSelects.nth(1);
+    const thirdHours = hourSelects.nth(2);
+    const thirdMinutes = minuteSelects.nth(2);
 
-    await first.fill('00:30');
-    await first.blur();
-    await second.fill('01:00');
-    await second.blur();
-    await third.fill('01:00');
-    await third.blur();
+    await firstHours.selectOption('00');
+    await firstMinutes.selectOption('30');
+    await secondHours.selectOption('01');
+    await secondMinutes.selectOption('00');
+    await thirdHours.selectOption('01');
+    await thirdMinutes.selectOption('00');
 
-    await expect(first).toHaveValue('00:30');
-    await expect(second).toHaveValue('01:00');
-    await expect(third).toHaveValue('01:00');
+    await expect(firstHours).toHaveValue('00');
+    await expect(firstMinutes).toHaveValue('30');
+    await expect(secondHours).toHaveValue('01');
+    await expect(secondMinutes).toHaveValue('00');
   });
 
-  test('global permissions auto-edge uses 24h duration fields', async ({ page }) => {
+  test('global permissions auto-edge uses 24h duration selectors', async ({ page }) => {
     await page.goto('/superadmin/settings?tab=permissions');
     await expect(page.getByText('Auto Late-In / Early-Out Permissions')).toBeVisible({ timeout: 20000 });
 
@@ -71,21 +75,19 @@ test.describe('Settings duration inputs E2E', () => {
     await expect(addButtons.first()).toBeVisible();
     await addButtons.first().click();
 
-    const durationInputs = page.locator('input[title*="24-hour"]');
-    await expect(durationInputs.first()).toBeVisible();
+    const hourSelects = page.locator('[data-duration-time="hours"]');
+    await expect(hourSelects.first()).toBeVisible();
 
-    const minShift = durationInputs.nth(0);
-    await minShift.fill('08:00');
-    await minShift.blur();
-    await expect(minShift).toHaveValue('08:00');
+    await hourSelects.nth(0).selectOption('08');
+    await page.locator('[data-duration-time="minutes"]').nth(0).selectOption('00');
+    await expect(hourSelects.nth(0)).toHaveValue('08');
 
-    const allowed = durationInputs.nth(3);
-    await allowed.fill('03:00');
-    await allowed.blur();
-    await expect(allowed).toHaveValue('03:00');
+    await hourSelects.nth(3).selectOption('03');
+    await page.locator('[data-duration-time="minutes"]').nth(3).selectOption('00');
+    await expect(hourSelects.nth(3)).toHaveValue('03');
   });
 
-  test('department OT settings use 24h text inputs', async ({ page }) => {
+  test('department OT settings use 24h duration selectors', async ({ page }) => {
     await page.goto('/superadmin/settings/departmental');
     await expect(page.getByText('Department settings', { exact: false }).or(page.getByRole('heading'))).toBeVisible({
       timeout: 20000,
@@ -102,14 +104,13 @@ test.describe('Settings duration inputs E2E', () => {
     await page.getByRole('button', { name: /OT|Overtime/i }).first().click();
     await expect(page.getByText('Ranges (HH:MM)')).toBeVisible({ timeout: 15000 });
 
-    const durationInputs = page.locator('input[title*="24-hour"]');
-    if ((await durationInputs.count()) === 0) {
+    const hourSelects = page.locator('[data-duration-time="hours"]');
+    if ((await hourSelects.count()) === 0) {
       await page.getByRole('button', { name: '+ Add range' }).click();
     }
-    const first = durationInputs.first();
-    await expect(first).toHaveAttribute('type', 'text');
-    await first.fill('00:45');
-    await first.blur();
-    await expect(first).toHaveValue('00:45');
+    const firstHours = hourSelects.first();
+    await firstHours.selectOption('00');
+    await page.locator('[data-duration-time="minutes"]').first().selectOption('45');
+    await expect(firstHours).toHaveValue('00');
   });
 });
