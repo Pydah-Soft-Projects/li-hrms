@@ -2177,6 +2177,29 @@ export const api = {
       deductFromSalary?: boolean | null;
       deductionAmount?: number | null;
       deductionRules?: Record<string, unknown>;
+      autoEdge?: {
+        isEnabled?: boolean | null;
+        applyFor?: 'late_in' | 'early_out' | 'both' | null;
+        useSameRulesForBoth?: boolean | null;
+        lateInRules?: {
+          shiftDurationRanges?: Array<{
+            minShiftHours: number;
+            maxShiftHours: number;
+            allowedMinutes: number;
+            minimumMinutes?: number;
+            description?: string;
+          }>;
+        };
+        earlyOutRules?: {
+          shiftDurationRanges?: Array<{
+            minShiftHours: number;
+            maxShiftHours: number;
+            allowedMinutes: number;
+            minimumMinutes?: number;
+            description?: string;
+          }>;
+        };
+      } | null;
     };
     ot?: Record<string, unknown>;
     attendance?: Record<string, unknown>;

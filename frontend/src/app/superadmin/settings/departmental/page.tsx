@@ -29,6 +29,7 @@ import {
 import WorkflowManager, { WorkflowData } from '@/components/settings/shared/WorkflowManager';
 import { IncludeMissingPayrollComponentsCard } from '@/components/settings/shared/IncludeMissingPayrollComponentsCard';
 import OTSettingsDepartment from '@/components/settings/OTSettingsDepartment';
+import AutoEdgeSettingsDepartment from '@/components/settings/AutoEdgeSettingsDepartment';
 import { SettingsAccentShell, SettingsContentPanel } from '@/components/settings/SettingsPageShell';
 import { ledgerPageHeaderStyle } from '@/lib/ledgerUi';
 import {
@@ -1614,6 +1615,25 @@ export default function DepartmentalSettingsPage() {
               </div>
             </div>
           </div>
+                  )}
+
+                  {activeDeptTab === 'permissions' && scopeReady && (
+                    <>
+                      {divisionWideDefaultsMode && selectedDivisionId ? (
+                        <AutoEdgeSettingsDepartment
+                          variant="divisionWide"
+                          departmentId=""
+                          divisionId={selectedDivisionId}
+                          onSaved={() => void loadDivisionWideSettings(selectedDivisionId)}
+                        />
+                      ) : selectedDepartmentId ? (
+                        <AutoEdgeSettingsDepartment
+                          departmentId={selectedDepartmentId}
+                          divisionId={selectedDivisionId || undefined}
+                          onSaved={() => void loadDepartmentSettings(selectedDepartmentId)}
+                        />
+                      ) : null}
+                    </>
                   )}
 
                   {activeDeptTab === 'ot' && scopeReady && (

@@ -13,6 +13,7 @@ import {
 import { settingsFieldHelpClass, settingsInputClass, settingsInputStyle, settingsLedgerBorder } from '@/lib/settingsUi';
 import WorkflowManager, { WorkflowData } from './shared/WorkflowManager';
 import { minutesToHHMM, hhmmToMinutes, hoursToHHMM, hhmmToHours } from './otTimeHelpers';
+import { DurationTimeInput } from './DurationTimeInput';
 
 type OtSettingsState = {
     payPerHour: number;
@@ -223,15 +224,12 @@ const OTSettings = () => {
                                     </select>
                                     <div className="flex items-center justify-between gap-2">
                                         <span className="text-[10px] text-gray-500">Threshold (HH:MM)</span>
-                                        <input
-                                            type="time"
-                                            lang="en-GB"
-                                            step={60}
+                                        <DurationTimeInput
                                             value={hoursToHHMM(otSettings.thresholdHours)}
-                                            onChange={(e) =>
+                                            onChange={(v) =>
                                                 setOTSettings({
                                                     ...otSettings,
-                                                    thresholdHours: hhmmToHours(e.target.value),
+                                                    thresholdHours: v ? hhmmToHours(v) : null,
                                                 })
                                             }
                                             className={`${inputCls} w-28 text-xs text-right`}
@@ -351,42 +349,33 @@ const OTSettings = () => {
                                         </div>
                                         {otSettings.otHourRanges.map((r, idx) => (
                                             <div key={idx} className="grid grid-cols-9 gap-2 items-center rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-slate-900/30 p-2">
-                                                <input
-                                                    type="time"
-                                                    lang="en-GB"
-                                                    step={60}
+                                                <DurationTimeInput
                                                     value={minutesToHHMM(r.minMinutes)}
-                                                    onChange={(e) => {
+                                                    onChange={(v) => {
                                                         const next = [...otSettings.otHourRanges];
-                                                        next[idx] = { ...next[idx], minMinutes: hhmmToMinutes(e.target.value) };
+                                                        next[idx] = { ...next[idx], minMinutes: hhmmToMinutes(v) };
                                                         setOTSettings({ ...otSettings, otHourRanges: next });
                                                     }}
                                                     className={`${inputCls} col-span-2 text-xs`}
                                                     style={inputStyle}
                                                 />
                                                 <span className="text-[10px] text-gray-500 text-center">to</span>
-                                                <input
-                                                    type="time"
-                                                    lang="en-GB"
-                                                    step={60}
+                                                <DurationTimeInput
                                                     value={minutesToHHMM(r.maxMinutes)}
-                                                    onChange={(e) => {
+                                                    onChange={(v) => {
                                                         const next = [...otSettings.otHourRanges];
-                                                        next[idx] = { ...next[idx], maxMinutes: hhmmToMinutes(e.target.value) };
+                                                        next[idx] = { ...next[idx], maxMinutes: hhmmToMinutes(v) };
                                                         setOTSettings({ ...otSettings, otHourRanges: next });
                                                     }}
                                                     className={`${inputCls} col-span-2 text-xs`}
                                                     style={inputStyle}
                                                 />
                                                 <span className="text-[10px] text-gray-500 text-center">consider</span>
-                                                <input
-                                                    type="time"
-                                                    lang="en-GB"
-                                                    step={60}
+                                                <DurationTimeInput
                                                     value={minutesToHHMM(r.creditedMinutes)}
-                                                    onChange={(e) => {
+                                                    onChange={(v) => {
                                                         const next = [...otSettings.otHourRanges];
-                                                        next[idx] = { ...next[idx], creditedMinutes: hhmmToMinutes(e.target.value) };
+                                                        next[idx] = { ...next[idx], creditedMinutes: hhmmToMinutes(v) };
                                                         setOTSettings({ ...otSettings, otHourRanges: next });
                                                     }}
                                                     className={`${inputCls} col-span-2 text-xs`}
@@ -453,12 +442,9 @@ const OTSettings = () => {
                 <div className="flex flex-wrap items-end gap-3">
                     <div>
                         <label className="mb-1 block text-[10px] font-semibold uppercase text-stone-500">Raw OT (HH:MM)</label>
-                        <input
-                            type="time"
-                            lang="en-GB"
-                            step={60}
+                        <DurationTimeInput
                             value={simRawHours}
-                            onChange={(e) => setSimRawHours(e.target.value)}
+                            onChange={setSimRawHours}
                             className={`${inputCls} w-28 text-sm`}
                             style={inputStyle}
                         />
