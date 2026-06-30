@@ -162,6 +162,7 @@ export function AutoEdgePermissionRulesEditor({ title, help, ruleSet, onChange }
               style={settingsLedgerBorder}
             >
               <DurationTimeInput
+                allowEmpty
                 value={
                   range.minShiftHours === '' ? '' : hoursToHHMM(Number(range.minShiftHours))
                 }
@@ -174,6 +175,7 @@ export function AutoEdgePermissionRulesEditor({ title, help, ruleSet, onChange }
                 placeholder="08:00"
               />
               <DurationTimeInput
+                allowEmpty
                 value={
                   range.maxShiftHours === '' ? '' : hoursToHHMM(Number(range.maxShiftHours))
                 }
@@ -186,6 +188,7 @@ export function AutoEdgePermissionRulesEditor({ title, help, ruleSet, onChange }
                 placeholder="12:00"
               />
               <DurationTimeInput
+                allowEmpty
                 value={
                   range.minimumMinutes === ''
                     ? ''
@@ -199,6 +202,7 @@ export function AutoEdgePermissionRulesEditor({ title, help, ruleSet, onChange }
                 placeholder="00:01"
               />
               <DurationTimeInput
+                allowEmpty
                 value={
                   range.allowedMinutes === ''
                     ? ''

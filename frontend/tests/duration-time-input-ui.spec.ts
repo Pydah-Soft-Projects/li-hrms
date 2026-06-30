@@ -1,61 +1,53 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * Mirrors DurationTimeInput blur normalization without mounting React.
+ * Static harness mirroring the 24h hour/minute selector pattern.
  */
 const HARNESS_HTML = `
 <!DOCTYPE html>
 <html lang="en-GB">
   <body>
-    <label for="duration">Duration (HH:MM)</label>
-    <input
-      id="duration"
-      type="text"
-      inputmode="numeric"
-      lang="en-GB"
-      pattern="^\\d{1,2}:[0-5]\\d$"
-      title="24-hour time (HH:MM)"
-      placeholder="00:00"
-    />
-    <script>
-      const input = document.getElementById('duration');
-      input.addEventListener('blur', () => {
-        const v = String(input.value || '').trim();
-        const m = v.match(/^(\\d{1,2}):([0-5]?\\d)$/);
-        if (!m) return;
-        const hh = String(parseInt(m[1], 10)).padStart(2, '0');
-        const mm = String(parseInt(m[2], 10)).padStart(2, '0');
-        input.value = hh + ':' + mm;
-      });
-    </script>
+    <div data-duration-time="picker">
+      <select id="hours" aria-label="Hours (24-hour)" data-duration-time="hours">
+        <option value="00">00</option>
+        <option value="01">01</option>
+        <option value="03">03</option>
+      </select>
+      <span>:</span>
+      <select id="minutes" aria-label="Minutes" data-duration-time="minutes">
+        <option value="00">00</option>
+        <option value="30">30</option>
+        <option value="45">45</option>
+      </select>
+    </div>
   </body>
 </html>
 `;
 
-test.describe('Duration text input UI (24h, not OS picker)', () => {
-  test('uses text input instead of native time picker', async ({ page }) => {
+test.describe('Duration 24h selector UI (not OS locale picker)', () => {
+  test('uses hour and minute selects instead of native time input', async ({ page }) => {
     await page.setContent(HARNESS_HTML);
-    const input = page.locator('#duration');
-    await expect(input).toHaveAttribute('type', 'text');
-    await expect(input).toHaveAttribute('lang', 'en-GB');
-    await expect(input).not.toHaveAttribute('type', 'time');
+    await expect(page.locator('[data-duration-time="hours"]')).toBeVisible();
+    await expect(page.locator('[data-duration-time="minutes"]')).toBeVisible();
+    await expect(page.locator('input[type="time"]')).toHaveCount(0);
   });
 
-  test('normalizes partial HH:MM on blur', async ({ page }) => {
+  test('selects 24h OT slab values without AM/PM', async ({ page }) => {
     await page.setContent(HARNESS_HTML);
-    const input = page.locator('#duration');
-    await input.fill('1:30');
-    await input.blur();
-    await expect(input).toHaveValue('01:30');
+    await page.locator('#hours').selectOption('00');
+    await page.locator('#minutes').selectOption('30');
+    await expect(page.locator('#hours')).toHaveValue('00');
+    await expect(page.locator('#minutes')).toHaveValue('30');
+
+    const hoursText = await page.locator('#hours').innerText();
+    expect(hoursText).not.toMatch(/AM|PM/i);
   });
 
-  test('accepts 24h OT slab values without AM/PM', async ({ page }) => {
+  test('supports duration-style values like 03:00', async ({ page }) => {
     await page.setContent(HARNESS_HTML);
-    const input = page.locator('#duration');
-    await input.fill('03:00');
-    await input.blur();
-    await expect(input).toHaveValue('03:00');
-    const visible = await input.inputValue();
-    expect(visible).not.toMatch(/AM|PM/i);
+    await page.locator('#hours').selectOption('03');
+    await page.locator('#minutes').selectOption('00');
+    await expect(page.locator('#hours')).toHaveValue('03');
+    await expect(page.locator('#minutes')).toHaveValue('00');
   });
 });
