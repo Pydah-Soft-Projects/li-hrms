@@ -16,6 +16,7 @@ const {
   buildAttendanceLeaveInfoForDate,
   leaveDailyCreditUnit,
 } = require('../../shared/utils/leaveDayRangeUtils');
+const { resolveDayLateEarlyWaiver } = require('../../shared/utils/hoursOdOverlapUtils');
 
 function defaultAttendancePolicyDeductionBreakdown() {
   return {
@@ -278,11 +279,15 @@ const {
   buildRosterHalfPartialPolicyMeta,
   applyRosterHalfToPayRegisterSnapshot,
 } = require('../utils/partialPolicyRosterHalf');
-const {
-  applyHalfHolidaySandwichPolicy,
-  applyHalfHolidayLeaveOverride,
-} = require('../utils/halfHolidaySandwichPolicy');
+const { applyHalfHolidaySandwichPolicy } = require('../utils/halfHolidaySandwichPolicy');
 const { enforceSingleShiftPartialLopSnapshot } = require('../utils/partialPolicySingleShift');
+const {
+  applyRosterNonWorkingLeaveResolution,
+  syncNonWorkingDateSets,
+  computeHalfNonWorkingCredits,
+  buildContributingNonWorkingEntries,
+  buildAttendanceDailyWriteBackForResolvedDay,
+} = require('../utils/rosterNonWorkingLeaveResolution');
 
 /**
  * Monthly summary is recalculated in the background when:
@@ -491,10 +496,6 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       } else if (parsed.firstHOL || parsed.secondHOL) {
         day.rosterFirstHalfHOL = parsed.firstHOL;
         day.rosterSecondHalfHOL = parsed.secondHOL;
-        let halfHol = 0;
-        if (parsed.firstHOL) halfHol += 0.5;
-        if (parsed.secondHOL) halfHol += 0.5;
-        halfHolidayCreditTotal += halfHol;
       }
     }
 
@@ -521,7 +522,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         },
       ],
       isActive: true,
-    }).select('fromDate toDate isHalfDay odType_extended halfDayType').lean(); // Added halfDayType
+    }).select('fromDate toDate isHalfDay odType_extended halfDayType odStartTime odEndTime durationHours numberOfDays').lean();
 
     // 4b. Get approved split leaves for this period (so leave totals are correct)
     const approvedLeaveSplits = await LeaveSplit.find({
@@ -565,7 +566,6 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     }
 
     for (const od of approvedODs) {
-      if (od.odType_extended === 'hours') continue;
       const start = toNormalizedDateStr(od.fromDate);
       const end = toNormalizedDateStr(od.toDate);
       const range = getAllDatesInRange(start, end);
@@ -601,31 +601,12 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       });
     }
 
-    // Half roster holiday + span/full-day leave: leave applies, half holiday credit off (same as full HOL + leave).
+    // Half-aware leave vs roster WO/HOL: leave wins on covered halves; other half keeps WO/HOL credit.
     for (const dStr of allDates) {
       const day = dailyStatsMap.get(dStr);
-      if (!day) continue;
-      if (applyHalfHolidayLeaveOverride(day)) {
-        halfHolidayCreditTotal = Math.max(
-          0,
-          Math.round((halfHolidayCreditTotal - (day.halfHolCreditRemoved || 0.5)) * 100) / 100
-        );
-      }
-    }
-
-    // Leave override on roster non-working days:
-    // if approved leave exists on WO/HOL, treat that date as leave/working for this employee.
-    for (const dStr of allDates) {
-      const day = dailyStatsMap.get(dStr);
-      if (!day || day.leaves.length === 0) continue;
-      if (day.isWO) {
-        day.isWO = false;
-        weekOffDates.delete(dStr);
-      }
-      if (day.isHOL) {
-        day.isHOL = false;
-        holidayDates.delete(dStr);
-      }
+      if (!day || isOutsideEmploymentBound(dStr)) continue;
+      applyRosterNonWorkingLeaveResolution(day);
+      syncNonWorkingDateSets(dStr, day, weekOffDates, holidayDates);
     }
 
     /**
@@ -699,13 +680,24 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       });
     };
 
+    // A WO/HOL day that itself has an approved OD or a real worked/present punch is NOT an
+    // empty bridged day — it must be excluded from sandwich blocks (no strip, no LOP). Otherwise
+    // the day gets a sandwich LOP AND the OD/present is counted again → double-count.
+    const dayHasOwnWorkedCoverage = (d) => {
+      if (!d) return false;
+      if (Array.isArray(d.ods) && d.ods.length > 0) return true;
+      if (d.attendance && !isAbsentStatus(d.attendance.status)) return true;
+      return false;
+    };
+
     // Business rule: sandwich conversion is supported only in single-shift mode.
     if (processingModeIsSingleShift) {
       let idx = 0;
       while (idx < allDates.length) {
         const dStr = allDates[idx];
         const day = dailyStatsMap.get(dStr);
-        const startsNonWorkingBlock = day && (day.isWO || day.isHOL);
+        const startsNonWorkingBlock =
+          day && (day.isWO || day.isHOL) && !dayHasOwnWorkedCoverage(day);
         if (!startsNonWorkingBlock) {
           idx += 1;
           continue;
@@ -716,7 +708,11 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           endIdx + 1 < allDates.length &&
           (() => {
             const nextDay = dailyStatsMap.get(allDates[endIdx + 1]);
-            return !!nextDay && (nextDay.isWO || nextDay.isHOL);
+            return (
+              !!nextDay &&
+              (nextDay.isWO || nextDay.isHOL) &&
+              !dayHasOwnWorkedCoverage(nextDay)
+            );
           })()
         ) {
           endIdx += 1;
@@ -777,12 +773,6 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         processingModeIsSingleShift,
         classifySandwichNeighbor,
       });
-      if (halfHolSandwich.creditAdjustment) {
-        halfHolidayCreditTotal = Math.max(
-          0,
-          Math.round((halfHolidayCreditTotal + halfHolSandwich.creditAdjustment) * 100) / 100
-        );
-      }
       for (const [d, meta] of halfHolSandwich.metaByDate) {
         halfHolSandwichPolicyMetaByDate.set(d, meta);
       }
@@ -810,32 +800,24 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       if (isOutsideEmploymentBound(d)) holidayDates.delete(d);
     }
 
-    summary.totalWeeklyOffs = weekOffDates.size;
-    summary.totalHolidays = holidayDates.size + halfHolidayCreditTotal;
-    contributingDates.weeklyOffs = Array.from(weekOffDates)
-      .filter((date) => !isOutsideEmploymentBound(date))
-      .map((date) => ({ date, value: 1, label: 'WO' }));
-    contributingDates.holidays = [
-      ...Array.from(holidayDates)
-        .filter((date) => !isOutsideEmploymentBound(date))
-        .map((date) => ({ date, value: 1, label: 'HOL' })),
-      ...allDates
-        .filter((date) => !isOutsideEmploymentBound(date))
-        .map((date) => {
-          const day = dailyStatsMap.get(date);
-          if (!day || day.isHOL) return null;
-          let h = 0;
-          if (day.rosterFirstHalfHOL) h += 0.5;
-          if (day.rosterSecondHalfHOL) h += 0.5;
-          if (day.halfHolidaySandwichCreditDelta) {
-            h = Math.round((h + day.halfHolidaySandwichCreditDelta) * 100) / 100;
-          }
-          if (day.halfHolLeaveOverridesHoliday) return null;
-          if (h <= 0) return null;
-          return { date, value: h, label: h >= 1 ? 'HOL' : 'HOL-½' };
-        })
-        .filter(Boolean),
-    ];
+    let halfWeekOffCreditTotal = 0;
+    halfHolidayCreditTotal = 0;
+    for (const dStr of allDates) {
+      if (isOutsideEmploymentBound(dStr)) continue;
+      const day = dailyStatsMap.get(dStr);
+      if (!day) continue;
+      syncNonWorkingDateSets(dStr, day, weekOffDates, holidayDates);
+      const credits = computeHalfNonWorkingCredits(day);
+      halfWeekOffCreditTotal += credits.wo;
+      halfHolidayCreditTotal += credits.hol;
+    }
+    halfWeekOffCreditTotal = Math.round(halfWeekOffCreditTotal * 100) / 100;
+    halfHolidayCreditTotal = Math.round(halfHolidayCreditTotal * 100) / 100;
+    summary.totalWeeklyOffs = halfWeekOffCreditTotal;
+    summary.totalHolidays = halfHolidayCreditTotal;
+    const nwContrib = buildContributingNonWorkingEntries(allDates, dailyStatsMap, isOutsideEmploymentBound);
+    contributingDates.weeklyOffs = nwContrib.weeklyOffs;
+    contributingDates.holidays = nwContrib.holidays;
 
     const payRegisterDaySnapshots = [];
     const partialPolicyMetaByDate = new Map();
@@ -947,6 +929,31 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       let attFirst = 0, attSecond = 0;
       let odFirst = 0, odSecond = 0;
 
+      // Approved (non-sandwich) leave coverage per half — leave has priority, so it must be
+      // subtracted from OD and attendance-present on the halves it covers (no >1 day double-count).
+      let approvedLeaveCovFirst = 0;
+      let approvedLeaveCovSecond = 0;
+      if (!day.isWO && !day.isHOL) {
+        for (const l of day.leaves) {
+          if (isPolicySandwichLeave(l)) continue;
+          const u = leaveDailyCreditUnit(l);
+          if (u >= 1 - 1e-6) {
+            approvedLeaveCovFirst = 0.5;
+            approvedLeaveCovSecond = 0.5;
+            break;
+          }
+          if (String(l.halfDayType || 'first_half').trim() === 'second_half') {
+            approvedLeaveCovSecond = 0.5;
+          } else {
+            approvedLeaveCovFirst = 0.5;
+          }
+        }
+      }
+      // Roster non-working half still present after leave resolution (OD on a holiday/week-off half
+      // is compensatory-off, not an OD attendance credit — mirror the full-day WO/HOL exclusion).
+      const rosterNwFirst = day.rosterFirstHalfHOL || day.rosterFirstHalfWO ? 0.5 : 0;
+      const rosterNwSecond = day.rosterSecondHalfHOL || day.rosterSecondHalfWO ? 0.5 : 0;
+
       // Base from Attendance
       if (day.attendance && !day.isWO && !day.isHOL) {
         const status = day.attendance.status;
@@ -996,6 +1003,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       let hasFullDayOdCoverage = false;
       if (day.ods.length > 0 && !day.isWO && !day.isHOL) {
         for (const od of day.ods) {
+          // Hour-based OD credits attendance gaps only — not counted as OD days in summary totals.
+          if (String(od.odType_extended || '') === 'hours') continue;
           const odDays = Number(od.numberOfDays) || 0;
           const isFullDayOd =
             (!od.isHalfDay && String(od.odType_extended || '') !== 'hours') ||
@@ -1017,10 +1026,17 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
             day.lateInWaved = true;
           }
         }
-        if (!contributingDates.ods.some(cd => cd.date === dStr)) {
-          contributingDates.ods.push({ date: dStr, value: odFirst + odSecond, label: 'OD' });
+        // Do not count OD on a half already covered by approved leave or a roster non-working half.
+        odFirst = Math.max(0, odFirst - approvedLeaveCovFirst - rosterNwFirst);
+        odSecond = Math.max(0, odSecond - approvedLeaveCovSecond - rosterNwSecond);
+        if (odFirst + odSecond <= 1e-9) {
+          hasFullDayOdCoverage = false;
         }
-        totalODDays += (odFirst + odSecond);
+        const odDayValue = Math.round((odFirst + odSecond) * 100) / 100;
+        if (odDayValue > 0 && !contributingDates.ods.some(cd => cd.date === dStr)) {
+          contributingDates.ods.push({ date: dStr, value: odDayValue, label: 'OD' });
+        }
+        totalODDays += odDayValue;
       }
 
       // Guardrail: full-day OD must contribute as OD only (no attendance-present credit).
@@ -1072,6 +1088,11 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         attFirst = 0;
         attSecond = 0;
       }
+
+      // Approved leave wins over attendance-present on the halves it covers
+      // (prevents present + leave counting the same half → totals > 1 per day).
+      if (approvedLeaveCovFirst > 0) attFirst = Math.max(0, attFirst - approvedLeaveCovFirst);
+      if (approvedLeaveCovSecond > 0) attSecond = Math.max(0, attSecond - approvedLeaveCovSecond);
 
       // dayPresent: punch half-credits minus OD; PARTIAL caps at 0.5 (never both halves from confused IN+OUT)
       let dayPresent = Math.min(Math.max(0, attFirst - odFirst) + Math.max(0, attSecond - odSecond), 1.0);
@@ -1144,8 +1165,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
       if (hasFullDayEsiLeave) {
         dayPayable = 0;
-      } else if (!processingModeIsMultiShift && isPartialDay && leaveContrib >= 0.999) {
-        // Full-day leave wins over PARTIAL thumb / shift payables (single-shift partial policy only)
+      } else if (!processingModeIsMultiShift && leaveContrib >= 0.999) {
+        // Full-day approved leave wins over punch / shift payables (single-shift): no payable on a leave day.
         dayPayable = 0;
       }
 
@@ -1370,13 +1391,16 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       // 3. Lates & Early Outs (only on PRESENT days)
       if (day.attendance && (day.attendance.status === 'PRESENT' || day.attendance.status === 'OD') && !day.isWO && !day.isHOL) {
         const shifts = Array.isArray(day.attendance.shifts) ? day.attendance.shifts : [];
+        const hourOdWaiver = resolveDayLateEarlyWaiver(day);
+        const lateInWaved = hourOdWaiver.lateInWaved;
+        const earlyOutWaved = hourOdWaiver.earlyOutWaved;
 
         // Late In
         let dayLateMin = (shifts.length > 0)
           ? shifts.reduce((sum, s) => sum + (Number(s.lateInMinutes) || 0), 0)
           : (Number(day.attendance.totalLateInMinutes) || 0);
 
-        if (dayLateMin > 0 && !day.lateInWaved) {
+        if (dayLateMin > 0 && !lateInWaved) {
           totalLateInMinutes += dayLateMin;
           lateInCount++;
         }
@@ -1386,14 +1410,14 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           ? shifts.reduce((sum, s) => sum + (Number(s.earlyOutMinutes) || 0), 0)
           : (Number(day.attendance.totalEarlyOutMinutes) || 0);
 
-        if (dayEarlyMin > 0 && !day.earlyOutWaved) {
+        if (dayEarlyMin > 0 && !earlyOutWaved) {
           totalEarlyOutMinutes += dayEarlyMin;
           earlyOutCount++;
         }
 
         // Combined Highlighting Contribution (Late + Early)
-        const isLate = dayLateMin > 0 && !day.lateInWaved;
-        const isEarly = dayEarlyMin > 0 && !day.earlyOutWaved;
+        const isLate = dayLateMin > 0 && !lateInWaved;
+        const isEarly = dayEarlyMin > 0 && !earlyOutWaved;
 
         if (isLate || isEarly) {
           let countContribution = 0;
@@ -1728,13 +1752,34 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
             },
           });
         } else {
-          const originalNonWorking = originalNonWorkingStatusByDate.get(dStr);
-          const restoreStatusSet =
-            originalNonWorking === 'WO'
-              ? { status: 'WEEK_OFF', payableShifts: 0 }
-              : originalNonWorking === 'HOL'
-                ? { status: 'HOLIDAY', payableShifts: 0 }
-                : null;
+          const day = dailyStatsMap.get(dStr);
+          const approvedLeavesForDay = (day?.leaves || []).filter((l) => l && !isPolicySandwichLeave(l));
+          const nwWriteBack = buildAttendanceDailyWriteBackForResolvedDay(
+            day,
+            originalNonWorkingStatusByDate.get(dStr),
+            approvedLeavesForDay
+          );
+          const restoreStatusSet = nwWriteBack
+            ? {
+                status: nwWriteBack.status,
+                payableShifts: nwWriteBack.payableShifts,
+                rosterFirstHalfNonWorking: nwWriteBack.rosterFirstHalfNonWorking ?? null,
+                rosterSecondHalfNonWorking: nwWriteBack.rosterSecondHalfNonWorking ?? null,
+                ...(nwWriteBack.partialDayRule
+                  ? {
+                      'policyMeta.partialDayRule.applied': nwWriteBack.partialDayRule.applied,
+                      'policyMeta.partialDayRule.ruleCode': nwWriteBack.partialDayRule.ruleCode,
+                      'policyMeta.partialDayRule.firstHalfStatus': nwWriteBack.partialDayRule.firstHalfStatus,
+                      'policyMeta.partialDayRule.secondHalfStatus': nwWriteBack.partialDayRule.secondHalfStatus,
+                      'policyMeta.partialDayRule.presentPortion': nwWriteBack.partialDayRule.presentPortion,
+                      'policyMeta.partialDayRule.lopPortion': nwWriteBack.partialDayRule.lopPortion,
+                      'policyMeta.partialDayRule.coveredPortion': nwWriteBack.partialDayRule.coveredPortion,
+                      'policyMeta.partialDayRule.note': nwWriteBack.partialDayRule.note,
+                      'policyMeta.partialDayRule.updatedAt': policyNow,
+                    }
+                  : {}),
+              }
+            : null;
           policyOps.push({
             updateOne: {
               filter: { employeeNumber: empNoNorm, date: dStr },

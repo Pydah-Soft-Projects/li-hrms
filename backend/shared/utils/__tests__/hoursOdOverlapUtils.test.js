@@ -8,6 +8,8 @@ const {
   computeHoursOdCredit,
   timeStringsOverlap,
   overlapMinuteRanges,
+  hoursOdWaivesLateIn,
+  hoursOdWaivesEarlyOut,
 } = require('../hoursOdOverlapUtils');
 
 function test(name, fn) {
@@ -68,6 +70,45 @@ test('timeStringsOverlap detects overlap', () => {
 test('overlapMinuteRanges overnight shift segment', () => {
   const mins = overlapMinuteRanges(22 * 60, 2 * 60, 23 * 60, 24 * 60);
   assert.strictEqual(mins, 60);
+});
+
+test('hour OD waives late when it covers pre-punch gap (emp 272 Jun 11 style)', () => {
+  assert.strictEqual(
+    hoursOdWaivesLateIn({
+      odStartTime: '09:00',
+      odEndTime: '09:02',
+      shiftStartTime: '09:00',
+      punchInTime: '09:03',
+      lateInMinutes: 1,
+    }),
+    true
+  );
+});
+
+test('hour OD waives early when it covers post-punch gap (emp 272 Jun 25 style)', () => {
+  assert.strictEqual(
+    hoursOdWaivesEarlyOut({
+      odStartTime: '15:45',
+      odEndTime: '17:34',
+      shiftEndTime: '17:30',
+      punchOutTime: '15:44',
+      earlyOutMinutes: 103,
+    }),
+    true
+  );
+});
+
+test('hour OD does not waive late when gap overlap is less than late minutes', () => {
+  assert.strictEqual(
+    hoursOdWaivesLateIn({
+      odStartTime: '09:00',
+      odEndTime: '09:01',
+      shiftStartTime: '09:00',
+      punchInTime: '09:30',
+      lateInMinutes: 20,
+    }),
+    false
+  );
 });
 
 console.log('done');

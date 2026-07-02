@@ -514,6 +514,11 @@ attendanceDailySchema.pre('save', async function () {
     const hourBasedODs = approvedODs.filter((od) => od.odType_extended === 'hours' && od.odStartTime && od.odEndTime);
     if (hourBasedODs.length > 0) {
       appliedShiftLevelOD = true;
+      const {
+        hoursOdWaivesLateIn,
+        hoursOdWaivesEarlyOut,
+        dateToIstTimeStr,
+      } = require('../../shared/utils/hoursOdOverlapUtils');
       for (const shift of this.shifts) {
         if (!shift.shiftStartTime || !shift.shiftEndTime) continue;
         const punchIn = shift.inTime ? new Date(shift.inTime) : null;
@@ -533,15 +538,35 @@ attendanceDailySchema.pre('save', async function () {
               odInPunchOverlap = getOverlapMinutes(punchIn, punchOut, odStart, odEnd);
             }
             addedOdMinutes += Math.max(0, odInShiftOverlap - odInPunchOverlap);
-            // Waive early-out when approved OD end covers shift end (OD covers time after punch-out)
-            if (shift.isEarlyOut && punchOut && odStart <= punchOut && odEnd >= shiftEndDate) {
-              shift.isEarlyOut = false;
-              shift.earlyOutMinutes = 0;
-            }
-            // Waive late-in when approved OD start is at or before shift start (OD covers time before punch-in)
-            if (shift.isLateIn && punchIn && odStart <= shiftStartDate && odEnd >= punchIn) {
+            const punchInStr = punchIn ? dateToIstTimeStr(punchIn) : null;
+            const punchOutStr = punchOut ? dateToIstTimeStr(punchOut) : null;
+            if (
+              shift.isLateIn &&
+              punchInStr &&
+              hoursOdWaivesLateIn({
+                odStartTime: od.odStartTime,
+                odEndTime: od.odEndTime,
+                shiftStartTime: shift.shiftStartTime,
+                punchInTime: punchInStr,
+                lateInMinutes: shift.lateInMinutes,
+              })
+            ) {
               shift.isLateIn = false;
               shift.lateInMinutes = 0;
+            }
+            if (
+              shift.isEarlyOut &&
+              punchOutStr &&
+              hoursOdWaivesEarlyOut({
+                odStartTime: od.odStartTime,
+                odEndTime: od.odEndTime,
+                shiftEndTime: shift.shiftEndTime,
+                punchOutTime: punchOutStr,
+                earlyOutMinutes: shift.earlyOutMinutes,
+              })
+            ) {
+              shift.isEarlyOut = false;
+              shift.earlyOutMinutes = 0;
             }
           } else if (od.odType_extended === 'half_day' || od.isHalfDay) {
             // Waive penalties based on half-day type

@@ -155,6 +155,140 @@ const computeHoursOdCredit = ({
   };
 };
 
+/**
+ * Hour-based OD waives late-in when it overlaps the shift-start → punch-in gap
+ * by at least the counted late minutes (OD credits the pre-punch gap).
+ */
+const hoursOdWaivesLateIn = ({
+  odStartTime,
+  odEndTime,
+  shiftStartTime,
+  punchInTime,
+  lateInMinutes,
+}) => {
+  const late = Number(lateInMinutes) || 0;
+  if (late <= 0 || !odStartTime || !odEndTime || !shiftStartTime || !punchInTime) return false;
+  const gapOverlap = overlapMinuteRanges(
+    timeStrToMins(shiftStartTime),
+    timeStrToMins(punchInTime),
+    timeStrToMins(odStartTime),
+    timeStrToMins(odEndTime)
+  );
+  return gapOverlap >= late;
+};
+
+/**
+ * Hour-based OD waives early-out when it overlaps the punch-out → shift-end gap
+ * by at least the counted early-out minutes (OD credits the post-punch gap).
+ */
+const hoursOdWaivesEarlyOut = ({
+  odStartTime,
+  odEndTime,
+  shiftEndTime,
+  punchOutTime,
+  earlyOutMinutes,
+}) => {
+  const early = Number(earlyOutMinutes) || 0;
+  if (early <= 0 || !odStartTime || !odEndTime || !shiftEndTime || !punchOutTime) return false;
+  const gapOverlap = overlapMinuteRanges(
+    timeStrToMins(punchOutTime),
+    timeStrToMins(shiftEndTime),
+    timeStrToMins(odStartTime),
+    timeStrToMins(odEndTime)
+  );
+  return gapOverlap >= early;
+};
+
+/**
+ * Resolve late/early waiver flags for a summary day from half/full-day OD flags
+ * plus hour-based OD gap coverage on attendance shifts.
+ */
+const resolveHourOdLateEarlyWaiver = (day) => {
+  let lateInWaved = !!day?.lateInWaved;
+  let earlyOutWaved = !!day?.earlyOutWaved;
+  if (lateInWaved && earlyOutWaved) return { lateInWaved, earlyOutWaved };
+
+  const hourOds = (day?.ods || []).filter(
+    (o) => String(o?.odType_extended || '') === 'hours' && o.odStartTime && o.odEndTime
+  );
+  if (hourOds.length === 0) return { lateInWaved, earlyOutWaved };
+
+  const shifts =
+    day?.attendance && Array.isArray(day.attendance.shifts) ? day.attendance.shifts : [];
+  if (shifts.length === 0) return { lateInWaved, earlyOutWaved };
+
+  for (const shift of shifts) {
+    const punchIn = shift.inTime ? dateToIstTimeStr(shift.inTime) : null;
+    const punchOut = shift.outTime ? dateToIstTimeStr(shift.outTime) : null;
+    const shiftStart = shift.shiftStartTime || null;
+    const shiftEnd = shift.shiftEndTime || null;
+    const lateMin = Number(shift.lateInMinutes) || 0;
+    const earlyMin = Number(shift.earlyOutMinutes) || 0;
+
+    for (const od of hourOds) {
+      if (
+        !lateInWaved &&
+        lateMin > 0 &&
+        hoursOdWaivesLateIn({
+          odStartTime: od.odStartTime,
+          odEndTime: od.odEndTime,
+          shiftStartTime: shiftStart,
+          punchInTime: punchIn,
+          lateInMinutes: lateMin,
+        })
+      ) {
+        lateInWaved = true;
+      }
+      if (
+        !earlyOutWaved &&
+        earlyMin > 0 &&
+        hoursOdWaivesEarlyOut({
+          odStartTime: od.odStartTime,
+          odEndTime: od.odEndTime,
+          shiftEndTime: shiftEnd,
+          punchOutTime: punchOut,
+          earlyOutMinutes: earlyMin,
+        })
+      ) {
+        earlyOutWaved = true;
+      }
+    }
+  }
+
+  return { lateInWaved, earlyOutWaved };
+};
+
+/** Half/full-day OD waiver flags (same rules as summary OD overlay). */
+function applyHalfFullDayOdWaiverFlags(day) {
+  let lateInWaved = !!day?.lateInWaved;
+  let earlyOutWaved = !!day?.earlyOutWaved;
+  for (const od of day?.ods || []) {
+    if (String(od?.odType_extended || '') === 'hours') continue;
+    const odDays = Number(od.numberOfDays) || 0;
+    const isFullDayOd =
+      (!od.isHalfDay && String(od.odType_extended || '') !== 'hours') ||
+      od.odType_extended === 'full_day' ||
+      odDays >= 1 - 1e-6;
+    if (isFullDayOd) {
+      lateInWaved = true;
+      earlyOutWaved = true;
+    } else if (od.halfDayType === 'first_half') {
+      lateInWaved = true;
+    } else if (od.halfDayType === 'second_half') {
+      earlyOutWaved = true;
+    } else {
+      lateInWaved = true;
+    }
+  }
+  return { lateInWaved, earlyOutWaved };
+}
+
+/** Combined late/early waiver for summary, deductions, and pay register. */
+const resolveDayLateEarlyWaiver = (day) => {
+  const flags = applyHalfFullDayOdWaiverFlags(day);
+  return resolveHourOdLateEarlyWaiver({ ...day, ...flags });
+};
+
 module.exports = {
   timeStrToMins,
   formatMinsAsHm,
@@ -163,4 +297,8 @@ module.exports = {
   timeStringsOverlap,
   dateToIstTimeStr,
   computeHoursOdCredit,
+  hoursOdWaivesLateIn,
+  hoursOdWaivesEarlyOut,
+  resolveHourOdLateEarlyWaiver,
+  resolveDayLateEarlyWaiver,
 };

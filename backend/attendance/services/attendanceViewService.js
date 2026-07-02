@@ -205,6 +205,12 @@ function resolveDayStatus(ctx) {
   if (isEsiLeaveDay) return { status: 'LEAVE' };
   const sandwichStatus = resolveSandwichDisplayStatus(record);
   if (sandwichStatus) return { status: sandwichStatus };
+  // Approved leave on roster week-off/holiday: show leave (or partial split), not raw HOLIDAY/WEEK_OFF.
+  if (hasLeave && (record?.status === 'HOLIDAY' || record?.status === 'WEEK_OFF')) {
+    if (leaveInfo?.isHalfDay) return { status: 'PARTIAL' };
+    return { status: 'LEAVE' };
+  }
+  if (hasLeave && record?.status === 'LEAVE') return { status: 'LEAVE' };
   if (record?.status) return { status: record.status };
   if (hasLeave) return { status: 'LEAVE' };
   if (hasOD) return { status: 'OD' };

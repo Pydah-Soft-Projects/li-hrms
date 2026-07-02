@@ -6,7 +6,8 @@ const AttendanceDeductionSettings = require('../../attendance/model/AttendanceDe
 const AllowanceDeductionMaster = require('../../allowances-deductions/model/AllowanceDeductionMaster');
 const cacheService = require('../../shared/services/cacheService');
 const dateCycleService = require('../../leaves/services/dateCycleService');
-const { extractISTComponents } = require('../../shared/utils/dateUtils');
+const { extractISTComponents, getAllDatesInRange } = require('../../shared/utils/dateUtils');
+const { resolveDayLateEarlyWaiver } = require('../../shared/utils/hoursOdOverlapUtils');
 
 /**
  * Deduction Calculation Service
@@ -311,6 +312,29 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
           const rulesTemp = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
           const minimumDuration = rulesTemp.minimumDuration || 0;
 
+          const OD = require('../../leaves/model/OD');
+          const startDate = new Date(`${startStr}T00:00:00+05:30`);
+          const endDate = new Date(`${endStr}T23:59:59+05:30`);
+          const approvedODs = await OD.find({
+            employeeId,
+            status: 'approved',
+            isActive: true,
+            fromDate: { $lte: endDate },
+            toDate: { $gte: startDate },
+          })
+            .select('fromDate toDate odType_extended isHalfDay halfDayType odStartTime odEndTime numberOfDays')
+            .lean();
+
+          const odsByDate = new Map();
+          for (const od of approvedODs) {
+            const odStart = extractISTComponents(od.fromDate).dateStr;
+            const odEnd = extractISTComponents(od.toDate).dateStr;
+            for (const dStr of getAllDatesInRange(odStart, odEnd)) {
+              if (!odsByDate.has(dStr)) odsByDate.set(dStr, []);
+              odsByDate.get(dStr).push(od);
+            }
+          }
+
           for (const record of attendanceRecords) {
             if (record.status !== 'PRESENT') continue;
 
@@ -326,8 +350,13 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
               dayLate = Number(record.totalLateInMinutes) || 0;
               dayEarly = Number(record.totalEarlyOutMinutes) || 0;
             }
-            if (dayLate > 0 && dayLate >= minimumDuration && !record.lateInWaved) lateInsCount++;
-            if (dayEarly > 0 && dayEarly >= minimumDuration && !record.earlyOutWaved) earlyOutsCount++;
+
+            const waiver = resolveDayLateEarlyWaiver({
+              ods: odsByDate.get(record.date) || [],
+              attendance: record,
+            });
+            if (dayLate > 0 && dayLate >= minimumDuration && !waiver.lateInWaved) lateInsCount++;
+            if (dayEarly > 0 && dayEarly >= minimumDuration && !waiver.earlyOutWaved) earlyOutsCount++;
           }
         }
       }
