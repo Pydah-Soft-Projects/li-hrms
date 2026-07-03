@@ -101,31 +101,70 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const updatePosition = () => {
-    if (containerRef.current && isOpen) {
-      const rect = containerRef.current.getBoundingClientRect();
-      setDropdownStyles({
-        position: 'fixed',
-        top: rect.bottom + 4,
-        left: rect.left,
-        width: rect.width,
-        zIndex: 9999,
-      });
+  const updatePosition = useCallback(() => {
+    if (!containerRef.current || !isOpen) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const viewportPad = 8;
+    const minMenuWidth = Math.max(rect.width, 220);
+    const maxMenuWidth = Math.min(480, window.innerWidth - viewportPad * 2);
+
+    let menuWidth = minMenuWidth;
+    if (dropdownRef.current) {
+      const el = dropdownRef.current;
+      const prevWidth = el.style.width;
+      const prevMinWidth = el.style.minWidth;
+      const prevMaxWidth = el.style.maxWidth;
+      el.style.width = 'max-content';
+      el.style.minWidth = `${minMenuWidth}px`;
+      el.style.maxWidth = `${maxMenuWidth}px`;
+      menuWidth = Math.min(Math.max(minMenuWidth, el.scrollWidth), maxMenuWidth);
+      el.style.width = prevWidth;
+      el.style.minWidth = prevMinWidth;
+      el.style.maxWidth = prevMaxWidth;
+    } else {
+      const longestLabel = options.reduce(
+        (max, opt) => Math.max(max, String(opt.name || '').length),
+        0,
+      );
+      const estimated = longestLabel * 7.5 + (single ? 28 : 52);
+      menuWidth = Math.min(Math.max(minMenuWidth, estimated), maxMenuWidth);
     }
-  };
+
+    let left = rect.left;
+    if (left + menuWidth > window.innerWidth - viewportPad) {
+      left = Math.max(viewportPad, window.innerWidth - viewportPad - menuWidth);
+    }
+
+    setDropdownStyles({
+      position: 'fixed',
+      top: rect.bottom + 4,
+      left,
+      minWidth: minMenuWidth,
+      width: menuWidth,
+      maxWidth: maxMenuWidth,
+      zIndex: 9999,
+    });
+  }, [isOpen, options, single]);
 
   useLayoutEffect(() => {
     if (isOpen) {
       refreshLedgerTheme();
       updatePosition();
+      const raf = requestAnimationFrame(() => updatePosition());
       window.addEventListener('scroll', updatePosition, true);
       window.addEventListener('resize', updatePosition);
+      return () => {
+        cancelAnimationFrame(raf);
+        window.removeEventListener('scroll', updatePosition, true);
+        window.removeEventListener('resize', updatePosition);
+      };
     }
     return () => {
       window.removeEventListener('scroll', updatePosition, true);
       window.removeEventListener('resize', updatePosition);
     };
-  }, [isOpen, refreshLedgerTheme]);
+  }, [isOpen, refreshLedgerTheme, updatePosition, options.length]);
 
   const toggleOption = (id: string) => {
     if (single) {
@@ -193,20 +232,22 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
 
   const optionRowClass = (selected: boolean) => {
     if (isLedger) {
-      return `flex cursor-pointer items-center gap-2.5 rounded-sm px-2 py-2 transition-all ${
+      return `flex cursor-pointer items-start gap-2.5 rounded-sm px-2 py-2 transition-all ${
         selected ? '' : 'hover:bg-stone-50 dark:hover:bg-stone-900'
       }`;
     }
-    return `flex cursor-pointer items-center gap-2 rounded-lg p-2 transition-all ${
+    return `flex cursor-pointer items-start gap-2 rounded-lg p-2 transition-all ${
       selected ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800'
     }`;
   };
 
   const optionLabelClass = (selected: boolean) => {
     if (isLedger) {
-      return `text-xs transition-colors ${selected ? '' : 'font-medium text-stone-700 dark:text-stone-300'}`;
+      return `flex-1 min-w-0 whitespace-normal break-words leading-snug text-xs transition-colors ${
+        selected ? '' : 'font-medium text-stone-700 dark:text-stone-300'
+      }`;
     }
-    return `text-xs font-bold transition-colors ${
+    return `flex-1 min-w-0 whitespace-normal break-words leading-snug text-xs font-bold transition-colors ${
       selected ? 'text-blue-600' : 'text-slate-700 dark:text-slate-300'
     }`;
   };
@@ -269,7 +310,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
               : 'overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900'
           }
         >
-          <div className="custom-scrollbar max-h-60 overflow-y-auto p-1.5">
+          <div className="custom-scrollbar max-h-[min(20rem,70vh)] overflow-y-auto p-1.5">
             {loading ? (
               <div className="p-4 text-center">
                 <Loader2 className="mx-auto h-5 w-5 animate-spin" style={isLedger ? { color: 'var(--ps-accent)' } : undefined} />
@@ -323,7 +364,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
                         >
                           {!single && (
                             <div
-                              className={checkboxClass(selected)}
+                              className={`${checkboxClass(selected)} mt-0.5`}
                               style={isLedger ? ledgerCheckboxStyle(selected) : undefined}
                             >
                               {selected && <Check className="h-2.5 w-2.5 stroke-[3] text-white" />}

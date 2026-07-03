@@ -797,6 +797,49 @@ function renumberSerial(rows) {
   return rows.map((row, i) => ({ ...row, 'S.No': i + 1 }));
 }
 
+function findTotalLabelColumnIndex(headers) {
+  const preferred = ['Name', 'Employee Name', 'Employee Code', 'Employee Number', 'Emp No'];
+  for (const key of preferred) {
+    const idx = headers.indexOf(key);
+    if (idx >= 0) return idx;
+  }
+  for (let i = 0; i < headers.length; i += 1) {
+    const h = headers[i];
+    if (h === 'S.No') continue;
+    if (isTextColumnHeader(h) && !isOrgColumnKey(h)) return i;
+  }
+  return Math.min(1, Math.max(headers.length - 1, 0));
+}
+
+function shouldSumAggregateColumn(header) {
+  const h = String(header || '').trim();
+  if (!h || h === 'S.No') return false;
+  if (isTextColumnHeader(h)) return false;
+  if (isOrgColumnKey(h)) return false;
+  return true;
+}
+
+/** Sum numeric paysheet columns (earnings, deductions, net salary, days, etc.) for section totals. */
+function buildAggregateDataRow(rows, headers, label) {
+  const labelCol = findTotalLabelColumnIndex(headers);
+  return headers.map((header, colIdx) => {
+    if (colIdx === labelCol) return label;
+    if (!shouldSumAggregateColumn(header)) return '';
+    let sum = 0;
+    let hasValue = false;
+    for (const row of rows || []) {
+      const raw = row?.[header];
+      if (raw == null || raw === '') continue;
+      const n = Number(raw);
+      if (Number.isFinite(n)) {
+        sum += n;
+        hasValue = true;
+      }
+    }
+    return hasValue ? sum : '';
+  });
+}
+
 /**
  * @param {PaysheetExportMeta} meta
  * @param {string} salaryKindLabel - e.g. "REGULAR SALARY" / "2ND SALARY"
@@ -816,7 +859,10 @@ function buildCombinedSheetAoa(rows, meta, salaryKindLabel) {
   const { headers, dataRows } = objectRowsToTable(numbered);
   const titleBlock = buildTitleBlockRows(meta, salaryKindLabel);
   const tableHeader = [headers];
-  const aoa = [...titleBlock, ...tableHeader, ...dataRows];
+  const grandTotalRow = numbered.length
+    ? buildAggregateDataRow(numbered, headers, 'GRAND TOTAL')
+    : null;
+  const aoa = [...titleBlock, ...tableHeader, ...dataRows, ...(grandTotalRow ? [grandTotalRow] : [])];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const merges = [];
   const lastCol = Math.max(headers.length - 1, 0);
@@ -899,6 +945,11 @@ function buildByDepartmentSheetAoa(rows, meta, salaryKindLabel) {
 
   for (const { division, departments } of groups) {
     pushMergedBannerRow(aoa, merges, `DIVISION: ${division}`, colCount);
+    const divisionRows = departments.flatMap(({ rows: deptRows }) => deptRows || []);
+    const divisionTable = objectRowsToTable(sortRowsByEmpNo(divisionRows), { hideOrgColumns: true });
+    const divisionHeaders = divisionTable.headers;
+    colCount = Math.max(colCount, divisionHeaders.length);
+
     for (const { department, rows: deptRows } of departments) {
       pushMergedBannerRow(aoa, merges, `DEPARTMENT: ${department}`, colCount);
       const numbered = deptRows.map((row, idx) => ({ ...row, 'S.No': idx + 1 }));
@@ -907,7 +958,14 @@ function buildByDepartmentSheetAoa(rows, meta, salaryKindLabel) {
       colHeaderRows.push(aoa.length);
       aoa.push(headers);
       dataRows.forEach((dr) => aoa.push(dr));
+      if (numbered.length) {
+        aoa.push(buildAggregateDataRow(numbered, headers, `DEPARTMENT TOTAL — ${department}`));
+      }
       aoa.push([]);
+    }
+
+    if (divisionRows.length) {
+      aoa.push(buildAggregateDataRow(divisionRows, divisionHeaders, `DIVISION TOTAL — ${division}`));
     }
     aoa.push([]);
   }

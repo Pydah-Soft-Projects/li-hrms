@@ -87,6 +87,20 @@ const STYLES = {
     border: BORDER_ALL,
     numFmt: '@',
   },
+  aggregateTotalText: {
+    font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '78350F' } },
+    fill: { fgColor: { rgb: 'FEF3C7' }, patternType: 'solid' },
+    alignment: { horizontal: 'left', vertical: 'center' },
+    border: BORDER_ALL,
+    numFmt: '@',
+  },
+  aggregateTotalNumber: {
+    font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '78350F' } },
+    fill: { fgColor: { rgb: 'FEF3C7' }, patternType: 'solid' },
+    alignment: { horizontal: 'right', vertical: 'center' },
+    border: BORDER_ALL,
+    numFmt: '#,##0.##',
+  },
 };
 
 /** Headers that must stay plain text in Excel (no numeric coercion / comma grouping). */
@@ -225,6 +239,20 @@ function isDepartmentBannerRow(ws, r) {
   return getCellText(ws, r, 0).toUpperCase().startsWith('DEPARTMENT:');
 }
 
+function isAggregateTotalRow(ws, r, cEnd) {
+  for (let c = 0; c <= cEnd; c += 1) {
+    const v = getCellText(ws, r, c).toUpperCase();
+    if (
+      v.startsWith('DEPARTMENT TOTAL') ||
+      v.startsWith('DIVISION TOTAL') ||
+      v.startsWith('GRAND TOTAL')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * @param {import('xlsx-js-style').WorkSheet} ws
  * @param {Object} opts
@@ -282,6 +310,38 @@ function applyPaysheetWorksheetStyles(ws, opts) {
     if (isDepartmentBannerRow(ws, r)) {
       applyRowStyle(ws, r, cEnd, STYLES.deptBanner);
       rowHeights[r] = { hpt: 22 };
+      continue;
+    }
+
+    if (isAggregateTotalRow(ws, r, cEnd)) {
+      const sectionHeaderRow = headerRowForDataRow(r, headerRowIndices, opts.headerRowIndex);
+      for (let c = 0; c <= cEnd; c += 1) {
+        const ref = cellRef(r, c);
+        if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+        const cell = ws[ref];
+        const colHeader =
+          (sectionHeaderRow != null ? getCellText(ws, sectionHeaderRow, c) : '') ||
+          columnHeaderMap.get(c) ||
+          '';
+        const asText = isTextColumnHeader(colHeader);
+        if (asText) {
+          forceCellAsText(cell);
+          cell.s = { ...STYLES.aggregateTotalText };
+          continue;
+        }
+        const numeric = cell.t === 'n' || isNumericValue(cell.v);
+        if (numeric && c > 0) {
+          if (typeof cell.v === 'string' && cell.v.trim() !== '') cell.v = Number(cell.v);
+          cell.t = 'n';
+          cell.s = { ...STYLES.aggregateTotalNumber };
+        } else if (cell.v != null && String(cell.v).trim() !== '') {
+          forceCellAsText(cell);
+          cell.s = { ...STYLES.aggregateTotalText };
+        } else {
+          cell.s = { ...STYLES.aggregateTotalNumber };
+        }
+      }
+      rowHeights[r] = { hpt: 20 };
       continue;
     }
 
