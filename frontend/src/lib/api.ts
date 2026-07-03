@@ -2177,6 +2177,29 @@ export const api = {
       deductFromSalary?: boolean | null;
       deductionAmount?: number | null;
       deductionRules?: Record<string, unknown>;
+      autoEdge?: {
+        isEnabled?: boolean | null;
+        applyFor?: 'late_in' | 'early_out' | 'both' | null;
+        useSameRulesForBoth?: boolean | null;
+        lateInRules?: {
+          shiftDurationRanges?: Array<{
+            minShiftHours: number;
+            maxShiftHours: number;
+            allowedMinutes: number;
+            minimumMinutes?: number;
+            description?: string;
+          }>;
+        };
+        earlyOutRules?: {
+          shiftDurationRanges?: Array<{
+            minShiftHours: number;
+            maxShiftHours: number;
+            allowedMinutes: number;
+            minimumMinutes?: number;
+            description?: string;
+          }>;
+        };
+      } | null;
     };
     ot?: Record<string, unknown>;
     attendance?: Record<string, unknown>;
@@ -4247,6 +4270,48 @@ export const api = {
 
   getConfusedShiftStats: async () => {
     return apiRequest<any>('/shifts/confused/stats', { method: 'GET' });
+  },
+
+  // Attendance audits (pre-payroll validation)
+  getAttendanceAuditTypes: async () => {
+    return apiRequest<any>('/attendance/audit/types', { method: 'GET' });
+  },
+
+  runAttendanceAudit: async (payload: {
+    type: string;
+    month: string;
+    divisionIds?: string[];
+    departmentIds?: string[];
+    empNos?: string;
+    onlyMismatches?: boolean;
+    limit?: number;
+  }) => {
+    return apiRequest<any>('/attendance/audit/run', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  getAttendanceAuditCompare: async (employeeId: string, month: string) => {
+    const params = new URLSearchParams({ employeeId, month });
+    return apiRequest<any>(`/attendance/audit/compare?${params.toString()}`, { method: 'GET' });
+  },
+
+  getAttendanceAuditOverview: async (params: {
+    month: string;
+    divisionIds?: string[];
+    departmentIds?: string[];
+    empNos?: string;
+    onlyIssues?: boolean;
+    limit?: number;
+  }) => {
+    const q = new URLSearchParams({ month: params.month });
+    if (params.divisionIds?.length) q.set('divisionIds', params.divisionIds.join(','));
+    if (params.departmentIds?.length) q.set('departmentIds', params.departmentIds.join(','));
+    if (params.empNos) q.set('empNos', params.empNos);
+    if (params.onlyIssues === false) q.set('onlyIssues', '0');
+    if (params.limit != null) q.set('limit', String(params.limit));
+    return apiRequest<any>(`/attendance/audit/overview?${q.toString()}`, { method: 'GET' });
   },
 
   // Pre-Scheduled Shifts

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import { downloadLeaveODReportPdf, type LeaveODReportExportFilters } from '@/lib/leaveOdReportExport';
 
 export default function LeaveReportsTab() {
     const [loading, setLoading] = useState(false);
@@ -71,7 +72,7 @@ export default function LeaveReportsTab() {
             const [divRes, desRes, settingRes] = await Promise.all([
                 api.getDivisions(true),
                 api.getAllDesignations(),
-                api.getSetting('payroll_cycle_start_day')
+                api.getSetting('payroll_cycle_start_day'),
             ]);
             if (divRes.success) setDivisions(divRes.data || []);
             if (desRes.success) setDesignations(desRes.data || []);
@@ -158,6 +159,16 @@ export default function LeaveReportsTab() {
         return { start: startDate, end: endDate };
     })();
 
+    const exportFilters: LeaveODReportExportFilters = {
+        fromDate: effectiveDates.start,
+        toDate: effectiveDates.end,
+        search: searchQuery || undefined,
+        division: divisionIds,
+        department: departmentIds,
+        designation: designationIds,
+        employeeId: employeeIds,
+    };
+
     const fetchReportData = async () => {
         setLoadingData(true);
         try {
@@ -220,33 +231,20 @@ export default function LeaveReportsTab() {
     }, [divisionIds, departmentIds, designationIds, employeeIds, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery]);
 
     const handleExport = async () => {
-        const toastId = toast.loading('Generating Leave PDF report...');
+        const toastId = toast.loading('Generating PDF report...');
         setLoading(true);
-        
-        try {
-            const blob = await api.downloadLeaveODReportPDF({
-                fromDate: effectiveDates.start,
-                toDate: effectiveDates.end,
-                search: searchQuery || undefined,
-                division: divisionIds,
-                department: departmentIds,
-                designation: designationIds,
-                employeeId: employeeIds,
-                includeLeaves: true,
-                includeODs: false, // Strictly Leaves
-                includeSummary: true
-            });
 
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `Leaves_Report_${startDate}_to_${endDate}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            a.remove();
-            
-            toast.success('Leaves PDF Downloaded Successfully!', { id: toastId });
+        try {
+            await downloadLeaveODReportPdf(
+                exportFilters,
+                { includeLeaves: true, includeODs: false, includeSummary: true },
+                `Leaves_Report_${effectiveDates.start}_to_${effectiveDates.end}.pdf`
+            );
+            toast.success('PDF downloaded successfully!', { id: toastId });
+        } catch (error: unknown) {
+            console.error('PDF export error:', error);
+            const msg = error instanceof Error ? error.message : 'Failed to export PDF';
+            toast.error(msg, { id: toastId });
         } finally {
             setLoading(false);
         }

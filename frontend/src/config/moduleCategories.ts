@@ -10,14 +10,14 @@ export const MODULE_CATEGORIES = [
     },
     {
         code: 'EMPLOYEE_MANAGEMENT',
-        name: 'Employee Management',
+        name: 'Employees',
         icon: '👥',
         modules: [
             { code: 'EMPLOYEES', label: 'Employees', href: '/employees', verifiable: true, bankable: true, editable: true },
-            { code: 'ASSETS_MANAGEMENT', label: 'Assets Management', href: '/assets-management' },
-            { code: 'EMPLOYEE_BIRTHDAYS', label: 'Employee Birthdays', href: '/employee-birthdays' },
-            { code: 'RESIGNATION', label: 'Resignations', href: '/resignations', terminable: true },
             { code: 'PROMOTIONS_TRANSFERS', label: 'Promotions & Transfers', href: '/promotions-transfers' },
+            { code: 'RESIGNATION', label: 'Resignations', href: '/resignations', terminable: true },
+            { code: 'EMPLOYEE_BIRTHDAYS', label: 'Birthdays', href: '/employee-birthdays' },
+            { code: 'ASSETS_MANAGEMENT', label: 'Assets', href: '/assets-management' },
             { code: 'PROFILE', label: 'My Profile', href: '/profile' }
         ]
     },
@@ -27,16 +27,18 @@ export const MODULE_CATEGORIES = [
         icon: '⏰',
         modules: [
             { code: 'ATTENDANCE', label: 'Attendance', href: '/attendance' },
+            { code: 'ATTENDANCE_AUDIT', label: 'Attendance Audits', href: '/attendance-audit' },
+            { code: 'LIVE_ATTENDANCE', label: 'Live Attendance', href: '/live-attendance' },
             { code: 'LEAVE_OD', label: 'Leave & OD', href: '/leaves', fileUploadable: true },
             { code: 'LEAVE_REGISTER', label: 'Leave Register', href: '/leave-register' },
-            { code: 'CCL', label: 'CCL (Compensatory)', href: '/ccl' },
+            { code: 'CCL', label: 'CCL', href: '/ccl' },
             { code: 'OT_PERMISSIONS', label: 'OT & Permissions', href: '/ot-permissions' },
-            { code: 'CONFUSED_SHIFTS', label: 'Confused Shifts', href: '/confused-shifts' },
             { code: 'SHIFT_ROSTER', label: 'Shift Roster', href: '/shift-roster' },
-            { code: 'HOLIDAY_CALENDAR', label: 'Holiday Calendar', href: '/holidays' },
+            { code: 'SHIFTS', label: 'Shifts', href: '/shifts' },
+            { code: 'CONFUSED_SHIFTS', label: 'Confused Shifts', href: '/confused-shifts' },
+            { code: 'HOLIDAY_CALENDAR', label: 'Holidays', href: '/holidays' },
             // Permission-only module: grants ability to manage GLOBAL holidays (not just scoped groups)
-            { code: 'HOLIDAY_CALENDAR_MANAGE_GLOBAL', label: 'Holiday Calendar (Global Manage)', href: '/holidays' },
-            { code: 'SHIFTS', label: 'Shifts', href: '/shifts' }
+            { code: 'HOLIDAY_CALENDAR_MANAGE_GLOBAL', label: 'Holiday Calendar (Global Manage)', href: '/holidays' }
         ]
     },
     {
@@ -46,8 +48,8 @@ export const MODULE_CATEGORIES = [
         modules: [
             { code: 'DIVISIONS', label: 'Divisions', href: '/divisions' },
             { code: 'DEPARTMENTS', label: 'Departments', href: '/departments' },
-            { code: 'EMPLOYEE_GROUPS', label: 'Employee groups', href: '/employee-groups' },
-            { code: 'DEPARTMENTAL_SETTINGS', label: 'Departmental Settings', href: '/departmental-settings' }
+            { code: 'EMPLOYEE_GROUPS', label: 'Employee Groups', href: '/employee-groups' },
+            { code: 'DEPARTMENTAL_SETTINGS', label: 'Dept. Settings', href: '/departmental-settings' }
         ]
     },
     {
@@ -56,25 +58,24 @@ export const MODULE_CATEGORIES = [
         icon: '🛡️',
         modules: [
             { code: 'USERS', label: 'Users', href: '/users' },
-            { code: 'LIVE_ATTENDANCE', label: 'Live Attendance', href: '/live-attendance' },
             { code: 'REPORTS', label: 'Reports', href: '/reports' }
         ]
     },
     {
         code: 'FINANCE_PAYROLL',
-        name: 'Finance & Payroll',
+        name: 'Payroll',
         icon: '💰',
         modules: [
-            { code: 'PAYMENTS', label: 'Payments', href: '/payments' },
             { code: 'PAY_REGISTER', label: 'Pay Register', href: '/pay-register' },
             { code: 'PAYSHEET', label: 'Paysheet', href: '/payroll-sheet' },
-            { code: 'PAYROLL_CONFIG', label: 'Payroll Configuration', href: '/payroll-config' },
-            { code: 'STATUTORY_DEDUCTIONS', label: 'Statutory Deductions', href: '/statutory-deductions' },
+            { code: 'PAYMENTS', label: 'Payments', href: '/payments' },
             { code: 'PAYSLIPS', label: 'Payslips', href: '/payslips', releasable: true },
             { code: 'ARREARS', label: 'Arrears', href: '/arrears' },
             { code: 'MANUAL_DEDUCTIONS', label: 'Manual Deductions', href: '/manual-deductions' },
             { code: 'ALLOWANCES_DEDUCTIONS', label: 'Allowances & Deductions', href: '/allowances-deductions' },
-            { code: 'LOANS', label: 'Loans & Salary Advance', href: '/loans' }
+            { code: 'LOANS', label: 'Loans & Advance', href: '/loans' },
+            { code: 'PAYROLL_CONFIG', label: 'Payroll Config', href: '/payroll-config' },
+            { code: 'STATUTORY_DEDUCTIONS', label: 'Statutory Deductions', href: '/statutory-deductions' }
         ]
     },
     {

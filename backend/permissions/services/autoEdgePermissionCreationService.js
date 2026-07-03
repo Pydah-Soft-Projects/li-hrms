@@ -1,5 +1,5 @@
 const Permission = require('../model/Permission');
-const AutoEdgePermissionSettings = require('../model/AutoEdgePermissionSettings');
+const { getMergedAutoEdgeConfig } = require('./autoEdgeConfigResolver');
 const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
 
@@ -435,7 +435,17 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
       return { success: false, created: 0, skippedReason: 'Attendance record missing employee/date' };
     }
 
-    const settings = await AutoEdgePermissionSettings.getActiveSettings();
+    const employeeNumber = String(attendanceDaily.employeeNumber).toUpperCase();
+    const employee = await Employee.findOne({ emp_no: employeeNumber })
+      .populate('division_id', 'name')
+      .populate('department_id', 'name');
+    if (!employee) {
+      return { success: false, created: 0, skippedReason: 'Employee not found' };
+    }
+
+    const deptId = employee.department_id?._id || employee.department_id || null;
+    const divId = employee.division_id?._id || employee.division_id || null;
+    const settings = await getMergedAutoEdgeConfig(deptId, divId);
     if (!settings?.isEnabled) {
       return { success: true, created: 0, skippedReason: 'Auto edge permission settings disabled' };
     }
@@ -443,14 +453,6 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
     const eligibleEdges = buildEligibleEdges(attendanceDaily, settings);
     if (!eligibleEdges.length) {
       return { success: true, created: 0, skippedReason: 'No eligible late-in / early-out edges' };
-    }
-
-    const employeeNumber = String(attendanceDaily.employeeNumber).toUpperCase();
-    const employee = await Employee.findOne({ emp_no: employeeNumber })
-      .populate('division_id', 'name')
-      .populate('department_id', 'name');
-    if (!employee) {
-      return { success: false, created: 0, skippedReason: 'Employee not found' };
     }
 
     const requestedBy = await resolveRequestedBy(employee);

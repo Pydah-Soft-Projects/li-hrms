@@ -92,7 +92,7 @@ const getWorkflowSettings = async (divisionId) => resolveLeaveTypeWorkflowSettin
 // @access  Private
 exports.getLeaves = async (req, res) => {
   try {
-    const { status, employeeId, department, division, designation, fromDate, toDate, search, page = 1, limit = 20 } = req.query;
+    const { status, employeeId, department, division, designation, fromDate, toDate, search, page = 1, limit = 20, leaveType } = req.query;
 
     // Multi-layered filter: Jurisdiction (Scope) AND Timing (Workflow)
     const scopeFilter = req.scopeFilter || { isActive: true };
@@ -129,6 +129,7 @@ exports.getLeaves = async (req, res) => {
     };
 
     if (status) filter.status = status;
+    if (leaveType) filter.leaveType = leaveType;
     if (employeeId && employeeId !== 'all') {
       const ids = String(employeeId).split(',').filter(id => id && id !== 'all');
       if (ids.length > 0) filter.employeeId = ids.length > 1 ? { $in: ids } : ids[0];
@@ -3630,7 +3631,7 @@ const drawPDFTable = (doc, headers, data, startX, startY, colWidths, options = {
 exports.exportReportPDF = async (req, res) => {
   try {
     const { 
-      status, fromDate, toDate, leaveType, department, division, designation, search, employeeId,
+      status, fromDate, toDate, leaveType, odType, department, division, designation, search, employeeId,
       includeLeaves = 'true', includeODs = 'true', includeSummary = 'true' 
     } = req.query;
 
@@ -3710,7 +3711,8 @@ exports.exportReportPDF = async (req, res) => {
     if (leaveType) leaveFilter.leaveType = leaveType;
 
     const odFilter = { ...baseFilter };
-    // OD status mapping if needed (OD uses similar statuses)
+    const resolvedOdType = odType || (includeODs === 'true' && includeLeaves !== 'true' ? leaveType : null);
+    if (resolvedOdType) odFilter.odType = resolvedOdType;
 
     const [leaves, ods] = await Promise.all([
       includeLeaves === 'true' ? Leave.find(leaveFilter).populate({
@@ -3912,7 +3914,7 @@ exports.exportReportPDF = async (req, res) => {
 exports.exportReportXLSX = async (req, res) => {
   try {
     const {
-      status, fromDate, toDate, leaveType, department, division, designation, search, employeeId,
+      status, fromDate, toDate, leaveType, odType, department, division, designation, search, employeeId,
       includeLeaves = 'true', includeODs = 'true', includeSummary = 'true',
     } = req.query;
 
@@ -3984,6 +3986,8 @@ exports.exportReportXLSX = async (req, res) => {
     const leaveFilter = { ...baseFilter };
     if (leaveType) leaveFilter.leaveType = leaveType;
     const odFilter = { ...baseFilter };
+    const resolvedOdTypeXlsx = odType || (includeODs === 'true' && includeLeaves !== 'true' ? leaveType : null);
+    if (resolvedOdTypeXlsx) odFilter.odType = resolvedOdTypeXlsx;
 
     const employeePopulate = {
       path: 'employeeId',

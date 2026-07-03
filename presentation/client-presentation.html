@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LI-HRMS — Client Presentation</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f172a; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+    .slide-container { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .slide-container img { max-width: 96vw; max-height: 92vh; object-fit: contain; border-radius: 8px; box-shadow: 0 12px 48px rgba(0,0,0,.6); }
+    .controls { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; background: rgba(15,23,42,.85); padding: 10px 24px; border-radius: 40px; border: 1px solid rgba(255,255,255,.1); }
+    .controls button { background: linear-gradient(135deg, #b45309, #d97706); color: #fff; border: none; padding: 8px 20px; border-radius: 20px; cursor: pointer; font-size: 14px; font-weight: 600; }
+    .controls button:hover { filter: brightness(1.1); }
+    .controls span { font-size: 14px; min-width: 80px; text-align: center; color: #cbd5e1; }
+    .thumbnails { position: fixed; right: 12px; top: 50%; transform: translateY(-50%); max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+    .thumbnails img { width: 68px; cursor: pointer; border-radius: 4px; opacity: .45; border: 2px solid transparent; transition: .2s; }
+    .thumbnails img.active { opacity: 1; border-color: #d97706; }
+    .title-bar { position: fixed; top: 14px; left: 24px; font-size: 13px; color: #94a3b8; }
+    .title-bar strong { color: #fbbf24; }
+  </style>
+</head>
+<body>
+  <div class="title-bar"><strong>LI-HRMS</strong> — Client Presentation (Business Value Edition)</div>
+  <div class="slide-container"><img id="slide" src="client-slides/client-slide-01-title.png" alt="Slide" /></div>
+  <div class="thumbnails" id="thumbs"></div>
+  <div class="controls">
+    <button onclick="prev()">← Prev</button>
+    <span id="counter">1 / 16</span>
+    <button onclick="next()">Next →</button>
+    <button onclick="toggleFullscreen()">Fullscreen</button>
+  </div>
+  <script>
+    const slides = [
+      'client-slide-01-title.png', 'client-slide-02-challenges.png', 'client-slide-03-one-platform.png',
+      'client-slide-04-business-impact.png', 'client-slide-05-employee-module.png', 'client-slide-06-attendance.png',
+      'client-slide-07-leave-workflow.png', 'client-slide-08-ot-permissions.png', 'client-slide-09-shifts-holidays.png',
+      'client-slide-10-payroll.png', 'client-slide-11-organization.png', 'client-slide-12-self-service.png',
+      'client-slide-13-dashboards.png', 'client-slide-14-roi.png', 'client-slide-15-mobile-app.png',
+      'client-slide-16-closing.png'
+    ];
+    let current = 0;
+    const img = document.getElementById('slide');
+    const counter = document.getElementById('counter');
+    const thumbs = document.getElementById('thumbs');
+    slides.forEach((s, i) => {
+      const t = document.createElement('img');
+      t.src = 'client-slides/' + s;
+      t.onclick = () => go(i);
+      thumbs.appendChild(t);
+    });
+    function go(n) {
+      current = Math.max(0, Math.min(slides.length - 1, n));
+      img.src = 'client-slides/' + slides[current];
+      counter.textContent = (current + 1) + ' / ' + slides.length;
+      [...thumbs.children].forEach((t, i) => t.classList.toggle('active', i === current));
+    }
+    function next() { go(current + 1); }
+    function prev() { go(current - 1); }
+    function toggleFullscreen() { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); }
+    document.addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next(); }
+      if (e.key === 'ArrowLeft') prev();
+      if (e.key === 'f') toggleFullscreen();
+    });
+    go(0);
+  </script>
+</body>
+</html>

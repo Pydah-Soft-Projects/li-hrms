@@ -9,6 +9,8 @@
     "lint": "eslint",
     "preinstall": "npm config set legacy-peer-deps true",
     "test:ui": "playwright test",
+    "test:ui:smoke": "playwright test --config=playwright.smoke.config.ts",
+    "test:ui:e2e": "playwright test --config=playwright.e2e.config.ts",
     "test:ui:ui": "playwright test --ui",
     "test:ui:report": "playwright show-report"
   },

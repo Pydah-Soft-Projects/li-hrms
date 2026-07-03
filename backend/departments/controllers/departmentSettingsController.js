@@ -264,6 +264,21 @@ function applyDepartmentSettingsPayloadToDoc(settings, body) {
         settings.permissions.deductionRules.calculationMode = permissions.deductionRules.calculationMode;
       }
     }
+
+    if (permissions.autoEdge === null) {
+      settings.permissions.autoEdge = undefined;
+    } else if (permissions.autoEdge !== undefined && typeof permissions.autoEdge === 'object') {
+      if (!settings.permissions.autoEdge) settings.permissions.autoEdge = {};
+      const ae = permissions.autoEdge;
+      if (ae.isEnabled !== undefined) settings.permissions.autoEdge.isEnabled = ae.isEnabled;
+      if (ae.applyFor !== undefined) settings.permissions.autoEdge.applyFor = ae.applyFor;
+      if (ae.useSameRulesForBoth !== undefined) {
+        settings.permissions.autoEdge.useSameRulesForBoth = ae.useSameRulesForBoth;
+      }
+      if (ae.lateInRules !== undefined) settings.permissions.autoEdge.lateInRules = ae.lateInRules;
+      if (ae.earlyOutRules !== undefined) settings.permissions.autoEdge.earlyOutRules = ae.earlyOutRules;
+    }
+
     settings.markModified('permissions');
   }
 

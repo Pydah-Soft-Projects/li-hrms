@@ -5,7 +5,6 @@ import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import { SettingsSkeleton } from './SettingsSkeleton';
 import {
-    SettingsOutlineButton,
     SettingsPanel,
     SettingsPanelHeader,
     SettingsSaveBar,
@@ -19,52 +18,18 @@ import {
     settingsLedgerBorder,
     settingsSectionTitleClass,
 } from '@/lib/settingsUi';
-import { Plus, Trash2 } from 'lucide-react';
 import WorkflowManager, { WorkflowData } from './shared/WorkflowManager';
 import { useCallback } from 'react';
+import {
+    AutoEdgePermissionRulesEditor,
+    emptyRuleSet,
+    normalizeAutoRulesForApi,
+    toLocalRuleSet,
+    validateAutoRuleSets,
+    type AutoRuleSet,
+} from './AutoEdgePermissionRulesEditor';
 
 type AutoApplyFor = 'late_in' | 'early_out' | 'both';
-type ShiftRange = {
-    _id?: string;
-    minShiftHours: number | '';
-    maxShiftHours: number | '';
-    minimumMinutes: number | '';
-    allowedMinutes: number | '';
-    description?: string;
-};
-type AutoRuleSet = {
-    shiftDurationRanges: ShiftRange[];
-};
-
-const emptyRuleSet = (): AutoRuleSet => ({ shiftDurationRanges: [] });
-const defaultRange = (): ShiftRange => ({
-    minShiftHours: '',
-    maxShiftHours: '',
-    minimumMinutes: 1,
-    allowedMinutes: '',
-    description: '',
-});
-
-type ApiShiftRange = {
-    _id?: string;
-    minShiftHours: number;
-    maxShiftHours: number;
-    minimumMinutes?: number;
-    allowedMinutes: number;
-    description?: string;
-};
-type ApiRuleSet = { shiftDurationRanges?: ApiShiftRange[] };
-
-const toLocalRuleSet = (rs?: ApiRuleSet): AutoRuleSet => ({
-    shiftDurationRanges: (rs?.shiftDurationRanges || []).map((r) => ({
-        _id: r._id,
-        minShiftHours: r.minShiftHours,
-        maxShiftHours: r.maxShiftHours,
-        minimumMinutes: r.minimumMinutes ?? 1,
-        allowedMinutes: r.allowedMinutes,
-        description: r.description,
-    })),
-});
 
 const PermissionsSettings = () => {
     const [loading, setLoading] = useState(false);
@@ -185,31 +150,6 @@ const PermissionsSettings = () => {
         });
     };
 
-    const updateRange = (
-        key: 'lateInRules' | 'earlyOutRules',
-        index: number,
-        field: keyof ShiftRange,
-        value: string
-    ) => {
-        const current = autoEdgeSettings[key]?.shiftDurationRanges || [];
-        const nextRanges = current.map((range, idx) => {
-            if (idx !== index) return range;
-            if (field === 'description') return { ...range, [field]: value };
-            return { ...range, [field]: value === '' ? '' : Number(value) };
-        });
-        updateAutoRuleSet(key, { shiftDurationRanges: nextRanges });
-    };
-
-    const addAutoRange = (key: 'lateInRules' | 'earlyOutRules') => {
-        const current = autoEdgeSettings[key]?.shiftDurationRanges || [];
-        updateAutoRuleSet(key, { shiftDurationRanges: [...current, defaultRange()] });
-    };
-
-    const removeAutoRange = (key: 'lateInRules' | 'earlyOutRules', index: number) => {
-        const current = autoEdgeSettings[key]?.shiftDurationRanges || [];
-        updateAutoRuleSet(key, { shiftDurationRanges: current.filter((_, idx) => idx !== index) });
-    };
-
     const handleSameRulesChange = (checked: boolean) => {
         setAutoEdgeSettings((prev) => {
             const source = prev.lateInRules?.shiftDurationRanges?.length ? prev.lateInRules : prev.earlyOutRules;
@@ -223,23 +163,13 @@ const PermissionsSettings = () => {
     };
 
     const normalizeAutoPayload = () => {
-        const normalizeRules = (rules: AutoRuleSet) => ({
-            shiftDurationRanges: (rules.shiftDurationRanges || []).map((range) => ({
-                minShiftHours: Number(range.minShiftHours),
-                maxShiftHours: Number(range.maxShiftHours),
-                minimumMinutes: range.minimumMinutes === '' || range.minimumMinutes === undefined ? 1 : Number(range.minimumMinutes),
-                allowedMinutes: Number(range.allowedMinutes),
-                description: String(range.description || '').trim(),
-            })),
-        });
-
-        const lateInRules = normalizeRules(autoEdgeSettings.lateInRules);
+        const lateInRules = normalizeAutoRulesForApi(autoEdgeSettings.lateInRules);
         const sharedSource = autoEdgeSettings.applyFor === 'early_out'
-            ? normalizeRules(autoEdgeSettings.earlyOutRules)
+            ? normalizeAutoRulesForApi(autoEdgeSettings.earlyOutRules)
             : lateInRules;
         const earlyOutRules = autoEdgeSettings.useSameRulesForBoth
             ? sharedSource
-            : normalizeRules(autoEdgeSettings.earlyOutRules);
+            : normalizeAutoRulesForApi(autoEdgeSettings.earlyOutRules);
 
         return {
             isEnabled: autoEdgeSettings.isEnabled,
@@ -263,28 +193,7 @@ const PermissionsSettings = () => {
                 ? [{ label: 'Early-out rules', rules: autoEdgeSettings.earlyOutRules }]
                 : sets;
 
-        if (autoEdgeSettings.isEnabled) {
-            for (const set of relevantSets) {
-                if (!set.rules.shiftDurationRanges?.length) {
-                    return `${set.label}: add at least one range before enabling auto mode.`;
-                }
-            }
-        }
-
-        for (const set of relevantSets) {
-            for (const range of set.rules.shiftDurationRanges || []) {
-                if (range.minShiftHours === '' || range.maxShiftHours === '' || range.allowedMinutes === '' || range.minimumMinutes === '') {
-                    return `${set.label}: fill min shift, max shift, minimum minutes, and allowed minutes for every range.`;
-                }
-                if (Number(range.maxShiftHours) <= Number(range.minShiftHours)) {
-                    return `${set.label}: max shift hours must be greater than min shift hours.`;
-                }
-                if (Number(range.minimumMinutes) > Number(range.allowedMinutes)) {
-                    return `${set.label}: minimum minutes cannot be greater than allowed minutes.`;
-                }
-            }
-        }
-        return null;
+        return validateAutoRuleSets(relevantSets, autoEdgeSettings.isEnabled);
     };
 
     const handleSaveAutoEdgeSettings = async () => {
@@ -318,101 +227,6 @@ const PermissionsSettings = () => {
 
     const inputCls = settingsInputClass();
     const inputStyle = settingsInputStyle();
-
-    const renderRangeEditor = (title: string, key: 'lateInRules' | 'earlyOutRules') => {
-        const ranges = autoEdgeSettings[key]?.shiftDurationRanges || [];
-        return (
-            <div className="space-y-3 border p-4" style={settingsLedgerBorder}>
-                <div className="flex items-center justify-between gap-3">
-                    <div>
-                        <p className={settingsSectionTitleClass}>{title}</p>
-                        <p className={settingsFieldHelpClass}>Match by shift duration, ignore tiny misses, and cap by allowed minutes.</p>
-                    </div>
-                    <SettingsOutlineButton onClick={() => addAutoRange(key)}>
-                        <Plus className="h-3.5 w-3.5" />
-                        Add
-                    </SettingsOutlineButton>
-                </div>
-
-                {ranges.length === 0 ? (
-                    <div className="border border-dashed px-4 py-5 text-center text-xs font-medium text-stone-400" style={settingsLedgerBorder}>
-                        No ranges configured.
-                    </div>
-                ) : (
-                    <div className="space-y-2">
-                        <div className="hidden gap-2 px-1 text-[9px] font-semibold uppercase tracking-widest text-stone-400 md:grid md:grid-cols-[1fr_1fr_1fr_1fr_1.4fr_auto]">
-                            <span>Min shift hrs</span>
-                            <span>Max shift hrs</span>
-                            <span>Min trigger mins</span>
-                            <span>Allowed mins</span>
-                            <span>Description</span>
-                            <span />
-                        </div>
-                        {ranges.map((range, index) => (
-                            <div key={range._id || index} className="grid grid-cols-1 gap-2 border p-3 md:grid-cols-[1fr_1fr_1fr_1fr_1.4fr_auto]" style={settingsLedgerBorder}>
-                                <input
-                                    type="number"
-                                    min={0}
-                                    step={0.25}
-                                    value={range.minShiftHours}
-                                    onChange={(e) => updateRange(key, index, 'minShiftHours', e.target.value)}
-                                    className={`${inputCls} min-w-0 text-xs`}
-                                    style={inputStyle}
-                                    placeholder="Min hrs"
-                                />
-                                <input
-                                    type="number"
-                                    min={0}
-                                    step={0.25}
-                                    value={range.maxShiftHours}
-                                    onChange={(e) => updateRange(key, index, 'maxShiftHours', e.target.value)}
-                                    className={`${inputCls} min-w-0 text-xs`}
-                                    style={inputStyle}
-                                    placeholder="Max hrs"
-                                />
-                                <input
-                                    type="number"
-                                    min={0}
-                                    step={0.01}
-                                    value={range.minimumMinutes ?? 1}
-                                    onChange={(e) => updateRange(key, index, 'minimumMinutes', e.target.value)}
-                                    className={`${inputCls} min-w-0 text-xs`}
-                                    style={inputStyle}
-                                    placeholder="Min trigger"
-                                />
-                                <input
-                                    type="number"
-                                    min={0}
-                                    value={range.allowedMinutes}
-                                    onChange={(e) => updateRange(key, index, 'allowedMinutes', e.target.value)}
-                                    className={`${inputCls} min-w-0 text-xs`}
-                                    style={inputStyle}
-                                    placeholder="Minutes"
-                                />
-                                <input
-                                    type="text"
-                                    value={range.description || ''}
-                                    onChange={(e) => updateRange(key, index, 'description', e.target.value)}
-                                    className={`${inputCls} min-w-0 text-xs`}
-                                    style={inputStyle}
-                                    placeholder="Description"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => removeAutoRange(key, index)}
-                                    className="flex h-9 w-9 items-center justify-center border text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20"
-                                    style={settingsLedgerBorder}
-                                    title="Remove range"
-                                >
-                                    <Trash2 className="h-4 w-4" />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        );
-    };
 
     if (loading) return <SettingsSkeleton />;
 
@@ -477,13 +291,41 @@ const PermissionsSettings = () => {
                                 )}
                             </div>
 
-                            {autoEdgeSettings.applyFor === 'late_in' && renderRangeEditor('Late-in ranges', 'lateInRules')}
-                            {autoEdgeSettings.applyFor === 'early_out' && renderRangeEditor('Early-out ranges', 'earlyOutRules')}
-                            {autoEdgeSettings.applyFor === 'both' && autoEdgeSettings.useSameRulesForBoth && renderRangeEditor('Shared late-in and early-out ranges', 'lateInRules')}
+                            {autoEdgeSettings.applyFor === 'late_in' && (
+                                <AutoEdgePermissionRulesEditor
+                                    title="Late-in ranges"
+                                    help="Match by shift duration (HH:MM hours). Times are 24-hour format."
+                                    ruleSet={autoEdgeSettings.lateInRules}
+                                    onChange={(next) => updateAutoRuleSet('lateInRules', next)}
+                                />
+                            )}
+                            {autoEdgeSettings.applyFor === 'early_out' && (
+                                <AutoEdgePermissionRulesEditor
+                                    title="Early-out ranges"
+                                    help="Match by shift duration (HH:MM hours). Times are 24-hour format."
+                                    ruleSet={autoEdgeSettings.earlyOutRules}
+                                    onChange={(next) => updateAutoRuleSet('earlyOutRules', next)}
+                                />
+                            )}
+                            {autoEdgeSettings.applyFor === 'both' && autoEdgeSettings.useSameRulesForBoth && (
+                                <AutoEdgePermissionRulesEditor
+                                    title="Shared late-in and early-out ranges"
+                                    ruleSet={autoEdgeSettings.lateInRules}
+                                    onChange={(next) => updateAutoRuleSet('lateInRules', next)}
+                                />
+                            )}
                             {autoEdgeSettings.applyFor === 'both' && !autoEdgeSettings.useSameRulesForBoth && (
                                 <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
-                                    {renderRangeEditor('Late-in ranges', 'lateInRules')}
-                                    {renderRangeEditor('Early-out ranges', 'earlyOutRules')}
+                                    <AutoEdgePermissionRulesEditor
+                                        title="Late-in ranges"
+                                        ruleSet={autoEdgeSettings.lateInRules}
+                                        onChange={(next) => updateAutoRuleSet('lateInRules', next)}
+                                    />
+                                    <AutoEdgePermissionRulesEditor
+                                        title="Early-out ranges"
+                                        ruleSet={autoEdgeSettings.earlyOutRules}
+                                        onChange={(next) => updateAutoRuleSet('earlyOutRules', next)}
+                                    />
                                 </div>
                             )}
 

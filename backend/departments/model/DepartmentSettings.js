@@ -289,6 +289,50 @@ const departmentSettingsSchema = new mongoose.Schema(
           default: null,
         },
       },
+      /** Department overrides for global auto late-in / early-out permission slabs */
+      autoEdge: {
+        isEnabled: {
+          type: Boolean,
+          default: null,
+        },
+        applyFor: {
+          type: String,
+          enum: ['late_in', 'early_out', 'both', null],
+          default: null,
+        },
+        useSameRulesForBoth: {
+          type: Boolean,
+          default: null,
+        },
+        lateInRules: {
+          shiftDurationRanges: {
+            type: [
+              {
+                minShiftHours: { type: Number, required: true, min: 0 },
+                maxShiftHours: { type: Number, required: true, min: 0 },
+                allowedMinutes: { type: Number, required: true, min: 0 },
+                minimumMinutes: { type: Number, default: 1, min: 0 },
+                description: { type: String, default: '', trim: true },
+              },
+            ],
+            default: undefined,
+          },
+        },
+        earlyOutRules: {
+          shiftDurationRanges: {
+            type: [
+              {
+                minShiftHours: { type: Number, required: true, min: 0 },
+                maxShiftHours: { type: Number, required: true, min: 0 },
+                allowedMinutes: { type: Number, required: true, min: 0 },
+                minimumMinutes: { type: Number, default: 1, min: 0 },
+                description: { type: String, default: '', trim: true },
+              },
+            ],
+            default: undefined,
+          },
+        },
+      },
     },
 
     // Overtime (OT) Settings

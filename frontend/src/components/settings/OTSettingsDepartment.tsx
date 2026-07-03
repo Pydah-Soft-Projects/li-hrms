@@ -14,7 +14,9 @@ import {
   settingsPrimaryButtonClass,
   settingsPrimaryButtonStyle,
 } from '@/lib/settingsUi';
-import { minutesToHHMM, hhmmToMinutes, hoursToHHMM, hhmmToHours } from './otTimeHelpers';
+import { DurationTimeInput, DurationHoursInput } from './DurationTimeInput';
+import { OtHourRangesEditor } from './OtHourRangesEditor';
+import { minutesToHHMM, hhmmToMinutes } from './otTimeHelpers';
 
 export type DepartmentOtDraft = {
   recognitionMode: string | null;
@@ -369,18 +371,15 @@ export default function OTSettingsDepartment({
                 </select>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[10px] text-gray-500">Threshold (HH:MM)</span>
-                  <input
-                    type="time"
-                    lang="en-GB"
-                    step={60}
-                    value={hoursToHHMM(draft.thresholdHours)}
-                    onChange={(e) =>
+                  <DurationHoursInput
+                    hours={draft.thresholdHours}
+                    onChangeHours={(v) =>
                       setDraft((p) => ({
                         ...p,
-                        thresholdHours: hhmmToHours(e.target.value),
+                        thresholdHours: v,
                       }))
                     }
-                    className="w-28 rounded-lg border border-gray-200 px-2 py-1 text-right text-xs dark:border-gray-700 dark:bg-slate-900"
+                    className="w-28"
                   />
                 </div>
                 <div className="flex items-center justify-between gap-2">
@@ -498,92 +497,19 @@ export default function OTSettingsDepartment({
                     className="w-16 rounded-lg border border-gray-200 px-2 py-1 text-right text-xs dark:border-gray-700 dark:bg-slate-900"
                   />
                 </div>
-                <p className="pt-2 text-[10px] font-bold uppercase tracking-tighter text-gray-500">Ranges (HH:MM)</p>
-                <p className="text-[10px] text-gray-500">Example: 00:30 to 01:00 consider as 01:00</p>
-                <div className="space-y-2">
-                  <div className="grid grid-cols-9 gap-2 px-1 text-[9px] font-bold uppercase tracking-wider text-gray-400">
-                    <span className="col-span-2">From</span>
-                    <span className="col-span-1 text-center">-</span>
-                    <span className="col-span-2">To</span>
-                    <span className="col-span-1 text-center">=</span>
-                    <span className="col-span-2">Consider As</span>
-                    <span className="col-span-1 text-right">Action</span>
-                  </div>
-                  {draft.otHourRanges.map((r, idx) => (
-                    <div
-                      key={idx}
-                      className="grid grid-cols-9 items-center gap-2 rounded-lg border border-gray-100 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-slate-900/30"
-                    >
-                      <input
-                        type="time"
-                        lang="en-GB"
-                        step={60}
-                        value={minutesToHHMM(r.minMinutes)}
-                        onChange={(e) => {
-                          const next = [...draft.otHourRanges];
-                          next[idx] = { ...next[idx], minMinutes: hhmmToMinutes(e.target.value) };
-                          setDraft((p) => ({ ...p, otHourRanges: next }));
-                        }}
-                        className="col-span-2 rounded-lg border border-gray-200 px-2 py-1 text-xs dark:border-gray-700 dark:bg-slate-900"
-                      />
-                      <span className="text-center text-[10px] text-gray-500">to</span>
-                      <input
-                        type="time"
-                        lang="en-GB"
-                        step={60}
-                        value={minutesToHHMM(r.maxMinutes)}
-                        onChange={(e) => {
-                          const next = [...draft.otHourRanges];
-                          next[idx] = { ...next[idx], maxMinutes: hhmmToMinutes(e.target.value) };
-                          setDraft((p) => ({ ...p, otHourRanges: next }));
-                        }}
-                        className="col-span-2 rounded-lg border border-gray-200 px-2 py-1 text-xs dark:border-gray-700 dark:bg-slate-900"
-                      />
-                      <span className="text-center text-[10px] text-gray-500">consider</span>
-                      <input
-                        type="time"
-                        lang="en-GB"
-                        step={60}
-                        value={minutesToHHMM(r.creditedMinutes)}
-                        onChange={(e) => {
-                          const next = [...draft.otHourRanges];
-                          next[idx] = { ...next[idx], creditedMinutes: hhmmToMinutes(e.target.value) };
-                          setDraft((p) => ({ ...p, otHourRanges: next }));
-                        }}
-                        className="col-span-2 rounded-lg border border-gray-200 px-2 py-1 text-xs dark:border-gray-700 dark:bg-slate-900"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setDraft((p) => ({
-                            ...p,
-                            otHourRanges: p.otHourRanges.filter((_, i) => i !== idx),
-                          }))
-                        }
-                        className="col-span-1 text-right text-[10px] font-bold text-red-600"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDraft((p) => ({
-                        ...p,
-                        otHourRanges: [...p.otHourRanges, { minMinutes: 0, maxMinutes: 0, creditedMinutes: 0, label: '' }],
-                      }))
-                    }
-                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700"
-                  >
-                    + Add range
-                  </button>
-                </div>
               </div>
-
-              <SettingsSaveBar onSave={handleSaveParams} saving={saving} label="Commit parameters" />
             </div>
           </SettingsSectionCard>
+
+      <SettingsSectionCard title="OT time ranges" description="Map raw overtime durations to credited hours (24-hour format).">
+        <OtHourRangesEditor
+          ranges={draft.otHourRanges}
+          onChange={(otHourRanges) => setDraft((p) => ({ ...p, otHourRanges }))}
+        />
+        <div className="mt-4">
+          <SettingsSaveBar onSave={handleSaveParams} saving={saving} label="Commit parameters" />
+        </div>
+      </SettingsSectionCard>
 
       <SettingsSectionCard title="Policy simulator" description="Preview OT recognition for sample extra hours.">
         {variant === 'divisionWide' || !departmentId ? (
@@ -595,12 +521,9 @@ export default function OTSettingsDepartment({
             <div className="flex flex-wrap items-end gap-3">
               <div>
                 <label className={DEPT_LABEL}>Raw OT (HH:MM)</label>
-                <input
-                  type="time"
-                  lang="en-GB"
-                  step={60}
+                <DurationTimeInput
                   value={simRawHours}
-                  onChange={(e) => setSimRawHours(e.target.value)}
+                  onChange={setSimRawHours}
                   className={`w-28 ${DEPT_INPUT}`}
                   style={inputStyle}
                 />

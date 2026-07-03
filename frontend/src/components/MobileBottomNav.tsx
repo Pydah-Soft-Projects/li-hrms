@@ -5,111 +5,21 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { api } from '@/lib/api';
-import { MODULE_CATEGORIES, isModuleEnabled, isCategoryEnabled } from '@/config/moduleCategories';
+import { MODULE_CATEGORIES, isModuleEnabled } from '@/config/moduleCategories';
+import {
+  WORKSPACE_NAV_CATEGORIES,
+  SIDEBAR_MODULE_ICONS,
+  SIDEBAR_SHORT_LABELS,
+  getSidebarPermissionCode,
+  isWorkspacePathActive,
+} from '@/config/sidebarNav';
 import {
   LayoutDashboard,
   MoreHorizontal,
   X,
-  Users,
-  Building2,
-  UserCog,
-  Settings,
-  PiggyBank,
-  Briefcase,
-  Gift,
-  Cake,
-  Clock,
-  CalendarDays,
-  Timer,
-  Fingerprint,
-  CalendarHeart,
-  CalendarClock,
-  UserCircle,
-  HandCoins,
-  AlertOctagon,
-  LineChart,
-  Calculator,
-  ArrowRightLeft,
-  ScrollText,
-  BadgeDollarSign,
   LogOut,
-  Receipt,
-  TrendingUp
 } from 'lucide-react';
 import { cn } from '@/lib/utils'; // Assuming this exists, based on usual project structure
-
-// Module code to icon mapping (Same as Sidebar)
-const moduleIcons: Record<string, any> = {
-  DASHBOARD: LayoutDashboard,
-  LEAVE: CalendarClock,
-  OD: Briefcase,
-  LEAVE_OD: CalendarDays,
-  CCL: Gift,
-  EMPLOYEE: Users,
-  EMPLOYEES: Users,
-  SHIFT: Clock,
-  SHIFTS: Clock,
-  SHIFT_ROSTER: CalendarDays,
-  DEPARTMENT: Building2,
-  DEPARTMENTS: Building2,
-  ATTENDANCE: Fingerprint,
-  PROFILE: UserCircle,
-  SETTINGS: Settings,
-  LOANS: PiggyBank,
-  LOAN: PiggyBank,
-  OT_PERMISSIONS: Timer,
-  CONFUSED_SHIFTS: AlertOctagon,
-  USERS: UserCog,
-  REPORTS: LineChart,
-  ALLOWANCES_DEDUCTIONS: Calculator,
-  PAYROLL_TRANSACTIONS: ArrowRightLeft,
-  PAY_REGISTER: ScrollText,
-  PAYSHEET: Receipt,
-  PAYSLIPS: Receipt,
-  PAYROLL: BadgeDollarSign,
-  LOANS_SALARY_ADVANCE: HandCoins,
-  HOLIDAY_CALENDAR: CalendarHeart,
-  RESIGNATION: LogOut,
-  PROMOTIONS_TRANSFERS: TrendingUp,
-  EMPLOYEE_BIRTHDAYS: Cake,
-  ASSETS_MANAGEMENT: HandCoins,
-};
-
-const shortModuleLabels: Record<string, string> = {
-  DASHBOARD: 'Dash',
-  LEAVE: 'Leave',
-  OD: 'OD',
-  LEAVE_OD: 'L/OD',
-  CCL: 'CCL',
-  EMPLOYEE: 'Emps',
-  EMPLOYEES: 'Emps',
-  SHIFT: 'Shift',
-  SHIFTS: 'Shift',
-  SHIFT_ROSTER: 'Roster',
-  DEPARTMENT: 'Dept',
-  DEPARTMENTS: 'Depts',
-  ATTENDANCE: 'Attn',
-  PROFILE: 'Me',
-  SETTINGS: 'Sets',
-  LOANS: 'Loans',
-  LOAN: 'Loan',
-  OT_PERMISSIONS: 'OT',
-  CONFUSED_SHIFTS: 'Alert',
-  USERS: 'Users',
-  REPORTS: 'Rpts',
-  ALLOWANCES_DEDUCTIONS: 'Allow',
-  PAYROLL_TRANSACTIONS: 'Txns',
-  PAY_REGISTER: 'Reg',
-  PAYSHEET: 'Sheet',
-  PAYSLIPS: 'Pay',
-  PAYROLL: 'Roll',
-  LOANS_SALARY_ADVANCE: 'Adv',
-  HOLIDAY_CALENDAR: 'Hols',
-  RESIGNATION: 'Resign',
-  PROMOTIONS_TRANSFERS: 'Promo',
-  EMPLOYEE_BIRTHDAYS: 'Bday',
-  ASSETS_MANAGEMENT: 'Assets',
-};
 
 export default function MobileBottomNav() {
   const pathname = usePathname();
@@ -172,14 +82,11 @@ export default function MobileBottomNav() {
   const allEnabledModules = useMemo(() => {
     if (!mounted || !featureControl) return [];
 
-    const modules: any[] = [];
-    MODULE_CATEGORIES.forEach(category => {
-      // Check if category is enabled (not really used in flat list but good to check)
-      if (!isCategoryEnabled(category.code, featureControl)) return;
-
-      category.modules.forEach(module => {
-        if (isModuleEnabled(module.code, featureControl)) {
-          modules.push(module);
+    const modules: { code: string; label: string; href: string }[] = [];
+    WORKSPACE_NAV_CATEGORIES.forEach((category) => {
+      category.items.forEach((item) => {
+        if (isModuleEnabled(getSidebarPermissionCode(item.code), featureControl)) {
+          modules.push(item);
         }
       });
     });
@@ -203,14 +110,8 @@ export default function MobileBottomNav() {
   const moreModules = needsMoreButton ? otherModules.slice(3) : []; // Modules in the "More" menu
 
   // Helper to check active state
-  const isActive = (href: string, code: string) => {
-    return pathname === href ||
-      (code === 'LEAVE_OD' && (pathname === '/leaves' || pathname === '/od')) ||
-      (code === 'CCL' && pathname === '/ccl') ||
-      (code === 'PROMOTIONS_TRANSFERS' && pathname === '/promotions-transfers') ||
-      (code === 'ASSETS_MANAGEMENT' && pathname === '/assets-management') ||
-      (code === 'EMPLOYEE_BIRTHDAYS' && pathname === '/employee-birthdays');
-  };
+  const isActive = (href: string, code: string) =>
+    isWorkspacePathActive(code, href, pathname);
 
   const handleLogout = async () => {
     if (!(await auth.logoutWithConfirmation())) return;
@@ -231,7 +132,7 @@ export default function MobileBottomNav() {
           {/* Left Side Modules */}
           <div className="flex flex-1 justify-around items-center">
             {leftModules.map((module) => {
-              const Icon = moduleIcons[module.code] || LayoutDashboard;
+              const Icon = SIDEBAR_MODULE_ICONS[module.code] || LayoutDashboard;
               const active = isActive(module.href, module.code);
               return (
                 <Link
@@ -276,7 +177,7 @@ export default function MobileBottomNav() {
           {/* Right Side Modules */}
           <div className="flex flex-1 justify-around items-center relative">
             {rightModules.map((module) => {
-              const Icon = moduleIcons[module.code] || LayoutDashboard;
+              const Icon = SIDEBAR_MODULE_ICONS[module.code] || LayoutDashboard;
               const active = isActive(module.href, module.code);
               return (
                 <Link
@@ -318,7 +219,7 @@ export default function MobileBottomNav() {
                   >
                     {/* Modules inside the pill */}
                     {moreModules.map((module, idx) => {
-                      const Icon = moduleIcons[module.code] || LayoutDashboard;
+                      const Icon = SIDEBAR_MODULE_ICONS[module.code] || LayoutDashboard;
                       const active = isActive(module.href, module.code);
                       return (
                         <Link
@@ -341,7 +242,7 @@ export default function MobileBottomNav() {
                             "text-[8px] font-bold  tracking-tight text-center leading-none",
                             active ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400"
                           )}>
-                            {shortModuleLabels[module.code] || module.label.slice(0, 4)}
+                            {SIDEBAR_SHORT_LABELS[module.code] || module.label.slice(0, 4)}
                           </span>
                         </Link>
                       );
