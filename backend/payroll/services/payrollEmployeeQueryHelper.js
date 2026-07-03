@@ -20,6 +20,26 @@ function toObjectIdIfValid(id) {
 }
 
 /**
+ * Parse a single id, comma-separated string, or array of ids into a de-duplicated ObjectId[].
+ * Ignores empty/'all'/invalid entries. Used for multi-select division/department filters.
+ */
+function toObjectIdList(raw) {
+  if (raw == null || raw === '' || raw === 'all') return [];
+  const parts = Array.isArray(raw) ? raw : String(raw).split(',');
+  const seen = new Set();
+  const out = [];
+  for (const part of parts) {
+    const oid = toObjectIdIfValid(part);
+    if (!oid) continue;
+    const key = String(oid);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(oid);
+  }
+  return out;
+}
+
+/**
  * Full employee match for POST /payroll/bulk-calculate (and worker replay).
  * Combines data-scope filter + division/department + payroll-month employment rule (active or left in period).
  * Uses $and so req.scopeFilter.$or is preserved (spread + overwriting $or was incorrect).
@@ -50,12 +70,12 @@ function buildPayrollBulkEmployeeQuery(scopeFilter, divisionId, departmentId, ra
   }
   andParts.push(employmentOr);
 
-  const div = toObjectIdIfValid(divisionId);
-  const dept = toObjectIdIfValid(departmentId);
+  const divs = toObjectIdList(divisionId);
+  const depts = toObjectIdList(departmentId);
   const des = toObjectIdIfValid(designationId);
   const grp = toObjectIdIfValid(employeeGroupId);
-  if (div) andParts.push({ division_id: div });
-  if (dept) andParts.push({ department_id: dept });
+  if (divs.length) andParts.push({ division_id: divs.length === 1 ? divs[0] : { $in: divs } });
+  if (depts.length) andParts.push({ department_id: depts.length === 1 ? depts[0] : { $in: depts } });
   if (des) andParts.push({ designation_id: des });
   if (grp) andParts.push({ employee_group_id: grp });
 
@@ -133,8 +153,10 @@ function getRegularPayrollEmployeeQuery(opts = {}) {
     query.is_active = true;
   }
 
-  if (departmentId && departmentId !== 'all') query.department_id = departmentId;
-  if (divisionId && divisionId !== 'all') query.division_id = divisionId;
+  const deptIds = toObjectIdList(departmentId);
+  const divIds = toObjectIdList(divisionId);
+  if (deptIds.length) query.department_id = deptIds.length === 1 ? deptIds[0] : { $in: deptIds };
+  if (divIds.length) query.division_id = divIds.length === 1 ? divIds[0] : { $in: divIds };
   return query;
 }
 
@@ -176,6 +198,8 @@ function buildPayrollPeriodEmployeeQuery(divisionId, departmentId, rangeStart, r
 }
 
 module.exports = {
+  toObjectIdIfValid,
+  toObjectIdList,
   buildPayrollBulkEmployeeQuery,
   buildPaysheetEmployeeFilter,
   getRegularPayrollEmployeeQuery,

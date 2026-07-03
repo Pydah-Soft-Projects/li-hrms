@@ -2,6 +2,35 @@ const { Worker } = require('bullmq');
 const { redisConfig } = require('../../config/redis');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
+/**
+ * Build the pre-fetched department context (optimization reused by per-employee calculation).
+ *
+ * departmentId / divisionId may be a single id, a comma-separated string (multi-select), or 'all'.
+ * The shared department context only makes sense for a SINGLE department (per-employee calc falls back
+ * to resolving its own department otherwise), so when zero or multiple departments are selected we skip
+ * the prefetch. This also avoids `Department.findById('id1,id2')` throwing a Cast to ObjectId error.
+ */
+async function buildSharedDepartmentContext(departmentId, divisionId) {
+    const empty = { department: null, includeMissing: undefined };
+    const { parseQueryIdList } = require('../../pay-register/services/payRegisterEmployeeFilter');
+
+    const deptIds = parseQueryIdList(departmentId);
+    if (deptIds.length !== 1) return empty;
+
+    const divIds = parseQueryIdList(divisionId);
+    const singleDivId = divIds.length === 1 ? divIds[0] : null;
+
+    const Department = require('../../departments/model/Department');
+    const allowanceDeductionResolverService = require('../../payroll/services/allowanceDeductionResolverService');
+
+    const [department, includeMissing] = await Promise.all([
+        Department.findById(deptIds[0]),
+        allowanceDeductionResolverService.getIncludeMissingFlag(deptIds[0], singleDivId),
+    ]);
+
+    return { department, includeMissing };
+}
+
 // Start the workers
 const startWorkers = () => {
     console.log('🚀 Starting BullMQ Workers...');
@@ -54,8 +83,6 @@ const startWorkers = () => {
                 const { calculateSecondSalary } = require('../../payroll/services/secondSalaryCalculationService');
                 const SecondSalaryBatchService = require('../../payroll/services/secondSalaryBatchService');
                 const Employee = require('../../employees/model/Employee');
-                const Department = require('../../departments/model/Department');
-                const allowanceDeductionResolverService = require('../../payroll/services/allowanceDeductionResolverService');
 
                 let employees;
                 if (job.data.employeeIds && Array.isArray(job.data.employeeIds) && job.data.employeeIds.length > 0) {
@@ -73,11 +100,8 @@ const startWorkers = () => {
                     console.log(`[Worker] Calculating 2nd salary for ${employees.length} employees (from query)`);
                 }
 
-                // Optimization: Pre-fetch department and settings for context
-                const sharedContext = {
-                    department: (departmentId && departmentId !== 'all') ? await Department.findById(departmentId) : null,
-                    includeMissing: (departmentId && departmentId !== 'all') ? await allowanceDeductionResolverService.getIncludeMissingFlag(departmentId, divisionId) : undefined
-                };
+                // Optimization: Pre-fetch department and settings for context (single-department selection only)
+                const sharedContext = await buildSharedDepartmentContext(departmentId, divisionId);
 
                 const batchIds = new Set();
 
@@ -106,8 +130,6 @@ const startWorkers = () => {
                 console.log(`[Worker] 2nd Salary batch calculation complete`);
             } else if (action === 'payroll_bulk_calculate') {
                 const Employee = require('../../employees/model/Employee');
-                const Department = require('../../departments/model/Department');
-                const allowanceDeductionResolverService = require('../../payroll/services/allowanceDeductionResolverService');
                 const PayrollBatchService = require('../../payroll/services/payrollBatchService');
                 const { buildPayRegisterEmployeeFilter } = require('../../pay-register/services/payRegisterEmployeeFilter');
                 const { ensurePayRegisterForPayroll } = require('../../pay-register/services/autoSyncService');
@@ -154,11 +176,8 @@ const startWorkers = () => {
                     console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees (legacy job: dept/div query)`);
                 }
 
-                // Optimization: Pre-fetch department and settings for context
-                const sharedContext = {
-                    department: (departmentId && departmentId !== 'all') ? await Department.findById(departmentId) : null,
-                    includeMissing: (departmentId && departmentId !== 'all') ? await allowanceDeductionResolverService.getIncludeMissingFlag(departmentId, divisionId) : undefined
-                };
+                // Optimization: Pre-fetch department and settings for context (single-department selection only)
+                const sharedContext = await buildSharedDepartmentContext(departmentId, divisionId);
 
                 const batchIds = new Set();
                 const useLegacy = job.data.strategy === 'legacy';
