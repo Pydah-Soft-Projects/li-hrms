@@ -3,6 +3,14 @@
 
 
 import { useState, useEffect, useRef, useMemo, type MouseEvent } from 'react';
+import {
+  attendanceMonthToDate,
+  dateToAttendanceMonth,
+} from '@/lib/attendance/urlFilters';
+import {
+  useAttendanceUrlHydration,
+  useSyncAttendanceUrlFilters,
+} from '@/lib/attendance/useAttendanceUrlFilters';
 
 import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
 import { api } from '@/lib/api';
@@ -497,6 +505,7 @@ export default function AttendancePage() {
   };
 
   const { user } = useAuth();
+  const initialUrl = useAttendanceUrlHydration();
 
   const isEmployee = user?.role === 'employee';
 
@@ -504,7 +513,9 @@ export default function AttendancePage() {
 
 
 
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(
+    () => attendanceMonthToDate(initialUrl.month) || new Date()
+  );
 
 
 
@@ -698,11 +709,11 @@ export default function AttendancePage() {
 
   const [designations, setDesignations] = useState<Designation[]>([]);
 
-  const [selectedDivision, setSelectedDivision] = useState<string>('');
+  const [selectedDivision, setSelectedDivision] = useState<string>(initialUrl.division || '');
 
-  const [selectedDepartment, setSelectedDepartment] = useState<string>('');
+  const [selectedDepartment, setSelectedDepartment] = useState<string>(initialUrl.dept || '');
 
-  const [selectedDesignation, setSelectedDesignation] = useState<string>('');
+  const [selectedDesignation, setSelectedDesignation] = useState<string>(initialUrl.designation || '');
 
   const [filteredMonthlyData, setFilteredMonthlyData] = useState<MonthlyAttendanceData[]>([]);
 
@@ -710,12 +721,12 @@ export default function AttendancePage() {
 
   // Search state
 
-  const [showSearch, setShowSearch] = useState(false);
+  const [showSearch, setShowSearch] = useState(Boolean(initialUrl.q));
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialUrl.q || '');
 
   /** Server-side monthly search; avoids filtering only the first loaded pages and matches resigned-in-period rows */
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState(initialUrl.q || '');
   useEffect(() => {
     const t = setTimeout(() => {
       const q = searchQuery.trim();
@@ -748,7 +759,9 @@ export default function AttendancePage() {
 
   // Table type state
 
-  const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>('complete');
+  const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>(
+    initialUrl.table || 'complete'
+  );
 
   /** Organization Complete-table totals from attendance settings (superadmin-configured). */
   const [orgCompleteSummaryColumns, setOrgCompleteSummaryColumns] = useState<
@@ -921,6 +934,31 @@ export default function AttendancePage() {
   const year = currentDate.getFullYear();
 
   const month = currentDate.getMonth() + 1;
+
+  const attendanceUrlFilters = useMemo(
+    () =>
+      isEmployee
+        ? { month: dateToAttendanceMonth(currentDate) }
+        : {
+            month: dateToAttendanceMonth(currentDate),
+            division: selectedDivision || undefined,
+            dept: selectedDepartment || undefined,
+            designation: selectedDesignation || undefined,
+            q: debouncedSearch || undefined,
+            table: tableType !== 'complete' ? tableType : undefined,
+          },
+    [
+      isEmployee,
+      currentDate,
+      selectedDivision,
+      selectedDepartment,
+      selectedDesignation,
+      debouncedSearch,
+      tableType,
+    ]
+  );
+
+  useSyncAttendanceUrlFilters(attendanceUrlFilters, true);
 
   useEffect(() => {
     loadDivisions();

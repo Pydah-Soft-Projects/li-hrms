@@ -81,6 +81,9 @@ const upload = multer({ storage: multer.memoryStorage() });
 // Create application (HR) - handle file uploads
 router.post('/', upload.any(), createApplication);
 
+// Create rejoin application for left employee (HR)
+router.post('/rejoin', authorize('super_admin', 'sub_admin', 'hr', 'manager'), require('./controllers/employeeApplicationController').createRejoinApplication);
+
 // Bulk approve applications (Superadmin)
 router.put('/bulk-approve', authorize('super_admin'), bulkApproveApplications);
 

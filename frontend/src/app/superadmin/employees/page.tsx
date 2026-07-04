@@ -14,6 +14,7 @@ import EmployeeUpdateModal from '@/components/EmployeeUpdateModal';
 import CertificatePreviewModal from '@/components/employee/CertificatePreviewModal';
 import HistoryViewCompleteModal from '@/components/employee/HistoryViewCompleteModal';
 import ResignationModal from '@/components/employee/ResignationModal';
+import RejoinEmployeeModal from '@/components/employee/RejoinEmployeeModal';
 import UpdateRequestReviewModal from '@/components/employee/UpdateRequestReviewModal';
 import BankUpdateDialog from '@/components/employee/BankUpdateDialog';
 import Spinner from '@/components/Spinner';
@@ -522,6 +523,8 @@ export default function EmployeesPage() {
   const [userRole, setUserRole] = useState<string>('');
   const [showLeftDateModal, setShowLeftDateModal] = useState(false);
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
+  const [showRejoinModal, setShowRejoinModal] = useState(false);
+  const [rejoinEmployee, setRejoinEmployee] = useState<Employee | null>(null);
   const [leftDateForm, setLeftDateForm] = useState<{ leftDate: string; leftReason: string; requestType?: 'resignation' | 'termination' }>({ leftDate: '', leftReason: '', requestType: 'resignation' });
   const [resignationNoticePeriodDays, setResignationNoticePeriodDays] = useState(0);
   const [includeLeftEmployees, setIncludeLeftEmployees] = useState(true);
@@ -2721,30 +2724,18 @@ export default function EmployeesPage() {
     }
   };
 
-  const handleRemoveLeftDate = async (employee: Employee) => {
-    const result = await alertConfirm(
-      'Reactivate employee?',
-      `Are you sure you want to reactivate ${employee.employee_name}? This will remove their left date.`,
-      'Yes, reactivate'
-    );
+  const openRejoinModal = (employee: Employee) => {
+    setRejoinEmployee(employee);
+    setShowRejoinModal(true);
+  };
 
-    if (!result.isConfirmed) return;
-
-    try {
-      setError('');
-      setSuccess('');
-      const response = await api.removeEmployeeLeftDate(employee.emp_no);
-
-      if (response.success) {
-        await alertSuccess('Employee reactivated', 'Employee reactivated successfully!');
-        loadEmployees();
-      } else {
-        await alertError('Failed to reactivate', response.message || 'Failed to reactivate employee');
-      }
-    } catch (err: any) {
-      await alertError('An error occurred', err.message || 'An error occurred');
-      console.error(err);
+  const handleRejoinSuccess = (message?: string) => {
+    if (message) {
+      setSuccess(message);
+      void alertSuccess('Rejoin submitted', message);
     }
+    loadEmployees();
+    if (activeTab === 'applications') loadApplications();
   };
 
   const handleToggleDeductionPreference = async (key: string, value: boolean) => {
@@ -3064,9 +3055,12 @@ export default function EmployeesPage() {
   };
 
   const handleVerifyApplication = async (application: EmployeeApplication) => {
+    const isRejoin = application.applicationType === 'rejoin';
     const result = await alertConfirm(
-      'Verify application?',
-      `Verify application for ${application.employee_name} and create their employee record?`,
+      isRejoin ? 'Verify rejoin application?' : 'Verify application?',
+      isRejoin
+        ? `Verify rejoin for ${application.employee_name}? This will reactivate the employee (salary still pending approval).`
+        : `Verify application for ${application.employee_name} and create their employee record?`,
       'Yes, verify'
     );
     if (!result.isConfirmed) return;
@@ -3081,10 +3075,16 @@ export default function EmployeesPage() {
       if (response.success) {
         closeAlert();
         await alertSuccess(
-          'Application verified',
-          'Employee record created. You can finalize salary when ready.'
+          isRejoin ? 'Rejoin verified' : 'Application verified',
+          isRejoin
+            ? 'Employee reactivated. You can finalize salary when ready.'
+            : 'Employee record created. You can finalize salary when ready.'
         );
-        setSuccess('Application verified and employee created! Now awaiting final salary approval.');
+        setSuccess(
+          isRejoin
+            ? 'Rejoin verified. Employee reactivated — awaiting salary approval.'
+            : 'Application verified and employee created! Now awaiting final salary approval.'
+        );
         await loadApplications();
         await loadEmployees();
 
@@ -3832,6 +3832,9 @@ export default function EmployeesPage() {
                               </td>
                               <td className="px-6 py-4">
                                 <div className="font-bold text-slate-900 dark:text-slate-100">{app.employee_name}</div>
+                                {app.applicationType === 'rejoin' && (
+                                  <span className="mt-0.5 inline-block rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">Rejoin</span>
+                                )}
                                 <div className="text-[10px] text-slate-500">{app.emp_no} • {app.email || 'No email'}</div>
                               </td>
                               <td className="px-6 py-4">
@@ -4489,10 +4492,10 @@ export default function EmployeesPage() {
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleRemoveLeftDate(employee);
+                                      openRejoinModal(employee);
                                     }}
                                     className="rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400"
-                                    title="Reactivate Employee"
+                                    title="Rejoin Employee"
                                   >
                                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -6270,11 +6273,11 @@ export default function EmployeesPage() {
                         onClick={() => {
                           setShowViewDialog(false);
                           setCertificatePreviewUrl(null);
-                          handleRemoveLeftDate(viewingEmployee);
+                          openRejoinModal(viewingEmployee);
                         }}
-                        className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+                        className="rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-emerald-700"
                       >
-                        Reactivate
+                        Rejoin Employee
                       </button>
                     )}
                     <button
@@ -7801,6 +7804,22 @@ export default function EmployeesPage() {
           <HistoryViewCompleteModal
             data={historyViewComplete}
             onClose={() => setHistoryViewComplete(null)}
+          />
+        )}
+
+        {/* Rejoin Modal */}
+        {showRejoinModal && rejoinEmployee && (
+          <RejoinEmployeeModal
+            employee={rejoinEmployee}
+            divisions={divisions}
+            departments={departments}
+            designations={designations}
+            employeeGroups={employeeGroups}
+            onClose={() => {
+              setShowRejoinModal(false);
+              setRejoinEmployee(null);
+            }}
+            onSuccess={handleRejoinSuccess}
           />
         )}
 

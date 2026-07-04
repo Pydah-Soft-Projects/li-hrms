@@ -1,6 +1,14 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo, type MouseEvent } from 'react';
+import {
+  attendanceMonthToDate,
+  dateToAttendanceMonth,
+} from '@/lib/attendance/urlFilters';
+import {
+  useAttendanceUrlHydration,
+  useSyncAttendanceUrlFilters,
+} from '@/lib/attendance/useAttendanceUrlFilters';
 import { api } from '@/lib/api';
 import { sortByEmpNo } from '@/lib/employeeSort';
 import { designationAccentClass } from '@/lib/designationDisplay';
@@ -289,6 +297,7 @@ interface Designation {
 }
 
 export default function AttendancePage() {
+  const initialUrl = useAttendanceUrlHydration();
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const scrollAttendanceTable = (direction: 'left' | 'right') => {
     const el = tableScrollRef.current;
@@ -297,7 +306,9 @@ export default function AttendancePage() {
     el.scrollBy({ left: direction === 'left' ? -amount : amount, behavior: 'smooth' });
   };
 
-  const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>('complete');
+  const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>(
+    initialUrl.table || 'complete'
+  );
   const [attendanceProcessingMode, setAttendanceProcessingMode] = useState<'single_shift' | 'multi_shift' | null>(null);
   const [orgCompleteSummaryColumns, setOrgCompleteSummaryColumns] = useState<
     Record<SuperadminCompleteAggregateKey, boolean>
@@ -415,7 +426,9 @@ export default function AttendancePage() {
   };
 
 
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(
+    () => attendanceMonthToDate(initialUrl.month) || new Date()
+  );
   const [showPayslipModal, setShowPayslipModal] = useState(false);
   const [selectedEmployeeForPayslip, setSelectedEmployeeForPayslip] = useState<Employee | null>(null);
   const [payslipData, setPayslipData] = useState<any>(null);
@@ -446,10 +459,10 @@ export default function AttendancePage() {
   const [cycleDates, setCycleDates] = useState({ startDate: '', endDate: '', label: '' });
 
   // Search state
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(Boolean(initialUrl.q));
+  const [searchQuery, setSearchQuery] = useState(initialUrl.q || '');
 
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState(initialUrl.q || '');
   useEffect(() => {
     const t = setTimeout(() => {
       const q = searchQuery.trim();
@@ -462,9 +475,9 @@ export default function AttendancePage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [divisions, setDivisions] = useState<any[]>([]);
-  const [selectedDivision, setSelectedDivision] = useState<string>('');
-  const [selectedDepartment, setSelectedDepartment] = useState<string>('');
-  const [selectedDesignation, setSelectedDesignation] = useState<string>('');
+  const [selectedDivision, setSelectedDivision] = useState<string>(initialUrl.division || '');
+  const [selectedDepartment, setSelectedDepartment] = useState<string>(initialUrl.dept || '');
+  const [selectedDesignation, setSelectedDesignation] = useState<string>(initialUrl.designation || '');
   // Pagination states for scaling
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(50);
@@ -684,6 +697,27 @@ export default function AttendancePage() {
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
+
+  const attendanceUrlFilters = useMemo(
+    () => ({
+      month: dateToAttendanceMonth(currentDate),
+      division: selectedDivision || undefined,
+      dept: selectedDepartment || undefined,
+      designation: selectedDesignation || undefined,
+      q: debouncedSearch || undefined,
+      table: tableType !== 'complete' ? tableType : undefined,
+    }),
+    [
+      currentDate,
+      selectedDivision,
+      selectedDepartment,
+      selectedDesignation,
+      debouncedSearch,
+      tableType,
+    ]
+  );
+
+  useSyncAttendanceUrlFilters(attendanceUrlFilters, true);
 
   useEffect(() => {
     setActiveHighlight(null);

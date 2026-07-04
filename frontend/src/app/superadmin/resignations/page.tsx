@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { api, Division, Department } from '@/lib/api';
+import { api, Division, Department, Designation } from '@/lib/api';
 import {
   buildDivisionToDepartmentIdsMap,
   getDepartmentsForDivision,
@@ -38,7 +38,9 @@ import {
   LayoutGrid,
   List,
   Pencil,
+  UserPlus,
 } from 'lucide-react';
+import RejoinEmployeeModal from '@/components/employee/RejoinEmployeeModal';
 
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, loading }: { title: string; value: number | string; icon: React.ComponentType<{ className?: string }>; bgClass: string; iconClass: string; dekorClass?: string; loading?: boolean }) => (
   <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
@@ -413,7 +415,10 @@ export default function SuperAdminResignationsPage() {
   });
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [designations, setDesignations] = useState<Designation[]>([]);
   const [groups, setGroups] = useState<EmployeeGroup[]>([]);
+  const [showRejoinModal, setShowRejoinModal] = useState(false);
+  const [rejoinEmployee, setRejoinEmployee] = useState<{ emp_no: string; employee_name?: string } | null>(null);
   const [customGroupingEnabled, setCustomGroupingEnabled] = useState(false);
   const [orgScopeGroupIds, setOrgScopeGroupIds] = useState<Set<string> | null>(null);
   const [viewType, setViewType] = useState<'card' | 'list'>('list');
@@ -571,14 +576,16 @@ export default function SuperAdminResignationsPage() {
 
   const fetchFilterOptions = async () => {
     try {
-      const [divRes, deptRes, groupRes, groupingSettingRes] = await Promise.all([
+      const [divRes, deptRes, desRes, groupRes, groupingSettingRes] = await Promise.all([
         api.getDivisions(true),
         api.getDepartments(true),
+        api.getDesignations(),
         api.getEmployeeGroups(true),
         api.getSetting('custom_employee_grouping_enabled'),
       ]);
       if (divRes.success) setDivisions(divRes.data || []);
       if (deptRes.success) setDepartments(deptRes.data || []);
+      if (desRes.success) setDesignations(desRes.data || []);
       if (groupRes.success) setGroups(groupRes.data || []);
       const groupingOn = !!(
         groupingSettingRes.success &&
@@ -592,6 +599,15 @@ export default function SuperAdminResignationsPage() {
     } catch (error) {
       console.error('Error fetching filter options:', error);
     }
+  };
+
+  const openRejoinForRequest = (req: ResignationRequest) => {
+    const name =
+      req.employeeId?.employee_name ||
+      [req.employeeId?.first_name, req.employeeId?.last_name].filter(Boolean).join(' ') ||
+      req.emp_no;
+    setRejoinEmployee({ emp_no: req.emp_no, employee_name: name });
+    setShowRejoinModal(true);
   };
 
   const openApplyModal = (type: 'resignation' | 'termination' = 'resignation') => {
@@ -1363,6 +1379,16 @@ export default function SuperAdminResignationsPage() {
                             <Eye className="w-3.5 h-3.5" />
                             <span>View</span>
                           </button>
+                          {req.status === 'approved' && (
+                            <button
+                              type="button"
+                              onClick={() => openRejoinForRequest(req)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-[10px] font-black uppercase text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 tracking-tighter"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              <span>Rejoin</span>
+                            </button>
+                          )}
                           {req.status === 'pending' && canPerformAction(req) && (
                             <>
                               <button
@@ -1469,6 +1495,16 @@ export default function SuperAdminResignationsPage() {
                       <Eye className="w-3.5 h-3.5" />
                       View
                     </button>
+                    {req.status === 'approved' && (
+                      <button
+                        type="button"
+                        onClick={() => openRejoinForRequest(req)}
+                        className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 py-2 text-[10px] font-black uppercase text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 tracking-tighter"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        Rejoin
+                      </button>
+                    )}
                     {req.status === 'pending' && canPerformAction(req) && (
                       <>
                         <button
@@ -1866,6 +1902,22 @@ export default function SuperAdminResignationsPage() {
               </div>
             )}
 
+            {selectedRequest.status === 'approved' && (
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    openRejoinForRequest(selectedRequest);
+                    setShowDetailDialog(false);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Initiate Rejoin
+                </button>
+              </div>
+            )}
+
             {selectedRequest.status === 'pending' && canPerformAction(selectedRequest) && (
               <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col gap-4">
                 <textarea
@@ -1898,6 +1950,25 @@ export default function SuperAdminResignationsPage() {
       )}
 
       <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop={false} closeOnClick pauseOnFocusLoss draggable pauseOnHover theme="light" />
+
+      {showRejoinModal && rejoinEmployee && (
+        <RejoinEmployeeModal
+          employee={rejoinEmployee}
+          divisions={divisions}
+          departments={departments}
+          designations={designations}
+          employeeGroups={groups}
+          onClose={() => {
+            setShowRejoinModal(false);
+            setRejoinEmployee(null);
+          }}
+          onSuccess={(msg) => {
+            toast.success(msg || 'Rejoin application submitted');
+            setShowRejoinModal(false);
+            setRejoinEmployee(null);
+          }}
+        />
+      )}
     </div>
   );
 }

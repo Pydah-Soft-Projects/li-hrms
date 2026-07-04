@@ -26,7 +26,7 @@ import {
   loansFormInputClass,
   loansFormInputStyle,
 } from '@/components/loans/LoanDetailDialogShell';
-import { ledgerActionButtonClass, ledgerStatusBadgeClass } from '@/lib/ledgerUi';
+import { ledgerActionButtonClass, ledgerStatusBadgeClass, ledgerTableActionsCellClass, ledgerTableActionsGroupClass, ledgerTableActionsHeaderClass } from '@/lib/ledgerUi';
 import {
   confirmDeleteWithAssignedEmployees,
   showDeleteError,
@@ -45,7 +45,7 @@ function GroupRowActions({
   onDelete: (g: EmployeeGroup) => void;
 }) {
   return (
-    <>
+    <div className={ledgerTableActionsGroupClass('right')}>
       <button
         type="button"
         onClick={() => onEdit(group)}
@@ -62,7 +62,7 @@ function GroupRowActions({
       >
         <Trash2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
       </button>
-    </>
+    </div>
   );
 }
 
@@ -338,7 +338,7 @@ export default function EmployeeGroupsClient() {
                     <th className="px-3 py-2 text-left">Code</th>
                     <th className="px-3 py-2 text-left">Description</th>
                     <th className="px-3 py-2 text-left">Status</th>
-                    <th className="px-3 py-2 text-right">Actions</th>
+                    <th className={`px-3 py-2 ${ledgerTableActionsHeaderClass('right')}`}>Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y dark:divide-stone-800" style={ledgerBorder}>
@@ -354,10 +354,8 @@ export default function EmployeeGroupsClient() {
                       <td className="px-3 py-2">
                         <GroupStatusToggle group={g} onToggle={toggleActive} />
                       </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center justify-end gap-0.5">
-                          <GroupRowActions group={g} onEdit={openEditDialog} onDelete={handleDelete} />
-                        </div>
+                      <td className={`px-3 py-2 ${ledgerTableActionsCellClass('right')}`}>
+                        <GroupRowActions group={g} onEdit={openEditDialog} onDelete={handleDelete} />
                       </td>
                     </tr>
                   ))}

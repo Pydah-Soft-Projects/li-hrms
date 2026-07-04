@@ -115,6 +115,26 @@ export function ledgerMoneyClass(debit = false): string {
 /** Semantic tones for ledger action buttons (outline or solid). */
 export type LedgerActionTone = 'emerald' | 'sky' | 'rose' | 'amber' | 'violet';
 
+export type LedgerTableAlign = 'left' | 'center' | 'right';
+
+/** Consistent Actions column header alignment across ledger tables. */
+export function ledgerTableActionsHeaderClass(align: LedgerTableAlign = 'right'): string {
+  const alignClass = align === 'left' ? 'text-left' : align === 'center' ? 'text-center' : 'text-right';
+  return `${alignClass} whitespace-nowrap font-semibold`;
+}
+
+/** Consistent Actions cell wrapper — prevents row-height jumps and keeps buttons on one line. */
+export function ledgerTableActionsCellClass(align: LedgerTableAlign = 'right'): string {
+  const alignClass = align === 'left' ? 'text-left' : align === 'center' ? 'text-center' : 'text-right';
+  return `whitespace-nowrap ${alignClass}`;
+}
+
+/** Flex row for inline table action buttons — use inside an Actions `<td>`. */
+export function ledgerTableActionsGroupClass(align: LedgerTableAlign = 'right'): string {
+  const justify = align === 'left' ? 'justify-start' : align === 'center' ? 'justify-center' : 'justify-end';
+  return `flex items-center ${justify} gap-1.5`;
+}
+
 const ledgerActionBtnBase =
   'inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2.5 text-[10px] font-semibold uppercase tracking-wide transition hover:opacity-90 disabled:opacity-40 disabled:hover:opacity-40';
 

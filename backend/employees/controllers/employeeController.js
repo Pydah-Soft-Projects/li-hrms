@@ -28,6 +28,7 @@ const fileStorageService = require('../../shared/services/fileStorageService');
 const { resolveRequestOrigin } = require('../../shared/utils/fileStorageConfig');
 const { getNextEmpNo } = require('../services/empNoService');
 const EmployeeHistory = require('../model/EmployeeHistory');
+const { closeCurrentTenure } = require('../services/employmentTenureService');
 const { initializeEmployeeLeaves } = require('../../leaves/services/employeeLeaveInitializationService');
 const {
   stripEmployeeGroupIfDisabled,
@@ -1802,6 +1803,8 @@ exports.setLeftDate = async (req, res) => {
     employee.leftReason = leftReason || null;
     employee.is_active = false; // Manual left-date API keeps behaviour: deactivate now
 
+    closeCurrentTenure(employee, leftDateObj, leftReason || null, 'manual');
+
     await employee.save();
 
     // Employee history: left date set manually
@@ -1851,51 +1854,9 @@ exports.setLeftDate = async (req, res) => {
  */
 exports.removeLeftDate = async (req, res) => {
   try {
-    const { empNo } = req.params;
-
-    // Find employee
-    const employee = await Employee.findOne({ emp_no: empNo.toUpperCase() });
-    if (!employee) {
-      return res.status(404).json({
-        success: false,
-        message: 'Employee not found',
-      });
-    }
-
-    // Remove left date and reactivate
-    employee.leftDate = null;
-    employee.leftReason = null;
-    employee.is_active = true;
-
-    await employee.save();
-
-    // Employee history: left date cleared / reactivation
-    try {
-      await EmployeeHistory.create({
-        emp_no: employee.emp_no,
-        event: 'left_date_cleared',
-        performedBy: req.user._id,
-        performedByName: req.user.name,
-        performedByRole: req.user.role,
-        details: {
-          source: 'manual_api',
-        },
-        comments: 'Employee reactivated; left date cleared',
-      });
-    } catch (err) {
-      console.error('Failed to log left date cleared history:', err.message);
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Employee reactivated successfully',
-      data: {
-        emp_no: employee.emp_no,
-        employee_name: employee.employee_name,
-        leftDate: employee.leftDate,
-        leftReason: employee.leftReason,
-        is_active: employee.is_active,
-      },
+    return res.status(403).json({
+      success: false,
+      message: 'Direct reactivation is disabled. Please use the Rejoin workflow from Employees or Resignations.',
     });
   } catch (error) {
     console.error('Error removing left date:', error);

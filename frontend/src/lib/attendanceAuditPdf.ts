@@ -119,7 +119,7 @@ function drawEmployeeCompareGrid(doc: DocWithAutoTable, item: CompareData, start
   const minBlockHeight = 42;
 
   if (startY + minBlockHeight > pageHeight - margin) {
-    doc.addPage('l', 'a4');
+    doc.addPage('a4', 'l');
     startY = margin;
   }
 

@@ -271,6 +271,20 @@ const employeeSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    /** Full join/leave cycle history (current doj is the latest tenure's joinDate) */
+    employmentTenures: {
+      type: [
+        {
+          joinDate: { type: Date, required: true },
+          leaveDate: { type: Date, default: null },
+          leaveReason: { type: String, trim: true, default: null },
+          closedBy: { type: String, trim: true, default: null },
+          applicationId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmployeeApplication', default: null },
+          remarks: { type: String, trim: true, default: null },
+        },
+      ],
+      default: [],
+    },
     password: {
       type: String,
       default: null,

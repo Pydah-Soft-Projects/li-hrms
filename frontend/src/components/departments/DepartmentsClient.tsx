@@ -47,7 +47,7 @@ import {
   loansFormInputClass,
   loansFormInputStyle,
 } from '@/components/loans/LoanDetailDialogShell';
-import { ledgerActionButtonClass, ledgerStatusBadgeClass } from '@/lib/ledgerUi';
+import { ledgerActionButtonClass, ledgerStatusBadgeClass, ledgerTableActionsCellClass, ledgerTableActionsGroupClass, ledgerTableActionsHeaderClass } from '@/lib/ledgerUi';
 import { alertConfirm, ledgerSwalFire } from '@/lib/customSwal';
 import {
   confirmDeleteWithAssignedEmployees,
@@ -81,7 +81,7 @@ function DeptRowActions({
   className?: string;
 }) {
   return (
-    <div className={`flex items-center gap-0.5 ${className}`}>
+    <div className={`${ledgerTableActionsGroupClass('right')} ${className}`}>
       {onShifts ? (
         <button type="button" onClick={onShifts} className={ledgerActionButtonClass('amber')} aria-label="Shifts">
           <Clock className="h-3.5 w-3.5" />
@@ -240,7 +240,7 @@ export default function DepartmentsClient() {
   const [showShiftBreakdownDialog, setShowShiftBreakdownDialog] = useState<Designation | null>(null);
   const [showBulkUploadDept, setShowBulkUploadDept] = useState(false);
   const [showBulkUploadDesig, setShowBulkUploadDesig] = useState(false);
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
   const [error, setError] = useState('');
 
   // Department form state
@@ -2002,7 +2002,7 @@ export default function DepartmentsClient() {
                   <th className="px-3 py-2 text-left">Code</th>
                   <th className="px-3 py-2 text-left">Divisions</th>
                   <th className="px-3 py-2 text-center">Roles</th>
-                  <th className="px-3 py-2 text-right">Actions</th>
+                  <th className={`px-3 py-2 ${ledgerTableActionsHeaderClass('right')}`}>Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y dark:divide-stone-800" style={ledgerBorder}>
@@ -2060,14 +2060,12 @@ export default function DepartmentsClient() {
                           {dept.designations?.length || 0}
                         </button>
                       </td>
-                      <td className="px-3 py-2">
-                        <div className="flex justify-end">
-                          <DeptRowActions
+                      <td className={`px-3 py-2 ${ledgerTableActionsCellClass('right')}`}>
+                        <DeptRowActions
                             onShifts={() => handleOpenShiftDialog(dept)}
                             onEdit={() => handleOpenEditDialog(dept)}
                             onDelete={() => void handleDeleteDepartment(dept._id)}
                           />
-                        </div>
                       </td>
                     </tr>
                   );

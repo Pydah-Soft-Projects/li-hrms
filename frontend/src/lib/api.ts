@@ -1150,6 +1150,13 @@ export interface Employee {
   is_active: boolean;
   leftDate?: string;
   leftReason?: string;
+  employmentTenures?: Array<{
+    joinDate?: string;
+    leaveDate?: string | null;
+    leaveReason?: string | null;
+    closedBy?: string | null;
+    remarks?: string | null;
+  }>;
   created_at?: string;
   updated_at?: string;
   salaryStatus?: 'pending_approval' | 'approved';
@@ -1188,6 +1195,11 @@ export interface EmployeeApplication extends Partial<Employee> {
   _id: string;
   proposedSalary: number;
   approvedSalary?: number;
+  applicationType?: 'new' | 'rejoin';
+  rejoinRemarks?: string;
+  previousDoj?: string;
+  previousLeftDate?: string;
+  previousLeftReason?: string;
   status: 'pending' | 'verified' | 'approved' | 'rejected';
   createdBy?: { _id: string; name: string; email: string };
   verifiedBy?: { _id: string; name: string; email: string };
@@ -2642,6 +2654,13 @@ export const api = {
     return apiRequest<any>('/employee-applications', {
       method: 'POST',
       body: data instanceof FormData ? data : JSON.stringify(data),
+    });
+  },
+
+  createRejoinApplication: async (data: Record<string, unknown>) => {
+    return apiRequest<any>('/employee-applications/rejoin', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   },
 

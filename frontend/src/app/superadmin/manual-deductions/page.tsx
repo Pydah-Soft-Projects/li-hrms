@@ -39,7 +39,7 @@ import {
 } from '@/components/loans/LoanDetailDialogShell';
 import { LedgerCollapsiblePanel } from '@/components/ledger';
 import { MultiSelect } from '@/components/MultiSelect';
-import { ledgerMoneyClass, ledgerStatusBadgeClass, type LedgerUiStatus } from '@/lib/ledgerUi';
+import { ledgerMoneyClass, ledgerStatusBadgeClass, ledgerActionButtonClass, ledgerTableActionsCellClass, ledgerTableActionsGroupClass, ledgerTableActionsHeaderClass, type LedgerUiStatus } from '@/lib/ledgerUi';
 import {
   DEDUCTION_LIST_STATUS_OPTIONS,
   deductionMatchesListOrgAndStatus,
@@ -759,7 +759,7 @@ export function ManualDeductionsContent() {
                   <th className={`px-6 py-4 text-right ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Total</th>
                   <th className={`px-6 py-4 text-right ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Remaining</th>
                   <th className={`px-6 py-4 text-left ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Status</th>
-                  <th className={`px-6 py-4 text-left ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Actions</th>
+                  <th className={`px-6 py-4 ${ledgerTableActionsHeaderClass('right')} ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y" style={{ borderColor: 'var(--ps-accent-border)' }}>
@@ -802,20 +802,21 @@ export function ManualDeductionsContent() {
                     <td className="px-6 py-4">
                       <span className={ledgerStatusBadgeClass(deductionLedgerStatus(d.status))}>{getStatusLabel(d.status)}</span>
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
+                    <td className={`px-6 py-4 ${ledgerTableActionsCellClass('right')}`}>
+                      <div className={ledgerTableActionsGroupClass('right')}>
                         <button
+                          type="button"
                           onClick={() => { setSelectedId(d._id); setDetailOpen(true); }}
-                          className={loansDialogOutlineButtonClass()}
-                          style={loansDialogOutlineButtonStyle()}
+                          className={ledgerActionButtonClass('sky', 'outline')}
                         >
                           <Eye className="h-3.5 w-3.5" /> View
                         </button>
                         {removableStatuses.includes(d.status) && (
                           <button
+                            type="button"
                             onClick={() => handleRemove(d)}
                             disabled={removingId === d._id}
-                            className={loansDialogDangerButtonClass()}
+                            className={ledgerActionButtonClass('rose', 'outline')}
                           >
                             {removingId === d._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                             Remove

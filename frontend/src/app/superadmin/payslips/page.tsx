@@ -33,7 +33,7 @@ import {
   loansFormInputStyle,
 } from '@/components/loans/LoanDetailDialogShell';
 import { MultiSelect } from '@/components/MultiSelect';
-import { ledgerMoneyClass, ledgerStatusBadgeClass, type LedgerUiStatus } from '@/lib/ledgerUi';
+import { ledgerMoneyClass, ledgerStatusBadgeClass, ledgerActionButtonClass, ledgerTableActionsCellClass, ledgerTableActionsGroupClass, ledgerTableActionsHeaderClass, type LedgerUiStatus } from '@/lib/ledgerUi';
 import {
   PAYSLIP_LIST_STATUS_OPTIONS,
   payslipMatchesListOrgAndStatus,
@@ -807,7 +807,7 @@ export function PayslipsContent({
                 <th className="px-4 py-3 text-right font-semibold">Net salary</th>
                 <th className="px-4 py-3 text-center font-semibold">Status</th>
                 {canRelease && <th className="px-4 py-3 text-center font-semibold">Employee view</th>}
-                <th className="px-4 py-3 text-center font-semibold">Actions</th>
+                <th className={`px-4 py-3 ${ledgerTableActionsHeaderClass('right')}`}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -935,15 +935,16 @@ export function PayslipsContent({
                           })()}
                         </td>
                       )}
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-center gap-1">
+                      <td className={`px-4 py-3 ${ledgerTableActionsCellClass('right')}`}>
+                        <div className={ledgerTableActionsGroupClass('right')}>
                           <Link
                             href={`${basePath}/${record._id}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="p-2 text-stone-400 transition-colors hover:text-stone-800 dark:hover:text-stone-200"
+                            className={ledgerActionButtonClass('sky', 'outline')}
                             title="View details"
                           >
-                            <Eye className="h-4 w-4" />
+                            <Eye className="h-3.5 w-3.5" />
+                            View
                           </Link>
                           <button
                             type="button"
@@ -952,10 +953,11 @@ export function PayslipsContent({
                               generatePayslipPDF(record);
                             }}
                             disabled={generatingPDF}
-                            className="p-2 text-stone-400 transition-colors hover:text-stone-800 disabled:opacity-50 dark:hover:text-stone-200"
+                            className={ledgerActionButtonClass('emerald', 'outline')}
                             title="Download PDF"
                           >
-                            <Download className="h-4 w-4" />
+                            <Download className="h-3.5 w-3.5" />
+                            PDF
                           </button>
                         </div>
                       </td>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { format, parseISO } from 'date-fns';
 import { parseQuickAssignValue, quickAssignLabel } from '@/lib/shiftRoster/quickAssignUtils';
 import { toast } from 'react-hot-toast';
@@ -36,6 +37,7 @@ import {
   saveDeptTemplates,
   cloneCell,
 } from './rosterCopyUtils';
+import { buildShiftRosterSearchParams, parseShiftRosterUrlFilters } from './urlFilters';
 
 const ROSTER_LIMIT = 50;
 
@@ -47,18 +49,27 @@ export type UseShiftRosterPageOptions = {
 export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
   const { holidaysGraceful = false } = options;
   const staticLoadedRef = useRef(false);
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  const initialUrlRef = useRef<ReturnType<typeof parseShiftRosterUrlFilters> | null>(null);
+  if (initialUrlRef.current === null) {
+    initialUrlRef.current = parseShiftRosterUrlFilters(searchParams);
+  }
+  const initialUrl = initialUrlRef.current;
+  const skipCycleAlignFromUrl = Boolean(initialUrl.month);
 
-  const [month, setMonth] = useState(formatMonthInput(new Date()));
+  const [month, setMonth] = useState(() => initialUrl.month || formatMonthInput(new Date()));
   const [strict] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [divisions, setDivisions] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
-  const [selectedDivision, setSelectedDivision] = useState('');
-  const [selectedDept, setSelectedDept] = useState('');
-  const [selectedDesignation, setSelectedDesignation] = useState('');
-  const [selectedGroup, setSelectedGroup] = useState('');
+  const [selectedDivision, setSelectedDivision] = useState(initialUrl.division || '');
+  const [selectedDept, setSelectedDept] = useState(initialUrl.dept || '');
+  const [selectedDesignation, setSelectedDesignation] = useState(initialUrl.designation || '');
+  const [selectedGroup, setSelectedGroup] = useState(initialUrl.group || '');
   const [employeeGroups, setEmployeeGroups] = useState<any[]>([]);
   const [filterScopedGroups, setFilterScopedGroups] = useState<any[] | null>(null);
   const [selectedShiftForAssign, setSelectedShiftForAssign] = useState('');
@@ -68,12 +79,12 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
   const [saving, setSaving] = useState(false);
   const [savingProgress, setSavingProgress] = useState<number | null>(null);
   const [autoFillLoading, setAutoFillLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'roster' | 'assigned'>('roster');
+  const [activeTab, setActiveTab] = useState<'roster' | 'assigned'>(initialUrl.tab || 'roster');
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [holidayGroups, setHolidayGroups] = useState<HolidayGroup[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [page, setPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState(initialUrl.q || '');
+  const [searchQuery, setSearchQuery] = useState(initialUrl.q || '');
+  const [page, setPage] = useState(initialUrl.page || 1);
   const [limit, setLimit] = useState(ROSTER_LIMIT);
   const [totalPages, setTotalPages] = useState(1);
   const [totalEmployees, setTotalEmployees] = useState(0);
@@ -117,7 +128,7 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
   }, []);
 
   useEffect(() => {
-    if (alignedToCycle || !cycleStartDay) return;
+    if (alignedToCycle || !cycleStartDay || skipCycleAlignFromUrl) return;
     const today = new Date();
     let y = today.getFullYear();
     let m = today.getMonth() + 1;
@@ -131,7 +142,37 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
     }
     setMonth(formatMonthInput(new Date(y, m - 1, 1)));
     setAlignedToCycle(true);
-  }, [cycleStartDay, alignedToCycle]);
+  }, [cycleStartDay, alignedToCycle, skipCycleAlignFromUrl]);
+
+  const rosterUrlFilters = useMemo(
+    () => ({
+      month,
+      division: selectedDivision || undefined,
+      dept: selectedDept || undefined,
+      designation: selectedDesignation || undefined,
+      group: selectedGroup || undefined,
+      q: searchQuery.trim() || undefined,
+      page: page > 1 ? page : undefined,
+      tab: activeTab === 'assigned' ? ('assigned' as const) : undefined,
+    }),
+    [
+      month,
+      selectedDivision,
+      selectedDept,
+      selectedDesignation,
+      selectedGroup,
+      searchQuery,
+      page,
+      activeTab,
+    ]
+  );
+
+  useEffect(() => {
+    const next = buildShiftRosterSearchParams(rosterUrlFilters).toString();
+    const current = searchParams.toString();
+    if (next === current) return;
+    router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+  }, [rosterUrlFilters, pathname, router, searchParams]);
 
   useEffect(() => {
     if (!month) return;

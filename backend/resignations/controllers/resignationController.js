@@ -2,6 +2,7 @@ const ResignationRequest = require('../model/ResignationRequest');
 const ResignationSettings = require('../model/ResignationSettings');
 const Employee = require('../../employees/model/Employee');
 const EmployeeHistory = require('../../employees/model/EmployeeHistory');
+const { closeCurrentTenure } = require('../../employees/services/employmentTenureService');
 const {
   getEmployeeIdsInScope,
   buildWorkflowVisibilityFilter
@@ -612,6 +613,9 @@ exports.approveResignationRequest = async (req, res) => {
         if (resignation.requestType === 'termination') {
           emp.is_active = false;
         }
+
+        const closedBy = resignation.requestType === 'termination' ? 'termination' : 'resignation';
+        closeCurrentTenure(emp, emp.leftDate, emp.leftReason, closedBy);
 
         await emp.save();
 

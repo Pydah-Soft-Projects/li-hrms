@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast, ToastContainer } from "react-toastify";
@@ -40,7 +40,15 @@ import {
   loansDialogOutlineButtonStyle,
   loansFormTextareaClass,
 } from "@/components/loans/LoanDetailDialogShell";
-import { ledgerMoneyClass, ledgerStatusBadgeClass, type LedgerUiStatus } from "@/lib/ledgerUi";
+import {
+  ledgerMoneyClass,
+  ledgerStatusBadgeClass,
+  ledgerActionButtonClass,
+  ledgerTableActionsCellClass,
+  ledgerTableActionsGroupClass,
+  ledgerTableActionsHeaderClass,
+  type LedgerUiStatus,
+} from "@/lib/ledgerUi";
 import {
   groupBatchesForUi,
   batchesEligibleForAction,
@@ -65,7 +73,7 @@ const statusLabels: Record<PayrollBatchStatus, string> = {
 function batchLedgerStatus(status: PayrollBatchStatus): LedgerUiStatus {
   if (status === "complete" || status === "approved") return "approved";
   if (status === "freeze") return "neutral";
-  return "pending";
+  return "current";
 }
 
 const PAYMENT_STATUS_OPTIONS = [
@@ -313,6 +321,53 @@ export default function PayrollBatchesHub({
       maximumFractionDigits: 0,
     }).format(amount);
   };
+
+  const renderRowActions = (batch: PayrollBatch) => (
+    <div className={ledgerTableActionsGroupClass("right")}>
+      <Link
+        href={`${detailBasePath}/${batch._id}`}
+        onClick={(e) => e.stopPropagation()}
+        className={ledgerActionButtonClass("sky", "outline")}
+        title="View batch"
+      >
+        <Eye className="h-3.5 w-3.5" />
+        View
+      </Link>
+      {batch.status === "pending" && (
+        <button
+          type="button"
+          onClick={() => openSingleAction(batch, "approve")}
+          className={ledgerActionButtonClass("emerald", "solid")}
+          title="Approve batch"
+        >
+          <CheckCircle className="h-3.5 w-3.5" />
+          Approve
+        </button>
+      )}
+      {batch.status === "approved" && (
+        <button
+          type="button"
+          onClick={() => openSingleAction(batch, "freeze")}
+          className={ledgerActionButtonClass("violet", "solid")}
+          title="Freeze batch"
+        >
+          <Snowflake className="h-3.5 w-3.5" />
+          Freeze
+        </button>
+      )}
+      {batch.status === "freeze" && (
+        <button
+          type="button"
+          onClick={() => openSingleAction(batch, "complete")}
+          className={ledgerActionButtonClass("emerald", "solid")}
+          title="Mark complete"
+        >
+          <CheckCheck className="h-3.5 w-3.5" />
+          Complete
+        </button>
+      )}
+    </div>
+  );
 
   const openSingleAction = (batch: PayrollBatch, action: "approve" | "freeze" | "complete") => {
     setDialogMode("single");
@@ -767,26 +822,45 @@ export default function PayrollBatchesHub({
                   </div>
 
                   {expanded && (
-                    <div className="divide-y" style={{ borderColor: "var(--ps-accent-border)" }}>
-                      {div.departments.map((dep) => (
-                        <div key={dep.deptId} className="px-4 py-3">
-                          <h3 className="mb-2 pl-1 text-[10px] font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--ps-accent-ink)" }}>
-                            {dep.deptName}
-                          </h3>
-                          <div className="overflow-x-auto border" style={{ borderColor: "var(--ps-accent-border)" }}>
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className={loansTableHeadClass()} style={loansTableHeadStyle()}>
-                                  <th className="w-10 py-2 pl-3 text-left" />
-                                  <th className="px-3 py-2 text-left font-semibold">Batch</th>
-                                  <th className="px-3 py-2 text-left font-semibold">Period</th>
-                                  <th className="px-3 py-2 text-center font-semibold">Emp</th>
-                                  <th className="px-3 py-2 text-right font-semibold">Net</th>
-                                  <th className="px-3 py-2 text-center font-semibold">Status</th>
-                                  <th className="px-3 py-2 text-center font-semibold">Actions</th>
+                    <div className="border-t" style={{ borderColor: "var(--ps-accent-border)" }}>
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[720px] border-collapse text-sm">
+                          <colgroup>
+                            <col className="w-10" />
+                            <col />
+                            <col />
+                            <col className="w-20" />
+                            <col />
+                            <col className="w-28" />
+                            <col className="w-56" />
+                          </colgroup>
+                          <thead>
+                            <tr className={loansTableHeadClass()} style={loansTableHeadStyle()}>
+                              <th className="py-2 pl-4 text-left" />
+                              <th className="px-3 py-2 text-left font-semibold">Batch</th>
+                              <th className="px-3 py-2 text-left font-semibold">Period</th>
+                              <th className="px-3 py-2 text-center font-semibold">Emp</th>
+                              <th className="px-3 py-2 text-right font-semibold">Net</th>
+                              <th className="px-3 py-2 text-center font-semibold">Status</th>
+                              <th className={`px-3 py-2 ${ledgerTableActionsHeaderClass("right")}`}>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {div.departments.map((dep) => (
+                              <Fragment key={dep.deptId}>
+                                <tr>
+                                  <td
+                                    colSpan={7}
+                                    className="border-y px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.2em]"
+                                    style={{
+                                      color: "var(--ps-accent-ink)",
+                                      backgroundColor: "var(--ps-accent-soft)",
+                                      borderColor: "var(--ps-accent-border)",
+                                    }}
+                                  >
+                                    {dep.deptName} · {dep.batches.length} batch(es)
+                                  </td>
                                 </tr>
-                              </thead>
-                              <tbody>
                                 {dep.batches.map((batch) => (
                                   <tr
                                     key={batch._id}
@@ -794,7 +868,7 @@ export default function PayrollBatchesHub({
                                     style={{ borderColor: "var(--ps-accent-border)" }}
                                     onClick={() => router.push(`${detailBasePath}/${batch._id}`)}
                                   >
-                                    <td className="py-2 pl-3" onClick={(e) => e.stopPropagation()}>
+                                    <td className="py-2 pl-4" onClick={(e) => e.stopPropagation()}>
                                       <input
                                         type="checkbox"
                                         style={{ accentColor: "var(--ps-accent)" }}
@@ -818,54 +892,16 @@ export default function PayrollBatchesHub({
                                         {statusLabels[batch.status] || batch.status}
                                       </span>
                                     </td>
-                                    <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                                      <div className="flex justify-center gap-0.5">
-                                        <Link
-                                          href={`${detailBasePath}/${batch._id}`}
-                                          className="p-1.5 text-stone-400 hover:text-stone-800 dark:hover:text-stone-200"
-                                          title="View"
-                                        >
-                                          <Eye className="h-4 w-4" />
-                                        </Link>
-                                        {batch.status === "pending" && (
-                                          <button
-                                            type="button"
-                                            onClick={() => openSingleAction(batch, "approve")}
-                                            className="p-1.5 text-stone-400 hover:text-emerald-600"
-                                            title="Approve"
-                                          >
-                                            <CheckCircle className="h-4 w-4" />
-                                          </button>
-                                        )}
-                                        {batch.status === "approved" && (
-                                          <button
-                                            type="button"
-                                            onClick={() => openSingleAction(batch, "freeze")}
-                                            className="p-1.5 text-stone-400 hover:text-stone-800"
-                                            title="Freeze"
-                                          >
-                                            <Snowflake className="h-4 w-4" />
-                                          </button>
-                                        )}
-                                        {batch.status === "freeze" && (
-                                          <button
-                                            type="button"
-                                            onClick={() => openSingleAction(batch, "complete")}
-                                            className="p-1.5 text-stone-400 hover:text-emerald-600"
-                                            title="Complete"
-                                          >
-                                            <CheckCheck className="h-4 w-4" />
-                                          </button>
-                                        )}
-                                      </div>
+                                    <td className={`px-3 py-2 ${ledgerTableActionsCellClass("right")}`} onClick={(e) => e.stopPropagation()}>
+                                      {renderRowActions(batch)}
                                     </td>
                                   </tr>
                                 ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      ))}
+                              </Fragment>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -889,7 +925,7 @@ export default function PayrollBatchesHub({
                   <th className="px-4 py-3 text-center font-semibold">Employees</th>
                   <th className="px-4 py-3 text-right font-semibold">Net</th>
                   <th className="px-4 py-3 text-center font-semibold">Status</th>
-                  <th className="px-4 py-3 text-center font-semibold">Actions</th>
+                  <th className={`px-4 py-3 ${ledgerTableActionsHeaderClass("right")}`}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -957,42 +993,8 @@ export default function PayrollBatchesHub({
                           {statusLabels[batch.status] || batch.status}
                         </span>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1">
-                          <Link
-                            href={`${detailBasePath}/${batch._id}`}
-                            className="p-2 text-stone-400 hover:text-stone-800 dark:hover:text-stone-200"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Link>
-                          {batch.status === "pending" && (
-                            <button
-                              type="button"
-                              onClick={() => openSingleAction(batch, "approve")}
-                              className="p-2 text-stone-400 hover:text-emerald-600"
-                            >
-                              <CheckCircle className="h-4 w-4" />
-                            </button>
-                          )}
-                          {batch.status === "approved" && (
-                            <button
-                              type="button"
-                              onClick={() => openSingleAction(batch, "freeze")}
-                              className="p-2 text-stone-400 hover:text-stone-800"
-                            >
-                              <Snowflake className="h-4 w-4" />
-                            </button>
-                          )}
-                          {batch.status === "freeze" && (
-                            <button
-                              type="button"
-                              onClick={() => openSingleAction(batch, "complete")}
-                              className="p-2 text-stone-400 hover:text-emerald-600"
-                            >
-                              <CheckCheck className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
+                      <td className={`px-4 py-3 ${ledgerTableActionsCellClass("right")}`} onClick={(e) => e.stopPropagation()}>
+                        {renderRowActions(batch)}
                       </td>
                     </tr>
                   ))

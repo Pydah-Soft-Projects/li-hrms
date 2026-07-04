@@ -66,6 +66,7 @@ import {
   sanitizeOverallQualificationStatusStore,
 } from '@/lib/qualificationStatus';
 import ManageOverallCertificateStatusDialog from '@/components/employee/ManageOverallCertificateStatusDialog';
+import RejoinEmployeeModal from '@/components/employee/RejoinEmployeeModal';
 import {
   mapApplicationToViewEmployee,
   mergeEmployeeWithApplicationSnapshot,
@@ -372,6 +373,8 @@ export default function EmployeesPage() {
   const [resolvedFeatureControl, setResolvedFeatureControl] = useState<string[] | null>(null);
   const [showLeftDateModal, setShowLeftDateModal] = useState(false);
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
+  const [showRejoinModal, setShowRejoinModal] = useState(false);
+  const [rejoinEmployee, setRejoinEmployee] = useState<Employee | null>(null);
   const [leftDateForm, setLeftDateForm] = useState({ leftDate: '', leftReason: '' });
   const [resignationNoticePeriodDays, setResignationNoticePeriodDays] = useState(0);
   const [includeLeftEmployees, setIncludeLeftEmployees] = useState(false);
@@ -2133,32 +2136,18 @@ export default function EmployeesPage() {
     }
   };
 
-  const handleRemoveLeftDate = async (employee: Employee) => {
-    const result = await alertConfirm(
-      'Reactivate employee?',
-      `Reactivate ${employee.employee_name}? This will remove their left date.`,
-      'Yes, reactivate'
-    );
-    if (!result.isConfirmed) return;
+  const openRejoinModal = (employee: Employee) => {
+    setRejoinEmployee(employee);
+    setShowRejoinModal(true);
+  };
 
-    try {
-      setError('');
-      setSuccess('');
-      const response = await api.removeEmployeeLeftDate(employee.emp_no);
-
-      if (response.success) {
-        await alertSuccess('Employee reactivated', 'Employee reactivated successfully!');
-        setSuccess('Employee reactivated successfully!');
-        loadEmployees();
-      } else {
-        await alertError('Failed to reactivate', response.message || 'Failed to reactivate employee');
-        setError(response.message || 'Failed to reactivate employee');
-      }
-    } catch (err: any) {
-      await alertError('Error', err.message || 'An error occurred');
-      setError(err.message || 'An error occurred');
-      console.error(err);
+  const handleRejoinSuccess = (message?: string) => {
+    if (message) {
+      setSuccess(message);
+      void alertSuccess('Rejoin submitted', message);
     }
+    loadEmployees();
+    if (activeTab === 'applications') loadApplications();
   };
 
   const handleToggleDeductionPreference = async (key: string, value: boolean) => {
@@ -2704,9 +2693,12 @@ export default function EmployeesPage() {
   };
 
   const handleVerifyApplication = async (application: EmployeeApplication) => {
+    const isRejoin = application.applicationType === 'rejoin';
     const result = await alertConfirm(
-      'Verify application?',
-      `Verify application for ${application.employee_name}? This will create their employee record and send credentials.`,
+      isRejoin ? 'Verify rejoin application?' : 'Verify application?',
+      isRejoin
+        ? `Verify rejoin for ${application.employee_name}? This will reactivate the employee (salary still pending approval).`
+        : `Verify application for ${application.employee_name}? This will create their employee record and send credentials.`,
       'Yes, verify'
     );
     if (!result.isConfirmed) return;
@@ -2721,10 +2713,16 @@ export default function EmployeesPage() {
       if (response.success) {
         closeAlert();
         await alertSuccess(
-          'Application verified',
-          'Employee record created and credentials sent successfully.'
+          isRejoin ? 'Rejoin verified' : 'Application verified',
+          isRejoin
+            ? 'Employee reactivated. Salary pending final approval.'
+            : 'Employee record created and credentials sent successfully.'
         );
-        setSuccess('Application verified successfully! Employee record created and credentials sent.');
+        setSuccess(
+          isRejoin
+            ? 'Rejoin verified. Employee reactivated.'
+            : 'Application verified successfully! Employee record created and credentials sent.'
+        );
         const updatedApp = { ...application, status: 'verified' as const };
         setViewingApplication(updatedApp);
         setSelectedApplication(updatedApp);
@@ -3972,9 +3970,9 @@ export default function EmployeesPage() {
                               <>
                                 {employee.leftDate ? (
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); handleRemoveLeftDate(employee); }}
+                                    onClick={(e) => { e.stopPropagation(); openRejoinModal(employee); }}
                                     className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-status-positive/10 hover:text-status-positive transition-all font-bold"
-                                    title="Reactivate Employee"
+                                    title="Rejoin Employee"
                                   >
                                     <UserCheck className="h-3.5 w-3.5" />
                                   </button>
@@ -4211,9 +4209,9 @@ export default function EmployeesPage() {
                       <>
                         {employee.leftDate ? (
                           <button
-                            onClick={(e) => { e.stopPropagation(); handleRemoveLeftDate(employee); }}
+                            onClick={(e) => { e.stopPropagation(); openRejoinModal(employee); }}
                             className="p-1.5 rounded-lg bg-status-positive/10 text-status-positive hover:bg-status-positive/20 transition-colors"
-                            title="Reactivate Employee"
+                            title="Rejoin Employee"
                           >
                             <UserCheck className="h-3 w-3" />
                           </button>
@@ -4468,6 +4466,9 @@ export default function EmployeesPage() {
                             </td>
                             <td className="whitespace-nowrap px-6 py-4">
                               <div className="text-sm font-black text-text-primary uppercase tracking-tight">{app.employee_name}</div>
+                              {app.applicationType === 'rejoin' && (
+                                <span className="mt-0.5 inline-block rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">Rejoin</span>
+                              )}
                               {app.email && <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">{app.email}</div>}
                             </td>
                             <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
@@ -6893,11 +6894,11 @@ export default function EmployeesPage() {
                         <button
                           onClick={() => {
                             setShowViewDialog(false);
-                            handleRemoveLeftDate(viewingEmployee);
+                            openRejoinModal(viewingEmployee);
                           }}
-                          className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+                          className="rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-emerald-700"
                         >
-                          Reactivate Employee
+                          Rejoin Employee
                         </button>
                       )}
                     </div>
@@ -7165,6 +7166,22 @@ export default function EmployeesPage() {
           </div>
         )
       }
+
+      {/* Rejoin Modal */}
+      {showRejoinModal && rejoinEmployee && (
+        <RejoinEmployeeModal
+          employee={rejoinEmployee}
+          divisions={divisions}
+          departments={departments}
+          designations={designations}
+          employeeGroups={employeeGroups}
+          onClose={() => {
+            setShowRejoinModal(false);
+            setRejoinEmployee(null);
+          }}
+          onSuccess={handleRejoinSuccess}
+        />
+      )}
 
       {/* Left Date Modal */}
       {

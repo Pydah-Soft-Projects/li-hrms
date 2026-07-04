@@ -14,6 +14,32 @@ const employeeApplicationSchema = new mongoose.Schema(
       enum: ['pending', 'verified', 'approved', 'rejected'],
       default: 'pending',
     },
+    /** new = first-time hire; rejoin = returning left employee */
+    applicationType: {
+      type: String,
+      enum: ['new', 'rejoin'],
+      default: 'new',
+    },
+    /** Rejoin-specific remarks from HR */
+    rejoinRemarks: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    /** Snapshot at rejoin request time */
+    previousDoj: {
+      type: Date,
+      default: null,
+    },
+    previousLeftDate: {
+      type: Date,
+      default: null,
+    },
+    previousLeftReason: {
+      type: String,
+      trim: true,
+      default: null,
+    },
 
     // Employee Details (same as Employee model)
     emp_no: {
@@ -313,6 +339,7 @@ const employeeApplicationSchema = new mongoose.Schema(
 employeeApplicationSchema.index({ status: 1 });
 employeeApplicationSchema.index({ createdBy: 1 });
 employeeApplicationSchema.index({ emp_no: 1 });
+employeeApplicationSchema.index({ applicationType: 1 });
 
 module.exports = mongoose.models.EmployeeApplication || mongoose.model('EmployeeApplication', employeeApplicationSchema);
 

@@ -42,6 +42,54 @@ const {
   resolveEmployeePortalUserIds,
 } = require('../../shared/utils/scopedNotificationRecipients');
 const { schedulePostVerifyBiometricBackfill } = require('../../attendance/services/postVerifyBiometricBackfillService');
+const {
+  closeCurrentTenure,
+  recordInitialTenure,
+  openNewTenure,
+  backfillTenuresFromEmployee,
+} = require('../../employees/services/employmentTenureService');
+
+/** Fields HR may update when submitting a rejoin request */
+const REJOIN_EDITABLE_FIELDS = [
+  'phone_number',
+  'alt_phone_number',
+  'email',
+  'address',
+  'location',
+  'division_id',
+  'department_id',
+  'designation_id',
+  'employee_group_id',
+  'pf_number',
+  'esi_number',
+  'bank_account_no',
+  'bank_name',
+  'bank_place',
+  'ifsc_code',
+  'salary_mode',
+  'experience',
+  'dynamicFields',
+  'employeeAllowances',
+  'employeeDeductions',
+  'applyProfessionTax',
+  'applyESI',
+  'applyPF',
+  'applyAttendanceDeduction',
+  'deductLateIn',
+  'deductEarlyOut',
+  'deductPermission',
+  'deductAbsent',
+  'second_salary',
+  'ctcSalary',
+  'calculatedSalary',
+];
+
+const hasOpenApplication = async (empNo) => {
+  return EmployeeApplication.findOne({
+    emp_no: String(empNo).toUpperCase(),
+    status: { $in: ['pending', 'verified'] },
+  });
+};
 
 const resolveReportingManagerUserIds = async (employeeRecord) => {
   const managers = employeeRecord?.dynamicFields?.reporting_to || employeeRecord?.dynamicFields?.reporting_to_ || [];
@@ -99,13 +147,10 @@ const createApplicationInternal = async (rawData, settings, creatorId) => {
     throw new Error(`Employee with number ${empNo} already exists`);
   }
 
-  // Check if pending application already exists
-  const existingApplication = await EmployeeApplication.findOne({
-    emp_no: empNo,
-    status: 'pending',
-  });
+  // Check if pending or salary-pending application already exists
+  const existingApplication = await hasOpenApplication(empNo);
   if (existingApplication) {
-    throw new Error(`Pending application already exists for employee number ${empNo}`);
+    throw new Error(`An open application already exists for employee number ${empNo} (status: ${existingApplication.status})`);
   }
 
   // Transform form data
@@ -173,6 +218,217 @@ const createApplicationInternal = async (rawData, settings, creatorId) => {
   }).catch(err => console.error('Failed to log application creation history:', err.message));
 
   return application;
+};
+
+/**
+ * Internal helper for creating a rejoin application for a left employee
+ */
+const createRejoinApplicationInternal = async (rawData, creatorId) => {
+  const empNo = String(rawData.emp_no || '').trim().toUpperCase();
+  if (!empNo) throw new Error('Employee number is required');
+
+  const employee = await Employee.findOne({ emp_no: empNo });
+  if (!employee) {
+    throw new Error(`Employee ${empNo} not found`);
+  }
+  if (!employee.leftDate) {
+    throw new Error(`Employee ${empNo} is not marked as left. Rejoin is only for resigned/terminated employees.`);
+  }
+
+  const openApp = await hasOpenApplication(empNo);
+  if (openApp) {
+    throw new Error(`An open application already exists for ${empNo} (status: ${openApp.status})`);
+  }
+
+  const rejoinDate = rawData.doj || rawData.rejoinDate;
+  if (!rejoinDate) throw new Error('Rejoin date is required');
+  const rejoinDateObj = new Date(rejoinDate);
+  if (Number.isNaN(rejoinDateObj.getTime())) throw new Error('Invalid rejoin date');
+
+  const proposedSalary = Number(rawData.proposedSalary);
+  if (!proposedSalary || proposedSalary <= 0) throw new Error('Valid proposed salary is required');
+
+  await stripEmployeeGroupIfDisabled(rawData);
+  const groupErr = await validateEmployeeGroupIfEnabled(rawData.employee_group_id || employee.employee_group_id);
+  if (groupErr) throw new Error(groupErr.error);
+
+  const normalizeOverrides = (list) =>
+    Array.isArray(list)
+      ? list
+        .filter((item) => item && (item.masterId || item.name))
+        .map((item) => ({
+          masterId: item.masterId || null,
+          code: item.code || null,
+          name: item.name || '',
+          category: item.category || null,
+          type: item.type || null,
+          amount: item.amount ?? item.overrideAmount ?? null,
+          percentage: item.percentage ?? null,
+          percentageBase: item.percentageBase ?? null,
+          minAmount: item.minAmount ?? null,
+          maxAmount: item.maxAmount ?? null,
+          basedOnPresentDays: item.basedOnPresentDays ?? false,
+          isOverride: true,
+        }))
+      : [];
+
+  const applicationPayload = {
+    emp_no: empNo,
+    employee_name: employee.employee_name,
+    dob: employee.dob,
+    aadhar_number: employee.aadhar_number,
+    gender: employee.gender,
+    marital_status: employee.marital_status,
+    blood_group: employee.blood_group,
+    qualifications: employee.qualifications,
+    qualificationStatus: employee.qualificationStatus,
+    profilePhoto: employee.profilePhoto,
+    division_id: employee.division_id,
+    department_id: employee.department_id,
+    designation_id: employee.designation_id,
+    employee_group_id: employee.employee_group_id,
+    phone_number: employee.phone_number,
+    alt_phone_number: employee.alt_phone_number,
+    email: employee.email,
+    address: employee.address,
+    location: employee.location,
+    pf_number: employee.pf_number,
+    esi_number: employee.esi_number,
+    bank_account_no: employee.bank_account_no,
+    bank_name: employee.bank_name,
+    bank_place: employee.bank_place,
+    ifsc_code: employee.ifsc_code,
+    salary_mode: employee.salary_mode,
+    experience: employee.experience,
+    dynamicFields: employee.dynamicFields || {},
+    employeeAllowances: employee.employeeAllowances || [],
+    employeeDeductions: employee.employeeDeductions || [],
+    applyProfessionTax: employee.applyProfessionTax,
+    applyESI: employee.applyESI,
+    applyPF: employee.applyPF,
+    applyAttendanceDeduction: employee.applyAttendanceDeduction,
+    deductLateIn: employee.deductLateIn,
+    deductEarlyOut: employee.deductEarlyOut,
+    deductPermission: employee.deductPermission,
+    deductAbsent: employee.deductAbsent,
+    second_salary: employee.second_salary,
+    paidLeaves: employee.paidLeaves,
+    casualLeaves: employee.casualLeaves,
+    allottedLeaves: employee.allottedLeaves,
+  };
+
+  REJOIN_EDITABLE_FIELDS.forEach((field) => {
+    if (rawData[field] !== undefined && rawData[field] !== null && rawData[field] !== '') {
+      if (field === 'dynamicFields' && typeof rawData.dynamicFields === 'object') {
+        applicationPayload.dynamicFields = {
+          ...(applicationPayload.dynamicFields || {}),
+          ...rawData.dynamicFields,
+        };
+      } else {
+        applicationPayload[field] = rawData[field];
+      }
+    }
+  });
+
+  await stripEmployeeGroupIfDisabled(applicationPayload);
+
+  const application = await EmployeeApplication.create({
+    ...applicationPayload,
+    doj: rejoinDateObj,
+    proposedSalary,
+    applicationType: 'rejoin',
+    rejoinRemarks: rawData.rejoinRemarks || rawData.remarks || null,
+    previousDoj: employee.doj || null,
+    previousLeftDate: employee.leftDate || null,
+    previousLeftReason: employee.leftReason || null,
+    employeeAllowances: normalizeOverrides(rawData.employeeAllowances ?? applicationPayload.employeeAllowances),
+    employeeDeductions: normalizeOverrides(rawData.employeeDeductions ?? applicationPayload.employeeDeductions),
+    createdBy: creatorId,
+    status: 'pending',
+  });
+
+  await EmployeeHistory.create({
+    emp_no: empNo,
+    event: 'rejoin_requested',
+    performedBy: creatorId,
+    details: {
+      proposedSalary,
+      rejoinDate: rejoinDateObj,
+      previousDoj: employee.doj,
+      previousLeftDate: employee.leftDate,
+      applicationId: application._id,
+    },
+    comments: application.rejoinRemarks || 'Rejoin application submitted',
+  }).catch((err) => console.error('Failed to log rejoin request history:', err.message));
+
+  return application;
+};
+
+/**
+ * @desc    Create rejoin application for a left employee (HR)
+ * @route   POST /api/employee-applications/rejoin
+ * @access  Private (HR, Sub Admin, Super Admin, Manager)
+ */
+exports.createRejoinApplication = async (req, res) => {
+  try {
+    let applicationData = { ...req.body };
+    if (typeof applicationData.dynamicFields === 'string') {
+      try {
+        applicationData.dynamicFields = JSON.parse(applicationData.dynamicFields);
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    ['employeeAllowances', 'employeeDeductions'].forEach((field) => {
+      if (typeof applicationData[field] === 'string') {
+        try {
+          applicationData[field] = JSON.parse(applicationData[field]);
+        } catch (_) {
+          /* ignore */
+        }
+      }
+    });
+
+    const application = await createRejoinApplicationInternal(applicationData, req.user._id);
+
+    await application.populate([
+      { path: 'createdBy', select: 'name email' },
+      { path: 'division_id', select: 'name' },
+      { path: 'department_id', select: 'name code' },
+      { path: 'designation_id', select: 'name code' },
+      { path: 'employee_group_id', select: 'name code isActive' },
+    ]);
+
+    res.status(201).json({
+      success: true,
+      message: 'Rejoin application created successfully. Pending verification.',
+      data: application,
+    });
+
+    const [superAdminIds, scopedRoleUserIds] = await Promise.all([
+      resolveSuperAdminUserIds(),
+      resolveScopedUserIdsForEmployee({
+        divisionId: application?.division_id?._id || application?.division_id,
+        departmentId: application?.department_id?._id || application?.department_id,
+        roles: ['hr', 'hod', 'manager', 'sub_admin'],
+      }),
+    ]);
+    notifyEmployeeApplicationEvent({
+      recipientUserIds: uniqueIds([...superAdminIds, ...scopedRoleUserIds]).filter((id) => id !== String(req.user._id)),
+      eventType: 'EMPLOYEE_REJOIN_REQUESTED',
+      title: `Rejoin Request: ${application.employee_name || application.emp_no}`,
+      message: `Rejoin application submitted for ${application.employee_name || application.emp_no} (${application.emp_no}). Rejoin date: ${application.doj ? new Date(application.doj).toLocaleDateString('en-IN') : 'N/A'}.`,
+      record: application,
+      createdBy: req.user._id,
+      priority: 'high',
+    }).catch((err) => console.error('[Notification] EMPLOYEE_REJOIN_REQUESTED failed:', err.message));
+  } catch (error) {
+    console.error('Error creating rejoin application:', error);
+    res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to create rejoin application',
+    });
+  }
 };
 
 const notifyEmployeeApplicationEvent = async ({
@@ -752,10 +1008,168 @@ exports.getApplication = async (req, res) => {
 };
 
 /**
+ * Step 2b: Rejoin Verification — reactivates existing left employee
+ */
+const verifyRejoinApplicationInternal = async (applicationId, approver) => {
+  const approverId = approver._id || approver;
+  const application = await EmployeeApplication.findById(applicationId);
+
+  if (!application) throw new Error('Employee application not found');
+  if (application.applicationType !== 'rejoin') {
+    throw new Error('Not a rejoin application');
+  }
+  if (application.status !== 'pending') {
+    throw new Error(`Rejoin application for ${application.emp_no} is already ${application.status}`);
+  }
+
+  const employee = await Employee.findOne({ emp_no: application.emp_no });
+  if (!employee) throw new Error(`Employee ${application.emp_no} not found`);
+
+  if (!employee.leftDate) {
+    throw new Error(`Employee ${application.emp_no} is not marked as left. Cannot verify rejoin.`);
+  }
+
+  const finalDOJ = application.doj || new Date();
+  application.status = 'verified';
+  application.verifiedBy = approverId;
+  application.verifiedAt = new Date();
+
+  const appObj = application.toObject();
+  const { permanentFields, dynamicFields } = transformApplicationToEmployee(appObj, {
+    gross_salary: application.proposedSalary,
+    doj: finalDOJ,
+  });
+
+  const { salaries: normSalaries, dynamicFields: dynamicFieldsNorm } = await normalizeEmployeeSalariesPayload(
+    appObj,
+    dynamicFields || {},
+    employee.salaries || {}
+  );
+
+  const lockedIdentityFields = ['emp_no', 'employee_name', 'dob', 'aadhar_number'];
+  lockedIdentityFields.forEach((f) => delete permanentFields[f]);
+
+  Object.assign(employee, permanentFields);
+  employee.salaries = normSalaries;
+  employee.dynamicFields = dynamicFieldsNorm || employee.dynamicFields || {};
+  employee.employeeAllowances = application.employeeAllowances || [];
+  employee.employeeDeductions = application.employeeDeductions || [];
+  employee.gross_salary = application.proposedSalary;
+  employee.doj = finalDOJ;
+  employee.salaryStatus = 'pending_approval';
+  employee.verifiedBy = approverId;
+  employee.verifiedAt = new Date();
+
+  backfillTenuresFromEmployee(employee);
+  const tenureLeaveDate = application.previousLeftDate || employee.leftDate || finalDOJ;
+  const tenureLeaveReason = application.previousLeftReason || employee.leftReason;
+  closeCurrentTenure(employee, tenureLeaveDate, tenureLeaveReason, 'rejoin');
+  openNewTenure(employee, finalDOJ, application._id, application.rejoinRemarks);
+
+  employee.leftDate = null;
+  employee.leftReason = null;
+  employee.is_active = true;
+
+  await employee.save();
+  await application.save();
+
+  let leaveInitialization = null;
+  try {
+    const leaveSettings = await LeavePolicySettings.getSettings();
+    const leaveSyncResult = await syncEmployeeCLFromPolicy(employee, leaveSettings, new Date(finalDOJ), {});
+    leaveInitialization = leaveSyncResult;
+    if (!leaveSyncResult?.success) {
+      console.error(`[VerifyRejoin] Leave sync warning for ${employee.emp_no}: ${leaveSyncResult?.error || 'unknown'}`);
+    }
+  } catch (leaveErr) {
+    console.error(`[VerifyRejoin] Leave sync error for ${employee.emp_no}:`, leaveErr.message);
+  }
+
+  schedulePostVerifyBiometricBackfill({
+    empNo: employee.emp_no,
+    doj: finalDOJ,
+    verifiedAt: application.verifiedAt,
+    employeeName: application.employee_name,
+  });
+
+  await EmployeeHistory.create({
+    emp_no: application.emp_no,
+    event: 'rejoin_verified',
+    performedBy: approverId,
+    performedByName: approver.name || null,
+    performedByRole: approver.role || null,
+    details: {
+      gross_salary: application.proposedSalary,
+      rejoinDate: finalDOJ,
+      previousDoj: application.previousDoj,
+      previousLeftDate: application.previousLeftDate,
+      applicationId: application._id,
+      tenureCount: employee.employmentTenures?.length || 0,
+    },
+    comments: application.rejoinRemarks || 'Employee reactivated on rejoin verification',
+  }).catch((err) => console.error('Rejoin verify history failed:', err.message));
+
+  const superAdminIds = await resolveSuperAdminUserIds();
+  const reportingManagerIds = await resolveReportingManagerUserIds(employee);
+  const [hodIds, managerIds, hrSubScopedIds] = await Promise.all([
+    reportingManagerIds.length
+      ? Promise.resolve([])
+      : resolveScopedUserIdsForEmployee({
+        divisionId: employee?.division_id,
+        departmentId: employee?.department_id,
+        roles: ['hod'],
+      }),
+    resolveScopedUserIdsForEmployee({
+      divisionId: employee?.division_id,
+      departmentId: employee?.department_id,
+      roles: ['manager'],
+    }),
+    resolveScopedUserIdsForEmployee({
+      divisionId: employee?.division_id,
+      departmentId: employee?.department_id,
+      roles: ['hr', 'sub_admin'],
+    }),
+  ]);
+
+  const approverIdStr = String(approverId);
+  notifyEmployeeApplicationEvent({
+    recipientUserIds: uniqueIds([
+      ...superAdminIds,
+      ...managerIds,
+      ...(reportingManagerIds.length ? reportingManagerIds : hodIds),
+      ...hrSubScopedIds,
+    ]).filter((id) => id !== approverIdStr),
+    eventType: 'EMPLOYEE_REJOIN_VERIFIED',
+    title: `Employee Rejoined: ${employee.employee_name || employee.emp_no}`,
+    message: `${employee.employee_name || employee.emp_no} (${employee.emp_no}) has been reactivated. Rejoin date: ${new Date(finalDOJ).toLocaleDateString('en-IN')}. Salary pending final approval.`,
+    record: application,
+    createdBy: approverId,
+    priority: 'high',
+  }).catch((err) => console.error('[Notification] EMPLOYEE_REJOIN_VERIFIED failed:', err.message));
+
+  return {
+    application,
+    results: { mongodb: true, rejoin: true },
+    notificationResults: null,
+    leaveInitialization,
+    employee,
+    isRejoin: true,
+  };
+};
+
+/**
  * Step 2: Verification Helper
  * Creates the employee record and sets status to 'verified'
  */
 const verifySingleApplicationInternal = async (applicationId, approver) => {
+  const applicationPreview = await EmployeeApplication.findById(applicationId).select('applicationType emp_no status');
+  if (!applicationPreview) {
+    throw new Error('Employee application not found');
+  }
+  if (applicationPreview.applicationType === 'rejoin') {
+    return verifyRejoinApplicationInternal(applicationId, approver);
+  }
+
   const approverId = approver._id || approver;
   const application = await EmployeeApplication.findById(applicationId);
 
@@ -822,6 +1236,9 @@ const verifySingleApplicationInternal = async (applicationId, approver) => {
   try {
     createdEmployee = await Employee.create(employeeData);
     results.mongodb = true;
+
+    recordInitialTenure(createdEmployee, finalDOJ);
+    await createdEmployee.save();
 
     // Ensure leave register is created using the same pay-period monthly grid sync logic.
     const leaveSettings = await LeavePolicySettings.getSettings();
@@ -1018,13 +1435,18 @@ const approveSalaryInternal = async (applicationId, salaryData, approver) => {
   }
 
   // Log History
+  const historyEvent = application.applicationType === 'rejoin' ? 'rejoin_salary_approved' : 'salary_approved';
   await EmployeeHistory.create({
     emp_no: application.emp_no,
-    event: 'salary_approved',
+    event: historyEvent,
     performedBy: approverId,
     performedByName: approver.name || null,
     performedByRole: approver.role || null,
-    details: { gross_salary: finalSalary, stage: 3 },
+    details: {
+      gross_salary: finalSalary,
+      stage: 3,
+      applicationType: application.applicationType || 'new',
+    },
     comments: comments
   }).catch(err => console.error('History log failed:', err.message));
 
@@ -1095,6 +1517,7 @@ const approveSingleApplicationInternal = async (applicationId, approvalData, app
 exports.verifyApplication = async (req, res) => {
   try {
     const result = await verifySingleApplicationInternal(req.params.id, req.user);
+    const isRejoin = result.isRejoin || result.application?.applicationType === 'rejoin';
 
     await result.application.populate([
       { path: 'createdBy', select: 'name email' },
@@ -1106,7 +1529,9 @@ exports.verifyApplication = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Application verified and employee record created. Credentials sent.',
+      message: isRejoin
+        ? 'Rejoin application verified. Employee reactivated. Salary pending final approval.'
+        : 'Application verified and employee record created. Credentials sent.',
       data: result.application,
       results: result.results,
       notificationResults: result.notificationResults,

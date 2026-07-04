@@ -34,6 +34,10 @@ const employeeHistorySchema = new mongoose.Schema(
                 // Left date / separation changes
                 'left_date_set',
                 'left_date_cleared',
+                // Rejoin workflow
+                'rejoin_requested',
+                'rejoin_verified',
+                'rejoin_salary_approved',
                 // Leave lifecycle
                 'leave_applied',
                 'leave_approved',

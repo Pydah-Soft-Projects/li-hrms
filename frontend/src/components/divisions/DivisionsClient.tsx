@@ -48,7 +48,7 @@ import {
     loansFormInputClass,
     loansFormInputStyle,
 } from '@/components/loans/LoanDetailDialogShell';
-import { ledgerActionButtonClass, ledgerStatusBadgeClass } from '@/lib/ledgerUi';
+import { ledgerActionButtonClass, ledgerStatusBadgeClass, ledgerTableActionsCellClass, ledgerTableActionsGroupClass, ledgerTableActionsHeaderClass } from '@/lib/ledgerUi';
 import { alertConfirm } from '@/lib/customSwal';
 import { showDeleteError, showDeleteSuccess } from '@/lib/assignedEmployeesDeleteSwal';
 
@@ -85,7 +85,7 @@ function DivRowActions({
     className?: string;
 }) {
     return (
-        <div className={`flex items-center gap-0.5 ${className}`}>
+        <div className={`${ledgerTableActionsGroupClass('right')} ${className}`}>
             {onShifts ? (
                 <button type="button" onClick={onShifts} className={ledgerActionButtonClass('amber')} aria-label="Shifts">
                     <Clock className="h-3.5 w-3.5" />
@@ -260,7 +260,7 @@ export default function DivisionsClient({
     const [shiftSearch, setShiftSearch] = useState('');
     const [segmentShiftId, setSegmentShiftId] = useState<string>('');
 
-    const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+    const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
 
     // Hierarchical Shift Assignment State
     const [targetScope, setTargetScope] = useState<'division' | 'department' | 'designation'>('division');
@@ -1004,7 +1004,7 @@ export default function DivisionsClient({
                                         <th className="px-3 py-2.5 font-semibold">Code</th>
                                         <th className="px-3 py-2.5 font-semibold">Manager</th>
                                         <th className="px-3 py-2.5 text-center font-semibold">Departments</th>
-                                        <th className="px-3 py-2.5 text-right font-semibold">Actions</th>
+                                        <th className={`px-3 py-2.5 ${ledgerTableActionsHeaderClass('right')}`}>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y" style={ledgerBorder}>
@@ -1053,8 +1053,8 @@ export default function DivisionsClient({
                                                     </button>
                                                 </div>
                                             </td>
-                                            <td className="px-3 py-3 text-right">
-                                                <div className="flex items-center justify-end gap-1">
+                                            <td className={`px-3 py-3 ${ledgerTableActionsCellClass('right')}`}>
+                                                <div className={ledgerTableActionsGroupClass('right')}>
                                                     {showWorkflowsLink ? (
                                                         <Link
                                                             href={`${workflowsBasePath}/${div._id}/workflows`}

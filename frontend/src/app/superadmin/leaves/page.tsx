@@ -1,7 +1,15 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import {
+  leavesStateToUrlFilters,
+  splitUrlIdList,
+} from '@/lib/leaves/urlFilters';
+import {
+  useLeavesUrlDateRestoreFlag,
+  useLeavesUrlHydration,
+  useSyncLeavesUrlFilters,
+} from '@/lib/leaves/useLeavesUrlFilters';
 import dynamic from 'next/dynamic';
 import { api, Department, Division, Designation } from '@/lib/api';
 import { auth } from '@/lib/auth';
@@ -833,15 +841,11 @@ type AttendancePresenceInfo = {
 };
 
 function LeavesPageContent() {
-  const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending'>('leaves');
-
-  useEffect(() => {
-    const tab = searchParams.get('tab');
-    if (tab === 'pending' || tab === 'od' || tab === 'leaves') {
-      setActiveTab(tab as any);
-    }
-  }, [searchParams]);
+  const initialUrl = useLeavesUrlHydration();
+  const restoreDateFromUrl = useLeavesUrlDateRestoreFlag(initialUrl);
+  const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending'>(
+    (initialUrl.tab === 'in_progress' ? 'leaves' : initialUrl.tab) || 'leaves'
+  );
 
   const [leaves, setLeaves] = useState<LeaveApplication[]>([]);
   const [ods, setODs] = useState<ODApplication[]>([]);
@@ -899,8 +903,12 @@ function LeavesPageContent() {
     return { from: format(startDate), to };
   };
 
-  const [dateRange, setDateRange] = useState(() => getDefaultDateRange(1));
-  const [pendingTab, setPendingTab] = useState<'leaves' | 'od'>('leaves');
+  const [dateRange, setDateRange] = useState(() =>
+    initialUrl.from && initialUrl.to
+      ? { from: initialUrl.from, to: initialUrl.to }
+      : getDefaultDateRange(1)
+  );
+  const [pendingTab, setPendingTab] = useState<'leaves' | 'od'>(initialUrl.pending || 'leaves');
 
   const payPeriodOptions = useMemo(
     () =>
@@ -1139,20 +1147,20 @@ function LeavesPageContent() {
   const [odTrailPublishMode, setOdTrailPublishMode] = useState<'idle' | 'socket' | 'http' | 'error'>('idle');
 
   // Filter Dropdown States
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(initialUrl.q || '');
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
 
   const [leaveFilters, setLeaveFilters] = useState({
-    division: [] as string[],
-    department: [] as string[],
-    designation: [] as string[],
+    division: splitUrlIdList(initialUrl.division),
+    department: splitUrlIdList(initialUrl.dept),
+    designation: splitUrlIdList(initialUrl.designation),
     /** Status filter for leave lists and leave stats. */
-    leaveStatus: '',
+    leaveStatus: initialUrl.leaveStatus || '',
     /** Status filter for OD lists and OD stats. */
-    odStatus: '',
-    odPlace: ''
+    odStatus: initialUrl.odStatus || '',
+    odPlace: initialUrl.odPlace || '',
   });
   const [showODMap, setShowODMap] = useState(false);
   const [odMapRequests, setODMapRequests] = useState<ODApplication[]>([]);
@@ -1165,6 +1173,25 @@ function LeavesPageContent() {
 
   const formatLeaveLbl = useCallback((s?: string) => fmtLeaveStatus(s, leaveStatusLabelMap), [leaveStatusLabelMap]);
   const formatOdLbl = useCallback((s?: string) => fmtOdStatus(s, odStatusLabelMap), [odStatusLabelMap]);
+
+  const leavesUrlFilters = useMemo(
+    () =>
+      leavesStateToUrlFilters({
+        activeTab,
+        pendingTab,
+        dateRange,
+        divisionIds: leaveFilters.division,
+        departmentIds: leaveFilters.department,
+        designationIds: leaveFilters.designation,
+        search: searchTerm,
+        leaveStatus: leaveFilters.leaveStatus,
+        odStatus: leaveFilters.odStatus,
+        odPlace: leaveFilters.odPlace,
+      }),
+    [activeTab, pendingTab, dateRange, leaveFilters, searchTerm]
+  );
+
+  useSyncLeavesUrlFilters(leavesUrlFilters, true);
 
   const odStatusFilterOptions = useMemo(() => odStatusFilterFromDefs(odStatusDefs, 'Status'), [odStatusDefs]);
 
@@ -1283,7 +1310,9 @@ function LeavesPageContent() {
           const startDay = parseInt(startRes.data.value, 10);
           if (!isNaN(startDay) && startDay >= 1 && startDay <= 31) {
             setPayCycleStartDay(startDay);
-            setDateRange(getDefaultDateRange(startDay));
+            if (!restoreDateFromUrl) {
+              setDateRange(getDefaultDateRange(startDay));
+            }
           }
         }
         if (endRes?.data?.value) {

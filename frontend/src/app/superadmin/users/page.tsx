@@ -80,7 +80,7 @@ import {
   loansFormInputStyle,
   loansFormSelectClass,
 } from '@/components/loans/LoanDetailDialogShell';
-import { ledgerActionButtonClass } from '@/lib/ledgerUi';
+import { ledgerActionButtonClass, ledgerTableActionsCellClass, ledgerTableActionsGroupClass, ledgerTableActionsHeaderClass } from '@/lib/ledgerUi';
 import { UserViewDialog } from '@/components/users/UserViewDialog';
 import {
   userActiveBadgeClass,
@@ -1277,7 +1277,7 @@ export default function UsersPage() {
                 <th className="px-4 py-3 text-left">Access scope</th>
                 <th className="px-4 py-3 text-left">Employee ID</th>
                 <th className="px-4 py-3 text-left">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className={`px-4 py-3 ${ledgerTableActionsHeaderClass('right')}`}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y dark:divide-stone-800" style={ledgerBorder}>
@@ -1371,8 +1371,8 @@ export default function UsersPage() {
                         {userActiveLabel(!!user.isActive)}
                       </button>
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
+                    <td className={`px-4 py-3 ${ledgerTableActionsCellClass('right')}`}>
+                      <div className={ledgerTableActionsGroupClass('right')}>
                         <button type="button" onClick={() => openEditDialog(user)} className={ledgerActionButtonClass('sky')} title="Edit">
                           <Edit className="h-3.5 w-3.5" />
                         </button>

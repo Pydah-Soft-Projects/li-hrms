@@ -1,6 +1,15 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
+import {
+  leavesStateToUrlFilters,
+  splitUrlIdList,
+} from '@/lib/leaves/urlFilters';
+import {
+  useLeavesUrlDateRestoreFlag,
+  useLeavesUrlHydration,
+  useSyncLeavesUrlFilters,
+} from '@/lib/leaves/useLeavesUrlFilters';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import dynamic from 'next/dynamic';
@@ -875,10 +884,14 @@ const getPolicyDateBounds = (policy: { allowBackdated?: boolean; maxBackdatedDay
   };
 };
 
-export default function LeavesPage() {
+function LeavesPageContent() {
+  const initialUrl = useLeavesUrlHydration();
+  const restoreDateFromUrl = useLeavesUrlDateRestoreFlag(initialUrl);
   const { getModuleConfig, hasPermission, activeWorkspace } = useWorkspace();
-  const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending' | 'in_progress'>('leaves');
-  const [pendingTab, setPendingTab] = useState<'leaves' | 'od'>('leaves');
+  const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending' | 'in_progress'>(
+    initialUrl.tab || 'leaves'
+  );
+  const [pendingTab, setPendingTab] = useState<'leaves' | 'od'>(initialUrl.pending || 'leaves');
   const [leaves, setLeaves] = useState<LeaveApplication[]>([]);
   const [ods, setODs] = useState<ODApplication[]>([]);
   const [pendingLeaves, setPendingLeaves] = useState<LeaveApplication[]>([]);
@@ -887,7 +900,18 @@ export default function LeavesPage() {
   const [showExportPDFDialog, setShowExportPDFDialog] = useState(false);
   const [exportPDFOptions, setExportPDFOptions] = useState({ includeLeaves: true, includeODs: true });
   const [exportingExcel, setExportingExcel] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(
+    Boolean(
+      initialUrl.division ||
+        initialUrl.dept ||
+        initialUrl.designation ||
+        initialUrl.leaveStatus ||
+        initialUrl.odStatus ||
+        initialUrl.odPlace ||
+        initialUrl.leaveType ||
+        initialUrl.odType
+    )
+  );
 
   // Pay cycle start / end day from settings (aligned with attendance payroll month)
   const [payCycleStartDay, setPayCycleStartDay] = useState(1);
@@ -939,7 +963,11 @@ export default function LeavesPage() {
     return { from: format(startDate), to };
   };
 
-  const [dateRange, setDateRange] = useState(() => getDefaultDateRange(1));
+  const [dateRange, setDateRange] = useState(() =>
+    initialUrl.from && initialUrl.to
+      ? { from: initialUrl.from, to: initialUrl.to }
+      : getDefaultDateRange(1)
+  );
   const [error, setError] = useState<string | null>(null);
 
   const payPeriodOptions = useMemo(
@@ -1172,19 +1200,19 @@ export default function LeavesPage() {
   }, [detailType, editFormData.fromDate, payCycleStartDay, payCycleEndDay]);
 
   const [leaveFilters, setLeaveFilters] = useState({
-    employeeNumber: '',
+    employeeNumber: initialUrl.q || '',
     /** Status filter for leave lists (workspace leave workflow). */
-    leaveStatus: '',
+    leaveStatus: initialUrl.leaveStatus || '',
     /** Status filter for OD lists (OD workflow — no principal-only steps). */
-    odStatus: '',
-    leaveType: '',
-    odType: '',
-    odPlace: '',
+    odStatus: initialUrl.odStatus || '',
+    leaveType: initialUrl.leaveType || '',
+    odType: initialUrl.odType || '',
+    odPlace: initialUrl.odPlace || '',
     startDate: '',
     endDate: '',
-    division: [] as string[],
-    department: [] as string[],
-    designation: [] as string[],
+    division: splitUrlIdList(initialUrl.division),
+    department: splitUrlIdList(initialUrl.dept),
+    designation: splitUrlIdList(initialUrl.designation),
   });
   const [showODMap, setShowODMap] = useState(false);
   const [odMapRequests, setODMapRequests] = useState<ODApplication[]>([]);
@@ -1255,6 +1283,27 @@ export default function LeavesPage() {
 
   const formatLeaveLbl = useCallback((s?: string) => fmtLeaveStatus(s, leaveStatusLabelMap), [leaveStatusLabelMap]);
   const formatOdLbl = useCallback((s?: string) => fmtOdStatus(s, odStatusLabelMap), [odStatusLabelMap]);
+
+  const leavesUrlFilters = useMemo(
+    () =>
+      leavesStateToUrlFilters({
+        activeTab,
+        pendingTab,
+        dateRange,
+        divisionIds: leaveFilters.division,
+        departmentIds: leaveFilters.department,
+        designationIds: leaveFilters.designation,
+        search: leaveFilters.employeeNumber,
+        leaveStatus: leaveFilters.leaveStatus,
+        odStatus: leaveFilters.odStatus,
+        odPlace: leaveFilters.odPlace,
+        leaveType: leaveFilters.leaveType,
+        odType: leaveFilters.odType,
+      }),
+    [activeTab, pendingTab, dateRange, leaveFilters]
+  );
+
+  useSyncLeavesUrlFilters(leavesUrlFilters, true);
 
   // Form validation for Apply button
   const isFormValid = () => {
@@ -1336,7 +1385,9 @@ export default function LeavesPage() {
           const startDay = parseInt(startRes.data.value, 10);
           if (!isNaN(startDay) && startDay >= 1 && startDay <= 31) {
             setPayCycleStartDay(startDay);
-            setDateRange(getDefaultDateRange(startDay));
+            if (!restoreDateFromUrl) {
+              setDateRange(getDefaultDateRange(startDay));
+            }
           }
         }
         if (endRes?.data?.value) {
@@ -7828,6 +7879,20 @@ export default function LeavesPage() {
         }
       />
     </div >
+  );
+}
+
+export default function LeavesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        </div>
+      }
+    >
+      <LeavesPageContent />
+    </Suspense>
   );
 }
 

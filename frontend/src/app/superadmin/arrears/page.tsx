@@ -32,7 +32,7 @@ import {
 } from '@/components/loans/LoanDetailDialogShell';
 import { LedgerCollapsiblePanel } from '@/components/ledger';
 import { MultiSelect } from '@/components/MultiSelect';
-import { ledgerMoneyClass, ledgerStatusBadgeClass, type LedgerUiStatus } from '@/lib/ledgerUi';
+import { ledgerMoneyClass, ledgerStatusBadgeClass, ledgerActionButtonClass, ledgerTableActionsCellClass, ledgerTableActionsGroupClass, ledgerTableActionsHeaderClass, type LedgerUiStatus } from '@/lib/ledgerUi';
 import {
   DEDUCTION_LIST_STATUS_OPTIONS,
   deductionMatchesListOrgAndStatus,
@@ -696,7 +696,7 @@ export function ArrearsContent() {
                   <th className={`px-6 py-4 text-right ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Total</th>
                   <th className={`px-6 py-4 text-right ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Remaining</th>
                   <th className={`px-6 py-4 text-left ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Status</th>
-                  <th className={`px-6 py-4 text-left ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Actions</th>
+                  <th className={`px-6 py-4 ${ledgerTableActionsHeaderClass('right')} ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y" style={{ borderColor: 'var(--ps-accent-border)' }}>
@@ -730,15 +730,16 @@ export function ArrearsContent() {
                     <td className="px-6 py-4">
                       <span className={ledgerStatusBadgeClass(arrearLedgerStatus(ar.status))}>{getStatusLabel(ar.status)}</span>
                     </td>
-                    <td className="px-6 py-4">
-                      <button
-                        type="button"
-                        onClick={() => handleViewDetails(ar._id)}
-                        className={loansDialogOutlineButtonClass()}
-                        style={loansDialogOutlineButtonStyle()}
-                      >
-                        <Eye className="h-3.5 w-3.5" /> View
-                      </button>
+                    <td className={`px-6 py-4 ${ledgerTableActionsCellClass('right')}`}>
+                      <div className={ledgerTableActionsGroupClass('right')}>
+                        <button
+                          type="button"
+                          onClick={() => handleViewDetails(ar._id)}
+                          className={ledgerActionButtonClass('sky', 'outline')}
+                        >
+                          <Eye className="h-3.5 w-3.5" /> View
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

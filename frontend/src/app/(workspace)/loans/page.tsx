@@ -66,6 +66,7 @@ import {
   loansFormSelectClass,
   loansFormTextareaClass,
 } from '@/components/loans/LoanDetailDialogShell';
+import { ledgerActionButtonClass, ledgerTableActionsCellClass, ledgerTableActionsHeaderClass } from '@/lib/ledgerUi';
 import {
   LedgerApprovalPanel,
   LedgerApprovalTimeline,
@@ -1635,7 +1636,7 @@ export default function LoansPage() {
                         <th className={`px-6 py-4 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Duration</th>
                         <th className={`px-6 py-4 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Status</th>
                         <th className={`px-6 py-4 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Date</th>
-                        <th className={`px-6 py-4 text-right ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Action</th>
+                        <th className={`px-6 py-4 ${ledgerTableActionsHeaderClass('right')} ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1694,15 +1695,18 @@ export default function LoansPage() {
                                 year: 'numeric',
                               })}
                             </td>
-                            <td className="px-6 py-4 text-right">
+                            <td className={`px-6 py-4 ${ledgerTableActionsCellClass('right')}`}>
                               <button
+                                type="button"
                                 onClick={() => {
                                   setSelectedLoan(loan);
                                   setShowDetailDialog(true);
                                 }}
-                                className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-all"
+                                className={ledgerActionButtonClass('sky', 'outline')}
+                                title="View details"
                               >
-                                <ChevronRight className="w-5 h-5" />
+                                <ChevronRight className="h-3.5 w-3.5" />
+                                View
                               </button>
                             </td>
                           </tr>
@@ -1788,7 +1792,7 @@ export default function LoansPage() {
                         <th className={`px-6 py-4 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Amount</th>
                         <th className={`px-6 py-4 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Status</th>
                         <th className={`px-6 py-4 ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Date</th>
-                        <th className={`px-6 py-4 text-right ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Action</th>
+                        <th className={`px-6 py-4 ${ledgerTableActionsHeaderClass('right')} ${loansTableHeadClass()}`} style={loansTableHeadStyle()}>Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1840,15 +1844,18 @@ export default function LoansPage() {
                                 year: 'numeric',
                               })}
                             </td>
-                            <td className="px-6 py-4 text-right">
+                            <td className={`px-6 py-4 ${ledgerTableActionsCellClass('right')}`}>
                               <button
+                                type="button"
                                 onClick={() => {
                                   setSelectedLoan(advance);
                                   setShowDetailDialog(true);
                                 }}
-                                className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-all"
+                                className={ledgerActionButtonClass('sky', 'outline')}
+                                title="View details"
                               >
-                                <ChevronRight className="w-5 h-5" />
+                                <ChevronRight className="h-3.5 w-3.5" />
+                                View
                               </button>
                             </td>
                           </tr>
