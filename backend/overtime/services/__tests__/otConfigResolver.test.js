@@ -11,7 +11,7 @@ const OvertimeSettings = require('../../model/OvertimeSettings');
 const DepartmentSettings = require('../../../departments/model/DepartmentSettings');
 const DivisionWorkflowSettings = require('../../../departments/model/DivisionWorkflowSettings');
 const Settings = require('../../../settings/model/Settings');
-const { getMergedOtConfig } = require('../otConfigResolver');
+const { getMergedOtConfig, resolveMonthlySalaryZ } = require('../otConfigResolver');
 
 const GLOBAL_RANGES = [
   { minMinutes: 30, maxMinutes: 60, creditedMinutes: 60, label: 'global slab' },
@@ -52,6 +52,30 @@ beforeEach(() => {
     allowFutureDated: true,
     maxAdvanceDays: 365,
     workflow: { steps: [], finalAuthority: { role: 'hr', anyHRCanApprove: false } },
+  });
+});
+
+describe('resolveMonthlySalaryZ', () => {
+  it('uses gross salary for regular OT salary resolution even when salary components exist', () => {
+    const employee = {
+      gross_salary: 50000,
+      second_salary: 40000,
+      salaries: {
+        basic: 1000,
+        allowance: 2000,
+      },
+    };
+
+    expect(resolveMonthlySalaryZ(employee, 'basic', false)).toBe(50000);
+  });
+
+  it('uses second salary when the second-salary path is enabled', () => {
+    const employee = {
+      gross_salary: 50000,
+      second_salary: 40000,
+    };
+
+    expect(resolveMonthlySalaryZ(employee, 'basic', true)).toBe(40000);
   });
 });
 

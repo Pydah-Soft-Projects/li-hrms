@@ -136,6 +136,7 @@ interface EmployeeApplication {
   employee_group?: { _id: string; name: string; code?: string };
   department?: { _id: string; name: string; code?: string };
   designation?: { _id: string; name: string; code?: string };
+  applicationType?: 'new' | 'rejoin';
   proposedSalary: number;
   approvedSalary?: number;
   status: 'pending' | 'verified' | 'approved' | 'rejected';
