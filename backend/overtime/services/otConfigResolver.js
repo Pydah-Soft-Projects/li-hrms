@@ -130,35 +130,17 @@ function mongooseId(id) {
 }
 
 /**
- * Monthly salary (z) for OT formula: basis basic | gross, or second salary cycle.
+ * Monthly salary (z) for OT formula: use gross salary for regular OT,
+ * or employee.second_salary when the second-salary flow is enabled.
  */
 function resolveMonthlySalaryZ(employee, salaryBasis, useSecondSalary) {
   if (!employee) return 0;
   if (useSecondSalary) {
     return num(employee.second_salary, 0);
   }
-  const basis = (salaryBasis || 'gross').toLowerCase();
-  if (basis === 'gross') {
-    return num(employee.gross_salary, 0);
-  }
-  // basic: scan salaries / dynamicFields for a "basic" component
-  const salaries = employee.salaries && typeof employee.salaries === 'object' ? employee.salaries : {};
-  for (const [k, v] of Object.entries(salaries)) {
-    if (/basic/i.test(String(k))) {
-      if (typeof v === 'number' && Number.isFinite(v)) return v;
-      if (v && typeof v === 'object' && typeof v.amount === 'number') return num(v.amount, 0);
-    }
-  }
-  const df = employee.dynamicFields;
-  if (df && typeof df === 'object') {
-    const sal = df.salaries && typeof df.salaries === 'object' ? df.salaries : df;
-    for (const [k, v] of Object.entries(sal)) {
-      if (/basic/i.test(String(k))) {
-        const n = num(v, NaN);
-        if (Number.isFinite(n)) return n;
-      }
-    }
-  }
+
+  // Regular OT uses the employee's gross salary as the monthly basis Z.
+  // The salary components object should not override this for OT pay.
   return num(employee.gross_salary, 0);
 }
 
