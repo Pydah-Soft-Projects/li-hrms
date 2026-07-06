@@ -32,6 +32,28 @@ function shiftIsOvernight(startTime, endTime) {
   return s != null && e != null && e <= s;
 }
 
+function getWorkedHalfFromInThumbOnlyLocal(inTime, startStr, endStr) {
+  if (!inTime || !startStr || !endStr) return 'first_half';
+  const startMins = timeToMinutes(startStr);
+  const endMins = timeToMinutes(endStr);
+  if (startMins == null || endMins == null) return 'first_half';
+
+  const inMins = inTime.getHours() * 60 + inTime.getMinutes();
+
+  let shiftEndMins = endMins;
+  if (shiftEndMins <= startMins) shiftEndMins += 24 * 60;
+  const durationMins = shiftEndMins - startMins;
+  if (durationMins <= 0) return 'first_half';
+
+  const midOffset = durationMins / 2;
+  let inOffset = inMins - startMins;
+  if (inOffset < 0) inOffset += 24 * 60;
+  if (inOffset > durationMins) inOffset -= 24 * 60;
+
+  return inOffset < midOffset ? 'first_half' : 'second_half';
+}
+
+
 /**
  * Punch hours clipped to the assigned shift window (same basis as legacy statusDuration).
  */
@@ -309,6 +331,70 @@ async function resolveShiftPresence({
   if (hasHalves && effectiveShiftDoc) {
     const segmentResult = getShiftSegmentAssignment(effectiveShiftDoc, date, inTime, outTime, graceOpts);
     return applySegmentFallbackStatus(pShift, segmentResult, basePayable);
+  }
+
+  // No half segments on shift master — fallback to percentage/thumb check
+  const PARTIAL_IN_OUT_HALF_DAY_HOURS_RATIO_MIN = 0.4;
+  if (statusDuration >= expectedHours * PARTIAL_IN_OUT_HALF_DAY_HOURS_RATIO_MIN) {
+    const startStr = pShift.shiftStartTime || effectiveShiftDoc?.startTime || '09:00';
+    const endStr = pShift.shiftEndTime || effectiveShiftDoc?.endTime || '18:00';
+    const workedHalfKey = getWorkedHalfFromInThumbOnlyLocal(inTime, startStr, endStr);
+
+    const startMins = timeToMinutes(startStr);
+    const endMins = timeToMinutes(endStr);
+    let shiftEndMins = endMins;
+    if (shiftEndMins <= startMins) shiftEndMins += 24 * 60;
+    const durationMins = shiftEndMins - startMins;
+    const midMins = (startMins + durationMins / 2) % (24 * 60);
+
+    const formatMins = (m) => {
+      const h = Math.floor(m / 60) % 24;
+      const mins = Math.floor(m % 60);
+      return `${String(h).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+    };
+
+    const midTimeStr = formatMins(midMins);
+    const graceVal = pShift.gracePeriod || effectiveShiftDoc?.gracePeriod || 15;
+
+    const segments = [
+      {
+        segmentName: 'firstHalf',
+        startTime: startStr,
+        endTime: midTimeStr,
+        duration: (durationMins / 2) / 60,
+        minDuration: null,
+        gracePeriod: graceVal,
+        payableShifts: 0.5,
+        present: workedHalfKey === 'first_half',
+        lateInMinutes: workedHalfKey === 'first_half' ? pShift.lateInMinutes || 0 : null,
+        earlyOutMinutes: workedHalfKey === 'first_half' ? pShift.earlyOutMinutes || 0 : null,
+        isLateIn: workedHalfKey === 'first_half' && (pShift.lateInMinutes || 0) > 0,
+        isEarlyOut: workedHalfKey === 'first_half' && (pShift.earlyOutMinutes || 0) > 0,
+        overlapMinutes: workedHalfKey === 'first_half' ? Math.round(statusDuration * 60) : 0,
+      },
+      {
+        segmentName: 'secondHalf',
+        startTime: midTimeStr,
+        endTime: endStr,
+        duration: (durationMins / 2) / 60,
+        minDuration: null,
+        gracePeriod: graceVal,
+        payableShifts: 0.5,
+        present: workedHalfKey === 'second_half',
+        lateInMinutes: workedHalfKey === 'second_half' ? pShift.lateInMinutes || 0 : null,
+        earlyOutMinutes: workedHalfKey === 'second_half' ? pShift.earlyOutMinutes || 0 : null,
+        isLateIn: workedHalfKey === 'second_half' && (pShift.lateInMinutes || 0) > 0,
+        isEarlyOut: workedHalfKey === 'second_half' && (pShift.earlyOutMinutes || 0) > 0,
+        overlapMinutes: workedHalfKey === 'second_half' ? Math.round(statusDuration * 60) : 0,
+      }
+    ];
+
+    return applyStatusAndPayableFromResolution(pShift, {
+      status: 'HALF_DAY',
+      payableShift: 0.5 * basePayable,
+      shiftSegments: segments,
+      resolutionPath: 'duration_half_day_fallback',
+    });
   }
 
   // No half segments on shift master — duration-only absent

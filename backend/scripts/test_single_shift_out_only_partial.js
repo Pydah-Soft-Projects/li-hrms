@@ -55,16 +55,18 @@ const shiftDoc = {
 };
 
 const mockShiftModel = {
-  findById: () => ({
-    select: () => ({
+  findById: function() {
+    const q = {
+      select: function() { return this; },
       lean: async () => ({
         _id: shiftObjectId,
         name: 'General',
         payableShifts: 1,
         duration: 8,
       }),
-    }),
-  }),
+    };
+    return q;
+  }
 };
 
 const mockShiftDetection = {
@@ -86,6 +88,28 @@ const mockShiftDetection = {
     basePayable: 1,
   }),
   calculateEarlyOut: () => 0,
+};
+
+const employeeModelPath = path.normalize(path.join(backendRoot, 'employees', 'model', 'Employee.js'));
+
+const employeeChain = {
+  populate: function() { return this; },
+  select: function() { return this; },
+  lean: async function() {
+    return {
+      _id: 'emp-id',
+      emp_no: 'EMP001',
+      division_id: { _id: 'div-id' },
+    };
+  },
+  then: function(resolve) {
+    this.lean().then(resolve);
+    return this;
+  }
+};
+
+const mockEmployee = {
+  findOne: () => employeeChain,
 };
 
 const mockOD = {
@@ -119,6 +143,9 @@ Module.prototype.require = function patchedRequire(id) {
   }
   if (sameResolved(resolved, shiftModelPath) || r.endsWith('/shifts/model/Shift.js')) {
     return mockShiftModel;
+  }
+  if (sameResolved(resolved, employeeModelPath) || r.endsWith('/employees/model/Employee.js')) {
+    return mockEmployee;
   }
   return origRequire.apply(this, arguments);
 };
