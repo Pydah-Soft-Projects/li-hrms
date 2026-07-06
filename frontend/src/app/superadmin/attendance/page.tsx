@@ -201,6 +201,7 @@ interface Employee {
   division?: { _id: string; name: string };
   division_id?: { _id: string; name: string };
   leftDate?: string;
+  doj?: string | null;
 }
 
 interface MonthlyAttendanceData {
@@ -3356,6 +3357,17 @@ export default function AttendancePage() {
                                 {getDeptName(item.employee)}
                               </span>
                             )}
+                            {item.employee?.doj && (() => {
+                              const dojStr = new Date(item.employee.doj!).toISOString().slice(0, 10);
+                              const inPeriod = cycleDates.startDate && cycleDates.endDate
+                                ? dojStr >= cycleDates.startDate && dojStr <= cycleDates.endDate
+                                : false;
+                              return inPeriod ? (
+                                <span className="text-green-600 dark:text-green-400 font-bold text-[8px] uppercase tracking-wider mt-0.5">
+                                  Joined {new Date(item.employee.doj!).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                </span>
+                              ) : null;
+                            })()}
                             {item.employee?.leftDate && (
                               <span className="text-amber-600 dark:text-amber-400 font-bold text-[8px] uppercase tracking-wider mt-0.5">
                                 Left {new Date(item.employee.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -4402,6 +4414,17 @@ export default function AttendancePage() {
                       Edited
                     </span>
                   )}
+                  {selectedEmployee?.doj && (() => {
+                    const dojStr = new Date(selectedEmployee.doj!).toISOString().slice(0, 10);
+                    const inPeriod = cycleDates.startDate && cycleDates.endDate
+                      ? dojStr >= cycleDates.startDate && dojStr <= cycleDates.endDate
+                      : false;
+                    return inPeriod ? (
+                      <span className="ml-2 inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-bold text-green-700 ring-1 ring-inset ring-green-600/20 shadow-sm">
+                        Joined {new Date(selectedEmployee.doj!).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </span>
+                    ) : null;
+                  })()}
                   {selectedEmployee?.leftDate && (
                     <span className="ml-2 inline-flex items-center rounded-md bg-amber-100 px-2 py-1 text-xs font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20 shadow-sm">
                       Left {new Date(selectedEmployee.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -5501,6 +5524,20 @@ export default function AttendancePage() {
                           <div>
                             <span className="font-medium text-slate-600 dark:text-slate-400">Designation:</span>
                             <span className="ml-2 text-slate-900 dark:text-white">{((selectedEmployeeForSummary as any).designation_id?.name || (selectedEmployeeForSummary.designation as any)?.name || '-')}</span>
+                          </div>
+                        )}
+                        {selectedEmployeeForSummary.doj && (
+                          <div>
+                            <span className="font-medium text-slate-600 dark:text-slate-400">Date of Joining:</span>
+                            <span className="ml-2 text-slate-900 dark:text-white">
+                              {new Date(selectedEmployeeForSummary.doj).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </span>
+                            {cycleDates.startDate && cycleDates.endDate && (() => {
+                              const dojStr = new Date(selectedEmployeeForSummary.doj!).toISOString().slice(0, 10);
+                              return dojStr >= cycleDates.startDate && dojStr <= cycleDates.endDate ? (
+                                <span className="ml-2 text-[10px] font-bold text-green-600 dark:text-green-400">(joined this period)</span>
+                              ) : null;
+                            })()}
                           </div>
                         )}
                         {selectedEmployeeForSummary.leftDate && (

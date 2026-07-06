@@ -361,6 +361,8 @@ interface Employee {
 
   leftDate?: string | Date | null;
 
+  doj?: string | Date | null;
+
 }
 
 
@@ -4165,11 +4167,24 @@ export default function AttendancePage() {
                   <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
                   Monthly Performance Summary
                 </h3>
-                {item.employee.leftDate && (
-                  <div className="text-[10px] bg-amber-100/80 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-3 py-1 rounded-full font-bold shadow-sm border border-amber-200/50 dark:border-amber-800/50">
-                    Employee Left: {new Date(item.employee.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                  </div>
-                )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {item.employee.doj && (() => {
+                    const dojStr = new Date(item.employee.doj).toISOString().slice(0, 10);
+                    const inPeriod = cycleDates.startDate && cycleDates.endDate
+                      ? dojStr >= cycleDates.startDate && dojStr <= cycleDates.endDate
+                      : false;
+                    return inPeriod ? (
+                      <div className="text-[10px] bg-green-100/80 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-3 py-1 rounded-full font-bold shadow-sm border border-green-200/50 dark:border-green-800/50">
+                        Joined: {new Date(item.employee.doj).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </div>
+                    ) : null;
+                  })()}
+                  {item.employee.leftDate && (
+                    <div className="text-[10px] bg-amber-100/80 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-3 py-1 rounded-full font-bold shadow-sm border border-amber-200/50 dark:border-amber-800/50">
+                      Employee Left: {new Date(item.employee.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 xl:gap-6">
                 {visibleCards.map((stat) => (
@@ -4872,9 +4887,24 @@ export default function AttendancePage() {
                                       ) : undefined
                                     }
                                     footer={
-                                      item.employee.leftDate ? (
-                                        <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
-                                          Left {new Date(item.employee.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                      (item.employee.leftDate || item.employee.doj) ? (
+                                        <div className="mt-0.5 flex flex-col gap-0.5">
+                                          {item.employee.doj && (() => {
+                                            const dojStr = new Date(item.employee.doj).toISOString().slice(0, 10);
+                                            const inPeriod = cycleDates.startDate && cycleDates.endDate
+                                              ? dojStr >= cycleDates.startDate && dojStr <= cycleDates.endDate
+                                              : false;
+                                            return inPeriod ? (
+                                              <span className="text-[9px] font-bold text-green-600 dark:text-green-400">
+                                                Joined {new Date(item.employee.doj).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                              </span>
+                                            ) : null;
+                                          })()}
+                                          {item.employee.leftDate && (
+                                            <span className="text-[9px] font-bold text-amber-600 dark:text-amber-400">
+                                              Left {new Date(item.employee.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                            </span>
+                                          )}
                                         </div>
                                       ) : undefined
                                     }
@@ -7227,6 +7257,20 @@ export default function AttendancePage() {
                           <div>
                             <span className="font-medium text-slate-600 dark:text-slate-400">Designation:</span>
                             <span className="ml-2 text-slate-900 dark:text-white">{(selectedEmployeeForSummary.designation as any)?.name || '-'}</span>
+                          </div>
+                        )}
+                        {selectedEmployeeForSummary?.doj && (
+                          <div>
+                            <span className="font-medium text-slate-600 dark:text-slate-400">Date of Joining:</span>
+                            <span className="ml-2 text-slate-900 dark:text-white">
+                              {new Date(selectedEmployeeForSummary.doj).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </span>
+                            {selectedEmployeeForSummary.doj && cycleDates.startDate && cycleDates.endDate && (() => {
+                              const dojStr = new Date(selectedEmployeeForSummary.doj!).toISOString().slice(0, 10);
+                              return dojStr >= cycleDates.startDate && dojStr <= cycleDates.endDate ? (
+                                <span className="ml-2 text-[10px] font-bold text-green-600 dark:text-green-400">(joined this period)</span>
+                              ) : null;
+                            })()}
                           </div>
                         )}
                         {selectedEmployeeForSummary?.leftDate && (
