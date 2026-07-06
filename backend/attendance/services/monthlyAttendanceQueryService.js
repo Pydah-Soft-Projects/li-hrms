@@ -2,7 +2,7 @@ const Employee = require('../../employees/model/Employee');
 const { extractISTComponents } = require('../../shared/utils/dateUtils');
 const { getPayrollPeriodForMonth } = require('../../shared/utils/payrollPeriodCache');
 const dateCycleService = require('../../leaves/services/dateCycleService');
-const { mergeScopeWithEmployeeClauses } = require('./attendanceEmployeeQuery');
+const { buildLeftDuringPeriodOrClause, mergeScopeWithEmployeeClauses } = require('./attendanceEmployeeQuery');
 const { EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 
 const VALID_VIEW_MODES = new Set([
@@ -42,15 +42,10 @@ async function resolveMonthlyPeriod(targetYear, targetMonth, startDate, endDate)
 
 function buildMonthlyEmployeeFilter(scopeFilter, query, periodStart, periodEnd) {
   const { search, divisionId, departmentId, designationId } = query;
-  const rosterVisibility = {
-    $or: [
-      { is_active: { $ne: false } },
-      {
-        is_active: false,
-        leftDate: { $gte: periodStart, $lte: periodEnd },
-      },
-    ],
-  };
+  const rosterVisibility = buildLeftDuringPeriodOrClause(
+    periodStart.toISOString().slice(0, 10),
+    periodEnd.toISOString().slice(0, 10)
+  );
 
   const extraClauses = [rosterVisibility];
   if (search) {

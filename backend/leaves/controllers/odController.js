@@ -17,7 +17,7 @@ const { assertEmployeeRangeRequestsEditable } = require('../../shared/services/p
 const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const { appendOdTrailPoints } = require('../services/odTrailService');
 const { emitOdTrailUpdate } = require('../../shared/services/socketService');
-const { isHolidayOrWeekOff, getHolidayWeekOffOdApplyContext } = require('../services/odHolidayApplyContextService');
+const { isHolidayOrWeekOff, getHolidayWeekOffOdApplyContext, enrichCoOdWithAttendancePunchTimings } = require('../services/odHolidayApplyContextService');
 const { extractISTComponents, getAllDatesInRange, createISTDate } = require('../../shared/utils/dateUtils');
 
 /** Holiday / week-off for CO: roster row, half roster HOL, attendance status, or OD flagged CO-eligible on that calendar day (apply-time). */
@@ -332,13 +332,20 @@ exports.getODs = async (req, res) => {
       OD.countDocuments(filter),
     ]);
 
+    const enrichedOds = await Promise.all(
+      ods.map(async (od) => {
+        const plain = od.toObject ? od.toObject() : od;
+        return enrichCoOdWithAttendancePunchTimings(plain);
+      })
+    );
+
     res.status(200).json({
       success: true,
-      count: ods.length,
+      count: enrichedOds.length,
       total,
       page: parseInt(page),
       totalPages: Math.ceil(total / parseInt(limit)),
-      data: ods,
+      data: enrichedOds,
     });
   } catch (error) {
     console.error('Error fetching ODs:', error);
@@ -398,10 +405,17 @@ exports.getMyODs = async (req, res) => {
       .populate('assignedBy', 'name email')
       .sort({ createdAt: -1 });
 
+    const enrichedOds = await Promise.all(
+      ods.map(async (od) => {
+        const plain = od.toObject ? od.toObject() : od;
+        return enrichCoOdWithAttendancePunchTimings(plain);
+      })
+    );
+
     res.status(200).json({
       success: true,
-      count: ods.length,
-      data: ods,
+      count: enrichedOds.length,
+      data: enrichedOds,
     });
   } catch (error) {
     console.error('Error fetching my ODs:', error);
@@ -442,9 +456,11 @@ exports.getOD = async (req, res) => {
       });
     }
 
+    const enrichedOd = await enrichCoOdWithAttendancePunchTimings(od.toObject ? od.toObject() : od);
+
     res.status(200).json({
       success: true,
-      data: od,
+      data: enrichedOd,
     });
   } catch (error) {
     console.error('Error fetching OD:', error);
@@ -949,6 +965,27 @@ exports.applyOD = async (req, res) => {
         resolvedNumberOfDays = 0.5;
         resolvedOdTypeExtended = 'half_day';
         halfHolidayOdRemark = halfHolRes.remark || null;
+      }
+
+      const { resolveOdApplyAgainstHolidayPunchContext } = require('../services/odHolidayApplyContextService');
+      const punchRes = await resolveOdApplyAgainstHolidayPunchContext(employee.emp_no, fromStr, {
+        isHalfDay: resolvedIsHalfDay,
+        halfDayType: resolvedHalfDayType,
+        odType_extended: resolvedOdTypeExtended,
+        numberOfDays: resolvedNumberOfDays,
+      });
+      if (!punchRes.ok) {
+        return res.status(400).json({
+          success: false,
+          error: punchRes.error || 'OD conflicts with holiday/week-off attendance',
+        });
+      }
+      if (punchRes.narrowed) {
+        resolvedIsHalfDay = true;
+        resolvedHalfDayType = punchRes.halfDayType;
+        resolvedNumberOfDays = 0.5;
+        resolvedOdTypeExtended = 'half_day';
+        halfHolidayOdRemark = punchRes.remark || null;
       }
     }
 

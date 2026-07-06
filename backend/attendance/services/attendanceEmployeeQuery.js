@@ -22,38 +22,67 @@ function mergeScopeWithEmployeeClauses(scopeFilter, additionalClauses) {
   return { $and: parts };
 }
 
+function buildDateBoundaryExpr(fieldPath, operator, boundaryStr) {
+  return {
+    $expr: {
+      [operator]: [
+        { $dateToString: { format: '%Y-%m-%d', date: `$${fieldPath}`, timezone: 'Asia/Kolkata' } },
+        boundaryStr,
+      ],
+    },
+  };
+}
+
 /**
  * Shared employee roster rules for attendance (monthly grid, calendar, employees list).
- * Matches pay-register intent: show current staff plus anyone whose leftDate falls in the period.
+ * Includes employees who were active during the period, employees who joined during the period,
+ * and employees who left during the period, while excluding employees who joined after the period
+ * and those who left before the period started.
  *
- * leftDate is compared as a calendar date in Asia/Kolkata so UTC storage does not drop edge cases.
+ * Dates are compared as calendar dates in Asia/Kolkata so UTC storage does not drop edge cases.
  *
  * @param {string} periodStartStr - YYYY-MM-DD (inclusive)
  * @param {string} periodEndStr - YYYY-MM-DD (inclusive)
  * @returns {{ $or: object[] }} Mongo clause to merge into a query (ANDs with sibling fields)
  */
 function buildLeftDuringPeriodOrClause(periodStartStr, periodEndStr) {
+  const joinOnOrBeforeEnd = {
+    $or: [
+      { doj: null },
+      buildDateBoundaryExpr('doj', '$lte', periodEndStr),
+    ],
+  };
+
+  const leftOnOrAfterStart = {
+    $or: [
+      { leftDate: null },
+      buildDateBoundaryExpr('leftDate', '$gte', periodStartStr),
+    ],
+  };
+
+  const leftWithinPeriod = {
+    $expr: {
+      $and: [
+        buildDateBoundaryExpr('leftDate', '$gte', periodStartStr).$expr,
+        buildDateBoundaryExpr('leftDate', '$lte', periodEndStr).$expr,
+      ],
+    },
+  };
+
   return {
     $or: [
-      { is_active: { $ne: false }, leftDate: null },
       {
-        $expr: {
-          $and: [
-            { $ne: ['$leftDate', null] },
-            {
-              $gte: [
-                { $dateToString: { format: '%Y-%m-%d', date: '$leftDate', timezone: 'Asia/Kolkata' } },
-                periodStartStr,
-              ],
-            },
-            {
-              $lte: [
-                { $dateToString: { format: '%Y-%m-%d', date: '$leftDate', timezone: 'Asia/Kolkata' } },
-                periodEndStr,
-              ],
-            },
-          ],
-        },
+        $and: [
+          { is_active: { $ne: false } },
+          joinOnOrBeforeEnd,
+          leftOnOrAfterStart,
+        ],
+      },
+      {
+        $and: [
+          joinOnOrBeforeEnd,
+          leftWithinPeriod,
+        ],
       },
     ],
   };

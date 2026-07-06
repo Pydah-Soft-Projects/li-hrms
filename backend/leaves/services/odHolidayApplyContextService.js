@@ -12,6 +12,7 @@ const {
   getAutoOdEligibilityFromRecord,
   extractPunchTimingsFromRecord,
   resolveHolWoPunchOdShape,
+  inferHalfDayTypeFromShiftSegments,
   MIN_HOURS_FOR_PUNCH_CONTEXT,
   FULL_DAY_HOURS_THRESHOLD,
 } = require('../utils/holwoOdPunchResolver');
@@ -102,6 +103,44 @@ async function getAttendancePunchTimingsForEmployeeDate(empNo, dateInput) {
   return { date: dateStr, ...timings, fromAttendance: true };
 }
 
+async function resolveOdApplyAgainstHolidayPunchContext(employeeNumber, dateInput, payload = {}) {
+  const dateStr = normalizeIstDateStr(dateInput);
+  const isHolWo = await isHolidayOrWeekOff(employeeNumber, dateStr);
+  if (!isHolWo) return { ok: true };
+
+  const isHalfOrHours =
+    Boolean(payload?.isHalfDay) ||
+    String(payload?.odType_extended || '') === 'half_day' ||
+    String(payload?.odType_extended || '') === 'hours' ||
+    (payload?.numberOfDays != null && Number(payload.numberOfDays) > 0 && Number(payload.numberOfDays) < 1);
+
+  if (isHalfOrHours) return { ok: true };
+
+  const empNos = employeeNumberVariants(employeeNumber);
+  const preferredEmp = empNos[0] || String(employeeNumber || '').trim().toUpperCase();
+  const record = await AttendanceDaily.findOne({
+    employeeNumber: { $in: empNos.length ? empNos : [preferredEmp] },
+    date: dateStr,
+  }).lean();
+
+  const shape = getPunchBasedOdSuggestionForRecord(record);
+  if (!shape.hasPunches || shape.suggestedOdTypeExtended !== 'half_day') {
+    return { ok: true };
+  }
+
+  return {
+    ok: true,
+    narrowed: true,
+    isHalfDay: true,
+    halfDayType: inferHalfDayTypeFromShiftSegments(record?.shifts, dateStr) || 'first_half',
+    numberOfDays: 0.5,
+    odType_extended: 'half_day',
+    remark: 'Narrowed to half day because attendance on this holiday/week-off shows only partial work.',
+    punchContextDetail: shape.punchContextDetail,
+    totalWorkingHours: shape.totalWorkingHours,
+  };
+}
+
 /** Same CO scope as OD detail: roster HOL/WO, half HOL, attendance HOL/WO status, or apply-time CO flag. */
 async function odQualifiesForCoPunchDisplay(empNo, fromStr, isCOEligible) {
   if (isCOEligible === true) return true;
@@ -154,6 +193,7 @@ module.exports = {
   resolveHolWoPunchOdShape,
   getHolidayWeekOffOdApplyContext,
   getAttendancePunchTimingsForEmployeeDate,
+  resolveOdApplyAgainstHolidayPunchContext,
   odQualifiesForCoPunchDisplay,
   enrichCoOdWithAttendancePunchTimings,
   MIN_HOURS_FOR_PUNCH_CONTEXT,

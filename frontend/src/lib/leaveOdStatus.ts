@@ -58,16 +58,18 @@ export function buildStatusLabelMap(defs: LeaveOdStatusDef[] | undefined): Recor
   return m;
 }
 
-export function formatLeaveStatusLabel(status: string | undefined, map: Record<string, string>): string {
+export function formatLeaveStatusLabel(status: string | undefined, map?: Record<string, string>): string {
   if (!status) return 'Unknown';
-  return map[status] ?? status.replaceAll('_', ' ');
+  const resolvedMap = map ?? {};
+  return resolvedMap[status] ?? status.replaceAll('_', ' ');
 }
 
 /** OD `draft` is treated as awaiting OUT submission in this product. */
-export function formatOdStatusLabel(status: string | undefined, map: Record<string, string>): string {
+export function formatOdStatusLabel(status: string | undefined, map?: Record<string, string>): string {
   if (!status) return 'Unknown';
   if (status === 'draft') return 'Waiting for OUT evidence';
-  return map[status] ?? status.replaceAll('_', ' ');
+  const resolvedMap = map ?? {};
+  return resolvedMap[status] ?? status.replaceAll('_', ' ');
 }
 
 export function filterStatusDefsForOd(defs: LeaveOdStatusDef[]): LeaveOdStatusDef[] {

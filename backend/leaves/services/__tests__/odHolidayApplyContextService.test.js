@@ -1,11 +1,38 @@
 /**
  * Unit tests for punch-based HOL/WO OD suggestion (no DB).
  */
+jest.mock('../../../attendance/model/AttendanceDaily', () => ({
+  findOne: jest.fn(),
+}));
+jest.mock('../../../shifts/model/PreScheduledShift', () => ({
+  findOne: jest.fn(),
+}));
+
+const AttendanceDaily = require('../../../attendance/model/AttendanceDaily');
+const PreScheduledShift = require('../../../shifts/model/PreScheduledShift');
 const {
   getPunchBasedOdSuggestionForRecord,
   FULL_DAY_HOURS_THRESHOLD,
   MIN_HOURS_FOR_PUNCH_CONTEXT,
+  resolveOdApplyAgainstHolidayPunchContext,
 } = require('../odHolidayApplyContextService');
+
+beforeEach(() => {
+  AttendanceDaily.findOne.mockReset();
+  PreScheduledShift.findOne.mockReset();
+  PreScheduledShift.findOne.mockReturnValue({
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue({ status: 'WO' }),
+  });
+  AttendanceDaily.findOne.mockReturnValue({
+    lean: jest.fn().mockResolvedValue({
+      totalWorkingHours: 3.5,
+      shifts: [
+        { status: 'PRESENT', inTime: new Date('2026-01-15T09:00:00+05:30'), outTime: new Date('2026-01-15T13:00:00+05:30') },
+      ],
+    }),
+  });
+});
 
 describe('odHolidayApplyContextService.getPunchBasedOdSuggestionForRecord', () => {
   it('returns no punches when record is null', () => {
@@ -76,6 +103,32 @@ describe('odHolidayApplyContextService.getPunchBasedOdSuggestionForRecord', () =
     expect(r.hasPunches).toBe(true);
     expect(r.suggestedOdTypeExtended).toBe('half_day');
     expect(r.punchContextDetail).toBe('hours_between_min_and_full_threshold');
+  });
+});
+
+describe('resolveOdApplyAgainstHolidayPunchContext', () => {
+  it('narrows a full-day holiday/week-off OD to half-day when attendance punches indicate only partial work', async () => {
+    AttendanceDaily.findOne.mockImplementationOnce(() => ({
+      lean: jest.fn().mockResolvedValue({
+        totalWorkingHours: 3.5,
+        shifts: [
+          { status: 'PRESENT', inTime: new Date('2026-01-15T09:00:00+05:30'), outTime: new Date('2026-01-15T13:00:00+05:30') },
+        ],
+      }),
+    }));
+
+    const result = await resolveOdApplyAgainstHolidayPunchContext('2146', '2026-01-15', {
+      isHalfDay: false,
+      odType_extended: 'full_day',
+      numberOfDays: 1,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.narrowed).toBe(true);
+    expect(result.isHalfDay).toBe(true);
+    expect(result.halfDayType).toBe('first_half');
+    expect(result.odType_extended).toBe('half_day');
+    expect(result.numberOfDays).toBe(0.5);
   });
 });
 

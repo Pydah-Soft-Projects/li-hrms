@@ -77,6 +77,7 @@ import {
   OD_WEB_TRAIL_POSITION_OPTIONS,
   shouldAppendOdWebTrailPoint,
 } from '@/lib/odWebTrailSampling';
+import { getOdDisplayPunchTimings, isCoEligibleOdForPunchDisplay } from '@/lib/odPunchTimings';
 import {
   joinOdTrailRoom,
   leaveOdTrailRoom,
@@ -5051,21 +5052,50 @@ function LeavesPageContent() {
               )}
 
               {/* CO Eligibility Indicator */}
-              {detailType === 'od' && (selectedItem as any).isCOEligible && (
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-200 dark:border-indigo-800/50 animate-in fade-in zoom-in duration-500 mb-4">
-                  <div className="flex items-start gap-4">
-                    <div className="p-2.5 rounded-xl bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 shrink-0">
-                      <Star className="w-5 h-5 fill-current" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-black text-indigo-900 dark:text-indigo-100 uppercase tracking-tight">Premium Reward</p>
-                      <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80 leading-relaxed font-medium mt-1">
-                        This OD contributes to compensatory off as it was applied on a holiday or week-off.
-                      </p>
+              {detailType === 'od' && isCoEligibleOdForPunchDisplay(selectedItem as any) && (() => {
+                const punchDetails = getOdDisplayPunchTimings(selectedItem as any);
+                const hasPunchInfo = Boolean(punchDetails.start || punchDetails.end || punchDetails.duration !== null);
+                return (
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-200 dark:border-indigo-800/50 animate-in fade-in zoom-in duration-500 mb-4">
+                    <div className="flex items-start gap-4">
+                      <div className="p-2.5 rounded-xl bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 shrink-0">
+                        <Star className="w-5 h-5 fill-current" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-indigo-900 dark:text-indigo-100 uppercase tracking-tight">Premium Reward</p>
+                        <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80 leading-relaxed font-medium mt-1">
+                          This OD contributes to compensatory off as it was applied on a holiday or week-off.
+                        </p>
+                        {hasPunchInfo && (
+                          <div className="mt-3 flex flex-wrap items-center justify-center gap-2 rounded-xl border border-emerald-300/70 bg-emerald-50/90 px-3 py-2 text-center shadow-sm dark:border-emerald-700/60 dark:bg-emerald-900/30">
+                            <span className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                              Attendance
+                            </span>
+                            <span className="text-sm font-bold text-emerald-900 dark:text-emerald-100">
+                              {punchDetails.start && punchDetails.end ? `${punchDetails.start} - ${punchDetails.end}` : 'Captured from attendance'}
+                            </span>
+                            {punchDetails.duration != null && (
+                              <span className="rounded-full bg-emerald-600/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                                {(() => {
+                                  const totalMinutes = Math.round(Number(punchDetails.duration) * 60);
+                                  const hours = Math.floor(totalMinutes / 60);
+                                  const minutes = totalMinutes % 60;
+                                  return `${hours}:${minutes.toString().padStart(2, '0')}`;
+                                })()}
+                              </span>
+                            )}
+                            {punchDetails.fromAttendance && (
+                              <span className="text-[11px] font-medium text-emerald-700/80 dark:text-emerald-300/80">
+                                from attendance
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Stats Grid */}
               {detailType === 'leave' && (() => {
