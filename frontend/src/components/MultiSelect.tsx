@@ -23,6 +23,11 @@ interface MultiSelectProps {
   variant?: 'default' | 'ledger';
   /** Shorter trigger + tighter label (toolbar / header filters) */
   compact?: boolean;
+  /**
+   * pill — borderless, backgroundless trigger for use inside a parent pill wrapper.
+   * The parent handles the border/bg/padding; the trigger just renders text + chevron.
+   */
+  pill?: boolean;
 }
 
 const LEDGER_VAR_KEYS = [
@@ -75,6 +80,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   single = false,
   variant = 'default',
   compact = false,
+  pill = false,
 }) => {
   const isLedger = variant === 'ledger';
   const [isOpen, setIsOpen] = useState(false);
@@ -255,7 +261,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   const triggerHeight = compact ? 'h-7' : isLedger ? 'h-10' : 'h-9';
 
   return (
-    <div className={`relative flex flex-col ${compact ? 'gap-0.5' : 'gap-1.5'} ${className}`} ref={containerRef}>
+    <div className={`relative flex flex-col gap-0 ${className}`} ref={containerRef}>
       {label && (
         <label
           className={
@@ -273,26 +279,32 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
       <div
         onClick={() => !disabled && setIsOpen(!isOpen)}
         className={
-          isLedger
-            ? `flex ${triggerHeight} cursor-pointer items-center justify-between ${compact ? 'px-2' : 'px-3'} transition hover:opacity-95 ${
-                disabled ? 'cursor-not-allowed opacity-50' : ''
-              } ${loansFormInputClass()}`
-            : `flex h-9 cursor-pointer items-center justify-between rounded-lg border px-3 transition-all ${
-                disabled ? 'cursor-not-allowed bg-slate-50 opacity-50' : 'bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800'
-              } ${isOpen ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200 shadow-sm dark:border-slate-800'}`
+          pill
+            ? `flex cursor-pointer items-center justify-between gap-1.5 transition-all ${disabled ? 'cursor-not-allowed opacity-50' : ''}`
+            : isLedger
+              ? `flex ${triggerHeight} cursor-pointer items-center justify-between ${compact ? 'px-2' : 'px-3'} transition hover:opacity-95 ${
+                  disabled ? 'cursor-not-allowed opacity-50' : ''
+                } ${loansFormInputClass()}`
+              : `flex h-9 cursor-pointer items-center justify-between rounded-lg border px-3 transition-all ${
+                  disabled ? 'cursor-not-allowed bg-slate-50 opacity-50' : 'bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800'
+                } ${isOpen ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200 shadow-sm dark:border-slate-800'}`
         }
         style={isLedger ? loansFormInputStyle() : undefined}
       >
         <span
-          className={`truncate font-semibold ${compact ? 'text-[10px]' : 'text-[11px]'} ${
-            selectedIds.length === 0 ? 'text-stone-400' : 'text-stone-900 dark:text-stone-100'
-          }`}
+          className={
+            pill
+              ? `truncate text-sm font-medium ${selectedIds.length === 0 ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-200'}`
+              : `truncate font-semibold ${compact ? 'text-[10px]' : 'text-[11px]'} ${
+                  selectedIds.length === 0 ? 'text-stone-400' : 'text-stone-900 dark:text-stone-100'
+                }`
+          }
           style={isLedger && selectedIds.length > 0 ? { color: 'var(--ps-accent-ink)' } : undefined}
         >
           {loading ? 'Loading…' : getSelectedLabels()}
         </span>
         <ChevronDown
-          className={`h-3.5 w-3.5 shrink-0 text-stone-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`h-3.5 w-3.5 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''} ${pill ? 'text-slate-400' : 'text-stone-400'}`}
         />
       </div>
 

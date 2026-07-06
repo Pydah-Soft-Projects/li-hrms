@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, Department, Division } from '@/lib/api';
 import { MultiSelect } from '@/components/MultiSelect';
 import Spinner from '@/components/Spinner';
-import { ShieldCheck, AlertTriangle, CheckCircle2, Info, Loader2, FileText } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, CheckCircle2, Info, Loader2, FileText, Building2, Building, User, Calendar, Search, FileDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AttendanceAuditCompareGrid, type CompareData } from '@/components/attendance/AttendanceAuditCompareGrid';
 import { exportAttendanceAuditPdf } from '@/lib/attendanceAuditPdf';
@@ -27,7 +27,7 @@ function currentPayrollMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-export default function AttendanceAuditPage() {
+export default function AttendanceAuditPage({ hideTitle }: { hideTitle?: boolean } = {}) {
   const [month, setMonth] = useState(currentPayrollMonth());
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -131,90 +131,105 @@ export default function AttendanceAuditPage() {
 
   return (
     <div className="w-full max-w-full -mx-4 space-y-6 px-4 pb-24 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900 dark:text-white">
-          <ShieldCheck className="h-7 w-7 text-indigo-600" />
-          Attendance Audits
-        </h1>
-        <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-400">
-          Attendance monthly view vs pay register — same day cells and summary columns as the attendance page.
-          Summaries follow each employee&apos;s shift mode (single-shift or multi-shift). Half-day present matches
-          pay register present on that half.
-        </p>
-      </div>
-
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          <label className="block text-sm lg:col-span-1">
-            <span className="mb-1 block font-medium text-slate-700 dark:text-slate-300">Payroll month</span>
-            <input
-              type="month"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800"
-            />
-          </label>
-          <div className="lg:col-span-1">
-            <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Division</span>
-            <MultiSelect
-              options={divisions.map((d) => ({ id: d._id, name: d.name }))}
-              selectedIds={divisionIds}
-              onChange={setDivisionIds}
-              placeholder="All divisions"
-            />
-          </div>
-          <div className="lg:col-span-1">
-            <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Department</span>
-            <MultiSelect
-              options={filteredDepartments.map((d) => ({ id: d._id, name: d.name }))}
-              selectedIds={departmentIds}
-              onChange={setDepartmentIds}
-              placeholder="All departments"
-            />
-          </div>
-          <label className="block text-sm lg:col-span-1">
-            <span className="mb-1 block font-medium text-slate-700 dark:text-slate-300">Employee #</span>
-            <input
-              type="text"
-              value={empNos}
-              onChange={(e) => setEmpNos(e.target.value)}
-              placeholder="e.g. 101, 102"
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800"
-            />
-          </label>
-          <div className="flex flex-col justify-end gap-2 lg:col-span-1">
-            <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={onlyIssues}
-                onChange={(e) => setOnlyIssues(e.target.checked)}
-                className="rounded border-slate-300"
-              />
-              Issues only
-            </label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={loadOverview}
-                disabled={loading}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:hover:bg-slate-800"
-              >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Refresh
-              </button>
-              <button
-                type="button"
-                onClick={handleExportPdf}
-                disabled={loading || exportingPdf || !overview}
-                title="Export abstract differences as PDF"
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-              >
-                {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                {exportingPdf ? 'Exporting…' : 'Export PDF'}
-              </button>
-            </div>
-          </div>
+      {!hideTitle && (
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900 dark:text-white">
+            <ShieldCheck className="h-7 w-7 text-indigo-600" />
+            Attendance Audits
+          </h1>
+          <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-400">
+            Attendance monthly view vs pay register — same day cells and summary columns as the attendance page.
+            Summaries follow each employee&apos;s shift mode (single-shift or multi-shift). Half-day present matches
+            pay register present on that half.
+          </p>
         </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Month */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:border-indigo-300">
+          <Calendar className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="bg-transparent text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none"
+          />
+        </div>
+
+        {/* Division */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:border-indigo-300">
+          <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <MultiSelect
+            options={divisions.map((d) => ({ id: d._id, name: d.name }))}
+            selectedIds={divisionIds}
+            onChange={setDivisionIds}
+            placeholder="All Divisions"
+            className="min-w-[120px]"
+            pill
+          />
+        </div>
+
+        {/* Department */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:border-indigo-300">
+          <Building className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <MultiSelect
+            options={filteredDepartments.map((d) => ({ id: d._id, name: d.name }))}
+            selectedIds={departmentIds}
+            onChange={setDepartmentIds}
+            placeholder="All Departments"
+            className="min-w-[120px]"
+            pill
+          />
+        </div>
+
+        {/* Employee # */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:border-indigo-300">
+          <User className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <input
+            type="text"
+            value={empNos}
+            onChange={(e) => setEmpNos(e.target.value)}
+            placeholder="Emp # (e.g. 101, 102)"
+            className="bg-transparent text-sm text-slate-700 dark:text-slate-300 placeholder:text-slate-400 focus:outline-none min-w-[140px]"
+          />
+        </div>
+
+        {/* Issues only toggle */}
+        <label className="flex cursor-pointer items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:border-indigo-300 select-none">
+          <input
+            type="checkbox"
+            checked={onlyIssues}
+            onChange={(e) => setOnlyIssues(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-slate-300 accent-indigo-600"
+          />
+          <span className="text-sm font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">
+            Issues only
+          </span>
+        </label>
+
+        {/* Refresh */}
+        <button
+          type="button"
+          onClick={loadOverview}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm text-sm font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-50 transition-all"
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+          Refresh
+        </button>
+
+        {/* Export PDF */}
+        <button
+          type="button"
+          onClick={handleExportPdf}
+          disabled={loading || exportingPdf || !overview}
+          title="Export abstract differences as PDF"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 shadow-sm text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-all"
+        >
+          {exportingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+          {exportingPdf ? 'Exporting…' : 'Export PDF'}
+        </button>
       </div>
 
       {loading ? (

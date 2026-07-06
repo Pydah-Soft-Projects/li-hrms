@@ -41,6 +41,7 @@ import {
   BadgeDollarSign,
   AlertOctagon,
   ClipboardCheck,
+  FolderSearch,
 } from 'lucide-react';
 
 export type SidebarIcon = ComponentType<{ className?: string; style?: CSSProperties; strokeWidth?: number }>;
@@ -71,7 +72,8 @@ export const SIDEBAR_MODULE_ICONS: Record<string, SidebarIcon> = {
   PROMOTIONS_TRANSFERS: TrendingUp,
   FORM_SETTINGS: FileCog,
   ATTENDANCE: Fingerprint,
-  ATTENDANCE_AUDIT: ClipboardCheck,
+  ATTENDANCE_AUDIT: FolderSearch,
+  AUDITS: FolderSearch,
   LIVE_ATTENDANCE: Clock,
   OT_PERMISSIONS: Timer,
   CONFUSED_SHIFTS: AlertOctagon,
@@ -143,7 +145,7 @@ export const SUPERADMIN_NAV_CATEGORIES: SidebarNavCategory[] = [
     icon: CalendarClock,
     items: [
       { code: 'ATTENDANCE', label: 'Attendance', href: `${SUPERADMIN_PREFIX}/attendance`, icon: Fingerprint },
-      { code: 'ATTENDANCE_AUDIT', label: 'Attendance Audits', href: `${SUPERADMIN_PREFIX}/attendance-audit`, icon: ClipboardCheck },
+      { code: 'ATTENDANCE_AUDIT', label: 'Audits', href: `${SUPERADMIN_PREFIX}/audits`, icon: FolderSearch },
       { code: 'LIVE_ATTENDANCE', label: 'Live Attendance', href: `${SUPERADMIN_PREFIX}/live-attendance`, icon: Clock },
       { code: 'LEAVE_OD', label: 'Leave & OD', href: `${SUPERADMIN_PREFIX}/leaves`, icon: Briefcase },
       { code: 'LEAVE_REGISTER', label: 'Leave Register', href: `${SUPERADMIN_PREFIX}/leave-register`, icon: ScrollText },
@@ -353,7 +355,6 @@ export const SIDEBAR_MODULE_PERMISSION_CODES: Record<string, string> = {
   SECOND_SALARY_PAYMENTS: 'PAYMENTS',
   SECOND_SALARY_PAYSLIPS: 'PAYSLIPS',
   MOBILE_ANALYTICS: 'REPORTS',
-  PAYSHEET: 'PAYSLIPS',
 };
 
 export function getSidebarPermissionCode(itemCode: string): string {
@@ -365,6 +366,7 @@ export function isSidebarPathActive(href: string, pathname: string): boolean {
   if (href.endsWith('/employees') && pathname.startsWith(`${href}/`)) {
     return pathname === `${href}/form-settings` ? false : true;
   }
+  if (href.endsWith('/audits') && pathname.startsWith(`${href}`)) return true;
   return false;
 }
 

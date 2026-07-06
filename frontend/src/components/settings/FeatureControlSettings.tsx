@@ -48,6 +48,7 @@ const availableModules: { id: string; label: string }[] = [
   { id: 'SHIFTS', label: 'Shifts' },
   { id: 'DEPARTMENTS', label: 'Departments' },
   { id: 'PAYSLIPS', label: 'Payslips' },
+  { id: 'PAYSHEET', label: 'Paysheet' },
   { id: 'PAY_REGISTER', label: 'Pay Register' },
   { id: 'ALLOWANCES_DEDUCTIONS', label: 'Allowances & Deductions' },
   { id: 'LOANS', label: 'Loans & Salary Advance' },
