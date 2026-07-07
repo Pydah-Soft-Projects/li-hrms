@@ -1034,10 +1034,6 @@ exports.updateEmployee = async (req, res) => {
     normalizePushSubscriptionsPayload(employeeData);
 
     // Check if employee exists
-
-
-
-    // Check if employee exists
     const existingEmployee = await Employee.findOne({ emp_no: empNo });
     if (!existingEmployee) {
       return res.status(404).json({

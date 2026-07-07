@@ -49,8 +49,38 @@ const normalizeNotificationArrayFields = (employeeData) => {
     delete employeeData[fieldName];
   };
 
+  const normalizeJsonFieldValue = (fieldName, value) => {
+    if (value === undefined || value === null) return;
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        delete employeeData[fieldName];
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed !== null && (typeof parsed === 'object' || Array.isArray(parsed))) {
+          employeeData[fieldName] = parsed;
+          return;
+        }
+      } catch (err) {
+        // Leave non-JSON strings intact; callers can handle them separately.
+      }
+    } else if (typeof value === 'object' || Array.isArray(value)) {
+      employeeData[fieldName] = value;
+    }
+  };
+
   normalizeArrayValue('pushSubscriptions', employeeData.pushSubscriptions);
   normalizeArrayValue('expoPushTokens', employeeData.expoPushTokens);
+
+  ['employmentTenures', 'dynamicFields', 'employeeAllowances', 'employeeDeductions'].forEach((fieldName) => {
+    if (employeeData[fieldName] !== undefined) {
+      normalizeJsonFieldValue(fieldName, employeeData[fieldName]);
+    }
+  });
 };
 
 module.exports = {

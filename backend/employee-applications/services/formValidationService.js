@@ -309,6 +309,7 @@ exports.transformFormData = (formData, settings) => {
     'bank_name',
     'bank_place',
     'ifsc_code',
+    'second_salary',
     'applyProfessionTax',
     'applyESI',
     'applyPF',
