@@ -15,8 +15,10 @@ const OD = require('../../leaves/model/OD');
 const {
   autoCreateEdgePermissionsForAttendance,
 } = require('../../permissions/services/autoEdgePermissionCreationService');
-const { resolveShiftPresence } = require('./shiftPresenceResolutionService');
+const { resolveShiftPresence, shiftHasHalfSegments } = require('./shiftPresenceResolutionService');
 const { resolveGraceFromSettings } = require('./shiftSegmentAttendanceService');
+const { getShiftSegmentAssignment } = require('../../shifts/services/shiftHalfSegmentService');
+const { applyShiftSegmentOverride } = require('../../shared/utils/shiftSegmentOverrides');
 const {
     normalizeManualOverrides,
     findOverrideOutTime,
@@ -687,7 +689,6 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                             for (let splitIdx = 0; splitIdx < splitSegments.length; splitIdx++) {
                                 const split = splitSegments[splitIdx];
                                 if (shiftCounter >= MAX_SHIFTS) break;
-                                shiftCounter++;
                                 const sIn = new Date(split.inTime);
                                 const sOut = new Date(split.outTime);
                                 const sDuration = sOut - sIn;
@@ -702,7 +703,7 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
 
                                 // Effective Duration (Clipped)
                                 const effectiveIn = new Date(Math.max(sIn.getTime(), shiftStart.getTime()));
-                                const effectiveOut = sOut; 
+                                const effectiveOut = sOut;
                                 const effectiveDurationMs = Math.max(0, effectiveOut - effectiveIn);
                                 const effectiveWorking = (effectiveDurationMs / 3600000) + (split.extraHours || 0);
 
@@ -719,6 +720,56 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                     segStatus = 'ABSENT';
                                     segPayable = 0;
                                 }
+
+                                // ── Fold decision for segments 2, 3, …
+                                // Rule: if this segment would resolve as ABSENT after proper presence
+                                // evaluation, don't create it — fold the raw punch hours into the
+                                // previous segment's extraHours instead.
+                                //
+                                // "Proper presence evaluation" mirrors resolveShiftPresence Step 3:
+                                //   • Shift HAS firstHalf/secondHalf configured → run
+                                //     getShiftSegmentAssignment; fold only when totalPayableShifts === 0
+                                //     (neither half is covered).
+                                //   • Shift has NO half-segments → use the 40% duration ratio
+                                //     (segStatus === 'ABSENT' from the block above).
+                                if (splitIdx > 0) {
+                                    let shouldFold = false;
+
+                                    const effectiveShiftDocForFold = applyShiftSegmentOverride(
+                                        split.assignedShift,
+                                        divisionId || null
+                                    );
+
+                                    if (shiftHasHalfSegments(effectiveShiftDocForFold)) {
+                                        // Half-segment aware: ask getShiftSegmentAssignment whether
+                                        // either half is covered by [sIn, sOut].
+                                        const segResult = getShiftSegmentAssignment(
+                                            effectiveShiftDocForFold,
+                                            formatDate(sIn),
+                                            sIn,
+                                            sOut,
+                                            {}
+                                        );
+                                        shouldFold = (segResult.totalPayableShifts === 0);
+                                        console.log(`[MultiShift] Segment ${splitIdx + 1} half-segment check: totalPayable=${segResult.totalPayableShifts}, fold=${shouldFold}`);
+                                    } else {
+                                        // No half-segments: fall back to 40% duration ratio.
+                                        shouldFold = (segStatus === 'ABSENT');
+                                        console.log(`[MultiShift] Segment ${splitIdx + 1} duration ratio check: ratio=${statusRatio.toFixed(2)}, fold=${shouldFold}`);
+                                    }
+
+                                    if (shouldFold) {
+                                        const prevProcessed = processedShifts[processedShifts.length - 1];
+                                        if (prevProcessed) {
+                                            const foldHours = Math.round(sWorkingHours * 100) / 100;
+                                            prevProcessed.extraHours = Math.round(((prevProcessed.extraHours || 0) + foldHours) * 100) / 100;
+                                            prevProcessed.workingHours = Math.round(((prevProcessed.workingHours || 0) + foldHours) * 100) / 100;
+                                        }
+                                        continue; // skip creating this segment
+                                    }
+                                }
+
+                                shiftCounter++;
 
                                 // Late/early with configured grace (global settings > shift grace > default 15)
                                 const segDateStr = formatDate(sIn);
