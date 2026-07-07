@@ -1,6 +1,6 @@
 /**
  * Live Attendance Report Controller
- * Handles real-time attendance reporting for superadmin
+ * Handles real-time attendance reporting with user-scope awareness
  */
 
 const AttendanceDaily = require('../model/AttendanceDaily');
@@ -11,9 +11,95 @@ const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
 const Division = require('../../departments/model/Division');
 const { parseQueryIdList } = require('../../pay-register/services/payRegisterEmployeeFilter');
+const mongoose = require('mongoose');
 
 function parseIdStringList(raw) {
   return parseQueryIdList(raw).map((id) => String(id));
+}
+
+/**
+ * Build a MongoDB employee query that constrains results to the requesting
+ * user's division/department scope (derived from req.scopedUser set by
+ * applyScopeFilter middleware).  Super-admins and sub-admins with scope=all
+ * are unrestricted.
+ *
+ * @param {Object} scopedUser  - user object from req.scopedUser
+ * @param {string[]} divisionIds - explicit division filter from query params
+ * @param {string[]} departmentIds - explicit department filter from query params
+ * @returns {Object} MongoDB query fragment safe to merge into the Employee.find() call
+ */
+function buildScopedEmployeeQuery(scopedUser, divisionIds, departmentIds) {
+  const role = scopedUser?.role;
+  const scope = scopedUser?.dataScope || (role === 'super_admin' || role === 'sub_admin' ? 'all' : 'division');
+
+  const isSuperAdmin = role === 'super_admin';
+  const isFullScope = isSuperAdmin || scope === 'all';
+
+  const query = { is_active: { $ne: false } };
+
+  // ── Apply explicit UI filters first ───────────────────────────────────────
+  if (divisionIds.length)   query.division_id   = { $in: divisionIds.map(id => new mongoose.Types.ObjectId(id)) };
+  if (departmentIds.length) query.department_id = { $in: departmentIds.map(id => new mongoose.Types.ObjectId(id)) };
+
+  // ── Super-admin / full-scope: no further restriction ─────────────────────
+  if (isFullScope) return query;
+
+  // ── Scoped user: restrict to their divisionMapping ────────────────────────
+  const mapping = scopedUser?.divisionMapping;
+  if (!mapping || !Array.isArray(mapping) || mapping.length === 0) {
+    // No mapping → no data
+    return { _id: null };
+  }
+
+  const orConditions = mapping.map((m) => {
+    const divId = (typeof m.division === 'string' ? m.division : m.division?._id)?.toString();
+    if (!divId) return null;
+
+    const depts = (m.departments || [])
+      .map(d => (typeof d === 'string' ? d : d?._id)?.toString())
+      .filter(Boolean);
+
+    const divCond = { division_id: new mongoose.Types.ObjectId(divId) };
+    if (depts.length) {
+      return { ...divCond, department_id: { $in: depts.map(id => new mongoose.Types.ObjectId(id)) } };
+    }
+    return divCond;
+  }).filter(Boolean);
+
+  if (orConditions.length === 0) return { _id: null };
+
+  // Merge scope restriction with any explicit UI filters already in `query`
+  // We do this by wrapping the existing division/department filters in an $and
+  // together with the scope $or, so both constraints must be satisfied.
+  const scopeCondition = orConditions.length === 1 ? orConditions[0] : { $or: orConditions };
+
+  // Remove the explicit filters from the top-level query (they'll be part of $and)
+  delete query.division_id;
+  delete query.department_id;
+
+  const andClauses = [scopeCondition];
+  if (divisionIds.length)   andClauses.push({ division_id:   { $in: divisionIds.map(id => new mongoose.Types.ObjectId(id)) } });
+  if (departmentIds.length) andClauses.push({ department_id: { $in: departmentIds.map(id => new mongoose.Types.ObjectId(id)) } });
+
+  query.$and = andClauses;
+  return query;
+}
+
+/**
+ * Return the set of division IDs the requesting user is allowed to see.
+ * Used to gate the filter-options endpoint.
+ */
+function getAllowedDivisionIds(scopedUser) {
+  const role = scopedUser?.role;
+  const scope = scopedUser?.dataScope || (role === 'super_admin' || role === 'sub_admin' ? 'all' : 'division');
+  if (role === 'super_admin' || scope === 'all') return null; // null = unrestricted
+
+  const mapping = scopedUser?.divisionMapping;
+  if (!mapping || !Array.isArray(mapping) || mapping.length === 0) return [];
+
+  return mapping
+    .map(m => (typeof m.division === 'string' ? m.division : m.division?._id)?.toString())
+    .filter(Boolean);
 }
 
 function matchesShiftFilter(shiftIds, shiftId) {
@@ -43,7 +129,7 @@ const calculateHoursWorked = (inTime) => {
 
 // @desc    Get live attendance report
 // @route   GET /api/attendance/reports/live
-// @access  Private (Super Admin only)
+// @access  Private (Super Admin, Sub Admin, HR)
 exports.getLiveAttendanceReport = async (req, res) => {
   try {
     const { date, division, department, shift } = req.query;
@@ -54,6 +140,18 @@ exports.getLiveAttendanceReport = async (req, res) => {
     const divisionIds = parseQueryIdList(division);
     const departmentIds = parseQueryIdList(department);
     const shiftIds = parseIdStringList(shift);
+
+    // ── Scope-aware employee query (uses req.scopedUser set by applyScopeFilter) ──
+    const scopedUser = req.scopedUser || req.user;
+    const employeeQuery = buildScopedEmployeeQuery(scopedUser, divisionIds.map(String), departmentIds.map(String));
+
+    // Fetch applicable active employees
+    const activeEmployees = await Employee.find(employeeQuery)
+      .select('_id emp_no employee_name division_id department_id designation_id')
+      .populate({ path: 'division_id', select: 'name' })
+      .populate({ path: 'department_id', select: 'name' })
+      .populate({ path: 'designation_id', select: 'name' })
+      .lean();
 
     // ── Detect processing mode (per-employee: division override → org default) ──
     const {
@@ -67,19 +165,6 @@ exports.getLiveAttendanceReport = async (req, res) => {
       .filter(Boolean);
     const divisionModeMap = await buildDivisionProcessingModeMap(divisionIdsForMode);
     const defaultIsMultiShift = orgProcessingMode.mode === 'multi_shift';
-
-    // 1. Build employee base query
-    const employeeQuery = { is_active: { $ne: false } };
-    if (divisionIds.length) employeeQuery.division_id = { $in: divisionIds };
-    if (departmentIds.length) employeeQuery.department_id = { $in: departmentIds };
-
-    // Fetch applicable active employees
-    const activeEmployees = await Employee.find(employeeQuery)
-      .select('_id emp_no employee_name division_id department_id designation_id')
-      .populate({ path: 'division_id', select: 'name' })
-      .populate({ path: 'department_id', select: 'name' })
-      .populate({ path: 'designation_id', select: 'name' })
-      .lean();
 
     const empNos = activeEmployees.map(e => e.emp_no);
     const employeeMap = activeEmployees.reduce((acc, e) => {
@@ -99,10 +184,8 @@ exports.getLiveAttendanceReport = async (req, res) => {
       })
       .lean();
 
-    // 3. Departmental Stats aggregation
-    const aggMatch = { is_active: { $ne: false } };
-    if (divisionIds.length) aggMatch.division_id = { $in: divisionIds };
-    if (departmentIds.length) aggMatch.department_id = { $in: departmentIds };
+    // 3. Departmental Stats aggregation — restrict to scoped employees only
+    const aggMatch = { ...employeeQuery };
 
     const divDeptStats = await Employee.aggregate([
       { $match: aggMatch },
@@ -375,22 +458,50 @@ exports.getLiveAttendanceReport = async (req, res) => {
 
 // @desc    Get filter options for live attendance report
 // @route   GET /api/attendance/reports/live/filters
-// @access  Private (Super Admin only)
+// @access  Private (Super Admin, Sub Admin, HR)
 exports.getFilterOptions = async (req, res) => {
   try {
-    // Divisions (used instead of organization)
-    const divisions = await Division.find({ isActive: true })
+    const scopedUser = req.scopedUser || req.user;
+    const allowedDivisionIds = getAllowedDivisionIds(scopedUser);
+
+    // ── Divisions ────────────────────────────────────────────────────────────
+    const divisionQuery = { isActive: true };
+    if (allowedDivisionIds !== null) {
+      // Scoped user: only show their assigned divisions
+      divisionQuery._id = { $in: allowedDivisionIds.map(id => new mongoose.Types.ObjectId(id)) };
+    }
+    const divisions = await Division.find(divisionQuery)
       .select('name')
       .sort({ name: 1 })
       .lean();
 
-    // Get all departments
-    const departments = await Department.find({ isActive: true })
+    // ── Departments — only those belonging to allowed divisions ───────────────
+    const departmentQuery = { isActive: true };
+    if (allowedDivisionIds !== null) {
+      const mapping = scopedUser?.divisionMapping || [];
+      const deptOrConditions = mapping.map((m) => {
+        const divId = (typeof m.division === 'string' ? m.division : m.division?._id)?.toString();
+        if (!divId) return null;
+        const depts = (m.departments || [])
+          .map(d => (typeof d === 'string' ? d : d?._id)?.toString())
+          .filter(Boolean);
+        if (depts.length) {
+          return {
+            divisions: new mongoose.Types.ObjectId(divId),
+            _id: { $in: depts.map(id => new mongoose.Types.ObjectId(id)) },
+          };
+        }
+        return { divisions: new mongoose.Types.ObjectId(divId) };
+      }).filter(Boolean);
+
+      departmentQuery.$or = deptOrConditions.length ? deptOrConditions : [{ _id: null }];
+    }
+    const departments = await Department.find(departmentQuery)
       .select('name')
       .sort({ name: 1 })
       .lean();
 
-    // Get all shifts
+    // ── Shifts — always show all active shifts (no division scope on shifts) ──
     const shifts = await Shift.find({ isActive: true })
       .select('name startTime endTime')
       .sort({ name: 1 })
