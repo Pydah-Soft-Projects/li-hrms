@@ -89,25 +89,27 @@ const getThumbReports = async (filters = {}) => {
             if (filters.endDate) query.timestamp.$lte = new Date(filters.endDate);
         }
 
-        const limit = parseInt(filters.limit) || 50;
-        const page = parseInt(filters.page) || 1;
-        const skip = (page - 1) * limit;
+        const limit = filters.limit == null ? 50 : parseInt(filters.limit, 10);
+        const page = parseInt(filters.page, 10) || 1;
+        const isPaging = Number.isFinite(limit) && limit > 0;
+        const skip = isPaging ? (page - 1) * limit : 0;
+
+        const queryBuilder = Model.find(query).sort({ timestamp: -1 });
+        if (isPaging) {
+            queryBuilder.skip(skip).limit(limit);
+        }
 
         const [logs, total] = await Promise.all([
-            Model.find(query)
-                .sort({ timestamp: -1 })
-                .skip(skip)
-                .limit(limit)
-                .lean(),
+            queryBuilder.lean(),
             Model.countDocuments(query)
         ]);
 
         return {
             logs,
             total,
-            page,
-            limit,
-            totalPages: Math.ceil(total / limit)
+            page: isPaging ? page : 1,
+            limit: isPaging ? limit : 0,
+            totalPages: isPaging ? Math.ceil(total / limit) : 1
         };
     } catch (error) {
         console.error('Error fetching thumb reports:', error);

@@ -79,24 +79,45 @@ export default function ThumbReportsTab() {
         lastPunch: logs.length > 0 ? dayjs(logs[0].timestamp).format('hh:mm A') : 'N/A'
     };
 
-    const handleExport = () => {
-        const headers = ['Timestamp', 'Employee ID', 'Name', 'Log Type', 'Device Name', 'Received At'];
-        const rows = logs.map(l => [
-            dayjs(l.timestamp).format('YYYY-MM-DD HH:mm:ss'),
-            l.employeeId,
-            l.employeeName || 'Unknown',
-            l.logType,
-            l.deviceName,
-            l.receivedAt ? dayjs(l.receivedAt).format('YYYY-MM-DD HH:mm:ss') : '-'
-        ]);
+    const handleExport = async () => {
+        const toastId = toast.loading('Preparing CSV export...');
+        try {
+            const exportLimit = totalCount > 0 ? totalCount : 0;
+            const response = await api.getThumbReports({
+                startDate: dayjs(startDate).startOf('day').toISOString(),
+                endDate: dayjs(endDate).endOf('day').toISOString(),
+                search: searchQuery || undefined,
+                page: 1,
+                limit: exportLimit
+            });
 
-        const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", `thumb_logs_${startDate}.csv`);
-        link.click();
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to load biometric logs for export');
+            }
+
+            const exportLogs: ThumbLog[] = response.data || [];
+            const headers = ['Timestamp', 'Employee ID', 'Name', 'Log Type', 'Device Name', 'Received At'];
+            const rows = exportLogs.map((l: ThumbLog) => [
+                dayjs(l.timestamp).format('YYYY-MM-DD HH:mm:ss'),
+                l.employeeId,
+                l.employeeName || 'Unknown',
+                l.logType,
+                l.deviceName,
+                l.receivedAt ? dayjs(l.receivedAt).format('YYYY-MM-DD HH:mm:ss') : '-'
+            ]);
+
+            const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `thumb_logs_${startDate}.csv`);
+            link.click();
+            toast.success('CSV export ready', { id: toastId });
+        } catch (error: any) {
+            console.error('Error exporting thumb logs:', error);
+            toast.error(error.message || 'Export failed', { id: toastId });
+        }
     };
 
     const handlePairedExport = async () => {
