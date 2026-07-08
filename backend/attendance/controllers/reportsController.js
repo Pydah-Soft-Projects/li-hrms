@@ -20,6 +20,7 @@ const { payRegisterAllRowFromSummary } = require('../../shared/payRegisterAllRow
 const { getMonthlyTableViewData } = require('../services/attendanceViewService');
 const { formatPdfDayCellText } = require('../utils/pdfDayCellText');
 const { compareEmpNo } = require('../../shared/utils/employeeSort');
+const { buildLeftDuringPeriodOrClause, mergeScopeWithEmployeeClauses } = require('../services/attendanceEmployeeQuery');
 
 // Date format DD-Mon-YY (e.g. 01-Dec-25)
 function formatPDate(d) {
@@ -578,30 +579,34 @@ exports.exportAttendanceReport = async (req, res) => {
         }
 
         // ── 1. Fetch employee map ────────────────────────────────────────────────
-        const empQuery = { is_active: { $ne: false }, ...(req.scopeFilter || {}) };
+        const rosterVisibility = buildLeftDuringPeriodOrClause(startDate, endDate);
+        const empClauses = [rosterVisibility];
         if (designationId && designationId !== 'all') {
             const desigIds = String(designationId).split(',').filter(id => id && id !== 'all');
-            empQuery.designation_id = desigIds.length > 1 ? { $in: desigIds } : desigIds[0];
+            empClauses.push({ designation_id: desigIds.length > 1 ? { $in: desigIds } : desigIds[0] });
         }
         if (departmentId && departmentId !== 'all') {
             const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
-            empQuery.department_id = deptIds.length > 1 ? { $in: deptIds } : deptIds[0];
+            empClauses.push({ department_id: deptIds.length > 1 ? { $in: deptIds } : deptIds[0] });
         }
         if (divisionId && divisionId !== 'all') {
             const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
-            empQuery.division_id = divIds.length > 1 ? { $in: divIds } : divIds[0];
+            empClauses.push({ division_id: divIds.length > 1 ? { $in: divIds } : divIds[0] });
         }
         if (employeeId && employeeId !== 'all') {
             const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
-            empQuery._id = empIds.length > 1 ? { $in: empIds } : empIds[0];
+            empClauses.push({ _id: empIds.length > 1 ? { $in: empIds } : empIds[0] });
         }
         if (search) {
-            empQuery.$or = [
-                { employee_name: { $regex: search, $options: 'i' } },
-                { emp_no: { $regex: search, $options: 'i' } }
-            ];
+            empClauses.push({
+                $or: [
+                    { employee_name: { $regex: search, $options: 'i' } },
+                    { emp_no: { $regex: search, $options: 'i' } }
+                ]
+            });
         }
 
+        const empQuery = mergeScopeWithEmployeeClauses(req.scopeFilter, empClauses);
         const employees = await Employee.find(empQuery)
             .populate('department_id', 'name')
             .populate('division_id', 'name')
@@ -1554,19 +1559,21 @@ exports.exportAttendanceReportPDF = async (req, res) => {
 
             const monthStr = (year && month) ? `${year}-${String(month).padStart(2, '0')}` : null;
 
+            const rosterVisibility = buildLeftDuringPeriodOrClause(startDate, endDate);
             for (let aggIx = 0; aggIx < children.length; aggIx++) {
                 const child = children[aggIx];
-                const childEmpFilter = { is_active: { $ne: false } };
+                const childClauses = [rosterVisibility];
                 if (groupBy === 'division') {
                     const division = await Division.findById(child._id).select('departments').lean();
                     const depts = await Department.find({ $or: [{ divisions: child._id }, { _id: { $in: division?.departments || [] } }] }).select('_id');
-                    childEmpFilter.$or = [{ division_id: child._id }, { department_id: { $in: depts.map(d => d._id) } }];
+                    childClauses.push({ $or: [{ division_id: child._id }, { department_id: { $in: depts.map(d => d._id) } }] });
                 } else if (groupBy === 'department') {
-                    childEmpFilter.department_id = child._id;
+                    childClauses.push({ department_id: child._id });
                 } else {
-                    childEmpFilter.emp_no = child.emp_no;
+                    childClauses.push({ emp_no: child.emp_no });
                 }
 
+                const childEmpFilter = mergeScopeWithEmployeeClauses(req.scopeFilter, childClauses);
                 const childEmployees = await Employee.find(childEmpFilter).select('emp_no');
                 const childEmpNos = childEmployees.map(e => e.emp_no);
                 const childEmpIds = childEmployees.map(e => e._id);
@@ -1662,27 +1669,29 @@ exports.exportAttendanceReportPDF = async (req, res) => {
         // --- BRANCH: Detailed Tabular Report (Two-Section: Logs + Summary) ---
 
         // 1. Fetch employees
-        const empQuery = { is_active: { $ne: false }, ...(req.scopeFilter || {}) };
+        const rosterVisibility = buildLeftDuringPeriodOrClause(startDate, endDate);
+        const empClauses = [rosterVisibility];
         if (designationId && designationId !== 'all') {
             const desigIds = String(designationId).split(',').filter(id => id && id !== 'all');
-            empQuery.designation_id = { $in: desigIds };
+            empClauses.push({ designation_id: { $in: desigIds } });
         }
         if (departmentId && departmentId !== 'all') {
             const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
-            empQuery.department_id = { $in: deptIds };
+            empClauses.push({ department_id: { $in: deptIds } });
         }
         if (divisionId && divisionId !== 'all') {
             const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
-            empQuery.division_id = { $in: divIds };
+            empClauses.push({ division_id: { $in: divIds } });
         }
         if (employeeId && employeeId !== 'all') {
             const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
-            empQuery._id = { $in: empIds };
+            empClauses.push({ _id: { $in: empIds } });
         }
         if (search) {
-            empQuery.$or = [{ employee_name: { $regex: search, $options: 'i' } }, { emp_no: { $regex: search, $options: 'i' } }];
+            empClauses.push({ $or: [{ employee_name: { $regex: search, $options: 'i' } }, { emp_no: { $regex: search, $options: 'i' } }] });
         }
 
+        const empQuery = mergeScopeWithEmployeeClauses(req.scopeFilter, empClauses);
         const employees = await Employee.find(empQuery)
             .populate('department_id', 'name')
             .populate('division_id', 'name')
