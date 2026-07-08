@@ -22,12 +22,19 @@ export const MODULE_CATEGORIES = [
         ]
     },
     {
+        code: 'AUDITS_CATEGORY',
+        name: 'Audits',
+        icon: '🛡️',
+        modules: [
+            { code: 'ATTENDANCE_AUDIT', label: 'Audits', href: '/attendance-audit' }
+        ]
+    },
+    {
         code: 'TIME_ATTENDANCE',
         name: 'Time & Attendance',
         icon: '⏰',
         modules: [
             { code: 'ATTENDANCE', label: 'Attendance', href: '/attendance' },
-            { code: 'ATTENDANCE_AUDIT', label: 'Attendance Audits', href: '/attendance-audit' },
             { code: 'LIVE_ATTENDANCE', label: 'Live Attendance', href: '/live-attendance' },
             { code: 'LEAVE_OD', label: 'Leave & OD', href: '/leaves', fileUploadable: true },
             { code: 'LEAVE_REGISTER', label: 'Leave Register', href: '/leave-register' },
@@ -98,6 +105,8 @@ export function getModulesForCategory(categoryCode: string) {
 const MODULE_CODE_ALIASES: Record<string, string[]> = {
     LOANS: ['LOANS_SALARY_ADVANCE', 'LOAN'],
     LOANS_SALARY_ADVANCE: ['LOANS', 'LOAN'],
+    ATTENDANCE_AUDIT: ['AUDITS'],
+    AUDITS: ['ATTENDANCE_AUDIT'],
 };
 
 function moduleCodesToCheck(moduleCode: string): string[] {

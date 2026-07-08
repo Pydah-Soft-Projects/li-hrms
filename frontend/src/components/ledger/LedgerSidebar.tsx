@@ -170,7 +170,7 @@ export function LedgerSidebarMenu({
   const directLinks = useMemo(
     () =>
       categories.flatMap((category) =>
-        category.code === 'MAIN' || category.items.length === 1 ? category.items : [],
+        category.code === 'MAIN' || (category.items.length === 1 && !category.forceDropdown) ? category.items : [],
       ),
     [categories],
   );
@@ -178,7 +178,8 @@ export function LedgerSidebarMenu({
   const categoryGroups = useMemo(
     () =>
       categories.filter(
-        (category) => category.code !== 'MAIN' && category.items.length > 1,
+        (category) =>
+          category.code !== 'MAIN' && (category.items.length > 1 || category.forceDropdown),
       ),
     [categories],
   );

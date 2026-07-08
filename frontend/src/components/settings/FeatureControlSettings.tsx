@@ -42,6 +42,7 @@ const availableModules: { id: string; label: string }[] = [
   { id: 'RESIGNATION', label: 'Resignations' },
   { id: 'PROMOTIONS_TRANSFERS', label: 'Promotions & Transfers' },
   { id: 'ATTENDANCE', label: 'Attendance' },
+  { id: 'ATTENDANCE_AUDIT', label: 'Audits' },
   { id: 'LEAVE_OD', label: 'Leave & OD' },
   { id: 'LEAVE_REGISTER', label: 'Leave Register' },
   { id: 'OT_PERMISSIONS', label: 'OT & Permissions' },
