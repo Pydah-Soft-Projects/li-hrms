@@ -6464,8 +6464,8 @@ export const api = {
     if (params.endDate) query.append('endDate', params.endDate);
     if (params.employeeId) query.append('employeeId', Array.isArray(params.employeeId) ? params.employeeId.join(',') : params.employeeId);
     if (params.search) query.append('search', params.search);
-    if (params.page) query.append('page', params.page.toString());
-    if (params.limit) query.append('limit', params.limit.toString());
+    if (params.page != null) query.append('page', params.page.toString());
+    if (params.limit != null) query.append('limit', params.limit.toString());
 
     return apiRequest<any>(`/attendance/reports/thumb?${query.toString()}`, { method: 'GET' });
   },
