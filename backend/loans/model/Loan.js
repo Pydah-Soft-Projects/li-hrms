@@ -492,7 +492,6 @@ LoanSchema.index({ requestType: 1, status: 1 });
 LoanSchema.index({ status: 1, 'workflow.nextApprover': 1 });
 LoanSchema.index({ appliedAt: -1 });
 LoanSchema.index({ 'repayment.nextPaymentDate': 1 });
-LoanSchema.index({ applicationFormNumber: 1 });
 
 // Pre-save hook to calculate remaining balance and migrations
 LoanSchema.pre('save', function () {

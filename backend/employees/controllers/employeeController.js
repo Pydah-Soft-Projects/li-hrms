@@ -1343,6 +1343,32 @@ exports.updateEmployee = async (req, res) => {
       }
     });
 
+    // Promote any weekday-shift group field (e.g. weekday_shift_pattern) to the permanent
+    // weekdayShiftSchedule field, and remove it from dynamicFields to keep a single source of
+    // truth. This mirrors the same logic in createApplicationInternal so employee edits behave
+    // identically to new applications.
+    const weekdayDynKey = Object.keys(dynamicFields).find(
+      (k) => k.toLowerCase().includes('weekday') && k.toLowerCase().includes('shift')
+    );
+    if (weekdayDynKey) {
+      const raw = dynamicFields[weekdayDynKey];
+      if (typeof raw === 'object' && !Array.isArray(raw) && Array.isArray(raw.schedule)) {
+        permanentFields.weekdayShiftSchedule = raw;
+      } else if (Array.isArray(raw)) {
+        permanentFields.weekdayShiftSchedule = { isEnabled: true, schedule: raw };
+      }
+      delete dynamicFields[weekdayDynKey];
+    }
+    // Also scrub any stale weekday-shift keys left in existing dynamicFields so they don't
+    // persist after the value has been promoted to the permanent field.
+    if (permanentFields.weekdayShiftSchedule !== undefined) {
+      Object.keys(dynamicFields).forEach((k) => {
+        if (k.toLowerCase().includes('weekday') && k.toLowerCase().includes('shift')) {
+          delete dynamicFields[k];
+        }
+      });
+    }
+
     const existingSalariesFlat =
       existingEmployee.salaries && typeof existingEmployee.salaries === 'object' && !Array.isArray(existingEmployee.salaries)
         ? { ...existingEmployee.salaries }
@@ -1445,6 +1471,14 @@ exports.updateEmployee = async (req, res) => {
           'proposedSalary' // Also cleanup proposedSalary if it was accidentally saved
         ];
         bankFieldsToCleanup.forEach(f => delete cleanedExistingDynamic[f]);
+
+        // Remove stale weekday-shift group field keys from existing dynamicFields — the value
+        // is now stored authoritatively in Employee.weekdayShiftSchedule (permanent field).
+        Object.keys(cleanedExistingDynamic).forEach((k) => {
+          if (k.toLowerCase().includes('weekday') && k.toLowerCase().includes('shift')) {
+            delete cleanedExistingDynamic[k];
+          }
+        });
 
         const sids = Array.isArray(salaryFieldIds) && salaryFieldIds.length > 0
           ? salaryFieldIds

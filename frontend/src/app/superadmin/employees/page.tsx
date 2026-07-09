@@ -2547,9 +2547,14 @@ export default function EmployeesPage() {
       ifsc_code: employee.ifsc_code ?? dynamicFieldsData.ifsc_code ?? '',
       experience: employee.experience ?? dynamicFieldsData.experience ?? '',
       profilePhoto: (employee as any).profilePhoto ?? dynamicFieldsData.profilePhoto ?? '',
-      // Weekday shift schedule: prefer top-level field; fall back to the dynamic group field
-      // (weekday_shift_pattern) so existing data is always shown in the editor
-      weekdayShiftSchedule: (() => {
+      // Weekday shift schedule is now resolved separately below — not set here
+    };
+    // Weekday shift: the form-settings group field (e.g. weekday_shift_pattern) is the single
+    // renderer. Resolve the canonical schedule value from either the permanent weekdayShiftSchedule
+    // field or any legacy dynamic key, then write it back under the group field key so
+    // renderField() picks it up. Remove weekdayShiftSchedule from formData so only one picker shows.
+    (() => {
+      const canonical = (() => {
         const top = (employee as any).weekdayShiftSchedule;
         if (top && (top.isEnabled || (Array.isArray(top.schedule) && top.schedule.length > 0))) return top;
         const dynKey = Object.keys(dynamicFieldsData).find(
@@ -2560,8 +2565,29 @@ export default function EmployeesPage() {
         if (Array.isArray(dynVal)) return { isEnabled: true, schedule: dynVal };
         if (typeof dynVal === 'object' && Array.isArray(dynVal.schedule)) return dynVal;
         return top ?? undefined;
-      })(),
-    };
+      })();
+
+      // Find the group field key from form settings (e.g. "weekday_shift_pattern")
+      const groupKey = (() => {
+        if (!formSettings?.groups) return null;
+        for (const g of (formSettings.groups as any[])) {
+          const f = (g.fields as any[])?.find(
+            (f: any) => f.id.toLowerCase().includes('weekday') && f.id.toLowerCase().includes('shift')
+          );
+          if (f) return f.id as string;
+        }
+        return null;
+      })();
+
+      // Remove weekdayShiftSchedule — rendering is done entirely via the group field
+      delete newFormData.weekdayShiftSchedule;
+      // Also clear any stale weekday-shift keys spread in from dynamicFields
+      Object.keys(newFormData).forEach((k) => {
+        if (k.toLowerCase().includes('weekday') && k.toLowerCase().includes('shift')) delete newFormData[k];
+      });
+      // Write canonical value under the group field key so renderField reads it
+      if (groupKey && canonical) newFormData[groupKey] = canonical;
+    })();
     if (!secondSalaryEnabled) {
       delete newFormData.second_salary;
       if (newFormData.dynamicFields && typeof newFormData.dynamicFields === 'object') {
@@ -6499,7 +6525,11 @@ export default function EmployeesPage() {
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('alt_phone_number', formSettings) || 'Alternate Phone'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.alt_phone_number || '-'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {viewingEmployee.alt_phone_number ||
+                                (viewingEmployee as any).dynamicFields?.alt_phone_number ||
+                                '-'}
+                            </p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('father_name', formSettings) || 'Father Name'}</label>

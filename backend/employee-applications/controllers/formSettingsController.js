@@ -46,13 +46,18 @@ exports.getSettings = async (req, res) => {
       });
     }
 
-    const settingsObj = settings.toObject();
+    // ---------------------------------------------------------------------------
+    // Migration patches — run against the live Mongoose document so changes are
+    // persisted to DB. Each block tracks whether it mutated anything; we do a
+    // single save() at the end if needed.
+    // ---------------------------------------------------------------------------
+    let needsSave = false;
 
-    // Ensure DOJ is present in basic_info for existing settings
-    const basicInfoGroup = settingsObj.groups.find((g) => g.id === 'basic_info');
+    // --- basic_info ---
+    const basicInfoGroup = settings.groups.find((g) => g.id === 'basic_info');
     if (basicInfoGroup) {
       if (!basicInfoGroup.fields.some((f) => f.id === 'doj')) {
-        const dojField = {
+        basicInfoGroup.fields.push({
           id: 'doj',
           label: 'Date of Joining',
           type: 'date',
@@ -60,15 +65,14 @@ exports.getSettings = async (req, res) => {
           isRequired: false,
           isSystem: true,
           dateFormat: 'dd-mm-yyyy',
-          order: 6, // Moved to 6
+          order: 6,
           isEnabled: true,
-        };
-        basicInfoGroup.fields.push(dojField);
+        });
+        needsSave = true;
       }
 
-      // Ensure division_id is present
       if (!basicInfoGroup.fields.some((f) => f.id === 'division_id')) {
-        const divisionField = {
+        basicInfoGroup.fields.push({
           id: 'division_id',
           label: 'Division',
           type: 'select',
@@ -78,30 +82,17 @@ exports.getSettings = async (req, res) => {
           placeholder: 'Select Division',
           order: 3,
           isEnabled: true,
-        };
-        basicInfoGroup.fields.push(divisionField);
+        });
+        needsSave = true;
       }
 
-      // Re-order fields to accommodate new additions
-      const fieldOrderMap = {
-        emp_no: 1,
-        employee_name: 2,
-        division_id: 3,
-        department_id: 4,
-        designation_id: 5,
-        doj: 6,
-        proposedSalary: 7
-      };
-
-      basicInfoGroup.fields.forEach(f => {
-        if (fieldOrderMap[f.id]) {
-          f.order = fieldOrderMap[f.id];
-        }
+      const fieldOrderMap = { emp_no: 1, employee_name: 2, division_id: 3, department_id: 4, designation_id: 5, doj: 6, proposedSalary: 7 };
+      basicInfoGroup.fields.forEach((f) => {
+        if (fieldOrderMap[f.id]) f.order = fieldOrderMap[f.id];
       });
 
-      // Ensure second_salary is present in basic_info
       if (!basicInfoGroup.fields.some((f) => f.id === 'second_salary')) {
-        const secondSalaryField = {
+        basicInfoGroup.fields.push({
           id: 'second_salary',
           label: 'Second Salary',
           type: 'number',
@@ -112,36 +103,57 @@ exports.getSettings = async (req, res) => {
           validation: { min: 0 },
           order: 8,
           isEnabled: true,
-        };
-        basicInfoGroup.fields.push(secondSalaryField);
+        });
+        needsSave = true;
       }
 
       basicInfoGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
     }
 
-    // Ensure Email is present in contact_info for existing settings
-    const contactInfoGroup = settingsObj.groups.find((g) => g.id === 'contact_info');
-    if (contactInfoGroup && !contactInfoGroup.fields.some((f) => f.id === 'email')) {
-      const emailField = {
-        id: 'email',
-        label: 'Email',
-        type: 'email',
-        dataType: 'string',
-        isRequired: false,
-        isSystem: true,
-        placeholder: 'example@email.com',
-        order: 2,
-        isEnabled: true,
-      };
-      contactInfoGroup.fields.push(emailField);
+    // --- contact_info ---
+    const contactInfoGroup = settings.groups.find((g) => g.id === 'contact_info');
+    if (contactInfoGroup) {
+      if (!contactInfoGroup.fields.some((f) => f.id === 'alt_phone_number')) {
+        contactInfoGroup.fields.push({
+          id: 'alt_phone_number',
+          label: 'Alternate Phone',
+          type: 'tel',
+          dataType: 'string',
+          isRequired: false,
+          isSystem: true,
+          validation: { maxLength: 15 },
+          order: 2,
+          isEnabled: true,
+        });
+        needsSave = true;
+      }
+      if (!contactInfoGroup.fields.some((f) => f.id === 'email')) {
+        contactInfoGroup.fields.push({
+          id: 'email',
+          label: 'Email',
+          type: 'email',
+          dataType: 'string',
+          isRequired: false,
+          isSystem: true,
+          placeholder: 'example@email.com',
+          order: 3,
+          isEnabled: true,
+        });
+        needsSave = true;
+      }
+      // Keep order: phone → alt_phone → email
+      const contactOrderMap = { phone_number: 1, alt_phone_number: 2, email: 3 };
+      contactInfoGroup.fields.forEach((f) => {
+        if (contactOrderMap[f.id] !== undefined) f.order = contactOrderMap[f.id];
+      });
       contactInfoGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
     }
 
-    // Ensure bank_details has salary mode + optional PF/ESI fields for existing settings
-    const bankDetailsGroup = settingsObj.groups.find((g) => g.id === 'bank_details');
+    // --- bank_details ---
+    const bankDetailsGroup = settings.groups.find((g) => g.id === 'bank_details');
     if (bankDetailsGroup) {
       if (!bankDetailsGroup.fields.some((f) => f.id === 'salary_mode')) {
-        const salaryModeField = {
+        bankDetailsGroup.fields.push({
           id: 'salary_mode',
           label: 'Salary Mode',
           type: 'select',
@@ -155,25 +167,48 @@ exports.getSettings = async (req, res) => {
           ],
           order: 7,
           isEnabled: true,
-        };
-        bankDetailsGroup.fields.push(salaryModeField);
+        });
+        needsSave = true;
       }
-      EmployeeApplicationFormSettings.ensureBankDetailsPfEsiFields(settingsObj.groups);
+      const bankChanged = EmployeeApplicationFormSettings.ensureBankDetailsPfEsiFields(settings.groups);
+      if (bankChanged) needsSave = true;
       bankDetailsGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
     }
 
-    if (!settingsObj.qualifications) {
-      settingsObj.qualifications = { isEnabled: true, enableCertificateUpload: false, fields: [], defaultRows: [] };
+    // --- weekdayShiftSchedule top-level config ---
+    const wssChanged = EmployeeApplicationFormSettings.ensureWeekdayShiftSchedule(settings);
+    if (wssChanged) needsSave = true;
+
+    // --- qualifications ---
+    if (!settings.qualifications) {
+      settings.qualifications = { isEnabled: true, enableCertificateUpload: false, fields: [], defaultRows: [] };
+      needsSave = true;
     }
-    if (!Array.isArray(settingsObj.qualifications.fields)) {
-      settingsObj.qualifications.fields = [];
+    if (!Array.isArray(settings.qualifications.fields)) {
+      settings.qualifications.fields = [];
+      needsSave = true;
     }
-    if (!Array.isArray(settingsObj.qualifications.defaultRows)) {
-      settingsObj.qualifications.defaultRows = [];
+    if (!Array.isArray(settings.qualifications.defaultRows)) {
+      settings.qualifications.defaultRows = [];
+      needsSave = true;
     }
+
+    // Persist migrations to DB so they are not re-applied on every request
+    if (needsSave) {
+      sanitizeItemSchemaFields(settings);
+      try {
+        await settings.save();
+      } catch (saveErr) {
+        // Non-fatal: log and continue — the in-memory fix still serves correct data
+        console.warn('[formSettings] Migration save failed (non-fatal):', saveErr.message);
+      }
+    }
+
+    // Build response object AFTER saving so it reflects the persisted state
+    const settingsObj = settings.toObject();
     settingsObj.qualifications.fields.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
-    // Ensure weekdayShiftSchedule is always present in the response
+    // weekdayShiftSchedule: ensure it's always present in response even if save failed
     if (!settingsObj.weekdayShiftSchedule) {
       settingsObj.weekdayShiftSchedule = { isEnabled: false };
     }
