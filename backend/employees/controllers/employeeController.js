@@ -1197,6 +1197,18 @@ exports.updateEmployee = async (req, res) => {
       }
     }
 
+    // Parse any JSON-stringified root-level fields FIRST — FormData sends all objects/arrays
+    // as strings. This must happen before validation AND before extractPermanentFields so
+    // weekdayShiftSchedule (and any other object field) arrives as the correct type.
+    Object.keys(employeeData).forEach(key => {
+      if (typeof employeeData[key] === 'string') {
+        const str = employeeData[key].trim();
+        if ((str.startsWith('{') && str.endsWith('}')) || (str.startsWith('[') && str.endsWith(']'))) {
+          try { employeeData[key] = JSON.parse(str); } catch (e) { /* not JSON — leave as string */ }
+        }
+      }
+    });
+
     // Validate dynamicFields if form settings exist
     // Only validate if dynamicFields are being updated and validation is explicitly needed
     // Skip validation for updates that only change permanent fields (like allowances/deductions/salary)

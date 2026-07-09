@@ -306,6 +306,7 @@ export default function EmployeesPage() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [editingApplicationID, setEditingApplicationID] = useState<string | null>(null); // Track ID of application being edited
   const [showViewDialog, setShowViewDialog] = useState(false);
+  const [viewShifts, setViewShifts] = useState<Array<{ _id: string; name: string; startTime?: string; endTime?: string }>>([]);
   const [showProfileHistoryDialog, setShowProfileHistoryDialog] = useState(false);
   const [selectedProfileHistoryEmployee, setSelectedProfileHistoryEmployee] = useState<{
     employeeName: string;
@@ -1945,6 +1946,20 @@ export default function EmployeesPage() {
       reporting_to_: reportingToValue,
       // Salary mode dropdown defaults to Cash when editing if not set
       salary_mode: (employee as any).salary_mode ?? dynamicFieldsData.salary_mode ?? 'Cash',
+      // Weekday shift schedule: prefer top-level field; fall back to the dynamic group field
+      // (weekday_shift_pattern) so existing data is always shown in the editor
+      weekdayShiftSchedule: (() => {
+        const top = (employee as any).weekdayShiftSchedule;
+        if (top && (top.isEnabled || (Array.isArray(top.schedule) && top.schedule.length > 0))) return top;
+        const dynKey = Object.keys(dynamicFieldsData).find(
+          k => k.toLowerCase().includes('weekday') && k.toLowerCase().includes('shift')
+        );
+        const dynVal = dynKey ? dynamicFieldsData[dynKey] : undefined;
+        if (!dynVal) return top ?? undefined;
+        if (Array.isArray(dynVal)) return { isEnabled: true, schedule: dynVal };
+        if (typeof dynVal === 'object' && Array.isArray(dynVal.schedule)) return dynVal;
+        return top ?? undefined;
+      })(),
     };
     if (!secondSalaryEnabled) {
       delete newFormData.second_salary;
@@ -2265,6 +2280,13 @@ export default function EmployeesPage() {
       }
     } catch (error) {
       console.error('Error refreshing employee data for view:', error);
+    }
+
+    // Fetch shifts for weekday schedule display (fire-and-forget)
+    if (viewShifts.length === 0) {
+      api.getShifts(true).then(r => {
+        if (r.success && Array.isArray(r.data)) setViewShifts(r.data);
+      }).catch(() => {});
     }
   };
 
@@ -7161,6 +7183,72 @@ export default function EmployeesPage() {
                     })()}
                   </div>
                 )}
+
+                {/* Weekday Shift Schedule */}
+                {(() => {
+                  const emp = viewingEmployee as any;
+
+                  // Collect from all possible sources
+                  // 1. Top-level schema field
+                  const topWss = emp.weekdayShiftSchedule;
+                  const topSchedule = Array.isArray(topWss?.schedule) ? topWss.schedule : [];
+
+                  // 2. Dynamic group field (weekday_shift_pattern or any weekday+shift key)
+                  const allFields = { ...(emp.dynamicFields || {}), ...emp };
+                  const dynKey = Object.keys(allFields).find(
+                    (k: string) => k !== 'weekdayShiftSchedule' &&
+                      k.toLowerCase().includes('weekday') && k.toLowerCase().includes('shift')
+                  );
+                  const dynVal = dynKey ? allFields[dynKey] : undefined;
+                  let dynSchedule: any[] = [];
+                  if (dynVal) {
+                    if (Array.isArray(dynVal)) dynSchedule = dynVal;
+                    else if (typeof dynVal === 'object' && Array.isArray(dynVal.schedule)) dynSchedule = dynVal.schedule;
+                  }
+
+                  // Prefer whichever source has actual data
+                  const schedule = topSchedule.length > 0 ? topSchedule : dynSchedule;
+                  const isEnabled = topWss?.isEnabled || dynSchedule.length > 0;
+
+                  if (!isEnabled && schedule.length === 0) return null;
+
+                  const WEEKDAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                  const normalizedSchedule = WEEKDAY_LABELS.map((_, dayIndex) => {
+                    const entry = schedule.find((s: any) => Number(s.weekday) === dayIndex);
+                    return entry ?? { weekday: dayIndex, shiftId: null, isWeekOff: false };
+                  });
+                  return (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Weekday Shift Schedule</h3>
+                      <div className="space-y-2">
+                        {normalizedSchedule.map((entry: any) => {
+                          const shift = viewShifts.find(s => s._id === String(entry.shiftId ?? ''));
+                          const label = entry.isWeekOff
+                            ? 'Week Off'
+                            : shift
+                              ? `${shift.name}${shift.startTime && shift.endTime ? ` (${shift.startTime}–${shift.endTime})` : ''}`
+                              : entry.shiftId
+                                ? String(entry.shiftId)
+                                : '— Not set —';
+                          const badge = entry.isWeekOff
+                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                            : entry.shiftId
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500';
+                          return (
+                            <div key={entry.weekday} className="grid grid-cols-[120px_1fr_auto] items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-2.5 dark:border-slate-700 dark:bg-slate-900">
+                              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{WEEKDAY_LABELS[entry.weekday]}</span>
+                              <span className="text-sm text-slate-600 dark:text-slate-300">{label}</span>
+                              <span className={`w-20 shrink-0 rounded-full px-2.5 py-1 text-center text-xs font-medium ${badge}`}>
+                                {entry.isWeekOff ? 'Week Off' : entry.shiftId ? 'Assigned' : 'Not set'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
 
               </div>
             </div>

@@ -49,6 +49,37 @@ router.get('/roster', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'ho
 router.post('/roster', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.saveRoster);
 router.post('/roster/auto-fill-next-cycle', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.autoFillNextCycle);
 
+// Manual trigger for weekday roster accrual (super_admin only – mirrors the nightly cron for testing)
+router.post('/roster/trigger-weekday-accrual', authorize('super_admin'), async (req, res) => {
+  try {
+    const { generateNextCycleRoster } = require('./services/weekdayRosterAccrualService');
+    const { getTodayISTDateString }   = require('../shared/utils/dateUtils');
+    const User = require('../users/model/User');
+
+    // Allow caller to override refDate for testing a specific cycle-end date
+    const refDateStr = req.body?.refDate || getTodayISTDateString();
+
+    const systemUser = await User.findOne({ role: 'super_admin' }).select('_id').lean();
+    if (!systemUser) {
+      return res.status(500).json({ success: false, message: 'No super_admin user found to use as scheduledBy' });
+    }
+
+    const result = await generateNextCycleRoster({
+      refDateStr,
+      systemUserId: req.user?._id || systemUser._id,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Weekday roster accrual triggered for refDate=${refDateStr}`,
+      data: result,
+    });
+  } catch (err) {
+    console.error('[TriggerWeekdayAccrual]', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // Parameterized shift routes (must be last)
 router.get('/:id', shiftController.getShift);
 router.put('/:id', authorize('manager', 'super_admin', 'sub_admin', 'hr'), shiftController.updateShift);

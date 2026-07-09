@@ -1918,7 +1918,11 @@ export default function DynamicEmployeeForm({
 
   // Render weekday shift schedule section
   const renderWeekdayShiftSchedule = () => {
-    if (!settings.weekdayShiftSchedule?.isEnabled) return null;
+    // Show if the org has enabled the toggle, OR if the employee already has a schedule set (edit mode)
+    const hasExistingSchedule =
+      formData.weekdayShiftSchedule?.isEnabled === true ||
+      (Array.isArray(formData.weekdayShiftSchedule?.schedule) && formData.weekdayShiftSchedule.schedule.length > 0);
+    if (!settings.weekdayShiftSchedule?.isEnabled && !hasExistingSchedule) return null;
 
     const WEEKDAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 

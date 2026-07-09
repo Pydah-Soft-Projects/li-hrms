@@ -283,6 +283,15 @@ const startServer = async () => {
       console.warn('⚠️  Holiday/week-off greeting cron failed to start:', cronErr.message);
     }
 
+    // Weekday roster accrual cron (23:55 IST daily — on each payroll cycle end date, seeds the
+    // next cycle's PreScheduledShift roster from each employee's weekdayShiftSchedule pattern)
+    try {
+      const { startWeekdayRosterAccrualCron } = require('./shifts/jobs/weekdayRosterAccrualCron');
+      startWeekdayRosterAccrualCron();
+    } catch (cronErr) {
+      console.warn('⚠️  Weekday roster accrual cron failed to start:', cronErr.message);
+    }
+
     // Start BullMQ Workers for background job processing
     try {
       const { startWorkers } = require('./shared/jobs/worker');
