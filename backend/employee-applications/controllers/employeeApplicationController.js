@@ -42,6 +42,7 @@ const {
   resolveEmployeePortalUserIds,
 } = require('../../shared/utils/scopedNotificationRecipients');
 const { schedulePostVerifyBiometricBackfill } = require('../../attendance/services/postVerifyBiometricBackfillService');
+const { generateFirstMonthRoster } = require('../../shifts/services/firstMonthRosterService');
 const {
   closeCurrentTenure,
   recordInitialTenure,
@@ -127,6 +128,21 @@ const createApplicationInternal = async (rawData, settings, creatorId) => {
     }
   });
 
+  // Parse any remaining string fields that look like JSON objects/arrays
+  // (covers dynamic fields like weekday_shift_pattern that are JSON.stringify'd by FormData)
+  Object.keys(applicationData).forEach(key => {
+    if (!jsonFields.includes(key) && typeof applicationData[key] === 'string') {
+      const str = applicationData[key].trim();
+      if ((str.startsWith('{') && str.endsWith('}')) || (str.startsWith('[') && str.endsWith(']'))) {
+        try {
+          applicationData[key] = JSON.parse(str);
+        } catch (e) {
+          // Not valid JSON — leave as string
+        }
+      }
+    }
+  });
+
   // Basic validation if no settings
   if (!settings) {
     if (!applicationData.emp_no) throw new Error('Employee number (emp_no) is required');
@@ -169,6 +185,23 @@ const createApplicationInternal = async (rawData, settings, creatorId) => {
     } else {
       permanentFields.qualifications = applicationData.qualifications;
     }
+  }
+
+  // Promote weekday shift schedule from group field → permanent weekdayShiftSchedule.
+  // The form stores it under the group field id (e.g. weekday_shift_pattern).
+  // We need it on the top-level EmployeeApplication.weekdayShiftSchedule field.
+  const weekdayShiftGroupKey = Object.keys(dynamicFields).find(
+    (k) => k.toLowerCase().includes('weekday') && k.toLowerCase().includes('shift')
+  );
+  if (weekdayShiftGroupKey && dynamicFields[weekdayShiftGroupKey]) {
+    const raw = dynamicFields[weekdayShiftGroupKey];
+    // Normalise to { isEnabled, schedule } shape regardless of what was sent
+    if (typeof raw === 'object' && !Array.isArray(raw) && Array.isArray(raw.schedule)) {
+      permanentFields.weekdayShiftSchedule = raw;
+    } else if (Array.isArray(raw)) {
+      permanentFields.weekdayShiftSchedule = { isEnabled: true, schedule: raw };
+    }
+    delete dynamicFields[weekdayShiftGroupKey];
   }
 
   const normalizeOverrides = (list) =>
@@ -778,6 +811,21 @@ exports.updateApplication = async (req, res) => {
       }
     });
 
+    // Parse any remaining string fields that look like JSON objects/arrays
+    // (covers dynamic fields like weekday_shift_pattern that are JSON.stringify'd by FormData)
+    Object.keys(applicationData).forEach(key => {
+      if (!jsonFields.includes(key) && typeof applicationData[key] === 'string') {
+        const str = applicationData[key].trim();
+        if ((str.startsWith('{') && str.endsWith('}')) || (str.startsWith('[') && str.endsWith(']'))) {
+          try {
+            applicationData[key] = JSON.parse(str);
+          } catch (e) {
+            // Not valid JSON — leave as string
+          }
+        }
+      }
+    });
+
     // Handle Qualifications Files (Replacement Logic)
     if (applicationData.qualifications && Array.isArray(applicationData.qualifications)) {
       const fileMap = {};
@@ -1269,6 +1317,21 @@ const verifySingleApplicationInternal = async (applicationId, approver) => {
     }
 
     await application.save();
+
+    // Auto-generate first pay-cycle roster if employee has a weekday shift schedule configured.
+    // Runs fire-and-forget so a roster failure never blocks employee verification.
+    generateFirstMonthRoster(createdEmployee, approverId).then((rosterResult) => {
+      if (rosterResult.created > 0) {
+        console.log(
+          `[VerifyApplication] First-month roster created for ${createdEmployee.emp_no}: ${rosterResult.message}`
+        );
+      }
+    }).catch((err) => {
+      console.error(
+        `[VerifyApplication] First-month roster generation failed for ${createdEmployee.emp_no}:`,
+        err.message
+      );
+    });
 
     schedulePostVerifyBiometricBackfill({
       empNo: createdEmployee.emp_no,

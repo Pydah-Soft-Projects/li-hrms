@@ -87,18 +87,13 @@ const FieldSchema = new mongoose.Schema(
     },
 
     // For array of objects: nested field schema
+    // Use Mixed for nested fields to avoid recursive Mongoose validation errors
+    // when itemSchema.fields itself contains object-type fields (e.g. weekday_shift_pattern).
     itemSchema: {
-      fields: [
-        {
-          id: String,
-          label: String,
-          type: String,
-          dataType: String,
-          isRequired: Boolean,
-          validation: mongoose.Schema.Types.Mixed,
-          options: [mongoose.Schema.Types.Mixed],
-        },
-      ],
+      fields: {
+        type: [mongoose.Schema.Types.Mixed],
+        default: undefined,
+      },
     },
 
     // Array constraints
@@ -207,6 +202,20 @@ const EmployeeApplicationFormSettingsSchema = new mongoose.Schema(
       ref: 'User',
     },
 
+    /**
+     * Weekday Shift Schedule Configuration
+     * When enabled, the employee form shows a 7-day weekday schedule picker
+     * allowing HR to assign a shift (or mark week-off) for each weekday.
+     * On verification the first pay-cycle roster is auto-generated from this schedule.
+     */
+    weekdayShiftSchedule: {
+      // Toggle: show/hide this section on the employee application form
+      isEnabled: {
+        type: Boolean,
+        default: false,
+      },
+    },
+
     // Qualifications Configuration (Special hardcoded field)
     qualifications: {
       // Enable/disable qualifications feature
@@ -308,6 +317,20 @@ function ensureBankDetailsPfEsiFields(groups) {
 
 EmployeeApplicationFormSettingsSchema.statics.ensureBankDetailsPfEsiFields = ensureBankDetailsPfEsiFields;
 
+/**
+ * Ensure weekdayShiftSchedule config exists on existing settings docs (migration helper).
+ * Returns true if the doc was mutated and needs saving.
+ */
+function ensureWeekdayShiftSchedule(doc) {
+  if (!doc) return false;
+  if (doc.weekdayShiftSchedule == null) {
+    doc.weekdayShiftSchedule = { isEnabled: false };
+    return true;
+  }
+  return false;
+}
+EmployeeApplicationFormSettingsSchema.statics.ensureWeekdayShiftSchedule = ensureWeekdayShiftSchedule;
+
 // Static method to get active settings (ensures salaries system group exists like basic_info on fresh DB)
 EmployeeApplicationFormSettingsSchema.statics.getActiveSettings = async function () {
   const doc = await this.findOne({ isActive: true }).sort({ createdAt: -1 });
@@ -320,6 +343,9 @@ EmployeeApplicationFormSettingsSchema.statics.getActiveSettings = async function
     changed = true;
   }
   if (ensureBankDetailsPfEsiFields(doc.groups)) {
+    changed = true;
+  }
+  if (ensureWeekdayShiftSchedule(doc)) {
     changed = true;
   }
   if (changed) {
@@ -663,6 +689,10 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
       fields: [],
       defaultRows: [],
     },
+    // Weekday Shift Schedule – off by default; super admin enables per org
+    weekdayShiftSchedule: {
+      isEnabled: false,
+    },
   };
 
   // Check if settings already exist
@@ -678,6 +708,9 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
     settingsChanged = true;
   }
   if (ensureBankDetailsPfEsiFields(settings.groups)) {
+    settingsChanged = true;
+  }
+  if (ensureWeekdayShiftSchedule(settings)) {
     settingsChanged = true;
   }
   if (settingsChanged) {

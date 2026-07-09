@@ -14,6 +14,7 @@ import {
   HelpCircle,
   Layers,
   GraduationCap,
+  CalendarDays,
   Pencil,
   ArrowUp,
   ArrowDown,
@@ -89,6 +90,9 @@ export interface FormSettings {
     enableCertificateUpload?: boolean;
     fields?: QualificationField[];
     defaultRows?: Record<string, unknown>[];
+  };
+  weekdayShiftSchedule?: {
+    isEnabled: boolean;
   };
   version?: number;
   isActive?: boolean;
@@ -1648,6 +1652,49 @@ export default function FormSettingsBuilder() {
           )}
         </div>
       )}
+
+      {/* Weekday Shift Schedule */}
+      <div className="rounded-2xl border border-slate-100 bg-white/80 p-6 shadow-sm backdrop-blur-sm dark:border-slate-700/50 dark:bg-slate-900/50">
+        <div className="flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400">
+            <CalendarDays className="h-6 w-6" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-slate-800 dark:text-white">Weekday shift schedule</h3>
+            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+              When enabled, HR can assign a shift (or mark week-off) for each day of the week on the employee application form.
+              On verification, the first pay-cycle roster is automatically created from this pattern.
+            </p>
+            <div className="mt-4">
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.weekdayShiftSchedule?.isEnabled === true}
+                  onChange={async (e) => {
+                    try {
+                      await api.updateWeekdayShiftScheduleConfig({ isEnabled: e.target.checked });
+                      await loadSettings();
+                      alertSuccess(
+                        'Weekday shift schedule',
+                        e.target.checked
+                          ? 'Enabled. HR can now assign weekly shift patterns on employee applications.'
+                          : 'Disabled. The section will no longer appear on new applications.'
+                      );
+                    } catch (err: any) {
+                      alertError('Error', err.message || 'Failed to update');
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                />
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                  Enable weekday shift schedule on application form
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </SettingsPanel>
   );
 }

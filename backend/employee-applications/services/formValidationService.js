@@ -255,6 +255,13 @@ function validateField(field, value, formData) {
           return `${field.label} must be an object`;
         }
 
+        // Weekday shift schedule fields have a special { isEnabled, schedule } shape —
+        // skip standard itemSchema validation for them.
+        const fid = (field.id || '').toLowerCase();
+        if (fid.includes('weekday') && fid.includes('shift')) {
+          break;
+        }
+
         // Validate nested fields
         for (const nestedField of itemSchema.fields) {
           const nestedValue = value[nestedField.id];

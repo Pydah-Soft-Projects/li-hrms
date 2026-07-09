@@ -34,6 +34,7 @@ const {
   reorderGroups,
   reorderFields,
   reorderQualificationsFields,
+  updateWeekdayShiftScheduleConfig,
 } = require('./controllers/formSettingsController');
 
 // All routes require authentication
@@ -70,6 +71,9 @@ router.post('/form-settings/qualifications/fields', authorize('super_admin', 'su
 router.put('/form-settings/qualifications/fields/:fieldId', authorize('super_admin', 'sub_admin'), updateQualificationsField);
 router.delete('/form-settings/qualifications/fields/:fieldId', authorize('super_admin', 'sub_admin'), deleteQualificationsField);
 router.put('/form-settings/qualifications/reorder-fields', authorize('super_admin', 'sub_admin'), reorderQualificationsFields);
+
+// Weekday shift schedule toggle
+router.put('/form-settings/weekday-shift-schedule', authorize('super_admin', 'sub_admin'), updateWeekdayShiftScheduleConfig);
 
 // ==========================================
 // APPLICATION ROUTES

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { api } from '@/lib/api';
+import { api, Shift } from '@/lib/api';
 import { CertificateUpload } from '@/components/CertificateUpload';
 import Spinner from '@/components/Spinner';
 import { Plus } from 'lucide-react';
@@ -73,6 +73,9 @@ interface QualificationsConfig {
 interface FormSettings {
   groups: Group[];
   qualifications?: QualificationsConfig;
+  weekdayShiftSchedule?: {
+    isEnabled: boolean;
+  };
 }
 
 interface DynamicEmployeeFormProps {
@@ -108,6 +111,7 @@ export default function DynamicEmployeeForm({
   const [settings, setSettings] = useState<FormSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<Array<{ _id: string; name: string; email: string; role?: string; divisionMapping?: Array<{ division?: { _id: string } | string }> }>>([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
   const [groupingEnabled, setGroupingEnabled] = useState(false);
   const [fallbackEmployeeGroups, setFallbackEmployeeGroups] = useState<Array<{ _id: string; name: string; isActive?: boolean }>>([]);
 
@@ -133,7 +137,19 @@ export default function DynamicEmployeeForm({
     loadSettings();
     loadUsers();
     loadGroupingConfig();
+    loadShifts();
   }, []);
+
+  const loadShifts = async () => {
+    try {
+      const response = await api.getShifts(true);
+      if (response.success && Array.isArray(response.data)) {
+        setShifts(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading shifts:', error);
+    }
+  };
 
   const loadUsers = async () => {
     try {
@@ -278,6 +294,97 @@ export default function DynamicEmployeeForm({
       }
       handleFieldChange(id, v);
     };
+
+  // Special handling: weekday shift pattern field stored in a group → render as shift-picker rows
+  // Matches any field whose ID contains "weekday" and "shift" (e.g. weekday_shift_pattern)
+  if (field.id.toLowerCase().includes('weekday') && field.id.toLowerCase().includes('shift')) {
+    const WEEKDAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+    // Normalise stored value — may be { isEnabled, schedule: [...] } or a bare array (legacy)
+    const rawValue: any = formData[field.id];
+    const rawSchedule: any[] = Array.isArray(rawValue)
+      ? rawValue
+      : Array.isArray(rawValue?.schedule)
+        ? rawValue.schedule
+        : [];
+
+    const normalizedSchedule = WEEKDAY_LABELS.map((_, dayIndex) => {
+      const existing = rawSchedule.find((s: any) => Number(s.weekday) === dayIndex);
+      return existing
+        ? { weekday: dayIndex, shiftId: existing.shiftId || null, isWeekOff: !!existing.isWeekOff }
+        : { weekday: dayIndex, shiftId: null, isWeekOff: false };
+    });
+
+    const updateDay = (dayIndex: number, patch: Partial<{ shiftId: string | null; isWeekOff: boolean }>) => {
+      const updated = normalizedSchedule.map((entry) =>
+        entry.weekday === dayIndex ? { ...entry, ...patch } : entry
+      );
+      // Always store as { isEnabled, schedule } — the shape EmployeeApplication model expects
+      localHandleFieldChange(field.id, { isEnabled: true, schedule: updated });
+    };
+
+    const selectCls =
+      'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-1 focus:ring-green-400/20 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed';
+
+    return (
+      <div key={fieldKey} className="col-span-full">
+        <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-slate-300">
+          {displayLabel} {field.isRequired && '*'}
+        </label>
+        <div className="space-y-2">
+          {normalizedSchedule.map((entry) => {
+            const dayLabel = WEEKDAY_LABELS[entry.weekday];
+            const shiftIdValue = entry.shiftId ? String(entry.shiftId) : '';
+            return (
+              <div
+                key={entry.weekday}
+                className="grid grid-cols-[120px_1fr_auto] items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-2.5 dark:border-slate-700 dark:bg-slate-900"
+              >
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{dayLabel}</span>
+                <select
+                  value={entry.isWeekOff ? '__week_off__' : shiftIdValue}
+                  onChange={(e) => {
+                    if (e.target.value === '__week_off__') {
+                      updateDay(entry.weekday, { isWeekOff: true, shiftId: null });
+                    } else {
+                      updateDay(entry.weekday, { isWeekOff: false, shiftId: e.target.value || null });
+                    }
+                  }}
+                  disabled={isViewMode}
+                  className={selectCls}
+                >
+                  <option value="">— Not set —</option>
+                  <option value="__week_off__">Week Off</option>
+                  {shifts.length > 0 ? (
+                    shifts.map((shift) => (
+                      <option key={shift._id} value={shift._id}>
+                        {shift.name}
+                        {shift.startTime && shift.endTime ? ` (${shift.startTime}–${shift.endTime})` : ''}
+                      </option>
+                    ))
+                  ) : (
+                    <option disabled value="">No shifts available — check form settings</option>
+                  )}
+                </select>
+                <span
+                  className={`w-20 shrink-0 rounded-full px-2.5 py-1 text-center text-xs font-medium ${
+                    entry.isWeekOff
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                      : entry.shiftId
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                  }`}
+                >
+                  {entry.isWeekOff ? 'Week Off' : entry.shiftId ? 'Assigned' : 'Not set'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      </div>
+    );
+  }
 
   // Special handling for division_id, department_id, designation_id and employee_group_id
     if (field.id === 'division_id') {
@@ -1809,7 +1916,106 @@ export default function DynamicEmployeeForm({
     );
   };
 
+  // Render weekday shift schedule section
+  const renderWeekdayShiftSchedule = () => {
+    if (!settings.weekdayShiftSchedule?.isEnabled) return null;
+
+    const WEEKDAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+    // Normalise value: ensure it's an object with isEnabled + schedule array
+    const rawValue: any = formData.weekdayShiftSchedule || {};
+    const schedule: Array<{ weekday: number; shiftId: string | null; isWeekOff: boolean }> =
+      Array.isArray(rawValue.schedule)
+        ? rawValue.schedule
+        : WEEKDAY_LABELS.map((_, i) => ({ weekday: i, shiftId: null, isWeekOff: false }));
+
+    // Ensure all 7 weekdays exist (fill in missing ones)
+    const normalizedSchedule = WEEKDAY_LABELS.map((_, dayIndex) => {
+      const existing = schedule.find((s) => s.weekday === dayIndex);
+      return existing ?? { weekday: dayIndex, shiftId: null, isWeekOff: false };
+    });
+
+    const updateDay = (dayIndex: number, patch: Partial<{ shiftId: string | null; isWeekOff: boolean }>) => {
+      const updated = normalizedSchedule.map((entry) =>
+        entry.weekday === dayIndex ? { ...entry, ...patch } : entry
+      );
+      handleFieldChange('weekdayShiftSchedule', {
+        isEnabled: true,
+        schedule: updated,
+      });
+    };
+    const selectCls =
+      'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-1 focus:ring-green-400/20 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed';
+
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+        <h3 className="mb-1 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          Weekday Shift Schedule
+        </h3>
+        <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+          Assign a shift to each weekday, or mark as week-off. This pattern is used to auto-generate the first pay-cycle roster on verification.
+        </p>
+        <div className="space-y-2">
+          {normalizedSchedule.map((entry) => {
+            const dayLabel = WEEKDAY_LABELS[entry.weekday];
+            const shiftIdValue = entry.shiftId ? String(entry.shiftId) : '';
+            return (
+              <div
+                key={entry.weekday}
+                className="grid grid-cols-[120px_1fr_auto] items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-2.5 dark:border-slate-700 dark:bg-slate-900"
+              >
+                {/* Day label */}
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{dayLabel}</span>
+
+                {/* Shift dropdown */}
+                <select
+                  value={entry.isWeekOff ? '__week_off__' : shiftIdValue}
+                  onChange={(e) => {
+                    if (e.target.value === '__week_off__') {
+                      updateDay(entry.weekday, { isWeekOff: true, shiftId: null });
+                    } else {
+                      updateDay(entry.weekday, { isWeekOff: false, shiftId: e.target.value || null });
+                    }
+                  }}
+                  disabled={isViewMode}
+                  className={selectCls}
+                >
+                  <option value="">— Not set —</option>
+                  <option value="__week_off__">Week Off</option>
+                  {shifts.length > 0 ? (
+                    shifts.map((shift) => (
+                      <option key={shift._id} value={shift._id}>
+                        {shift.name}
+                        {shift.startTime && shift.endTime ? ` (${shift.startTime}–${shift.endTime})` : ''}
+                      </option>
+                    ))
+                  ) : (
+                    <option disabled value="">No shifts available</option>
+                  )}
+                </select>
+
+                {/* Status badge */}
+                <span
+                  className={`w-20 rounded-full px-2.5 py-1 text-center text-xs font-medium ${
+                    entry.isWeekOff
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                      : entry.shiftId
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                  }`}
+                >
+                  {entry.isWeekOff ? 'Week Off' : entry.shiftId ? 'Assigned' : 'Not set'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const qualificationsBlock = renderQualifications();
+  const weekdayShiftScheduleBlock = renderWeekdayShiftSchedule();
   const shouldRenderEmployeeGroup =
     groupingEnabled &&
     effectiveEmployeeGroups.length > 0 &&
@@ -1875,12 +2081,17 @@ export default function DynamicEmployeeForm({
             {group.id === 'personal_info' && qualificationsBlock && (
               <div className="mt-6">{qualificationsBlock}</div>
             )}
+            {/* Render weekday shift schedule immediately after personal info */}
+            {group.id === 'personal_info' && weekdayShiftScheduleBlock && (
+              <div className="mt-6">{weekdayShiftScheduleBlock}</div>
+            )}
           </div>
         );
       })}
 
-      {/* If no personal info group exists, still show qualifications at the end */}
+      {/* If no personal info group exists, still show qualifications and weekday schedule at the end */}
       {!sortedGroups.some((g) => g.id === 'personal_info') && qualificationsBlock}
+      {!sortedGroups.some((g) => g.id === 'personal_info') && weekdayShiftScheduleBlock}
     </div>
   );
 }

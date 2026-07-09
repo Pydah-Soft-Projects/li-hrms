@@ -2813,6 +2813,14 @@ export const api = {
       body: JSON.stringify(config),
     });
   },
+
+  // Weekday shift schedule toggle
+  updateWeekdayShiftScheduleConfig: async (config: { isEnabled: boolean }) => {
+    return apiRequest<any>('/employee-applications/form-settings/weekday-shift-schedule', {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    });
+  },
   addQualificationsField: async (data: {
     id: string;
     label: string;

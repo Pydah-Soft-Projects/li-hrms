@@ -1,9 +1,34 @@
-/**
+﻿/**
  * Employee Application Form Settings Controller
  * Manages dynamic form configuration
  */
 
 const EmployeeApplicationFormSettings = require('../model/EmployeeApplicationFormSettings');
+
+/**
+ * Repair in-memory: if any field's itemSchema.fields was stored as a JSON string
+ * (data corruption), parse it back to an array so settings.save() doesn't throw a
+ * Mongoose CastError.  Safe to call before every save â€” no-op when data is clean.
+ */
+function sanitizeItemSchemaFields(settings) {
+  if (!settings || !Array.isArray(settings.groups)) return;
+  for (const group of settings.groups) {
+    if (!Array.isArray(group.fields)) continue;
+    for (const field of group.fields) {
+      if (!field || !field.itemSchema) continue;
+      const raw = field.itemSchema.fields;
+      if (!Array.isArray(raw) && raw != null) {
+        // Could be a string (JSON-serialised array) or something else â€” normalise to []
+        try {
+          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          field.itemSchema.fields = Array.isArray(parsed) ? parsed : [];
+        } catch (_) {
+          field.itemSchema.fields = [];
+        }
+      }
+    }
+  }
+}
 
 /**
  * @desc    Get active form settings
@@ -148,6 +173,11 @@ exports.getSettings = async (req, res) => {
     }
     settingsObj.qualifications.fields.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
+    // Ensure weekdayShiftSchedule is always present in the response
+    if (!settingsObj.weekdayShiftSchedule) {
+      settingsObj.weekdayShiftSchedule = { isEnabled: false };
+    }
+
     res.status(200).json({
       success: true,
       data: settingsObj,
@@ -211,6 +241,8 @@ exports.updateSettings = async (req, res) => {
 
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
+
+    sanitizeItemSchemaFields(settings);
 
     await settings.save();
 
@@ -277,6 +309,8 @@ exports.addGroup = async (req, res) => {
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
 
+    sanitizeItemSchemaFields(settings);
+
     await settings.save();
 
     res.status(201).json({
@@ -331,6 +365,8 @@ exports.updateGroup = async (req, res) => {
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
 
+    sanitizeItemSchemaFields(settings);
+
     await settings.save();
 
     res.status(200).json({
@@ -379,6 +415,8 @@ exports.deleteGroup = async (req, res) => {
     settings.groups.splice(groupIndex, 1);
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
+
+    sanitizeItemSchemaFields(settings);
 
     await settings.save();
 
@@ -450,6 +488,8 @@ exports.addField = async (req, res) => {
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
 
+    sanitizeItemSchemaFields(settings);
+
     await settings.save();
 
     res.status(201).json({
@@ -514,6 +554,8 @@ exports.updateField = async (req, res) => {
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
 
+    sanitizeItemSchemaFields(settings);
+
     await settings.save();
 
     res.status(200).json({
@@ -571,6 +613,8 @@ exports.deleteField = async (req, res) => {
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
 
+    sanitizeItemSchemaFields(settings);
+
     await settings.save();
 
     res.status(200).json({
@@ -596,43 +640,45 @@ exports.updateQualificationsConfig = async (req, res) => {
   try {
     const { isEnabled, enableCertificateUpload } = req.body;
 
-    const settings = await EmployeeApplicationFormSettings.getActiveSettings();
-    if (!settings) {
-      return res.status(404).json({
-        success: false,
-        message: 'Form settings not found',
-      });
-    }
+    // Build a targeted $set so we never run full-document validation.
+    // This avoids a ValidationError from pre-existing corrupt itemSchema.fields data
+    // in unrelated groups (same root cause as weekdayShiftSchedule toggle).
+    const setFields = { updatedBy: req.user._id };
 
-    if (!settings.qualifications) {
-      settings.qualifications = { isEnabled: true, enableCertificateUpload: false, fields: [], defaultRows: [] };
-    }
-
-    // Update fields if provided
     if (isEnabled !== undefined) {
-      settings.qualifications.isEnabled = isEnabled;
+      setFields['qualifications.isEnabled'] = !!isEnabled;
     }
     if (enableCertificateUpload !== undefined) {
-      settings.qualifications.enableCertificateUpload = enableCertificateUpload;
+      setFields['qualifications.enableCertificateUpload'] = !!enableCertificateUpload;
     }
     if (Array.isArray(req.body.defaultRows)) {
-      settings.qualifications.defaultRows = req.body.defaultRows;
+      setFields['qualifications.defaultRows'] = req.body.defaultRows;
     }
 
-    settings.updatedBy = req.user._id;
-    settings.version = (settings.version || 1) + 1;
+    const result = await EmployeeApplicationFormSettings.updateOne(
+      { isActive: true },
+      { $set: setFields, $inc: { version: 1 } },
+      { runValidators: false }
+    );
 
-    await settings.save();
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, message: 'Form settings not found' });
+    }
+
+    // Fetch just the qualifications sub-doc to return in the response
+    const updated = await EmployeeApplicationFormSettings.findOne({ isActive: true })
+      .select('qualifications')
+      .lean();
 
     console.log('[Form Settings] Qualifications config updated:', {
-      isEnabled: settings.qualifications.isEnabled,
-      enableCertificateUpload: settings.qualifications.enableCertificateUpload,
+      isEnabled: updated?.qualifications?.isEnabled,
+      enableCertificateUpload: updated?.qualifications?.enableCertificateUpload,
     });
 
     res.status(200).json({
       success: true,
       message: 'Qualifications configuration updated successfully',
-      data: settings.qualifications,
+      data: updated?.qualifications || {},
     });
   } catch (error) {
     console.error('Error updating qualifications config:', error);
@@ -697,6 +743,8 @@ exports.addQualificationsField = async (req, res) => {
     settings.qualifications.fields.sort((a, b) => a.order - b.order);
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
+
+    sanitizeItemSchemaFields(settings);
 
     await settings.save();
 
@@ -763,6 +811,8 @@ exports.updateQualificationsField = async (req, res) => {
 
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
+
+    sanitizeItemSchemaFields(settings);
 
     await settings.save();
 
@@ -833,6 +883,8 @@ exports.addQualificationsField = async (req, res) => {
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
 
+    sanitizeItemSchemaFields(settings);
+
     await settings.save();
 
     res.status(201).json({
@@ -894,6 +946,8 @@ exports.deleteQualificationsField = async (req, res) => {
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
 
+    sanitizeItemSchemaFields(settings);
+
     await settings.save();
 
     res.status(200).json({
@@ -934,6 +988,7 @@ exports.reorderGroups = async (req, res) => {
 
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
+    sanitizeItemSchemaFields(settings);
     await settings.save();
 
     res.status(200).json({ success: true, message: 'Groups reordered successfully' });
@@ -973,6 +1028,7 @@ exports.reorderFields = async (req, res) => {
 
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
+    sanitizeItemSchemaFields(settings);
     await settings.save();
 
     res.status(200).json({ success: true, message: 'Fields reordered successfully' });
@@ -1012,6 +1068,7 @@ exports.reorderQualificationsFields = async (req, res) => {
 
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
+    sanitizeItemSchemaFields(settings);
     await settings.save();
 
     res.status(200).json({ success: true, message: 'Qualification fields reordered successfully' });
@@ -1020,3 +1077,52 @@ exports.reorderQualificationsFields = async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to reorder qualification fields', error: error.message });
   }
 };
+
+/**
+ * @desc    Update weekday shift schedule configuration (enable / disable)
+ * @route   PUT /api/employee-applications/form-settings/weekday-shift-schedule
+ * @access  Private (Super Admin, Sub Admin)
+ */
+exports.updateWeekdayShiftScheduleConfig = async (req, res) => {
+  try {
+    const { isEnabled } = req.body;
+
+    if (isEnabled === undefined || typeof isEnabled !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'isEnabled (boolean) is required' });
+    }
+
+    // Use a targeted updateOne so Mongoose never hydrates or validates the whole document.
+    // This avoids a ValidationError caused by pre-existing corrupt itemSchema.fields data in
+    // unrelated groups â€” which would fail a full document.save() even though we only need to
+    // touch weekdayShiftSchedule.isEnabled.
+    const result = await EmployeeApplicationFormSettings.updateOne(
+      { isActive: true },
+      {
+        $set: {
+          'weekdayShiftSchedule.isEnabled': isEnabled,
+          updatedBy: req.user._id,
+        },
+        $inc: { version: 1 },
+      },
+      { runValidators: false }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, message: 'Form settings not found' });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Weekday shift schedule configuration updated successfully',
+      data: { isEnabled },
+    });
+  } catch (error) {
+    console.error('Error updating weekday shift schedule config:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update weekday shift schedule configuration',
+      error: error.message,
+    });
+  }
+};
+

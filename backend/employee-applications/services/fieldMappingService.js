@@ -56,6 +56,8 @@ const PERMANENT_FIELDS = [
   'deductEarlyOut',
   'deductPermission',
   'deductAbsent',
+  // Weekday shift schedule: copied verbatim from application → employee on verification
+  'weekdayShiftSchedule',
 ];
 
 /**
