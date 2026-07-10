@@ -659,18 +659,22 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
     }
     const isSingle = isSingleCalendarDayLeave(l);
     const tag = `${REMARK_PREFIX} ${dateStr}:`;
-    if (String(l.remarks || '').includes(tag)) {
-      results.push({ leaveId: l._id, action: 'skip', reason: 'already_reconciled' });
-      continue;
-    }
 
     const { l1, l2 } = leaveHalfMaskForDate(l, dateStr);
     const isFullDayLeaveOnDate = l1 >= 0.5 - 1e-6 && l2 >= 0.5 - 1e-6;
     const isHalfDayOnDate = !isFullDayLeaveOnDate && (l1 > 0 || l2 > 0);
+    const onFirst = l1 > 0;
+    const physConflictsHalf =
+      isHalfDayOnDate && ((onFirst && p1 >= 0.5) || (!onFirst && p2 >= 0.5));
+    const physConflictsFull = isFullDayLeaveOnDate && p1 >= 0.5 && p2 >= 0.5;
+
+    if (String(l.remarks || '').includes(tag) && !physConflictsHalf && !physConflictsFull) {
+      results.push({ leaveId: l._id, action: 'skip', reason: 'already_reconciled' });
+      continue;
+    }
 
     if (isHalfDayOnDate) {
-      const onFirst = l1 > 0;
-      const physConflicts = (onFirst && p1 >= 0.5) || (!onFirst && p2 >= 0.5);
+      const physConflicts = physConflictsHalf;
       if (!physConflicts) {
         results.push({ leaveId: l._id, action: 'none', reason: 'no_conflict_half_leave' });
         continue;

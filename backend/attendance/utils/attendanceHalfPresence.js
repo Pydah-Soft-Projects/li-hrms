@@ -145,17 +145,29 @@ function getWorkedHalfFromLegacyPenalties(daily, shift) {
 }
 
 /**
- * HALF_DAY: exactly one worked half (never both). Matches attendance UI: early-out vs late-in, then punch-gap.
- * Segment/midpoint may return 'both' when punches span midpoint; that is wrong for HALF_DAY payroll status.
+ * HALF_DAY: exactly one worked half (never both).
+ * Prefer shift segment presence (same as PARTIAL / leave reconciliation), then legacy penalties / midpoint.
+ * When segments say 'both' but status is HALF_DAY, collapse to one half via penalties or IN thumb.
  * @returns {'first_half'|'second_half'}
  */
 function resolveHalfDayWorkedHalfKey(daily) {
   const shift = pickPrimaryShift(daily);
-  const legacy = getWorkedHalfFromLegacyPenalties(daily, shift);
-  if (legacy) return legacy;
+  const dateStr = daily?.date ? String(daily.date).substring(0, 10) : null;
 
   const fromSegments = getWorkedHalfFromShiftSegments(shift);
   if (fromSegments === 'first_half' || fromSegments === 'second_half') return fromSegments;
+
+  if (fromSegments === 'both') {
+    const legacy = getWorkedHalfFromLegacyPenalties(daily, shift);
+    if (legacy) return legacy;
+    const shifts = Array.isArray(daily?.shifts) ? daily.shifts : [];
+    const fromMid = getWorkedHalfFromShiftTimes(shifts);
+    if (fromMid === 'first_half' || fromMid === 'second_half') return fromMid;
+    return collapsePartialHalfKey('both', shift, dateStr);
+  }
+
+  const legacy = getWorkedHalfFromLegacyPenalties(daily, shift);
+  if (legacy) return legacy;
 
   const shifts = Array.isArray(daily?.shifts) ? daily.shifts : [];
   const fromMid = getWorkedHalfFromShiftTimes(shifts);

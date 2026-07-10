@@ -228,6 +228,32 @@ describe('attendanceHalfPresence', () => {
       });
     });
 
+    it('credits segment-present first half over small late-in (leave reconciliation)', () => {
+      const daily = {
+        status: 'HALF_DAY',
+        totalEarlyOutMinutes: 0,
+        totalLateInMinutes: 0,
+        shifts: [
+          {
+            shiftStartTime: '09:00',
+            shiftEndTime: '18:00',
+            inTime: new Date('2026-07-07T09:05:00+05:30'),
+            outTime: new Date('2026-07-07T12:55:00+05:30'),
+            lateInMinutes: 3,
+            shiftSegments: [
+              { segmentName: 'firstHalf', present: true },
+              { segmentName: 'secondHalf', present: false },
+            ],
+          },
+        ],
+      };
+      expect(resolveHalfDayWorkedHalfKey(daily)).toBe('first_half');
+      expect(computeRawAttendanceHalfCreditsSync(daily, [], { processingMode: 'single_shift' })).toEqual({
+        attFirst: 0.5,
+        attSecond: 0,
+      });
+    });
+
     it('opposite-half leave would not clash: first_half leave + second_half worked', () => {
       const daily = {
         status: 'HALF_DAY',
