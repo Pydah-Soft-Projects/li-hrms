@@ -153,13 +153,9 @@ export default function RejoinEmployeeModal({
   const filteredDesignations = useMemo(() => {
     const desList = designations ?? [];
     if (!form.department_id) return desList;
-
-    const targetDepartmentId = form.department_id;
-    return desList.filter((d) => {
-      const departmentValue = d.department;
-      const departmentId = typeof departmentValue === 'string' ? departmentValue : refId(departmentValue);
-      return !departmentId || departmentId === targetDepartmentId;
-    });
+    return desList.filter(
+      (d) => !d.department_id || refId(d.department_id) === form.department_id
+    );
   }, [designations, form.department_id]);
 
   const handleSubmit = async (e: React.FormEvent) => {

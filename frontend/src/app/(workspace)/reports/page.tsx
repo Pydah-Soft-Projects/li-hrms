@@ -7,12 +7,13 @@ import ThumbReportsTab from './thumb-reports-tab';
 import LeaveReportsTab from './leave-reports-tab';
 import ODReportsTab from './od-reports-tab';
 import LoanReportsTab from './loan-reports-tab';
+import CertificationReportsTab from './certification-reports-tab';
 import DeductionsReportsTab from './deductions-reports-tab';
 import { auth } from '@/lib/auth';
 import { canViewReports, canViewFinancialReports } from '@/lib/permissions';
-import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase, Wallet, Banknote, TrendingDown } from 'lucide-react';
+import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase, Wallet, Banknote, TrendingDown, GraduationCap } from 'lucide-react';
 
-type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'deductions';
+type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'deductions' | 'certifications';
 
 const TAB_CONFIG = {
   payroll: { label: 'Payroll', icon: CreditCard, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30', border: 'border-violet-500', activeBg: 'bg-violet-600' },
@@ -23,6 +24,7 @@ const TAB_CONFIG = {
   od: { label: 'OD', icon: Briefcase, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/30', border: 'border-amber-500', activeBg: 'bg-amber-600' },
   loans: { label: 'Loans', icon: Wallet, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-950/30', border: 'border-rose-500', activeBg: 'bg-rose-600' },
   salary_advance: { label: 'Salary Advance', icon: Banknote, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/30', border: 'border-amber-500', activeBg: 'bg-amber-600' },
+  certifications: { label: 'Certifications', icon: GraduationCap, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30', border: 'border-violet-500', activeBg: 'bg-violet-600' },
 };
 
 export default function ReportsPage() {
@@ -46,7 +48,7 @@ export default function ReportsPage() {
 
   const tabs: TabType[] = [];
   if (hasFinancialAccess) tabs.push('payroll', 'deductions', 'loans', 'salary_advance');
-  tabs.push('attendance', 'biometric', 'leaves', 'od');
+  tabs.push('attendance', 'biometric', 'leaves', 'od', 'certifications');
 
   const currentTab: TabType = tabs.includes(activeTab) ? activeTab : tabs[0];
 
@@ -94,6 +96,7 @@ export default function ReportsPage() {
         {currentTab === 'od' && <ODReportsTab />}
         {currentTab === 'loans' && <LoanReportsTab defaultRequestType="loan" />}
         {currentTab === 'salary_advance' && <LoanReportsTab defaultRequestType="salary_advance" />}
+        {currentTab === 'certifications' && <CertificationReportsTab />}
       </div>
     </div>
   );

@@ -186,26 +186,38 @@ exports.extractDynamicFields = (sourceData, permanentFields = null) => {
  * @returns {Object} { permanentFields, dynamicFields }
  */
 exports.transformApplicationToEmployee = (applicationData, overrides = {}) => {
+  const { applyWeekdayShiftScheduleToPayload } = require('../../shared/utils/weekdayShiftScheduleUtils');
+  const {
+    promotePermanentFieldsFromDynamic,
+    stripPromotedPermanentFieldsFromDynamic,
+  } = require('../../shared/utils/promotePermanentFieldsFromDynamic');
+
+  const promotedSource = promotePermanentFieldsFromDynamic(applicationData);
+
   // Extract permanent fields
-  const permanentFields = exports.extractPermanentFields(applicationData, overrides);
+  const permanentFields = exports.extractPermanentFields(promotedSource, overrides);
 
   // Extract dynamic fields (from dynamicFields or from root level)
   let dynamicFields = {};
 
   // If dynamicFields exists in application, use it
-  if (applicationData.dynamicFields && typeof applicationData.dynamicFields === 'object') {
-    dynamicFields = { ...applicationData.dynamicFields };
+  if (promotedSource.dynamicFields && typeof promotedSource.dynamicFields === 'object') {
+    dynamicFields = { ...promotedSource.dynamicFields };
   }
 
   // Also check for any fields in root that should be dynamic
-  const rootDynamicFields = exports.extractDynamicFields(applicationData, permanentFields);
+  const rootDynamicFields = exports.extractDynamicFields(promotedSource, permanentFields);
   if (Object.keys(rootDynamicFields).length > 0) {
     dynamicFields = { ...dynamicFields, ...rootDynamicFields };
   }
 
+  dynamicFields = stripPromotedPermanentFieldsFromDynamic(dynamicFields);
+
+  const normalized = applyWeekdayShiftScheduleToPayload(permanentFields, dynamicFields, promotedSource);
+
   return {
-    permanentFields,
-    dynamicFields: Object.keys(dynamicFields).length > 0 ? dynamicFields : {},
+    permanentFields: normalized.permanentFields,
+    dynamicFields: Object.keys(normalized.dynamicFields).length > 0 ? normalized.dynamicFields : {},
   };
 };
 

@@ -245,6 +245,11 @@ const employeeSchema = new mongoose.Schema(
       type: Number,
       default: null, // Gross Salary + Allowances - Deductions (Net Salary)
     },
+    /** Canonical 7-day shift pattern (Sunday=0). Org toggle is on form settings. */
+    weekdayShiftSchedule: {
+      type: require('../../shared/schemas/weekdayShiftScheduleSchema').weekdayShiftScheduleSchema,
+      default: null,
+    },
     // Dynamic fields for configurable form fields
     dynamicFields: {
       type: mongoose.Schema.Types.Mixed,
@@ -341,26 +346,6 @@ const employeeSchema = new mongoose.Schema(
     deductEarlyOut: { type: Boolean, default: true },
     deductPermission: { type: Boolean, default: true },
     deductAbsent: { type: Boolean, default: true },
-    /**
-     * Per-employee weekday shift schedule.
-     * Set at application time; used to auto-generate the first pay-cycle roster on verification.
-     * schedule[i] corresponds to JS getDay() weekday: 0=Sun, 1=Mon, …, 6=Sat.
-     * Each entry carries either a shiftId (ObjectId) or isWeekOff=true (or both null = unset).
-     */
-    weekdayShiftSchedule: {
-      isEnabled: { type: Boolean, default: false },
-      schedule: {
-        type: [
-          {
-            weekday: { type: Number, min: 0, max: 6, required: true }, // 0=Sun … 6=Sat
-            shiftId: { type: mongoose.Schema.Types.ObjectId, ref: 'Shift', default: null },
-            isWeekOff: { type: Boolean, default: false },
-          },
-        ],
-        default: [],
-      },
-    },
-
     /** Web Push (employee portal / PWA); same shape as User.pushSubscriptions */
     pushSubscriptions: [
       {

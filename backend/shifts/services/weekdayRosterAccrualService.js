@@ -11,7 +11,8 @@
  *
  * Rules
  * -----
- * • Employees WITHOUT weekdayShiftSchedule (or isEnabled=false) are skipped entirely.
+ * • Employees WITHOUT weekdayShiftSchedule are skipped entirely.
+ * • Org-level form settings toggle must be enabled (no per-employee isEnabled flag).
  * • For each day in the next cycle, we look up the day's weekday index and apply
  *   the configured shift or week-off.
  * • Days with no entry in the schedule are left unscheduled (no roster entry).
@@ -30,6 +31,7 @@ const PreScheduledShift                = require('../model/PreScheduledShift');
 const Employee                         = require('../../employees/model/Employee');
 const EmployeeApplicationFormSettings  = require('../../employee-applications/model/EmployeeApplicationFormSettings');
 const Settings          = require('../../settings/model/Settings');
+const { hasConfiguredWeekdaySchedule } = require('../../shared/utils/weekdayShiftScheduleUtils');
 const {
   getAllDatesInRange,
   extractISTComponents,
@@ -157,49 +159,13 @@ async function generateNextCycleRoster({ refDateStr, systemUserId }) {
   console.log(`${TAG} Next cycle: ${startDate} → ${endDate} (triggered on ${refDateStr})`);
 
   // ------------------------------------------------------------------
-  // 3. Load all active employees — resolve their weekday schedule from
-  //    either the top-level schema field OR dynamicFields.weekday_shift_pattern
-  //    (whichever has actual data).
+  // 3. Load all active employees with a canonical weekdayShiftSchedule.
   // ------------------------------------------------------------------
   const employees = await Employee.find({ is_active: true, leftDate: null })
-    .select('emp_no doj weekdayShiftSchedule dynamicFields')
+    .select('emp_no doj weekdayShiftSchedule')
     .lean();
 
-  /**
-   * Resolve the effective schedule array for an employee.
-   * Priority:
-   *   1. weekdayShiftSchedule.schedule  (top-level schema field, non-empty)
-   *   2. dynamicFields.weekday_shift_pattern.schedule  (group-field path)
-   *   3. dynamicFields.weekday_shift_pattern  (bare array, legacy)
-   * Returns [] when no usable schedule is found.
-   */
-  function resolveSchedule(emp) {
-    // Top-level schema field
-    const top = emp.weekdayShiftSchedule;
-    if (Array.isArray(top?.schedule) && top.schedule.length > 0) {
-      return top.schedule;
-    }
-
-    // Dynamic group field — any key matching weekday+shift
-    const dynFields = emp.dynamicFields || {};
-    const dynKey = Object.keys(dynFields).find(
-      k => k.toLowerCase().includes('weekday') && k.toLowerCase().includes('shift')
-    );
-    if (!dynKey) return [];
-
-    const dynVal = dynFields[dynKey];
-    if (Array.isArray(dynVal) && dynVal.length > 0) return dynVal;
-    if (Array.isArray(dynVal?.schedule) && dynVal.schedule.length > 0) return dynVal.schedule;
-
-    return [];
-  }
-
-  // Build eligible list: only employees with at least one shift or WO entry
-  const eligible = employees
-    .map(emp => ({ emp, schedule: resolveSchedule(emp) }))
-    .filter(({ schedule }) =>
-      schedule.some(s => s.isWeekOff || s.shiftId)
-    );
+  const eligible = employees.filter((emp) => hasConfiguredWeekdaySchedule(emp.weekdayShiftSchedule));
 
   if (eligible.length === 0) {
     console.log(`${TAG} No employees with a configured weekday shift pattern — nothing to do.`);
@@ -217,9 +183,13 @@ async function generateNextCycleRoster({ refDateStr, systemUserId }) {
   // ------------------------------------------------------------------
   const toInsert = [];
 
-  for (const { emp, schedule } of eligible) {
+  for (const emp of eligible) {
     const empNo = String(emp.emp_no || '').toUpperCase();
     if (!empNo) continue;
+
+    const schedule = Array.isArray(emp.weekdayShiftSchedule?.schedule)
+      ? emp.weekdayShiftSchedule.schedule
+      : [];
 
     // DOJ filter
     const dojStr = emp.doj ? extractISTComponents(emp.doj).dateStr : null;

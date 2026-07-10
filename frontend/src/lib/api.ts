@@ -477,6 +477,10 @@ export interface ApiResponse<T> {
   modifiedCount?: number;
   count?: number;
   stats?: any;
+  employees?: any[];
+  rows?: any[];
+  qualFieldLabels?: string[];
+  overallStatusOptions?: { value: string; label: string }[];
   periodStats?: any;
   personalStats?: any;
   payPeriod?: any;
@@ -1146,6 +1150,13 @@ export interface Employee {
   employeeDeductions?: any[];
   ctcSalary?: number;
   calculatedSalary?: number;
+  weekdayShiftSchedule?: {
+    schedule: Array<{
+      weekday: number;
+      shiftId?: string | null;
+      isWeekOff?: boolean;
+    }>;
+  } | null;
   dynamicFields?: any;
   is_active: boolean;
   leftDate?: string;
@@ -2564,6 +2575,53 @@ export const api = {
     return apiRequest<any>(`/employees${query}`, { method: 'GET', ...fetchInit });
   },
 
+  getCertificationReport: async (filters?: Record<string, string | number | boolean | undefined>) => {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          params.append(key, String(value));
+        }
+      });
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/employees/reports/certifications${query}`, { method: 'GET' });
+  },
+
+  exportCertificationReport: async (filters?: Record<string, string | number | boolean | undefined>) => {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          params.append(key, String(value));
+        }
+      });
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const response = await fetch(`${API_BASE_URL}/employees/reports/certifications/export${query}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+    });
+    if (!response.ok) throw new Error('Export failed');
+    return response.blob();
+  },
+
+  exportCertificationReportPDF: async (filters?: Record<string, string | number | boolean | undefined>) => {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          params.append(key, String(value));
+        }
+      });
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const response = await fetch(`${API_BASE_URL}/employees/reports/certifications/export-pdf${query}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+    });
+    if (!response.ok) throw new Error('Export failed');
+    return response.blob();
+  },
+
   /** Scoped lean payload for birthday calendar (DOB + org refs only). */
   getBirthdaysSummary: async (options?: { today?: boolean; includeLeft?: boolean }, fetchInit?: RequestInit) => {
     const params = new URLSearchParams();
@@ -2813,8 +2871,6 @@ export const api = {
       body: JSON.stringify(config),
     });
   },
-
-  // Weekday shift schedule toggle
   updateWeekdayShiftScheduleConfig: async (config: { isEnabled: boolean }) => {
     return apiRequest<any>('/employee-applications/form-settings/weekday-shift-schedule', {
       method: 'PUT',
@@ -6472,8 +6528,8 @@ export const api = {
     if (params.endDate) query.append('endDate', params.endDate);
     if (params.employeeId) query.append('employeeId', Array.isArray(params.employeeId) ? params.employeeId.join(',') : params.employeeId);
     if (params.search) query.append('search', params.search);
-    if (params.page != null) query.append('page', params.page.toString());
-    if (params.limit != null) query.append('limit', params.limit.toString());
+    if (params.page) query.append('page', params.page.toString());
+    if (params.limit) query.append('limit', params.limit.toString());
 
     return apiRequest<any>(`/attendance/reports/thumb?${query.toString()}`, { method: 'GET' });
   },

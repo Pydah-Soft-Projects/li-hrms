@@ -1031,7 +1031,22 @@ exports.updateEmployee = async (req, res) => {
   try {
     const { empNo } = req.params;
     const employeeData = req.body;
+    const { stripLegacyWeekdayFromDynamicFields } = require('../../shared/utils/weekdayShiftScheduleUtils');
     normalizePushSubscriptionsPayload(employeeData);
+
+    // Weekday shift pattern is captured on application only — not editable after verify
+    delete employeeData.weekdayShiftSchedule;
+    if (employeeData.dynamicFields) {
+      try {
+        const parsedDynamic =
+          typeof employeeData.dynamicFields === 'string'
+            ? JSON.parse(employeeData.dynamicFields)
+            : employeeData.dynamicFields;
+        employeeData.dynamicFields = stripLegacyWeekdayFromDynamicFields(parsedDynamic);
+      } catch (e) {
+        // Parsed again later if needed
+      }
+    }
 
     // Check if employee exists
     const existingEmployee = await Employee.findOne({ emp_no: empNo });
@@ -1075,7 +1090,7 @@ exports.updateEmployee = async (req, res) => {
         'allData', 'division', 'department', 'designation', 'employeeGroup', 'employee_group',
         '_id', 'createdAt', 'updatedAt', '__v', 'dynamicFields',
         'payroll_stats', 'leave_stats', 'password', 'plain_password',
-        'isProfileRequest', 'status', 'is_active'
+        'isProfileRequest', 'status', 'is_active', 'weekdayShiftSchedule'
       ];
 
       for (const key in employeeData) {
@@ -1197,18 +1212,6 @@ exports.updateEmployee = async (req, res) => {
       }
     }
 
-    // Parse any JSON-stringified root-level fields FIRST — FormData sends all objects/arrays
-    // as strings. This must happen before validation AND before extractPermanentFields so
-    // weekdayShiftSchedule (and any other object field) arrives as the correct type.
-    Object.keys(employeeData).forEach(key => {
-      if (typeof employeeData[key] === 'string') {
-        const str = employeeData[key].trim();
-        if ((str.startsWith('{') && str.endsWith('}')) || (str.startsWith('[') && str.endsWith(']'))) {
-          try { employeeData[key] = JSON.parse(str); } catch (e) { /* not JSON — leave as string */ }
-        }
-      }
-    });
-
     // Validate dynamicFields if form settings exist
     // Only validate if dynamicFields are being updated and validation is explicitly needed
     // Skip validation for updates that only change permanent fields (like allowances/deductions/salary)
@@ -1256,6 +1259,7 @@ exports.updateEmployee = async (req, res) => {
 
     // Separate permanent fields and dynamicFields
     const permanentFields = extractPermanentFields(employeeData);
+    delete permanentFields.weekdayShiftSchedule;
 
     // 1. Extract dynamic fields from root level
     const extractedDynamic = extractDynamicFields(employeeData, permanentFields);
@@ -1267,14 +1271,14 @@ exports.updateEmployee = async (req, res) => {
         const nested = typeof employeeData.dynamicFields === 'string'
           ? JSON.parse(employeeData.dynamicFields)
           : employeeData.dynamicFields;
-        dynamicFields = { ...nested };
+        dynamicFields = stripLegacyWeekdayFromDynamicFields(nested);
       } catch (e) {
         console.warn('Failed to parse dynamicFields in updateEmployee:', e.message);
       }
     }
 
     // 3. Merge: root-level fields take precedence
-    dynamicFields = { ...dynamicFields, ...extractedDynamic };
+    dynamicFields = stripLegacyWeekdayFromDynamicFields({ ...dynamicFields, ...extractedDynamic });
 
     // 4. Parse specific Fields that should be arrays
     const arrayFields = ['reporting_to', 'reporting_to_'];
@@ -1342,32 +1346,6 @@ exports.updateEmployee = async (req, res) => {
         delete dynamicFields[camel];
       }
     });
-
-    // Promote any weekday-shift group field (e.g. weekday_shift_pattern) to the permanent
-    // weekdayShiftSchedule field, and remove it from dynamicFields to keep a single source of
-    // truth. This mirrors the same logic in createApplicationInternal so employee edits behave
-    // identically to new applications.
-    const weekdayDynKey = Object.keys(dynamicFields).find(
-      (k) => k.toLowerCase().includes('weekday') && k.toLowerCase().includes('shift')
-    );
-    if (weekdayDynKey) {
-      const raw = dynamicFields[weekdayDynKey];
-      if (typeof raw === 'object' && !Array.isArray(raw) && Array.isArray(raw.schedule)) {
-        permanentFields.weekdayShiftSchedule = raw;
-      } else if (Array.isArray(raw)) {
-        permanentFields.weekdayShiftSchedule = { isEnabled: true, schedule: raw };
-      }
-      delete dynamicFields[weekdayDynKey];
-    }
-    // Also scrub any stale weekday-shift keys left in existing dynamicFields so they don't
-    // persist after the value has been promoted to the permanent field.
-    if (permanentFields.weekdayShiftSchedule !== undefined) {
-      Object.keys(dynamicFields).forEach((k) => {
-        if (k.toLowerCase().includes('weekday') && k.toLowerCase().includes('shift')) {
-          delete dynamicFields[k];
-        }
-      });
-    }
 
     const existingSalariesFlat =
       existingEmployee.salaries && typeof existingEmployee.salaries === 'object' && !Array.isArray(existingEmployee.salaries)
@@ -1471,14 +1449,6 @@ exports.updateEmployee = async (req, res) => {
           'proposedSalary' // Also cleanup proposedSalary if it was accidentally saved
         ];
         bankFieldsToCleanup.forEach(f => delete cleanedExistingDynamic[f]);
-
-        // Remove stale weekday-shift group field keys from existing dynamicFields — the value
-        // is now stored authoritatively in Employee.weekdayShiftSchedule (permanent field).
-        Object.keys(cleanedExistingDynamic).forEach((k) => {
-          if (k.toLowerCase().includes('weekday') && k.toLowerCase().includes('shift')) {
-            delete cleanedExistingDynamic[k];
-          }
-        });
 
         const sids = Array.isArray(salaryFieldIds) && salaryFieldIds.length > 0
           ? salaryFieldIds

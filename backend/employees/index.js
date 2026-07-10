@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const employeeController = require('./controllers/employeeController');
+const certificationReportController = require('./controllers/certificationReportController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
 const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 const multer = require('multer');
@@ -29,6 +30,11 @@ router.get('/', applyScopeFilter, employeeController.getAllEmployees);
 
 // Lean list for birthday calendar (scoped, DOB + org refs only) — must be before /:empNo
 router.get('/birthdays-summary', applyScopeFilter, employeeController.getBirthdaysSummary);
+
+// Certification status reports (must be before /:empNo)
+router.get('/reports/certifications', applyScopeFilter, certificationReportController.getCertificationReport);
+router.get('/reports/certifications/export', applyScopeFilter, certificationReportController.exportCertificationReport);
+router.get('/reports/certifications/export-pdf', applyScopeFilter, certificationReportController.exportCertificationReportPDF);
 
 // Export employees
 router.post('/export', applyScopeFilter, employeeController.exportEmployees);

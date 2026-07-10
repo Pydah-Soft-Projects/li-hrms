@@ -26,6 +26,7 @@
     "test:roster-half-holiday": "node scripts/test_roster_half_holiday_integration.js",
     "test:paysheet-adjustment": "node scripts/test_paysheet_adjustment_integration.js",
     "test:half-day-holiday-api": "node scripts/test_half_day_holiday_api.js",
+    "test:weekday-shift-schedule": "node scripts/test_weekday_shift_schedule.js",
     "seed:holiday-test-users": "node scripts/seed_holiday_scoped_test_users.js",
     "seed:holiday-mapping-test-user": "node scripts/seed_holiday_mapping_test_user.js",
     "test:single-shift-partial": "node scripts/test_single_shift_out_only_partial.js",

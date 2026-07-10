@@ -16,6 +16,8 @@
 
 const PreScheduledShift = require('../model/PreScheduledShift');
 const Settings = require('../../settings/model/Settings');
+const EmployeeApplicationFormSettings = require('../../employee-applications/model/EmployeeApplicationFormSettings');
+const { hasConfiguredWeekdaySchedule } = require('../../shared/utils/weekdayShiftScheduleUtils');
 const { getAllDatesInRange, extractISTComponents } = require('../../shared/utils/dateUtils');
 
 /**
@@ -83,15 +85,20 @@ async function getFirstPayCycleForDoj(dojStr) {
 async function generateFirstMonthRoster(employee, scheduledBy) {
   const tag = '[FirstMonthRoster]';
 
-  // Guard: feature must be explicitly enabled on this employee
-  const wss = employee?.weekdayShiftSchedule;
-  if (!wss?.isEnabled) {
-    console.log(`${tag} Skipped for ${employee?.emp_no}: weekdayShiftSchedule not enabled.`);
-    return { created: 0, skipped: 0, cycleRange: null, message: 'Weekday shift schedule not enabled.' };
+  const formSettings = await EmployeeApplicationFormSettings.findOne({ isActive: true })
+    .select('weekdayShiftSchedule')
+    .lean();
+
+  if (!formSettings?.weekdayShiftSchedule?.isEnabled) {
+    console.log(`${tag} Skipped for ${employee?.emp_no}: weekday shift schedule disabled org-wide.`);
+    return { created: 0, skipped: 0, cycleRange: null, message: 'Weekday shift schedule disabled org-wide.' };
   }
 
-  const schedule = Array.isArray(wss.schedule) ? wss.schedule : [];
-  if (schedule.length === 0) {
+  const schedule = Array.isArray(employee?.weekdayShiftSchedule?.schedule)
+    ? employee.weekdayShiftSchedule.schedule
+    : [];
+
+  if (!hasConfiguredWeekdaySchedule({ schedule })) {
     console.log(`${tag} Skipped for ${employee?.emp_no}: schedule array is empty.`);
     return { created: 0, skipped: 0, cycleRange: null, message: 'Weekday shift schedule is empty.' };
   }
@@ -106,10 +113,16 @@ async function generateFirstMonthRoster(employee, scheduledBy) {
   for (const entry of schedule) {
     const wd = Number(entry.weekday);
     if (wd < 0 || wd > 6) continue;
+    if (!entry.isWeekOff && !entry.shiftId) continue;
     weekdayMap.set(wd, {
       shiftId:   entry.shiftId   || null,
       isWeekOff: entry.isWeekOff || false,
     });
+  }
+
+  if (weekdayMap.size === 0) {
+    console.log(`${tag} Skipped for ${employee?.emp_no}: no configured weekday entries.`);
+    return { created: 0, skipped: 0, cycleRange: null, message: 'Weekday shift schedule has no assigned days.' };
   }
 
   const dojStr = extractISTComponents(employee.doj).dateStr;

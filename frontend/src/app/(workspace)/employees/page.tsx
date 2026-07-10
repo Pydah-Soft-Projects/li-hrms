@@ -42,6 +42,9 @@ import {
 } from 'lucide-react';
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
+import WeekdayShiftScheduleDisplay from '@/components/WeekdayShiftScheduleDisplay';
+import { promoteWeekdayShiftScheduleOnRecord, shouldShowWeekdayShiftSection } from '@/lib/weekdayShiftSchedule';
+import { resolveEmployeeField } from '@/lib/resolveEmployeeField';
 import Spinner from '@/components/Spinner';
 import BankUpdateDialog from '@/components/employee/BankUpdateDialog';
 import EmployeeExportDialog from '@/components/employee/EmployeeExportDialog';
@@ -136,7 +139,6 @@ interface EmployeeApplication {
   employee_group?: { _id: string; name: string; code?: string };
   department?: { _id: string; name: string; code?: string };
   designation?: { _id: string; name: string; code?: string };
-  applicationType?: 'new' | 'rejoin';
   proposedSalary: number;
   approvedSalary?: number;
   status: 'pending' | 'verified' | 'approved' | 'rejected';
@@ -306,7 +308,6 @@ export default function EmployeesPage() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [editingApplicationID, setEditingApplicationID] = useState<string | null>(null); // Track ID of application being edited
   const [showViewDialog, setShowViewDialog] = useState(false);
-  const [viewShifts, setViewShifts] = useState<Array<{ _id: string; name: string; startTime?: string; endTime?: string }>>([]);
   const [showProfileHistoryDialog, setShowProfileHistoryDialog] = useState(false);
   const [selectedProfileHistoryEmployee, setSelectedProfileHistoryEmployee] = useState<{
     employeeName: string;
@@ -1533,6 +1534,10 @@ export default function EmployeesPage() {
         calculatedSalary: salarySummary.netSalary,
       };
 
+      if (editingEmployee) {
+        delete (submitData as any).weekdayShiftSchedule;
+      }
+
       // Ensure ObjectId refs are submitted as plain IDs, never serialized objects.
       ['division_id', 'department_id', 'designation_id', 'employee_group_id'].forEach((key) => {
         (submitData as any)[key] = normalizeEntityRef((submitData as any)[key]);
@@ -1746,7 +1751,7 @@ export default function EmployeesPage() {
         delete (appData as any).second_salary;
         delete (appData as any).secondSalary;
       }
-      setApplicationFormData(appData);
+      setApplicationFormData(promoteWeekdayShiftScheduleOnRecord(appData));
       setShowApplicationDialog(true);
       return;
     }
@@ -1946,47 +1951,7 @@ export default function EmployeesPage() {
       reporting_to_: reportingToValue,
       // Salary mode dropdown defaults to Cash when editing if not set
       salary_mode: (employee as any).salary_mode ?? dynamicFieldsData.salary_mode ?? 'Cash',
-      // Weekday shift schedule is now resolved separately below — not set here
     };
-    // Weekday shift: the form-settings group field (e.g. weekday_shift_pattern) is the single
-    // renderer. Resolve the canonical schedule value from either the permanent weekdayShiftSchedule
-    // field or any legacy dynamic key, then write it back under the group field key so
-    // renderField() picks it up. Remove weekdayShiftSchedule from formData so only one picker shows.
-    (() => {
-      const canonical = (() => {
-        const top = (employee as any).weekdayShiftSchedule;
-        if (top && (top.isEnabled || (Array.isArray(top.schedule) && top.schedule.length > 0))) return top;
-        const dynKey = Object.keys(dynamicFieldsData).find(
-          k => k.toLowerCase().includes('weekday') && k.toLowerCase().includes('shift')
-        );
-        const dynVal = dynKey ? dynamicFieldsData[dynKey] : undefined;
-        if (!dynVal) return top ?? undefined;
-        if (Array.isArray(dynVal)) return { isEnabled: true, schedule: dynVal };
-        if (typeof dynVal === 'object' && Array.isArray(dynVal.schedule)) return dynVal;
-        return top ?? undefined;
-      })();
-
-      // Find the group field key from form settings (e.g. "weekday_shift_pattern")
-      const groupKey = (() => {
-        if (!formSettings?.groups) return null;
-        for (const g of formSettings.groups as any[]) {
-          const f = (g.fields as any[])?.find(
-            (f: any) => f.id.toLowerCase().includes('weekday') && f.id.toLowerCase().includes('shift')
-          );
-          if (f) return f.id as string;
-        }
-        return null;
-      })();
-
-      // Remove weekdayShiftSchedule — rendering is done entirely via the group field
-      delete newFormData.weekdayShiftSchedule;
-      // Also clear any stale weekday-shift keys spread in from dynamicFields
-      Object.keys(newFormData).forEach((k) => {
-        if (k.toLowerCase().includes('weekday') && k.toLowerCase().includes('shift')) delete newFormData[k];
-      });
-      // Write canonical value under the group field key so renderField reads it
-      if (groupKey && canonical) newFormData[groupKey] = canonical;
-    })();
     if (!secondSalaryEnabled) {
       delete newFormData.second_salary;
       if (newFormData.dynamicFields && typeof newFormData.dynamicFields === 'object') {
@@ -1994,7 +1959,7 @@ export default function EmployeesPage() {
       }
     }
 
-    setFormData(newFormData);
+    setFormData(promoteWeekdayShiftScheduleOnRecord(newFormData));
 
     // Pre-populate override state from existing employee overrides
     if (Array.isArray(employee.employeeAllowances) && employee.employeeAllowances.length > 0) {
@@ -2306,13 +2271,6 @@ export default function EmployeesPage() {
       }
     } catch (error) {
       console.error('Error refreshing employee data for view:', error);
-    }
-
-    // Fetch shifts for weekday schedule display (fire-and-forget)
-    if (viewShifts.length === 0) {
-      api.getShifts(true).then(r => {
-        if (r.success && Array.isArray(r.data)) setViewShifts(r.data);
-      }).catch(() => {});
     }
   };
 
@@ -5254,8 +5212,30 @@ export default function EmployeesPage() {
                       <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Created By</p>
                       <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.createdBy?.name || '-'}</p>
                     </div>
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">{getFieldLabel('phone_number', formSettings) || 'Phone Number'}</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {resolveEmployeeField(selectedApplication as any, 'phone_number', ['contact_number']) || '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">{getFieldLabel('alt_phone_number', formSettings) || 'Alternate Phone'}</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {resolveEmployeeField(selectedApplication as any, 'alt_phone_number') || '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">{getFieldLabel('email', formSettings) || 'Email'}</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {resolveEmployeeField(selectedApplication as any, 'email') || '-'}
+                      </p>
+                    </div>
                   </div>
                 </div>
+
+                {shouldShowWeekdayShiftSection(formSettings, selectedApplication as any) && (
+                  <WeekdayShiftScheduleDisplay source={selectedApplication as any} />
+                )}
 
                 {/* Qualifications - Key Feature */}
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
@@ -6545,27 +6525,19 @@ export default function EmployeesPage() {
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('phone_number', formSettings) || 'Phone Number'}</label>
                       <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {viewingEmployee.phone_number ||
-                          (viewingEmployee as any).contact_number ||
-                          (viewingEmployee as any).dynamicFields?.phone_number ||
-                          (viewingEmployee as any).dynamicFields?.contact_number ||
-                          '-'}
+                        {resolveEmployeeField(viewingEmployee as any, 'phone_number', ['contact_number']) || '-'}
                       </p>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('alt_phone_number', formSettings) || 'Alternate Phone'}</label>
                       <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {viewingEmployee.alt_phone_number ||
-                          (viewingEmployee as any).dynamicFields?.alt_phone_number ||
-                          '-'}
+                        {resolveEmployeeField(viewingEmployee as any, 'alt_phone_number') || '-'}
                       </p>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('email', formSettings) || 'Email'}</label>
                       <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {viewingEmployee.email ||
-                          (viewingEmployee as any).dynamicFields?.email ||
-                          '-'}
+                        {resolveEmployeeField(viewingEmployee as any, 'email') || '-'}
                       </p>
                     </div>
                     <div>
@@ -7160,6 +7132,10 @@ export default function EmployeesPage() {
                     );
                   })}
 
+                {shouldShowWeekdayShiftSection(formSettings, viewingEmployee as any) && (
+                  <WeekdayShiftScheduleDisplay source={viewingEmployee as any} />
+                )}
+
                 {/* Reporting Authority Section - Check both root and dynamicFields, handle both reporting_to and reporting_to_ */}
                 {((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_) && (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
@@ -7209,72 +7185,6 @@ export default function EmployeesPage() {
                     })()}
                   </div>
                 )}
-
-                {/* Weekday Shift Schedule */}
-                {(() => {
-                  const emp = viewingEmployee as any;
-
-                  // Collect from all possible sources
-                  // 1. Top-level schema field
-                  const topWss = emp.weekdayShiftSchedule;
-                  const topSchedule = Array.isArray(topWss?.schedule) ? topWss.schedule : [];
-
-                  // 2. Dynamic group field (weekday_shift_pattern or any weekday+shift key)
-                  const allFields = { ...(emp.dynamicFields || {}), ...emp };
-                  const dynKey = Object.keys(allFields).find(
-                    (k: string) => k !== 'weekdayShiftSchedule' &&
-                      k.toLowerCase().includes('weekday') && k.toLowerCase().includes('shift')
-                  );
-                  const dynVal = dynKey ? allFields[dynKey] : undefined;
-                  let dynSchedule: any[] = [];
-                  if (dynVal) {
-                    if (Array.isArray(dynVal)) dynSchedule = dynVal;
-                    else if (typeof dynVal === 'object' && Array.isArray(dynVal.schedule)) dynSchedule = dynVal.schedule;
-                  }
-
-                  // Prefer whichever source has actual data
-                  const schedule = topSchedule.length > 0 ? topSchedule : dynSchedule;
-                  const isEnabled = topWss?.isEnabled || dynSchedule.length > 0;
-
-                  if (!isEnabled && schedule.length === 0) return null;
-
-                  const WEEKDAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                  const normalizedSchedule = WEEKDAY_LABELS.map((_, dayIndex) => {
-                    const entry = schedule.find((s: any) => Number(s.weekday) === dayIndex);
-                    return entry ?? { weekday: dayIndex, shiftId: null, isWeekOff: false };
-                  });
-                  return (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Weekday Shift Schedule</h3>
-                      <div className="space-y-2">
-                        {normalizedSchedule.map((entry: any) => {
-                          const shift = viewShifts.find(s => s._id === String(entry.shiftId ?? ''));
-                          const label = entry.isWeekOff
-                            ? 'Week Off'
-                            : shift
-                              ? `${shift.name}${shift.startTime && shift.endTime ? ` (${shift.startTime}–${shift.endTime})` : ''}`
-                              : entry.shiftId
-                                ? String(entry.shiftId)
-                                : '— Not set —';
-                          const badge = entry.isWeekOff
-                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                            : entry.shiftId
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500';
-                          return (
-                            <div key={entry.weekday} className="grid grid-cols-[120px_1fr_auto] items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-2.5 dark:border-slate-700 dark:bg-slate-900">
-                              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{WEEKDAY_LABELS[entry.weekday]}</span>
-                              <span className="text-sm text-slate-600 dark:text-slate-300">{label}</span>
-                              <span className={`w-20 shrink-0 rounded-full px-2.5 py-1 text-center text-xs font-medium ${badge}`}>
-                                {entry.isWeekOff ? 'Week Off' : entry.shiftId ? 'Assigned' : 'Not set'}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
 
               </div>
             </div>

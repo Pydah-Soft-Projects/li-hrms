@@ -1,10 +1,13 @@
 /**
  * Build a read-only employee snapshot from an employee application for verify / finalize dialogs.
  */
+import { promoteWeekdayShiftScheduleOnRecord } from '@/lib/weekdayShiftSchedule';
+import { resolveEmployeeField } from '@/lib/resolveEmployeeField';
+
 export function mapApplicationToViewEmployee(application: Record<string, any>): Record<string, any> {
   const dynamicFields = { ...(application.dynamicFields || {}) };
 
-  return {
+  const snapshot = {
     ...application,
     emp_no: application.emp_no,
     employee_name: application.employee_name,
@@ -30,9 +33,9 @@ export function mapApplicationToViewEmployee(application: Record<string, any>): 
     address: application.address,
     location: application.location,
     aadhar_number: application.aadhar_number,
-    phone_number: application.phone_number,
-    alt_phone_number: application.alt_phone_number,
-    email: application.email,
+    phone_number: resolveEmployeeField(application, 'phone_number', ['contact_number']) || application.phone_number,
+    alt_phone_number: resolveEmployeeField(application, 'alt_phone_number') || application.alt_phone_number,
+    email: resolveEmployeeField(application, 'email') || application.email,
     pf_number: application.pf_number,
     esi_number: application.esi_number,
     bank_account_no: application.bank_account_no,
@@ -61,10 +64,13 @@ export function mapApplicationToViewEmployee(application: Record<string, any>): 
     deductEarlyOut: application.deductEarlyOut,
     deductPermission: application.deductPermission,
     deductAbsent: application.deductAbsent,
+    weekdayShiftSchedule: application.weekdayShiftSchedule ?? null,
     ctcSalary: application.ctcSalary,
     calculatedSalary: application.calculatedSalary,
     is_active: true,
   };
+
+  return promoteWeekdayShiftScheduleOnRecord(snapshot);
 }
 
 /** Prefer persisted employee data; fill gaps from the application snapshot. */
@@ -78,7 +84,7 @@ export function mergeEmployeeWithApplicationSnapshot(
     ...(employee.dynamicFields || {}),
   };
 
-  return {
+  const merged = {
     ...snapshot,
     ...employee,
     dynamicFields: mergedDynamic,
@@ -98,5 +104,8 @@ export function mergeEmployeeWithApplicationSnapshot(
     proposedSalary: snapshot.proposedSalary ?? employee.proposedSalary,
     profilePhoto: employee.profilePhoto ?? snapshot.profilePhoto,
     qualificationStatus: employee.qualificationStatus ?? snapshot.qualificationStatus,
+    weekdayShiftSchedule: employee.weekdayShiftSchedule ?? snapshot.weekdayShiftSchedule ?? null,
   };
+
+  return promoteWeekdayShiftScheduleOnRecord(merged);
 }

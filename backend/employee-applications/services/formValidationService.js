@@ -289,6 +289,8 @@ function validateField(field, value, formData) {
  * @returns {Object} { permanentFields: Object, dynamicFields: Object }
  */
 exports.transformFormData = (formData, settings) => {
+  const { applyWeekdayShiftScheduleToPayload } = require('../../shared/utils/weekdayShiftScheduleUtils');
+
   const permanentFieldIds = [
     'emp_no',
     'employee_name',
@@ -325,6 +327,7 @@ exports.transformFormData = (formData, settings) => {
     'deductEarlyOut',
     'deductPermission',
     'deductAbsent',
+    'weekdayShiftSchedule',
   ];
 
   const permanentFields = {};
@@ -353,6 +356,6 @@ exports.transformFormData = (formData, settings) => {
     }
   }
 
-  return { permanentFields, dynamicFields };
+  return applyWeekdayShiftScheduleToPayload(permanentFields, dynamicFields, formData);
 };
 

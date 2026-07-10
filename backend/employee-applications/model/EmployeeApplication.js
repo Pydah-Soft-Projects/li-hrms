@@ -209,6 +209,11 @@ const employeeApplicationSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    /** Canonical 7-day shift pattern captured on application; copied to employee on verify. */
+    weekdayShiftSchedule: {
+      type: require('../../shared/schemas/weekdayShiftScheduleSchema').weekdayShiftScheduleSchema,
+      default: null,
+    },
     // Dynamic fields for configurable form fields
     dynamicFields: {
       type: mongoose.Schema.Types.Mixed,
@@ -269,24 +274,6 @@ const employeeApplicationSchema = new mongoose.Schema(
       type: Number,
       default: null, // Gross Salary + Allowances - Deductions (Net Salary)
     },
-    /**
-     * Per-employee weekday shift schedule (mirrors Employee.weekdayShiftSchedule).
-     * Stored at application time so it survives into the Employee record on verification.
-     */
-    weekdayShiftSchedule: {
-      isEnabled: { type: Boolean, default: false },
-      schedule: {
-        type: [
-          {
-            weekday: { type: Number, min: 0, max: 6, required: true },
-            shiftId: { type: mongoose.Schema.Types.ObjectId, ref: 'Shift', default: null },
-            isWeekOff: { type: Boolean, default: false },
-          },
-        ],
-        default: [],
-      },
-    },
-
     is_active: {
       type: Boolean,
       default: true,
