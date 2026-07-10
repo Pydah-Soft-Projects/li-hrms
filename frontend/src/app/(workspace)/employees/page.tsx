@@ -142,6 +142,7 @@ interface EmployeeApplication {
   proposedSalary: number;
   approvedSalary?: number;
   status: 'pending' | 'verified' | 'approved' | 'rejected';
+  applicationType?: 'new' | 'rejoin';
   createdBy?: { _id: string; name: string; email: string };
   verifiedBy?: { _id: string; name: string; email: string };
   verifiedAt?: string;

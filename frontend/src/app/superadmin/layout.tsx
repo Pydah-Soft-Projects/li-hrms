@@ -62,7 +62,7 @@ export default function SuperAdminLayout({
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen bg-white dark:bg-slate-900">
+      <div className="flex min-h-screen bg-[#f4f6f9] dark:bg-slate-900">
         <Sidebar />
         <MainContent className="pt-16 sm:pt-0">{children}</MainContent>
       </div>

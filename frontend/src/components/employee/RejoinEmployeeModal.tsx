@@ -154,7 +154,7 @@ export default function RejoinEmployeeModal({
     const desList = designations ?? [];
     if (!form.department_id) return desList;
     return desList.filter(
-      (d) => !d.department_id || refId(d.department_id) === form.department_id
+      (d) => !d.department || refId(d.department) === form.department_id
     );
   }, [designations, form.department_id]);
 

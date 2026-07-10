@@ -208,10 +208,82 @@ h1, h2, h3, h4, .font-display {
   animation: headline-exit 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Background Overlay for Light Image */
+/* Hero silk background — static mint satin image */
+.hero-silk-bg {
+  background-image: url("/images/hero_bg.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+/* Light veil for text contrast — keeps the fabric folds visible */
 .hero-bg-overlay {
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.1) 100%);
-  backdrop-filter: blur(1px);
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.18) 0%,
+    rgba(240, 253, 244, 0.08) 45%,
+    rgba(255, 255, 255, 0.22) 100%
+  );
+}
+
+/* Subtle satin shimmer across the silk folds */
+.hero-silk-sheen {
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.12) 42%,
+    rgba(167, 243, 208, 0.08) 50%,
+    rgba(255, 255, 255, 0.12) 58%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: silk-sheen 12s ease-in-out infinite;
+  mix-blend-mode: soft-light;
+}
+
+@keyframes silk-sheen {
+  0%,
+  100% {
+    background-position: 200% 0;
+  }
+  50% {
+    background-position: -200% 0;
+  }
+}
+
+/* Shared silk page shell (home + login) */
+.silk-page-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+.silk-page-bg.hero-silk-bg {
+  z-index: 0;
+}
+
+.login-glass-card {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  box-shadow:
+    0 8px 32px rgba(6, 78, 59, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}
+
+.login-input {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.login-input:focus {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
 }
 
 /* Global Custom Scrollbar */

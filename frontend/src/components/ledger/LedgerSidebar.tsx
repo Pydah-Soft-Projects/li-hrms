@@ -6,6 +6,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, LogOut, Menu, X } from 'lucide-
 import type { SidebarNavCategory, SidebarNavItem } from '@/config/sidebarNav';
 import { PAYSLIP_ACCENT_FALLBACK, payslipAccentCssVars, resolvePayslipAccentHex } from '@/lib/payslipTheme';
 import { fetchCompanyProfile } from '@/lib/companyProfile';
+import { SidebarRibbonArt } from '@/components/ledger/SidebarRibbonArt';
 
 function useLedgerSidebarTheme(): CSSProperties {
   const [style, setStyle] = useState<CSSProperties>(
@@ -22,11 +23,11 @@ function useLedgerSidebarTheme(): CSSProperties {
 }
 
 function ledgerSidebarRowClass(isActive: boolean, collapsed?: boolean): string {
-  const base = `group flex w-full items-center rounded-lg transition-all duration-150 ${
-    collapsed ? 'justify-center px-2 py-2.5' : 'gap-2.5 px-2.5 py-2.5'
+  const base = `group flex w-full items-center rounded-xl transition-all duration-150 ${
+    collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'
   } text-[13px]`;
-  if (isActive) return `${base} font-medium`;
-  return `${base} text-stone-600 hover:bg-stone-100/80 dark:text-stone-400 dark:hover:bg-stone-800/60 hover:text-stone-900 dark:hover:text-stone-100`;
+  if (isActive) return `${base} font-semibold`;
+  return `${base} text-zinc-600 hover:bg-emerald-50/70 dark:text-zinc-400 dark:hover:bg-emerald-950/30 hover:text-zinc-900 dark:hover:text-zinc-100`;
 }
 
 function ledgerSidebarRowStyle(isActive: boolean): CSSProperties {
@@ -37,19 +38,19 @@ function ledgerSidebarRowStyle(isActive: boolean): CSSProperties {
   };
 }
 
-export function ledgerSidebarLinkClass(isActive: boolean, collapsed?: boolean): string {
-  const base = `group relative flex items-center rounded-lg transition-all duration-150 ${
-    collapsed ? 'justify-center px-2 py-2' : 'gap-2.5 px-2.5 py-2'
+function ledgerSidebarLinkClass(isActive: boolean, collapsed?: boolean): string {
+  const base = `group relative flex items-center rounded-xl transition-all duration-150 ${
+    collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'
   } text-[13px]`;
-  if (isActive) return `${base} font-medium`;
-  return `${base} text-stone-600 hover:bg-stone-100/80 dark:text-stone-400 dark:hover:bg-stone-800/60 hover:text-stone-900 dark:hover:text-stone-100`;
+  if (isActive) return `${base} font-semibold`;
+  return `${base} text-zinc-600 hover:bg-emerald-50/70 dark:text-zinc-400 dark:hover:bg-emerald-950/30 hover:text-zinc-900 dark:hover:text-zinc-100`;
 }
 
 export function ledgerSidebarLinkStyle(isActive: boolean): CSSProperties {
   if (!isActive) return {};
   return {
-    backgroundColor: 'var(--ps-accent-soft)',
-    color: 'var(--ps-accent-ink)',
+    backgroundColor: 'var(--ps-accent-soft, #ecfdf5)',
+    color: 'var(--ps-accent-ink, #047857)',
   };
 }
 
@@ -105,7 +106,7 @@ export function LedgerSidebarShell({
       )}
 
       <aside
-        className={`fixed left-0 top-0 z-[100] h-screen border-r border-stone-200/80 bg-white transition-all duration-300 ease-in-out dark:border-stone-800 dark:bg-stone-950 ${
+        className={`fixed left-0 top-0 z-[100] h-screen border-r border-zinc-100 bg-white transition-all duration-300 ease-in-out dark:border-zinc-800 dark:bg-zinc-950 ${
           isMobileOpen ? 'w-[260px] translate-x-0' : '-translate-x-full sm:translate-x-0'
         } ${navCollapsed ? 'sm:w-[68px]' : 'sm:w-[260px]'}`}
         style={themeStyle}
@@ -139,15 +140,28 @@ export function LedgerSidebarShell({
           </div>
 
           <nav
-            className="relative flex-1 space-y-1 overflow-y-auto px-2 py-3 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-stone-200 dark:[&::-webkit-scrollbar-thumb]:bg-stone-700"
-            style={{ scrollbarColor: 'rgb(214 211 209) transparent' }}
+            className="relative z-10 flex-1 space-y-1 overflow-y-auto px-3 py-4 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-200 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700"
+            style={{ scrollbarColor: 'rgb(212 212 216) transparent' }}
           >
             {children}
           </nav>
 
-          <div className="shrink-0 border-t border-stone-100 p-2.5 dark:border-stone-800">
-            {footer}
-          </div>
+          {!navCollapsed && (
+            <div className="relative mt-auto w-full shrink-0 bg-white dark:bg-zinc-950">
+              <div className="relative -mb-8 h-28">
+                <SidebarRibbonArt />
+              </div>
+              <div className="relative z-10 px-3 pb-3">
+                {footer}
+              </div>
+            </div>
+          )}
+
+          {navCollapsed && (
+            <div className="relative z-10 shrink-0 px-2 pb-3">
+              {footer}
+            </div>
+          )}
         </div>
       </aside>
     </div>
@@ -327,6 +341,12 @@ export function LedgerSidebarLink({
         style={ledgerSidebarLinkStyle(isActive)}
         title={collapsed ? label : undefined}
       >
+        {isActive && !collapsed && (
+          <span
+            className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full"
+            style={{ backgroundColor: 'var(--ps-accent, #10b981)' }}
+          />
+        )}
         <Icon
           className={ledgerSidebarIconClass(isActive)}
           style={ledgerSidebarIconStyle(isActive)}
@@ -353,49 +373,90 @@ export function LedgerSidebarUserCard({
   onLogout: () => void;
 }) {
   const initial = (name.charAt(0) || 'U').toUpperCase();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <div
-      className={`flex items-center gap-1.5 rounded-lg bg-stone-50 p-1.5 dark:bg-stone-900/50 ${
-        collapsed ? 'flex-col' : 'flex-row'
-      }`}
-    >
-      <Link
-        href={profileHref}
-        onClick={onNavigate}
-        className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-md p-1 transition hover:bg-white dark:hover:bg-stone-800 ${
-          collapsed ? 'justify-center p-0 hover:bg-transparent dark:hover:bg-transparent' : ''
+    <div className="relative">
+      <div
+        className={`flex items-center gap-2 rounded-xl border border-zinc-100 bg-white p-2 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 ${
+          collapsed ? 'flex-col' : 'flex-row'
         }`}
-        title={collapsed ? 'Profile' : undefined}
       >
-        <div
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
-          style={{ backgroundColor: 'var(--ps-accent)' }}
+        <Link
+          href={profileHref}
+          onClick={onNavigate}
+          className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-lg p-1 transition hover:bg-white dark:hover:bg-zinc-800 ${
+            collapsed ? 'justify-center p-0 hover:bg-transparent dark:hover:bg-transparent' : ''
+          }`}
+          title={collapsed ? 'Profile' : undefined}
         >
-          {initial}
-        </div>
-        {!collapsed && (
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-medium text-stone-900 dark:text-stone-100">
-              {name}
-            </p>
-            <p className="truncate text-[11px] capitalize text-stone-500 dark:text-stone-400">
-              {subtitle}
-            </p>
+          <div
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
+            style={{ backgroundColor: 'var(--ps-accent, #10b981)' }}
+          >
+            {initial}
           </div>
-        )}
-      </Link>
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
+                {name}
+              </p>
+              <p className="truncate text-[11px] capitalize text-zinc-500 dark:text-zinc-400">
+                {subtitle}
+              </p>
+            </div>
+          )}
+        </Link>
 
-      <button
-        type="button"
-        onClick={onLogout}
-        className={`flex shrink-0 items-center justify-center rounded-md p-1.5 text-stone-400 transition hover:bg-white hover:text-rose-600 dark:hover:bg-stone-800 dark:hover:text-rose-400 ${
-          collapsed ? 'w-full' : ''
-        }`}
-        title="Logout"
-      >
-        <LogOut className="h-4 w-4" />
-      </button>
+        {!collapsed && (
+          <button
+            type="button"
+            onClick={() => setMenuOpen((o) => !o)}
+            className="flex shrink-0 items-center justify-center rounded-lg p-1.5 text-zinc-400 transition hover:bg-white hover:text-zinc-600 dark:hover:bg-zinc-800"
+            aria-label="User menu"
+            aria-expanded={menuOpen}
+          >
+            <ChevronDown className={`h-4 w-4 transition-transform ${menuOpen ? 'rotate-180' : ''}`} />
+          </button>
+        )}
+
+        {collapsed && (
+          <button
+            type="button"
+            onClick={onLogout}
+            className="flex w-full shrink-0 items-center justify-center rounded-md p-1.5 text-zinc-400 transition hover:bg-white hover:text-rose-600 dark:hover:bg-zinc-800"
+            title="Logout"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {menuOpen && !collapsed && (
+        <div className="absolute bottom-full left-0 right-0 z-50 mb-1 overflow-hidden rounded-xl border border-zinc-100 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
+          <Link
+            href={profileHref}
+            onClick={() => {
+              setMenuOpen(false);
+              onNavigate?.();
+            }}
+            className="block px-4 py-2.5 text-xs font-medium text-zinc-700 hover:bg-emerald-50 dark:text-zinc-300 dark:hover:bg-emerald-950/30"
+          >
+            My Profile
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              setMenuOpen(false);
+              onLogout();
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Logout
+          </button>
+        </div>
+      )}
     </div>
   );
 }

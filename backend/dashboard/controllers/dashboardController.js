@@ -921,36 +921,83 @@ exports.getSuperAdminAnalytics = async (req, res) => {
       .lean();
     const activeEmpNos = normalizeEmpNos(activeEmployeesForPulse);
 
-    const presentStatusFilter = { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL', 'OD'] };
+    const presentOnlyStatusFilter = { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] };
     const employeeScopeFilter = activeEmpNos.length > 0
       ? { employeeNumber: { $in: activeEmpNos } }
       : { _id: null };
+    const odTodayStatusFilter = { $nin: ['rejected', 'cancelled'] };
+
+    const pendingStatusFilter = { $nin: ['approved', 'rejected', 'cancelled'] };
 
     const fetchDayTrackerBuckets = async (ds) => {
       if (isFutureDateStr(todayStr, ds)) {
-        return { present: 0, leave: 0, od: 0 };
+        return { present: 0, leave: 0, od: 0, pendingLeave: 0, pendingOd: 0 };
       }
       const dayStart = createISTDate(ds, '00:00');
       const dayEnd = createISTDate(ds, '23:59');
-      const [present, leave, od] = await Promise.all([
-        AttendanceDaily.countDocuments({ 
-          date: ds, 
+      const [present, leave, od, pendingLeave, pendingOd] = await Promise.all([
+        AttendanceDaily.countDocuments({
+          date: ds,
           ...employeeScopeFilter,
-          status: presentStatusFilter,
+          status: presentOnlyStatusFilter,
         }),
         Leave.countDocuments({
           status: 'approved',
           fromDate: { $lte: dayEnd },
           toDate: { $gte: dayStart },
+          isActive: true,
         }),
         OD.countDocuments({
-          status: 'approved',
+          status: odTodayStatusFilter,
           fromDate: { $lte: dayEnd },
-          toDate: { $gte: dayStart }
+          toDate: { $gte: dayStart },
+          isActive: true,
+        }).catch(() => 0),
+        Leave.countDocuments({
+          status: pendingStatusFilter,
+          fromDate: { $lte: dayEnd },
+          toDate: { $gte: dayStart },
+          isActive: true,
+        }),
+        OD.countDocuments({
+          status: pendingStatusFilter,
+          fromDate: { $lte: dayEnd },
+          toDate: { $gte: dayStart },
+          isActive: true,
         }).catch(() => 0),
       ]);
-      return { present, leave, od };
+      return { present, leave, od, pendingLeave, pendingOd };
     };
+
+    const [
+      todayPresentScoped,
+      yesterdayPresentScoped,
+      todayOnLeaveScoped,
+      todayODsScoped,
+    ] = await Promise.all([
+      AttendanceDaily.countDocuments({
+        date: todayStr,
+        ...employeeScopeFilter,
+        status: presentOnlyStatusFilter,
+      }),
+      AttendanceDaily.countDocuments({
+        date: yesterdayStr,
+        ...employeeScopeFilter,
+        status: presentOnlyStatusFilter,
+      }),
+      Leave.countDocuments({
+        status: 'approved',
+        fromDate: { $lte: endOfToday },
+        toDate: { $gte: startOfToday },
+        isActive: true,
+      }),
+      OD.countDocuments({
+        status: odTodayStatusFilter,
+        fromDate: { $lte: endOfToday },
+        toDate: { $gte: startOfToday },
+        isActive: true,
+      }).catch(() => 0),
+    ]);
 
     let weeklyTracker;
     if (trackerPeriod === 'week') {
@@ -1043,22 +1090,70 @@ exports.getSuperAdminAnalytics = async (req, res) => {
     const daysPassed = Math.max(1, Math.round((startOfToday.getTime() - cycleStart.getTime()) / 86400000) + 1);
     const attendanceRate = activeEmployees > 0 ? (monthlyPresentDocs / (activeEmployees * daysPassed)) * 100 : 0;
     const presentRateToday = activeEmployees > 0
-      ? Math.round((todayPresentCount / activeEmployees) * 1000) / 10
+      ? Math.round((todayPresentScoped / activeEmployees) * 1000) / 10
       : 0;
     const presentRateYesterday = activeEmployees > 0
-      ? Math.round((yesterdayPresentCount / activeEmployees) * 1000) / 10
+      ? Math.round((yesterdayPresentScoped / activeEmployees) * 1000) / 10
       : 0;
+
+    const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const anchorParts = extractISTComponents(analyticsAnchorDate);
+    const joinResignTrend = [];
+    const employeeGrowthTrend = [];
+    for (let i = 11; i >= 0; i--) {
+      const monthDate = new Date(anchorParts.year, anchorParts.month - 1 - i, 1);
+      const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+      const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 23, 59, 59, 999);
+      const label = monthLabels[monthDate.getMonth()];
+      const [joined, resigned, headcount] = await Promise.all([
+        Employee.countDocuments({ doj: { $gte: monthStart, $lte: monthEnd } }),
+        Employee.countDocuments({ leftDate: { $gte: monthStart, $lte: monthEnd } }),
+        Employee.countDocuments({
+          doj: { $lte: monthEnd },
+          $or: [{ leftDate: null }, { leftDate: { $exists: false } }, { leftDate: { $gt: monthEnd } }],
+        }),
+      ]);
+      joinResignTrend.push({ label, joined, resigned });
+      employeeGrowthTrend.push({ label, total: headcount });
+    }
+    const growthStart = employeeGrowthTrend[0]?.total || 0;
+    const growthEnd = employeeGrowthTrend[employeeGrowthTrend.length - 1]?.total || 0;
+    const employeeGrowthPct = growthStart > 0
+      ? Math.round(((growthEnd - growthStart) / growthStart) * 1000) / 10
+      : growthEnd > 0 ? 100 : 0;
+    const netGrowth12Months = joinResignTrend.reduce((sum, m) => sum + m.joined - m.resigned, 0);
+
+    const upcomingHolidays = await Holiday.find({
+      date: { $gte: startOfToday },
+      isActive: { $ne: false },
+    })
+      .sort({ date: 1 })
+      .limit(8)
+      .select('name date type')
+      .lean()
+      .catch(() => []);
+
+    const upcomingEvents = (upcomingHolidays || []).slice(0, 4).map((h) => {
+      const d = h.date instanceof Date ? h.date : new Date(h.date);
+      return {
+        id: String(h._id),
+        title: h.name || 'Holiday',
+        date: extractISTComponents(d).dateStr,
+        description: h.type || 'Company event',
+        status: 'Upcoming',
+      };
+    });
 
     const data = {
       totalEmployees,
       activeEmployees,
       totalDepartments,
       totalUsers,
-      todayPresent: todayPresentCount,
+      todayPresent: todayPresentScoped,
       todayAbsent: todayAbsentCount,
-      todayOnLeave: allLeaves.length,
-      todayODs: allODs.length,
-      yesterdayPresent: yesterdayPresentCount,
+      todayOnLeave: todayOnLeaveScoped,
+      todayODs: todayODsScoped,
+      yesterdayPresent: yesterdayPresentScoped,
       yesterdayAbsent: yesterdayAbsentCount,
       yesterdayOnLeave: yesterdayOnLeaveCount,
       yesterdayODs: yesterdayODsCount,
@@ -1089,6 +1184,12 @@ exports.getSuperAdminAnalytics = async (req, res) => {
       performanceDeltaVsYesterday: Math.round((presentRateToday - presentRateYesterday) * 10) / 10,
       analyticsDateStr: todayStr,
       trackerPeriod: trackerPeriod === 'lastmonth' ? 'lastMonth' : trackerPeriod,
+      employeeGrowthTrend,
+      joinResignTrend,
+      employeeGrowthPct,
+      netGrowth12Months,
+      upcomingEvents,
+      pendingApprovalsTotal: pendingLeaves + pendingODs + pendingPermissions + pendingApplications + pendingSalaryVerification,
     };
 
     res.status(200).json({ success: true, data });

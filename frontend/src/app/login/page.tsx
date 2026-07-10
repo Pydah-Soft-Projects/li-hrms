@@ -8,6 +8,30 @@ import { api } from "@/lib/api";
 import { auth } from "@/lib/auth";
 import { setWorkspaceDataFromLogin } from "@/contexts/WorkspaceContext";
 
+function SilkBackground() {
+  return (
+    <>
+      <div className="silk-page-bg hero-silk-bg" aria-hidden="true" />
+      <div className="silk-page-bg hero-bg-overlay" aria-hidden="true" />
+      <div className="silk-page-bg hero-silk-sheen pointer-events-none" aria-hidden="true" />
+    </>
+  );
+}
+
+function LoginLoading({ message }: { message: string }) {
+  return (
+    <div className="relative min-h-screen bg-[#f0fdf4]">
+      <SilkBackground />
+      <div className="relative z-10 flex min-h-screen items-center justify-center px-6">
+        <div className="login-glass-card rounded-2xl px-10 py-12 flex flex-col items-center gap-4">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+          <p className="text-slate-600 font-light">{message}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -20,16 +44,12 @@ function LoginContent() {
   const [ssoVerifying, setSsoVerifying] = useState(false);
   const ssoAttempted = useRef(false);
 
-  // Check if already authenticated or if we need to clear session for SSO
   useEffect(() => {
     const ssoToken = searchParams.get("token");
 
-    // If a new SSO token is present, we must clear the old session FIRST
     if (ssoToken && !ssoAttempted.current) {
       const currentToken = auth.getToken();
-      // Only logout if there is actually something to clear
       if (currentToken) {
-        console.log("SSO Token detected in URL. Clearing existing local sessions to prioritize new login.");
         void auth.logout();
       }
       setChecking(false);
@@ -40,7 +60,6 @@ function LoginContent() {
     const user = auth.getUser();
 
     if (token && user) {
-      // Already authenticated, redirect to dashboard
       const dashboardPath = auth.getRoleBasedPath(user.role);
       router.replace(dashboardPath);
     } else {
@@ -48,7 +67,6 @@ function LoginContent() {
     }
   }, [router, searchParams]);
 
-  // SSO: when URL has ?token=..., verify with backend and log in
   useEffect(() => {
     if (checking || ssoAttempted.current) return;
     const ssoToken = searchParams.get("token");
@@ -74,7 +92,6 @@ function LoginContent() {
             });
           }
           const dashboardPath = auth.getRoleBasedPath(response.data.user.role);
-          // Remove token from URL before redirect
           router.replace(dashboardPath);
         } else {
           setError(response.message || "SSO login failed.");
@@ -82,7 +99,7 @@ function LoginContent() {
           router.replace("/login", { scroll: false });
         }
       })
-      .catch((err) => {
+      .catch(() => {
         setError("SSO verification failed. Please sign in with your credentials.");
         setSsoVerifying(false);
         router.replace("/login", { scroll: false });
@@ -104,7 +121,6 @@ function LoginContent() {
         );
         auth.setUser(response.data.user);
 
-        // Navigate based on role
         const dashboardPath = auth.getRoleBasedPath(response.data.user.role);
         router.push(dashboardPath);
       } else {
@@ -118,225 +134,185 @@ function LoginContent() {
     }
   };
 
-  // Show loading while checking authentication
   if (checking) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent"></div>
-          <p className="text-slate-600 font-light">Authenticating...</p>
-        </div>
-      </div>
-    );
+    return <LoginLoading message="Authenticating..." />;
   }
 
-  // Show verifying state when logging in via SSO token
   if (ssoVerifying) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent"></div>
-          <p className="text-slate-600 font-light">Verifying SSO token...</p>
-        </div>
-      </div>
-    );
+    return <LoginLoading message="Verifying SSO token..." />;
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      {/* Left Side: Branding (Hidden on mobile) */}
-      <div className="hidden lg:flex lg:w-1/2 relative bg-emerald-950 items-center justify-center overflow-hidden">
-        <div className="relative z-10 p-12 max-w-xl text-white">
-          <div className="mb-8 p-3 w-fit bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl">
-            <ShieldCheck className="w-10 h-10 text-emerald-400" />
-          </div>
-          <h1 className="text-5xl font-display font-bold leading-tight mb-6">
-            Elevating your <span className="text-emerald-400">Workforce</span> Experience.
-          </h1>
-          <p className="text-xl text-emerald-100/70 font-light leading-relaxed">
-            Access your unified workspace to manage payroll, attendance, and employee relationships with enterprise-level security.
-          </p>
-          
-          <div className="mt-12 flex gap-4">
-            <div className="flex -space-x-3">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="w-10 h-10 rounded-full border-2 border-emerald-900 bg-emerald-800 flex items-center justify-center text-[10px] font-bold">
-                  U{i}
-                </div>
-              ))}
+    <div className="relative min-h-screen bg-[#f0fdf4] text-slate-900 overflow-x-hidden">
+      <SilkBackground />
+
+      <header className="fixed top-0 left-0 right-0 z-50 bg-white/20 backdrop-blur-xl border-b border-white/20 h-20 shadow-sm">
+        <div className="max-w-7xl mx-auto h-full px-6 flex items-center justify-between w-full">
+          <Link href="/" className="flex items-center gap-2 group">
+            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg border border-white/20">
+              <ShieldCheck className="text-white w-6 h-6" />
             </div>
-            <p className="text-sm text-emerald-200/50 flex items-center">
-              Trusted by 500+ departments
-            </p>
-          </div>
-        </div>
-
-        {/* Decorative elements */}
-        <div className="absolute bottom-10 right-10 opacity-10">
-          <svg className="w-40 h-40 text-white" viewBox="0 0 200 200" fill="currentColor">
-            <path d="M40 40h120v120H40z" opacity=".2"/>
-            <path d="M60 60h80v80H60z" opacity=".4"/>
-          </svg>
-        </div>
-      </div>
-
-      {/* Right Side: Login Form */}
-      <div className="w-full lg:w-1/2 flex flex-col items-center justify-center px-6 py-12 relative overflow-hidden">
-        {/* Mobile-only background decorative elements */}
-        <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl lg:hidden"></div>
-        <div className="absolute bottom-[-10%] left-[-10%] w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl lg:hidden"></div>
-
-        <div className="w-full max-w-md relative z-10">
-          {/* Back button */}
-          <Link
-            href="/"
-            className="group inline-flex items-center text-slate-500 hover:text-emerald-600 mb-8 text-sm font-medium transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
-            Go Back
+            <span className="text-xl font-display font-bold tracking-tight text-slate-900">
+              <span className="text-emerald-600">HRMS</span>
+            </span>
           </Link>
 
-          {/* Small Screen Branding Header (Hidden on large screens) */}
-          <div className="lg:hidden flex flex-col items-center mb-10 animate-fade-in-up">
-            <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg mb-4">
-              <ShieldCheck className="text-white w-7 h-7" />
-            </div>
-            <h1 className="text-xl font-display font-bold text-slate-900">
-              <span className="text-emerald-600">HRMS</span>
+          <Link
+            href="/"
+            className="group inline-flex items-center text-sm font-medium text-slate-600 hover:text-emerald-600 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
+            Back to Home
+          </Link>
+        </div>
+      </header>
+
+      <main className="relative z-10 min-h-screen pt-28 pb-12 px-6 flex items-center justify-center">
+        <div className="w-full max-w-5xl grid lg:grid-cols-[1fr_420px] gap-10 lg:gap-16 items-center">
+          <div className="hidden lg:block animate-fade-in-up">
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700/80 mb-4">
+              Secure Access
+            </p>
+            <h1 className="text-4xl xl:text-5xl font-display font-bold leading-tight text-slate-900 mb-6">
+              Welcome back to your{" "}
+              <span className="text-gradient">workforce hub</span>
             </h1>
+            <p className="text-lg text-slate-600 font-light leading-relaxed max-w-md">
+              Sign in to manage payroll, attendance, leaves, and employee records — all in one elegant workspace.
+            </p>
+
+            <div className="mt-10 flex items-center gap-4">
+              <div className="flex -space-x-2">
+                {[1, 2, 3, 4].map((i) => (
+                  <div
+                    key={i}
+                    className="w-9 h-9 rounded-full border-2 border-white/80 bg-emerald-600/90 flex items-center justify-center text-[10px] font-bold text-white shadow-sm"
+                  >
+                    U{i}
+                  </div>
+                ))}
+              </div>
+              <p className="text-sm text-slate-500">Trusted by 500+ departments</p>
+            </div>
           </div>
 
-          <div className="animate-fade-in-up">
-            <div className="mb-10 text-center lg:text-left">
-              <h2 className="text-3xl font-display font-bold text-slate-900 mb-2">
-                Welcome back
-              </h2>
-              <p className="text-slate-500">
-                Please enter your credentials to continue
-              </p>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Identifier Field */}
-              <div className="space-y-2">
-                <label
-                  htmlFor="identifier"
-                  className="text-sm font-medium text-slate-700 ml-1"
-                >
-                  Username / Employee No / Email
-                </label>
-                <div className="relative group">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors">
-                    <User className="w-5 h-5" />
-                  </div>
-                  <input
-                    id="identifier"
-                    type="text"
-                    value={identifier}
-                    onChange={(e) => setIdentifier(e.target.value)}
-                    required
-                    className="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-sans text-slate-900 placeholder:text-slate-400 shadow-sm"
-                    placeholder="username, EMP001, or john.doe@company.com"
-                  />
+          <div className="w-full max-w-md mx-auto lg:max-w-none animate-fade-in-up">
+            <div className="login-glass-card rounded-2xl p-8 sm:p-10">
+              <div className="lg:hidden flex flex-col items-center mb-8">
+                <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg border border-white/20 mb-3">
+                  <ShieldCheck className="text-white w-7 h-7" />
                 </div>
+                <span className="text-lg font-display font-bold text-slate-900">
+                  <span className="text-emerald-600">HRMS</span> Sign In
+                </span>
               </div>
 
-              {/* Password Field */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center px-1">
-                  <label
-                    htmlFor="password"
-                    className="text-sm font-medium text-slate-700"
-                  >
-                    Password
+              <div className="mb-8 text-center lg:text-left">
+                <h2 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 mb-2">
+                  Sign in
+                </h2>
+                <p className="text-slate-500 text-sm sm:text-base">
+                  Enter your credentials to access your dashboard
+                </p>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-5">
+                <div className="space-y-2">
+                  <label htmlFor="identifier" className="text-sm font-medium text-slate-700 ml-1">
+                    Username / Employee No / Email
                   </label>
-                  <Link
-                    href="/forgot-password"
-                    className="text-xs text-emerald-600 hover:text-emerald-700 font-semibold transition-colors"
-                  >
-                    Forgot password?
-                  </Link>
-                </div>
-                <div className="relative group">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors">
-                    <Lock className="w-5 h-5" />
+                  <div className="relative group">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors">
+                      <User className="w-5 h-5" />
+                    </div>
+                    <input
+                      id="identifier"
+                      type="text"
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
+                      required
+                      className="login-input w-full pl-12 pr-4 py-3.5 rounded-xl focus:outline-none transition-all font-sans text-slate-900 placeholder:text-slate-400"
+                      placeholder="username, EMP001, or email"
+                    />
                   </div>
-                  <input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="w-full pl-12 pr-12 py-3.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-sans text-slate-900 placeholder:text-slate-400 shadow-sm"
-                    placeholder="••••••••"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none p-1"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="w-5 h-5" />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center px-1">
+                    <label htmlFor="password" className="text-sm font-medium text-slate-700">
+                      Password
+                    </label>
+                    <Link
+                      href="/forgot-password"
+                      className="text-xs text-emerald-600 hover:text-emerald-700 font-semibold transition-colors"
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
+                  <div className="relative group">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors">
+                      <Lock className="w-5 h-5" />
+                    </div>
+                    <input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      className="login-input w-full pl-12 pr-12 py-3.5 rounded-xl focus:outline-none transition-all font-sans text-slate-900 placeholder:text-slate-400"
+                      placeholder="••••••••"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none p-1"
+                    >
+                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {error && (
+                  <div className="bg-red-50/90 border border-red-100 text-red-600 px-4 py-3 rounded-xl text-sm flex items-center gap-3 animate-shake backdrop-blur-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0" />
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="group relative w-full py-3.5 bg-slate-900 text-white font-semibold rounded-xl hover:bg-emerald-700 transition-all shadow-xl hover:shadow-emerald-500/20 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
+                >
+                  {!loading && <div className="shimmer-btn-overlay" />}
+                  <div className="relative z-10 flex items-center justify-center gap-2">
+                    {loading ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Authenticating...
+                      </>
                     ) : (
-                      <Eye className="w-5 h-5" />
+                      "Sign In to Dashboard"
                     )}
-                  </button>
-                </div>
-              </div>
+                  </div>
+                </button>
+              </form>
 
-              {/* Error Message */}
-              {error && (
-                <div className="bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl text-sm flex items-center gap-3 animate-shake">
-                  <div className="w-1.5 h-1.5 rounded-full bg-red-600"></div>
-                  {error}
-                </div>
-              )}
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="group relative w-full py-4 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition-all shadow-lg hover:shadow-emerald-500/20 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
-              >
-                <div className="relative z-10 flex items-center justify-center gap-2">
-                  {loading ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Authenticating...
-                    </>
-                  ) : (
-                    "Sign In to Dashboard"
-                  )}
-                </div>
-                {/* Shine effect on hover */}
-                <div className="absolute top-0 -inset-full h-full w-1/2 z-5 block transform -skew-x-12 bg-gradient-to-r from-transparent to-white/10 opacity-40 group-hover:animate-shine" />
-              </button>
-            </form>
-
-            <div className="mt-12 text-center">
-              <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold">
+              <p className="mt-8 text-center text-[11px] text-slate-400 uppercase tracking-widest font-semibold">
                 Enterprise HRMS Platform
               </p>
             </div>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent"></div>
-          <p className="text-slate-600 font-light">Loading...</p>
-        </div>
-      </div>
-    }>
+    <Suspense fallback={<LoginLoading message="Loading..." />}>
       <LoginContent />
     </Suspense>
   );
 }
-

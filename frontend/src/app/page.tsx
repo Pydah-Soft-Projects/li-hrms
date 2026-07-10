@@ -4,9 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@/lib/auth';
-import LiquidEther from '@/components/LiquidEther';
-import '@/components/LiquidEther.css';
-import { ChevronRight, ShieldCheck, Zap, Users, BarChart3, Clock, CreditCard, Fingerprint } from 'lucide-react';
+import { ChevronRight, ShieldCheck, Fingerprint } from 'lucide-react';
 
 export default function Home() {
   const router = useRouter();
@@ -97,7 +95,7 @@ export default function Home() {
   }
 
   return (
-    <div className="relative flex flex-col min-h-screen overflow-x-hidden bg-slate-50 text-slate-900">
+    <div className="relative flex flex-col min-h-screen overflow-x-hidden bg-[#f0fdf4] text-slate-900">
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/20 backdrop-blur-xl border-b border-white/20 h-20 shadow-sm">
         <div className="max-w-7xl mx-auto h-full px-6 flex items-center justify-between w-full">
@@ -121,17 +119,9 @@ export default function Home() {
       </header>
 
       {/* Hero Section - 100vh Independent */}
-      <main 
-        className="relative z-10 h-[100dvh] flex items-center justify-center px-6 overflow-hidden"
-        style={{
-          backgroundImage: 'url("/images/hero_bg.png")',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat'
-        }}
-      >
-        {/* Transparent Overlay to ensure contrast */}
-        <div className="absolute inset-0 z-0 hero-bg-overlay opacity-80" />
+      <main className="relative z-10 h-[100dvh] flex items-center justify-center px-6 overflow-hidden hero-silk-bg">
+        <div className="absolute inset-0 z-0 hero-bg-overlay" />
+        <div className="absolute inset-0 z-0 hero-silk-sheen pointer-events-none" />
 
         <div className="relative z-10 max-w-7xl mx-auto w-full">
           <div className="flex flex-col items-center text-center max-w-4xl mx-auto animate-fade-in-up">
