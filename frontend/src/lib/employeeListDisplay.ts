@@ -48,15 +48,16 @@ function refName(
 
 /** Resolve division / department / designation labels for view dialogs and lists. */
 export function resolveEmployeeOrgRefName(
-  record: Record<string, unknown> | null | undefined,
+  record: object | null | undefined,
   refKey: 'division' | 'department' | 'designation' | 'employee_group',
   idKey: 'division_id' | 'department_id' | 'designation_id' | 'employee_group_id',
   lookups?: { _id?: string; name?: string; code?: string; title?: string }[],
 ): string {
   if (!record) return '-';
+  const row = record as Record<string, unknown>;
   const name =
-    refName(record[refKey], lookups) ||
-    refName(record[idKey], lookups);
+    refName(row[refKey], lookups) ||
+    refName(row[idKey], lookups);
   return name || '-';
 }
 

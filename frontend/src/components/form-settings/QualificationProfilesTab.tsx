@@ -191,7 +191,7 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
         }
       }
 
-      if (!source || (!source.fields.length && !source.defaultRows.length)) {
+      if (!source || (!source.fields.length && !(source.defaultRows?.length))) {
         alertError(
           'Nothing to copy',
           'Global default has no qualification columns yet. Open the Form fields tab, add columns under Global default qualifications, then try again.'

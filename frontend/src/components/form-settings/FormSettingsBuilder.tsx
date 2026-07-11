@@ -397,7 +397,7 @@ export default function FormSettingsBuilder() {
     return (
       <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-900/20">
         <p className="text-red-700 dark:text-red-300">Could not load form settings.</p>
-        <button onClick={loadSettings} className="mt-4 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+        <button onClick={() => void loadSettings()} className="mt-4 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
           Retry
         </button>
       </div>

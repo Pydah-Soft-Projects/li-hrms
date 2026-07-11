@@ -10,6 +10,8 @@ import {
   mergeQualificationsOnProfileChange,
   resolvedToQualificationsConfig,
   seedQualificationsFromDefaults,
+  type QualificationsConfig,
+  type QualificationFieldConfig,
 } from '@/lib/qualificationProfile';
 import {
   WEEKDAY_LABELS,
@@ -36,9 +38,13 @@ interface Field {
     maxLength?: number;
     min?: number;
     max?: number;
+    step?: number;
+    minLabel?: string;
+    maxLabel?: string;
     custom?: string;
   };
   options?: Array<{ label: string; value: string }>;
+  gridRows?: string[];
   itemType?: string;
   itemSchema?: {
     fields: Field[];
@@ -61,29 +67,7 @@ interface Group {
   isEnabled: boolean;
 }
 
-interface QualificationsField {
-  id: string;
-  label: string;
-  type: string;
-  isRequired: boolean;
-  isEnabled: boolean;
-  placeholder?: string;
-  validation?: {
-    minLength?: number;
-    maxLength?: number;
-    min?: number;
-    max?: number;
-  };
-  options?: Array<{ label: string; value: string }>;
-  order: number;
-}
-
-interface QualificationsConfig {
-  isEnabled: boolean;
-  enableCertificateUpload?: boolean;
-  fields: QualificationsField[];
-  defaultRows?: Record<string, unknown>[];
-}
+type QualificationsField = QualificationFieldConfig;
 
 interface FormSettings {
   groups: Group[];

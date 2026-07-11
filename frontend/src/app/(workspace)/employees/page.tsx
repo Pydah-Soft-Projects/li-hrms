@@ -6504,26 +6504,26 @@ export default function EmployeesPage() {
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('division_id', formSettings) || 'Division'}</label>
                       <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {resolveEmployeeOrgRefName(viewingEmployee as Record<string, unknown>, 'division', 'division_id', divisions)}
+                        {resolveEmployeeOrgRefName(viewingEmployee, 'division', 'division_id', divisions)}
                       </p>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('department_id', formSettings) || 'Department'}</label>
                       <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {resolveEmployeeOrgRefName(viewingEmployee as Record<string, unknown>, 'department', 'department_id', departments)}
+                        {resolveEmployeeOrgRefName(viewingEmployee, 'department', 'department_id', departments)}
                       </p>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('designation_id', formSettings) || 'Designation'}</label>
                       <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {resolveEmployeeOrgRefName(viewingEmployee as Record<string, unknown>, 'designation', 'designation_id', designations)}
+                        {resolveEmployeeOrgRefName(viewingEmployee, 'designation', 'designation_id', designations)}
                       </p>
                     </div>
                     {customEmployeeGroupingEnabled && (
                       <div>
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Group</label>
                         <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                          {resolveEmployeeOrgRefName(viewingEmployee as Record<string, unknown>, 'employee_group', 'employee_group_id', employeeGroups)}
+                          {resolveEmployeeOrgRefName(viewingEmployee, 'employee_group', 'employee_group_id', employeeGroups)}
                         </p>
                       </div>
                     )}

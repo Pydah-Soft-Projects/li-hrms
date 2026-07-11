@@ -10,8 +10,12 @@ export type QualificationFieldConfig = {
     maxLength?: number;
     min?: number;
     max?: number;
+    step?: number;
+    minLabel?: string;
+    maxLabel?: string;
   };
   options?: Array<{ label: string; value: string }>;
+  gridRows?: string[];
   order?: number;
 };
 
@@ -138,15 +142,38 @@ export function cloneQualificationsConfigForDraft(
   };
 }
 
+type FormSettingsQualificationsInput = {
+  qualifications?: Partial<Omit<QualificationsConfig, 'fields'>> & {
+    fields?: Array<Partial<QualificationFieldConfig> & Pick<QualificationFieldConfig, 'id' | 'label'>>;
+  };
+} | null | undefined;
+
+function normalizeQualificationFields(
+  fields?: Array<Partial<QualificationFieldConfig> & Pick<QualificationFieldConfig, 'id' | 'label'>>
+): QualificationFieldConfig[] {
+  if (!Array.isArray(fields)) return [];
+  return fields.map((f) => ({
+    id: f.id,
+    label: f.label,
+    type: f.type ?? 'text',
+    isRequired: f.isRequired,
+    isEnabled: f.isEnabled,
+    placeholder: f.placeholder,
+    validation: f.validation,
+    options: f.options,
+    order: f.order,
+  }));
+}
+
 export function globalQualificationsFromFormSettings(
-  formSettings?: { qualifications?: Partial<QualificationsConfig> } | null
+  formSettings?: FormSettingsQualificationsInput
 ): QualificationsConfig | null {
   const q = formSettings?.qualifications;
   if (!q) return null;
   return {
     isEnabled: q.isEnabled !== false,
     enableCertificateUpload: !!q.enableCertificateUpload,
-    fields: Array.isArray(q.fields) ? (q.fields as QualificationFieldConfig[]) : [],
+    fields: normalizeQualificationFields(q.fields),
     defaultRows: Array.isArray(q.defaultRows) ? q.defaultRows : [],
   };
 }

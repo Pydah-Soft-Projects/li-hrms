@@ -102,8 +102,8 @@ function collectLookupKeys(fieldId: string, aliases: string[], fieldLabel?: stri
 /**
  * Promote nested dynamicFields group values to the root (mirrors edit-form hydration).
  */
-export function flattenEmployeeRecordForView(record: Record<string, any> | null | undefined) {
-  if (!record || typeof record !== 'object') return record;
+export function flattenEmployeeRecordForView(record: Record<string, any> | null | undefined): Record<string, any> {
+  if (!record || typeof record !== 'object') return {};
 
   const flat: Record<string, any> = { ...record };
   const df = record.dynamicFields;

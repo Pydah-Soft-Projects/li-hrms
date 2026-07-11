@@ -2886,6 +2886,7 @@ export const api = {
     placeholder?: string;
     validation?: any;
     options?: Array<{ label: string; value: string }>;
+    gridRows?: string[];
     order?: number;
   }) => {
     return apiRequest<any>('/employee-applications/form-settings/qualifications/fields', {
@@ -2901,6 +2902,7 @@ export const api = {
     placeholder?: string;
     validation?: any;
     options?: Array<{ label: string; value: string }>;
+    gridRows?: string[];
     order?: number;
   }) => {
     return apiRequest<any>(`/employee-applications/form-settings/qualifications/fields/${fieldId}`, {

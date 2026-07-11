@@ -223,7 +223,13 @@ function DonutDistribution({
                     <Cell key={entry.name} fill={entry.color || colors?.[i] || PIE_COLORS[i % PIE_COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v: number, name: string) => [`${v} (${pct(v, total)}%)`, name]} />
+                <Tooltip
+                  formatter={(v, name) => {
+                    const n = typeof v === 'number' ? v : Number(v) || 0;
+                    const label = typeof name === 'string' ? name : String(name ?? '');
+                    return [`${n} (${pct(n, total)}%)`, label];
+                  }}
+                />
               </PieChart>
             </ResponsiveContainer>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
