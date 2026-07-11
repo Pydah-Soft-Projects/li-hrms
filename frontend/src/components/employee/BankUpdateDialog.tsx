@@ -72,7 +72,7 @@ export default function BankUpdateDialog({
           </div>
           <button
             onClick={onClose}
-            className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
+            className="rounded-xl border border-emerald-200 bg-white p-2 text-emerald-600 transition hover:border-emerald-400 hover:text-emerald-800 dark:border-emerald-800 dark:bg-slate-900 dark:text-emerald-400"
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -139,14 +139,14 @@ export default function BankUpdateDialog({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
+              className="flex-1 rounded-xl border border-emerald-300 bg-white py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 dark:border-emerald-700 dark:bg-slate-900 dark:text-emerald-300"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="flex-[2] rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-200 transition hover:from-indigo-700 hover:to-violet-700 disabled:opacity-50 dark:shadow-none"
+              className="flex-[2] rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-600/25 transition hover:bg-emerald-700 disabled:opacity-50"
             >
               {submitting ? 'Submitting...' : 'Submit Request'}
             </button>

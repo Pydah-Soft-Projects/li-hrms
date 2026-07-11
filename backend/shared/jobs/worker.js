@@ -268,12 +268,19 @@ const startWorkers = () => {
                 console.log(`[Worker] Bulk regular payroll calculation complete`);
 
                 const { isSecondSalaryGloballyEnabled } = require('../../settings/secondSalaryFeatureGate');
+                const { isSuperAdmin } = require('../../employees/utils/employeeFeatureAccess');
+                const User = require('../../users/model/User');
+                const bulkUser = userId ? await User.findById(userId).select('role roles featureControl').lean() : null;
+                const bulkUserForAuth = bulkUser
+                  ? { role: bulkUser.role, roles: bulkUser.roles, featureControl: bulkUser.featureControl }
+                  : null;
                 const secondSalaryGloballyOn = await isSecondSalaryGloballyEnabled();
+                const mayPostSecondSalary = secondSalaryGloballyOn && isSuperAdmin(bulkUserForAuth);
                 const { calculateSecondSalaryForPayRegister } = require('../../payroll/services/secondSalaryCalculationService');
                 const SecondSalaryBatchService = require('../../payroll/services/secondSalaryBatchService');
                 const secondBatchIds = new Set();
 
-                for (let j = 0; secondSalaryGloballyOn && j < secondSalaryEmployees.length; j++) {
+                for (let j = 0; mayPostSecondSalary && j < secondSalaryEmployees.length; j++) {
                     const employee = secondSalaryEmployees[j];
                     try {
                         const { arrearsSettlements, deductionSettlements } = settlementsForEmployee(

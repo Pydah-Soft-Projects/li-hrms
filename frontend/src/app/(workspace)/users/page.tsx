@@ -27,6 +27,9 @@ import {
   getWriteButtonTitle,
   getReleaseButtonTitle,
 } from '@/lib/modulePermissionLabels';
+import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
+import ModuleGranularPermissionToggles from '@/components/users/ModuleGranularPermissionToggles';
+import ModulePermissionBadges, { moduleShouldShowInPermissionView } from '@/components/users/ModulePermissionBadges';
 import Spinner from '@/components/Spinner';
 import {
   buildDivisionMappingFromDepartment,
@@ -140,6 +143,7 @@ const ROLES = [
 
 
 export default function UsersPage() {
+  const { secondSalaryEnabled } = useSecondSalaryFeatureEnabled();
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -1872,67 +1876,12 @@ export default function UsersPage() {
                                             Release
                                           </button>
                                         )}
-                                        {/* Verify Toggle — only for verifiable modules (e.g. EMPLOYEES) */}
-                                        {(module as any).verifiable && (
-                                          <button
-                                            type="button"
-                                            onClick={toggleVerify}
-                                            title="Verify: grants access to the Applications tab and ability to verify applications. Independent of Read/Write."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasVerify
-                                              ? 'bg-violet-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            Verify
-                                          </button>
-                                        )}
-                                        {(module as any).bankable && (
-                                          <button
-                                            type="button"
-                                            onClick={toggleBank}
-                                            title="Bank: grants access to update bank details. Independent of Read/Write."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasBank
-                                              ? 'bg-amber-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            Bank
-                                          </button>
-                                        )}
-                                        {(module as any).fileUploadable && (
-                                          <button
-                                            type="button"
-                                            onClick={toggleFile}
-                                            title="File: allows OD evidence from device gallery or file picker (camera still available without this)."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasFile
-                                              ? 'bg-sky-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            File
-                                          </button>
-                                        )}
-                                        {(module as any).editable && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const currentFeatures = formData.featureControl || [];
-                                              const editPerm = `${module.code}:edit`;
-                                              const hasEdit = currentFeatures.includes(editPerm);
-                                              const newFeatures = hasEdit
-                                                ? currentFeatures.filter(f => f !== editPerm)
-                                                : [...currentFeatures, editPerm];
-                                              setFormData({ ...formData, featureControl: newFeatures });
-                                            }}
-                                            title="Edit: profile update requests from this user are auto-approved without review."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:edit`)
-                                              ? 'bg-rose-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            Edit
-                                          </button>
-                                        )}
+                                        <ModuleGranularPermissionToggles
+                                          module={module as any}
+                                          featureControl={formData.featureControl}
+                                          onChange={(featureControl) => setFormData({ ...formData, featureControl })}
+                                          secondSalaryOrgEnabled={secondSalaryEnabled}
+                                        />
                                       </div>
                                     </div>
                                   );
@@ -2365,7 +2314,7 @@ export default function UsersPage() {
                                     className="flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-white dark:hover:bg-slate-700/50"
                                   >
                                     <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{module.label}</span>
-                                    <div className="flex gap-2">
+                                    <div className="flex flex-wrap gap-2 justify-end max-w-[70%]">
                                       <button
                                         type="button"
                                         onClick={toggleRead}
@@ -2414,19 +2363,12 @@ export default function UsersPage() {
                                           Release
                                         </button>
                                       )}
-                                      {(module as any).fileUploadable && (
-                                        <button
-                                          type="button"
-                                          onClick={toggleFile}
-                                          title="File: allows OD evidence from device gallery or file picker (camera still available without this)."
-                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasFile
-                                            ? 'bg-sky-500 text-white shadow-sm'
-                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                            }`}
-                                        >
-                                          File
-                                        </button>
-                                      )}
+                                      <ModuleGranularPermissionToggles
+                                        module={module as any}
+                                        featureControl={employeeFormData.featureControl}
+                                        onChange={(featureControl) => setEmployeeFormData({ ...employeeFormData, featureControl })}
+                                        secondSalaryOrgEnabled={secondSalaryEnabled}
+                                      />
                                     </div>
                                   </div>
                                 );
@@ -2809,66 +2751,12 @@ export default function UsersPage() {
                                             Release
                                           </button>
                                         )}
-                                        {(module as any).verifiable && (
-                                          <button
-                                            type="button"
-                                            onClick={toggleVerify}
-                                            title="Verify: grants access to the Applications tab and ability to verify applications. Independent of Read/Write."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasVerify
-                                              ? 'bg-violet-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            Verify
-                                          </button>
-                                        )}
-                                        {(module as any).bankable && (
-                                          <button
-                                            type="button"
-                                            onClick={toggleBank}
-                                            title="Bank: grants access to update bank details. Independent of Read/Write."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasBank
-                                              ? 'bg-amber-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            Bank
-                                          </button>
-                                        )}
-                                        {(module as any).fileUploadable && (
-                                          <button
-                                            type="button"
-                                            onClick={toggleFile}
-                                            title="File: allows OD evidence from device gallery or file picker (camera still available without this)."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasFile
-                                              ? 'bg-sky-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            File
-                                          </button>
-                                        )}
-                                        {(module as any).editable && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const currentFeatures = formData.featureControl || [];
-                                              const editPerm = `${module.code}:edit`;
-                                              const hasEdit = currentFeatures.includes(editPerm);
-                                              const newFeatures = hasEdit
-                                                ? currentFeatures.filter(f => f !== editPerm)
-                                                : [...currentFeatures, editPerm];
-                                              setFormData({ ...formData, featureControl: newFeatures });
-                                            }}
-                                            title="Edit: profile update requests from this user are auto-approved without review."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:edit`)
-                                              ? 'bg-rose-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            Edit
-                                          </button>
-                                        )}
+                                        <ModuleGranularPermissionToggles
+                                          module={module as any}
+                                          featureControl={formData.featureControl}
+                                          onChange={(featureControl) => setFormData({ ...formData, featureControl })}
+                                          secondSalaryOrgEnabled={secondSalaryEnabled}
+                                        />
                                       </div>
                                     </div>
                                   );
@@ -3252,14 +3140,9 @@ export default function UsersPage() {
                           ) : (
                             <div className="space-y-6">
                               {MODULE_CATEGORIES.map(category => {
-                                const modulesWithPerms = category.modules.map(m => ({
-                                  ...m,
-                                  hasRead: selectedViewUser.featureControl?.includes(`${m.code}:read`) || false,
-                                  hasWrite: selectedViewUser.featureControl?.includes(`${m.code}:write`) || false,
-                                  hasVerify: (m as any).verifiable ? (selectedViewUser.featureControl?.includes(`${m.code}:verify`) || false) : false,
-                                  hasTerminate: (m as any).terminable ? (selectedViewUser.featureControl?.includes(`${m.code}:terminate`) || false) : false,
-                                  hasRelease: (m as any).releasable ? (selectedViewUser.featureControl?.includes(`${m.code}:release`) || false) : false,
-                                })).filter(m => m.hasRead || m.hasWrite || m.hasVerify || m.hasTerminate || m.hasRelease);
+                                const modulesWithPerms = category.modules.filter((m) =>
+                                  moduleShouldShowInPermissionView(m as any, selectedViewUser.featureControl)
+                                );
 
                                 if (modulesWithPerms.length === 0) return null;
 
@@ -3275,33 +3158,11 @@ export default function UsersPage() {
                                       {modulesWithPerms.map(m => (
                                         <div key={m.code} className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-sm transition-all hover:border-emerald-500/20">
                                           <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">{m.label}</span>
-                                          <div className="flex gap-2">
-                                            {m.hasRead && (
-                                              <span className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-2 py-1 text-[9px] font-black text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
-                                                <div className="h-1 w-1 rounded-full bg-blue-500" /> {getReadButtonLabel(m.code).toUpperCase()}
-                                              </span>
-                                            )}
-                                            {m.hasWrite && (
-                                              <span className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 text-[9px] font-black text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
-                                                <div className="h-1 w-1 rounded-full bg-emerald-500" /> {getWriteButtonLabel(m.code).toUpperCase()}
-                                              </span>
-                                            )}
-                                            {(m as any).hasVerify && (
-                                              <span className="flex items-center gap-1.5 rounded-lg bg-violet-50 px-2 py-1 text-[9px] font-black text-violet-600 dark:bg-violet-500/10 dark:text-violet-400">
-                                                <div className="h-1 w-1 rounded-full bg-violet-500" /> VERIFY
-                                              </span>
-                                            )}
-                                            {(m as any).hasTerminate && (
-                                              <span className="flex items-center gap-1.5 rounded-lg bg-rose-50 px-2 py-1 text-[9px] font-black text-rose-600 dark:bg-rose-500/10 dark:text-rose-400">
-                                                <div className="h-1 w-1 rounded-full bg-rose-500" /> TERMINATE
-                                              </span>
-                                            )}
-                                            {(m as any).hasRelease && (
-                                              <span className="flex items-center gap-1.5 rounded-lg bg-teal-50 px-2 py-1 text-[9px] font-black text-teal-600 dark:bg-teal-500/10 dark:text-teal-400">
-                                                <div className="h-1 w-1 rounded-full bg-teal-500" /> RELEASE
-                                              </span>
-                                            )}
-                                          </div>
+                                          <ModulePermissionBadges
+                                            module={m as any}
+                                            featureControl={selectedViewUser.featureControl}
+                                            variant="matrix"
+                                          />
                                         </div>
                                       ))}
                                     </div>

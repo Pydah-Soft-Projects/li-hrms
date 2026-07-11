@@ -46,6 +46,20 @@ function refName(
   return hit?.name || hit?.title || hit?.code || '';
 }
 
+/** Resolve division / department / designation labels for view dialogs and lists. */
+export function resolveEmployeeOrgRefName(
+  record: Record<string, unknown> | null | undefined,
+  refKey: 'division' | 'department' | 'designation' | 'employee_group',
+  idKey: 'division_id' | 'department_id' | 'designation_id' | 'employee_group_id',
+  lookups?: { _id?: string; name?: string; code?: string; title?: string }[],
+): string {
+  if (!record) return '-';
+  const name =
+    refName(record[refKey], lookups) ||
+    refName(record[idKey], lookups);
+  return name || '-';
+}
+
 export function resolveEmployeeListDisplayParts(
   source: EmployeeListDisplaySource,
   lookups?: {

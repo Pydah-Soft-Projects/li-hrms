@@ -22,7 +22,9 @@ import UpdateRequestReviewModal from '@/components/employee/UpdateRequestReviewM
 import BankUpdateDialog from '@/components/employee/BankUpdateDialog';
 import Spinner from '@/components/Spinner';
 import EmployeeExportDialog from '@/components/employee/EmployeeExportDialog';
-import { getEmployeeGroupedDynamicFieldValue } from '@/lib/employeeDynamicFieldValue';
+import { getEmployeeGroupedDynamicFieldValue, flattenEmployeeRecordForView, formatEmployeeFieldDisplay, formatSalaryFieldDisplay, getFieldAliases } from '@/lib/employeeDynamicFieldValue';
+import EmployeeFormGroupView from '@/components/employee/EmployeeFormGroupView';
+import { resolveEmployeeOrgRefName } from '@/lib/employeeListDisplay';
 import {
   mapApplicationToViewEmployee,
   mergeEmployeeWithApplicationSnapshot,
@@ -47,6 +49,12 @@ import {
   overallQualificationStatusLabel,
   sanitizeOverallQualificationStatusStore,
 } from '@/lib/qualificationStatus';
+import {
+  buildQualFieldIdToLabelMap,
+  globalQualificationsFromFormSettings,
+  idFromRef,
+  resolveQualConfigForEmployeeForm,
+} from '@/lib/qualificationProfile';
 import ManageOverallCertificateStatusDialog from '@/components/employee/ManageOverallCertificateStatusDialog';
 import {
   UserCheck,
@@ -253,6 +261,7 @@ const initialFormState: Partial<Employee> = {
   marital_status: '',
   blood_group: '',
   qualifications: [],
+  qualificationStatus: '',
   experience: undefined,
   address: '',
   location: '',
@@ -429,11 +438,8 @@ const renderCustomFieldsForSystemGroup = (groupId: string, hardcodedFieldIds: st
   const customFields = group.fields?.filter((f: any) => f.isEnabled !== false && !hardcodedFieldIds.includes(f.id)) || [];
   
   return customFields.sort((a: any, b: any) => (a.order || 0) - (b.order || 0)).map((field: any) => {
-    let val = employee.dynamicFields?.[field.id] ?? employee[field.id];
-    if (groupId === 'salaries') {
-      val = employee.salaries?.[field.id] ?? val;
-    }
-    const displayVal = (val === undefined || val === null || val === '') ? '-' : String(val);
+    const val = formatEmployeeFieldDisplay(employee, groupId, field.id, getFieldAliases(field.id), field.label);
+    const displayVal = val === '-' ? '-' : val;
     return (
       <div key={field.id}>
         <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{field.label}</label>
@@ -473,6 +479,7 @@ export default function EmployeesPage() {
   const [editingApplicationID, setEditingApplicationID] = useState<string | null>(null);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
+  const [viewDialogLoading, setViewDialogLoading] = useState(false);
   const [showApprovalOverrides, setShowApprovalOverrides] = useState(false);
 
   const [employeeHistory, setEmployeeHistory] = useState<any[]>([]);
@@ -505,6 +512,7 @@ export default function EmployeesPage() {
   const [qualificationStatusesSetting, setQualificationStatusesSetting] = useState<unknown>(null);
   const [addOverallCertDialogOpen, setAddOverallCertDialogOpen] = useState(false);
   const [addOverallCertSubmitting, setAddOverallCertSubmitting] = useState(false);
+  const [viewingQualConfig, setViewingQualConfig] = useState<{ fields: Array<{ id: string; label: string; isEnabled?: boolean; order?: number }> } | null>(null);
 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -1943,6 +1951,26 @@ export default function EmployeesPage() {
     ]
   );
 
+  useEffect(() => {
+    if (!viewingEmployee) {
+      setViewingQualConfig(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const cfg = await resolveQualConfigForEmployeeForm(
+        idFromRef(viewingEmployee.division_id),
+        idFromRef(viewingEmployee.department_id),
+        idFromRef(viewingEmployee.designation_id),
+        globalQualificationsFromFormSettings(formSettings)
+      );
+      if (!cancelled) setViewingQualConfig(cfg);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingEmployee, formSettings]);
+
   // Trigger search and filter
   useEffect(() => {
     loadEmployees(1);
@@ -2212,24 +2240,15 @@ export default function EmployeesPage() {
       // DEBUG: Inspect payload
       console.log('DEBUG: Final Payload Entries (Standard):', Array.from((payload as any).entries ? (payload as any).entries() : []));
 
-      // Handle Qualifications - Merge pre-filled rows (from settings) + applicant rows; map Field IDs to Labels
-      const defaultRows = Array.isArray(formSettings?.qualifications?.defaultRows) ? formSettings.qualifications.defaultRows : [];
-      const applicantQuals = Array.isArray(formData.qualifications) ? formData.qualifications : [];
-      const isNewEmployee = !editingEmployee;
-      const qualities = isNewEmployee
-        ? [
-          ...defaultRows.map((r: any) => ({ ...r, isPreFilled: true })),
-          ...applicantQuals.map((q: any) => ({ ...q, isPreFilled: false })),
-        ]
-        : (Array.isArray(formData.qualifications) ? formData.qualifications : []);
-      console.log('Skills/Qualities before processing:', qualities);
-
-      const fieldIdToLabelMap: Record<string, string> = {};
-      if (formSettings?.qualifications?.fields) {
-        formSettings.qualifications.fields.forEach((f: any) => {
-          fieldIdToLabelMap[f.id] = f.label;
-        });
-      }
+      // Handle Qualifications — use resolved dept+designation profile for field mapping
+      const qualConfig = await resolveQualConfigForEmployeeForm(
+        idFromRef(formData.division_id),
+        idFromRef(formData.department_id),
+        idFromRef(formData.designation_id),
+        globalQualificationsFromFormSettings(formSettings)
+      );
+      const qualities = Array.isArray(formData.qualifications) ? formData.qualifications : [];
+      const fieldIdToLabelMap = buildQualFieldIdToLabelMap(qualConfig?.fields);
 
       const cleanQualifications = qualities.map((q: any, index: number) => {
         const { certificateFile, isPreFilled, ...rest } = q;
@@ -2356,8 +2375,14 @@ export default function EmployeesPage() {
     // Clone employee to avoid mutation during transformation
     const empData = { ...employee };
 
-    // Reverse Map Qualification Labels -> Field IDs (Fix for Missing Values on Edit)
-    const qualFields = formSettings?.qualifications?.fields;
+    // Reverse Map Qualification Labels -> Field IDs (profile-aware)
+    const qualConfig = await resolveQualConfigForEmployeeForm(
+      idFromRef(empData.division_id),
+      idFromRef(empData.department_id),
+      idFromRef(empData.designation_id),
+      globalQualificationsFromFormSettings(formSettings)
+    );
+    const qualFields = qualConfig?.fields || formSettings?.qualifications?.fields;
     if (empData.qualifications && Array.isArray(empData.qualifications) && qualFields) {
       empData.qualifications = empData.qualifications.map((q: any) => {
         const newQ: any = {};
@@ -2414,8 +2439,8 @@ export default function EmployeesPage() {
         const normalized: any = {};
 
         // Strategy: Iterate through form settings fields to find values in the stored qualification object
-        if (formSettings?.qualifications?.fields) {
-          formSettings.qualifications.fields.forEach((field: any) => {
+        if (qualConfig?.fields?.length) {
+          qualConfig.fields.forEach((field: any) => {
             const fieldId = field.id;
             const fieldLabel = field.label;
 
@@ -2824,81 +2849,53 @@ export default function EmployeesPage() {
   };
 
   const handleViewEmployee = async (employee: Employee) => {
-    // Initial set to show dialog immediately with available data
-    setViewingEmployee(employee);
     setEmployeeViewTab('profile');
     setEmployeeHistory([]);
+    setSelectedApplication(null);
     setShowViewDialog(true);
-
-    // Fetch latest data to ensure A&D overrides and other fields are fresh
+    setViewDialogLoading(true);
+    setViewingEmployee(flattenEmployeeRecordForView(employee as any) as Employee);
     try {
-      const response = await api.getEmployee(employee.emp_no);
-      if (response.success && response.data) {
-        setViewingEmployee(response.data);
+      if (employee.emp_no) {
+        const response = await api.getEmployee(employee.emp_no);
+        if (response.success && response.data) {
+          setViewingEmployee(flattenEmployeeRecordForView(response.data as any) as Employee);
+        }
       }
-    } catch (error) {
-      console.error('Error refreshing employee data:', error);
-    }
-
-    // Fetch employee history (Super Admin only; backend enforces authorization)
-    try {
-      setEmployeeHistoryLoading(true);
-      const historyRes = await api.getEmployeeHistory(employee.emp_no);
-      if (historyRes.success && Array.isArray(historyRes.data)) {
-        setEmployeeHistory(historyRes.data);
-      } else {
-        setEmployeeHistory([]);
-      }
+    } catch {
+      /* keep list snapshot */
     } finally {
-      setEmployeeHistoryLoading(false);
-    }
-
-    // Check if there is a pending salary approval (verified application) for this employee
-    const pendingApp = applications.find(a => a.emp_no === employee.emp_no && a.status === 'verified');
-    if (pendingApp) {
-      initApprovalState(pendingApp);
+      setViewDialogLoading(false);
     }
   };
 
   const openEmployeeViewFromApplication = async (application: EmployeeApplication) => {
     const mappedEmployee = mapApplicationToViewEmployee(application as any) as Employee;
-
     setViewingEmployee(mappedEmployee);
     setEmployeeViewTab('profile');
     setEmployeeHistory([]);
     setShowViewDialog(true);
-
+    setViewDialogLoading(true);
     setSelectedApplication(application);
     if (application.status === 'verified') {
       initApprovalState(application);
     }
-
     try {
-      if (application.emp_no) {
-        const response = await api.getEmployee(application.emp_no);
+      if (application._id) {
+        const response = await api.getEmployeeApplication(application._id);
         if (response.success && response.data) {
-          setViewingEmployee(
-            mergeEmployeeWithApplicationSnapshot(response.data as any, application as any) as Employee
-          );
+          const app = response.data as EmployeeApplication;
+          setSelectedApplication(app);
+          setViewingEmployee(mapApplicationToViewEmployee(app as any) as Employee);
+          if (app.status === 'verified') {
+            initApprovalState(app);
+          }
         }
       }
-    } catch (error) {
-      console.error('Error refreshing employee data from application view:', error);
-    }
-
-    // Fetch employee history when available.
-    try {
-      if (application.emp_no) {
-        setEmployeeHistoryLoading(true);
-        const historyRes = await api.getEmployeeHistory(application.emp_no);
-        if (historyRes.success && Array.isArray(historyRes.data)) {
-          setEmployeeHistory(historyRes.data);
-        } else {
-          setEmployeeHistory([]);
-        }
-      }
+    } catch {
+      /* keep list snapshot */
     } finally {
-      setEmployeeHistoryLoading(false);
+      setViewDialogLoading(false);
     }
   };
 
@@ -2966,6 +2963,13 @@ export default function EmployeesPage() {
     setFormErrors({});
 
     try {
+      const qualStatus = String(applicationFormData.qualificationStatus ?? '').trim();
+      if (!qualStatus) {
+        setFormErrors({ qualificationStatus: 'Overall qualification status is required' });
+        setError('Please select overall qualification status');
+        return;
+      }
+
       // 1. Clean up enum fields & Prepare Submit Data
       console.log('Submitting Application Payload:', applicationFormData); // DEBUG
       const submitData = {
@@ -2988,7 +2992,7 @@ export default function EmployeesPage() {
       });
       // Convert empty strings to undefined for other optional fields
       Object.keys(submitData).forEach(key => {
-        if ((submitData as any)[key] === '' && !enumFields.includes(key) && key !== 'qualifications') {
+        if ((submitData as any)[key] === '' && !enumFields.includes(key) && key !== 'qualifications' && key !== 'qualificationStatus') {
           (submitData as any)[key] = undefined;
         }
       });
@@ -3047,7 +3051,7 @@ export default function EmployeesPage() {
       if (response.success) {
         setSuccess(editingApplicationID ? 'Application updated successfully!' : 'Application created successfully!');
         setShowApplicationDialog(false);
-        setApplicationFormData({ ...initialFormState, qualifications: [], employeeAllowances: [], employeeDeductions: [] });
+        setApplicationFormData({ ...initialFormState, qualifications: [], qualificationStatus: '', employeeAllowances: [], employeeDeductions: [] });
         setEditingApplicationID(null);
         // Refresh list
         loadApplications();
@@ -4744,10 +4748,13 @@ export default function EmployeesPage() {
                   <DynamicEmployeeForm
                     formData={applicationFormData as any}
                     onChange={setApplicationFormData}
+                    errors={formErrors}
                     departments={departments}
                     divisions={divisions}
                     employeeGroups={employeeGroups}
                     designations={filteredApplicationDesignations as any}
+                    isEmployeeApplicationForm
+                    isEditingExistingEmployee={false}
                     excludeFields={[
                       ...(applicationFormAutoGenerateEmpNo ? ['emp_no'] : []),
                       ...(customEmployeeGroupingEnabled ? ['employee_group_id'] : []),
@@ -6250,12 +6257,17 @@ export default function EmployeesPage() {
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowViewDialog(false); setCertificatePreviewUrl(null); }} />
               <div className="relative z-50 max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+                {viewDialogLoading && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center rounded-3xl bg-white/70 dark:bg-slate-950/70">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+                  </div>
+                )}
                 <div className="mb-6 flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div>
                       <div className="mb-1 flex items-center gap-3">
                         <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                          Gross: {viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}
+                          {selectedApplication ? 'Proposed' : 'Gross'}: {formatSalaryFieldDisplay(viewingEmployee)}
                         </span>
                         <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300">
                           Cert status: {overallQualificationStatusLabel(viewingEmployee.qualificationStatus, overallCertificateStatusOptions)}
@@ -6454,25 +6466,26 @@ export default function EmployeesPage() {
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('division_id', formSettings) || 'Division'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).division?.name
-                                || (typeof viewingEmployee.division_id === 'object' && viewingEmployee.division_id && 'name' in (viewingEmployee.division_id as object)
-                                  ? (viewingEmployee.division_id as { name?: string }).name
-                                  : '-')}
+                              {resolveEmployeeOrgRefName(viewingEmployee as Record<string, unknown>, 'division', 'division_id', divisions)}
                             </p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('department_id', formSettings) || 'Department'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.department?.name || '-'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {resolveEmployeeOrgRefName(viewingEmployee as Record<string, unknown>, 'department', 'department_id', departments)}
+                            </p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('designation_id', formSettings) || 'Designation'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.designation?.name || '-'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {resolveEmployeeOrgRefName(viewingEmployee as Record<string, unknown>, 'designation', 'designation_id', designations)}
+                            </p>
                           </div>
                           {customEmployeeGroupingEnabled && (
                             <div>
                               <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Group</label>
                               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                                {(viewingEmployee as any).employee_group?.name || ((viewingEmployee as any).employee_group_id as any)?.name || '-'}
+                                {resolveEmployeeOrgRefName(viewingEmployee as Record<string, unknown>, 'employee_group', 'employee_group_id', employeeGroups)}
                               </p>
                             </div>
                           )}
@@ -6484,135 +6497,41 @@ export default function EmployeesPage() {
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('dob', formSettings) || 'Date of Birth'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{formatDateDayMonthYear(viewingEmployee.dob)}</p>
                           </div>
-
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('gender', formSettings) || 'Gender'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gender || '-'}</p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('marital_status', formSettings) || 'Marital Status'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.marital_status || '-'}</p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('blood_group', formSettings) || 'Blood Group'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.blood_group || '-'}</p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('phone_number', formSettings) || 'Phone Number'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {resolveEmployeeField(viewingEmployee as any, 'phone_number', ['contact_number']) || '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('alt_phone_number', formSettings) || 'Alternate Phone'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {resolveEmployeeField(viewingEmployee as any, 'alt_phone_number') || '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('father_name', formSettings) || 'Father Name'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).father_name ||
-                                (viewingEmployee as any).dynamicFields?.father_name ||
-                                '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('mother_name', formSettings) || 'Mother Name'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).mother_name ||
-                                (viewingEmployee as any).dynamicFields?.mother_name ||
-                                '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('caste', formSettings) || 'Caste'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).caste ||
-                                (viewingEmployee as any).dynamicFields?.caste ||
-                                '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Category</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).category ||
-                                (viewingEmployee as any).dynamicFields?.category ||
-                                '-'}
-                            </p>
-                          </div>
+                          <EmployeeFormGroupView
+                            groupId="basic_info"
+                            employee={viewingEmployee}
+                            formSettings={formSettings}
+                            excludeFieldIds={[
+                              'emp_no',
+                              'employee_name',
+                              'division_id',
+                              'department_id',
+                              'designation_id',
+                              'employee_group_id',
+                              'doj',
+                              'dob',
+                              'qualificationStatus',
+                              'profilePhoto',
+                              ...(!secondSalaryEnabled ? ['second_salary'] : []),
+                            ]}
+                            fieldLabelOverrides={{
+                              proposedSalary: selectedApplication
+                                ? (getFieldLabel('proposedSalary', formSettings) || 'Proposed Salary')
+                                : (getFieldLabel('gross_salary', formSettings) || 'Gross Salary'),
+                            }}
+                            className="contents"
+                          />
                           </div>
                         </div>
-                        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('email', formSettings) || 'Email'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {resolveEmployeeField(viewingEmployee as any, 'email') || '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Present Address</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).present_address ||
-                                (viewingEmployee as any).dynamicFields?.present_address ||
-                                viewingEmployee.address ||
-                                (viewingEmployee as any).dynamicFields?.address ||
-                                '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('permanent_address', formSettings) || 'Permanent Address'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).permanent_address ||
-                                (viewingEmployee as any).dynamicFields?.permanent_address ||
-                                '-'}
-                            </p>
-                          </div>
-                          <div className="sm:col-span-2 xl:col-span-2">
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Address</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(() => {
-                                const dynamic = (viewingEmployee as any).dynamicFields || {};
-                                const address =
-                                  viewingEmployee.address ||
-                                  (viewingEmployee as any).present_address ||
-                                  dynamic.address ||
-                                  dynamic.present_address ||
-                                  (viewingEmployee as any).permanent_address ||
-                                  dynamic.permanent_address ||
-                                  '';
-
-                                if (!address) return '-';
-
-                                const permanentAddress =
-                                  (viewingEmployee as any).permanent_address || dynamic.permanent_address || '';
-
-                                if (permanentAddress && permanentAddress !== address) {
-                                  return `${address} | ${permanentAddress}`;
-                                }
-                                return address;
-                              })()}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.location || '-'}</p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Relative Contact 1</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).relative_contact_1 ||
-                                (viewingEmployee as any).dynamicFields?.relative_contact_1 ||
-                                '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Relative Contact 2</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).relative_contact_2 ||
-                                (viewingEmployee as any).dynamicFields?.relative_contact_2 ||
-                                '-'}
-                            </p>
+                        <div className="mt-4 rounded-xl border border-slate-200/80 bg-white/40 p-4 dark:border-slate-700 dark:bg-slate-900/30">
+                          <h4 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-200">{getGroupLabel('contact_info', formSettings, 'Contact Information')}</h4>
+                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            <EmployeeFormGroupView
+                              groupId="contact_info"
+                              employee={viewingEmployee}
+                              formSettings={formSettings}
+                              className="contents"
+                            />
                           </div>
                         </div>
                       </div>
@@ -6621,82 +6540,12 @@ export default function EmployeesPage() {
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                         <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{getGroupLabel('bank_details', formSettings, 'Financial Information')}</h3>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('pf_number', formSettings) || 'PF Number'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).pf_number ||
-                                (viewingEmployee as any).dynamicFields?.pf_number ||
-                                (viewingEmployee as any).dynamicFields?.pfNumber ||
-                                '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('esi_number', formSettings) || 'ESI Number'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).esi_number ||
-                                (viewingEmployee as any).dynamicFields?.esi_number ||
-                                (viewingEmployee as any).dynamicFields?.esiNumber ||
-                                '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('aadhar_no', formSettings) || 'Aadhar Number'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).aadhar_number ||
-                                (viewingEmployee as any).aadhaar_number ||
-                                (viewingEmployee as any).dynamicFields?.aadhar_number ||
-                                (viewingEmployee as any).dynamicFields?.aadhaar_number ||
-                                (viewingEmployee as any).dynamicFields?.aadharNumber ||
-                                '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('account_no', formSettings) || 'Account Number'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).bank_account_no ||
-                                (viewingEmployee as any).dynamicFields?.bank_account_no ||
-                                (viewingEmployee as any).dynamicFields?.bank_ac_no ||
-                                (viewingEmployee as any).dynamicFields?.bank_account_number ||
-                                (viewingEmployee as any).dynamicFields?.account_number ||
-                                '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('bank_name', formSettings) || 'Bank Name'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).bank_name ||
-                                (viewingEmployee as any).dynamicFields?.bank_name ||
-                                (viewingEmployee as any).dynamicFields?.bankName ||
-                                '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).bank_place ||
-                                (viewingEmployee as any).dynamicFields?.bank_place ||
-                                (viewingEmployee as any).dynamicFields?.bankPlace ||
-                                '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('ifsc_code', formSettings) || 'IFSC Code'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).ifsc_code ||
-                                (viewingEmployee as any).dynamicFields?.ifsc_code ||
-                                (viewingEmployee as any).dynamicFields?.ifsc ||
-                                '-'}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('salary_mode', formSettings) || 'Salary Mode'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {(viewingEmployee as any).salary_mode ||
-                                (viewingEmployee as any).dynamicFields?.salary_mode ||
-                                (viewingEmployee as any).dynamicFields?.salaryMode ||
-                                'Bank'}
-                            </p>
-                          </div>
+                          <EmployeeFormGroupView
+                            groupId="bank_details"
+                            employee={viewingEmployee}
+                            formSettings={formSettings}
+                            className="contents"
+                          />
                         </div>
                         <div className="mt-4 flex justify-end">
                           <button
@@ -6835,7 +6684,7 @@ export default function EmployeesPage() {
                                 return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
                               }
                               if (Array.isArray(quals)) {
-                                const qualFields = (formSettings?.qualifications?.fields || []).filter((f: any) => f.isEnabled !== false).sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+                                const qualFields = (viewingQualConfig?.fields || formSettings?.qualifications?.fields || []).filter((f: any) => f.isEnabled !== false).sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
                                 return (
                                   <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
                                     <table className="w-full min-w-[700px] text-left text-sm">
@@ -6892,8 +6741,14 @@ export default function EmployeesPage() {
                               formSettings
                             )}
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('gross_salary', formSettings) || 'Gross Salary'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                              {selectedApplication
+                                ? (getFieldLabel('proposedSalary', formSettings) || 'Proposed Salary')
+                                : (getFieldLabel('gross_salary', formSettings) || 'Gross Salary')}
+                            </label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {formatSalaryFieldDisplay(viewingEmployee)}
+                            </p>
                           </div>
                           {secondSalaryEnabled ? (
                             <div>

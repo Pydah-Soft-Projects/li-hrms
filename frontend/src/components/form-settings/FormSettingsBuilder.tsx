@@ -24,6 +24,22 @@ import {
   SettingsPanelHeader,
   SettingsOutlineButton,
 } from '@/components/settings/SettingsPageShell';
+import QualificationProfilesTab from '@/components/form-settings/QualificationProfilesTab';
+import QualificationColumnForm from '@/components/form-settings/QualificationColumnForm';
+import FieldTypeSelect from '@/components/form-settings/FieldTypeSelect';
+import FieldTypeConfigPanel from '@/components/form-settings/FieldTypeConfigPanel';
+import {
+  EMPLOYEE_FORM_FIELD_GROUPS,
+  QUALIFICATION_FIELD_GROUPS,
+  emptyQualificationColumnDraft,
+  defaultConfigForFieldType,
+  validateFieldConfigDraft,
+  fieldTypeNeedsOptions,
+  getFieldTypeLabel,
+  slugifyFieldId,
+  type QualificationColumnDraft,
+  type FieldConfigDraft,
+} from '@/lib/fieldTypeConfig';
 import {
   settingsInputClass,
   settingsInputStyle,
@@ -43,17 +59,35 @@ import {
 export interface FormField {
   id: string;
   label: string;
-  type: 'text' | 'textarea' | 'number' | 'date' | 'select' | 'multiselect' | 'email' | 'tel' | 'file' | 'array' | 'object' | 'userselect';
+  type: string;
   dataType: string;
   placeholder?: string;
   options?: Array<{ label: string; value: any }>;
-  validation?: { minLength?: number; maxLength?: number; min?: number; max?: number; pattern?: string; custom?: string; maxItems?: number };
+  validation?: {
+    minLength?: number;
+    maxLength?: number;
+    min?: number;
+    max?: number;
+    step?: number;
+    minLabel?: string;
+    maxLabel?: string;
+    minSelections?: number;
+    maxSelections?: number;
+    maxFileSizeMb?: number;
+    accept?: string;
+    pattern?: string;
+    custom?: string;
+    maxItems?: number;
+  };
+  gridRows?: string[];
   isRequired: boolean;
   isSystem: boolean;
   isEnabled: boolean;
   order: number;
   itemType?: string;
   itemSchema?: any;
+  minItems?: number;
+  maxItems?: number;
   description?: string;
 }
 
@@ -76,8 +110,9 @@ export interface QualificationField {
   isRequired?: boolean;
   isEnabled?: boolean;
   placeholder?: string;
-  validation?: { minLength?: number; maxLength?: number; min?: number; max?: number };
+  validation?: { minLength?: number; maxLength?: number; min?: number; max?: number; step?: number; minLabel?: string; maxLabel?: string; minSelections?: number; maxSelections?: number };
   options?: Array<{ label: string; value: string }>;
+  gridRows?: string[];
   order?: number;
   _id?: string;
 }
@@ -101,42 +136,19 @@ export interface FormSettings {
   updatedBy?: string;
 }
 
-const QUESTION_TYPES: { value: FormField['type']; label: string }[] = [
-  { value: 'text', label: 'Short answer' },
-  { value: 'textarea', label: 'Paragraph' },
-  { value: 'number', label: 'Number' },
-  { value: 'date', label: 'Date' },
-  { value: 'email', label: 'Email' },
-  { value: 'tel', label: 'Phone number' },
-  { value: 'select', label: 'Dropdown' },
-  { value: 'multiselect', label: 'Checkboxes' },
-  { value: 'file', label: 'File upload' },
-  { value: 'userselect', label: 'Choose from list (person)' },
-  { value: 'array', label: 'List of items' },
-  { value: 'object', label: 'Group of fields' },
-];
-
 function getQuestionTypeLabel(type: string): string {
-  return QUESTION_TYPES.find((t) => t.value === type)?.label || type;
+  return getFieldTypeLabel(EMPLOYEE_FORM_FIELD_GROUPS, type);
 }
 
-const QUAL_FIELD_TYPES = [
-  { value: 'text', label: 'Short answer' },
-  { value: 'textarea', label: 'Paragraph' },
-  { value: 'number', label: 'Number' },
-  { value: 'date', label: 'Date' },
-  { value: 'select', label: 'Dropdown' },
-  { value: 'boolean', label: 'Yes/No' },
-];
-
 function getQualTypeLabel(type: string): string {
-  return QUAL_FIELD_TYPES.find((t) => t.value === type)?.label || type;
+  return getFieldTypeLabel(QUALIFICATION_FIELD_GROUPS, type);
 }
 
 
 
 export default function FormSettingsBuilder() {
   const [settings, setSettings] = useState<FormSettings | null>(null);
+  const [activeTab, setActiveTab] = useState<'form' | 'qual_profiles'>('form');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
@@ -157,32 +169,15 @@ export default function FormSettingsBuilder() {
   const [newOption, setNewOption] = useState('');
   const [editingQualFieldId, setEditingQualFieldId] = useState<string | null>(null);
   const [showAddQualField, setShowAddQualField] = useState(false);
-  const [newQualField, setNewQualField] = useState<{
-    id: string;
-    label: string;
-    type: string;
-    isRequired: boolean;
-    isEnabled: boolean;
-    placeholder: string;
-    order: number;
-    validation?: { minLength?: number; maxLength?: number; min?: number; max?: number };
-  }>({
-    id: '',
-    label: '',
-    type: 'text',
-    isRequired: false,
-    isEnabled: true,
-    placeholder: '',
-    order: 0,
-  });
+  const [newQualField, setNewQualField] = useState<QualificationColumnDraft>(emptyQualificationColumnDraft());
 
   useEffect(() => {
     loadSettings();
   }, []);
 
-  const loadSettings = async () => {
+  const loadSettings = async (opts?: { silent?: boolean }) => {
     try {
-      setLoading(true);
+      if (!opts?.silent) setLoading(true);
       const response = await api.getFormSettings();
       const data = (response && (response as any).data !== undefined) ? (response as any).data : response;
       const success = (response && (response as any).success !== undefined) ? (response as any).success : true;
@@ -202,7 +197,7 @@ export default function FormSettingsBuilder() {
     } catch (error: any) {
       alertError('Error', error.message || 'Failed to load form settings');
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   };
 
@@ -248,22 +243,36 @@ export default function FormSettingsBuilder() {
   };
 
   const handleAddQuestion = async (groupId: string) => {
-    if (!newQuestion.label?.trim()) {
-      alertError('Required', 'Question is required');
+    const draft: FieldConfigDraft = {
+      label: newQuestion.label || '',
+      type: newQuestion.type || 'text',
+      isRequired: !!newQuestion.isRequired,
+      isEnabled: newQuestion.isEnabled !== false,
+      placeholder: newQuestion.placeholder || '',
+      validation: newQuestion.validation,
+      options: newQuestion.options,
+      gridRows: newQuestion.gridRows,
+      minItems: newQuestion.minItems,
+      maxItems: newQuestion.maxItems,
+    };
+    const err = validateFieldConfigDraft(draft);
+    if (err) {
+      alertError('Invalid question', err);
       return;
     }
     const group = settings?.groups?.find((g) => g.id === groupId);
     if (!group) return;
     try {
       setSaving(true);
-      const fieldId = newQuestion.label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      const fieldId = slugifyFieldId(newQuestion.label || '');
       const maxOrder = group.fields.length ? Math.max(...group.fields.map((f) => f.order)) : 0;
       let dataType: string = 'string';
-      if (newQuestion.type === 'number') dataType = 'number';
-      else if (newQuestion.type === 'date') dataType = 'date';
-      else if (newQuestion.type === 'array') dataType = 'array';
-      else if (newQuestion.type === 'object') dataType = 'object';
-      else if (newQuestion.type === 'userselect') dataType = 'array';
+      const t = newQuestion.type || 'text';
+      if (t === 'number' || t === 'scale' || t === 'rating') dataType = 'number';
+      else if (t === 'date' || t === 'time') dataType = 'date';
+      else if (t === 'array' || t === 'radio_grid' || t === 'checkbox_grid') dataType = 'array';
+      else if (t === 'object') dataType = 'object';
+      else if (t === 'userselect' || t === 'multiselect') dataType = 'array';
 
       const fieldData = {
         id: fieldId,
@@ -275,8 +284,11 @@ export default function FormSettingsBuilder() {
         isSystem: false,
         isEnabled: newQuestion.isEnabled !== false,
         order: maxOrder + 1,
-        options: (newQuestion.type === 'select' || newQuestion.type === 'multiselect') ? (newQuestion.options || []) : undefined,
+        options: newQuestion.options?.length ? newQuestion.options : undefined,
         validation: newQuestion.validation,
+        gridRows: newQuestion.gridRows?.length ? newQuestion.gridRows : undefined,
+        minItems: newQuestion.minItems,
+        maxItems: newQuestion.maxItems,
       };
 
       const response = await api.addFormField(groupId, fieldData);
@@ -461,7 +473,7 @@ export default function FormSettingsBuilder() {
     }
     try {
       setSaving(true);
-      const id = newQualField.label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      const id = slugifyFieldId(newQualField.label);
       const maxOrder = settings?.qualifications?.fields?.length ? Math.max(...settings.qualifications.fields.map((f) => f.order ?? 0)) : 0;
 
       const response = await api.addQualificationsField({
@@ -471,13 +483,16 @@ export default function FormSettingsBuilder() {
         isRequired: newQualField.isRequired,
         isEnabled: newQualField.isEnabled,
         placeholder: newQualField.placeholder,
+        validation: newQualField.validation,
+        options: newQualField.options?.length ? newQualField.options : [],
+        gridRows: newQualField.gridRows?.length ? newQualField.gridRows : [],
         order: maxOrder + 1,
       });
 
       if (response.success) {
         await loadSettings();
         setShowAddQualField(false);
-        setNewQualField({ id: '', label: '', type: 'text', isRequired: false, isEnabled: true, placeholder: '', order: 0 });
+        setNewQualField(emptyQualificationColumnDraft());
         alertSuccess('Column added', 'The qualification column was added.');
       } else {
         alertError('Failed to add column', response.message || 'Could not add column.');
@@ -499,16 +514,62 @@ export default function FormSettingsBuilder() {
           title="Form builder"
           subtitle="Configure sections and questions for the employee application form."
         />
+        {activeTab === 'form' ? (
+          <button
+            type="button"
+            onClick={() => setShowAddSection(true)}
+            className={`inline-flex shrink-0 items-center gap-2 ${settingsSaveButtonClass()}`}
+            style={settingsSaveButtonStyle()}
+          >
+            <Plus className="h-4 w-4" />
+            Add section
+          </button>
+        ) : null}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3 dark:border-slate-700">
         <button
           type="button"
-          onClick={() => setShowAddSection(true)}
-          className={`inline-flex shrink-0 items-center gap-2 ${settingsSaveButtonClass()}`}
-          style={settingsSaveButtonStyle()}
+          onClick={() => setActiveTab('form')}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'form'
+              ? 'bg-indigo-600 text-white'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+          }`}
         >
-          <Plus className="h-4 w-4" />
-          Add section
+          Form fields
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('qual_profiles');
+            void loadSettings({ silent: true });
+          }}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'qual_profiles'
+              ? 'bg-violet-600 text-white'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+          }`}
+        >
+          Qualification profiles
         </button>
       </div>
+
+      {activeTab === 'qual_profiles' ? (
+        <QualificationProfilesTab
+          globalQualifications={
+            settings?.qualifications
+              ? {
+                  isEnabled: settings.qualifications.isEnabled !== false,
+                  enableCertificateUpload: !!settings.qualifications.enableCertificateUpload,
+                  fields: settings.qualifications.fields || [],
+                  defaultRows: settings.qualifications.defaultRows || [],
+                }
+              : null
+          }
+        />
+      ) : (
+        <>
 
       <LoanDetailDialog open={showAddSection} onClose={() => setShowAddSection(false)} maxWidth="max-w-md">
         <LoanDetailDialogHeader
@@ -570,53 +631,13 @@ export default function FormSettingsBuilder() {
       {showAddQualField && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4" onClick={() => setShowAddQualField(false)}>
           <div
-            className="w-full max-w-md rounded-2xl border border-slate-100 bg-white p-6 shadow-lg dark:border-slate-700 dark:bg-slate-900"
+            className="w-full max-w-lg rounded-2xl border border-slate-100 bg-white p-6 shadow-lg dark:border-slate-700 dark:bg-slate-900"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-slate-800 dark:text-white">New qualification column</h3>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Add a new field to the qualifications table.</p>
-            <div className="mt-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300">Column name</label>
-                <input
-                  type="text"
-                  value={newQualField.label}
-                  onChange={(e) => setNewQualField({ ...newQualField, label: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-800 shadow-sm focus:border-violet-400 focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                  placeholder="e.g. Percentage"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300">Type</label>
-                <select
-                  value={newQualField.type}
-                  onChange={(e) => setNewQualField({ ...newQualField, type: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-violet-400 focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                >
-                  {QUAL_FIELD_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300">Placeholder (optional)</label>
-                <input
-                  type="text"
-                  value={newQualField.placeholder}
-                  onChange={(e) => setNewQualField({ ...newQualField, placeholder: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-800 shadow-sm focus:border-violet-400 focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                  placeholder="e.g. E.g., 85%"
-                />
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={newQualField.isRequired}
-                  onChange={(e) => setNewQualField({ ...newQualField, isRequired: e.target.checked })}
-                  className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                />
-                <span className="text-sm text-slate-600 dark:text-slate-300">Required field</span>
-              </label>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Same field types and validation as form questions — tuned for the qualifications table.</p>
+            <div className="mt-4">
+              <QualificationColumnForm draft={newQualField} onChange={setNewQualField} mode="add" />
             </div>
             <div className="mt-6 flex justify-end gap-2">
               <button
@@ -629,7 +650,7 @@ export default function FormSettingsBuilder() {
               <button
                 type="button"
                 onClick={handleAddQualField}
-                disabled={saving || !newQualField.label.trim()}
+                disabled={saving || !!validateFieldConfigDraft(newQualField)}
                 className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
               >
                 {saving ? 'Adding…' : 'Add column'}
@@ -810,37 +831,50 @@ export default function FormSettingsBuilder() {
                           placeholder="e.g. Full name"
                         />
                       </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Description / help text (optional)</label>
-                        <input
-                          type="text"
-                          value={newQuestion.placeholder || ''}
-                          onChange={(e) => setNewQuestion({ ...newQuestion, placeholder: e.target.value })}
-                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                          placeholder="Shown below the question"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Question type</label>
-                        <select
-                          value={newQuestion.type || 'text'}
-                          onChange={(e) => {
-                            const type = e.target.value as FormField['type'];
-                            let dataType = 'string';
-                            if (type === 'number') dataType = 'number';
-                            else if (type === 'date') dataType = 'date';
-                            else if (type === 'array') dataType = 'array';
-                            else if (type === 'object') dataType = 'object';
-                            else if (type === 'userselect') dataType = 'array';
-                            setNewQuestion({ ...newQuestion, type, dataType, options: (type === 'select' || type === 'multiselect') ? (newQuestion.options || []) : undefined });
-                          }}
-                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                        >
-                          {QUESTION_TYPES.map((t) => (
-                            <option key={t.value} value={t.value}>{t.label}</option>
-                          ))}
-                        </select>
-                      </div>
+                      <FieldTypeSelect
+                        groups={EMPLOYEE_FORM_FIELD_GROUPS}
+                        value={newQuestion.type || 'text'}
+                        onChange={(type) => {
+                          let dataType = 'string';
+                          if (type === 'number' || type === 'scale' || type === 'rating') dataType = 'number';
+                          else if (type === 'date' || type === 'time') dataType = 'date';
+                          else if (type === 'array' || type === 'radio_grid' || type === 'checkbox_grid') dataType = 'array';
+                          else if (type === 'object') dataType = 'object';
+                          else if (type === 'userselect' || type === 'multiselect') dataType = 'array';
+                          setNewQuestion({
+                            ...newQuestion,
+                            type,
+                            dataType,
+                            ...defaultConfigForFieldType(type),
+                          });
+                        }}
+                        label="Question type"
+                      />
+                      <FieldTypeConfigPanel
+                        draft={{
+                          label: newQuestion.label || '',
+                          type: newQuestion.type || 'text',
+                          isRequired: !!newQuestion.isRequired,
+                          isEnabled: newQuestion.isEnabled !== false,
+                          placeholder: newQuestion.placeholder || '',
+                          validation: newQuestion.validation,
+                          options: newQuestion.options,
+                          gridRows: newQuestion.gridRows,
+                          minItems: newQuestion.minItems,
+                          maxItems: newQuestion.maxItems,
+                        }}
+                        onChange={(d) =>
+                          setNewQuestion({
+                            ...newQuestion,
+                            placeholder: d.placeholder,
+                            validation: d.validation,
+                            options: d.options,
+                            gridRows: d.gridRows,
+                            minItems: d.minItems,
+                            maxItems: d.maxItems,
+                          })
+                        }
+                      />
                       <div className="flex items-center gap-4">
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
@@ -852,118 +886,6 @@ export default function FormSettingsBuilder() {
                           <span className="text-sm text-slate-700 dark:text-slate-300">Required</span>
                         </label>
                       </div>
-                      {(newQuestion.type === 'select' || newQuestion.type === 'multiselect') && (
-                        <div>
-                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Options</label>
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {(newQuestion.options || []).map((opt, i) => (
-                              <span
-                                key={i}
-                                className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-3 py-1 text-sm dark:bg-slate-700"
-                              >
-                                {opt.label}
-                                <button
-                                  type="button"
-                                  onClick={() => setNewQuestion({ ...newQuestion, options: (newQuestion.options || []).filter((_, j) => j !== i) })}
-                                  className="rounded p-0.5 hover:bg-slate-300 dark:hover:bg-slate-600"
-                                >
-                                  <X className="h-3 w-3" />
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                          <div className="mt-2 flex gap-2">
-                            <input
-                              type="text"
-                              value={newOption}
-                              onChange={(e) => setNewOption(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  if (newOption.trim()) {
-                                    setNewQuestion({ ...newQuestion, options: [...(newQuestion.options || []), { label: newOption.trim(), value: newOption.trim() }] });
-                                    setNewOption('');
-                                  }
-                                }
-                              }}
-                              className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                              placeholder="Add option"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (newOption.trim()) {
-                                  setNewQuestion({ ...newQuestion, options: [...(newQuestion.options || []), { label: newOption.trim(), value: newOption.trim() }] });
-                                  setNewOption('');
-                                }
-                              }}
-                              className="rounded-lg bg-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-white dark:hover:bg-slate-500"
-                            >
-                              Add option
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      {(newQuestion.type === 'text' || newQuestion.type === 'textarea' || newQuestion.type === 'email' || newQuestion.type === 'tel') && (
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Min length</label>
-                            <input
-                              type="number"
-                              min={0}
-                              value={newQuestion.validation?.minLength ?? ''}
-                              onChange={(e) => {
-                                const v = e.target.value ? Number(e.target.value) : undefined;
-                                setNewQuestion({ ...newQuestion, validation: { ...newQuestion.validation, minLength: v } });
-                              }}
-                              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                              placeholder="Optional"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Max length</label>
-                            <input
-                              type="number"
-                              min={0}
-                              value={newQuestion.validation?.maxLength ?? ''}
-                              onChange={(e) => {
-                                const v = e.target.value ? Number(e.target.value) : undefined;
-                                setNewQuestion({ ...newQuestion, validation: { ...newQuestion.validation, maxLength: v } });
-                              }}
-                              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                              placeholder="Optional"
-                            />
-                          </div>
-                        </div>
-                      )}
-                      {newQuestion.type === 'number' && (
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Min value</label>
-                            <input
-                              type="number"
-                              value={newQuestion.validation?.min ?? ''}
-                              onChange={(e) => {
-                                const v = e.target.value === '' ? undefined : Number(e.target.value);
-                                setNewQuestion({ ...newQuestion, validation: { ...newQuestion.validation, min: v } });
-                              }}
-                              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Max value</label>
-                            <input
-                              type="number"
-                              value={newQuestion.validation?.max ?? ''}
-                              onChange={(e) => {
-                                const v = e.target.value === '' ? undefined : Number(e.target.value);
-                                setNewQuestion({ ...newQuestion, validation: { ...newQuestion.validation, max: v } });
-                              }}
-                              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                            />
-                          </div>
-                        </div>
-                      )}
                     </div>
                     <div className="mt-4 flex gap-2">
                       <button
@@ -1035,6 +957,69 @@ export default function FormSettingsBuilder() {
                                     placeholder="Optional"
                                   />
                                 </div>
+                                {!field.isSystem ? (
+                                  <FieldTypeSelect
+                                    groups={EMPLOYEE_FORM_FIELD_GROUPS}
+                                    value={field.type}
+                                    onChange={(type) => {
+                                      const next = settings.groups.map((g) =>
+                                        g.id === group.id
+                                          ? {
+                                              ...g,
+                                              fields: g.fields.map((f) =>
+                                                f.id === field.id
+                                                  ? { ...f, type, ...defaultConfigForFieldType(type) }
+                                                  : f
+                                              ),
+                                            }
+                                          : g
+                                      );
+                                      setSettings({ ...settings, groups: next });
+                                    }}
+                                    label="Question type"
+                                  />
+                                ) : (
+                                  <p className="text-xs text-slate-500">Type: {getQuestionTypeLabel(field.type)} (system field)</p>
+                                )}
+                                {!field.isSystem ? (
+                                  <FieldTypeConfigPanel
+                                    draft={{
+                                      label: field.label,
+                                      type: field.type,
+                                      isRequired: !!field.isRequired,
+                                      isEnabled: field.isEnabled !== false,
+                                      placeholder: field.placeholder || '',
+                                      validation: field.validation,
+                                      options: field.options,
+                                      gridRows: field.gridRows,
+                                      minItems: field.minItems,
+                                      maxItems: field.maxItems,
+                                    }}
+                                    onChange={(d) => {
+                                      const next = settings.groups.map((g) =>
+                                        g.id === group.id
+                                          ? {
+                                              ...g,
+                                              fields: g.fields.map((f) =>
+                                                f.id === field.id
+                                                  ? {
+                                                      ...f,
+                                                      placeholder: d.placeholder,
+                                                      validation: d.validation,
+                                                      options: d.options,
+                                                      gridRows: d.gridRows,
+                                                      minItems: d.minItems,
+                                                      maxItems: d.maxItems,
+                                                    }
+                                                  : f
+                                              ),
+                                            }
+                                          : g
+                                      );
+                                      setSettings({ ...settings, groups: next });
+                                    }}
+                                  />
+                                ) : null}
                                 <div className="flex items-center gap-4">
                                   <label className="flex items-center gap-2 cursor-pointer">
                                     <input
@@ -1071,71 +1056,6 @@ export default function FormSettingsBuilder() {
                                     <span className="text-sm text-slate-700 dark:text-slate-300">Enabled</span>
                                   </label>
                                 </div>
-                                {(field.type === 'select' || field.type === 'multiselect') && (
-                                  <div>
-                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Options</label>
-                                    <div className="mt-1 flex flex-wrap gap-2">
-                                      {(field.options || []).map((opt, i) => (
-                                        <span key={i} className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-3 py-1 text-sm dark:bg-slate-700">
-                                          {opt.label}
-                                          {!field.isSystem && (
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                const opts = (field.options || []).filter((_, j) => j !== i);
-                                                const next = settings.groups.map((g) =>
-                                                  g.id === group.id ? { ...g, fields: g.fields.map((f) => (f.id === field.id ? { ...f, options: opts } : f)) } : g
-                                                );
-                                                setSettings({ ...settings, groups: next });
-                                              }}
-                                              className="rounded p-0.5 hover:bg-slate-300 dark:hover:bg-slate-600"
-                                            >
-                                              <X className="h-3 w-3" />
-                                            </button>
-                                          )}
-                                        </span>
-                                      ))}
-                                    </div>
-                                    {!field.isSystem && (
-                                      <div className="mt-2 flex gap-2">
-                                        <input
-                                          type="text"
-                                          id={`add-opt-${field.id}`}
-                                          placeholder="Add option"
-                                          className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                                          onKeyDown={(e) => {
-                                            const input = e.target as HTMLInputElement;
-                                            if (e.key === 'Enter' && input.value.trim()) {
-                                              const opts = [...(field.options || []), { label: input.value.trim(), value: input.value.trim() }];
-                                              const next = settings.groups.map((g) =>
-                                                g.id === group.id ? { ...g, fields: g.fields.map((f) => (f.id === field.id ? { ...f, options: opts } : f)) } : g
-                                              );
-                                              setSettings({ ...settings, groups: next });
-                                              input.value = '';
-                                            }
-                                          }}
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            const input = document.getElementById(`add-opt-${field.id}`) as HTMLInputElement;
-                                            if (input?.value.trim()) {
-                                              const opts = [...(field.options || []), { label: input.value.trim(), value: input.value.trim() }];
-                                              const next = settings.groups.map((g) =>
-                                                g.id === group.id ? { ...g, fields: g.fields.map((f) => (f.id === field.id ? { ...f, options: opts } : f)) } : g
-                                              );
-                                              setSettings({ ...settings, groups: next });
-                                              input.value = '';
-                                            }
-                                          }}
-                                          className="rounded-lg bg-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-white"
-                                        >
-                                          Add option
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
                               </div>
                               <div className="mt-4 flex gap-2">
                                 <button
@@ -1145,10 +1065,15 @@ export default function FormSettingsBuilder() {
                                     if (f) {
                                       handleUpdateQuestion(group.id, field.id, {
                                         label: f.label,
+                                        type: f.type,
                                         placeholder: f.placeholder,
                                         isRequired: f.isRequired,
                                         isEnabled: f.isEnabled,
                                         options: f.options,
+                                        validation: f.validation,
+                                        gridRows: f.gridRows,
+                                        minItems: f.minItems,
+                                        maxItems: f.maxItems,
                                       });
                                     }
                                   }}
@@ -1241,8 +1166,11 @@ export default function FormSettingsBuilder() {
                 <GraduationCap className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-slate-800 dark:text-white">Education & qualifications</h3>
-                <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Table columns for qualifications. Enable/disable columns below; applicants fill one row per exam (e.g. 10th, 12th, B.Tech).</p>
+                <h3 className="text-lg font-semibold text-slate-800 dark:text-white">Global default qualifications</h3>
+                <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                  Fallback when no department + designation profile exists. Configure role-specific setups on the
+                  Qualification profiles tab.
+                </p>
                 <div className="mt-4 flex flex-wrap items-center gap-6">
                   <label className="flex items-center gap-2.5 cursor-pointer">
                     <input
@@ -1336,49 +1264,30 @@ export default function FormSettingsBuilder() {
                                 {isEditingThis ? (
                                   <tr className="bg-violet-50/50 dark:bg-slate-800/50">
                                     <td colSpan={7} className="p-4">
-                                      <h4 className="text-sm font-semibold text-slate-800 dark:text-white">Edit qualification field</h4>
-                                      <div className="mt-4 space-y-4">
-                                        <div>
-                                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Field name</label>
-                                          <input
-                                            type="text"
-                                            value={field.label}
-                                            onChange={(e) => updateQualFieldInSettings({ label: e.target.value })}
-                                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-violet-400 focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                                            placeholder="e.g. Degree"
-                                          />
-                                        </div>
-                                        <div>
-                                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Type</label>
-                                          <select
-                                            value={field.type}
-                                            onChange={(e) => updateQualFieldInSettings({ type: e.target.value })}
-                                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-violet-400 focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                                          >
-                                            {QUAL_FIELD_TYPES.map((t) => (
-                                              <option key={t.value} value={t.value}>{t.label}</option>
-                                            ))}
-                                          </select>
-                                        </div>
-                                        <div>
-                                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Placeholder (optional)</label>
-                                          <input
-                                            type="text"
-                                            value={field.placeholder || ''}
-                                            onChange={(e) => updateQualFieldInSettings({ placeholder: e.target.value })}
-                                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-violet-400 focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                                            placeholder="e.g. E.g., B.Tech, MBA"
-                                          />
-                                        </div>
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                          <input
-                                            type="checkbox"
-                                            checked={field.isRequired || false}
-                                            onChange={(e) => updateQualFieldInSettings({ isRequired: e.target.checked })}
-                                            className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                                          />
-                                          <span className="text-sm text-slate-600 dark:text-slate-300">Required</span>
-                                        </label>
+                                      <h4 className="text-sm font-semibold text-slate-800 dark:text-white">Edit qualification column</h4>
+                                      <div className="mt-4">
+                                        <QualificationColumnForm
+                                          mode="edit"
+                                          draft={{
+                                            label: field.label,
+                                            type: field.type,
+                                            isRequired: !!field.isRequired,
+                                            isEnabled: field.isEnabled !== false,
+                                            placeholder: field.placeholder || '',
+                                            validation: field.validation,
+                                            options: field.options || [],
+                                          }}
+                                          onChange={(draft) =>
+                                            updateQualFieldInSettings({
+                                              label: draft.label,
+                                              type: draft.type,
+                                              isRequired: draft.isRequired,
+                                              placeholder: draft.placeholder,
+                                              validation: draft.validation,
+                                              options: draft.options,
+                                            })
+                                          }
+                                        />
                                       </div>
                                       <div className="mt-4 flex gap-2">
                                         <button
@@ -1391,6 +1300,9 @@ export default function FormSettingsBuilder() {
                                                 type: field.type,
                                                 isRequired: field.isRequired,
                                                 placeholder: field.placeholder || undefined,
+                                                validation: field.validation,
+                                                options: field.options || [],
+                                                gridRows: field.gridRows,
                                               });
                                               await loadSettings();
                                               setEditingQualFieldId(null);
@@ -1694,6 +1606,9 @@ export default function FormSettingsBuilder() {
           </div>
         </div>
       </div>
+
+        </>
+      )}
 
     </SettingsPanel>
   );

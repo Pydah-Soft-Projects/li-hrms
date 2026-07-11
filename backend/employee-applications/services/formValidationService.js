@@ -75,6 +75,14 @@ exports.validateFormData = async (formData, settings = null) => {
       }
     }
 
+    // When qualifications are enabled, overall status must be explicitly selected
+    if (settings.qualifications?.isEnabled !== false) {
+      const qualStatus = formData.qualificationStatus != null ? String(formData.qualificationStatus).trim() : '';
+      if (!qualStatus) {
+        errors.qualificationStatus = 'Overall qualification status is required';
+      }
+    }
+
     return {
       isValid: Object.keys(errors).length === 0,
       errors,
@@ -311,6 +319,7 @@ exports.transformFormData = (formData, settings) => {
     'location',
     'aadhar_number',
     'qualifications',
+    'qualificationStatus',
     'experience',
     'pf_number',
     'esi_number',

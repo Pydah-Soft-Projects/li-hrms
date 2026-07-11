@@ -751,8 +751,9 @@ exports.calculatePayroll = async (req, res) => {
 
     let secondSalaryPayRegister = null;
     try {
+      const { isSuperAdmin } = require('../../employees/utils/employeeFeatureAccess');
       const secondOn = await isSecondSalaryGloballyEnabled();
-      const emp = secondOn ? await Employee.findById(employeeId).select('second_salary') : null;
+      const emp = secondOn && isSuperAdmin(req.user) ? await Employee.findById(employeeId).select('second_salary') : null;
       if (emp && Number(emp.second_salary) > 0) {
         const { calculateSecondSalaryForPayRegister } = require('../services/secondSalaryCalculationService');
         const SecondSalaryBatchService = require('../services/secondSalaryBatchService');

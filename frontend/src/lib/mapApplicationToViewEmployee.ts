@@ -3,11 +3,19 @@
  */
 import { promoteWeekdayShiftScheduleOnRecord } from '@/lib/weekdayShiftSchedule';
 import { resolveEmployeeField } from '@/lib/resolveEmployeeField';
+import { flattenEmployeeRecordForView } from '@/lib/employeeDynamicFieldValue';
 
 export function mapApplicationToViewEmployee(application: Record<string, any>): Record<string, any> {
   const dynamicFields = { ...(application.dynamicFields || {}) };
+  const spreadDynamic: Record<string, any> = { ...dynamicFields };
+  for (const value of Object.values(dynamicFields)) {
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      Object.assign(spreadDynamic, value as Record<string, unknown>);
+    }
+  }
 
   const snapshot = {
+    ...spreadDynamic,
     ...application,
     emp_no: application.emp_no,
     employee_name: application.employee_name,
@@ -15,10 +23,18 @@ export function mapApplicationToViewEmployee(application: Record<string, any>): 
     department_id: application.department_id,
     designation_id: application.designation_id,
     employee_group_id: application.employee_group_id,
-    employee_group: application.employee_group,
-    department: application.department,
-    division: application.division,
-    designation: application.designation,
+    employee_group:
+      application.employee_group ??
+      (typeof application.employee_group_id === 'object' ? application.employee_group_id : undefined),
+    department:
+      application.department ??
+      (typeof application.department_id === 'object' ? application.department_id : undefined),
+    division:
+      application.division ??
+      (typeof application.division_id === 'object' ? application.division_id : undefined),
+    designation:
+      application.designation ??
+      (typeof application.designation_id === 'object' ? application.designation_id : undefined),
     doj: application.doj,
     dob: application.dob,
     gross_salary: application.gross_salary ?? application.proposedSalary,
@@ -70,7 +86,7 @@ export function mapApplicationToViewEmployee(application: Record<string, any>): 
     is_active: true,
   };
 
-  return promoteWeekdayShiftScheduleOnRecord(snapshot);
+  return flattenEmployeeRecordForView(promoteWeekdayShiftScheduleOnRecord(snapshot));
 }
 
 /** Prefer persisted employee data; fill gaps from the application snapshot. */
@@ -107,5 +123,5 @@ export function mergeEmployeeWithApplicationSnapshot(
     weekdayShiftSchedule: employee.weekdayShiftSchedule ?? snapshot.weekdayShiftSchedule ?? null,
   };
 
-  return promoteWeekdayShiftScheduleOnRecord(merged);
+  return flattenEmployeeRecordForView(promoteWeekdayShiftScheduleOnRecord(merged));
 }

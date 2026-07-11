@@ -41,6 +41,8 @@ const {
   getSalariesGroupFieldIds,
 } = require('../utils/employeeSalariesNormalize');
 const { normalizeNotificationArrayFields } = require('../utils/notificationPayloadNormalization');
+const { enforceSecondSalaryOnPayload } = require('../utils/employeeFeatureAccess');
+const { getQualificationSettingsForScope } = require('../../employee-applications/services/qualificationProfileService');
 
 /**
  * Normalize web-push subscriptions from multipart/form payloads.
@@ -766,6 +768,8 @@ exports.createEmployee = async (req, res) => {
       });
     }
 
+    await enforceSecondSalaryOnPayload(req.user, employeeData);
+
     // Check if employee already exists in MongoDB
     const existingMongo = await Employee.findOne({ emp_no: String(employeeData.emp_no || '').toUpperCase() });
     if (existingMongo) {
@@ -956,8 +960,10 @@ exports.createEmployee = async (req, res) => {
     // Resolve Qualification Labels & Uploads
     let qualifications = [];
     try {
-      const settings = await EmployeeApplicationFormSettings.getActiveSettings();
-      // Use helper to parse, upload, and resolve
+      const divId = permanentFields.division_id || employeeData.division_id;
+      const deptId = permanentFields.department_id || employeeData.department_id;
+      const desId = permanentFields.designation_id || employeeData.designation_id;
+      const settings = await getQualificationSettingsForScope(divId, deptId, desId);
       qualifications = await processQualifications(req, settings);
       console.log('[createEmployee] Final Qualifications:', JSON.stringify(qualifications));
     } catch (err) {
@@ -1065,6 +1071,8 @@ exports.updateEmployee = async (req, res) => {
         message: groupErrUpdate.error,
       });
     }
+
+    await enforceSecondSalaryOnPayload(req.user, employeeData);
 
     // NEW Profile Request Logic: 
     // If not super_admin and not the employee themselves, create a request instead of direct update
@@ -1392,7 +1400,19 @@ exports.updateEmployee = async (req, res) => {
     // Resolve Qualification Labels & Uploads
     let qualifications = [];
     try {
-      const settings = await EmployeeApplicationFormSettings.getActiveSettings();
+      const divId =
+        permanentFields.division_id ||
+        employeeData.division_id ||
+        existingEmployee.division_id;
+      const deptId =
+        permanentFields.department_id ||
+        employeeData.department_id ||
+        existingEmployee.department_id;
+      const desId =
+        permanentFields.designation_id ||
+        employeeData.designation_id ||
+        existingEmployee.designation_id;
+      const settings = await getQualificationSettingsForScope(divId, deptId, desId);
       qualifications = await processQualifications(req, settings);
 
       // If no new qualifications in request, merge with existing?

@@ -2920,6 +2920,61 @@ export const api = {
     });
   },
 
+  resolveQualificationProfile: async (params?: {
+    divisionId?: string;
+    departmentId?: string;
+    designationId?: string;
+  }) => {
+    const search = new URLSearchParams();
+    if (params?.divisionId) search.set('division_id', params.divisionId);
+    if (params?.departmentId) search.set('department_id', params.departmentId);
+    if (params?.designationId) search.set('designation_id', params.designationId);
+    const q = search.toString();
+    return apiRequest<any>(`/employee-applications/qualification-profiles/resolve${q ? `?${q}` : ''}`, {
+      method: 'GET',
+    });
+  },
+  listQualificationProfiles: async () => {
+    return apiRequest<any>('/employee-applications/qualification-profiles', { method: 'GET' });
+  },
+  lookupQualificationProfile: async (params: {
+    scopeType: string;
+    divisionId?: string;
+    departmentId?: string;
+    designationId?: string;
+  }) => {
+    const search = new URLSearchParams({ scopeType: params.scopeType });
+    if (params.divisionId) search.set('division_id', params.divisionId);
+    if (params.departmentId) search.set('department_id', params.departmentId);
+    if (params.designationId) search.set('designation_id', params.designationId);
+    return apiRequest<any>(`/employee-applications/qualification-profiles/lookup?${search.toString()}`, {
+      method: 'GET',
+    });
+  },
+  upsertQualificationProfile: async (body: {
+    scopeType: string;
+    division_id?: string | null;
+    department_id?: string | null;
+    designation_id?: string | null;
+    isEnabled?: boolean;
+    enableCertificateUpload?: boolean;
+    fields?: unknown[];
+    defaultRows?: Record<string, unknown>[];
+  }) => {
+    return apiRequest<any>('/employee-applications/qualification-profiles', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+  deleteQualificationProfile: async (id: string) => {
+    return apiRequest<any>(`/employee-applications/qualification-profiles/${id}`, { method: 'DELETE' });
+  },
+  copyQualificationProfileFromGlobal: async () => {
+    return apiRequest<any>('/employee-applications/qualification-profiles/copy-from-global', {
+      method: 'GET',
+    });
+  },
+
 
   deleteEmployee: async (empNo: string) => {
     return apiRequest<any>(`/employees/${empNo}`, { method: 'DELETE' });

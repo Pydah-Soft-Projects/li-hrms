@@ -27,7 +27,14 @@ function currentPayrollMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-export default function AttendanceAuditPage({ hideTitle }: { hideTitle?: boolean } = {}) {
+export default function AttendanceAuditPage({
+  hideTitle,
+  embedded,
+}: {
+  hideTitle?: boolean;
+  /** When rendered inside Audits page — no breakout margins */
+  embedded?: boolean;
+} = {}) {
   const [month, setMonth] = useState(currentPayrollMonth());
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -130,7 +137,13 @@ export default function AttendanceAuditPage({ hideTitle }: { hideTitle?: boolean
   }
 
   return (
-    <div className="w-full max-w-full -mx-4 space-y-6 px-4 pb-24 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6">
+    <div
+      className={
+        embedded
+          ? 'w-full max-w-full space-y-5'
+          : 'w-full max-w-full -mx-4 space-y-6 px-4 pb-24 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6'
+      }
+    >
       {!hideTitle && (
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900 dark:text-white">

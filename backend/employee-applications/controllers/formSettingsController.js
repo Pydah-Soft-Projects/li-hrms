@@ -179,6 +179,10 @@ exports.getSettings = async (req, res) => {
     const wssChanged = EmployeeApplicationFormSettings.ensureWeekdayShiftSchedule(settings);
     if (wssChanged) needsSave = true;
 
+    // --- personal_info: gender, marital_status, blood_group as select dropdowns ---
+    const personalInfoChanged = EmployeeApplicationFormSettings.ensurePersonalInfoDropdownFields(settings.groups);
+    if (personalInfoChanged) needsSave = true;
+
     // --- qualifications ---
     if (!settings.qualifications) {
       settings.qualifications = { isEnabled: true, enableCertificateUpload: false, fields: [], defaultRows: [] };

@@ -1,27 +1,27 @@
 const express = require('express');
 const router = express.Router();
 const secondSalaryController = require('../controllers/secondSalaryController');
-const { protect } = require('../../authentication/middleware/authMiddleware');
+const { protect, authorize } = require('../../authentication/middleware/authMiddleware');
 const { applyScopeFilter } = require('../../shared/middleware/dataScopeMiddleware');
 const requireSecondSalaryEnabled = require('../../settings/middleware/requireSecondSalaryEnabled');
 
-// Batch Management
-router.post('/calculate', protect, applyScopeFilter, requireSecondSalaryEnabled, secondSalaryController.calculateSecondSalary);
-router.get('/batches', protect, requireSecondSalaryEnabled, secondSalaryController.getSecondSalaryBatches);
-router.get('/batches/:id', protect, requireSecondSalaryEnabled, secondSalaryController.getSecondSalaryBatch);
+// Batch Management — Super Admin only (staff must not post second salary)
+router.post('/calculate', protect, authorize('super_admin'), applyScopeFilter, requireSecondSalaryEnabled, secondSalaryController.calculateSecondSalary);
+router.get('/batches', protect, authorize('super_admin'), requireSecondSalaryEnabled, secondSalaryController.getSecondSalaryBatches);
+router.get('/batches/:id', protect, authorize('super_admin'), requireSecondSalaryEnabled, secondSalaryController.getSecondSalaryBatch);
 
 // Status Management
-router.put('/batches/:id/status', protect, requireSecondSalaryEnabled, secondSalaryController.updateBatchStatus);
+router.put('/batches/:id/status', protect, authorize('super_admin'), requireSecondSalaryEnabled, secondSalaryController.updateBatchStatus);
 
-// Records (Payslips)
-router.get('/records', protect, requireSecondSalaryEnabled, secondSalaryController.getSecondSalaryRecords);
-router.get('/records/:id', protect, requireSecondSalaryEnabled, secondSalaryController.getSecondSalaryRecordById);
+// Records (Payslips) — read for scoped users via other routes; batch ops superadmin only
+router.get('/records', protect, authorize('super_admin'), requireSecondSalaryEnabled, secondSalaryController.getSecondSalaryRecords);
+router.get('/records/:id', protect, authorize('super_admin'), requireSecondSalaryEnabled, secondSalaryController.getSecondSalaryRecordById);
 
 // Comparison
-router.get('/comparison', protect, requireSecondSalaryEnabled, secondSalaryController.getSalaryComparison);
-router.get('/comparison/export', protect, requireSecondSalaryEnabled, secondSalaryController.exportSalaryComparisonExcel);
+router.get('/comparison', protect, authorize('super_admin'), requireSecondSalaryEnabled, secondSalaryController.getSalaryComparison);
+router.get('/comparison/export', protect, authorize('super_admin'), requireSecondSalaryEnabled, secondSalaryController.exportSalaryComparisonExcel);
 
 // Export
-router.get('/export', protect, requireSecondSalaryEnabled, secondSalaryController.exportSecondSalaryExcel);
+router.get('/export', protect, authorize('super_admin'), requireSecondSalaryEnabled, secondSalaryController.exportSecondSalaryExcel);
 
 module.exports = router;

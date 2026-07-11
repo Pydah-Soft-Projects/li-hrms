@@ -8,6 +8,11 @@ const {
   overallQualificationStatusLabel,
   rowQualificationStatusLabel,
 } = require('../../shared/utils/qualificationStatusUtils');
+const {
+  buildSettingsWithResolvedQualifications,
+  buildProfileResolverForEmployees,
+  getQualFieldLabelsFromConfig,
+} = require('../../employee-applications/services/qualificationProfileService');
 
 const RESERVED_QUAL_KEYS = new Set([
   'status',
@@ -111,18 +116,9 @@ function buildCertificationFilters(scopeFilter, query) {
   return queryFilters;
 }
 
-function getQualFieldLabels(formSettings) {
-  const fields = formSettings?.qualifications?.fields || [];
-  const labels = [];
-  const seen = new Set();
-  fields.forEach((field) => {
-    const label = field?.label ? String(field.label).trim() : '';
-    if (label && !seen.has(label.toLowerCase())) {
-      seen.add(label.toLowerCase());
-      labels.push(label);
-    }
-  });
-  return labels;
+function getQualFieldLabels(formSettings, qualConfig) {
+  if (qualConfig) return getQualFieldLabelsFromConfig(qualConfig);
+  return getQualFieldLabelsFromConfig(formSettings?.qualifications);
 }
 
 function extractQualificationFieldValues(qual, qualFieldLabels) {
@@ -192,15 +188,22 @@ async function fetchEmployeesForReport(filters) {
     .lean();
 }
 
-function buildRowsFromEmployees(employees, formSettings, overallStatusOptions) {
-  const qualFieldLabels = getQualFieldLabels(formSettings);
-  const hasLegacy = employees.some((emp) => {
+async function buildRowsFromEmployees(employees, formSettings, overallStatusOptions) {
+  const resolveProfile = await buildProfileResolverForEmployees(employees);
+  const labelUnion = new Set();
+  let hasLegacy = false;
+
+  employees.forEach((emp) => {
     const raw = resolveEmployeeQualifications(emp);
-    return raw.some((q) => q && q._legacyText);
+    if (raw.some((q) => q && q._legacyText)) hasLegacy = true;
+    const qualConfig = resolveProfile(emp.division_id, emp.department_id, emp.designation_id);
+    getQualFieldLabels(formSettings, qualConfig).forEach((label) => labelUnion.add(label));
   });
-  const exportQualLabels = hasLegacy && !qualFieldLabels.includes('Qualifications (Legacy)')
-    ? [...qualFieldLabels, 'Qualifications (Legacy)']
-    : [...qualFieldLabels];
+
+  const exportQualLabels = [...labelUnion];
+  if (hasLegacy && !exportQualLabels.includes('Qualifications (Legacy)')) {
+    exportQualLabels.push('Qualifications (Legacy)');
+  }
 
   const rows = [];
   const stats = {
@@ -216,6 +219,10 @@ function buildRowsFromEmployees(employees, formSettings, overallStatusOptions) {
     const overallLabel = overallQualificationStatusLabel(overallRaw, overallStatusOptions);
     stats.byOverallStatus[overallLabel] = (stats.byOverallStatus[overallLabel] || 0) + 1;
 
+    const qualConfig = resolveProfile(emp.division_id, emp.department_id, emp.designation_id);
+    const scopedSettings = buildSettingsWithResolvedQualifications(formSettings, qualConfig);
+    const empQualLabels = getQualFieldLabels(formSettings, qualConfig);
+
     const base = {
       emp_no: emp.emp_no || '',
       employee_name: emp.employee_name || '',
@@ -224,10 +231,11 @@ function buildRowsFromEmployees(employees, formSettings, overallStatusOptions) {
       designation: mapOrgName(emp.designation_id),
       overallCertificationStatus: overallLabel,
       overallCertificationStatusValue: overallRaw,
+      qualificationProfileSource: qualConfig.source || 'global',
     };
 
     const rawQuals = resolveEmployeeQualifications(emp);
-    const resolvedQuals = resolveQualificationLabels(rawQuals, formSettings);
+    const resolvedQuals = resolveQualificationLabels(rawQuals, scopedSettings);
 
     if (!resolvedQuals.length) {
       stats.employeesWithoutQualifications += 1;
@@ -248,7 +256,7 @@ function buildRowsFromEmployees(employees, formSettings, overallStatusOptions) {
     stats.employeesWithQualifications += 1;
     resolvedQuals.forEach((qual, index) => {
       stats.totalQualificationRows += 1;
-      const fieldValues = extractQualificationFieldValues(qual, exportQualLabels);
+      const fieldValues = extractQualificationFieldValues(qual, empQualLabels.length ? empQualLabels : exportQualLabels);
       exportQualLabels.forEach((label) => {
         if (!(label in fieldValues)) fieldValues[label] = '';
       });
@@ -338,7 +346,7 @@ async function buildCertificationReport(scopeFilter, query = {}) {
   ]);
 
   const overallStatusOptions = parseOverallStatusOptions(statusSetting?.value);
-  const { rows, qualFieldLabels, stats } = buildRowsFromEmployees(
+  const { rows, qualFieldLabels, stats } = await buildRowsFromEmployees(
     employees,
     formSettings,
     overallStatusOptions

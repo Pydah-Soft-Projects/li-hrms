@@ -430,7 +430,7 @@ export default function RejoinEmployeeModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-300"
+            className="flex-1 rounded-xl border border-emerald-300 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
           >
             Cancel
           </button>

@@ -124,7 +124,7 @@ const employeeApplicationSchema = new mongoose.Schema(
     },
     qualificationStatus: {
       type: String,
-      default: 'not_submitted',
+      default: null,
       trim: true,
     },
     experience: {

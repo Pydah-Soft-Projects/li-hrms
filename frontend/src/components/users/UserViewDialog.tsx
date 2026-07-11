@@ -4,18 +4,16 @@ import {
   Building,
   Clock,
   Edit,
-  Eye,
   Globe,
   Info,
   Layers,
   Lock,
-  RotateCw,
   Shield,
   ShieldAlert,
   ShieldCheck,
 } from 'lucide-react';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
-import { getReadButtonLabel, getWriteButtonLabel } from '@/lib/modulePermissionLabels';
+import ModulePermissionBadges, { moduleShouldShowInPermissionView } from '@/components/users/ModulePermissionBadges';
 import type { Department, Division, User, UserHistoryRow } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 import {
@@ -30,7 +28,6 @@ import {
   loansDialogPrimaryButtonStyle,
 } from '@/components/loans/LoanDetailDialogShell';
 import {
-  permissionChipClass,
   userActiveBadgeClass,
   userActiveLabel,
   userAvatarClass,
@@ -252,22 +249,9 @@ export function UserViewDialog({
               ) : (
                 <div className="space-y-4">
                   {MODULE_CATEGORIES.map((category) => {
-                    const modulesWithPerms = category.modules
-                      .map((m) => ({
-                        ...m,
-                        hasRead: user.featureControl?.includes(`${m.code}:read`) || false,
-                        hasWrite: user.featureControl?.includes(`${m.code}:write`) || false,
-                        hasVerify: (m as any).verifiable
-                          ? user.featureControl?.includes(`${m.code}:verify`) || false
-                          : false,
-                        hasTerminate: (m as any).terminable
-                          ? user.featureControl?.includes(`${m.code}:terminate`) || false
-                          : false,
-                        hasRelease: (m as any).releasable
-                          ? user.featureControl?.includes(`${m.code}:release`) || false
-                          : false,
-                      }))
-                      .filter((m) => m.hasRead || m.hasWrite || m.hasVerify || m.hasTerminate || m.hasRelease);
+                    const modulesWithPerms = category.modules.filter((m) =>
+                      moduleShouldShowInPermissionView(m as any, user.featureControl)
+                    );
 
                     if (modulesWithPerms.length === 0) return null;
 
@@ -292,16 +276,7 @@ export function UserViewDialog({
                               <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-700 dark:text-stone-300">
                                 {m.label}
                               </span>
-                              <div className="flex flex-wrap justify-end gap-1">
-                                {m.hasRead ? <span className={permissionChipClass('read')}><Eye className="h-3 w-3" />{getReadButtonLabel(m.code)}</span> : null}
-                                {m.hasWrite ? <span className={permissionChipClass('write')}>{getWriteButtonLabel(m.code)}</span> : null}
-                                {m.hasVerify ? <span className={permissionChipClass('verify')}>Verify</span> : null}
-                                {m.hasTerminate ? <span className={permissionChipClass('terminate')}>Terminate</span> : null}
-                                {m.hasRelease ? <span className={permissionChipClass('release')}>Release</span> : null}
-                                {user.featureControl?.includes(`${m.code}:bank`) ? (
-                                  <span className={permissionChipClass('bank')}><RotateCw className="h-3 w-3" />Bank</span>
-                                ) : null}
-                              </div>
+                              <ModulePermissionBadges module={m as any} featureControl={user.featureControl} />
                             </div>
                           ))}
                         </div>

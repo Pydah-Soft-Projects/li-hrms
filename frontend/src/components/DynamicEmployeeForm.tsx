@@ -1,10 +1,16 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { api, Shift } from '@/lib/api';
 import { CertificateUpload } from '@/components/CertificateUpload';
 import Spinner from '@/components/Spinner';
 import { Plus } from 'lucide-react';
+import {
+  idFromRef,
+  mergeQualificationsOnProfileChange,
+  resolvedToQualificationsConfig,
+  seedQualificationsFromDefaults,
+} from '@/lib/qualificationProfile';
 import {
   WEEKDAY_LABELS,
   isLegacyWeekdayShiftFieldId,
@@ -12,6 +18,8 @@ import {
   resolveWeekdayShiftScheduleFromFormData,
   shouldShowWeekdayShiftSection,
 } from '@/lib/weekdayShiftSchedule';
+import { normalizePersonalEnumField } from '@/lib/personalEnumFields';
+import { mergeOverallQualificationStatusOptions } from '@/lib/qualificationStatus';
 
 interface Field {
   id: string;
@@ -80,6 +88,7 @@ interface QualificationsConfig {
 interface FormSettings {
   groups: Group[];
   qualifications?: QualificationsConfig;
+  qualification_statuses?: Array<string | { value: string; label: string }>;
   weekdayShiftSchedule?: {
     isEnabled: boolean;
   };
@@ -99,6 +108,8 @@ interface DynamicEmployeeFormProps {
   excludeFields?: string[];
   /** When true (editing existing employee), only pre-filled qualification cells are read-only; all others stay editable. When false (create), a cell becomes read-only after the user edits it (except certificate fields). */
   isEditingExistingEmployee?: boolean;
+  /** New employee application: show required overall status; qualification rows stay editable like other create flows. */
+  isEmployeeApplicationForm?: boolean;
 }
 
 export default function DynamicEmployeeForm({
@@ -114,6 +125,7 @@ export default function DynamicEmployeeForm({
   employeeGroups = [],
   excludeFields = [],
   isEditingExistingEmployee = false,
+  isEmployeeApplicationForm = false,
 }: DynamicEmployeeFormProps) {
   const [settings, setSettings] = useState<FormSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -121,6 +133,13 @@ export default function DynamicEmployeeForm({
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [groupingEnabled, setGroupingEnabled] = useState(false);
   const [fallbackEmployeeGroups, setFallbackEmployeeGroups] = useState<Array<{ _id: string; name: string; isActive?: boolean }>>([]);
+  const [effectiveQualConfig, setEffectiveQualConfig] = useState<QualificationsConfig | null>(null);
+  const [qualConfigSource, setQualConfigSource] = useState<'global' | string>('global');
+  const prevOrgScopeRef = useRef<{ div: string; dept: string; des: string } | null>(null);
+
+  const divisionIdStr = idFromRef(formData?.division_id);
+  const departmentId = idFromRef(formData?.department_id);
+  const designationId = idFromRef(formData?.designation_id);
 
   // Reporting-to dropdown: filter by selected division using each user's divisionMapping; super_admin and sub_admin shown for all divisions
   const divisionId = typeof formData?.division_id === 'object' ? (formData?.division_id as any)?._id : formData?.division_id;
@@ -213,6 +232,82 @@ export default function DynamicEmployeeForm({
 
   const effectiveEmployeeGroups = employeeGroups.length > 0 ? employeeGroups : fallbackEmployeeGroups;
 
+  useEffect(() => {
+    if (!settings) return;
+    let cancelled = false;
+
+    const resolveQualConfig = async () => {
+      try {
+        const res = await api.resolveQualificationProfile({
+          divisionId: divisionIdStr || undefined,
+          departmentId: departmentId || undefined,
+          designationId: designationId || undefined,
+        });
+        if (cancelled) return;
+        if (res.success && res.data) {
+          const cfg = resolvedToQualificationsConfig(res.data);
+          setEffectiveQualConfig(cfg);
+          setQualConfigSource(res.data.source === 'global' ? 'global' : String(res.data.source));
+        } else {
+          setEffectiveQualConfig(
+            settings.qualifications
+              ? {
+                  isEnabled: settings.qualifications.isEnabled !== false,
+                  enableCertificateUpload: !!settings.qualifications.enableCertificateUpload,
+                  fields: settings.qualifications.fields || [],
+                  defaultRows: settings.qualifications.defaultRows || [],
+                }
+              : null
+          );
+          setQualConfigSource('global');
+        }
+      } catch {
+        if (!cancelled && settings.qualifications) {
+          setEffectiveQualConfig({
+            isEnabled: settings.qualifications.isEnabled !== false,
+            enableCertificateUpload: !!settings.qualifications.enableCertificateUpload,
+            fields: settings.qualifications.fields || [],
+            defaultRows: settings.qualifications.defaultRows || [],
+          });
+          setQualConfigSource('global');
+        }
+      }
+    };
+
+    void resolveQualConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, [settings, divisionIdStr, departmentId, designationId]);
+
+  useEffect(() => {
+    if (!effectiveQualConfig) return;
+
+    const prev = prevOrgScopeRef.current;
+    const changed =
+      prev != null &&
+      (prev.div !== divisionIdStr || prev.dept !== departmentId || prev.des !== designationId);
+    prevOrgScopeRef.current = { div: divisionIdStr, dept: departmentId, des: designationId };
+
+    if (changed) {
+      const merged = mergeQualificationsOnProfileChange(
+        formData.qualifications || [],
+        effectiveQualConfig.defaultRows || []
+      );
+      onChange({ ...formData, qualifications: merged });
+      return;
+    }
+
+    const seeded = seedQualificationsFromDefaults(
+      formData.qualifications || [],
+      effectiveQualConfig.defaultRows || []
+    );
+    if (seeded) {
+      onChange({ ...formData, qualifications: seeded });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveQualConfig, divisionIdStr, departmentId, designationId]);
+
   const handleFieldChange = (fieldId: string, value: any) => {
     const newData = {
       ...formData,
@@ -265,6 +360,7 @@ export default function DynamicEmployeeForm({
   };
 
   const renderField = (field: Field, groupId: string, arrayIndex?: number) => {
+    field = normalizePersonalEnumField(field);
     if (excludeFields.includes(field.id)) return null;
 
     // When editing an employee (formData.gross_salary exists), map proposedSalary field to gross_salary
@@ -567,6 +663,191 @@ export default function DynamicEmployeeForm({
           </div>
         );
 
+      case 'radio':
+        return (
+          <div key={fieldKey}>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {displayLabel} {field.isRequired && '*'}
+            </label>
+            <div className="space-y-2">
+              {(field.options || []).map((opt) => (
+                <label key={opt.value} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name={field.id}
+                    checked={String(value) === String(opt.value)}
+                    onChange={() => localHandleFieldChange(field.id, opt.value)}
+                    disabled={isViewMode}
+                  />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
+      case 'scale': {
+        const min = field.validation?.min ?? 1;
+        const max = field.validation?.max ?? 5;
+        const step = field.validation?.step ?? 1;
+        const points: number[] = [];
+        for (let i = min; i <= max; i += step) points.push(i);
+        return (
+          <div key={fieldKey}>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {displayLabel} {field.isRequired && '*'}
+            </label>
+            <div className="flex flex-wrap items-center gap-3">
+              {field.validation?.minLabel ? (
+                <span className="text-xs text-slate-500">{field.validation.minLabel}</span>
+              ) : null}
+              {points.map((p) => (
+                <label key={p} className="inline-flex flex-col items-center gap-1 text-xs">
+                  <input
+                    type="radio"
+                    name={field.id}
+                    checked={Number(value) === p}
+                    onChange={() => localHandleFieldChange(field.id, p)}
+                    disabled={isViewMode}
+                  />
+                  <span>{p}</span>
+                </label>
+              ))}
+              {field.validation?.maxLabel ? (
+                <span className="text-xs text-slate-500">{field.validation.maxLabel}</span>
+              ) : null}
+            </div>
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+      }
+
+      case 'rating': {
+        const maxStars = field.validation?.max ?? 5;
+        return (
+          <div key={fieldKey}>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {displayLabel} {field.isRequired && '*'}
+            </label>
+            <div className="flex gap-1">
+              {Array.from({ length: maxStars }, (_, i) => i + 1).map((star) => (
+                <button
+                  key={star}
+                  type="button"
+                  disabled={isViewMode}
+                  onClick={() => localHandleFieldChange(field.id, star)}
+                  className={`text-xl ${Number(value) >= star ? 'text-amber-400' : 'text-slate-300'}`}
+                >
+                  ★
+                </button>
+              ))}
+            </div>
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+      }
+
+      case 'radio_grid':
+      case 'checkbox_grid': {
+        const rows = field.gridRows || [];
+        const cols = field.options || [];
+        const gridVal = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
+        return (
+          <div key={fieldKey} className="overflow-x-auto">
+            <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {displayLabel} {field.isRequired && '*'}
+            </label>
+            <table className="min-w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  <th className="border border-slate-200 px-2 py-1 dark:border-slate-700" />
+                  {cols.map((c) => (
+                    <th key={c.value} className="border border-slate-200 px-2 py-1 dark:border-slate-700">
+                      {c.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row}>
+                    <td className="border border-slate-200 px-2 py-1 font-medium dark:border-slate-700">{row}</td>
+                    {cols.map((c) => (
+                      <td key={c.value} className="border border-slate-200 px-2 py-1 text-center dark:border-slate-700">
+                        <input
+                          type={field.type === 'radio_grid' ? 'radio' : 'checkbox'}
+                          name={field.type === 'radio_grid' ? `${field.id}-${row}` : undefined}
+                          checked={
+                            field.type === 'radio_grid'
+                              ? String(gridVal[row]) === String(c.value)
+                              : Array.isArray(gridVal[row]) && (gridVal[row] as string[]).includes(String(c.value))
+                          }
+                          disabled={isViewMode}
+                          onChange={(e) => {
+                            const next = { ...gridVal };
+                            if (field.type === 'radio_grid') {
+                              next[row] = c.value;
+                            } else {
+                              const cur = Array.isArray(next[row]) ? [...(next[row] as string[])] : [];
+                              if (e.target.checked) cur.push(String(c.value));
+                              else {
+                                const idx = cur.indexOf(String(c.value));
+                                if (idx >= 0) cur.splice(idx, 1);
+                              }
+                              next[row] = cur;
+                            }
+                            localHandleFieldChange(field.id, next);
+                          }}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+      }
+
+      case 'time':
+        return (
+          <div key={fieldKey}>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {displayLabel} {field.isRequired && '*'}
+            </label>
+            <input
+              type="time"
+              value={value || ''}
+              onChange={(e) => localHandleFieldChange(field.id, e.target.value)}
+              required={field.isRequired}
+              disabled={isViewMode}
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300' : 'border-slate-200 bg-white'}`}
+            />
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
+      case 'boolean':
+        return (
+          <div key={fieldKey}>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {displayLabel} {field.isRequired && '*'}
+            </label>
+            <select
+              value={value === true || value === 'true' ? 'true' : 'false'}
+              onChange={(e) => localHandleFieldChange(field.id, e.target.value === 'true')}
+              disabled={isViewMode}
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300' : 'border-slate-200 bg-white'}`}
+            >
+              <option value="true">{field.options?.[0]?.label || 'Yes'}</option>
+              <option value="false">{field.options?.[1]?.label || 'No'}</option>
+            </select>
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
       case 'select':
         return (
           <div key={fieldKey}>
@@ -577,6 +858,7 @@ export default function DynamicEmployeeForm({
               value={value || ''}
               onChange={(e) => localHandleFieldChange(field.id, e.target.value || null)}
               required={field.isRequired}
+              disabled={isViewMode}
               className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                 }`}
             >
@@ -1369,11 +1651,20 @@ export default function DynamicEmployeeForm({
 
   // Render qualifications section
   const renderQualifications = () => {
-    if (!settings.qualifications || !settings.qualifications.isEnabled) {
+    const qualConfig = effectiveQualConfig ?? settings?.qualifications;
+    if (!qualConfig || qualConfig.isEnabled === false) {
       return null;
     }
 
-    const qualFields = settings.qualifications.fields
+    if (!departmentId || !designationId) {
+      return (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
+          Select <strong>department</strong> and <strong>designation</strong> to load qualification requirements for this role.
+        </div>
+      );
+    }
+
+    const qualFields = (qualConfig.fields || [])
       .filter((f) => f.isEnabled !== false && f.id !== 's_no')
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
@@ -1385,7 +1676,7 @@ export default function DynamicEmployeeForm({
     const hasPreFilledFlags = Array.isArray(rawQualifications) && rawQualifications.some((r: any) => r && (r.isPreFilled === true || r.isPreFilled === false));
     const defaultRowsToShow = hasPreFilledFlags
       ? (rawQualifications as any[]).filter((r: any) => r.isPreFilled === true)
-      : (settings.qualifications?.defaultRows || []);
+      : (qualConfig?.defaultRows || []);
     const applicantRowsToShow = hasPreFilledFlags
       ? (rawQualifications as any[]).filter((r: any) => r.isPreFilled !== true)
       : rawQualifications;
@@ -1517,6 +1808,7 @@ export default function DynamicEmployeeForm({
           );
         }
         case 'select':
+        case 'radio':
           return (
             <>
               <select
@@ -1533,6 +1825,76 @@ export default function DynamicEmployeeForm({
                   </option>
                 ))}
               </select>
+              {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            </>
+          );
+        case 'multiselect': {
+          const selected = Array.isArray(raw) ? raw.map(String) : raw ? [String(raw)] : [];
+          return (
+            <>
+              <div className="flex flex-col gap-1">
+                {(field.options || []).map((opt) => (
+                  <label key={opt.value} className="inline-flex items-center gap-1.5 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(String(opt.value))}
+                      disabled={isViewMode}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? [...selected, String(opt.value)]
+                          : selected.filter((v) => v !== String(opt.value));
+                        handleQualificationChange(applicantRowIndex, field.id, next);
+                      }}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+              {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            </>
+          );
+        }
+        case 'email':
+          return (
+            <>
+              <input
+                type="email"
+                value={value}
+                onChange={(e) => handleQualificationChange(applicantRowIndex, field.id, e.target.value)}
+                placeholder={field.placeholder}
+                required={field.isRequired}
+                disabled={isViewMode}
+                className={inputCls(!!error)}
+              />
+              {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            </>
+          );
+        case 'tel':
+          return (
+            <>
+              <input
+                type="tel"
+                value={value}
+                onChange={(e) => handleQualificationChange(applicantRowIndex, field.id, e.target.value)}
+                placeholder={field.placeholder}
+                required={field.isRequired}
+                disabled={isViewMode}
+                className={inputCls(!!error)}
+              />
+              {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            </>
+          );
+        case 'time':
+          return (
+            <>
+              <input
+                type="time"
+                value={value}
+                onChange={(e) => handleQualificationChange(applicantRowIndex, field.id, e.target.value)}
+                required={field.isRequired}
+                disabled={isViewMode}
+                className={inputCls(!!error)}
+              />
               {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
             </>
           );
@@ -1632,6 +1994,7 @@ export default function DynamicEmployeeForm({
           );
         }
         case 'select':
+        case 'radio':
           return (
             <>
               <select
@@ -1648,6 +2011,53 @@ export default function DynamicEmployeeForm({
                   </option>
                 ))}
               </select>
+              {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            </>
+          );
+        case 'multiselect': {
+          const selected = Array.isArray(raw) ? raw.map(String) : raw ? [String(raw)] : [];
+          return (
+            <>
+              <div className="flex flex-col gap-1">
+                {(field.options || []).map((opt) => (
+                  <label key={opt.value} className="inline-flex items-center gap-1.5 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(String(opt.value))}
+                      disabled={isViewMode}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? [...selected, String(opt.value)]
+                          : selected.filter((v) => v !== String(opt.value));
+                        onChange(next);
+                      }}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+              {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            </>
+          );
+        }
+        case 'email':
+          return (
+            <>
+              <input type="email" value={value} onChange={(e) => onChange(e.target.value)} placeholder={field.placeholder} required={field.isRequired} disabled={isViewMode} className={inputCls(!!error)} />
+              {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            </>
+          );
+        case 'tel':
+          return (
+            <>
+              <input type="tel" value={value} onChange={(e) => onChange(e.target.value)} placeholder={field.placeholder} required={field.isRequired} disabled={isViewMode} className={inputCls(!!error)} />
+              {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            </>
+          );
+        case 'time':
+          return (
+            <>
+              <input type="time" value={value} onChange={(e) => onChange(e.target.value)} required={field.isRequired} disabled={isViewMode} className={inputCls(!!error)} />
               {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
             </>
           );
@@ -1675,7 +2085,7 @@ export default function DynamicEmployeeForm({
     const hasPreFilledCellValueForDefaultRow = (rowIndex: number, field: QualificationsField) => {
       if (field.id === 's_no') return true;
       if (field.id === 'certificate_submitted') return false; // always editable in application and edit
-      const originalDefaultRows = settings.qualifications?.defaultRows ?? [];
+      const originalDefaultRows = qualConfig?.defaultRows ?? [];
       const originalRow = originalDefaultRows[rowIndex] as Record<string, unknown> | undefined;
       if (!originalRow) return false;
       const v = originalRow[field.id];
@@ -1687,19 +2097,60 @@ export default function DynamicEmployeeForm({
       return String(v).trim() !== '';
     };
 
-    const certUploadEnabled = settings.qualifications?.enableCertificateUpload;
+    const certUploadEnabled = qualConfig?.enableCertificateUpload;
     const inputClsFile = "block w-full text-sm text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-green-50 file:text-green-700 hover:file:bg-green-100 dark:file:bg-green-900/20 dark:file:text-green-400";
+
+    const overallStatusOptions = mergeOverallQualificationStatusOptions({
+      settingList: settings?.qualification_statuses,
+      current: formData?.qualificationStatus,
+    });
+    const overallStatusValue = formData?.qualificationStatus != null ? String(formData.qualificationStatus) : '';
+    const overallStatusError = errors.qualificationStatus;
 
     return (
       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
           Qualifications
+          {qualConfigSource === 'global' ? (
+            <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold normal-case text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+              Global default
+            </span>
+          ) : (
+            <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold normal-case text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+              Scoped profile
+            </span>
+          )}
         </h3>
         <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-          {defaultRows.length > 0
-            ? 'Pre-filled rows: only cells with a value set by your organization are read-only. Empty cells are editable—fill them in and add more rows below if needed.'
-            : 'Add rows for each exam (e.g. 10th, 12th, degree). Headers are fixed; fill only the values in each row.'}
+          {isEmployeeApplicationForm
+            ? 'Select overall status (required), then fill in qualification details below. Org pre-filled cells stay read-only; empty cells and extra rows are editable.'
+            : defaultRows.length > 0
+              ? 'Pre-filled rows: only cells with a value set by your organization are read-only. Empty cells are editable—fill them in and add more rows below if needed.'
+              : 'Add rows for each exam (e.g. 10th, 12th, degree). Headers are fixed; fill only the values in each row.'}
         </p>
+        {isEmployeeApplicationForm && !isViewMode && (
+          <div className="mb-4 max-w-md">
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              Overall status <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={overallStatusValue}
+              onChange={(e) => handleFieldChange('qualificationStatus', e.target.value)}
+              required
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${overallStatusError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'}`}
+            >
+              <option value="">Select status</option>
+              {overallStatusOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            {overallStatusError && (
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">{overallStatusError}</p>
+            )}
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[800px] border-collapse text-left text-sm">
             <thead>

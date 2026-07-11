@@ -17,6 +17,8 @@ import {
   getWriteButtonTitle,
   getReleaseButtonTitle,
 } from '@/lib/modulePermissionLabels';
+import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
+import ModuleGranularPermissionToggles from '@/components/users/ModuleGranularPermissionToggles';
 import Spinner from '@/components/Spinner';
 import {
   buildDivisionMappingFromDepartment,
@@ -136,6 +138,7 @@ const hasMonthSlotEditPermission = (featureControl?: string[]) =>
   !!featureControl?.includes(MONTH_SLOT_EDIT_PERMISSION) || !!featureControl?.includes('LEAVE_REGISTER_MONTH_EDIT');
 
 export default function UsersPage() {
+  const { secondSalaryEnabled } = useSecondSalaryFeatureEnabled();
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
@@ -1864,85 +1867,12 @@ export default function UsersPage() {
                                             Release
                                           </button>
                                         )}
-                                        {/* Verify Toggle â€” only for verifiable modules (e.g. EMPLOYEES) */}
-                                        {(module as any).verifiable && (
-                                          <button
-                                            type="button"
-                                            onClick={toggleVerify}
-                                            title="Verify: grants access to Applications tab and Verify button. Independent of Read/Write."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasVerify
-                                              ? 'bg-violet-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            Verify
-                                          </button>
-                                        )}
-                                        {/* Bank Toggle â€” only for bankable modules (e.g. EMPLOYEES) */}
-                                        {(module as any).bankable && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const currentFeatures = formData.featureControl || [];
-                                              const bankPerm = `${module.code}:bank`;
-                                              const hasBank = currentFeatures.includes(bankPerm);
-                                              const newFeatures = hasBank
-                                                ? currentFeatures.filter(f => f !== bankPerm)
-                                                : [...currentFeatures, bankPerm];
-                                              setFormData({ ...formData, featureControl: newFeatures });
-                                            }}
-                                            title="Bank: grants access to update bank details. Independent of Read/Write."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:bank`)
-                                              ? 'bg-amber-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            Bank
-                                          </button>
-                                        )}
-                                        {(module as any).fileUploadable && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const currentFeatures = formData.featureControl || [];
-                                              const filePerm = `${module.code}:file`;
-                                              const hasFile = currentFeatures.includes(filePerm);
-                                              const newFeatures = hasFile
-                                                ? currentFeatures.filter(f => f !== filePerm)
-                                                : [...currentFeatures, filePerm];
-                                              setFormData({ ...formData, featureControl: newFeatures });
-                                            }}
-                                            title="File: allows OD evidence from device gallery or file picker (camera still available without this)."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:file`)
-                                              ? 'bg-sky-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            File
-                                          </button>
-                                        )}
-                                        {/* Edit Toggle â€” only for editable modules (e.g. EMPLOYEES): auto-approves profile requests */}
-                                        {(module as any).editable && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const currentFeatures = formData.featureControl || [];
-                                              const editPerm = `${module.code}:edit`;
-                                              const hasEdit = currentFeatures.includes(editPerm);
-                                              const newFeatures = hasEdit
-                                                ? currentFeatures.filter(f => f !== editPerm)
-                                                : [...currentFeatures, editPerm];
-                                              setFormData({ ...formData, featureControl: newFeatures });
-                                            }}
-                                            title="Edit: profile update requests from this user are auto-approved without Super Admin review."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:edit`)
-                                              ? 'bg-rose-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            Edit
-                                          </button>
-                                        )}
+                                        <ModuleGranularPermissionToggles
+                                          module={module as any}
+                                          featureControl={formData.featureControl}
+                                          onChange={(featureControl) => setFormData({ ...formData, featureControl })}
+                                          secondSalaryOrgEnabled={secondSalaryEnabled}
+                                        />
                                       </div>
                                     </div>
                                   );
@@ -2468,85 +2398,12 @@ export default function UsersPage() {
                                           Release
                                         </button>
                                       )}
-                                      {/* Verify Toggle â€” only for verifiable modules (e.g. EMPLOYEES) */}
-                                      {(module as any).verifiable && (
-                                        <button
-                                          type="button"
-                                          onClick={toggleVerify}
-                                          title="Verify: grants access to Applications tab and Verify button. Independent of Read/Write."
-                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasVerify
-                                            ? 'bg-violet-500 text-white shadow-sm'
-                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                            }`}
-                                        >
-                                          Verify
-                                        </button>
-                                      )}
-                                      {/* Bank Toggle â€” only for bankable modules (e.g. EMPLOYEES) */}
-                                      {(module as any).bankable && (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            const currentFeatures = employeeFormData.featureControl || [];
-                                            const bankPerm = `${module.code}:bank`;
-                                            const hasBank = currentFeatures.includes(bankPerm);
-                                            const newFeatures = hasBank
-                                              ? currentFeatures.filter(f => f !== bankPerm)
-                                              : [...currentFeatures, bankPerm];
-                                            setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
-                                          }}
-                                          title="Bank: grants access to update bank details. Independent of Read/Write."
-                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${employeeFormData.featureControl?.includes(`${module.code}:bank`)
-                                            ? 'bg-amber-500 text-white shadow-sm'
-                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                            }`}
-                                        >
-                                          Bank
-                                        </button>
-                                      )}
-                                      {(module as any).fileUploadable && (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            const currentFeatures = employeeFormData.featureControl || [];
-                                            const filePerm = `${module.code}:file`;
-                                            const hasFile = currentFeatures.includes(filePerm);
-                                            const newFeatures = hasFile
-                                              ? currentFeatures.filter(f => f !== filePerm)
-                                              : [...currentFeatures, filePerm];
-                                            setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
-                                          }}
-                                          title="File: allows OD evidence from device gallery or file picker (camera still available without this)."
-                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${employeeFormData.featureControl?.includes(`${module.code}:file`)
-                                            ? 'bg-sky-500 text-white shadow-sm'
-                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                            }`}
-                                        >
-                                          File
-                                        </button>
-                                      )}
-                                      {/* Edit Toggle â€” auto-approves profile requests */}
-                                      {(module as any).editable && (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            const currentFeatures = employeeFormData.featureControl || [];
-                                            const editPerm = `${module.code}:edit`;
-                                            const hasEdit = currentFeatures.includes(editPerm);
-                                            const newFeatures = hasEdit
-                                              ? currentFeatures.filter(f => f !== editPerm)
-                                              : [...currentFeatures, editPerm];
-                                            setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
-                                          }}
-                                          title="Edit: profile update requests from this user are auto-approved without Super Admin review."
-                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${employeeFormData.featureControl?.includes(`${module.code}:edit`)
-                                            ? 'bg-rose-500 text-white shadow-sm'
-                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                            }`}
-                                        >
-                                          Edit
-                                        </button>
-                                      )}
+                                      <ModuleGranularPermissionToggles
+                                        module={module as any}
+                                        featureControl={employeeFormData.featureControl}
+                                        onChange={(featureControl) => setEmployeeFormData({ ...employeeFormData, featureControl })}
+                                        secondSalaryOrgEnabled={secondSalaryEnabled}
+                                      />
                                     </div>
                                   </div>
                                 );
@@ -2972,85 +2829,12 @@ export default function UsersPage() {
                                             Release
                                           </button>
                                         )}
-                                        {/* Verify Toggle â€” only for verifiable modules (e.g. EMPLOYEES) */}
-                                        {(module as any).verifiable && (
-                                          <button
-                                            type="button"
-                                            onClick={toggleVerify}
-                                            title="Verify: grants access to Applications tab and Verify button. Independent of Read/Write."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasVerify
-                                              ? 'bg-violet-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            Verify
-                                          </button>
-                                        )}
-                                        {/* Bank Toggle â€” only for bankable modules (e.g. EMPLOYEES) */}
-                                        {(module as any).bankable && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const currentFeatures = formData.featureControl || [];
-                                              const bankPerm = `${module.code}:bank`;
-                                              const hasBank = currentFeatures.includes(bankPerm);
-                                              const newFeatures = hasBank
-                                                ? currentFeatures.filter(f => f !== bankPerm)
-                                                : [...currentFeatures, bankPerm];
-                                              setFormData({ ...formData, featureControl: newFeatures });
-                                            }}
-                                            title="Bank: grants access to update bank details. Independent of Read/Write."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:bank`)
-                                              ? 'bg-amber-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            Bank
-                                          </button>
-                                        )}
-                                        {(module as any).fileUploadable && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const currentFeatures = formData.featureControl || [];
-                                              const filePerm = `${module.code}:file`;
-                                              const hasFile = currentFeatures.includes(filePerm);
-                                              const newFeatures = hasFile
-                                                ? currentFeatures.filter(f => f !== filePerm)
-                                                : [...currentFeatures, filePerm];
-                                              setFormData({ ...formData, featureControl: newFeatures });
-                                            }}
-                                            title="File: allows OD evidence from device gallery or file picker (camera still available without this)."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:file`)
-                                              ? 'bg-sky-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            File
-                                          </button>
-                                        )}
-                                        {/* Edit Toggle â€” auto-approves profile requests */}
-                                        {(module as any).editable && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const currentFeatures = formData.featureControl || [];
-                                              const editPerm = `${module.code}:edit`;
-                                              const hasEdit = currentFeatures.includes(editPerm);
-                                              const newFeatures = hasEdit
-                                                ? currentFeatures.filter(f => f !== editPerm)
-                                                : [...currentFeatures, editPerm];
-                                              setFormData({ ...formData, featureControl: newFeatures });
-                                            }}
-                                            title="Edit: profile update requests from this user are auto-approved without Super Admin review."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:edit`)
-                                              ? 'bg-rose-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            Edit
-                                          </button>
-                                        )}
+                                        <ModuleGranularPermissionToggles
+                                          module={module as any}
+                                          featureControl={formData.featureControl}
+                                          onChange={(featureControl) => setFormData({ ...formData, featureControl })}
+                                          secondSalaryOrgEnabled={secondSalaryEnabled}
+                                        />
                                       </div>
                                     </div>
                                   );

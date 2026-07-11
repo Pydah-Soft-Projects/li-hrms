@@ -125,6 +125,22 @@ export function canCreateEmployee(user: User): boolean {
     return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'manager', 'employee']) && canManageFeature(user, 'EMPLOYEES');
 }
 
+/** Create or edit employee applications — EMPLOYEES:write OR EMPLOYEES:verify. */
+export function canCreateApplication(user: User): boolean {
+    if (!user) return false;
+    if (user.role === 'super_admin') return true;
+    if (!hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager'])) return false;
+    return canManageFeature(user, 'EMPLOYEES') || canVerifyFeature(user, 'EMPLOYEES');
+}
+
+/** Set second salary on applications/employees — SuperAdmin or explicit EMPLOYEES:second_salary. */
+export function canEditSecondSalary(user: User): boolean {
+    if (!user) return false;
+    if (user.role === 'super_admin') return true;
+    if (!user.featureControl || user.featureControl.length === 0) return false;
+    return user.featureControl.includes('EMPLOYEES:second_salary');
+}
+
 export function canEditEmployee(user: User): boolean {
     return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'hod', 'manager', 'employee']) && canManageFeature(user, 'EMPLOYEES');
 }

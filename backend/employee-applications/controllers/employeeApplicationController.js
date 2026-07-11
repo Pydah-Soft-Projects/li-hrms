@@ -20,12 +20,17 @@ const { generatePassword, sendCredentials } = require('../../shared/services/pas
 const fileStorageService = require('../../shared/services/fileStorageService');
 const { resolveRequestOrigin } = require('../../shared/utils/fileStorageConfig');
 const { resolveQualificationLabels } = require('../services/fieldMappingService');
+const { getQualificationSettingsForScope } = require('../services/qualificationProfileService');
 const { applicationQueue } = require('../../shared/jobs/queueManager');
 const Settings = require('../../settings/model/Settings');
 const { getNextEmpNo, getNextEmpNos } = require('../../employees/services/empNoService');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const { syncEmployeeCLFromPolicy } = require('../../leaves/services/annualCLResetService');
 const { normalizeEmployeeSalariesPayload } = require('../../employees/utils/employeeSalariesNormalize');
+const {
+  assertCanCreateApplication,
+  enforceSecondSalaryOnPayload,
+} = require('../../employees/utils/employeeFeatureAccess');
 const {
   isCustomEmployeeGroupingEnabled,
   stripEmployeeGroupIfDisabled,
@@ -90,6 +95,21 @@ const hasOpenApplication = async (empNo) => {
     emp_no: String(empNo).toUpperCase(),
     status: { $in: ['pending', 'verified'] },
   });
+};
+
+const pickOrgScopeIds = (data) => {
+  const division_id =
+    data?.division_id?._id || data?.division_id || data?.division?._id || data?.division || null;
+  const department_id =
+    data?.department_id?._id || data?.department_id || data?.department?._id || data?.department || null;
+  const designation_id =
+    data?.designation_id?._id || data?.designation_id || data?.designation?._id || data?.designation || null;
+  return { division_id, department_id, designation_id };
+};
+
+const getScopedQualificationSettings = async (applicationData) => {
+  const { division_id, department_id, designation_id } = pickOrgScopeIds(applicationData);
+  return getQualificationSettingsForScope(division_id, department_id, designation_id);
 };
 
 const resolveReportingManagerUserIds = async (employeeRecord) => {
@@ -165,8 +185,12 @@ const createApplicationInternal = async (rawData, settings, creatorId) => {
 
   // Ensure qualifications (if provided) are handled and labels are resolved
   if (applicationData.qualifications) {
-    if (settings && Array.isArray(applicationData.qualifications)) {
-      permanentFields.qualifications = resolveQualificationLabels(applicationData.qualifications, settings);
+    if (Array.isArray(applicationData.qualifications)) {
+      const qualSettings = await getScopedQualificationSettings(applicationData);
+      permanentFields.qualifications = resolveQualificationLabels(
+        applicationData.qualifications,
+        qualSettings
+      );
     } else {
       permanentFields.qualifications = applicationData.qualifications;
     }
@@ -481,7 +505,9 @@ const notifyEmployeeApplicationEvent = async ({
 exports.createApplication = async (req, res) => {
   console.log('[CreateApplication] Received request');
   try {
+    assertCanCreateApplication(req.user);
     let applicationData = { ...req.body };
+    await enforceSecondSalaryOnPayload(req.user, applicationData);
 
     // Respect auto_generate_employee_number: assign next number if setting is ON and emp_no is blank (never use "(Auto)" as real emp_no)
     const autoGenSetting = await Settings.findOne({ key: 'auto_generate_employee_number' });
@@ -564,7 +590,7 @@ exports.createApplication = async (req, res) => {
     }).catch((err) => console.error('[Notification] EMPLOYEE_APPLICATION_CREATED failed:', err.message));
   } catch (error) {
     console.error('Error creating employee application:', error);
-    res.status(400).json({
+    res.status(error.statusCode || 400).json({
       success: false,
       message: error.message || 'Failed to create employee application',
     });
@@ -579,6 +605,7 @@ exports.createApplication = async (req, res) => {
 exports.bulkCreateApplications = async (req, res) => {
   console.log('[BulkCreateApplications] Received request');
   try {
+    assertCanCreateApplication(req.user);
     let applications = req.body;
 
     if (!Array.isArray(applications) || applications.length === 0) {
@@ -613,6 +640,10 @@ exports.bulkCreateApplications = async (req, res) => {
     const settings = await EmployeeApplicationFormSettings.getActiveSettings();
     const creatorId = req.user._id;
     const groupingOn = await isCustomEmployeeGroupingEnabled();
+
+    for (const app of applications) {
+      await enforceSecondSalaryOnPayload(req.user, app);
+    }
 
     // 1. Pre-fetch existing and pending emp_no for duplicate checking
     const empNos = applications.map(app => String(app.emp_no || '').toUpperCase()).filter(Boolean);
@@ -689,8 +720,9 @@ exports.bulkCreateApplications = async (req, res) => {
 
         // Qualifications
         if (appData.qualifications) {
-          if (settings && Array.isArray(appData.qualifications)) {
-            permanentFields.qualifications = resolveQualificationLabels(appData.qualifications, settings);
+          if (Array.isArray(appData.qualifications)) {
+            const qualSettings = await getScopedQualificationSettings(appData);
+            permanentFields.qualifications = resolveQualificationLabels(appData.qualifications, qualSettings);
           } else {
             permanentFields.qualifications = appData.qualifications;
           }
@@ -757,8 +789,10 @@ exports.updateApplication = async (req, res) => {
   console.log('[UpdateApplication] Files:', req.files ? req.files.map(f => f.fieldname) : 'No files');
 
   try {
+    assertCanCreateApplication(req.user);
     const applicationId = req.params.id;
     let applicationData = { ...req.body };
+    await enforceSecondSalaryOnPayload(req.user, applicationData);
 
     const existingApplication = await EmployeeApplication.findById(applicationId);
     if (!existingApplication) {
@@ -857,8 +891,12 @@ exports.updateApplication = async (req, res) => {
 
     // Resolve labels for qualifications
     if (applicationData.qualifications) {
-      if (settings && Array.isArray(applicationData.qualifications)) {
-        permanentFields.qualifications = resolveQualificationLabels(applicationData.qualifications, settings);
+      if (Array.isArray(applicationData.qualifications)) {
+        const qualSettings = await getScopedQualificationSettings(applicationData);
+        permanentFields.qualifications = resolveQualificationLabels(
+          applicationData.qualifications,
+          qualSettings
+        );
       } else {
         permanentFields.qualifications = applicationData.qualifications;
       }
@@ -1195,10 +1233,8 @@ const verifySingleApplicationInternal = async (applicationId, approver) => {
 
   // Resolve Qualification Labels if needed
   if (appObj.qualifications && Array.isArray(appObj.qualifications)) {
-    const settings = await EmployeeApplicationFormSettings.getActiveSettings();
-    if (settings) {
-      appObj.qualifications = resolveQualificationLabels(appObj.qualifications, settings);
-    }
+    const qualSettings = await getScopedQualificationSettings(appObj);
+    appObj.qualifications = resolveQualificationLabels(appObj.qualifications, qualSettings);
   }
 
   const { permanentFields, dynamicFields } = transformApplicationToEmployee(

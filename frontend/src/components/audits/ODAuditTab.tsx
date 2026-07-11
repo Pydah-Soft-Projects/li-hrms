@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, Fragment } from 'react';
 import { api, Department, Division } from '@/lib/api';
 import { MultiSelect } from '@/components/MultiSelect';
 import Spinner from '@/components/Spinner';
@@ -23,8 +23,30 @@ import {
   Briefcase,
   AlertCircle,
   MoreVertical,
+  FileDown,
+  Clock3,
+  Ban,
+  CheckCircle,
+  Users,
+  List,
+  BarChart3,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import {
+  buildLeaveODPayPeriodOptions,
+  matchLeaveODPayPeriodSelectValue,
+} from '@/lib/payPeriodRange';
+import { exportOdAuditPdf } from '@/lib/odAuditPdf';
+import {
+  buildOdPendingByUser,
+  buildOdSegmentBreakdown,
+  buildOdStatusBreakdown,
+  buildOdDivisionAggregates,
+  buildOdTrend,
+  odSegmentOf,
+  type OdUserPendingRow,
+} from '@/lib/odAuditStats';
+import ODAuditAggregatesPanel from '@/components/audits/ODAuditAggregatesPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -85,6 +107,11 @@ interface ODRecord {
   };
   createdAt?: string;
   updatedAt?: string;
+  division_name?: string;
+  division_id?: { name?: string } | string;
+  department?: { name?: string } | string;
+  department_id?: { name?: string } | string;
+  department_name?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -191,10 +218,136 @@ const SEGMENTS: SegmentConfig[] = [
 ];
 
 function segmentOf(od: ODRecord): 'co' | 'hours' | 'regular' {
-  if (od.isCOEligible) return 'co';
-  if (od.odType_extended === 'hours') return 'hours';
-  return 'regular';
+  return odSegmentOf(od);
 }
+
+// ─── Pending by user table (second OD Audit sub-tab) ─────────────────────────
+
+function PendingByUserPanel({
+  rows,
+  loading,
+}: {
+  rows: OdUserPendingRow[];
+  loading?: boolean;
+}) {
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[30vh] flex-col items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+        <Spinner />
+        <p className="text-sm text-slate-500">Loading pending breakdown…</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+        <h3 className="text-sm font-bold text-slate-900 dark:text-white">Pending ODs by Employee</h3>
+        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+          {rows.length} employee{rows.length !== 1 ? 's' : ''} with in-workflow OD requests — CO, hour-based &amp; regular counts for the selected period
+        </p>
+      </div>
+
+      <div className="overflow-x-auto p-4">
+        {rows.length === 0 ? (
+          <p className="py-8 text-center text-sm text-slate-500">No pending OD requests for the selected filters.</p>
+        ) : (
+          <table className="min-w-full border-collapse text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-amber-50/80 dark:border-slate-700 dark:bg-amber-950/20">
+                <th className="px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-500">Employee</th>
+                <th className="px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-500">Department</th>
+                <th className="px-3 py-2 text-center text-[10px] font-black uppercase tracking-wider text-violet-500">CO</th>
+                <th className="px-3 py-2 text-center text-[10px] font-black uppercase tracking-wider text-sky-500">Hours</th>
+                <th className="px-3 py-2 text-center text-[10px] font-black uppercase tracking-wider text-slate-500">Regular</th>
+                <th className="px-3 py-2 text-center text-[10px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">Total</th>
+                <th className="w-10 px-2 py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const expanded = expandedKey === row.key;
+                return (
+                  <Fragment key={row.key}>
+                    <tr className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                      <td className="px-3 py-2.5">
+                        <div className="font-semibold text-slate-900 dark:text-white">{row.empName}</div>
+                        <div className="text-[10px] text-slate-400">{row.empNo}</div>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-slate-600 dark:text-slate-400">{row.department}</td>
+                      <td className="px-3 py-2.5 text-center">
+                        {row.co > 0 ? (
+                          <span className="inline-flex min-w-[1.5rem] justify-center rounded-full bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">{row.co}</span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        {row.hours > 0 ? (
+                          <span className="inline-flex min-w-[1.5rem] justify-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">{row.hours}</span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        {row.regular > 0 ? (
+                          <span className="inline-flex min-w-[1.5rem] justify-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">{row.regular}</span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-center text-sm font-black text-amber-700 dark:text-amber-300">{row.total}</td>
+                      <td className="px-2 py-2.5 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedKey(expanded ? null : row.key)}
+                          className="rounded-md px-2 py-1 text-[10px] font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/30"
+                        >
+                          {expanded ? 'Hide' : 'View'}
+                        </button>
+                      </td>
+                    </tr>
+                    {expanded && (
+                      <tr className="border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-800/30">
+                        <td colSpan={7} className="px-4 py-3">
+                          <div className="space-y-2">
+                            {row.records.map((od) => (
+                              <div
+                                key={od._id}
+                                className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] dark:border-slate-700 dark:bg-slate-900"
+                              >
+                                <span className="font-semibold text-slate-800 dark:text-slate-200">{od.odType || '—'}</span>
+                                <span className="text-slate-500">{formatDate(od.fromDate)}{od.toDate && od.fromDate !== od.toDate ? ` → ${formatDate(od.toDate)}` : ''}</span>
+                                {od.isCOEligible && <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold text-violet-700">CO</span>}
+                                {od.odType_extended === 'hours' && <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[9px] font-bold text-sky-700">Hours</span>}
+                                <StatusBadge status={od.status} />
+                                <span className="max-w-[200px] truncate text-slate-400">{od.purpose}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const OD_VIEW_TABS = [
+  { id: 'records', label: 'OD Records', icon: List, activeBg: 'bg-indigo-600' },
+  { id: 'aggregates', label: 'Aggregates', icon: BarChart3, activeBg: 'bg-violet-600' },
+  { id: 'pending-by-user', label: 'Pending by User', icon: Users, activeBg: 'bg-amber-600' },
+] as const;
+
+type OdViewTabId = (typeof OD_VIEW_TABS)[number]['id'];
 
 // ─── Expanded detail panel ────────────────────────────────────────────────────
 
@@ -608,13 +761,23 @@ const STATUS_OPTIONS = [
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function ODAuditTab() {
-  const today = new Date();
-  const firstOfMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
-  const lastOfMonth  = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
+function getDefaultDateRange(startDay: number = 1) {
+  const now = new Date();
+  const today = now.getDate();
+  const startDate = new Date(now);
+  if (startDay > 1 && today < startDay) {
+    startDate.setMonth(startDate.getMonth() - 1);
+  }
+  startDate.setDate(startDay);
+  const format = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { from: format(startDate), to: format(now) };
+}
 
-  const [fromDate, setFromDate]         = useState(firstOfMonth);
-  const [toDate, setToDate]             = useState(lastOfMonth);
+export default function ODAuditTab() {
+  const [payCycleStartDay, setPayCycleStartDay] = useState(1);
+  const [payCycleEndDay, setPayCycleEndDay] = useState<number | null>(null);
+  const [dateRange, setDateRange] = useState(() => getDefaultDateRange(1));
   const [search, setSearch]             = useState('');
   const [status, setStatus]             = useState('');
   const [divisionIds, setDivisionIds]   = useState<string[]>([]);
@@ -622,11 +785,36 @@ export default function ODAuditTab() {
   const [divisions, setDivisions]       = useState<Division[]>([]);
   const [departments, setDepartments]   = useState<Department[]>([]);
   const [loadingFilters, setLoadingFilters] = useState(true);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [loading, setLoading]           = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [statsOds, setStatsOds] = useState<ODRecord[]>([]);
+  const [loadingStats, setLoadingStats] = useState(false);
+  const [activeViewTab, setActiveViewTab] = useState<OdViewTabId>('records');
   const [ods, setOds]                   = useState<ODRecord[]>([]);
   const [total, setTotal]               = useState(0);
   const [page, setPage]                 = useState(1);
   const limit = 50;
+
+  const payPeriodOptions = useMemo(
+    () =>
+      buildLeaveODPayPeriodOptions({
+        payrollCycleStartDay: payCycleStartDay,
+        payrollCycleEndDay: payCycleEndDay,
+        monthsBack: 18,
+        getDefaultRange: () => getDefaultDateRange(payCycleStartDay),
+        defaultLabel: 'Current period (default)',
+      }),
+    [payCycleStartDay, payCycleEndDay]
+  );
+
+  const payPeriodSelectValue = useMemo(
+    () =>
+      matchLeaveODPayPeriodSelectValue(dateRange, payPeriodOptions, () =>
+        getDefaultDateRange(payCycleStartDay)
+      ),
+    [dateRange.from, dateRange.to, payPeriodOptions, payCycleStartDay]
+  );
 
   const filteredDepartments = useMemo(() => {
     if (!divisionIds.length) return departments;
@@ -640,31 +828,70 @@ export default function ODAuditTab() {
   useEffect(() => {
     (async () => {
       try {
-        const [divRes, deptRes] = await Promise.all([api.getDivisions(), api.getDepartments()]);
+        const [divRes, deptRes, startRes, endRes] = await Promise.all([
+          api.getDivisions(),
+          api.getDepartments(),
+          api.getSetting('payroll_cycle_start_day'),
+          api.getSetting('payroll_cycle_end_day'),
+        ]);
         if (divRes.success) setDivisions(divRes.data || []);
         if (deptRes.success) setDepartments(deptRes.data || []);
+        if (startRes?.data?.value) {
+          const startDay = parseInt(startRes.data.value, 10);
+          if (!isNaN(startDay) && startDay >= 1 && startDay <= 31) {
+            setPayCycleStartDay(startDay);
+            setDateRange(getDefaultDateRange(startDay));
+          }
+        }
+        if (endRes?.data?.value) {
+          const endDay = parseInt(endRes.data.value, 10);
+          if (!isNaN(endDay) && endDay >= 1 && endDay <= 31) {
+            setPayCycleEndDay(endDay);
+          }
+        }
       } catch (err) { console.error(err); }
-      finally { setLoadingFilters(false); }
+      finally {
+        setLoadingFilters(false);
+        setSettingsLoaded(true);
+      }
     })();
   }, []);
 
   const loadODs = useCallback(async (pg = 1) => {
+    const filters = {
+      fromDate: dateRange.from || undefined,
+      toDate: dateRange.to || undefined,
+      search: search.trim() || undefined,
+      status: status || undefined,
+      division: divisionIds.length ? divisionIds : undefined,
+      department: departmentIds.length ? departmentIds : undefined,
+    };
+
     try {
       setLoading(true);
-      const res = await api.getODs({
-        fromDate: fromDate || undefined,
-        toDate: toDate || undefined,
-        search: search.trim() || undefined,
-        status: status || undefined,
-        division: divisionIds.length ? divisionIds : undefined,
-        department: departmentIds.length ? departmentIds : undefined,
-        page: pg,
-        limit,
-      });
+      const res = await api.getODs({ ...filters, page: pg, limit });
       if (res.success) {
         setOds(res.data || []);
         setTotal(res.total || 0);
         setPage(pg);
+
+        if (pg === 1) {
+          setStatsOds([]);
+          const statTotal = res.total || 0;
+          if (statTotal <= limit) {
+            setStatsOds(res.data || []);
+          } else {
+            setLoadingStats(true);
+            try {
+              const statRes = await api.getODs({ ...filters, page: 1, limit: statTotal });
+              if (statRes.success) setStatsOds(statRes.data || []);
+            } catch (err) {
+              console.error(err);
+            } finally {
+              setLoadingStats(false);
+            }
+          }
+        }
       } else {
         toast.error(res.message || 'Failed to load OD records');
       }
@@ -674,27 +901,72 @@ export default function ODAuditTab() {
     } finally {
       setLoading(false);
     }
-  }, [fromDate, toDate, search, status, divisionIds, departmentIds]);
+  }, [dateRange.from, dateRange.to, search, status, divisionIds, departmentIds]);
 
   useEffect(() => {
-    if (!loadingFilters) loadODs(1);
-  }, [loadODs, loadingFilters]);
+    if (!loadingFilters && settingsLoaded) loadODs(1);
+  }, [loadODs, loadingFilters, settingsLoaded]);
+
+  const handleExportPdf = async () => {
+    const toastId = toast.loading('Generating PDF…');
+    setExportingPdf(true);
+    try {
+      const exportLimit = Math.max(total, ods.length, 5000);
+      const res = await api.getODs({
+        fromDate: dateRange.from || undefined,
+        toDate: dateRange.to || undefined,
+        search: search.trim() || undefined,
+        status: status || undefined,
+        division: divisionIds.length ? divisionIds : undefined,
+        department: departmentIds.length ? departmentIds : undefined,
+        page: 1,
+        limit: exportLimit,
+      });
+      if (!res.success) throw new Error(res.message || 'Failed to load OD records');
+      const allOds: ODRecord[] = res.data || [];
+      const statusBreakdown = buildOdStatusBreakdown(allOds);
+      const segmentBreakdown = buildOdSegmentBreakdown(allOds);
+      const pendingByUser = buildOdPendingByUser(allOds);
+      const divisionAggregates = buildOdDivisionAggregates(allOds);
+      const trend = buildOdTrend(allOds, dateRange.from, dateRange.to);
+      const statusLabel = STATUS_OPTIONS.find((s) => s.id === status)?.name;
+      exportOdAuditPdf(
+        {
+          period: { from: dateRange.from, to: dateRange.to },
+          total: res.total ?? allOds.length,
+          coCount: segmentBreakdown.co,
+          hoursCount: segmentBreakdown.hours,
+          regularCount: segmentBreakdown.regular,
+          statusBreakdown,
+          pendingByUser,
+          divisionAggregates,
+          trend,
+          statusLabel: status ? statusLabel : undefined,
+        },
+        allOds
+      );
+      toast.success('PDF downloaded', { id: toastId });
+    } catch (err: unknown) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : 'Failed to generate PDF', { id: toastId });
+    } finally {
+      setExportingPdf(false);
+    }
+  };
 
   const totalPages = Math.ceil(total / limit);
 
-  // Segment buckets
+  // Segment buckets (current page)
   const segmentedODs = useMemo(() => {
     const buckets: Record<string, ODRecord[]> = { co: [], hours: [], regular: [] };
     for (const od of ods) buckets[segmentOf(od)].push(od);
     return buckets;
   }, [ods]);
 
-  // Summary counts
-  const statusCounts = useMemo(() => {
-    const c: Record<string, number> = {};
-    for (const od of ods) { const s = od.status || 'unknown'; c[s] = (c[s] || 0) + 1; }
-    return c;
-  }, [ods]);
+  // Full-dataset stats for breakdown cards & modal
+  const statusBreakdown = useMemo(() => buildOdStatusBreakdown(statsOds), [statsOds]);
+  const segmentBreakdown = useMemo(() => buildOdSegmentBreakdown(statsOds), [statsOds]);
+  const pendingByUser = useMemo(() => buildOdPendingByUser(statsOds), [statsOds]);
 
   if (loadingFilters) {
     return <div className="flex min-h-[50vh] items-center justify-center"><Spinner /></div>;
@@ -706,14 +978,44 @@ export default function ODAuditTab() {
       {/* ── Filters ── */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 transition-all hover:border-indigo-300">
-          <Calendar className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
-            className="bg-transparent text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none min-w-[110px]" />
+          <select
+            aria-label="Pay period"
+            value={payPeriodSelectValue}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === '__custom__') return;
+              if (v === '__default__') {
+                setDateRange(getDefaultDateRange(payCycleStartDay));
+                return;
+              }
+              const opt = payPeriodOptions.find((o) => o.value === v);
+              if (opt) setDateRange({ from: opt.range.from, to: opt.range.to });
+            }}
+            className="bg-transparent text-[10px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 focus:outline-none min-w-[130px] max-w-[180px] cursor-pointer"
+          >
+            <option value="__custom__">Custom range…</option>
+            {payPeriodOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
         </div>
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 transition-all hover:border-indigo-300">
+        <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 transition-all hover:border-indigo-300">
           <Calendar className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)}
-            className="bg-transparent text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none min-w-[110px]" />
+          <input
+            type="date"
+            value={dateRange.from}
+            onChange={(e) => setDateRange((prev) => ({ ...prev, from: e.target.value }))}
+            className="bg-transparent text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none min-w-[110px]"
+          />
+          <span className="text-slate-400 text-xs">→</span>
+          <input
+            type="date"
+            value={dateRange.to}
+            onChange={(e) => setDateRange((prev) => ({ ...prev, to: e.target.value }))}
+            className="bg-transparent text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none min-w-[110px]"
+          />
         </div>
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 transition-all hover:border-indigo-300">
           <Filter className="h-3.5 w-3.5 shrink-0 text-slate-400" />
@@ -743,11 +1045,83 @@ export default function ODAuditTab() {
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           {loading ? 'Loading…' : 'Refresh'}
         </button>
+        <button
+          type="button"
+          onClick={handleExportPdf}
+          disabled={loading || exportingPdf || total === 0}
+          title="Export filtered OD records as PDF"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 shadow-sm text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-all"
+        >
+          {exportingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+          {exportingPdf ? 'Exporting…' : 'Export PDF'}
+        </button>
       </div>
 
-      {/* ── Summary stat cards ── */}
-      {!loading && ods.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* ── Status breakdown ── */}
+      {!loading && total > 0 && (
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Status breakdown</h2>
+            {loadingStats && (
+              <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                <Loader2 className="h-3 w-3 animate-spin" /> Updating totals…
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 shadow-sm dark:border-amber-900 dark:bg-amber-950/20">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-300">
+                <Clock3 className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="text-2xl font-black tabular-nums leading-none text-amber-700 dark:text-amber-300">
+                  {loadingStats ? '…' : statusBreakdown.pending}
+                </div>
+                <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-500">Pending</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/20">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-300">
+                <CheckCircle className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="text-2xl font-black tabular-nums leading-none text-emerald-700 dark:text-emerald-300">
+                  {loadingStats ? '…' : statusBreakdown.approved}
+                </div>
+                <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">Approved</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50/60 px-4 py-3 shadow-sm dark:border-red-800 dark:bg-red-950/20">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-300">
+                <XCircle className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="text-2xl font-black tabular-nums leading-none text-red-700 dark:text-red-300">
+                  {loadingStats ? '…' : statusBreakdown.rejected}
+                </div>
+                <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-red-400">Rejected</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 dark:bg-slate-800">
+                <Ban className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="text-2xl font-black tabular-nums leading-none text-slate-700 dark:text-slate-200">
+                  {loadingStats ? '…' : statusBreakdown.cancelled}
+                </div>
+                <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Cancelled</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Segment summary ── */}
+      {!loading && total > 0 && (
+        <div>
+          <h2 className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">By type</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {/* Total */}
           <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 dark:bg-slate-800">
@@ -764,7 +1138,9 @@ export default function ODAuditTab() {
               <Gift className="h-4 w-4" />
             </div>
             <div>
-              <div className="text-2xl font-black tabular-nums leading-none text-violet-700 dark:text-violet-300">{segmentedODs.co.length}</div>
+              <div className="text-2xl font-black tabular-nums leading-none text-violet-700 dark:text-violet-300">
+                {loadingStats ? '…' : segmentBreakdown.co}
+              </div>
               <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-violet-400">CO Eligible</div>
             </div>
           </div>
@@ -774,7 +1150,9 @@ export default function ODAuditTab() {
               <Timer className="h-4 w-4" />
             </div>
             <div>
-              <div className="text-2xl font-black tabular-nums leading-none text-sky-700 dark:text-sky-300">{segmentedODs.hours.length}</div>
+              <div className="text-2xl font-black tabular-nums leading-none text-sky-700 dark:text-sky-300">
+                {loadingStats ? '…' : segmentBreakdown.hours}
+              </div>
               <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-400">Hour-Based</div>
             </div>
           </div>
@@ -784,15 +1162,65 @@ export default function ODAuditTab() {
               <Briefcase className="h-4 w-4" />
             </div>
             <div>
-              <div className="text-2xl font-black tabular-nums leading-none text-slate-700 dark:text-slate-200">{segmentedODs.regular.length}</div>
+              <div className="text-2xl font-black tabular-nums leading-none text-slate-700 dark:text-slate-200">
+                {loadingStats ? '…' : segmentBreakdown.regular}
+              </div>
               <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Regular</div>
             </div>
+          </div>
           </div>
         </div>
       )}
 
-      {/* ── Content ── */}
-      {loading ? (
+      {/* ── OD Audit sub-tabs (Reports-style pills) ── */}
+      <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex items-center gap-1 overflow-x-auto pb-0.5 no-scrollbar">
+          {OD_VIEW_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeViewTab === tab.id;
+            const badge =
+              tab.id === 'pending-by-user' && !loadingStats && pendingByUser.length > 0
+                ? pendingByUser.length
+                : null;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveViewTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 whitespace-nowrap ${
+                  isActive
+                    ? `${tab.activeBg} text-white shadow-md scale-[1.02]`
+                    : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {tab.label}
+                {badge != null && (
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                      isActive ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                    }`}
+                  >
+                    {badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Tab content ── */}
+      {activeViewTab === 'aggregates' ? (
+        <ODAuditAggregatesPanel
+          records={statsOds}
+          periodFrom={dateRange.from}
+          periodTo={dateRange.to}
+          loading={loading || loadingStats}
+        />
+      ) : activeViewTab === 'pending-by-user' ? (
+        <PendingByUserPanel rows={pendingByUser} loading={loading || loadingStats} />
+      ) : loading ? (
         <div className="flex min-h-[30vh] flex-col items-center justify-center gap-3">
           <Spinner />
           <p className="text-sm text-slate-500">Loading OD records…</p>

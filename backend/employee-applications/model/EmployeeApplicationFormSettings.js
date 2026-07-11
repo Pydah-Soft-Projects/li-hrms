@@ -29,7 +29,7 @@ const FieldSchema = new mongoose.Schema(
     // Field type: text, textarea, number, date, select, multiselect, email, tel, file, array, object, userselect
     type: {
       type: String,
-      enum: ['text', 'textarea', 'number', 'date', 'select', 'multiselect', 'email', 'tel', 'file', 'array', 'object', 'userselect'],
+      enum: ['text', 'textarea', 'number', 'date', 'time', 'email', 'tel', 'select', 'multiselect', 'radio', 'boolean', 'scale', 'rating', 'radio_grid', 'checkbox_grid', 'file', 'array', 'object', 'userselect'],
       required: true,
     },
 
@@ -63,12 +63,24 @@ const FieldSchema = new mongoose.Schema(
 
     // Validation rules
     validation: {
-      pattern: String, // Regex pattern
+      pattern: String,
       minLength: Number,
       maxLength: Number,
       min: Number,
       max: Number,
-      custom: String, // Custom validation message
+      step: Number,
+      minLabel: String,
+      maxLabel: String,
+      minSelections: Number,
+      maxSelections: Number,
+      maxFileSizeMb: Number,
+      accept: String,
+      custom: String,
+    },
+
+    gridRows: {
+      type: [String],
+      default: undefined,
     },
 
     // Options for select/multiselect fields
@@ -233,12 +245,23 @@ const EmployeeApplicationFormSettingsSchema = new mongoose.Schema(
         {
           id: { type: String, required: true, trim: true },
           label: { type: String, required: true, trim: true },
-          type: { type: String, enum: ['text', 'textarea', 'number', 'date', 'select', 'boolean'], required: true },
+          type: { type: String, enum: ['text', 'textarea', 'number', 'date', 'time', 'email', 'tel', 'select', 'multiselect', 'radio', 'boolean', 'scale', 'rating', 'radio_grid', 'checkbox_grid'], required: true },
           isRequired: { type: Boolean, default: false },
           isEnabled: { type: Boolean, default: true },
           placeholder: { type: String, default: '' },
-          validation: { minLength: Number, maxLength: Number, min: Number, max: Number },
+          validation: {
+            minLength: Number,
+            maxLength: Number,
+            min: Number,
+            max: Number,
+            step: Number,
+            minLabel: String,
+            maxLabel: String,
+            minSelections: Number,
+            maxSelections: Number,
+          },
           options: [{ label: String, value: String }],
+          gridRows: { type: [String], default: undefined },
           order: { type: Number, default: 0 },
         },
       ],
@@ -291,6 +314,106 @@ const ESI_NUMBER_FIELD_TEMPLATE = {
   order: 6,
   isEnabled: true,
 };
+
+const PERSONAL_INFO_DROPDOWN_FIELDS = {
+  gender: {
+    id: 'gender',
+    label: 'Gender',
+    type: 'select',
+    dataType: 'string',
+    isRequired: false,
+    isSystem: true,
+    options: [
+      { label: 'Male', value: 'Male' },
+      { label: 'Female', value: 'Female' },
+      { label: 'Other', value: 'Other' },
+    ],
+    order: 2,
+    isEnabled: true,
+  },
+  marital_status: {
+    id: 'marital_status',
+    label: 'Marital Status',
+    type: 'select',
+    dataType: 'string',
+    isRequired: false,
+    isSystem: true,
+    options: [
+      { label: 'Single', value: 'Single' },
+      { label: 'Married', value: 'Married' },
+      { label: 'Divorced', value: 'Divorced' },
+      { label: 'Widowed', value: 'Widowed' },
+    ],
+    order: 3,
+    isEnabled: true,
+  },
+  blood_group: {
+    id: 'blood_group',
+    label: 'Blood Group',
+    type: 'select',
+    dataType: 'string',
+    isRequired: false,
+    isSystem: true,
+    options: [
+      { label: 'A+', value: 'A+' },
+      { label: 'A-', value: 'A-' },
+      { label: 'B+', value: 'B+' },
+      { label: 'B-', value: 'B-' },
+      { label: 'AB+', value: 'AB+' },
+      { label: 'AB-', value: 'AB-' },
+      { label: 'O+', value: 'O+' },
+      { label: 'O-', value: 'O-' },
+    ],
+    order: 4,
+    isEnabled: true,
+  },
+};
+
+function optionsMatchCanonical(existing, canonical) {
+  if (!Array.isArray(existing) || existing.length !== canonical.length) return false;
+  return canonical.every((opt, i) => {
+    const cur = existing[i];
+    return cur && cur.label === opt.label && cur.value === opt.value;
+  });
+}
+
+/** Ensure personal_info gender / marital_status / blood_group are select dropdowns with canonical options. */
+function ensurePersonalInfoDropdownFields(groups) {
+  if (!Array.isArray(groups)) return false;
+  const personalInfoGroup = groups.find((g) => g && g.id === 'personal_info');
+  if (!personalInfoGroup || !Array.isArray(personalInfoGroup.fields)) return false;
+
+  let changed = false;
+  for (const [fieldId, template] of Object.entries(PERSONAL_INFO_DROPDOWN_FIELDS)) {
+    const idx = personalInfoGroup.fields.findIndex((f) => f && f.id === fieldId);
+    if (idx < 0) {
+      personalInfoGroup.fields.push({ ...template });
+      changed = true;
+      continue;
+    }
+    const field = personalInfoGroup.fields[idx];
+    const needsType = field.type !== 'select';
+    const needsDataType = field.dataType !== 'string';
+    const needsOptions = !optionsMatchCanonical(field.options, template.options);
+    if (needsType || needsDataType || needsOptions) {
+      personalInfoGroup.fields[idx] = {
+        ...field,
+        type: 'select',
+        dataType: 'string',
+        options: template.options.map((opt) => ({ ...opt })),
+        label: field.label || template.label,
+        order: field.order ?? template.order,
+      };
+      changed = true;
+    }
+  }
+  if (changed) {
+    personalInfoGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
+  }
+  return changed;
+}
+
+EmployeeApplicationFormSettingsSchema.statics.ensurePersonalInfoDropdownFields = ensurePersonalInfoDropdownFields;
 
 /** Ensure optional PF/ESI fields exist in bank_details (new installs + existing DBs). */
 function ensureBankDetailsPfEsiFields(groups) {
@@ -346,6 +469,9 @@ EmployeeApplicationFormSettingsSchema.statics.getActiveSettings = async function
     changed = true;
   }
   if (ensureWeekdayShiftSchedule(doc)) {
+    changed = true;
+  }
+  if (ensurePersonalInfoDropdownFields(doc.groups)) {
     changed = true;
   }
   if (changed) {

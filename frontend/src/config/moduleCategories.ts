@@ -13,7 +13,7 @@ export const MODULE_CATEGORIES = [
         name: 'Employees',
         icon: '👥',
         modules: [
-            { code: 'EMPLOYEES', label: 'Employees', href: '/employees', verifiable: true, bankable: true, editable: true },
+            { code: 'EMPLOYEES', label: 'Employees', href: '/employees', verifiable: true, bankable: true, editable: true, secondSalaryEditable: true },
             { code: 'PROMOTIONS_TRANSFERS', label: 'Promotions & Transfers', href: '/promotions-transfers' },
             { code: 'RESIGNATION', label: 'Resignations', href: '/resignations', terminable: true },
             { code: 'EMPLOYEE_BIRTHDAYS', label: 'Birthdays', href: '/employee-birthdays' },

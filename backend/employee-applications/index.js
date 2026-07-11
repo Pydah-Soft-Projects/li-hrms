@@ -37,6 +37,17 @@ const {
   updateWeekdayShiftScheduleConfig,
 } = require('./controllers/formSettingsController');
 
+const {
+  resolveProfile,
+  listScopeTypes,
+  listProfiles,
+  getProfile,
+  lookupProfile,
+  upsertProfile,
+  deleteProfile,
+  copyFromGlobal,
+} = require('./controllers/qualificationProfileController');
+
 // All routes require authentication
 router.use(protect);
 
@@ -72,6 +83,17 @@ router.put('/form-settings/qualifications/fields/:fieldId', authorize('super_adm
 router.delete('/form-settings/qualifications/fields/:fieldId', authorize('super_admin', 'sub_admin'), deleteQualificationsField);
 router.put('/form-settings/qualifications/reorder-fields', authorize('super_admin', 'sub_admin'), reorderQualificationsFields);
 router.put('/form-settings/weekday-shift-schedule', authorize('super_admin', 'sub_admin'), updateWeekdayShiftScheduleConfig);
+
+// Qualification profiles (dept + designation)
+router.get('/qualification-profiles/resolve', resolveProfile);
+router.get('/qualification-profiles/scope-types', listScopeTypes);
+router.get('/qualification-profiles/lookup', lookupProfile);
+router.get('/qualification-profiles/copy-from-global', authorize('super_admin', 'sub_admin'), copyFromGlobal);
+router.post('/qualification-profiles/copy-from-global', authorize('super_admin', 'sub_admin'), copyFromGlobal);
+router.get('/qualification-profiles', authorize('super_admin', 'sub_admin'), listProfiles);
+router.get('/qualification-profiles/:id', authorize('super_admin', 'sub_admin'), getProfile);
+router.post('/qualification-profiles', authorize('super_admin', 'sub_admin'), upsertProfile);
+router.delete('/qualification-profiles/:id', authorize('super_admin', 'sub_admin'), deleteProfile);
 
 // ==========================================
 // APPLICATION ROUTES
