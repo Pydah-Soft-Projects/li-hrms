@@ -68,6 +68,7 @@ async function loadAuthIdentity(userId) {
       activeWorkspaceId: authUser?.activeWorkspaceId,
       dataScope: authUser?.dataScope || (authEmployee ? 'own' : 'all'),
       divisionMapping: authUser?.divisionMapping || [],
+      featureControl: authUser?.featureControl || [],
       type: authUser ? 'user' : 'employee',
       sessionId: null,
     },

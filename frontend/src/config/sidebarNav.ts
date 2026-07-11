@@ -59,6 +59,7 @@ export type SidebarNavCategory = {
   label: string;
   icon: SidebarIcon;
   items: SidebarNavItem[];
+  forceDropdown?: boolean;
 };
 
 /** Shared icon map keyed by module code (workspace + superadmin). */
@@ -145,7 +146,6 @@ export const SUPERADMIN_NAV_CATEGORIES: SidebarNavCategory[] = [
     icon: CalendarClock,
     items: [
       { code: 'ATTENDANCE', label: 'Attendance', href: `${SUPERADMIN_PREFIX}/attendance`, icon: Fingerprint },
-      { code: 'ATTENDANCE_AUDIT', label: 'Audits', href: `${SUPERADMIN_PREFIX}/audits`, icon: FolderSearch },
       { code: 'LIVE_ATTENDANCE', label: 'Live Attendance', href: `${SUPERADMIN_PREFIX}/live-attendance`, icon: Clock },
       { code: 'LEAVE_OD', label: 'Leave & OD', href: `${SUPERADMIN_PREFIX}/leaves`, icon: Briefcase },
       { code: 'LEAVE_REGISTER', label: 'Leave Register', href: `${SUPERADMIN_PREFIX}/leave-register`, icon: ScrollText },
@@ -155,6 +155,15 @@ export const SUPERADMIN_NAV_CATEGORIES: SidebarNavCategory[] = [
       { code: 'SHIFTS', label: 'Shifts', href: `${SUPERADMIN_PREFIX}/shifts`, icon: Watch },
       { code: 'CONFUSED_SHIFTS', label: 'Confused Shifts', href: `${SUPERADMIN_PREFIX}/confused-shifts`, icon: AlertOctagon },
       { code: 'HOLIDAY_CALENDAR', label: 'Holidays', href: `${SUPERADMIN_PREFIX}/holidays`, icon: CalendarHeart },
+    ],
+  },
+  {
+    code: 'AUDITS',
+    label: 'Audits',
+    icon: FolderSearch,
+    forceDropdown: true,
+    items: [
+      { code: 'ATTENDANCE_AUDIT', label: 'Audits', href: `${SUPERADMIN_PREFIX}/audits`, icon: FolderSearch },
     ],
   },
   {
@@ -249,7 +258,6 @@ export const WORKSPACE_NAV_CATEGORIES: SidebarNavCategory[] = [
     icon: CalendarClock,
     items: [
       { code: 'ATTENDANCE', label: 'Attendance', href: '/attendance', icon: Fingerprint },
-      { code: 'ATTENDANCE_AUDIT', label: 'Attendance Audits', href: '/attendance-audit', icon: ClipboardCheck },
       { code: 'LIVE_ATTENDANCE', label: 'Live Attendance', href: '/live-attendance', icon: Clock },
       { code: 'LEAVE_OD', label: 'Leave & OD', href: '/leaves', icon: Briefcase },
       { code: 'LEAVE_REGISTER', label: 'Leave Register', href: '/leave-register', icon: ScrollText },
@@ -259,6 +267,15 @@ export const WORKSPACE_NAV_CATEGORIES: SidebarNavCategory[] = [
       { code: 'SHIFTS', label: 'Shifts', href: '/shifts', icon: Watch },
       { code: 'CONFUSED_SHIFTS', label: 'Confused Shifts', href: '/confused-shifts', icon: AlertOctagon },
       { code: 'HOLIDAY_CALENDAR', label: 'Holidays', href: '/holidays', icon: CalendarHeart },
+    ],
+  },
+  {
+    code: 'AUDITS',
+    label: 'Audits',
+    icon: FolderSearch,
+    forceDropdown: true,
+    items: [
+      { code: 'ATTENDANCE_AUDIT', label: 'Attendance Audits', href: '/attendance-audit', icon: ClipboardCheck },
     ],
   },
   {
@@ -351,7 +368,6 @@ export const SIDEBAR_SHORT_LABELS: Record<string, string> = {
 export const SIDEBAR_MODULE_PERMISSION_CODES: Record<string, string> = {
   SECURITY: 'SECURITY',
   FORM_SETTINGS: 'EMPLOYEES',
-  ATTENDANCE_AUDIT: 'ATTENDANCE',
   SECOND_SALARY_PAYMENTS: 'PAYMENTS',
   SECOND_SALARY_PAYSLIPS: 'PAYSLIPS',
   MOBILE_ANALYTICS: 'REPORTS',

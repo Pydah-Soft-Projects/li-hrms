@@ -1399,7 +1399,7 @@ export default function UsersPage() {
                     </td>
                     <td className="px-6 py-5">
                       <code className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                        {user.employeeId || user.employeeRef?.emp_no || 'SYSTEM'}
+                        {user.employeeId || user.employeeRef?.emp_no || '-'}
                       </code>
                     </td>
                     <td className="px-6 py-5">

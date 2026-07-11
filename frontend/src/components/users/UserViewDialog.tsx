@@ -70,7 +70,7 @@ export function UserViewDialog({
   loadingUserActivity: boolean;
   userActivity: UserHistoryRow[];
 }) {
-  const empId = user.employeeId || user.employeeRef?.emp_no || '—';
+  const empId = user.employeeId || user.employeeRef?.emp_no || '-';
   const tabs: { id: UserLedgerTab; label: string; icon: typeof Layers }[] = [
     { id: 'overview', label: 'Overview', icon: Layers },
     { id: 'permissions', label: 'Access', icon: Lock },

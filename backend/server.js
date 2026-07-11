@@ -20,7 +20,7 @@ app.set('trust proxy', 1);
 
 // Middleware
 const logger = require('./middleware/logger');
-app.use(logger); // Log all requestsbn
+app.use(logger); // Log all requests
 
 const allowedOrigins = [
   "*",

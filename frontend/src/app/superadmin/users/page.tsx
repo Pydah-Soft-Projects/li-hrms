@@ -1,4 +1,4 @@
-﻿/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -1358,7 +1358,7 @@ export default function UsersPage() {
                     </td>
                     <td className="px-4 py-3">
                       <code className="font-mono text-xs tabular-nums text-stone-600 dark:text-stone-400">
-                        {user.employeeId || user.employeeRef?.emp_no || 'â€”'}
+                        {user.employeeId || user.employeeRef?.emp_no || '-'}
                       </code>
                     </td>
                     <td className="px-4 py-3">

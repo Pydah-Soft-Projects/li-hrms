@@ -168,12 +168,10 @@ exports.login = async (req, res) => {
       if (user.employeeRef) {
         await Employee.findByIdAndUpdate(user.employeeRef, { lastLogin: now });
       } else {
-        user.lastLogin = now;
-        await user.save();
+        await User.updateOne({ _id: user._id }, { $set: { lastLogin: now } });
       }
     } else {
-      user.lastLogin = now;
-      await user.save();
+      await Employee.updateOne({ _id: user._id }, { $set: { lastLogin: now } });
     }
 
     // Issue session-backed tokens (single active device)
@@ -203,7 +201,7 @@ exports.login = async (req, res) => {
             ? (user.managedHolidayGroupIds || []).map((id) => id.toString())
             : undefined,
           holidayDivisionMapping: userType === 'user' ? (user.holidayDivisionMapping || []) : undefined,
-          phone_number: userType === 'employee' ? user.phone_number : (user.employeeRef ? (await Employee.findById(user.employeeRef)).phone_number : null),
+          phone_number: userType === 'employee' ? user.phone_number : (user.employeeRef ? (await Employee.findById(user.employeeRef))?.phone_number || null : null),
         },
       },
     });
@@ -280,7 +278,7 @@ exports.getMe = async (req, res) => {
           profilePhoto,
           createdAt: joined,
           lastLogin,
-          phone_number: userType === 'employee' ? user.phone_number : (user.employeeRef ? (await Employee.findById(user.employeeRef).select('phone_number')).phone_number : null),
+          phone_number: userType === 'employee' ? user.phone_number : (user.employeeRef ? (await Employee.findById(user.employeeRef).select('phone_number'))?.phone_number || null : null),
         },
       },
     });
@@ -439,11 +437,14 @@ exports.ssoLogin = async (req, res) => {
     }
 
     const now = new Date();
-    if (userType === 'user' && user.employeeRef) {
-      await Employee.findByIdAndUpdate(user.employeeRef, { lastLogin: now });
+    if (userType === 'user') {
+      if (user.employeeRef) {
+        await Employee.findByIdAndUpdate(user.employeeRef, { lastLogin: now });
+      } else {
+        await User.updateOne({ _id: user._id }, { $set: { lastLogin: now } });
+      }
     } else {
-      user.lastLogin = now;
-      await user.save();
+      await Employee.updateOne({ _id: user._id }, { $set: { lastLogin: now } });
     }
 
     const tokens = await issueAuthTokens(user, userType, req);
