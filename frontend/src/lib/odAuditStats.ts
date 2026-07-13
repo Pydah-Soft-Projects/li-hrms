@@ -381,3 +381,62 @@ export function buildDivisionStatusPercentRows(rows: OdOrgAggregateRow[]) {
     };
   });
 }
+
+export type OdUserWiseStatusCounts = {
+  co: number;
+  hours: number;
+  regular: number;
+  total: number;
+};
+
+export type OdUserWiseRow = {
+  key: string;
+  empNo: string;
+  empName: string;
+  department: string;
+  approved: OdUserWiseStatusCounts;
+  rejected: OdUserWiseStatusCounts;
+  pending: OdUserWiseStatusCounts;
+  total: number;
+  records: OdAuditStatsRecord[];
+};
+
+export function buildOdUserWise(records: OdAuditStatsRecord[]): OdUserWiseRow[] {
+  const byKey = new Map<string, OdUserWiseRow>();
+
+  for (const od of records) {
+    const emp = od.employeeId;
+    const empNo = emp?.emp_no || od.emp_no;
+    const empName = emp?.employee_name || empNo;
+    const key = empNo;
+    const seg = odSegmentOf(od);
+    const bucket = odStatusBucket(od.status);
+
+    if (bucket !== 'pending' && bucket !== 'approved' && bucket !== 'rejected') {
+      continue;
+    }
+
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        key,
+        empNo,
+        empName,
+        department: emp?.department_id?.name || '—',
+        approved: { co: 0, hours: 0, regular: 0, total: 0 },
+        rejected: { co: 0, hours: 0, regular: 0, total: 0 },
+        pending: { co: 0, hours: 0, regular: 0, total: 0 },
+        total: 0,
+        records: [],
+      });
+    }
+
+    const row = byKey.get(key)!;
+    row[bucket][seg] += 1;
+    row[bucket].total += 1;
+    row.total += 1;
+    row.records.push(od);
+  }
+
+  return Array.from(byKey.values()).sort((a, b) => b.total - a.total || a.empName.localeCompare(b.empName));
+}
+

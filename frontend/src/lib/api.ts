@@ -3633,7 +3633,7 @@ export const api = {
   },
 
   // Get all ODs (admin) - supports pagination, search, division, designation
-  getODs: async (filters?: { status?: string; employeeId?: string | string[]; department?: string | string[]; division?: string | string[]; designation?: string | string[]; search?: string; placeVisited?: string; fromDate?: string; toDate?: string; page?: number; limit?: number }) => {
+  getODs: async (filters?: { status?: string; employeeId?: string | string[]; department?: string | string[]; division?: string | string[]; designation?: string | string[]; search?: string; placeVisited?: string; fromDate?: string; toDate?: string; page?: number; limit?: number; segment?: string }) => {
     const params = new URLSearchParams();
     if (filters?.status) params.append('status', filters.status);
     if (filters?.employeeId) params.append('employeeId', Array.isArray(filters.employeeId) ? filters.employeeId.join(',') : filters.employeeId);
@@ -3646,6 +3646,7 @@ export const api = {
     if (filters?.toDate) params.append('toDate', filters.toDate);
     if (filters?.page != null) params.append('page', String(filters.page));
     if (filters?.limit != null) params.append('limit', String(filters.limit));
+    if (filters?.segment) params.append('segment', filters.segment);
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/leaves/od${query}`, { method: 'GET' });
   },
@@ -4444,6 +4445,7 @@ export const api = {
     empNos?: string;
     onlyIssues?: boolean;
     limit?: number;
+    page?: number;
   }) => {
     const q = new URLSearchParams({ month: params.month });
     if (params.divisionIds?.length) q.set('divisionIds', params.divisionIds.join(','));
@@ -4451,6 +4453,7 @@ export const api = {
     if (params.empNos) q.set('empNos', params.empNos);
     if (params.onlyIssues === false) q.set('onlyIssues', '0');
     if (params.limit != null) q.set('limit', String(params.limit));
+    if (params.page != null) q.set('page', String(params.page));
     return apiRequest<any>(`/attendance/audit/overview?${q.toString()}`, { method: 'GET' });
   },
 

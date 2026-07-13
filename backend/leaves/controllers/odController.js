@@ -226,7 +226,7 @@ const hasValidGeoLocation = (geoLocation) =>
 // @access  Private
 exports.getODs = async (req, res) => {
   try {
-    const { status, employeeId, department, division, designation, placeVisited, fromDate, toDate, search, page = 1, limit = 20, odType } = req.query;
+    const { status, employeeId, department, division, designation, placeVisited, fromDate, toDate, search, page = 1, limit = 20, odType, segment } = req.query;
 
     // Multi-layered filter: Jurisdiction (Scope) AND Timing (Workflow)
     const scopeFilter = req.scopeFilter || { isActive: true };
@@ -264,6 +264,17 @@ exports.getODs = async (req, res) => {
 
     if (status) filter.status = status;
     if (odType) filter.odType = odType;
+
+    // Segment filter
+    if (segment === 'co') {
+      filter.isCOEligible = true;
+    } else if (segment === 'hours') {
+      filter.isCOEligible = { $ne: true };
+      filter.odType_extended = 'hours';
+    } else if (segment === 'regular') {
+      filter.isCOEligible = { $ne: true };
+      filter.odType_extended = { $ne: 'hours' };
+    }
     if (employeeId && employeeId !== 'all') {
       const ids = String(employeeId).split(',').filter(id => id && id !== 'all');
       if (ids.length > 0) filter.employeeId = ids.length > 1 ? { $in: ids } : ids[0];
