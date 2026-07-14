@@ -658,13 +658,13 @@ function ApproverAnalyticsPanel({
         </p>
       </div>
 
-      <div className="overflow-x-auto p-4">
+      <div className="overflow-x-auto overflow-y-auto max-h-[70vh] px-4 pb-4 relative">
         {rows.length === 0 ? (
           <p className="py-8 text-center text-sm text-slate-500">No approvers or OD records found for the selected filters.</p>
         ) : (
           <table className="min-w-full border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-800/30">
+            <thead className="sticky top-0 z-10 shadow-sm">
+              <tr className="border-b border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
                 <th className="border-r border-slate-200 dark:border-slate-700 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-500 align-middle">Approver</th>
                 <th className="border-r border-slate-200 dark:border-slate-700 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-500 align-middle">Department</th>
                 <th className="border-r border-slate-200 dark:border-slate-700 px-3 py-2 text-center text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 align-middle">Total Scope ODs</th>
@@ -674,6 +674,9 @@ function ApproverAnalyticsPanel({
                 <th className="border-r border-slate-200 dark:border-slate-700 px-3 py-2 text-center text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-500 align-middle">Rejected By Them</th>
                 <th className="border-r border-slate-200 dark:border-slate-700 px-3 py-2 text-center text-[10px] font-black uppercase tracking-wider text-slate-500 align-middle">Total Pending (User Scope)</th>
                 <th className="border-r border-slate-200 dark:border-slate-700 px-3 py-2 text-center text-[10px] font-black uppercase tracking-wider text-slate-500 align-middle">Total Approved (User Scope)</th>
+                <th className="border-r border-slate-200 dark:border-slate-700 px-3 py-2 text-center text-[10px] font-black uppercase tracking-wider text-slate-500 align-middle">Total Rejected (User Scope)</th>
+                <th className="border-r border-slate-200 dark:border-slate-700 px-3 py-2 text-center text-[10px] font-black uppercase tracking-wider text-slate-500 align-middle">Total Cancelled (User Scope)</th>
+                <th className="border-r border-slate-200 dark:border-slate-700 px-3 py-2 text-center text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 align-middle">Sum Total (All Buckets)</th>
               </tr>
             </thead>
             <tbody>
@@ -716,41 +719,22 @@ function ApproverAnalyticsPanel({
                   <td className="px-2 py-2.5 text-center font-bold text-slate-600 dark:text-slate-300 border-r border-slate-200 dark:border-slate-700">
                     {row.totalApproved > 0 ? row.totalApproved : <span className="text-slate-300 dark:text-slate-700 font-normal">—</span>}
                   </td>
+
+                  <td className="px-2 py-2.5 text-center font-bold text-slate-600 dark:text-slate-300 border-r border-slate-200 dark:border-slate-700">
+                    {row.totalRejected > 0 ? row.totalRejected : <span className="text-slate-300 dark:text-slate-700 font-normal">—</span>}
+                  </td>
+
+                  <td className="px-2 py-2.5 text-center font-bold text-slate-600 dark:text-slate-300 border-r border-slate-200 dark:border-slate-700">
+                    {row.totalCancelled > 0 ? row.totalCancelled : <span className="text-slate-300 dark:text-slate-700 font-normal">—</span>}
+                  </td>
+
+                  <td className="px-2 py-2.5 text-center font-black text-indigo-700 dark:text-indigo-300 bg-indigo-50/40 dark:bg-indigo-950/20 border-r border-slate-200 dark:border-slate-700">
+                    {row.totalPending + row.totalApproved + row.totalRejected + row.totalCancelled}
+                  </td>
                 </tr>
               ))}
             </tbody>
-            {/* Overall Totals Footer */}
-            {rows.length > 0 && (() => {
-              const tot = rows.reduce(
-                (acc, r) => ({
-                  scopeTot: acc.scopeTot + r.scopeTotal,
-                  penBef: acc.penBef + r.pendingBeforeStage,
-                  penAt: acc.penAt + r.pendingAtStage,
-                  appBy: acc.appBy + r.approvedByThem,
-                  rejBy: acc.rejBy + r.rejectedByThem,
-                  totPen: acc.totPen + r.totalPending,
-                  totApp: acc.totApp + r.totalApproved,
-                }),
-                { scopeTot: 0, penBef: 0, penAt: 0, appBy: 0, rejBy: 0, totPen: 0, totApp: 0 }
-              );
-              return (
-                <tfoot>
-                  <tr className="border-t-2 border-slate-300 dark:border-slate-600 bg-slate-100/80 dark:bg-slate-800/60 font-bold">
-                    <td colSpan={2} className="px-3 py-2.5 border-r border-slate-200 dark:border-slate-700 text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">
-                      Totals
-                      <span className="ml-2 rounded-full bg-slate-200 dark:bg-slate-700 px-2 py-0.5 text-[10px] font-extrabold text-slate-700 dark:text-slate-200">{rows.length} approvers</span>
-                    </td>
-                    <td className="px-2 py-2.5 text-center border-r border-slate-200 dark:border-slate-700 text-indigo-700 dark:text-indigo-300 bg-indigo-50/40 dark:bg-indigo-950/20">{tot.scopeTot || <span className="text-slate-300 dark:text-slate-700 font-normal">—</span>}</td>
-                    <td className="px-2 py-2.5 text-center border-r border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-300">{tot.penBef || <span className="text-slate-300 dark:text-slate-700 font-normal">—</span>}</td>
-                    <td className="px-2 py-2.5 text-center border-r border-slate-200 dark:border-slate-700 text-amber-700 dark:text-amber-300 bg-amber-50/40 dark:bg-amber-950/20">{tot.penAt || <span className="text-slate-300 dark:text-slate-700 font-normal">—</span>}</td>
-                    <td className="px-2 py-2.5 text-center border-r border-slate-200 dark:border-slate-700 text-emerald-700 dark:text-emerald-300 bg-emerald-50/40 dark:bg-emerald-950/20">{tot.appBy || <span className="text-slate-300 dark:text-slate-700 font-normal">—</span>}</td>
-                    <td className="px-2 py-2.5 text-center border-r border-slate-200 dark:border-slate-700 text-rose-700 dark:text-rose-400 bg-rose-50/40 dark:bg-rose-950/20">{tot.rejBy || <span className="text-slate-300 dark:text-slate-700 font-normal">—</span>}</td>
-                    <td className="px-2 py-2.5 text-center border-r border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-200/40 dark:bg-slate-700/20"><span className="text-slate-300 dark:text-slate-700 font-normal">—</span></td>
-                    <td className="px-2 py-2.5 text-center border-r border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-200/40 dark:bg-slate-700/20"><span className="text-slate-300 dark:text-slate-700 font-normal">—</span></td>
-                  </tr>
-                </tfoot>
-              );
-            })()}
+
           </table>
         )}
       </div>

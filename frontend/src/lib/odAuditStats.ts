@@ -8,16 +8,16 @@ export type OdAuditStatsRecord = {
   employeeId?: {
     employee_name?: string;
     emp_no?: string;
-    department_id?: { name?: string };
-    division_id?: { name?: string };
+    department_id?: { _id?: string; name?: string };
+    division_id?: { _id?: string; name?: string };
     department?: { name?: string };
     division?: { name?: string };
     designation_id?: { name?: string };
   };
-  division_id?: { name?: string } | string;
+  division_id?: { _id?: string; name?: string } | string;
   division_name?: string;
   department?: { name?: string } | string;
-  department_id?: { name?: string } | string;
+  department_id?: { _id?: string; name?: string } | string;
   department_name?: string;
   odType?: string;
   odType_extended?: 'full_day' | 'half_day' | 'hours' | null;
@@ -40,6 +40,7 @@ export type OdAuditStatsRecord = {
       role?: string;
       status?: string;
       actionByName?: string;
+      isCurrent?: boolean;
     }>;
   };
   createdAt?: string;
@@ -453,6 +454,8 @@ export type OdApproverAnalyticsRow = {
   rejectedByThem: number;
   totalPending: number;
   totalApproved: number;
+  totalRejected: number;
+  totalCancelled: number;
   records: OdAuditStatsRecord[];
 };
 
@@ -476,6 +479,8 @@ export function buildOdApproverAnalytics(records: OdAuditStatsRecord[], approver
       rejectedByThem: 0,
       totalPending: 0,
       totalApproved: 0,
+      totalRejected: 0,
+      totalCancelled: 0,
       records: [],
     };
 
@@ -505,23 +510,28 @@ export function buildOdApproverAnalytics(records: OdAuditStatsRecord[], approver
       if (isGlobal) {
         inScope = true;
       } else if (dataScope === 'division') {
-        const odDivId = String(od.division_id?._id || od.division_id || od.employeeId?.division_id?._id || '');
+        const odDivId = String((od.division_id as any)?._id || od.division_id || (od.employeeId?.division_id as any)?._id || '');
         if (allowedDivIds.has(odDivId)) inScope = true;
       } else if (dataScope === 'department') {
-        const odDeptId = String(od.department_id?._id || od.department_id || od.employeeId?.department_id?._id || '');
+        const odDeptId = String((od.department_id as any)?._id || od.department_id || (od.employeeId?.department_id as any)?._id || '');
         if (allowedDeptIds.has(odDeptId)) inScope = true;
       }
 
       if (!inScope) continue;
 
+      const bucket = odStatusBucket(od.status);
+      
       row.scopeTotal += 1;
       row.records.push(od);
 
-      const bucket = odStatusBucket(od.status);
       if (bucket === 'pending') {
         row.totalPending += 1;
       } else if (bucket === 'approved') {
         row.totalApproved += 1;
+      } else if (bucket === 'rejected') {
+        row.totalRejected += 1;
+      } else if (bucket === 'cancelled') {
+        row.totalCancelled += 1;
       }
 
       // Now analyze workflow stages
@@ -529,7 +539,10 @@ export function buildOdApproverAnalytics(records: OdAuditStatsRecord[], approver
       
       // Find where this approver's role sits in the chain
       // Or check if they actually approved it
-      const theirAction = chain.find(step => step.actionBy === approver._id || step.role === approver.role);
+      const theirAction = chain.find(step => {
+        const stepActorId = String((step as any).actionBy?._id || (step as any).actionBy || '');
+        return (stepActorId && stepActorId === String(approver._id)) || step.role === approver.role;
+      });
       
       if (theirAction) {
         if (theirAction.status === 'approved') {
@@ -537,11 +550,13 @@ export function buildOdApproverAnalytics(records: OdAuditStatsRecord[], approver
         } else if (theirAction.status === 'rejected') {
           row.rejectedByThem += 1;
         } else if (theirAction.status === 'pending') {
-          if (theirAction.isCurrent) {
-            row.pendingAtStage += 1;
-          } else {
-            // It's in the chain, it's pending, but not current yet
-            row.pendingBeforeStage += 1;
+          if (bucket !== 'rejected' && bucket !== 'cancelled') {
+            if (theirAction.isCurrent) {
+              row.pendingAtStage += 1;
+            } else {
+              // It's in the chain, it's pending, but not current yet
+              row.pendingBeforeStage += 1;
+            }
           }
         }
       } else {
