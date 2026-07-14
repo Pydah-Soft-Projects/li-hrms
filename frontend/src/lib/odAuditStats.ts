@@ -8,16 +8,16 @@ export type OdAuditStatsRecord = {
   employeeId?: {
     employee_name?: string;
     emp_no?: string;
-    department_id?: { name?: string };
-    division_id?: { name?: string };
+    department_id?: { _id?: string; name?: string };
+    division_id?: { _id?: string; name?: string };
     department?: { name?: string };
     division?: { name?: string };
     designation_id?: { name?: string };
   };
-  division_id?: { name?: string } | string;
+  division_id?: { _id?: string; name?: string } | string;
   division_name?: string;
   department?: { name?: string } | string;
-  department_id?: { name?: string } | string;
+  department_id?: { _id?: string; name?: string } | string;
   department_name?: string;
   odType?: string;
   odType_extended?: 'full_day' | 'half_day' | 'hours' | null;
@@ -40,6 +40,7 @@ export type OdAuditStatsRecord = {
       role?: string;
       status?: string;
       actionByName?: string;
+      isCurrent?: boolean;
     }>;
   };
   createdAt?: string;
@@ -381,3 +382,196 @@ export function buildDivisionStatusPercentRows(rows: OdOrgAggregateRow[]) {
     };
   });
 }
+
+export type OdUserWiseStatusCounts = {
+  co: number;
+  hours: number;
+  regular: number;
+  total: number;
+};
+
+export type OdUserWiseRow = {
+  key: string;
+  empNo: string;
+  empName: string;
+  department: string;
+  approved: OdUserWiseStatusCounts;
+  rejected: OdUserWiseStatusCounts;
+  pending: OdUserWiseStatusCounts;
+  total: number;
+  records: OdAuditStatsRecord[];
+};
+
+export function buildOdUserWise(records: OdAuditStatsRecord[]): OdUserWiseRow[] {
+  const byKey = new Map<string, OdUserWiseRow>();
+
+  for (const od of records) {
+    const emp = od.employeeId;
+    const empNo = emp?.emp_no || od.emp_no;
+    const empName = emp?.employee_name || empNo;
+    const key = empNo;
+    const seg = odSegmentOf(od);
+    const bucket = odStatusBucket(od.status);
+
+    if (bucket !== 'pending' && bucket !== 'approved' && bucket !== 'rejected') {
+      continue;
+    }
+
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        key,
+        empNo,
+        empName,
+        department: emp?.department_id?.name || '—',
+        approved: { co: 0, hours: 0, regular: 0, total: 0 },
+        rejected: { co: 0, hours: 0, regular: 0, total: 0 },
+        pending: { co: 0, hours: 0, regular: 0, total: 0 },
+        total: 0,
+        records: [],
+      });
+    }
+
+    const row = byKey.get(key)!;
+    row[bucket][seg] += 1;
+    row[bucket].total += 1;
+    row.total += 1;
+    row.records.push(od);
+  }
+
+  return Array.from(byKey.values()).sort((a, b) => b.total - a.total || a.empName.localeCompare(b.empName));
+}
+
+export type OdApproverAnalyticsRow = {
+  key: string;
+  approverId: string;
+  approverName: string;
+  approverRole: string;
+  department: string;
+  scopeTotal: number;
+  pendingBeforeStage: number;
+  pendingAtStage: number;
+  approvedByThem: number;
+  rejectedByThem: number;
+  totalPending: number;
+  totalApproved: number;
+  totalRejected: number;
+  totalCancelled: number;
+  records: OdAuditStatsRecord[];
+};
+
+export function buildOdApproverAnalytics(records: OdAuditStatsRecord[], approvers: any[]): OdApproverAnalyticsRow[] {
+  const result: OdApproverAnalyticsRow[] = [];
+
+  for (const approver of approvers) {
+    // Skip normal employees
+    if (approver.role === 'employee') continue;
+
+    const row: OdApproverAnalyticsRow = {
+      key: approver._id || approver.email,
+      approverId: approver._id,
+      approverName: approver.name,
+      approverRole: approver.role,
+      department: approver.department?.name || '—',
+      scopeTotal: 0,
+      pendingBeforeStage: 0,
+      pendingAtStage: 0,
+      approvedByThem: 0,
+      rejectedByThem: 0,
+      totalPending: 0,
+      totalApproved: 0,
+      totalRejected: 0,
+      totalCancelled: 0,
+      records: [],
+    };
+
+    // Determine scope based on dataScope, allowedDivisions, divisionMapping, departments
+    const dataScope = approver.dataScope || 'own';
+    const isGlobal = dataScope === 'all' || approver.role === 'super_admin' || approver.role === 'sub_admin';
+
+    const allowedDivIds = new Set<string>();
+    if (approver.allowedDivisions) {
+      approver.allowedDivisions.forEach((d: any) => allowedDivIds.add(String(d._id || d)));
+    }
+    if (approver.divisionMapping) {
+      approver.divisionMapping.forEach((m: any) => allowedDivIds.add(String(m.division?._id || m.division)));
+    }
+    
+    const allowedDeptIds = new Set<string>();
+    if (approver.departments) {
+      approver.departments.forEach((d: any) => allowedDeptIds.add(String(d._id || d)));
+    }
+    if (approver.department) {
+      allowedDeptIds.add(String(approver.department._id || approver.department));
+    }
+
+    for (const od of records) {
+      // Check if OD is in scope
+      let inScope = false;
+      if (isGlobal) {
+        inScope = true;
+      } else if (dataScope === 'division') {
+        const odDivId = String((od.division_id as any)?._id || od.division_id || (od.employeeId?.division_id as any)?._id || '');
+        if (allowedDivIds.has(odDivId)) inScope = true;
+      } else if (dataScope === 'department') {
+        const odDeptId = String((od.department_id as any)?._id || od.department_id || (od.employeeId?.department_id as any)?._id || '');
+        if (allowedDeptIds.has(odDeptId)) inScope = true;
+      }
+
+      if (!inScope) continue;
+
+      const bucket = odStatusBucket(od.status);
+      
+      row.scopeTotal += 1;
+      row.records.push(od);
+
+      if (bucket === 'pending') {
+        row.totalPending += 1;
+      } else if (bucket === 'approved') {
+        row.totalApproved += 1;
+      } else if (bucket === 'rejected') {
+        row.totalRejected += 1;
+      } else if (bucket === 'cancelled') {
+        row.totalCancelled += 1;
+      }
+
+      // Now analyze workflow stages
+      const chain = od.workflow?.approvalChain || [];
+      
+      // Find where this approver's role sits in the chain
+      // Or check if they actually approved it
+      const theirAction = chain.find(step => {
+        const stepActorId = String((step as any).actionBy?._id || (step as any).actionBy || '');
+        return (stepActorId && stepActorId === String(approver._id)) || step.role === approver.role;
+      });
+      
+      if (theirAction) {
+        if (theirAction.status === 'approved') {
+          row.approvedByThem += 1;
+        } else if (theirAction.status === 'rejected') {
+          row.rejectedByThem += 1;
+        } else if (theirAction.status === 'pending') {
+          if (bucket !== 'rejected' && bucket !== 'cancelled') {
+            if (theirAction.isCurrent) {
+              row.pendingAtStage += 1;
+            } else {
+              // It's in the chain, it's pending, but not current yet
+              row.pendingBeforeStage += 1;
+            }
+          }
+        }
+      } else {
+        // If they are not explicitly in the chain but the OD is in their scope,
+        // it means either it hasn't reached dynamic assignment, or they are not required.
+        // We'll leave the granular stage counts alone for this record.
+      }
+    }
+
+    // Only include if they have a scope (optional: can filter out zero-scope if needed, but keeping shows "empty" queues)
+    if (row.scopeTotal > 0 || isGlobal) {
+        result.push(row);
+    }
+  }
+
+  return result.sort((a, b) => b.scopeTotal - a.scopeTotal || a.approverName.localeCompare(b.approverName));
+}
+

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api, Department, Division } from '@/lib/api';
 import { MultiSelect } from '@/components/MultiSelect';
 import Spinner from '@/components/Spinner';
@@ -15,8 +16,11 @@ type OverviewResult = {
   month: string;
   period: { start: string; end: string };
   total: number;
+  totalFiltered?: number;
   flagged: number;
   shown: number;
+  page?: number;
+  totalPages?: number;
   truncated?: boolean;
   onlyIssues?: boolean;
   employees: OverviewEmployee[];
@@ -30,10 +34,12 @@ function currentPayrollMonth(): string {
 export default function AttendanceAuditPage({
   hideTitle,
   embedded,
+  active = true,
 }: {
   hideTitle?: boolean;
   /** When rendered inside Audits page — no breakout margins */
   embedded?: boolean;
+  active?: boolean;
 } = {}) {
   const [month, setMonth] = useState(currentPayrollMonth());
   const [divisions, setDivisions] = useState<Division[]>([]);
@@ -42,6 +48,12 @@ export default function AttendanceAuditPage({
   const [departmentIds, setDepartmentIds] = useState<string[]>([]);
   const [empNos, setEmpNos] = useState('');
   const [onlyIssues, setOnlyIssues] = useState(true);
+  const [page, setPage] = useState(1);
+  const [mounted, setMounted] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const [loadingFilters, setLoadingFilters] = useState(true);
   const [loading, setLoading] = useState(true);
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -70,7 +82,7 @@ export default function AttendanceAuditPage({
     })();
   }, []);
 
-  const loadOverview = useCallback(async () => {
+  const loadOverview = useCallback(async (targetPage = 1) => {
     if (!month) return;
     try {
       setLoading(true);
@@ -80,7 +92,8 @@ export default function AttendanceAuditPage({
         departmentIds: departmentIds.length ? departmentIds : undefined,
         empNos: empNos.trim() || undefined,
         onlyIssues,
-        limit: 150,
+        limit: 50,
+        page: targetPage,
       });
       if (res.success) {
         setOverview(res.data as OverviewResult);
@@ -96,8 +109,16 @@ export default function AttendanceAuditPage({
   }, [month, divisionIds, departmentIds, empNos, onlyIssues]);
 
   useEffect(() => {
-    if (!loadingFilters) loadOverview();
-  }, [loadOverview, loadingFilters]);
+    if (!loadingFilters) {
+      setPage(1);
+      loadOverview(1);
+    }
+  }, [month, divisionIds, departmentIds, empNos, onlyIssues, loadingFilters, loadOverview]);
+
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+    loadOverview(newPage);
+  };
 
   const handleExportPdf = () => {
     if (!overview) {
@@ -136,6 +157,86 @@ export default function AttendanceAuditPage({
     );
   }
 
+  const filtersBar = (
+    <div className="flex flex-nowrap w-max min-w-full items-center gap-2 pb-1.5">
+      {/* Month */}
+      <div className="flex shrink-0 items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:border-emerald-300">
+        <Calendar className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+        <input
+          type="month"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="bg-transparent text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none"
+        />
+      </div>
+
+      {/* Division */}
+      <div className="flex shrink-0 items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:border-emerald-300">
+        <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+        <MultiSelect
+          options={divisions.map((d) => ({ id: d._id, name: d.name }))}
+          selectedIds={divisionIds}
+          onChange={setDivisionIds}
+          placeholder="All Divisions"
+          className="min-w-[100px] max-w-[130px]"
+          pill
+        />
+      </div>
+
+      {/* Department */}
+      <div className="flex shrink-0 items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:border-emerald-300">
+        <Building className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+        <MultiSelect
+          options={filteredDepartments.map((d) => ({ id: d._id, name: d.name }))}
+          selectedIds={departmentIds}
+          onChange={setDepartmentIds}
+          placeholder="All Departments"
+          className="min-w-[100px] max-w-[130px]"
+          pill
+        />
+      </div>
+
+      {/* Employee # */}
+      <div className={`flex shrink-0 items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all duration-300 hover:border-emerald-300 ${searchFocused ? 'w-[200px] sm:w-[260px]' : 'w-[120px]'}`}>
+        <User className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+        <input
+          type="text"
+          value={empNos}
+          onChange={(e) => setEmpNos(e.target.value)}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
+          placeholder="Emp # (e.g. 101, 102)"
+          className="bg-transparent text-sm text-slate-700 dark:text-slate-300 placeholder:text-slate-400 focus:outline-none w-full"
+        />
+      </div>
+
+      {/* Refresh */}
+      <button
+        type="button"
+        onClick={() => loadOverview(1)}
+        disabled={loading}
+        className="flex shrink-0 items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm text-sm font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 hover:border-emerald-300 hover:text-emerald-600 disabled:opacity-50 transition-all"
+      >
+        {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+        Refresh
+      </button>
+
+      {/* Export PDF */}
+      <button
+        type="button"
+        onClick={handleExportPdf}
+        disabled={loading || exportingPdf || !overview}
+        title="Export abstract differences as PDF"
+        className="flex shrink-0 items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 shadow-sm text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-all"
+      >
+        {exportingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+        {exportingPdf ? 'Exporting…' : 'Export PDF'}
+      </button>
+    </div>
+  );
+
+  const portalTarget = active && mounted ? document.getElementById('audit-header-filters') : null;
+
   return (
     <div
       className={
@@ -147,7 +248,7 @@ export default function AttendanceAuditPage({
       {!hideTitle && (
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900 dark:text-white">
-            <ShieldCheck className="h-7 w-7 text-indigo-600" />
+            <ShieldCheck className="h-7 w-7 text-emerald-600" />
             Attendance Audits
           </h1>
           <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-400">
@@ -158,92 +259,7 @@ export default function AttendanceAuditPage({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        {/* Month */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:border-indigo-300">
-          <Calendar className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="bg-transparent text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none"
-          />
-        </div>
-
-        {/* Division */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:border-indigo-300">
-          <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-          <MultiSelect
-            options={divisions.map((d) => ({ id: d._id, name: d.name }))}
-            selectedIds={divisionIds}
-            onChange={setDivisionIds}
-            placeholder="All Divisions"
-            className="min-w-[120px]"
-            pill
-          />
-        </div>
-
-        {/* Department */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:border-indigo-300">
-          <Building className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-          <MultiSelect
-            options={filteredDepartments.map((d) => ({ id: d._id, name: d.name }))}
-            selectedIds={departmentIds}
-            onChange={setDepartmentIds}
-            placeholder="All Departments"
-            className="min-w-[120px]"
-            pill
-          />
-        </div>
-
-        {/* Employee # */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:border-indigo-300">
-          <User className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-          <input
-            type="text"
-            value={empNos}
-            onChange={(e) => setEmpNos(e.target.value)}
-            placeholder="Emp # (e.g. 101, 102)"
-            className="bg-transparent text-sm text-slate-700 dark:text-slate-300 placeholder:text-slate-400 focus:outline-none min-w-[140px]"
-          />
-        </div>
-
-        {/* Issues only toggle */}
-        <label className="flex cursor-pointer items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:border-indigo-300 select-none">
-          <input
-            type="checkbox"
-            checked={onlyIssues}
-            onChange={(e) => setOnlyIssues(e.target.checked)}
-            className="h-3.5 w-3.5 rounded border-slate-300 accent-indigo-600"
-          />
-          <span className="text-sm font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">
-            Issues only
-          </span>
-        </label>
-
-        {/* Refresh */}
-        <button
-          type="button"
-          onClick={loadOverview}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm text-sm font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-50 transition-all"
-        >
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-          Refresh
-        </button>
-
-        {/* Export PDF */}
-        <button
-          type="button"
-          onClick={handleExportPdf}
-          disabled={loading || exportingPdf || !overview}
-          title="Export abstract differences as PDF"
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 shadow-sm text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-all"
-        >
-          {exportingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
-          {exportingPdf ? 'Exporting…' : 'Export PDF'}
-        </button>
-      </div>
+      {portalTarget ? createPortal(filtersBar, portalTarget) : filtersBar}
 
       {loading ? (
         <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3">
@@ -273,17 +289,10 @@ export default function AttendanceAuditPage({
             <span className="text-xs text-slate-500">Showing {overview.shown}</span>
           </div>
 
-          {overview.truncated && (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
-              <Info className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>Narrow division, department, or employee filters to see more rows (max 150 per load).</p>
-            </div>
-          )}
-
           {!overview.employees.length ? (
             <div className="rounded-xl border border-slate-200 bg-white p-12 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900">
               {onlyIssues
-                ? 'No mismatches or edits found for this scope. Uncheck “Issues only” to see all employees.'
+                ? 'No mismatches or edits found for this scope.'
                 : 'No employees in scope for this month.'}
             </div>
           ) : (
@@ -293,6 +302,56 @@ export default function AttendanceAuditPage({
               ))}
             </div>
           )}
+
+          {/* Pagination */}
+          {(() => {
+            const totalPages = overview.totalPages;
+            if (!totalPages || totalPages <= 1) return null;
+            return (
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900 shadow-sm mt-4">
+                <span className="text-xs text-slate-500">
+                  Page {page} of {totalPages} · {overview.totalFiltered || overview.shown} employees
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handlePageChange(page - 1)}
+                    disabled={page <= 1 || loading}
+                    className="rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-40 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800 dark:text-slate-300"
+                  >
+                    ← Prev
+                  </button>
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    const pg = Math.max(1, page - 2) + i;
+                    if (pg > totalPages) return null;
+                    return (
+                      <button
+                        key={pg}
+                        type="button"
+                        onClick={() => handlePageChange(pg)}
+                        disabled={loading}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-40 ${
+                          pg === page
+                            ? 'bg-emerald-600 border-emerald-600 text-white'
+                            : 'hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800 dark:text-slate-300'
+                        }`}
+                      >
+                        {pg}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => handlePageChange(page + 1)}
+                    disabled={page >= totalPages || loading}
+                    className="rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-40 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800 dark:text-slate-300"
+                  >
+                    Next →
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       ) : null}
     </div>

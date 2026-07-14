@@ -262,7 +262,6 @@ function summaryKeysForMode(mode) {
       'lates',
       'attDed',
       'paidDays',
-      'payableShifts',
     ];
   }
   return [
@@ -472,7 +471,8 @@ async function getAttendanceAuditOverview(options) {
     departmentIds = [],
     empNos = [],
     onlyIssues = true,
-    limit = 150,
+    limit = 50,
+    page = 1,
   } = options;
 
   const { year, monthNumber, startDateStr, endDateStr } = await resolvePeriod(monthStr);
@@ -505,8 +505,10 @@ async function getAttendanceAuditOverview(options) {
   }
 
   const empIds = employees.map((e) => e._id);
+  const empNosList = employees.map((e) => String(e.emp_no).trim().toUpperCase());
 
-  const [monthlyRows, payRegisters] = await Promise.all([
+  // ── Parallel fetch: monthly data + pay registers + edited dailies + processing modes ──
+  const [monthlyRows, payRegisters, dailies, processingModes] = await Promise.all([
     getMonthlyTableViewData(employees, year, monthNumber, startDateStr, endDateStr, {
       mode: 'complete',
       includeContributingDates: true,
@@ -516,19 +518,19 @@ async function getAttendanceAuditOverview(options) {
         'employeeId dailyRecords totals editHistory totalDaysInMonth summaryLocked lastEditedAt totalAttendanceDeductionDays totalPermissionCount totalPermissionDeductionDays'
       )
       .lean(),
+    AttendanceDaily.find({
+      employeeNumber: { $in: empNosList },
+      date: { $gte: startDateStr, $lte: endDateStr },
+      $or: [{ isEdited: true }, { 'editHistory.0': { $exists: true } }],
+    })
+      .select('employeeNumber date isEdited editHistory status')
+      .lean(),
+    // Resolve processing mode for ALL employees in parallel instead of serially
+    Promise.all(employees.map((emp) => getProcessingModeForEmployee(emp))),
   ]);
 
   const prByEmp = new Map(payRegisters.map((p) => [String(p.employeeId), p]));
   const monthlyByEmp = new Map(monthlyRows.map((r) => [String(r.employee._id), r]));
-
-  const empNosList = employees.map((e) => String(e.emp_no).trim().toUpperCase());
-  const dailies = await AttendanceDaily.find({
-    employeeNumber: { $in: empNosList },
-    date: { $gte: startDateStr, $lte: endDateStr },
-    $or: [{ isEdited: true }, { 'editHistory.0': { $exists: true } }],
-  })
-    .select('employeeNumber date isEdited editHistory status')
-    .lean();
 
   const dailiesByEmpNo = new Map();
   for (const d of dailies) {
@@ -540,10 +542,10 @@ async function getAttendanceAuditOverview(options) {
   const compares = [];
   let flaggedCount = 0;
 
-  for (const emp of employees) {
+  for (let i = 0; i < employees.length; i++) {
+    const emp = employees[i];
     const eid = String(emp._id);
-    const pm = await getProcessingModeForEmployee(emp);
-    const processingMode = pm?.mode || 'multi_shift';
+    const processingMode = processingModes[i]?.mode || 'multi_shift';
     const payload = buildComparePayload({
       employee: emp,
       monthlyRow: monthlyByEmp.get(eid) || null,
@@ -563,18 +565,24 @@ async function getAttendanceAuditOverview(options) {
     return String(a.employee.emp_no).localeCompare(String(b.employee.emp_no), 'en');
   });
 
-  const cap = Math.min(Math.max(parseInt(String(limit), 10) || 150, 1), 300);
-  const truncated = compares.length > cap;
+  const cap = Math.max(parseInt(String(limit), 10) || 50, 1);
+  const totalFiltered = compares.length;
+  const totalPages = Math.ceil(totalFiltered / cap);
+  const startIndex = (page - 1) * cap;
+  const paginatedCompares = compares.slice(startIndex, startIndex + cap);
 
   return {
     month: monthStr,
     period: { start: startDateStr, end: endDateStr },
     total: employees.length,
+    totalFiltered,
     flagged: flaggedCount,
-    shown: Math.min(compares.length, cap),
-    truncated,
+    shown: paginatedCompares.length,
+    page,
+    totalPages,
+    limit: cap,
     onlyIssues,
-    employees: compares.slice(0, cap),
+    employees: paginatedCompares,
   };
 }
 
@@ -588,8 +596,9 @@ function parseOverviewQuery(query) {
         .filter(Boolean)
     : [];
   const onlyIssues = query.onlyIssues !== '0' && query.onlyIssues !== 'false';
-  const limit = Math.min(Math.max(parseInt(String(query.limit || 150), 10) || 150, 1), 300);
-  return { divisionIds, departmentIds, empNos, onlyIssues, limit };
+  const limit = parseInt(String(query.limit || 50), 10) || 50;
+  const page = parseInt(String(query.page || 1), 10) || 1;
+  return { divisionIds, departmentIds, empNos, onlyIssues, limit, page };
 }
 
 module.exports = {

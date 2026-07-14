@@ -98,7 +98,7 @@ exports.getOverview = async (req, res) => {
     if (!month) {
       return res.status(400).json({ success: false, message: 'Month (YYYY-MM) is required' });
     }
-    const { divisionIds, departmentIds, empNos, onlyIssues, limit } = parseOverviewQuery(req.query);
+    const { divisionIds, departmentIds, empNos, onlyIssues, limit, page } = parseOverviewQuery(req.query);
     const data = await getAttendanceAuditOverview({
       month,
       scopeFilter: req.scopeFilter || {},
@@ -107,6 +107,7 @@ exports.getOverview = async (req, res) => {
       empNos,
       onlyIssues,
       limit,
+      page,
     });
     res.status(200).json({ success: true, data });
   } catch (error) {
