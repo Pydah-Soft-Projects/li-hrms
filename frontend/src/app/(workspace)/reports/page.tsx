@@ -9,11 +9,12 @@ import ODReportsTab from './od-reports-tab';
 import LoanReportsTab from './loan-reports-tab';
 import CertificationReportsTab from './certification-reports-tab';
 import DeductionsReportsTab from './deductions-reports-tab';
+import ResignationReportsTab from './resignation-reports-tab';
 import { auth } from '@/lib/auth';
-import { canViewReports, canViewFinancialReports } from '@/lib/permissions';
-import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase, Wallet, Banknote, TrendingDown, GraduationCap } from 'lucide-react';
+import { canViewReports, canViewFinancialReports, canViewResignation } from '@/lib/permissions';
+import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase, Wallet, Banknote, TrendingDown, GraduationCap, LogOut } from 'lucide-react';
 
-type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'deductions' | 'certifications';
+type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'deductions' | 'certifications' | 'resignations';
 
 const TAB_CONFIG = {
   payroll: { label: 'Payroll', icon: CreditCard, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30', border: 'border-violet-500', activeBg: 'bg-violet-600' },
@@ -25,6 +26,7 @@ const TAB_CONFIG = {
   loans: { label: 'Loans', icon: Wallet, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-950/30', border: 'border-rose-500', activeBg: 'bg-rose-600' },
   salary_advance: { label: 'Salary Advance', icon: Banknote, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/30', border: 'border-amber-500', activeBg: 'bg-amber-600' },
   certifications: { label: 'Certifications', icon: GraduationCap, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30', border: 'border-violet-500', activeBg: 'bg-violet-600' },
+  resignations: { label: 'Resignations', icon: LogOut, color: 'text-slate-800 dark:text-slate-200', bg: 'bg-slate-50 dark:bg-slate-800/30', border: 'border-slate-400', activeBg: 'bg-slate-800' },
 };
 
 export default function ReportsPage() {
@@ -33,6 +35,7 @@ export default function ReportsPage() {
   const user = auth.getUser();
   const hasReportsAccess = user ? canViewReports(user as any) : false;
   const hasFinancialAccess = user ? canViewFinancialReports(user as any) : false;
+  const hasResignationAccess = user ? canViewResignation(user as any) : false;
 
   if (!hasReportsAccess) {
     return (
@@ -49,6 +52,7 @@ export default function ReportsPage() {
   const tabs: TabType[] = [];
   if (hasFinancialAccess) tabs.push('payroll', 'deductions', 'loans', 'salary_advance');
   tabs.push('attendance', 'biometric', 'leaves', 'od', 'certifications');
+  if (hasResignationAccess) tabs.push('resignations');
 
   const currentTab: TabType = tabs.includes(activeTab) ? activeTab : tabs[0];
 
@@ -97,6 +101,7 @@ export default function ReportsPage() {
         {currentTab === 'loans' && <LoanReportsTab defaultRequestType="loan" />}
         {currentTab === 'salary_advance' && <LoanReportsTab defaultRequestType="salary_advance" />}
         {currentTab === 'certifications' && <CertificationReportsTab />}
+        {currentTab === 'resignations' && <ResignationReportsTab />}
       </div>
     </div>
   );
