@@ -120,7 +120,7 @@ export default function AttendanceAuditPage({
     loadOverview(newPage);
   };
 
-  const handleExportPdf = () => {
+  const handleExportPdf = async () => {
     if (!overview) {
       toast.error('Load audit data before exporting');
       return;
@@ -128,22 +128,38 @@ export default function AttendanceAuditPage({
     setExportingPdf(true);
     const toastId = toast.loading('Generating PDF…');
     try {
+      const res = await api.getAttendanceAuditOverview({
+        month,
+        divisionIds: divisionIds.length ? divisionIds : undefined,
+        departmentIds: departmentIds.length ? departmentIds : undefined,
+        empNos: empNos.trim() || undefined,
+        onlyIssues,
+        limit: 5000,
+        page: 1,
+      });
+
+      if (!res.success) {
+        throw new Error(res.message || 'Failed to fetch audit data');
+      }
+
+      const fullOverview = res.data as OverviewResult;
+
       exportAttendanceAuditPdf(
         {
-          month: overview.month,
-          period: overview.period,
-          total: overview.total,
-          flagged: overview.flagged,
-          shown: overview.shown,
-          onlyIssues: overview.onlyIssues,
-          truncated: overview.truncated,
+          month: fullOverview.month,
+          period: fullOverview.period,
+          total: fullOverview.total,
+          flagged: fullOverview.flagged,
+          shown: fullOverview.shown,
+          onlyIssues: fullOverview.onlyIssues,
+          truncated: fullOverview.truncated,
         },
-        overview.employees
+        fullOverview.employees
       );
       toast.success('PDF downloaded', { id: toastId });
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast.error('Failed to generate PDF', { id: toastId });
+      toast.error(err.message || 'Failed to generate PDF', { id: toastId });
     } finally {
       setExportingPdf(false);
     }
