@@ -129,7 +129,7 @@ export function AttendanceAuditCompareGrid({ employeeId, month, data: dataProp, 
   const [loading, setLoading] = useState(!dataProp);
   const [data, setData] = useState<CompareData | null>(dataProp ?? null);
   const [editPanel, setEditPanel] = useState<{ date: string; edits: EditEntry[] } | null>(null);
-  const [showEditsOnly, setShowEditsOnly] = useState(false);
+  const showEditsOnly = true;
 
   useEffect(() => {
     if (dataProp) {
@@ -166,9 +166,8 @@ export function AttendanceAuditCompareGrid({ employeeId, month, data: dataProp, 
 
   const visibleDays = useMemo(() => {
     if (!data) return [];
-    if (!showEditsOnly) return data.dayComparisons;
     return data.dayComparisons.filter((d) => d.mismatch || d.hasEdits || d.isConflict);
-  }, [data, showEditsOnly]);
+  }, [data]);
 
   if (loading) {
     return (
@@ -202,15 +201,6 @@ export function AttendanceAuditCompareGrid({ employeeId, month, data: dataProp, 
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
-            <input
-              type="checkbox"
-              checked={showEditsOnly}
-              onChange={(e) => setShowEditsOnly(e.target.checked)}
-              className="rounded"
-            />
-            Mismatches & edits only
-          </label>
           {onClose && (
             <button type="button" onClick={onClose} className="rounded-lg p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700">
               <X className="h-4 w-4" />

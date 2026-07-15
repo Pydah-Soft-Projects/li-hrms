@@ -86,8 +86,7 @@ function formatNum(n: number): string {
 
 /** Same as UI "Mismatches & edits only" — avoids listing every calendar day. */
 function visibleDaysForPdf(item: CompareData) {
-  const issueDays = item.dayComparisons.filter((d) => d.mismatch || d.hasEdits || d.isConflict);
-  return issueDays.length > 0 ? issueDays : item.dayComparisons;
+  return item.dayComparisons.filter((d) => d.mismatch || d.hasEdits || d.isConflict);
 }
 
 type DocWithAutoTable = jsPDF & { lastAutoTable?: { finalY: number } };
@@ -144,7 +143,7 @@ function drawEmployeeCompareGrid(doc: DocWithAutoTable, item: CompareData, start
   const metaParts = [
     item.employee.department || '',
     item.processingMode || '',
-    showingIssueDaysOnly ? `issue days only (${visibleDays.length})` : `all days (${visibleDays.length})`,
+    `mismatches & edits only (${visibleDays.length})`,
   ].filter(Boolean);
   doc.text(pdfAscii(metaParts.join('  |  ')), margin, startY + 4);
 

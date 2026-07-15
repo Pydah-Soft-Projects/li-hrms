@@ -10,9 +10,10 @@ import LoanReportsTab from '../../(workspace)/reports/loan-reports-tab';
 import CertificationReportsTab from '../../(workspace)/reports/certification-reports-tab';
 import DeductionsReportsTab from '../../(workspace)/reports/deductions-reports-tab';
 import MobileAnalyticsTab from '../../(workspace)/reports/mobile-analytics-tab';
-import { BarChart2, Fingerprint, CreditCard, FileText, Briefcase, Wallet, Banknote, Smartphone, TrendingDown, GraduationCap } from 'lucide-react';
+import ResignationReportsTab from '../../(workspace)/reports/resignation-reports-tab';
+import { BarChart2, Fingerprint, CreditCard, FileText, Briefcase, Wallet, Banknote, Smartphone, TrendingDown, GraduationCap, LogOut } from 'lucide-react';
 
-type TabType = 'payroll' | 'deductions' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'mobile_app' | 'certifications';
+type TabType = 'payroll' | 'deductions' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'mobile_app' | 'certifications' | 'resignations';
 
 const TAB_CONFIG = {
   payroll: { label: 'Payroll', icon: CreditCard, activeBg: 'bg-violet-600' },
@@ -25,9 +26,10 @@ const TAB_CONFIG = {
   salary_advance: { label: 'Salary Advance', icon: Banknote, activeBg: 'bg-amber-600' },
   mobile_app: { label: 'Mobile App', icon: Smartphone, activeBg: 'bg-cyan-600' },
   certifications: { label: 'Certifications', icon: GraduationCap, activeBg: 'bg-violet-600' },
+  resignations: { label: 'Resignations', icon: LogOut, activeBg: 'bg-slate-800' },
 };
 
-const ALL_TABS: TabType[] = ['payroll', 'deductions', 'attendance', 'biometric', 'leaves', 'od', 'loans', 'salary_advance', 'certifications', 'mobile_app'];
+const ALL_TABS: TabType[] = ['payroll', 'deductions', 'attendance', 'biometric', 'leaves', 'od', 'loans', 'salary_advance', 'certifications', 'resignations', 'mobile_app'];
 
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('attendance');
@@ -75,6 +77,7 @@ export default function ReportsPage() {
         {activeTab === 'loans' && <LoanReportsTab defaultRequestType="loan" />}
         {activeTab === 'salary_advance' && <LoanReportsTab defaultRequestType="salary_advance" />}
         {activeTab === 'certifications' && <CertificationReportsTab />}
+        {activeTab === 'resignations' && <ResignationReportsTab />}
         {activeTab === 'mobile_app' && <MobileAnalyticsTab />}
       </div>
     </div>
