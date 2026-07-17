@@ -236,6 +236,50 @@ describe('shiftPresenceResolutionService', () => {
       expect(pShift.shiftSegments.find(s => s.segmentName === 'secondHalf').present).toBe(true);
     });
 
+    test('IN just before midpoint with large late-in → second half (not IN-thumb first half)', async () => {
+      // Shift 09:00–16:20 midpoint 12:40; IN 12:36 is before mid but late-in >> early-out
+      const shiftTsGeneral = {
+        _id: 'shift-ts-general',
+        name: 'TS-GENERAL',
+        startTime: '09:00',
+        endTime: '16:20',
+        duration: 7.333,
+        firstHalf: null,
+        secondHalf: null,
+      };
+      const pShift = {
+        shiftNumber: 1,
+        shiftId: 'shift-ts-general',
+        shiftStartTime: '09:00',
+        shiftEndTime: '16:20',
+        expectedHours: 7.333,
+        basePayable: 1,
+        inTime: createISTDate(DATE, '12:36'),
+        outTime: createISTDate(DATE, '16:25'),
+        punchHours: 3.82,
+        workingHours: 3.82,
+        odHours: 0,
+        edgePermissionHours: 0,
+        lateInMinutes: 214,
+        earlyOutMinutes: 0,
+      };
+
+      await resolveShiftPresence({
+        pShift,
+        dateStr: DATE,
+        employeeNumber: '2181',
+        graceOpts: grace,
+        shiftDoc: shiftTsGeneral,
+        applyEdgePermissions: false,
+      });
+
+      expect(pShift.presenceResolutionPath).toBe('duration_half_day_fallback');
+      expect(pShift.status).toBe('HALF_DAY');
+      expect(pShift.payableShift).toBe(0.5);
+      expect(pShift.shiftSegments.find((s) => s.segmentName === 'firstHalf').present).toBe(false);
+      expect(pShift.shiftSegments.find((s) => s.segmentName === 'secondHalf').present).toBe(true);
+    });
+
     test('short day 9-11 (worked < 40%) falls back to ABSENT', async () => {
       const pShift = baseShiftNoHalves('09:00', '11:00'); // 2 hours worked, 2/9 = 22.2% < 40%
       pShift.punchHours = 2;

@@ -3,6 +3,7 @@
  *   1) Shift-level hours (clipped punch + OD + edge permission) ≥ 75% or shift min → PRESENT, both halves present
  *   2) Edge permissions (late-in / early-out only — applied before re-check in step 1)
  *   3) Half-segment break-aware fallback when shift-level present is not met
+ *   4) No half segments: HALF_DAY via late-in/early-out (then punch-gap), IN-vs-midpoint last
  */
 
 const Shift = require('../../shifts/model/Shift');
@@ -15,6 +16,7 @@ const {
 } = require('../../shifts/services/shiftHalfSegmentService');
 const { applyShiftSegmentOverride } = require('../../shared/utils/shiftSegmentOverrides');
 const { createISTDate, extractISTComponents } = require('../../shared/utils/dateUtils');
+const { getWorkedHalfFromLegacyPenalties } = require('../utils/attendanceHalfPresence');
 
 /** Shift-level present when effective hours reach this fraction of expected shift duration */
 const SHIFT_PRESENT_THRESHOLD = 0.75;
@@ -333,12 +335,16 @@ async function resolveShiftPresence({
     return applySegmentFallbackStatus(pShift, segmentResult, basePayable);
   }
 
-  // No half segments on shift master — fallback to percentage/thumb check
+  // No half segments on shift master — half-day by late-in/early-out (then punch-gap), IN-thumb last
   const PARTIAL_IN_OUT_HALF_DAY_HOURS_RATIO_MIN = 0.4;
   if (statusDuration >= expectedHours * PARTIAL_IN_OUT_HALF_DAY_HOURS_RATIO_MIN) {
     const startStr = pShift.shiftStartTime || effectiveShiftDoc?.startTime || '09:00';
     const endStr = pShift.shiftEndTime || effectiveShiftDoc?.endTime || '18:00';
-    const workedHalfKey = getWorkedHalfFromInThumbOnlyLocal(inTime, startStr, endStr);
+    // Prefer late-in vs early-out (and punch-gap vs shift bounds when tied) over IN-vs-midpoint.
+    // Example: IN 12:36 vs midpoint 12:40 looked like first half, but large late-in → second half.
+    const workedHalfKey =
+      getWorkedHalfFromLegacyPenalties({}, pShift) ||
+      getWorkedHalfFromInThumbOnlyLocal(inTime, startStr, endStr);
 
     const startMins = timeToMinutes(startStr);
     const endMins = timeToMinutes(endStr);
