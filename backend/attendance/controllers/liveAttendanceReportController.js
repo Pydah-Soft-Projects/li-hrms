@@ -145,13 +145,32 @@ exports.getLiveAttendanceReport = async (req, res) => {
     const scopedUser = req.scopedUser || req.user;
     const employeeQuery = buildScopedEmployeeQuery(scopedUser, divisionIds.map(String), departmentIds.map(String));
 
-    // Fetch applicable active employees
-    const activeEmployees = await Employee.find(employeeQuery)
-      .select('_id emp_no employee_name division_id department_id designation_id')
-      .populate({ path: 'division_id', select: 'name' })
-      .populate({ path: 'department_id', select: 'name' })
-      .populate({ path: 'designation_id', select: 'name' })
-      .lean();
+    // Prefer org-history as-of target date when filtering by division/department
+    let activeEmployees;
+    if (divisionIds.length || departmentIds.length) {
+      const { resolveEmployeesForOrgFilter } = require('../services/attendanceOrgFilterService');
+      const resolved = await resolveEmployeesForOrgFilter({
+        divisionIds: divisionIds.map(String),
+        departmentIds: departmentIds.map(String),
+        asOf: targetDate,
+        extraFilter: { ...employeeQuery, is_active: { $ne: false } },
+        select: '_id emp_no employee_name division_id department_id designation_id orgHistory',
+      });
+      const ids = resolved.employeeIds;
+      activeEmployees = await Employee.find({ _id: { $in: ids } })
+        .select('_id emp_no employee_name division_id department_id designation_id')
+        .populate({ path: 'division_id', select: 'name' })
+        .populate({ path: 'department_id', select: 'name' })
+        .populate({ path: 'designation_id', select: 'name' })
+        .lean();
+    } else {
+      activeEmployees = await Employee.find(employeeQuery)
+        .select('_id emp_no employee_name division_id department_id designation_id')
+        .populate({ path: 'division_id', select: 'name' })
+        .populate({ path: 'department_id', select: 'name' })
+        .populate({ path: 'designation_id', select: 'name' })
+        .lean();
+    }
 
     // ── Detect processing mode (per-employee: division override → org default) ──
     const {

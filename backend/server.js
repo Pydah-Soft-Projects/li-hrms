@@ -263,6 +263,10 @@ const startServer = async () => {
     try {
       const { startResignationCron } = require('./resignations/jobs/resignationCron');
       startResignationCron();
+
+      const { startEmployeeTimelineCron } = require('./employees/jobs/employeeTimelineCron');
+      startEmployeeTimelineCron();
+      console.log('Employee timeline cron started (daily 00:10 IST)');
     } catch (cronErr) {
       console.warn('⚠️  Resignation deactivation cron failed to start:', cronErr.message);
     }

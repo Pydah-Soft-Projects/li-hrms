@@ -109,50 +109,39 @@ exports.getAttendanceReport = async (req, res) => {
             }
         }
 
-        // Apply filters by fetching relevant employee IDs first if department/division/designation is set
+        // Apply filters by org history overlapping the report date range
         if ((departmentId && departmentId !== 'all') || (divisionId && divisionId !== 'all') || (designationId && designationId !== 'all')) {
-            const empFilter = { is_active: { $ne: false } };
+            const { resolveEmployeesForOrgFilter } = require('../services/attendanceOrgFilterService');
+            const deptIds =
+              departmentId && departmentId !== 'all'
+                ? String(departmentId).split(',').filter((id) => id && id !== 'all')
+                : [];
+            const divIds =
+              divisionId && divisionId !== 'all'
+                ? String(divisionId).split(',').filter((id) => id && id !== 'all')
+                : [];
+            const desigIds =
+              designationId && designationId !== 'all'
+                ? String(designationId).split(',').filter((id) => id && id !== 'all')
+                : [];
 
-            if (designationId && designationId !== 'all') {
-                const desigIds = String(designationId).split(',').filter(id => id && id !== 'all');
-                empFilter.designation_id = desigIds.length > 1 ? { $in: desigIds } : desigIds[0];
+            const extraFilter = { is_active: { $ne: false } };
+            if (desigIds.length) {
+              extraFilter.designation_id = desigIds.length > 1 ? { $in: desigIds } : desigIds[0];
             }
 
-            if (departmentId && departmentId !== 'all') {
-                const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
-                empFilter.department_id = deptIds.length > 1 ? { $in: deptIds } : deptIds[0];
-            } else if (divisionId && divisionId !== 'all') {
-                const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
-                const divIdsCount = divIds.length;
-
-                // If only division is set, find all departments linked to these divisions
-                const divisions = await Division.find({ _id: { $in: divIds } }).select('departments').lean();
-                let divisionLinkedDeptIds = [];
-                divisions.forEach(div => {
-                    if (div.departments) divisionLinkedDeptIds = [...divisionLinkedDeptIds, ...div.departments];
-                });
-
-                const depts = await Department.find({
-                    $or: [
-                        { divisions: { $in: divIds } },
-                        { _id: { $in: divisionLinkedDeptIds } }
-                    ]
-                }).select('_id');
-                const deptIds = depts.map(d => d._id);
-
-                empFilter.$or = [
-                    { division_id: { $in: divIds } },
-                    { department_id: { $in: deptIds } }
-                ];
-            }
-
-            const employees = await Employee.find(empFilter).select('emp_no');
-            const empNos = employees.map(e => e.emp_no);
+            const resolved = await resolveEmployeesForOrgFilter({
+              divisionIds: divIds,
+              departmentIds: deptIds,
+              rangeStart: startDate,
+              rangeEnd: endDate,
+              extraFilter,
+            });
+            const empNos = resolved.empNos;
 
             if (query.employeeNumber) {
-                // If specific employees were already selected, intersect them
                 const existingEmpNos = query.employeeNumber.$in || [query.employeeNumber];
-                query.employeeNumber = { $in: empNos.filter(eno => existingEmpNos.includes(eno)) };
+                query.employeeNumber = { $in: empNos.filter((eno) => existingEmpNos.includes(eno)) };
             } else {
                 query.employeeNumber = { $in: empNos };
             }

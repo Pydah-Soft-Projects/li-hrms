@@ -152,6 +152,18 @@ mongoose.connect(MONGODB_URI)
     .then(async () => {
         logger.info('Connected to MongoDB');
 
+        // Backfill multi-device membership from lastDeviceId (idempotent)
+        try {
+            const DeviceUser = require('./models/DeviceUser');
+            const { backfillDeviceIdsFromLastDevice } = require('./utils/deviceMembership');
+            const bf = await backfillDeviceIdsFromLastDevice(DeviceUser);
+            if (bf.modifiedCount > 0) {
+                logger.info(`DeviceUser membership backfill: modified ${bf.modifiedCount} record(s)`);
+            }
+        } catch (bfErr) {
+            logger.warn(`DeviceUser membership backfill skipped: ${bfErr.message}`);
+        }
+
         // Connect to HRMS MongoDB for export (employee name, department, division)
         await connectHRMS().catch(() => { });
 

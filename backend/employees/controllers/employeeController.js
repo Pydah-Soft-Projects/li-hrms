@@ -19,7 +19,12 @@ const {
   extractDynamicFields,
   resolveQualificationLabels,
   mapQualificationsLabelsToIds,
+  getPermanentFieldNames,
 } = require('../../employee-applications/services/fieldMappingService');
+const {
+  promotePermanentFieldsFromDynamic,
+  stripPromotedPermanentFieldsFromDynamic,
+} = require('../../shared/utils/promotePermanentFieldsFromDynamic');
 const { resolveForEmployee } = require('../../payroll/services/allowanceDeductionResolverService');
 const mongoose = require('mongoose');
 const { compareEmpNo, EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
@@ -930,6 +935,20 @@ exports.createEmployee = async (req, res) => {
     dynamicFields = dynamicFieldsAfterSalaries;
     permanentFields.salaries = normalizedSalaries;
 
+    // Lift any permanent schema values stuck in dynamicFields onto root, then strip them from dynamic
+    const promotedCreate = promotePermanentFieldsFromDynamic({ ...permanentFields, dynamicFields });
+    for (const name of getPermanentFieldNames()) {
+      if (
+        (permanentFields[name] === undefined || permanentFields[name] === null || permanentFields[name] === '') &&
+        promotedCreate[name] !== undefined &&
+        promotedCreate[name] !== null &&
+        promotedCreate[name] !== ''
+      ) {
+        permanentFields[name] = promotedCreate[name];
+      }
+    }
+    dynamicFields = stripPromotedPermanentFieldsFromDynamic(dynamicFields);
+
     const normalizeOverrides = (list) => {
       try {
         const parsed = typeof list === 'string' ? JSON.parse(list) : (list || []);
@@ -999,6 +1018,20 @@ exports.createEmployee = async (req, res) => {
       .populate('department_id', 'name code')
       .populate('designation_id', 'name code')
       .populate('employee_group_id', 'name code isActive');
+
+    try {
+      const { ensureInitialTimeline } = require('../services/employeeTimelineService');
+      const raw = await Employee.findById(createdEmployee._id);
+      if (raw) {
+        ensureInitialTimeline(raw);
+        // Prefer hire source on first segment
+        if (raw.orgHistory?.[0]) raw.orgHistory[0].source = 'hire';
+        if (raw.salaryHistory?.[0]) raw.salaryHistory[0].source = 'hire';
+        await raw.save();
+      }
+    } catch (tlErr) {
+      console.warn('[createEmployee] timeline seed failed:', tlErr.message);
+    }
 
     // Initialize prorated leave balances for the new employee
     const leaveInitResults = await initializeEmployeeLeaves(createdEmployee._id);
@@ -1079,6 +1112,67 @@ exports.updateEmployee = async (req, res) => {
     // We check both role (string) and roles (array) for robust permission check
     const isSuperAdmin = req.user.role === 'super_admin' || (req.user.roles && req.user.roles.includes('super_admin'));
     const isOwner = req.user.employeeRef && req.user.employeeRef.toString() === existingEmployee._id.toString();
+
+    // Division/department: workspace cannot change; use Promotions & Transfers with effectDate.
+    // Superadmin may change with acknowledgeOrgTimelineRisk + effectDate (writes timeline).
+    {
+      const { sameId, applyOrgChange, startOfUtcDay } = require('../services/employeeTimelineService');
+      const nextDiv = employeeData.division_id;
+      const nextDept = employeeData.department_id;
+      const divChanging =
+        nextDiv !== undefined &&
+        nextDiv !== null &&
+        nextDiv !== '' &&
+        !sameId(existingEmployee.division_id, nextDiv);
+      const deptChanging =
+        nextDept !== undefined &&
+        nextDept !== null &&
+        nextDept !== '' &&
+        !sameId(existingEmployee.department_id, nextDept);
+
+      if (divChanging || deptChanging) {
+        if (!isSuperAdmin) {
+          delete employeeData.division_id;
+          delete employeeData.department_id;
+          return res.status(403).json({
+            success: false,
+            message:
+              'Division and department cannot be edited here. Use Promotions & Transfers with an effect date.',
+            code: 'ORG_EDIT_VIA_TRANSFER',
+          });
+        }
+        if (!employeeData.acknowledgeOrgTimelineRisk) {
+          return res.status(400).json({
+            success: false,
+            message:
+              'Changing division/department bypasses the transfer workflow. Confirm with acknowledgeOrgTimelineRisk=true and provide effectDate (prefer Promotions & Transfers).',
+            code: 'ORG_EDIT_NEEDS_ACK',
+          });
+        }
+        const effectRaw = employeeData.effectDate || new Date();
+        const effectDate = startOfUtcDay(effectRaw);
+        if (!effectDate) {
+          return res.status(400).json({ success: false, message: 'Invalid effectDate' });
+        }
+        applyOrgChange(existingEmployee, {
+          division_id: divChanging ? nextDiv : existingEmployee.division_id,
+          department_id: deptChanging ? nextDept : existingEmployee.department_id,
+          designation_id:
+            employeeData.designation_id !== undefined && employeeData.designation_id !== null && employeeData.designation_id !== ''
+              ? employeeData.designation_id
+              : existingEmployee.designation_id,
+          effectiveFrom: effectDate,
+          source: 'manual_superadmin',
+          applyMaster: true,
+        });
+        // Prevent double-apply via generic assign; timeline already set master
+        delete employeeData.division_id;
+        delete employeeData.department_id;
+        delete employeeData.acknowledgeOrgTimelineRisk;
+        delete employeeData.effectDate;
+        // Keep designation in payload if provided for other validation paths
+      }
+    }
 
     // Check if user has explicit EMPLOYEES:edit permission (grants direct update without review queue)
     const User = require('../../users/model/User');
@@ -1367,6 +1461,30 @@ exports.updateEmployee = async (req, res) => {
     dynamicFields = dynamicFieldsAfterSalaries;
     permanentFields.salaries = normalizedSalaries;
 
+    // Lift permanent fields wrongly stored only in existing/incoming dynamic onto root, then strip
+    const existingPlain = existingEmployee.toObject({ virtuals: false });
+    const promotedUpdate = promotePermanentFieldsFromDynamic({
+      ...existingPlain,
+      ...permanentFields,
+      dynamicFields: {
+        ...(existingPlain.dynamicFields || {}),
+        ...dynamicFields,
+      },
+    });
+    for (const name of getPermanentFieldNames()) {
+      // Prefer explicit update payload; otherwise lift from dynamic if root was empty
+      if (permanentFields[name] !== undefined && permanentFields[name] !== null) continue;
+      if (
+        (existingPlain[name] === undefined || existingPlain[name] === null || existingPlain[name] === '') &&
+        promotedUpdate[name] !== undefined &&
+        promotedUpdate[name] !== null &&
+        promotedUpdate[name] !== ''
+      ) {
+        permanentFields[name] = promotedUpdate[name];
+      }
+    }
+    dynamicFields = stripPromotedPermanentFieldsFromDynamic(dynamicFields);
+
     // Normalize employee allowances and deductions
     const normalizeOverrides = (list) => {
       try {
@@ -1433,12 +1551,18 @@ exports.updateEmployee = async (req, res) => {
     }
 
     try {
-      // Ensure paidLeaves is explicitly set (even if 0)
       const updateData = {
         ...permanentFields,
-        qualifications, // Explicitly save resolved qualifications
         updated_at: new Date(),
       };
+
+      // Only overwrite qualifications when the client explicitly sent them (partial edit safe)
+      const qualificationsProvided =
+        req.body.qualifications !== undefined ||
+        (Array.isArray(req.files) && req.files.some((f) => String(f.fieldname || '').startsWith('qualification_cert_')));
+      if (qualificationsProvided) {
+        updateData.qualifications = qualifications;
+      }
 
       // Handle allowances, deductions and salary fields ONLY if provided in request to avoid partial-update wipes
       if (employeeData.employeeAllowances !== undefined) {
@@ -1454,8 +1578,13 @@ exports.updateEmployee = async (req, res) => {
         updateData.calculatedSalary = calculatedSalary;
       }
 
-      // Handle dynamicFields carefully to prevent wiping
-      if (Object.keys(dynamicFields).length > 0 || (existingEmployee.dynamicFields && Object.keys(existingEmployee.dynamicFields).length > 0)) {
+      // Handle dynamicFields carefully to prevent wiping; always strip permanent schema keys
+      // On partial updates with no dynamic payload, still strip permanent keys stuck in dynamicFields
+      const hasIncomingDynamic = Object.keys(dynamicFields).length > 0;
+      const hasExistingDynamic =
+        existingEmployee.dynamicFields && Object.keys(existingEmployee.dynamicFields).length > 0;
+
+      if (hasIncomingDynamic || hasExistingDynamic) {
         const cleanedExistingDynamic = { ...(existingEmployee.dynamicFields || {}) };
 
         // Explicitly remove bank fields from existing dynamic fields to fix stale data
@@ -1475,10 +1604,10 @@ exports.updateEmployee = async (req, res) => {
           : await getSalariesGroupFieldIds();
         const cleanedExistingNoSalaries = stripSalaryKeysFromDynamicField(cleanedExistingDynamic, sids);
 
-        updateData.dynamicFields = {
+        updateData.dynamicFields = stripPromotedPermanentFieldsFromDynamic({
           ...cleanedExistingNoSalaries,
           ...dynamicFields
-        };
+        });
       } else if (existingEmployee.dynamicFields && typeof existingEmployee.dynamicFields === 'object') {
         const sidsFallback = Array.isArray(salaryFieldIds) && salaryFieldIds.length > 0
           ? salaryFieldIds
@@ -1487,10 +1616,20 @@ exports.updateEmployee = async (req, res) => {
           existingEmployee.dynamicFields.salaries != null ||
           sidsFallback.some((id) => existingEmployee.dynamicFields[id] !== undefined);
         if (hadLegacySalaries) {
-          updateData.dynamicFields = stripSalaryKeysFromDynamicField(
-            { ...existingEmployee.dynamicFields },
-            sidsFallback
+          updateData.dynamicFields = stripPromotedPermanentFieldsFromDynamic(
+            stripSalaryKeysFromDynamicField(
+              { ...existingEmployee.dynamicFields },
+              sidsFallback
+            )
           );
+        } else {
+          // Still strip any permanent keys stuck in dynamic even when no other changes
+          const stripped = stripPromotedPermanentFieldsFromDynamic({
+            ...(existingEmployee.dynamicFields || {}),
+          });
+          if (JSON.stringify(stripped) !== JSON.stringify(existingEmployee.dynamicFields || {})) {
+            updateData.dynamicFields = stripped;
+          }
         }
       }
 
@@ -1509,6 +1648,17 @@ exports.updateEmployee = async (req, res) => {
         updateData.second_salary = Number(employeeData.second_salary);
       } else if (employeeData.secondSalary !== undefined && employeeData.secondSalary !== null && employeeData.secondSalary !== '') {
         updateData.second_salary = Number(employeeData.secondSalary);
+      }
+
+      // Persist timeline mutations from superadmin org edit (applyOrgChange on existingEmployee)
+      if (Array.isArray(existingEmployee.orgHistory) && existingEmployee.orgHistory.length) {
+        updateData.orgHistory = existingEmployee.orgHistory;
+        if (existingEmployee.division_id) updateData.division_id = existingEmployee.division_id;
+        if (existingEmployee.department_id) updateData.department_id = existingEmployee.department_id;
+        if (existingEmployee.designation_id) updateData.designation_id = existingEmployee.designation_id;
+      }
+      if (Array.isArray(existingEmployee.salaryHistory) && existingEmployee.salaryHistory.length) {
+        updateData.salaryHistory = existingEmployee.salaryHistory;
       }
 
       await Employee.findOneAndUpdate(
@@ -1856,6 +2006,16 @@ exports.setLeftDate = async (req, res) => {
       });
     } catch (err) {
       console.error('Failed to log left date set history:', err.message);
+    }
+
+    // Biometric: offboard on LWD+1 (immediate if leftDate already past)
+    try {
+      const { isPastLastWorkingDay, scheduleBiometricDeviceOffboard } = require('../../attendance/services/biometricDeviceLifecycleService');
+      if (isPastLastWorkingDay(employee.leftDate)) {
+        scheduleBiometricDeviceOffboard(employee.emp_no);
+      }
+    } catch (bioErr) {
+      console.error('Failed to schedule biometric offboard after setLeftDate:', bioErr.message);
     }
 
     res.status(200).json({

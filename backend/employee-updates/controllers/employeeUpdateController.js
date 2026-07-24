@@ -3,6 +3,86 @@ const Employee = require('../../employees/model/Employee');
 const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 const Settings = require('../../settings/model/Settings');
 const mongoose = require('mongoose');
+const {
+    promotePermanentFieldsFromDynamic,
+    splitUpdatesIntoPermanentAndDynamic,
+} = require('../../shared/utils/promotePermanentFieldsFromDynamic');
+
+/** Frontend / form aliases → Employee root schema keys */
+const PROFILE_FIELD_MAPPING = {
+    personal_email: 'email',
+    phone: 'phone_number',
+    date_of_birth: 'dob',
+    joining_date: 'doj',
+    profile_photo: 'profilePhoto',
+    employee_group: 'employee_group_id',
+    employeeGroupId: 'employee_group_id',
+    employeeGroup: 'employee_group_id',
+    bankAccountNo: 'bank_account_no',
+    bankName: 'bank_name',
+    bankPlace: 'bank_place',
+    ifscCode: 'ifsc_code',
+    salaryMode: 'salary_mode',
+    secondSalary: 'second_salary',
+    divisionId: 'division_id',
+    departmentId: 'department_id',
+    designationId: 'designation_id',
+};
+
+/**
+ * Apply requestedChanges onto an Employee document with correct permanent vs dynamic routing.
+ * Also lifts any permanent fields that were previously stuck only in dynamicFields.
+ */
+async function applyChangesToEmployee(employee, changes) {
+    const lifted = promotePermanentFieldsFromDynamic(employee.toObject({ virtuals: false }));
+    const { getPermanentFieldNames } = require('../../employee-applications/services/fieldMappingService');
+    const permanentNames = getPermanentFieldNames();
+
+    for (const name of permanentNames) {
+        if (
+            (employee[name] === undefined || employee[name] === null || employee[name] === '') &&
+            lifted[name] !== undefined &&
+            lifted[name] !== null &&
+            lifted[name] !== ''
+        ) {
+            employee[name] = lifted[name];
+        }
+    }
+
+    const { permanentUpdates, dynamicUpdates } = splitUpdatesIntoPermanentAndDynamic(
+        changes,
+        employee.dynamicFields || {},
+        PROFILE_FIELD_MAPPING
+    );
+
+    if (Object.keys(permanentUpdates).length > 0) {
+        Object.assign(employee, permanentUpdates);
+    }
+
+    employee.dynamicFields = dynamicUpdates;
+    employee.markModified('dynamicFields');
+
+    if (permanentUpdates.qualifications) {
+        employee.markModified('qualifications');
+    }
+
+    await employee.save();
+
+    // Sync User model when name/email change on root
+    if (permanentUpdates.employee_name || permanentUpdates.email) {
+        const User = require('../../users/model/User');
+        const userUpdate = {};
+        if (permanentUpdates.employee_name) userUpdate.name = permanentUpdates.employee_name;
+        if (permanentUpdates.email) userUpdate.email = permanentUpdates.email;
+
+        await User.findOneAndUpdate(
+            { employeeRef: employee._id },
+            { $set: userUpdate }
+        ).catch((err) => console.error('Failed to sync User model:', err));
+    }
+
+    return { permanentUpdates, dynamicUpdates };
+}
 
 /**
  * @desc    Create an update request (Employee)
@@ -105,17 +185,10 @@ exports.createRequest = async (req, res) => {
         }
 
         // 4. Create the request
-        const fieldMapping = {
-            'personal_email': 'email',
-            'phone': 'phone_number',
-            'date_of_birth': 'dob',
-            'joining_date': 'doj'
-        };
-
         const previousValues = {};
         for (const key in filteredChanges) {
-            const actualKey = fieldMapping[key] || key;
-            if (employee[actualKey] !== undefined) {
+            const actualKey = PROFILE_FIELD_MAPPING[key] || key;
+            if (employee[actualKey] !== undefined && employee[actualKey] !== null) {
                 previousValues[key] = employee[actualKey];
             } else if (employee.dynamicFields && employee.dynamicFields[actualKey] !== undefined) {
                 previousValues[key] = employee.dynamicFields[actualKey];
@@ -141,44 +214,7 @@ exports.createRequest = async (req, res) => {
         const isSuperAdmin = (requestingUser?.role || req.user?.role) === 'super_admin';
 
         if (hasEditPermission || isSuperAdmin) {
-            // Apply the changes immediately (same logic as approveRequest)
-            const permanentFields = [
-                'employee_name', 'email', 'phone_number', 'address',
-                'blood_group', 'qualifications', 'dob', 'doj',
-                'gender', 'marital_status',
-                'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code', 'salary_mode',
-                'paidLeaves', 'allottedLeaves', 'casualLeaves', 'sickLeaves', 'maternityLeaves', 'onDutyLeaves', 'compensatoryOffs',
-                'gross_salary', 'ctcSalary', 'calculatedSalary', 'pf_number', 'esi_number',
-                'is_active', 'leftDate', 'leftReason', 'applyProfessionTax', 'applyESI', 'applyPF',
-                'applyAttendanceDeduction', 'deductLateIn', 'deductEarlyOut', 'deductPermission', 'deductAbsent'
-            ];
-            const fieldMapping = {
-                'personal_email': 'email',
-                'phone': 'phone_number',
-                'date_of_birth': 'dob',
-                'joining_date': 'doj'
-            };
-
-            const permanentUpdates = {};
-            const dynamicUpdates = { ...(employee.dynamicFields || {}) };
-
-            for (let key in filteredChanges) {
-                const actualKey = fieldMapping[key] || key;
-                const value = filteredChanges[key];
-                if (permanentFields.includes(actualKey)) {
-                    permanentUpdates[actualKey] = value;
-                } else {
-                    dynamicUpdates[actualKey] = value;
-                }
-            }
-
-            if (Object.keys(permanentUpdates).length > 0) Object.assign(employee, permanentUpdates);
-            if (Object.keys(dynamicUpdates).length > Object.keys(employee.dynamicFields || {}).length || JSON.stringify(dynamicUpdates) !== JSON.stringify(employee.dynamicFields || {})) {
-                employee.dynamicFields = dynamicUpdates;
-                employee.markModified('dynamicFields');
-            }
-            if (permanentUpdates.qualifications) employee.markModified('qualifications');
-            await employee.save();
+            await applyChangesToEmployee(employee, filteredChanges);
 
             request.status = 'approved';
             request.approvedBy = req.user._id;
@@ -322,26 +358,6 @@ exports.approveRequest = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Employee not found' });
         }
 
-        // 1. Separate permanent fields from dynamic fields
-        const permanentFields = [
-            'employee_name', 'email', 'phone_number', 'address',
-            'blood_group', 'qualifications', 'dob', 'doj',
-            'gender', 'marital_status',
-            'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code', 'salary_mode',
-            'paidLeaves', 'allottedLeaves', 'casualLeaves', 'sickLeaves', 'maternityLeaves', 'onDutyLeaves', 'compensatoryOffs', 
-            'gross_salary', 'ctcSalary', 'calculatedSalary', 'pf_number', 'esi_number',
-            'is_active', 'leftDate', 'leftReason', 'applyProfessionTax', 'applyESI', 'applyPF', 
-            'applyAttendanceDeduction', 'deductLateIn', 'deductEarlyOut', 'deductPermission', 'deductAbsent'
-        ];
-
-        // Mapping for frontend aliases
-        const fieldMapping = {
-            'personal_email': 'email',
-            'phone': 'phone_number',
-            'date_of_birth': 'dob',
-            'joining_date': 'doj'
-        };
-
         const { selectedFields } = req.body;
         let updates = { ...request.requestedChanges };
         let rejectedUpdates = {};
@@ -371,52 +387,8 @@ exports.approveRequest = async (req, res) => {
             });
         }
 
-        const permanentUpdates = {};
-        const dynamicUpdates = { ...(employee.dynamicFields || {}) };
-        let hasPermanent = false;
-        let hasDynamic = false;
-
-        for (let key in updates) {
-            // Apply mapping if exists
-            const actualKey = fieldMapping[key] || key;
-            const value = updates[key];
-
-            if (permanentFields.includes(actualKey)) {
-                permanentUpdates[actualKey] = value;
-                hasPermanent = true;
-            } else {
-                dynamicUpdates[actualKey] = value;
-                hasDynamic = true;
-            }
-        }
-
-        // 2. Apply updates to the Employee record
-        if (hasPermanent) {
-            Object.assign(employee, permanentUpdates);
-        }
-        if (hasDynamic) {
-            employee.dynamicFields = dynamicUpdates;
-            employee.markModified('dynamicFields');
-        }
-
-        if (permanentUpdates.qualifications) {
-            employee.markModified('qualifications');
-        }
-
-        await employee.save();
-
-        // 2b. Sync with User model if necessary
-        if (permanentUpdates.employee_name || permanentUpdates.email) {
-            const User = require('../../users/model/User');
-            const userUpdate = {};
-            if (permanentUpdates.employee_name) userUpdate.name = permanentUpdates.employee_name;
-            if (permanentUpdates.email) userUpdate.email = permanentUpdates.email;
-
-            await User.findOneAndUpdate(
-                { employeeRef: employee._id },
-                { $set: userUpdate }
-            ).catch(err => console.error('Failed to sync User model:', err));
-        }
+        // Route permanent schema fields to root; only true custom fields go to dynamicFields
+        await applyChangesToEmployee(employee, updates);
 
         // 3. Log to History with detailed changes
         const historyChanges = Object.keys(updates).map(key => ({

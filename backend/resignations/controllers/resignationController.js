@@ -644,6 +644,17 @@ exports.approveResignationRequest = async (req, res) => {
         } catch (recalcErr) {
           console.error('Failed to recalculate monthly summary after resignation approval:', recalcErr.message);
         }
+
+        // If LWD is already in the past (or termination with past LWD), offboard biometric now.
+        // Otherwise resignationCron handles device delete on LWD+1.
+        try {
+          const { isPastLastWorkingDay, scheduleBiometricDeviceOffboard } = require('../../attendance/services/biometricDeviceLifecycleService');
+          if (isPastLastWorkingDay(emp.leftDate)) {
+            scheduleBiometricDeviceOffboard(emp.emp_no);
+          }
+        } catch (bioErr) {
+          console.error('Failed to schedule biometric offboard after resignation approval:', bioErr.message);
+        }
       }
 
       return res.status(200).json({

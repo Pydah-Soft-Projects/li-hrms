@@ -94,6 +94,10 @@ interface DynamicEmployeeFormProps {
   isEditingExistingEmployee?: boolean;
   /** New employee application: show required overall status; qualification rows stay editable like other create flows. */
   isEmployeeApplicationForm?: boolean;
+  /** When true while editing, division/department are read-only (workspace). */
+  lockOrgFields?: boolean;
+  /** Superadmin: warn that direct org edits bypass transfer workflow. */
+  orgEditWarning?: boolean;
 }
 
 export default function DynamicEmployeeForm({
@@ -110,6 +114,8 @@ export default function DynamicEmployeeForm({
   excludeFields = [],
   isEditingExistingEmployee = false,
   isEmployeeApplicationForm = false,
+  lockOrgFields = false,
+  orgEditWarning = false,
 }: DynamicEmployeeFormProps) {
   const [settings, setSettings] = useState<FormSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -396,6 +402,7 @@ export default function DynamicEmployeeForm({
         typeof value === 'object'
           ? String((value as any)?.name || selectedDivisionId)
           : selectedDivisionId;
+      const orgLocked = isViewMode || (lockOrgFields && isEditingExistingEmployee);
       return (
         <div key={fieldKey}>
           <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -405,7 +412,7 @@ export default function DynamicEmployeeForm({
             value={selectedDivisionId}
             onChange={(e) => localHandleFieldChange(field.id, e.target.value)}
             required={field.isRequired}
-            disabled={isViewMode}
+            disabled={orgLocked}
             className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
               }`}
           >
@@ -419,6 +426,16 @@ export default function DynamicEmployeeForm({
               </option>
             ))}
           </select>
+          {orgLocked && isEditingExistingEmployee && (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              Division changes go through Promotions &amp; Transfers with an effect date.
+            </p>
+          )}
+          {orgEditWarning && isEditingExistingEmployee && !orgLocked && (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              Prefer Promotions &amp; Transfers. Direct edits bypass workflow and need an effect date + acknowledgement on save.
+            </p>
+          )}
           {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
         </div>
       );
@@ -469,7 +486,7 @@ export default function DynamicEmployeeForm({
             value={selectedDepartmentId}
             onChange={(e) => localHandleFieldChange(field.id, e.target.value)}
             required={field.isRequired}
-            disabled={isViewMode || (divisions.length > 0 && !formData.division_id)}
+            disabled={isViewMode || (lockOrgFields && isEditingExistingEmployee) || (divisions.length > 0 && !formData.division_id)}
             className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
               }`}
           >
@@ -483,6 +500,11 @@ export default function DynamicEmployeeForm({
               </option>
             ))}
           </select>
+          {lockOrgFields && isEditingExistingEmployee && !isViewMode && (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              Department changes go through Promotions &amp; Transfers with an effect date.
+            </p>
+          )}
           {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
         </div>
       );

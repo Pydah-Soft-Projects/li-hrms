@@ -25,6 +25,7 @@ import EmployeeExportDialog from '@/components/employee/EmployeeExportDialog';
 import { getEmployeeGroupedDynamicFieldValue, flattenEmployeeRecordForView, formatEmployeeFieldDisplay, formatSalaryFieldDisplay, getFieldAliases } from '@/lib/employeeDynamicFieldValue';
 import EmployeeFormGroupView from '@/components/employee/EmployeeFormGroupView';
 import { resolveEmployeeOrgRefName } from '@/lib/employeeListDisplay';
+import { pickChangedEmployeeFields, qualificationsChanged } from '@/lib/pickChangedEmployeeFields';
 import {
   mapApplicationToViewEmployee,
   mergeEmployeeWithApplicationSnapshot,
@@ -2113,8 +2114,18 @@ export default function EmployeesPage() {
         ...formData,
         employeeAllowances,
         employeeDeductions,
-        paidLeaves: formData.paidLeaves !== null && formData.paidLeaves !== undefined ? formData.paidLeaves : 0,
-        allottedLeaves: formData.allottedLeaves !== null && formData.allottedLeaves !== undefined ? formData.allottedLeaves : 0,
+        paidLeaves:
+          formData.paidLeaves !== null && formData.paidLeaves !== undefined
+            ? formData.paidLeaves
+            : editingEmployee
+              ? undefined
+              : 0,
+        allottedLeaves:
+          formData.allottedLeaves !== null && formData.allottedLeaves !== undefined
+            ? formData.allottedLeaves
+            : editingEmployee
+              ? undefined
+              : 0,
         ctcSalary: salarySummary.ctcSalary,
         calculatedSalary: salarySummary.netSalary,
       };
@@ -2164,65 +2175,43 @@ export default function EmployeesPage() {
       // Construct FormData for multipart/form-data submission
       const payload = new FormData();
 
-      // OPTIMIZATION: If it's a profile request, only send fields that have actually changed
-      // This solves the redundant data issue in profile requests.
+      // Direct edit AND profile request: only send fields that actually changed
       const user = auth.getUser();
       const userRole = user?.role;
       const hasEditPermission = !!user?.featureControl?.includes('EMPLOYEES:edit');
       const isProfileRequest = (userRole === 'hr' || userRole === 'sub_admin') && !hasEditPermission && editingEmployee;
 
-      let finalSubmitData = submitData;
-      if (isProfileRequest && editingEmployee) {
-        payload.append('isProfileRequest', 'true');
-        const changedData: any = {};
-        const original = editingEmployee as any;
+      let finalSubmitData: any = submitData;
+      if (editingEmployee) {
+        if (isProfileRequest) {
+          payload.append('isProfileRequest', 'true');
+        }
+        finalSubmitData = pickChangedEmployeeFields(submitData as any, editingEmployee as any, {
+          alwaysIncludeName: false,
+        });
+        if ((submitData as any).emp_no) {
+          finalSubmitData.emp_no = (submitData as any).emp_no;
+        }
 
-        Object.entries(submitData).forEach(([key, value]) => {
-          // Always include core identifying fields
-          if (key === 'emp_no' || key === 'employee_name') {
-            changedData[key] = value;
+        const curDiv = String((editingEmployee as any).division_id?._id || (editingEmployee as any).division_id || '');
+        const curDept = String((editingEmployee as any).department_id?._id || (editingEmployee as any).department_id || '');
+        const nextDiv = String((submitData as any).division_id || '');
+        const nextDept = String((submitData as any).department_id || '');
+        if ((nextDiv && nextDiv !== curDiv) || (nextDept && nextDept !== curDept)) {
+          const ok = window.confirm(
+            'You are changing division/department outside Promotions & Transfers.\n\n' +
+              'This bypasses the transfer workflow. Prefer Promotions & Transfers with an effect date.\n\n' +
+              'Continue and apply change effective today?'
+          );
+          if (!ok) {
+            setSubmitting(false);
             return;
           }
-
-          // Fields to skip in comparison (internal/meta/redundant objects)
-          const skipFields = [
-            '_id', 'createdAt', 'updatedAt', '__v', 'status', 'is_active', 'isProfileRequest',
-            'allData', 'division', 'department', 'designation', 'employee_group', 'employeeGroup',
-            'AllData', 'Division', 'Department', 'Designation', 'EmployeeGroup',
-            'lastLogin', 'last_login', 'updated_at', 'created_at', 'v', '_v'
-          ];
-          if (skipFields.some(sf => sf.toLowerCase() === key.toLowerCase())) return;
-
-          // Field mapping for comparison (e.g. proposedSalary should be checked against gross_salary)
-          const fieldMappings: Record<string, string> = {
-            'proposedSalary': 'gross_salary',
-          };
-          const targetKey = fieldMappings[key] || key;
-
-          // Resolve original value (handle nested dynamicFields)
-          let origValue = original[targetKey];
-          if (origValue === undefined && original.dynamicFields) {
-            origValue = original.dynamicFields[targetKey];
-          }
-
-          // Normalize for comparison
-          const normalize = (v: any) => {
-            if (v === null || v === undefined || v === '') return null;
-            // Handle empty arrays/objects correctly (redundant changes)
-            if (Array.isArray(v) && v.length === 0) return null;
-            if (typeof v === 'object' && Object.keys(v).length === 0 && !(v instanceof Date)) return null;
-            return v;
-          };
-
-          const normOrig = normalize(origValue);
-          const normNew = normalize(value);
-
-          // Deep comparison using stringify for arrays/objects
-          if (JSON.stringify(normOrig) !== JSON.stringify(normNew)) {
-            changedData[key] = value;
-          }
-        });
-        finalSubmitData = changedData;
+          finalSubmitData.acknowledgeOrgTimelineRisk = true;
+          finalSubmitData.effectDate = new Date().toISOString().slice(0, 10);
+          if (nextDiv) finalSubmitData.division_id = nextDiv;
+          if (nextDept) finalSubmitData.department_id = nextDept;
+        }
       }
 
       // Append standard fields
@@ -2267,7 +2256,14 @@ export default function EmployeesPage() {
         }
         return transformedQ;
       });
-      payload.append('qualifications', JSON.stringify(cleanQualifications));
+      const hasQualCertUploads = qualities.some((q: any) => q?.certificateFile instanceof File);
+      const shouldSendQualifications =
+        !editingEmployee ||
+        hasQualCertUploads ||
+        qualificationsChanged(cleanQualifications, editingEmployee as any);
+      if (shouldSendQualifications) {
+        payload.append('qualifications', JSON.stringify(cleanQualifications));
+      }
 
       let response;
       if (editingEmployee) {
@@ -5730,6 +5726,7 @@ export default function EmployeesPage() {
                       ...(!secondSalaryEnabled ? ['second_salary'] : []),
                     ]}
                     isEditingExistingEmployee={!!editingEmployee}
+                    orgEditWarning
                   />
 
                   {/* Leave Settings (Optional) */}

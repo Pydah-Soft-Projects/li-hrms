@@ -52,7 +52,28 @@ const DeviceUserSchema = new mongoose.Schema({
         updatedAt: { type: Date }
     },
     lastSyncedAt: { type: Date, default: Date.now },
-    lastDeviceId: { type: String, index: true }
+    /** Most recent device that pushed this user (SN). */
+    lastDeviceId: { type: String, index: true },
+    /**
+     * All device serials this user is known to exist on (active).
+     * Updated on every ADMS/TCP ingest and when cloning to a target.
+     */
+    deviceIds: {
+        type: [String],
+        default: [],
+        index: true
+    },
+    /**
+     * Devices where the user was deleted from the terminal but kept in DB as inactive.
+     * Re-enrollment / ingest on that device moves SN back to deviceIds.
+     */
+    inactiveDeviceIds: {
+        type: [String],
+        default: [],
+        index: true
+    },
+    /** Last time a device-side delete was queued for this user. */
+    lastDeactivatedAt: { type: Date, default: null }
 }, {
     timestamps: true
 });

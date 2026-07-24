@@ -108,12 +108,22 @@ async function cloneUserToDevices(userId, options = {}) {
         await queueUserCloneToDevice(user, device);
     }
 
-    logger.info(`Clone: User ${userId} queued for ${devices.length} device(s): ${devices.map((d) => d.deviceId).join(', ')}`);
+    // Record intended membership immediately (device will confirm on next USERINFO push)
+    const targetIds = devices.map((d) => d.deviceId);
+    await DeviceUser.updateOne(
+        { userId },
+        {
+            $addToSet: { deviceIds: { $each: targetIds } },
+            $pull: { inactiveDeviceIds: { $in: targetIds } }
+        }
+    );
+
+    logger.info(`Clone: User ${userId} queued for ${devices.length} device(s): ${targetIds.join(', ')}`);
 
     return {
         userId,
         devicesQueued: devices.length,
-        deviceIds: devices.map((d) => d.deviceId),
+        deviceIds: targetIds,
         fingerprintCount: user.fingerprints?.length || 0
     };
 }
@@ -147,9 +157,293 @@ async function autoCloneUserWithinCategory(userId, sourceDeviceId) {
     return { skipped: false, ...result };
 }
 
+/**
+ * Queue DATA DELETE USERINFO for one user on one device.
+ */
+async function queueUserDeleteOnDevice(userId, device) {
+    const cmd = `DATA DELETE USERINFO PIN=${userId}`;
+    await DeviceCommand.create({
+        deviceId: device.deviceId,
+        command: cmd,
+        status: 'PENDING'
+    });
+}
+
+/**
+ * Delete user(s) from a device terminal and mark inactive in DB (keep golden record).
+ * @param {string[]} userIds
+ * @param {string} deviceId
+ */
+async function deactivateUsersOnDevice(userIds, deviceId) {
+    const { deactivateMembershipUpdate, normalizeDeviceId } = require('../utils/deviceMembership');
+    const sn = normalizeDeviceId(deviceId);
+    if (!sn) {
+        const err = new Error('deviceId is required');
+        err.code = 'BAD_REQUEST';
+        throw err;
+    }
+
+    const device = await Device.findOne({ deviceId: sn }).lean();
+    if (!device) {
+        const err = new Error('Device not found');
+        err.code = 'DEVICE_NOT_FOUND';
+        throw err;
+    }
+
+    const ids = [...new Set((userIds || []).map((id) => String(id).trim()).filter(Boolean))];
+    if (!ids.length) {
+        const err = new Error('userIds required');
+        err.code = 'BAD_REQUEST';
+        throw err;
+    }
+
+    const memUpdate = deactivateMembershipUpdate(sn);
+    const results = [];
+    const errors = [];
+
+    for (const userId of ids) {
+        try {
+            const user = await DeviceUser.findOne({ userId });
+            if (!user) {
+                errors.push({ userId, error: 'User not found in database' });
+                continue;
+            }
+
+            await queueUserDeleteOnDevice(userId, device);
+            await DeviceUser.updateOne({ userId }, memUpdate);
+
+            results.push({
+                userId,
+                deviceId: sn,
+                commandQueued: true,
+                status: 'inactive'
+            });
+            logger.info(`Delete: User ${userId} queued for removal on ${sn}; marked inactive in DB`);
+        } catch (err) {
+            errors.push({ userId, error: err.message });
+        }
+    }
+
+    return {
+        deviceId: sn,
+        deviceName: device.name,
+        deleted: results.length,
+        results,
+        errors
+    };
+}
+
+/**
+ * Re-activate user(s) on a device: push profile+biometrics to terminal and mark active in DB.
+ * @param {string[]} userIds
+ * @param {string} deviceId
+ */
+async function activateUsersOnDevice(userIds, deviceId) {
+    const { normalizeDeviceId } = require('../utils/deviceMembership');
+    const sn = normalizeDeviceId(deviceId);
+    if (!sn) {
+        const err = new Error('deviceId is required');
+        err.code = 'BAD_REQUEST';
+        throw err;
+    }
+
+    const device = await Device.findOne({ deviceId: sn }).lean();
+    if (!device) {
+        const err = new Error('Device not found');
+        err.code = 'DEVICE_NOT_FOUND';
+        throw err;
+    }
+
+    const ids = [...new Set((userIds || []).map((id) => String(id).trim()).filter(Boolean))];
+    if (!ids.length) {
+        const err = new Error('userIds required');
+        err.code = 'BAD_REQUEST';
+        throw err;
+    }
+
+    const results = [];
+    const errors = [];
+
+    for (const userId of ids) {
+        try {
+            const user = await DeviceUser.findOne({ userId });
+            if (!user) {
+                errors.push({ userId, error: 'User not found in database' });
+                continue;
+            }
+
+            await queueUserCloneToDevice(user, device);
+            await DeviceUser.updateOne(
+                { userId },
+                {
+                    $addToSet: { deviceIds: sn },
+                    $pull: { inactiveDeviceIds: sn },
+                    $set: { lastSyncedAt: new Date(), lastDeviceId: sn }
+                }
+            );
+
+            results.push({
+                userId,
+                deviceId: sn,
+                commandQueued: true,
+                status: 'active',
+                fingerprintCount: user.fingerprints?.length || 0
+            });
+            logger.info(`Activate: User ${userId} queued for write on ${sn}; marked active in DB`);
+        } catch (err) {
+            errors.push({ userId, error: err.message });
+        }
+    }
+
+    return {
+        deviceId: sn,
+        deviceName: device.name,
+        activated: results.length,
+        results,
+        errors
+    };
+}
+
+/**
+ * Deactivate one user on every device they are currently active on.
+ * Keeps golden DeviceUser; marks inactiveDeviceIds.
+ */
+async function deactivateUserOnAllActiveDevices(userId) {
+    const pin = String(userId || '').trim();
+    if (!pin) {
+        const err = new Error('userId is required');
+        err.code = 'BAD_REQUEST';
+        throw err;
+    }
+
+    const user = await DeviceUser.findOne({ userId: pin });
+    if (!user) {
+        return {
+            userId: pin,
+            skipped: true,
+            reason: 'user_not_found',
+            deviceIds: [],
+            deleted: 0,
+            results: [],
+            errors: []
+        };
+    }
+
+    const activeIds = Array.isArray(user.deviceIds) && user.deviceIds.length
+        ? [...new Set(user.deviceIds.map(String))]
+        : (user.lastDeviceId && !(user.inactiveDeviceIds || []).includes(user.lastDeviceId)
+            ? [String(user.lastDeviceId)]
+            : []);
+
+    if (!activeIds.length) {
+        return {
+            userId: pin,
+            skipped: true,
+            reason: 'no_active_devices',
+            deviceIds: [],
+            deleted: 0,
+            results: [],
+            errors: []
+        };
+    }
+
+    const results = [];
+    const errors = [];
+    for (const deviceId of activeIds) {
+        try {
+            const r = await deactivateUsersOnDevice([pin], deviceId);
+            results.push(...(r.results || []));
+            errors.push(...(r.errors || []));
+        } catch (err) {
+            errors.push({ userId: pin, deviceId, error: err.message });
+        }
+    }
+
+    return {
+        userId: pin,
+        skipped: false,
+        deviceIds: activeIds,
+        deleted: results.length,
+        results,
+        errors
+    };
+}
+
+/**
+ * Activate one user on given devices, or on inactiveDeviceIds if deviceIds omitted.
+ */
+async function activateUserOnDevices(userId, deviceIds) {
+    const pin = String(userId || '').trim();
+    if (!pin) {
+        const err = new Error('userId is required');
+        err.code = 'BAD_REQUEST';
+        throw err;
+    }
+
+    const user = await DeviceUser.findOne({ userId: pin });
+    if (!user) {
+        return {
+            userId: pin,
+            skipped: true,
+            reason: 'user_not_found',
+            deviceIds: [],
+            activated: 0,
+            results: [],
+            errors: []
+        };
+    }
+
+    let targets = Array.isArray(deviceIds)
+        ? [...new Set(deviceIds.map(String).filter(Boolean))]
+        : [];
+    if (!targets.length) {
+        targets = Array.isArray(user.inactiveDeviceIds)
+            ? [...new Set(user.inactiveDeviceIds.map(String))]
+            : [];
+    }
+
+    if (!targets.length) {
+        return {
+            userId: pin,
+            skipped: true,
+            reason: 'no_target_devices',
+            deviceIds: [],
+            activated: 0,
+            results: [],
+            errors: []
+        };
+    }
+
+    const results = [];
+    const errors = [];
+    for (const deviceId of targets) {
+        try {
+            const r = await activateUsersOnDevice([pin], deviceId);
+            results.push(...(r.results || []));
+            errors.push(...(r.errors || []));
+        } catch (err) {
+            errors.push({ userId: pin, deviceId, error: err.message });
+        }
+    }
+
+    return {
+        userId: pin,
+        skipped: false,
+        deviceIds: targets,
+        activated: results.length,
+        results,
+        errors
+    };
+}
+
 module.exports = {
     queueUserCloneToDevice,
     resolveTargetDevices,
     cloneUserToDevices,
-    autoCloneUserWithinCategory
+    autoCloneUserWithinCategory,
+    queueUserDeleteOnDevice,
+    deactivateUsersOnDevice,
+    activateUsersOnDevice,
+    deactivateUserOnAllActiveDevices,
+    activateUserOnDevices
 };

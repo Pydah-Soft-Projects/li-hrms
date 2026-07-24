@@ -19,6 +19,35 @@ const payrollRecordSchema = new mongoose.Schema(
       ref: 'Division',
       index: true,
     },
+    /** Department for this payroll segment (historical org). */
+    department_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Department',
+      index: true,
+    },
+    /**
+     * Mid-period transfer support: multiple records per emp/month.
+     * segmentIndex 0 = first window; 1+ = subsequent.
+     */
+    segmentIndex: {
+      type: Number,
+      default: 0,
+      min: 0,
+      index: true,
+    },
+    segmentStartDate: {
+      type: String,
+      default: null,
+    },
+    segmentEndDate: {
+      type: String,
+      default: null,
+    },
+    /** Gross salary used for this segment (from salaryHistory as-of). */
+    grossSalaryUsed: {
+      type: Number,
+      default: null,
+    },
 
     // Employee number for quick reference
     emp_no: {
@@ -566,9 +595,9 @@ const payrollRecordSchema = new mongoose.Schema(
   }
 );
 
-// Unique index: one payroll record per employee per month
-payrollRecordSchema.index({ employeeId: 1, month: 1 }, { unique: true });
-payrollRecordSchema.index({ emp_no: 1, month: 1 }, { unique: true });
+// Unique index: one payroll record per employee per month per segment
+payrollRecordSchema.index({ employeeId: 1, month: 1, segmentIndex: 1 }, { unique: true });
+payrollRecordSchema.index({ emp_no: 1, month: 1, segmentIndex: 1 }, { unique: true });
 
 // Indexes for queries
 payrollRecordSchema.index({ year: 1, monthNumber: 1 });
@@ -576,8 +605,8 @@ payrollRecordSchema.index({ employeeId: 1, year: 1 });
 payrollRecordSchema.index({ status: 1 });
 payrollRecordSchema.index({ month: 1, status: 1 });
 
-// Static method to get or create payroll record
-payrollRecordSchema.statics.getOrCreate = async function (employeeId, emp_no, year, monthNumber) {
+// Static method to get or create payroll record (optional segment)
+payrollRecordSchema.statics.getOrCreate = async function (employeeId, emp_no, year, monthNumber, segmentOpts = {}) {
   const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
   const { startDate, endDate, totalDays } = await getPayrollDateRange(year, monthNumber);
 
@@ -587,8 +616,14 @@ payrollRecordSchema.statics.getOrCreate = async function (employeeId, emp_no, ye
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
   const monthName = `${monthNames[monthNumber - 1]} ${year}`;
+  const segmentIndex = Number.isFinite(Number(segmentOpts.segmentIndex))
+    ? Number(segmentOpts.segmentIndex)
+    : 0;
 
-  let record = await this.findOne({ employeeId, month: monthStr });
+  let record = await this.findOne({ employeeId, month: monthStr, segmentIndex });
+
+  const segStart = segmentOpts.segmentStartDate || startDate;
+  const segEnd = segmentOpts.segmentEndDate || endDate;
 
   if (!record) {
     record = await this.create({
@@ -599,17 +634,27 @@ payrollRecordSchema.statics.getOrCreate = async function (employeeId, emp_no, ye
       year,
       monthNumber,
       totalDaysInMonth: totalDays,
-      startDate,
-      endDate,
+      startDate: segStart,
+      endDate: segEnd,
+      segmentIndex,
+      segmentStartDate: segStart,
+      segmentEndDate: segEnd,
+      division_id: segmentOpts.division_id || undefined,
+      department_id: segmentOpts.department_id || undefined,
+      grossSalaryUsed: segmentOpts.grossSalaryUsed != null ? segmentOpts.grossSalaryUsed : undefined,
       attendance: { totalDaysInMonth: totalDays },
       status: 'draft',
     });
   } else {
-    // Update month name and range
     record.monthName = monthName;
     record.totalDaysInMonth = totalDays;
-    record.startDate = startDate;
-    record.endDate = endDate;
+    record.startDate = segStart;
+    record.endDate = segEnd;
+    record.segmentStartDate = segStart;
+    record.segmentEndDate = segEnd;
+    if (segmentOpts.division_id) record.division_id = segmentOpts.division_id;
+    if (segmentOpts.department_id) record.department_id = segmentOpts.department_id;
+    if (segmentOpts.grossSalaryUsed != null) record.grossSalaryUsed = segmentOpts.grossSalaryUsed;
     if (record.attendance) {
       record.attendance.totalDaysInMonth = totalDays;
     }

@@ -161,6 +161,9 @@
             margin-bottom: 16px;
             display: flex;
             justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
         }
 
         #data-container {
@@ -900,6 +903,293 @@
             background: rgba(99, 102, 241, 0.25);
             border: 1px solid rgba(99, 102, 241, 0.4);
         }
+
+        /* —— Dashboard layout refinements —— */
+        .header-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            justify-content: flex-end;
+            max-width: 720px;
+        }
+
+        .header-actions .btn-refresh {
+            font-size: 0.8rem;
+            padding: 7px 12px;
+        }
+
+        .scope-toggle {
+            display: inline-flex;
+            gap: 4px;
+            background: rgba(15, 23, 42, 0.6);
+            padding: 4px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+
+        .scope-toggle button {
+            border: none;
+            background: transparent;
+            color: var(--text-dim);
+            padding: 7px 14px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+        }
+
+        .scope-toggle button.active {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        .user-row {
+            display: grid;
+            grid-template-columns: 28px minmax(180px, 1.2fr) minmax(160px, 1fr) minmax(140px, 0.8fr) 100px;
+            gap: 16px;
+            align-items: center;
+            padding: 14px 16px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.45);
+            margin-bottom: 8px;
+            transition: border-color 0.15s, background 0.15s;
+        }
+
+        .user-row:hover {
+            border-color: rgba(99, 102, 241, 0.45);
+            background: rgba(30, 41, 59, 0.55);
+        }
+
+        .user-row-head {
+            display: grid;
+            grid-template-columns: 28px minmax(180px, 1.2fr) minmax(160px, 1fr) minmax(140px, 0.8fr) 100px;
+            gap: 16px;
+            padding: 0 16px 10px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-dim);
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 12px;
+        }
+
+        .user-id-badge {
+            display: inline-block;
+            background: rgba(99, 102, 241, 0.25);
+            color: #c7d2fe;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        .user-name {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .user-meta {
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        .device-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .device-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            max-width: 160px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            background: rgba(148, 163, 184, 0.12);
+            color: #cbd5e1;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .device-chip.current {
+            background: rgba(16, 185, 129, 0.15);
+            border-color: rgba(16, 185, 129, 0.45);
+            color: #6ee7b7;
+        }
+
+        .device-chip.last {
+            box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.35);
+        }
+
+        .device-chip.inactive {
+            background: rgba(239, 68, 68, 0.12);
+            border-color: rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+            text-decoration: line-through;
+            text-decoration-thickness: 1px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            padding: 2px 7px;
+            border-radius: 999px;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+
+        .status-badge--active {
+            background: rgba(16, 185, 129, 0.18);
+            color: #6ee7b7;
+        }
+
+        .status-badge--inactive {
+            background: rgba(239, 68, 68, 0.18);
+            color: #fca5a5;
+        }
+
+        .btn-delete-users {
+            border-color: rgba(239, 68, 68, 0.55) !important;
+            color: #fca5a5 !important;
+        }
+
+        .btn-delete-users:hover:not(:disabled) {
+            background: rgba(239, 68, 68, 0.2) !important;
+            border-color: #ef4444 !important;
+            color: #fecaca !important;
+        }
+
+        .btn-delete-users:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .btn-activate-users {
+            border-color: rgba(16, 185, 129, 0.55) !important;
+            color: #6ee7b7 !important;
+        }
+
+        .btn-activate-users:hover:not(:disabled) {
+            background: rgba(16, 185, 129, 0.2) !important;
+            border-color: #10b981 !important;
+            color: #a7f3d0 !important;
+        }
+
+        .btn-activate-users:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .btn-row-delete {
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            background: transparent;
+            color: #fca5a5;
+            font-size: 0.72rem;
+            padding: 4px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .btn-row-delete:hover {
+            background: rgba(239, 68, 68, 0.15);
+        }
+
+        .btn-row-activate {
+            border: 1px solid rgba(16, 185, 129, 0.45);
+            background: transparent;
+            color: #6ee7b7;
+            font-size: 0.72rem;
+            padding: 4px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .btn-row-activate:hover {
+            background: rgba(16, 185, 129, 0.15);
+        }
+
+        .user-row.inactive-row {
+            opacity: 0.72;
+            border-style: dashed;
+        }
+
+        .bio-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+
+        .bio-stats b {
+            color: var(--text-main);
+        }
+
+        .sync-col {
+            text-align: right;
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            line-height: 1.35;
+        }
+
+        .list-hint {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-bottom: 12px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .list-hint.warn {
+            background: rgba(251, 191, 36, 0.08);
+            border-color: rgba(251, 191, 36, 0.25);
+            color: #fcd34d;
+        }
+
+        #device-actions {
+            display: none;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px dashed var(--primary);
+            padding: 16px;
+            border-radius: 12px;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        #device-actions.visible {
+            display: flex;
+        }
+
+        @media (max-width: 1100px) {
+            .user-row,
+            .user-row-head {
+                grid-template-columns: 28px 1fr;
+            }
+
+            .user-row-head span:nth-child(n+3),
+            .user-row > :nth-child(n+3) {
+                display: none;
+            }
+        }
     </style>
 </head>
 
@@ -930,21 +1220,17 @@
                 <h1 id="selected-device-name">Select a Device</h1>
                 <p id="selected-device-sn" style="color: var(--text-dim); font-size: 0.9rem;">To view data pulls</p>
             </div>
-            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-                <button type="button" class="btn-refresh btn-settings-primary" onclick="openSettingsPage()" title="Service settings (auto-clone, sync, operation mode)">⚙ Service Settings</button>
-                <button class="btn-refresh" onclick="openDownloadDialog('logs')" style="border-data: #10b981;">Download
-                    Logs</button>
+            <div class="header-actions">
+                <button type="button" class="btn-refresh btn-settings-primary" onclick="openSettingsPage()" title="Service settings (auto-clone, sync, operation mode)">⚙ Settings</button>
+                <button class="btn-refresh" onclick="openDownloadDialog('logs')">Download Logs</button>
                 <button class="btn-refresh" onclick="openDownloadDialog('report')">Download Report</button>
-                <button class="btn-refresh" onclick="exportPdfSummary()"
-                    style="border-color: #f43f5e; color: #f43f5e;">PDF Summary</button>
-                <button class="btn-refresh" onclick="exportUniqueUsersExcel()"
-                    style="border-color: #10b981; color: #10b981;">Export Excel (Unique IDs)</button>
-                <button class="btn-refresh" onclick="openManualPullDialog()" style="background: var(--primary); border-color: var(--primary); color: white;">Test TCP Pull</button>
-                <button class="btn-refresh" onclick="openDeviceAttlogDialog()" style="border-color: #f59e0b; color: #f59e0b;">Backup / Clear (TCP)</button>
-                <button class="btn-refresh" onclick="openTcpSyncToDbDialog()" style="border-color: #38bdf8; color: #38bdf8;">Sync to MongoDB (TCP)</button>
-                <button class="btn-refresh" onclick="refreshData()">Refresh Data</button>
-                <button class="btn-refresh" onclick="openTransferUsersDialog()" style="border-color: #a78bfa; color: #c4b5fd;">Transfer users</button>
-                <button class="btn-refresh" onclick="loadAnalytics()">Refresh analytics</button>
+                <button class="btn-refresh" onclick="exportPdfSummary()" style="border-color: #f43f5e; color: #f43f5e;">PDF</button>
+                <button class="btn-refresh" onclick="exportUniqueUsersExcel()" style="border-color: #10b981; color: #10b981;">Excel IDs</button>
+                <button class="btn-refresh" onclick="openManualPullDialog()">TCP Pull</button>
+                <button class="btn-refresh" onclick="openDeviceAttlogDialog()" style="border-color: #f59e0b; color: #f59e0b;">Backup / Clear</button>
+                <button class="btn-refresh" onclick="openTcpSyncToDbDialog()" style="border-color: #38bdf8; color: #38bdf8;">Sync Mongo</button>
+                <button class="btn-refresh" onclick="openTransferUsersDialog()" style="border-color: #a78bfa; color: #c4b5fd;">Transfer</button>
+                <button class="btn-refresh" onclick="refreshData()">Refresh</button>
             </div>
         </div>
 
@@ -957,9 +1243,8 @@
             <div class="stat-card"><div class="label">Categories</div><div class="value" id="stat-categories">—</div></div>
         </div>
 
-        <!-- NEW: Command Actions Section -->
-        <div id="device-actions"
-            style="display: none; background: rgba(99, 102, 241, 0.1); border: 1px dashed var(--primary); padding: 16px; border-radius: 12px; display: flex; align-items: center; gap: 16px;">
+        <!-- Device sync actions (shown when a device is selected) -->
+        <div id="device-actions">
             <span style="font-weight: 600; font-size: 0.9rem; color: var(--primary);">FORCE PULL:</span>
             <button class="btn-refresh" onclick="sendDeviceCommand('DATA QUERY USERINFO')">Sync All Users</button>
             <button class="btn-refresh" onclick="sendDeviceCommand('DATA QUERY FINGERTMP')">Sync Fingerprints</button>
@@ -1011,7 +1296,12 @@
                     <span id="record-count" style="color: var(--primary); font-size: 0.8rem;">0 Records</span>
                 </div>
 
-                <div style="position: relative; flex: 1; max-width: 400px; margin-left: auto;">
+                <div id="user-scope-toggle" class="scope-toggle" title="Filter users by device membership">
+                    <button type="button" id="scope-device" class="active" onclick="setUserListScope('device')">This device</button>
+                    <button type="button" id="scope-all" onclick="setUserListScope('all')">All devices</button>
+                </div>
+
+                <div style="position: relative; flex: 1; max-width: 360px;">
                     <input type="text" id="dashboard-search" placeholder="Search by ID or Name..."
                         style="width: 100%; padding: 10px 16px 10px 40px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 8px; color: white; font-size: 0.9rem;"
                         onkeyup="handleSearch()">
@@ -1028,8 +1318,19 @@
                     Select all on this page
                 </label>
                 <span id="user-selection-count">0 users selected</span>
+                <div id="membership-status-toggle" class="scope-toggle" title="Active vs inactive on this device">
+                    <button type="button" id="status-active" class="active" onclick="setMembershipStatusFilter('active')">Active</button>
+                    <button type="button" id="status-inactive" onclick="setMembershipStatusFilter('inactive')">Inactive</button>
+                    <button type="button" id="status-all" onclick="setMembershipStatusFilter('all')">All</button>
+                </div>
                 <button type="button" class="btn-download" id="btn-transfer-selected" onclick="openTransferUsersDialog()" disabled>
                     Transfer to devices…
+                </button>
+                <button type="button" class="btn-refresh btn-activate-users" id="btn-activate-selected" onclick="confirmActivateSelectedUsers()" disabled title="Write users back onto this device and mark active">
+                    Activate on device…
+                </button>
+                <button type="button" class="btn-refresh btn-delete-users" id="btn-delete-selected" onclick="confirmDeleteSelectedUsers()" disabled title="Remove from this device; keep as inactive in DB">
+                    Deactivate on device…
                 </button>
             </div>
             <div id="settings-panel" class="settings-panel">
@@ -1410,6 +1711,10 @@
         let searchDebounceTimer = null;
         let selectedUserIds = new Set();
         let allCategories = [];
+        /** 'device' = users on selected device (membership); 'all' = full golden user set */
+        let userListScope = 'device';
+        /** active | inactive | all — membership on selected device */
+        let membershipStatusFilter = 'active';
 
         const TZ_IST = 'Asia/Kolkata';
 
@@ -1470,6 +1775,66 @@
             return ['USERINFO', 'FINGERTMP', 'FACE'].includes(activeTable);
         }
 
+        function setUserListScope(scope) {
+            userListScope = scope === 'all' ? 'all' : 'device';
+            document.getElementById('scope-device')?.classList.toggle('active', userListScope === 'device');
+            document.getElementById('scope-all')?.classList.toggle('active', userListScope === 'all');
+            updateMembershipStatusToggleVisibility();
+            userListPage = 1;
+            if (isUserListTab()) fetchTableData();
+        }
+
+        function setMembershipStatusFilter(status) {
+            membershipStatusFilter = ['active', 'inactive', 'all'].includes(status) ? status : 'active';
+            document.getElementById('status-active')?.classList.toggle('active', membershipStatusFilter === 'active');
+            document.getElementById('status-inactive')?.classList.toggle('active', membershipStatusFilter === 'inactive');
+            document.getElementById('status-all')?.classList.toggle('active', membershipStatusFilter === 'all');
+            userListPage = 1;
+            if (isUserListTab()) fetchTableData();
+        }
+
+        function updateMembershipStatusToggleVisibility() {
+            const el = document.getElementById('membership-status-toggle');
+            if (!el) return;
+            el.style.display = (isUserListTab() && userListScope === 'device' && selectedSN) ? 'inline-flex' : 'none';
+        }
+
+        function updateScopeToggleVisibility() {
+            const el = document.getElementById('user-scope-toggle');
+            if (!el) return;
+            el.style.display = isUserListTab() ? 'inline-flex' : 'none';
+            updateMembershipStatusToggleVisibility();
+        }
+
+        function escapeHtml(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function renderDeviceChips(user) {
+            const devices = Array.isArray(user.devices) && user.devices.length
+                ? user.devices
+                : (user.deviceIds || []).map((id) => ({
+                    deviceId: id,
+                    name: (allDevices.find((d) => d.deviceId === id) || {}).name || id,
+                    isLast: user.lastDeviceId === id,
+                    isSelected: selectedSN && id === selectedSN
+                }));
+            if (!devices.length) {
+                return '<span class="device-chip" title="No device membership yet">Unknown</span>';
+            }
+            return devices.map((d) => {
+                const cls = ['device-chip'];
+                if (d.isSelected) cls.push('current');
+                if (d.isLast) cls.push('last');
+                const title = `${d.name} (${d.deviceId})${d.isLast ? ' · last sync' : ''}${d.isSelected ? ' · this device' : ''}`;
+                return `<span class="${cls.join(' ')}" title="${escapeHtml(title)}">${escapeHtml(d.name || d.deviceId)}</span>`;
+            }).join('');
+        }
+
         function updateUserTransferToolbar() {
             const bar = document.getElementById('user-transfer-toolbar');
             if (!bar) return;
@@ -1479,11 +1844,128 @@
             if (countEl) countEl.textContent = count + (count === 1 ? ' user selected' : ' users selected');
             const btn = document.getElementById('btn-transfer-selected');
             if (btn) btn.disabled = count === 0;
+            const delBtn = document.getElementById('btn-delete-selected');
+            if (delBtn) {
+                const canDeactivate = count > 0 && !!selectedSN && userListScope === 'device' && membershipStatusFilter !== 'inactive';
+                delBtn.disabled = !canDeactivate;
+            }
+            const actBtn = document.getElementById('btn-activate-selected');
+            if (actBtn) {
+                const canActivate = count > 0 && !!selectedSN && userListScope === 'device' && membershipStatusFilter !== 'active';
+                actBtn.disabled = !canActivate;
+            }
             const allCb = document.getElementById('select-all-users-page');
             if (allCb && lastFetchedData.length) {
                 const onPage = lastFetchedData.map(u => String(u.userId));
                 allCb.checked = onPage.length > 0 && onPage.every(id => selectedUserIds.has(id));
                 allCb.indeterminate = !allCb.checked && onPage.some(id => selectedUserIds.has(id));
+            }
+            updateMembershipStatusToggleVisibility();
+        }
+
+        async function confirmDeleteSelectedUsers() {
+            const ids = [...selectedUserIds];
+            if (!ids.length || !selectedSN) return;
+            await deleteUsersFromSelectedDevice(ids);
+        }
+
+        async function confirmDeleteSingleUser(userId) {
+            if (!userId || !selectedSN) return;
+            await deleteUsersFromSelectedDevice([String(userId)]);
+        }
+
+        async function confirmActivateSelectedUsers() {
+            const ids = [...selectedUserIds];
+            if (!ids.length || !selectedSN) return;
+            await activateUsersOnSelectedDevice(ids);
+        }
+
+        async function confirmActivateSingleUser(userId) {
+            if (!userId || !selectedSN) return;
+            await activateUsersOnSelectedDevice([String(userId)]);
+        }
+
+        async function deleteUsersFromSelectedDevice(userIds) {
+            if (!selectedSN) {
+                showToast('Select a device first', 'error');
+                return;
+            }
+            const ids = [...new Set((userIds || []).map(String))];
+            if (!ids.length) return;
+
+            const dev = allDevices.find(d => d.deviceId === selectedSN);
+            const deviceLabel = dev ? dev.name : selectedSN;
+            const preview = ids.slice(0, 8).join(', ') + (ids.length > 8 ? ` … (+${ids.length - 8})` : '');
+            const ok = window.confirm(
+                `Deactivate ${ids.length} user(s) on device "${deviceLabel}"?\n\n` +
+                `IDs: ${preview}\n\n` +
+                `Removes them from the terminal only. They stay in the database as Inactive for this device.`
+            );
+            if (!ok) return;
+
+            try {
+                const res = await fetch('/api/adms/delete-users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deviceId: selectedSN, userIds: ids })
+                });
+                const result = await res.json();
+                if (!res.ok || !result.success) {
+                    const errMsg = result.error || (result.data?.errors?.[0]?.error) || 'Deactivate failed';
+                    showToast(errMsg, 'error');
+                    if (result.data?.deleted > 0) {
+                        selectedUserIds.clear();
+                        setMembershipStatusFilter('inactive');
+                    }
+                    return;
+                }
+                showToast(result.message || `Deactivated ${ids.length} user(s)`, 'success');
+                selectedUserIds.clear();
+                setMembershipStatusFilter('inactive');
+            } catch (err) {
+                showToast('Deactivate failed: ' + err.message, 'error');
+            }
+        }
+
+        async function activateUsersOnSelectedDevice(userIds) {
+            if (!selectedSN) {
+                showToast('Select a device first', 'error');
+                return;
+            }
+            const ids = [...new Set((userIds || []).map(String))];
+            if (!ids.length) return;
+
+            const dev = allDevices.find(d => d.deviceId === selectedSN);
+            const deviceLabel = dev ? dev.name : selectedSN;
+            const preview = ids.slice(0, 8).join(', ') + (ids.length > 8 ? ` … (+${ids.length - 8})` : '');
+            const ok = window.confirm(
+                `Activate ${ids.length} user(s) on device "${deviceLabel}"?\n\n` +
+                `IDs: ${preview}\n\n` +
+                `Writes profile + fingerprints back to the terminal and marks them Active in the database.`
+            );
+            if (!ok) return;
+
+            try {
+                const res = await fetch('/api/adms/activate-users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deviceId: selectedSN, userIds: ids })
+                });
+                const result = await res.json();
+                if (!res.ok || !result.success) {
+                    const errMsg = result.error || (result.data?.errors?.[0]?.error) || 'Activate failed';
+                    showToast(errMsg, 'error');
+                    if (result.data?.activated > 0) {
+                        selectedUserIds.clear();
+                        setMembershipStatusFilter('active');
+                    }
+                    return;
+                }
+                showToast(result.message || `Activated ${ids.length} user(s)`, 'success');
+                selectedUserIds.clear();
+                setMembershipStatusFilter('active');
+            } catch (err) {
+                showToast('Activate failed: ' + err.message, 'error');
             }
         }
 
@@ -2473,8 +2955,8 @@
             document.getElementById('selected-device-name').innerText = name;
             document.getElementById('selected-device-sn').innerText = `Serial Number: ${sn}`;
 
-            // Show action bar
-            document.getElementById('device-actions').style.display = 'flex';
+            const actions = document.getElementById('device-actions');
+            if (actions) actions.classList.add('visible');
 
             // Re-render list to show active state
             loadDevices();
@@ -2562,9 +3044,11 @@
             const pagBar = document.getElementById('user-pagination');
             if (pagBar && isSettings) pagBar.classList.remove('visible');
             const actions = document.getElementById('device-actions');
-            if (actions && isSettings) actions.style.display = 'none';
+            if (actions && isSettings) actions.classList.remove('visible');
+            else if (actions && selectedSN && !isSettings) actions.classList.add('visible');
 
             updateUserTransferToolbar();
+            updateScopeToggleVisibility();
 
             if (isSettings) {
                 loadBiometricSettings();
@@ -2714,27 +3198,40 @@
 
         async function fetchTableData() {
             if (activeTable === 'SETTINGS') return;
-            if (!selectedSN) return;
+            if (!selectedSN && userListScope !== 'all') return;
+            if (!selectedSN && !isUserListTab()) return;
 
             const container = document.getElementById('data-container');
-            const countEl = document.getElementById('record-count');
             const pagBar = document.getElementById('user-pagination');
+            updateScopeToggleVisibility();
 
             container.innerHTML = '<div class="empty-state"><span class="loader"></span><p>Fetching data from server...</p></div>';
 
             try {
                 let url = '';
-                if (['USERINFO', 'FINGERTMP', 'FACE'].includes(activeTable)) {
+                if (isUserListTab()) {
                     const params = new URLSearchParams({
-                        sn: selectedSN,
                         page: String(userListPage),
                         limit: String(userListPageSize),
                         light: '1'
                     });
+                    if (userListScope === 'all') {
+                        params.set('all', '1');
+                    } else if (selectedSN) {
+                        params.set('sn', selectedSN);
+                        params.set('status', membershipStatusFilter || 'active');
+                    } else {
+                        container.innerHTML = '<div class="empty-state"><p>Select a device to view its users, or switch to <b>All devices</b>.</p></div>';
+                        return;
+                    }
                     const term = document.getElementById('dashboard-search').value.trim();
                     if (term) params.set('q', term);
                     url = `/api/adms/users?${params}`;
                 } else {
+                    if (!selectedSN) {
+                        container.innerHTML = '<div class="empty-state"><p>Select a device first.</p></div>';
+                        return;
+                    }
                     if (pagBar) pagBar.classList.remove('visible');
                     url = `/api/adms/logs?sn=${selectedSN}&table=${activeTable}&limit=100`;
                 }
@@ -2742,7 +3239,7 @@
                 const res = await fetch(url);
                 const result = await res.json();
 
-                if (['USERINFO', 'FINGERTMP', 'FACE'].includes(activeTable)) {
+                if (isUserListTab()) {
                     lastFetchedData = result.data || [];
                     userListMeta = {
                         total: result.total ?? lastFetchedData.length,
@@ -2790,69 +3287,91 @@
         function renderData(dataList) {
             const container = document.getElementById('data-container');
             const countEl = document.getElementById('record-count');
-            const isStructured = ['USERINFO', 'FINGERTMP', 'FACE'].includes(activeTable);
+            const isStructured = isUserListTab();
 
             if (dataList.length > 0) {
                 if (isStructured) {
-                    countEl.innerText = `${dataList.length} on this page · ${userListMeta.total} total`;
+                    const scopeLabel = userListScope === 'all'
+                        ? 'all devices'
+                        : `this device · ${membershipStatusFilter}`;
+                    countEl.innerText = `${dataList.length} on this page · ${userListMeta.total} total (${scopeLabel})`;
                 } else {
                     countEl.innerText = `${dataList.length} Records Found`;
                 }
 
                 if (isStructured) {
+                    const hint = userListScope === 'all'
+                        ? `<div class="list-hint warn">Showing golden users across <b>all devices</b>. Green chip = selected device; gold ring = last sync source.</div>`
+                            : membershipStatusFilter === 'inactive'
+                            ? `<div class="list-hint warn">Inactive on <b>${escapeHtml((allDevices.find(d => d.deviceId === selectedSN) || {}).name || selectedSN || 'device')}</b> — removed from the terminal, still in DB. Use <b>Activate</b> to write them back.</div>`
+                            : `<div class="list-hint">Users on <b>${escapeHtml((allDevices.find(d => d.deviceId === selectedSN) || {}).name || selectedSN || 'device')}</b>. <b>Deactivate</b> removes from device; <b>Activate</b> writes them back.</div>`;
+
+                    const head = `
+                        <div class="user-row-head">
+                            <span></span>
+                            <span>User</span>
+                            <span>On devices</span>
+                            <span>Biometrics</span>
+                            <span style="text-align:right">Actions</span>
+                        </div>`;
+
                     const content = dataList.map(user => {
                         const fpCount = user.fingerprints?.length || 0;
-                        const fids = user.fingerprints?.map(f => f.fingerIndex).sort((a, b) => a - b).join(', ') || 'None';
+                        const fids = user.fingerprints?.map(f => f.fingerIndex).sort((a, b) => a - b).join(', ') || '—';
                         const faceOk = Boolean(user.face?.templateData || (user.face?.length > 0));
-                        const hasFace = faceOk ? '✅' : '❌';
-
                         const hasName = user.name && user.name.trim() && !['unknown', 'staff', 'anonymous'].includes(user.name.trim().toLowerCase());
-                        const displayName = hasName ? user.name : `Staff member #${user.userId}`;
-                        const subText = hasName ? `Staff ID: ${user.userId}` : `<i>(Name not set on device)</i>`;
-
+                        const displayName = hasName ? user.name : `Staff #${user.userId}`;
+                        const subText = hasName ? `Staff ID ${user.userId}` : 'Name not set on device';
                         const uid = String(user.userId).replace(/'/g, "\\'");
                         const isChecked = selectedUserIds.has(String(user.userId));
+                        const deviceCount = (user.devices || user.deviceIds || []).length;
+                        const isInactive = user.statusOnDevice === 'inactive'
+                            || (selectedSN && (user.inactiveDeviceIds || []).includes(selectedSN));
+                        const statusBadge = selectedSN
+                            ? (isInactive
+                                ? '<span class="status-badge status-badge--inactive">Inactive</span>'
+                                : '<span class="status-badge status-badge--active">Active</span>')
+                            : '';
+                        const deleteBtn = (selectedSN && userListScope === 'device' && !isInactive)
+                            ? `<button type="button" class="btn-row-delete" onclick="confirmDeleteSingleUser('${uid}')">Deactivate</button>`
+                            : '';
+                        const activateBtn = (selectedSN && userListScope === 'device' && isInactive)
+                            ? `<button type="button" class="btn-row-activate" onclick="confirmActivateSingleUser('${uid}')">Activate</button>`
+                            : '';
+                        const syncMeta = (!deleteBtn && !activateBtn)
+                            ? `<div class="sync-col"><div>IST</div><div>${user.lastSyncedAt ? formatISTShort(user.lastSyncedAt) : '—'}</div></div>`
+                            : (isInactive
+                                ? `<div class="sync-col" style="margin-bottom:6px;"><div>Inactive</div><div>${user.lastDeactivatedAt ? formatISTShort(user.lastDeactivatedAt) : '—'}</div></div>`
+                                : `<div class="sync-col" style="margin-bottom:6px;"><div>IST</div><div>${user.lastSyncedAt ? formatISTShort(user.lastSyncedAt) : '—'}</div></div>`);
+
+                        const inactiveChips = (user.inactiveDevices || []).map((d) => {
+                            const title = `${d.name} (${d.deviceId}) · inactive`;
+                            return `<span class="device-chip inactive" title="${escapeHtml(title)}">${escapeHtml(d.name || d.deviceId)}</span>`;
+                        }).join('');
 
                         return `
-                        <div class="card" style="margin-bottom: 12px; padding: 20px; border: 1px solid var(--border); background: rgba(30, 41, 59, 0.3);">
-                            <div style="display: flex; justify-content: space-between; align-items: start; gap: 12px;">
-                                <label style="display:flex;align-items:flex-start;padding-top:4px;cursor:pointer;" title="Select for transfer">
-                                    <input type="checkbox" class="user-select-cb user-card-checkbox" data-user-id="${user.userId}" ${isChecked ? 'checked' : ''} onchange="toggleUserSelection('${uid}', this.checked)">
-                                </label>
-                                <div style="flex: 1;">
-                                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                                        <span style="background: var(--primary); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; letter-spacing: 1px;">ID: ${user.userId}</span>
-                                        <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-main);">${displayName}</h3>
-                                    </div>
-                                    <div style="font-size: 0.85rem; color: var(--text-dim); display: flex; flex-direction: column; gap: 4px;">
-                                        <div>${subText}</div>
-                                        <div style="display: flex; gap: 12px; margin-top: 4px;">
-                                            <span><b>Card:</b> ${user.card || 'None'}</span>
-                                            <span><b>Role:</b> ${user.role === 14 ? 'Administrator' : 'User'}</span>
-                                        </div>
-                                    </div>
+                        <div class="user-row ${isInactive ? 'inactive-row' : ''}">
+                            <label style="display:flex;align-items:center;cursor:pointer;" title="Select for transfer / activate / deactivate">
+                                <input type="checkbox" class="user-select-cb user-card-checkbox" data-user-id="${user.userId}" ${isChecked ? 'checked' : ''} onchange="toggleUserSelection('${uid}', this.checked)">
+                            </label>
+                            <div>
+                                <div>
+                                    <span class="user-id-badge">ID ${escapeHtml(user.userId)}</span>
+                                    <span class="user-name">${escapeHtml(displayName)}</span>
+                                    ${statusBadge}
                                 </div>
-                                <div style="text-align: right; font-size: 0.65rem; color: var(--text-dim); min-width: 110px;">
-                                    <div>Synced (IST):</div>
-                                    <div>${user.lastSyncedAt ? formatISTShort(user.lastSyncedAt) : '—'}</div>
-                                </div>
-                                </div>
+                                <div class="user-meta">${escapeHtml(subText)} · Card ${escapeHtml(user.card || '—')} · ${user.role === 14 ? 'Admin' : 'User'}${deviceCount > 1 ? ` · on ${deviceCount} devices` : ''}</div>
                             </div>
-                            
-                            <div style="margin-top: 16px; display: flex; gap: 24px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.05);">
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                                    <span style="font-size: 0.9rem;"><b>${fpCount}</b> Fingers <span style="color: var(--text-dim); font-size: 0.8rem;">(Indices: ${fids})</span></span>
-                                </div>
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${faceOk ? '#10b981' : '#ef4444'}" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                                    <span style="font-size: 0.9rem;">Face Support: <b>${hasFace}</b></span>
-                                </div>
+                            <div class="device-chips">${renderDeviceChips(user)}${inactiveChips}</div>
+                            <div class="bio-stats">
+                                <span><b>${fpCount}</b> fingers <span style="opacity:.7">(${escapeHtml(fids)})</span></span>
+                                <span>Face ${faceOk ? '✓' : '—'}</span>
                             </div>
-                        </div>
-                        `;
+                            <div style="text-align:right;">${syncMeta}${activateBtn}${deleteBtn}</div>
+                        </div>`;
                     }).join('');
-                    container.innerHTML = content;
+
+                    container.innerHTML = hint + head + content;
                     updateUserTransferToolbar();
                 } else {
                     const content = dataList.map((log, index) => {
@@ -2889,7 +3408,7 @@
                 container.innerHTML = `
                     <div class="empty-state">
                         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                        <p>No records matching search found for <b>${activeTable}</b>.</p>
+                        <p>No users found for this filter. Try <b>Sync All Users</b> on the device, or switch to <b>All devices</b>.</p>
                     </div>
                 `;
             }
@@ -3059,6 +3578,7 @@
         updateModeControlVisibility();
         updateServiceModeChip();
         updateModeDeviceSourceInfo();
+        updateScopeToggleVisibility();
         loadDevices();
         loadCategories();
         loadAnalytics();

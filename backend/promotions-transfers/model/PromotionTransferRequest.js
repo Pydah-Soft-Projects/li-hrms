@@ -106,6 +106,19 @@ const PromotionTransferRequestSchema = new mongoose.Schema(
       ref: 'Designation',
       default: null,
     },
+    /**
+     * Calendar effect date for org moves (transfer, or promotion/demotion with div/dept change).
+     * From this date onward attendance/payroll use the new org.
+     */
+    effectDate: {
+      type: Date,
+      default: null,
+    },
+    /** True after timeline segments written on final approve. */
+    timelineApplied: {
+      type: Boolean,
+      default: false,
+    },
     workflow: {
       currentStepRole: String,
       nextApproverRole: String,
