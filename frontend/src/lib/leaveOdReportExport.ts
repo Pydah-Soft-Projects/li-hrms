@@ -10,6 +10,9 @@ export type LeaveOdTypeOption = {
   label?: string;
 };
 
+/** Status for "Action Required" exports: everything still in the workflow, i.e. neither approved nor rejected/cancelled. */
+export const ACTION_REQUIRED_EXPORT_STATUS = 'action_required';
+
 export type LeaveODReportExportFilters = {
   fromDate: string;
   toDate: string;

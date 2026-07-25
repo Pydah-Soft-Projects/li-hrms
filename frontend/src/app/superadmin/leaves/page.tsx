@@ -49,6 +49,7 @@ import {
   isDayFullyCovered,
   resolveDayHalfCoverage,
 } from '@/lib/leaveApplyApprovedRecords';
+import { ACTION_REQUIRED_EXPORT_STATUS } from '@/lib/leaveOdReportExport';
 import { getHoursOdAttendanceSuggestion } from '@/lib/hoursOdAttendanceSuggestion';
 import { computeHoursOdCredit, formatMinsAsHm, timeStringsOverlap } from '@/lib/hoursOdOverlap';
 import LeaveApplyDateCheckBanner from '@/components/leave/LeaveApplyDateCheckBanner';
@@ -1994,7 +1995,7 @@ function LeavesPageContent() {
     try {
       const blob = await api.downloadLeaveODReportPDF({
         ...filters,
-        status: activeTab === 'pending' ? 'pending' : undefined,
+        status: activeTab === 'pending' ? ACTION_REQUIRED_EXPORT_STATUS : undefined,
         includeLeaves: options.includeLeaves,
         includeODs: options.includeODs,
         includeSummary: options.includeSummary
@@ -2033,7 +2034,7 @@ function LeavesPageContent() {
     try {
       const blob = await api.downloadLeaveODReportXLSX({
         ...filters,
-        status: activeTab === 'pending' ? 'pending' : undefined,
+        status: activeTab === 'pending' ? ACTION_REQUIRED_EXPORT_STATUS : undefined,
         includeLeaves: options.includeLeaves,
         includeODs: options.includeODs,
         includeSummary: options.includeSummary,

@@ -3604,6 +3604,41 @@ const drawPDFTable = (doc, headers, data, startX, startY, colWidths, options = {
   return y;
 };
 
+/** `status` value sent by the Action Required tab: everything still in the workflow. */
+const ACTION_REQUIRED_STATUS = 'action_required';
+const ACTION_REQUIRED_LEAVE_STATUS = { $nin: ['approved', 'rejected', 'cancelled'] };
+const ACTION_REQUIRED_OD_STATUS = { $nin: ['draft', 'approved', 'rejected', 'cancelled'] };
+
+/**
+ * Scope for Action Required exports; mirrors getPendingApprovals so the file
+ * carries the same rows the tab lists (statuses are applied per-model by the caller).
+ * @param {object} user - req.user
+ * @returns {Promise<object>} filter fragment to AND into the export filter
+ */
+async function buildActionRequiredExportScope(user) {
+  const userRole = user.role;
+  const scope = {};
+
+  // Self-applied requests live under "My Leaves" for everyone except the admin roles.
+  if (!['super_admin', 'sub_admin'].includes(userRole)) {
+    scope.appliedBy = { $ne: user._id };
+  }
+
+  if (userRole === 'super_admin') return scope;
+
+  if (['sub_admin', 'hod', 'hr', 'manager'].includes(userRole)) {
+    const employeeIds = await getEmployeeIdsInScope(user);
+    scope.employeeId = { $in: Array.isArray(employeeIds) ? employeeIds : [] };
+    return scope;
+  }
+
+  scope.$or = [
+    { 'workflow.approvalChain': { $elemMatch: { role: userRole, status: 'pending' } } },
+    { 'workflow.reportingManagerIds': user._id.toString() },
+  ];
+  return scope;
+}
+
 // @desc    Export Leaves and ODs as PDF
 // @route   GET /api/leaves/export/pdf
 // @access  Private
@@ -3645,7 +3680,12 @@ exports.exportReportPDF = async (req, res) => {
       ]
     };
 
-    if (status && !['leaves', 'od', 'all'].includes(status)) baseFilter.status = status;
+    const isActionRequired = String(status || '') === ACTION_REQUIRED_STATUS;
+    if (isActionRequired) {
+      baseFilter.$and.push(await buildActionRequiredExportScope(req.user));
+    } else if (status && !['leaves', 'od', 'all'].includes(status)) {
+      baseFilter.status = status;
+    }
     if (employeeId && employeeId !== 'all') {
       const ids = String(employeeId).split(',').filter(id => id && id !== 'all');
       if (ids.length > 0) baseFilter.employeeId = ids.length > 1 ? { $in: ids } : ids[0];
@@ -3687,10 +3727,12 @@ exports.exportReportPDF = async (req, res) => {
     // Clone for Leave and OD
     const leaveFilter = { ...baseFilter };
     if (leaveType) leaveFilter.leaveType = leaveType;
+    if (isActionRequired) leaveFilter.status = ACTION_REQUIRED_LEAVE_STATUS;
 
     const odFilter = { ...baseFilter };
     const resolvedOdType = odType || (includeODs === 'true' && includeLeaves !== 'true' ? leaveType : null);
     if (resolvedOdType) odFilter.odType = resolvedOdType;
+    if (isActionRequired) odFilter.status = ACTION_REQUIRED_OD_STATUS;
 
     const [leaves, ods] = await Promise.all([
       includeLeaves === 'true' ? Leave.find(leaveFilter).populate({
@@ -3732,7 +3774,8 @@ exports.exportReportPDF = async (req, res) => {
        .text("Leave & OD Request Report", { align: 'center' });
     
     // Filter summary
-    doc.fontSize(9).font('Helvetica').text(`Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${status || 'All'}`, { align: 'left' });
+    const statusLabelPdf = isActionRequired ? 'Action Required' : (status || 'All');
+    doc.fontSize(9).font('Helvetica').text(`Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${statusLabelPdf}`, { align: 'left' });
     doc.moveTo(margin, doc.y + 5).lineTo(pageWidth - margin, doc.y + 5).strokeColor('#CCCCCC').stroke();
     doc.moveDown(1.5);
 
@@ -3801,11 +3844,11 @@ exports.exportReportPDF = async (req, res) => {
     // --- Summary Table ---
     if (includeSummary === 'true') {
       if (currentY > 400) { doc.addPage(); currentY = 50; }
-      doc.fontSize(11).font('Helvetica-Bold').text("SUMMARY (APPROVED)", margin, currentY);
+      doc.fontSize(11).font('Helvetica-Bold').text(isActionRequired ? "SUMMARY (ACTION REQUIRED)" : "SUMMARY (APPROVED)", margin, currentY);
       
       const summaryMap = {};
       const process = (item, isOD) => {
-        if (item.status !== 'approved' && item.status !== 'split_approved') return;
+        if (!isActionRequired && item.status !== 'approved' && item.status !== 'split_approved') return;
         const emp = item.employeeId;
         const empKey = emp?._id?.toString() || getEmpName(emp);
         if (!summaryMap[empKey]) {
@@ -3926,7 +3969,12 @@ exports.exportReportXLSX = async (req, res) => {
       ],
     };
 
-    if (status && !['leaves', 'od', 'all'].includes(status)) baseFilter.status = status;
+    const isActionRequired = String(status || '') === ACTION_REQUIRED_STATUS;
+    if (isActionRequired) {
+      baseFilter.$and.push(await buildActionRequiredExportScope(req.user));
+    } else if (status && !['leaves', 'od', 'all'].includes(status)) {
+      baseFilter.status = status;
+    }
     if (employeeId && employeeId !== 'all') {
       const ids = String(employeeId).split(',').filter((id) => id && id !== 'all');
       if (ids.length > 0) baseFilter.employeeId = ids.length > 1 ? { $in: ids } : ids[0];
@@ -3962,9 +4010,11 @@ exports.exportReportXLSX = async (req, res) => {
 
     const leaveFilter = { ...baseFilter };
     if (leaveType) leaveFilter.leaveType = leaveType;
+    if (isActionRequired) leaveFilter.status = ACTION_REQUIRED_LEAVE_STATUS;
     const odFilter = { ...baseFilter };
     const resolvedOdTypeXlsx = odType || (includeODs === 'true' && includeLeaves !== 'true' ? leaveType : null);
     if (resolvedOdTypeXlsx) odFilter.odType = resolvedOdTypeXlsx;
+    if (isActionRequired) odFilter.status = ACTION_REQUIRED_OD_STATUS;
 
     const employeePopulate = {
       path: 'employeeId',
@@ -3996,7 +4046,7 @@ exports.exportReportXLSX = async (req, res) => {
       return `${emp.first_name || ''} ${emp.last_name || ''} (${emp.emp_no || ''})`.trim();
     };
 
-    const periodLine = `Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${status || 'All'}`;
+    const periodLine = `Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${isActionRequired ? 'Action Required' : (status || 'All')}`;
     const wb = XLSX.utils.book_new();
 
     if (includeLeaves === 'true' && leaves.length > 0) {
@@ -4032,7 +4082,7 @@ exports.exportReportXLSX = async (req, res) => {
     if (includeSummary === 'true') {
       const summaryMap = {};
       const process = (item, isOD) => {
-        if (item.status !== 'approved' && item.status !== 'split_approved') return;
+        if (!isActionRequired && item.status !== 'approved' && item.status !== 'split_approved') return;
         const emp = item.employeeId;
         const empKey = emp?._id?.toString() || getEmpName(emp);
         if (!summaryMap[empKey]) {
@@ -4076,12 +4126,12 @@ exports.exportReportXLSX = async (req, res) => {
       });
 
       const summaryAoA = [
-        ['SUMMARY (APPROVED)'],
+        [isActionRequired ? 'SUMMARY (ACTION REQUIRED)' : 'SUMMARY (APPROVED)'],
         [`Period: ${fromDate || 'Any'} to ${toDate || 'Any'}`],
         summaryHeaders,
         ...(summaryRows.length > 0
           ? summaryRows
-          : [['No approved requests found for summary.']]),
+          : [[`No ${isActionRequired ? 'action required' : 'approved'} requests found for summary.`]]),
       ];
       const wsSummary = XLSX.utils.aoa_to_sheet(summaryAoA);
       XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');

@@ -36,6 +36,7 @@ import {
   isDayFullyCovered,
   resolveDayHalfCoverage,
 } from '@/lib/leaveApplyApprovedRecords';
+import { ACTION_REQUIRED_EXPORT_STATUS } from '@/lib/leaveOdReportExport';
 import { getHoursOdAttendanceSuggestion } from '@/lib/hoursOdAttendanceSuggestion';
 import { computeHoursOdCredit, formatMinsAsHm, timeStringsOverlap } from '@/lib/hoursOdOverlap';
 import LeaveApplyDateCheckBanner from '@/components/leave/LeaveApplyDateCheckBanner';
@@ -3732,7 +3733,7 @@ function LeavesPageContent() {
       const baseFilters = getLeavesODFilters();
       const status =
         activeTab === 'pending'
-          ? 'pending'
+          ? ACTION_REQUIRED_EXPORT_STATUS
           : activeTab === 'od'
             ? (leaveFilters.odStatus || undefined)
             : activeTab === 'leaves'
@@ -3791,7 +3792,7 @@ function LeavesPageContent() {
       const baseFilters = getLeavesODFilters();
       const status =
         activeTab === 'pending'
-          ? 'pending'
+          ? ACTION_REQUIRED_EXPORT_STATUS
           : activeTab === 'od'
             ? (leaveFilters.odStatus || undefined)
             : activeTab === 'leaves'
