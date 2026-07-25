@@ -3,98 +3,261 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 /**
- * Script to copy a production MongoDB database to a local instance safely.
- * Replaces or inserts each document by _id (upsert). Does not delete local
- * documents that no longer exist in production.
- * Requirements:
- * 1. MONGODB_ATLAS_URI in backend/.env (Source - Production)
- * 2. MONGODB_URI in backend/.env (Destination - Local)
+ * Copy production MongoDB → local safely (upsert by _id).
+ *
+ * Resilient to Atlas network drops (ECONNRESET): reconnects, retries,
+ * and resumes each collection from the last copied _id.
+ *
+ * Env:
+ * 1. MONGODB_ATLAS_URI in backend/.env (source)
+ * 2. Destination hardcoded below (or set LOCAL_COPY_URI)
  */
 
-async function copyDatabase() {
-    const prodUri = process.env.MONGODB_ATLAS_URI || process.env.MONGODB_URI;
-    const localUri = "mongodb://127.0.0.1:27017/ravi";
+const MAX_RETRIES = 8;
+const BATCH_SIZE = 500;
+const RETRY_BASE_MS = 2000;
 
-    console.log("--------------------------------------------------");
-    console.log(`Source (PROD): ${prodUri.replace(/:[^:@]+@/, ':****@')}`);
-    console.log(`Destination (LOCAL): ${localUri.replace(/:[^:@]+@/, ':****@')}`);
-    console.log("--------------------------------------------------");
+const CLIENT_OPTIONS = {
+  // Keep sockets alive so long Atlas reads don't get silently dropped
+  maxPoolSize: 5,
+  minPoolSize: 1,
+  maxIdleTimeMS: 60_000,
+  connectTimeoutMS: 60_000,
+  socketTimeoutMS: 0, // no idle socket timeout (we handle disconnects ourselves)
+  serverSelectionTimeoutMS: 60_000,
+  heartbeatFrequencyMS: 10_000,
+  retryWrites: true,
+  retryReads: true,
+};
 
-    console.log("Connecting to Source (Production)...");
-    const prodClient = new MongoClient(prodUri, { readPreference: 'secondaryPreferred' });
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
-    console.log("Connecting to Destination (Local)...");
-    const localClient = new MongoClient(localUri);
+function isRetryableNetworkError(err) {
+  if (!err) return false;
+  const name = err.name || '';
+  const code = err.code || err.cause?.code || '';
+  const msg = String(err.message || err.cause?.message || '');
+  const labels = err.errorLabelSet;
 
+  if (labels && (labels.has('ResetPool') || labels.has('RetryableWriteError') || labels.has('Retryable'))) {
+    return true;
+  }
+  if (
+    name === 'MongoNetworkError' ||
+    name === 'MongoServerSelectionError' ||
+    name === 'MongoNetworkTimeoutError' ||
+    name === 'MongoExpiredSessionError'
+  ) {
+    return true;
+  }
+  if (
+    code === 'ECONNRESET' ||
+    code === 'ETIMEDOUT' ||
+    code === 'EPIPE' ||
+    code === 'ENOTFOUND' ||
+    code === 'ECONNREFUSED'
+  ) {
+    return true;
+  }
+  if (/ECONNRESET|ETIMEDOUT|socket|network|not connected|topology|pool/i.test(msg)) {
+    return true;
+  }
+  return false;
+}
+
+async function withRetry(label, fn) {
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-        await prodClient.connect();
-        await localClient.connect();
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (!isRetryableNetworkError(err) || attempt === MAX_RETRIES) {
+        throw err;
+      }
+      const wait = RETRY_BASE_MS * Math.pow(2, attempt - 1);
+      console.warn(
+        `  ⚠ ${label} failed (${err.name || 'Error'}: ${err.message}). ` +
+          `Retry ${attempt}/${MAX_RETRIES} in ${wait / 1000}s...`
+      );
+      await sleep(wait);
+    }
+  }
+  throw lastErr;
+}
 
-        const prodDb = prodClient.db();
-        const localDb = localClient.db();
+async function copyDatabase() {
+  const prodUri = process.env.MONGODB_ATLAS_URI || process.env.MONGODB_URI;
+  const localUri = process.env.LOCAL_COPY_URI || 'mongodb://127.0.0.1:27017/ravi-1';
 
-        // Get all collections from production
-        const collections = await prodDb.listCollections().toArray();
-        console.log(`Found ${collections.length} collections in production.`);
+  if (!prodUri) {
+    console.error('Missing MONGODB_ATLAS_URI (or MONGODB_URI) in backend/.env');
+    process.exit(1);
+  }
 
-        for (const collectionInfo of collections) {
-            const collectionName = collectionInfo.name;
+  console.log('--------------------------------------------------');
+  console.log(`Source (PROD): ${prodUri.replace(/:[^:@]+@/, ':****@')}`);
+  console.log(`Destination (LOCAL): ${localUri.replace(/:[^:@]+@/, ':****@')}`);
+  console.log('--------------------------------------------------');
+  console.log(
+    'Note: Upserts by _id. Safe to re-run after a network drop — it resumes per collection.\n'
+  );
 
-            // Skip system collections if any
-            if (collectionName.startsWith('system.')) continue;
+  let prodClient = new MongoClient(prodUri, {
+    ...CLIENT_OPTIONS,
+    readPreference: 'secondaryPreferred',
+  });
+  let localClient = new MongoClient(localUri, CLIENT_OPTIONS);
 
-            console.log(`\n--- Copying collection: ${collectionName} ---`);
+  const reconnect = async (which) => {
+    if (which === 'prod' || which === 'both') {
+      try {
+        await prodClient.close();
+      } catch (_) {
+        /* ignore */
+      }
+      prodClient = new MongoClient(prodUri, {
+        ...CLIENT_OPTIONS,
+        readPreference: 'secondaryPreferred',
+      });
+      await prodClient.connect();
+      console.log('  ↻ Reconnected to production.');
+    }
+    if (which === 'local' || which === 'both') {
+      try {
+        await localClient.close();
+      } catch (_) {
+        /* ignore */
+      }
+      localClient = new MongoClient(localUri, CLIENT_OPTIONS);
+      await localClient.connect();
+      console.log('  ↻ Reconnected to local.');
+    }
+  };
 
-            const prodCollection = prodDb.collection(collectionName);
-            const count = await prodCollection.countDocuments();
-            console.log(`Total documents to upsert: ${count}`);
+  try {
+    console.log('Connecting to Source (Production)...');
+    await prodClient.connect();
+    console.log('Connecting to Destination (Local)...');
+    await localClient.connect();
 
-            if (count === 0) {
-                console.log(`Skipping empty collection: ${collectionName}`);
-                continue;
-            }
+    let prodDb = prodClient.db();
+    let localDb = localClient.db();
 
-            const batchSize = 1000;
-            const cursor = prodCollection.find({});
+    const collections = await withRetry('listCollections', () =>
+      prodDb.listCollections().toArray()
+    );
+    console.log(`Found ${collections.length} collections in production.`);
 
-            let batch = [];
-            let processed = 0;
+    for (const collectionInfo of collections) {
+      const collectionName = collectionInfo.name;
+      if (collectionName.startsWith('system.')) continue;
 
-            const flushBatch = async () => {
-                if (batch.length === 0) return;
-                const ops = batch.map((doc) => ({
-                    replaceOne: {
-                        filter: { _id: doc._id },
-                        replacement: doc,
-                        upsert: true,
-                    },
-                }));
-                await localDb.collection(collectionName).bulkWrite(ops, { ordered: false });
-                processed += batch.length;
-                console.log(`  Upserted ${processed}/${count}...`);
-                batch = [];
-            };
+      console.log(`\n--- Copying collection: ${collectionName} ---`);
 
-            while (await cursor.hasNext()) {
-                const doc = await cursor.next();
-                batch.push(doc);
+      // Fresh handles after any reconnect
+      prodDb = prodClient.db();
+      localDb = localClient.db();
 
-                if (batch.length === batchSize) {
-                    await flushBatch();
-                }
-            }
+      let count;
+      try {
+        count = await withRetry(`count ${collectionName}`, async () => {
+          prodDb = prodClient.db();
+          return prodDb.collection(collectionName).countDocuments();
+        });
+      } catch (err) {
+        if (isRetryableNetworkError(err)) {
+          await reconnect('prod');
+          prodDb = prodClient.db();
+          count = await prodDb.collection(collectionName).countDocuments();
+        } else {
+          throw err;
+        }
+      }
 
-            await flushBatch();
+      console.log(`Total documents to upsert: ${count}`);
+      if (count === 0) {
+        console.log(`Skipping empty collection: ${collectionName}`);
+        continue;
+      }
+
+      // _id-based paging: no long-lived cursor that dies on ECONNRESET
+      let lastId = null;
+      let processed = 0;
+
+      for (;;) {
+        let docs;
+        try {
+          docs = await withRetry(`fetch ${collectionName} batch`, async () => {
+            prodDb = prodClient.db();
+            const filter = lastId ? { _id: { $gt: lastId } } : {};
+            return prodDb
+              .collection(collectionName)
+              .find(filter)
+              .sort({ _id: 1 })
+              .limit(BATCH_SIZE)
+              .toArray();
+          });
+        } catch (err) {
+          if (!isRetryableNetworkError(err)) throw err;
+          console.warn('  Network error on fetch — reconnecting production...');
+          await reconnect('prod');
+          continue;
         }
 
-        console.log("\nDatabase copy completed successfully!");
+        if (!docs.length) break;
 
-    } catch (error) {
-        console.error("An error occurred during the copy process:", error);
-    } finally {
-        await prodClient.close();
-        await localClient.close();
+        const ops = docs.map((doc) => ({
+          replaceOne: {
+            filter: { _id: doc._id },
+            replacement: doc,
+            upsert: true,
+          },
+        }));
+
+        try {
+          await withRetry(`bulkWrite ${collectionName}`, async () => {
+            localDb = localClient.db();
+            await localDb.collection(collectionName).bulkWrite(ops, { ordered: false });
+          });
+        } catch (err) {
+          if (!isRetryableNetworkError(err)) throw err;
+          console.warn('  Network error on write — reconnecting local...');
+          await reconnect('local');
+          continue; // same batch again (upserts are safe)
+        }
+
+        lastId = docs[docs.length - 1]._id;
+        processed += docs.length;
+        console.log(`  Upserted ${processed}/${count}...`);
+
+        if (docs.length < BATCH_SIZE) break;
+      }
+
+      console.log(`  ✓ Done: ${collectionName} (${processed} docs)`);
     }
+
+    console.log('\nDatabase copy completed successfully!');
+  } catch (error) {
+    console.error('\nAn error occurred during the copy process:', error);
+    console.error(
+      '\nSafe to re-run this script — already-copied docs are upserted; remaining collections continue.'
+    );
+    process.exitCode = 1;
+  } finally {
+    try {
+      await prodClient.close();
+    } catch (_) {
+      /* ignore */
+    }
+    try {
+      await localClient.close();
+    } catch (_) {
+      /* ignore */
+    }
+  }
 }
 
 copyDatabase();

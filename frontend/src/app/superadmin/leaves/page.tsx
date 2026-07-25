@@ -52,6 +52,8 @@ import {
 import { getHoursOdAttendanceSuggestion } from '@/lib/hoursOdAttendanceSuggestion';
 import { computeHoursOdCredit, formatMinsAsHm, timeStringsOverlap } from '@/lib/hoursOdOverlap';
 import LeaveApplyDateCheckBanner from '@/components/leave/LeaveApplyDateCheckBanner';
+import LeaveDetailAttendancePreview from '@/components/leave/LeaveDetailAttendancePreview';
+import type { LeaveAttendancePreview } from '@/lib/leaveDetailAttendancePreview';
 import {
   calculateLeaveNumberOfDays,
   checkDayHalfCoverageConflict,
@@ -972,6 +974,9 @@ function LeavesPageContent() {
   const [selectedItem, setSelectedItem] = useState<LeaveApplication | ODApplication | null>(null);
   const [detailType, setDetailType] = useState<'leave' | 'od'>('leave');
   const [actionComment, setActionComment] = useState('');
+  const [leaveAttendancePreview, setLeaveAttendancePreview] = useState<LeaveAttendancePreview | null>(null);
+  const [leaveAttendancePreviewLoading, setLeaveAttendancePreviewLoading] = useState(false);
+  const [leaveAttendancePreviewError, setLeaveAttendancePreviewError] = useState<string | null>(null);
   const [splitMode, setSplitMode] = useState(false);
   const [splitDrafts, setSplitDrafts] = useState<LeaveSplit[]>([]);
   const [splitWarnings, setSplitWarnings] = useState<string[]>([]);
@@ -2813,6 +2818,9 @@ function LeavesPageContent() {
       setSplitErrors([]);
       setSplitSaving(false);
       setActionComment('');
+      setLeaveAttendancePreview(null);
+      setLeaveAttendancePreviewError(null);
+      setLeaveAttendancePreviewLoading(type === 'leave');
 
       let enrichedItem: LeaveApplication | ODApplication = item;
       if (type === 'leave') {
@@ -2824,11 +2832,24 @@ function LeavesPageContent() {
         setSplitDrafts(initialSplits);
         const leaveItem = enrichedItem as LeaveApplication;
         setSplitMode((leaveItem.splits && leaveItem.splits.length > 0) || false);
+        try {
+          const previewRes = await api.getLeaveAttendancePreview(enrichedItem._id);
+          if (previewRes?.success && previewRes.data) {
+            setLeaveAttendancePreview(previewRes.data as LeaveAttendancePreview);
+          } else {
+            setLeaveAttendancePreviewError(previewRes?.error || 'Failed to load attendance preview');
+          }
+        } catch (previewErr: any) {
+          setLeaveAttendancePreviewError(previewErr?.message || 'Failed to load attendance preview');
+        } finally {
+          setLeaveAttendancePreviewLoading(false);
+        }
       } else {
         const response = await api.getOD(item._id);
         if (response?.success && response.data) {
           enrichedItem = response.data;
         }
+        setLeaveAttendancePreviewLoading(false);
       }
 
       setSelectedItem(enrichedItem);
@@ -2947,6 +2968,19 @@ function LeavesPageContent() {
   const handleDetailAction = async (action: 'approve' | 'reject' | 'cancel') => {
     if (!selectedItem) return;
     if (isRequestActionBusy(detailType, selectedItem._id)) return;
+
+    if (
+      detailType === 'leave' &&
+      action === 'approve' &&
+      leaveAttendancePreview?.approveBlocked
+    ) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Cannot approve',
+        text: 'Attendance is present on every day of this leave. Reject the leave instead — the employee already attended.',
+      });
+      return;
+    }
 
     setActionProcessing({ type: detailType, id: selectedItem._id });
     try {
@@ -5853,6 +5887,14 @@ function LeavesPageContent() {
                     </button>
                   )}
 
+                {detailType === 'leave' && (
+                  <LeaveDetailAttendancePreview
+                    preview={leaveAttendancePreview}
+                    loading={leaveAttendancePreviewLoading}
+                    error={leaveAttendancePreviewError}
+                  />
+                )}
+
                 {/* Approval Actions - only show to current approver */}
                 {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem, detailType) && (
                   <>
@@ -5871,7 +5913,15 @@ function LeavesPageContent() {
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={isDetailActionBusy()}
+                        disabled={
+                          isDetailActionBusy() ||
+                          (detailType === 'leave' && Boolean(leaveAttendancePreview?.approveBlocked))
+                        }
+                        title={
+                          detailType === 'leave' && leaveAttendancePreview?.approveBlocked
+                            ? 'Approve disabled: attendance is present on every leave day'
+                            : undefined
+                        }
                         onClick={() => handleDetailAction('approve')}
                         className="px-4 py-2.5 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
                       >
@@ -5886,6 +5936,11 @@ function LeavesPageContent() {
                         {isDetailActionBusy() ? <Loader2 className="w-4 h-4 animate-spin" /> : <XIcon />} Reject
                       </button>
                     </div>
+                    {detailType === 'leave' && leaveAttendancePreview?.approveBlocked && (
+                      <p className="text-xs text-rose-600 dark:text-rose-400">
+                        Approve is disabled because attendance covers all days. Use Reject.
+                      </p>
+                    )}
                   </>
                 )}
               </div>

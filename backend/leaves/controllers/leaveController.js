@@ -2618,6 +2618,35 @@ exports.getApprovedRecordsForDate = async (req, res) => {
   }
 };
 
+// @desc    Preview attendance occupancy for each day of a leave (approve/reject guidance)
+// @route   GET /api/leaves/:id/attendance-preview
+// @access  Private
+exports.getLeaveAttendancePreview = async (req, res) => {
+  try {
+    const leave = await Leave.findById(req.params.id).lean();
+    if (!leave) {
+      return res.status(404).json({
+        success: false,
+        error: 'Leave not found',
+      });
+    }
+
+    const { getLeaveAttendancePreview } = require('../../shared/services/conflictValidationService');
+    const preview = await getLeaveAttendancePreview(leave);
+
+    res.status(200).json({
+      success: true,
+      data: preview,
+    });
+  } catch (error) {
+    console.error('Error fetching leave attendance preview:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch leave attendance preview',
+    });
+  }
+};
+
 /**
  * @desc    Get leave conflicts for an attendance date
  * @route   GET /api/leaves/conflicts

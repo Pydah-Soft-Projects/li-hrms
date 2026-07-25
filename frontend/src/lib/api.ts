@@ -3531,6 +3531,11 @@ export const api = {
     });
   },
 
+  /** Per-day attendance occupancy for a leave (approve/reject guidance). */
+  getLeaveAttendancePreview: async (leaveId: string) => {
+    return apiRequest<any>(`/leaves/${leaveId}/attendance-preview`, { method: 'GET' });
+  },
+
   // Get leave statistics
   getLeaveStats: async (filters?: { employeeId?: string; department?: string; year?: string }) => {
     const params = new URLSearchParams();

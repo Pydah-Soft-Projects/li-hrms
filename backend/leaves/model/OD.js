@@ -570,8 +570,13 @@ ODSchema.statics.getPendingForRole = async function (role, departmentIds = []) {
 // Post-save hook to update monthly attendance summary when OD is approved
 ODSchema.post('save', async function () {
   try {
+    // Saves originating from leave⇄attendance reconciliation must NOT re-trigger the
+    // heavy summary recalc (which itself re-runs reconciliation), to avoid the same
+    // split-and-recreate feedback loop that can flood leave/OD rows.
+    const skipReconcileSideEffects = !!(this.$locals && this.$locals.skipReconcileSideEffects);
+
     // Only update if status is 'approved' and this is a new approval
-    if (this.status === 'approved' && this.isModified('status')) {
+    if (!skipReconcileSideEffects && this.status === 'approved' && this.isModified('status')) {
       console.log('[OD-FLOW] OD post-save: status=approved and modified, calling recalculateOnODApproval', { odId: this._id?.toString() });
       const { recalculateOnODApproval } = require('../../attendance/services/summaryCalculationService');
       await recalculateOnODApproval(this);

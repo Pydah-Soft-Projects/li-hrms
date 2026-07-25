@@ -948,6 +948,145 @@ const getApprovedRecordsForDate = async (employeeId, employeeNumber, date) => {
   }
 };
 
+/**
+ * Per-day attendance vs leave-request preview for the leave detail / approve screen.
+ * Approvers see which calendar days in the leave already have physical attendance so they
+ * can reject (or avoid approving) when the employee already punched on those days.
+ */
+const getLeaveAttendancePreview = async (leave) => {
+  const { leaveHalfMaskForDate } = require('../utils/leaveDayRangeUtils');
+  const { getAllDatesInRange } = require('../utils/dateUtils');
+
+  const fromStr = extractISTComponents(leave.fromDate).dateStr;
+  const toStr = extractISTComponents(leave.toDate || leave.fromDate).dateStr;
+  const dates = getAllDatesInRange(fromStr, toStr);
+  const empNo = String(leave.emp_no || '').trim().toUpperCase();
+
+  const days = [];
+  for (const dateStr of dates) {
+    const { l1, l2 } = leaveHalfMaskForDate(leave, dateStr);
+    const leaveWantsFirst = l1 > 0;
+    const leaveWantsSecond = l2 > 0;
+    const leaveIsFull = leaveWantsFirst && leaveWantsSecond;
+    const leaveIsHalfDay = !leaveIsFull && (leaveWantsFirst || leaveWantsSecond);
+    const leaveHalfDayType = leaveIsHalfDay
+      ? leaveWantsSecond
+        ? 'second_half'
+        : 'first_half'
+      : null;
+    const leaveLabel = leaveIsFull
+      ? 'Full-day leave'
+      : leaveHalfDayType === 'second_half'
+        ? 'Second-half leave'
+        : leaveHalfDayType === 'first_half'
+          ? 'First-half leave'
+          : 'No leave coverage';
+
+    let attendance = null;
+    if (empNo) {
+      attendance = await getAttendanceCoverageForDate(empNo, dateStr);
+    }
+
+    const attFirst = Boolean(attendance?.firstHalfPresent);
+    const attSecond = Boolean(attendance?.secondHalfPresent);
+    const attFull = Boolean(attendance?.fullDayPresent || (attFirst && attSecond));
+    const hasPhysical =
+      Boolean(attendance?.hasAttendance) && (attFull || attFirst || attSecond);
+
+    let occupancy = 'free';
+    let note = 'No attendance punches — leave day is free.';
+
+    if (!leaveWantsFirst && !leaveWantsSecond) {
+      occupancy = 'free';
+      note = 'Outside leave coverage.';
+    } else if (!hasPhysical) {
+      occupancy = 'free';
+      note = 'No attendance punches — leave day is free.';
+    } else if (leaveIsFull) {
+      if (attFull) {
+        occupancy = 'occupied';
+        note = 'Full-day attendance present — leave cannot apply on this day.';
+      } else if (attFirst || attSecond) {
+        occupancy = 'partial';
+        note = attFirst
+          ? 'First-half attendance present — leave would be narrowed to second half.'
+          : 'Second-half attendance present — leave would be narrowed to first half.';
+      }
+    } else if (leaveWantsFirst) {
+      if (attFirst || attFull) {
+        occupancy = 'occupied';
+        note = 'First-half attendance present — conflicts with this leave half.';
+      } else {
+        occupancy = 'free';
+        note = 'Requested first half is free of attendance.';
+      }
+    } else if (leaveWantsSecond) {
+      if (attSecond || attFull) {
+        occupancy = 'occupied';
+        note = 'Second-half attendance present — conflicts with this leave half.';
+      } else {
+        occupancy = 'free';
+        note = 'Requested second half is free of attendance.';
+      }
+    }
+
+    days.push({
+      date: dateStr,
+      leaveIsHalfDay,
+      leaveHalfDayType,
+      leaveLabel,
+      occupancy,
+      attendance: attendance
+        ? {
+            hasAttendance: Boolean(attendance.hasAttendance),
+            status: attendance.status || null,
+            firstHalfPresent: attFirst,
+            secondHalfPresent: attSecond,
+            fullDayPresent: attFull,
+            label: attendance.label || null,
+            punchInTime: attendance.punchInTime || null,
+            punchOutTime: attendance.punchOutTime || null,
+          }
+        : null,
+      note,
+    });
+  }
+
+  const occupiedDays = days.filter((d) => d.occupancy === 'occupied').length;
+  const freeDays = days.filter((d) => d.occupancy === 'free').length;
+  const partialDays = days.filter((d) => d.occupancy === 'partial').length;
+  const totalDays = days.length;
+  const allOccupied = totalDays > 0 && occupiedDays === totalDays;
+  const someOccupied = occupiedDays > 0 || partialDays > 0;
+  const approveBlocked = allOccupied;
+
+  let summary = 'No attendance conflicts on the leave dates.';
+  if (allOccupied) {
+    summary =
+      'Attendance is present on every day of this leave. Approve is disabled — reject the leave (employee already attended).';
+  } else if (occupiedDays > 0 && freeDays > 0) {
+    summary = `Attendance occupies ${occupiedDays} of ${totalDays} leave day(s). Approving will keep leave only on free days after reconciliation; consider rejecting if leave was not needed.`;
+  } else if (partialDays > 0 && occupiedDays === 0) {
+    summary = `Partial attendance on ${partialDays} day(s). Approving may narrow those days to the free half.`;
+  } else if (occupiedDays > 0) {
+    summary = `Attendance occupies ${occupiedDays} of ${totalDays} leave day(s).`;
+  }
+
+  return {
+    days,
+    totalDays,
+    occupiedDays,
+    freeDays,
+    partialDays,
+    allOccupied,
+    someOccupied,
+    approveBlocked,
+    summary,
+    fromDate: fromStr,
+    toDate: toStr,
+  };
+};
+
 module.exports = {
   checkLeaveConflict,
   checkODConflict,
@@ -959,5 +1098,6 @@ module.exports = {
   validateHoursOdAttendance,
   getAttendanceCoverageForDate,
   getApprovedRecordsForDate,
+  getLeaveAttendancePreview,
 };
 
