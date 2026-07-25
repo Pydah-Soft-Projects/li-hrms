@@ -298,6 +298,19 @@ exports.getODs = async (req, res) => {
     } else if (segment === 'regular') {
       filter.isCOEligible = { $ne: true };
       filter.odType_extended = { $ne: 'hours' };
+    } else if (segment === 'shortfall') {
+      // Duration shortfall / authority-consented day ODs (audit spotlight section)
+      filter.odType_extended = { $ne: 'hours' };
+      filter.$and = [
+        ...(Array.isArray(filter.$and) ? filter.$and : []),
+        {
+          $or: [
+            { 'durationClassification.requiresAuthorityDecision': true },
+            { 'durationClassification.status': { $in: ['shortfall', 'authority_required'] } },
+            { 'authorityConsent.0': { $exists: true } },
+          ],
+        },
+      ];
     }
     if (employeeId && employeeId !== 'all') {
       const ids = String(employeeId).split(',').filter(id => id && id !== 'all');

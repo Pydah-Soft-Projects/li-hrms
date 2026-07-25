@@ -1,6 +1,34 @@
 export type OdStatusBucket = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'other';
 
-export type OdSegmentId = 'co' | 'hours' | 'regular';
+export type OdSegmentId = 'co' | 'hours' | 'regular' | 'shortfall';
+
+export type OdAuthorityConsentEntry = {
+  stepRole?: string;
+  stepOrder?: number;
+  actionByName?: string;
+  actionByRole?: string;
+  decision?: 'full_day' | 'half_day';
+  halfDayType?: 'first_half' | 'second_half' | null;
+  consented?: boolean;
+  acknowledgeAttendanceOverlap?: boolean;
+  comments?: string;
+  warnings?: string[];
+  at?: string;
+};
+
+export type OdDurationClassification = {
+  status?: 'full_day' | 'half_day' | 'shortfall' | 'authority_required' | null;
+  reason?: string;
+  requiresAuthorityDecision?: boolean;
+  tentative?: boolean;
+  evidenceDurationMinutes?: number | null;
+  shiftDurationMinutes?: number | null;
+  halfDayMinimumMinutes?: number | null;
+  fullDayMinimumMinutes?: number | null;
+  employeeMessage?: string;
+  systemOdType?: string | null;
+  systemHalfDayType?: string | null;
+};
 
 export type OdAuditStatsRecord = {
   _id: string;
@@ -34,6 +62,9 @@ export type OdAuditStatsRecord = {
   status?: string;
   isCOEligible?: boolean;
   isAssigned?: boolean;
+  evidenceDurationMinutes?: number | null;
+  durationClassification?: OdDurationClassification | null;
+  authorityConsent?: OdAuthorityConsentEntry[];
   workflow?: {
     approvalChain?: Array<{
       label?: string;
@@ -63,7 +94,16 @@ const REJECTED_STATUSES = new Set([
   'hr_rejected',
 ]);
 
-export function odSegmentOf(od: OdAuditStatsRecord): OdSegmentId {
+/** Shortfall / authority-consented day ODs for audit spotlight. */
+export function isShortfallConsentedOd(od: OdAuditStatsRecord): boolean {
+  if (od.odType_extended === 'hours') return false;
+  if (od.durationClassification?.requiresAuthorityDecision) return true;
+  const status = String(od.durationClassification?.status || '');
+  if (status === 'shortfall' || status === 'authority_required') return true;
+  return Array.isArray(od.authorityConsent) && od.authorityConsent.length > 0;
+}
+
+export function odSegmentOf(od: OdAuditStatsRecord): Exclude<OdSegmentId, 'shortfall'> {
   if (od.isCOEligible) return 'co';
   if (od.odType_extended === 'hours') return 'hours';
   return 'regular';
@@ -90,6 +130,7 @@ export type OdSegmentBreakdown = {
   co: number;
   hours: number;
   regular: number;
+  shortfall: number;
 };
 
 export type OdUserPendingRow = {
@@ -113,9 +154,10 @@ export function buildOdStatusBreakdown(records: OdAuditStatsRecord[]): OdStatusB
 }
 
 export function buildOdSegmentBreakdown(records: OdAuditStatsRecord[]): OdSegmentBreakdown {
-  const out: OdSegmentBreakdown = { co: 0, hours: 0, regular: 0 };
+  const out: OdSegmentBreakdown = { co: 0, hours: 0, regular: 0, shortfall: 0 };
   for (const od of records) {
     out[odSegmentOf(od)] += 1;
+    if (isShortfallConsentedOd(od)) out.shortfall += 1;
   }
   return out;
 }

@@ -33,6 +33,7 @@ import {
   BarChart3,
   TrendingUp,
   Layers,
+  ShieldCheck,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -53,8 +54,12 @@ import {
   buildOdApproverAnalytics,
   type OdApproverAnalyticsRow,
   odStatusBucket,
+  isShortfallConsentedOd,
+  type OdAuthorityConsentEntry,
+  type OdDurationClassification,
 } from '@/lib/odAuditStats';
 import ODAuditAggregatesPanel from '@/components/audits/ODAuditAggregatesPanel';
+import { formatOdEvidenceMinutes } from '@/lib/formatOdDuration';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -120,6 +125,9 @@ interface ODRecord {
   department?: { name?: string } | string;
   department_id?: { name?: string } | string;
   department_name?: string;
+  evidenceDurationMinutes?: number | null;
+  durationClassification?: OdDurationClassification | null;
+  authorityConsent?: OdAuthorityConsentEntry[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -222,6 +230,17 @@ const SEGMENTS: SegmentConfig[] = [
     accentClass: 'border-l-4 border-slate-300 dark:border-slate-600',
     rowHighlight: 'hover:bg-slate-50 dark:hover:bg-slate-800/40',
     emptyMsg: 'No regular ODs in this range.',
+  },
+  {
+    id: 'shortfall',
+    label: 'Shortfall / Consented ODs',
+    description:
+      'Day ODs below half-day duration (or without roster classification) where approvers confirmed half/full day with consent — modified & accepted shortfall cases for audit.',
+    icon: <ShieldCheck className="h-4 w-4" />,
+    headerClass: 'bg-amber-50 dark:bg-amber-950/30',
+    accentClass: 'border-l-4 border-amber-400',
+    rowHighlight: 'hover:bg-amber-50/50 dark:hover:bg-amber-950/20',
+    emptyMsg: 'No shortfall / authority-consented ODs in this range.',
   },
 ];
 
@@ -828,6 +847,52 @@ function ExpandedDetail({ od, colSpan }: { od: ODRecord; colSpan: number }) {
             </dl>
           </div>
 
+          {isShortfallConsentedOd(od) && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 dark:border-amber-800/60 dark:bg-amber-950/20 md:col-span-2">
+              <h5 className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Shortfall / Authority consents
+              </h5>
+              {od.durationClassification && (
+                <p className="mb-2 text-[11px] text-amber-800 dark:text-amber-300">
+                  Status: <span className="font-semibold">{od.durationClassification.status || '—'}</span>
+                  {od.durationClassification.evidenceDurationMinutes != null && (
+                    <> · worked {formatOdEvidenceMinutes(od.durationClassification.evidenceDurationMinutes)}</>
+                  )}
+                  {od.durationClassification.halfDayMinimumMinutes != null && (
+                    <> · half-day min {formatOdEvidenceMinutes(od.durationClassification.halfDayMinimumMinutes)}</>
+                  )}
+                  {' · final: '}
+                  <span className="font-semibold">
+                    {od.odType_extended === 'full_day'
+                      ? 'Full day'
+                      : `Half day (${od.halfDayType === 'second_half' ? '2nd' : '1st'})`}
+                  </span>
+                </p>
+              )}
+              {Array.isArray(od.authorityConsent) && od.authorityConsent.length > 0 ? (
+                <ul className="space-y-1.5">
+                  {od.authorityConsent.map((c, i) => (
+                    <li key={i} className="rounded-lg border border-amber-200/80 bg-white/80 px-2.5 py-1.5 text-[11px] text-slate-700 dark:border-amber-800/50 dark:bg-slate-900/40 dark:text-slate-300">
+                      <span className="font-semibold">{c.actionByName || c.actionByRole || 'Approver'}</span>
+                      {' '}({String(c.stepRole || c.actionByRole || '').toUpperCase() || 'APPROVER'}) confirmed{' '}
+                      <span className="font-bold">
+                        {c.decision === 'full_day' ? 'Full day' : `Half day (${c.halfDayType === 'second_half' ? '2nd' : '1st'})`}
+                      </span>
+                      {c.consented !== false ? ' with consent' : ''}
+                      {c.at ? ` · ${formatDateTime(c.at)}` : ''}
+                      {c.comments ? <div className="mt-0.5 text-[10px] text-slate-500">Note: {c.comments}</div> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[11px] text-amber-700/80 dark:text-amber-400/80">
+                  Marked as shortfall / authority-required; consent entries not yet recorded.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* ── Approval chain ── */}
           <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-800/40">
             <h5 className="mb-3 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Approval Chain</h5>
@@ -934,6 +999,7 @@ function ODRow({ od, seg, colSpan }: { od: ODRecord; seg: SegmentConfig; colSpan
           <div className="flex items-center gap-2.5">
             <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-black ${seg.id === 'co' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-200'
               : seg.id === 'hours' ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-200'
+                : seg.id === 'shortfall' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200'
                 : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-200'
               }`}>
               {initials(empName)}
@@ -968,6 +1034,11 @@ function ODRow({ od, seg, colSpan }: { od: ODRecord; seg: SegmentConfig; colSpan
             {od.isAssigned && (
               <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
                 Assigned
+              </span>
+            )}
+            {isShortfallConsentedOd(od) && (
+              <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                <ShieldCheck className="h-2.5 w-2.5" /> Shortfall
               </span>
             )}
           </div>
@@ -1101,6 +1172,7 @@ function SegmentBlock({
         <div className="flex items-center gap-2.5">
           <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${seg.id === 'co' ? 'bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-300'
             : seg.id === 'hours' ? 'bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300'
+              : seg.id === 'shortfall' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300'
               : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
             }`}>
             {seg.icon}
@@ -1110,6 +1182,7 @@ function SegmentBlock({
               <span className="text-sm font-bold text-slate-900 dark:text-white">{seg.label}</span>
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${seg.id === 'co' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
                 : seg.id === 'hours' ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'
+                  : seg.id === 'shortfall' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
                   : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
                 }`}>
                 {total}
@@ -1261,6 +1334,12 @@ export default function ODAuditTab({ active = true }: { active?: boolean } = {})
   const [regularPage, setRegularPage] = useState(1);
   const [loadingRegular, setLoadingRegular] = useState(false);
 
+  // Shortfall / authority-consented Segment state
+  const [shortfallOds, setShortfallOds] = useState<ODRecord[]>([]);
+  const [shortfallTotal, setShortfallTotal] = useState(0);
+  const [shortfallPage, setShortfallPage] = useState(1);
+  const [loadingShortfall, setLoadingShortfall] = useState(false);
+
   const limit = 50;
 
   const payPeriodOptions = useMemo(
@@ -1331,7 +1410,7 @@ export default function ODAuditTab({ active = true }: { active?: boolean } = {})
     })();
   }, []);
 
-  const loadSegmentODs = useCallback(async (segment: 'co' | 'hours' | 'regular', pg = 1) => {
+  const loadSegmentODs = useCallback(async (segment: 'co' | 'hours' | 'regular' | 'shortfall', pg = 1) => {
     const filters = {
       fromDate: dateRange.from || undefined,
       toDate: dateRange.to || undefined,
@@ -1345,6 +1424,7 @@ export default function ODAuditTab({ active = true }: { active?: boolean } = {})
     try {
       if (segment === 'co') setLoadingCo(true);
       else if (segment === 'hours') setLoadingHours(true);
+      else if (segment === 'shortfall') setLoadingShortfall(true);
       else setLoadingRegular(true);
 
       const res = await api.getODs({ ...filters, page: pg, limit });
@@ -1357,6 +1437,10 @@ export default function ODAuditTab({ active = true }: { active?: boolean } = {})
           setHoursOds(res.data || []);
           setHoursTotal(res.total || 0);
           setHoursPage(pg);
+        } else if (segment === 'shortfall') {
+          setShortfallOds(res.data || []);
+          setShortfallTotal(res.total || 0);
+          setShortfallPage(pg);
         } else {
           setRegularOds(res.data || []);
           setRegularTotal(res.total || 0);
@@ -1371,6 +1455,7 @@ export default function ODAuditTab({ active = true }: { active?: boolean } = {})
     } finally {
       if (segment === 'co') setLoadingCo(false);
       else if (segment === 'hours') setLoadingHours(false);
+      else if (segment === 'shortfall') setLoadingShortfall(false);
       else setLoadingRegular(false);
     }
   }, [dateRange.from, dateRange.to, search, status, divisionIds, departmentIds]);
@@ -1390,6 +1475,7 @@ export default function ODAuditTab({ active = true }: { active?: boolean } = {})
       loadSegmentODs('co', 1),
       loadSegmentODs('hours', 1),
       loadSegmentODs('regular', 1),
+      loadSegmentODs('shortfall', 1),
     ]);
 
     // Load full dataset for summary and PDF export
@@ -1440,6 +1526,7 @@ export default function ODAuditTab({ active = true }: { active?: boolean } = {})
           coCount: segmentBreakdown.co,
           hoursCount: segmentBreakdown.hours,
           regularCount: segmentBreakdown.regular,
+          shortfallCount: segmentBreakdown.shortfall,
           statusBreakdown,
           pendingByUser,
           divisionAggregates,
@@ -1649,7 +1736,7 @@ export default function ODAuditTab({ active = true }: { active?: boolean } = {})
           </div>
           <h2 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">By type</h2>
         </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           {/* Total */}
           <div className="relative rounded-2xl border border-zinc-200/80 bg-white p-3.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 flex items-center gap-4 min-h-[82px] min-w-0 overflow-hidden">
             <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-indigo-500/10 to-transparent pointer-events-none dark:from-indigo-500/5" />
@@ -1714,6 +1801,23 @@ export default function ODAuditTab({ active = true }: { active?: boolean } = {})
               ) : (
                 <p className="mt-1 text-2xl font-black tabular-nums tracking-tight text-zinc-900 dark:text-white leading-none">
                   {regularTotal}
+                </p>
+              )}
+            </div>
+          </div>
+          {/* Shortfall / Consented */}
+          <div className="relative rounded-2xl border border-zinc-200/80 bg-white p-3.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 flex items-center gap-4 min-h-[82px] min-w-0 overflow-hidden">
+            <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-amber-500/10 to-transparent pointer-events-none dark:from-amber-500/5" />
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400">
+              <ShieldCheck className="h-6 w-6" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 leading-tight">Shortfall / Consented</p>
+              {loadingShortfall ? (
+                <div className="mt-2 h-5 w-10 bg-zinc-200 dark:bg-zinc-850 animate-pulse rounded" />
+              ) : (
+                <p className="mt-1 text-2xl font-black tabular-nums tracking-tight text-zinc-900 dark:text-white leading-none">
+                  {shortfallTotal}
                 </p>
               )}
             </div>
@@ -1810,6 +1914,14 @@ export default function ODAuditTab({ active = true }: { active?: boolean } = {})
             page={regularPage}
             loading={loadingRegular}
             onPageChange={(pg) => loadSegmentODs('regular', pg)}
+          />
+          <SegmentBlock
+            seg={SEGMENTS[3]}
+            ods={shortfallOds}
+            total={shortfallTotal}
+            page={shortfallPage}
+            loading={loadingShortfall}
+            onPageChange={(pg) => loadSegmentODs('shortfall', pg)}
           />
         </div>
       )}

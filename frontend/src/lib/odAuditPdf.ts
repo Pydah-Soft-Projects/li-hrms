@@ -7,6 +7,7 @@ import {
   type OdTrendPoint,
   type OdUserPendingRow,
   odSegmentOf,
+  isShortfallConsentedOd,
   OD_STATUS_LABELS,
 } from './odAuditStats';
 import { drawOdAuditChartsSection } from './odAuditPdfCharts';
@@ -19,6 +20,7 @@ export type ODAuditPdfMeta = {
   coCount: number;
   hoursCount: number;
   regularCount: number;
+  shortfallCount?: number;
   statusBreakdown: OdStatusBreakdown;
   pendingByUser: OdUserPendingRow[];
   divisionAggregates?: OdOrgAggregateRow[];
@@ -28,10 +30,11 @@ export type ODAuditPdfMeta = {
 
 type DocWithAutoTable = jsPDF & { lastAutoTable?: { finalY: number } };
 
-const SEGMENTS: { id: 'co' | 'hours' | 'regular'; label: string; headColor: [number, number, number] }[] = [
+const SEGMENTS: { id: 'co' | 'hours' | 'regular' | 'shortfall'; label: string; headColor: [number, number, number] }[] = [
   { id: 'co', label: 'CO Eligible ODs', headColor: [237, 233, 254] },
   { id: 'hours', label: 'Hour-Based ODs', headColor: [224, 242, 254] },
   { id: 'regular', label: 'Regular ODs', headColor: [248, 250, 252] },
+  { id: 'shortfall', label: 'Shortfall / Consented ODs', headColor: [255, 251, 235] },
 ];
 
 function pdfAscii(text: string): string {
@@ -91,6 +94,7 @@ function typeTags(od: ODAuditPdfRecord): string {
   if (od.odType_extended === 'hours') tags.push('Hours');
   if (od.isHalfDay) tags.push('Half');
   if (od.isAssigned) tags.push('Assigned');
+  if (isShortfallConsentedOd(od)) tags.push('Shortfall');
   return tags.length ? tags.join(', ') : '';
 }
 
@@ -155,6 +159,7 @@ function drawSummaryAggregatesSection(doc: DocWithAutoTable, meta: ODAuditPdfMet
       ['CO Eligible', String(meta.coCount)],
       ['Hour-Based', String(meta.hoursCount)],
       ['Regular', String(meta.regularCount)],
+      ['Shortfall / Consented', String(meta.shortfallCount ?? 0)],
     ],
     theme: 'grid',
     styles: { fontSize: 8, cellPadding: 2 },
@@ -296,12 +301,16 @@ export function exportOdAuditPdf(meta: ODAuditPdfMeta, records: ODAuditPdfRecord
   const margin = 10;
   drawHeader(doc, meta);
 
-  const buckets: Record<'co' | 'hours' | 'regular', ODAuditPdfRecord[]> = {
+  const buckets: Record<'co' | 'hours' | 'regular' | 'shortfall', ODAuditPdfRecord[]> = {
     co: [],
     hours: [],
     regular: [],
+    shortfall: [],
   };
-  for (const od of records) buckets[odSegmentOf(od)].push(od);
+  for (const od of records) {
+    buckets[odSegmentOf(od)].push(od);
+    if (isShortfallConsentedOd(od)) buckets.shortfall.push(od);
+  }
 
   let y = drawSummaryAggregatesSection(doc, meta, 38);
   drawDivisionAggregatesSection(doc, meta, y);
