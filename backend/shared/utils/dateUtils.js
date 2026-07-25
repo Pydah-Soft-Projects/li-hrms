@@ -31,6 +31,51 @@ function parseCalendarDateAsIST(value) {
 }
 
 /**
+ * Start of an IST calendar day (same as parseCalendarDateAsIST).
+ * @param {string|Date} value
+ * @returns {Date|null}
+ */
+function startOfISTDay(value) {
+    return parseCalendarDateAsIST(value);
+}
+
+/**
+ * Inclusive end of an IST calendar day (23:59:59.999 IST).
+ * Prefer this over `new Date('YYYY-MM-DD')` (UTC midnight) when filtering stored leave/OD dates.
+ * @param {string|Date} value
+ * @returns {Date|null}
+ */
+function endOfISTDay(value) {
+    const start = parseCalendarDateAsIST(value);
+    if (!start) return null;
+    // IST has no DST; +1 calendar day from IST midnight is always the next IST midnight.
+    return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+}
+
+/**
+ * Inclusive overlap filter for Leave/OD `fromDate`/`toDate` against a UI YYYY-MM-DD range.
+ * Matches any record whose interval intersects [fromDate, toDate] in Asia/Kolkata.
+ * Mutates and returns `filter`.
+ *
+ * @param {object} filter
+ * @param {string|Date|null|undefined} fromDate
+ * @param {string|Date|null|undefined} toDate
+ * @returns {object}
+ */
+function applyLeaveOdDateRangeOverlap(filter, fromDate, toDate) {
+    if (!filter || (!fromDate && !toDate)) return filter;
+    if (toDate) {
+        const end = endOfISTDay(toDate);
+        if (end) filter.fromDate = { ...filter.fromDate, $lte: end };
+    }
+    if (fromDate) {
+        const start = startOfISTDay(fromDate);
+        if (start) filter.toDate = { ...filter.toDate, $gte: start };
+    }
+    return filter;
+}
+
+/**
  * Extract date components in IST
  * @param {Date|string} dateInput 
  * @returns {{year: number, month: number, day: number, dateStr: string}}
@@ -354,6 +399,9 @@ async function getPresentPayPeriod() {
 module.exports = {
     createISTDate,
     parseCalendarDateAsIST,
+    startOfISTDay,
+    endOfISTDay,
+    applyLeaveOdDateRangeOverlap,
     extractISTComponents,
     getTodayISTDateString,
     getPayrollDateRange,

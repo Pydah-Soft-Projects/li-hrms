@@ -18,7 +18,7 @@ const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services
 const { appendOdTrailPoints } = require('../services/odTrailService');
 const { emitOdTrailUpdate } = require('../../shared/services/socketService');
 const { isHolidayOrWeekOff, getHolidayWeekOffOdApplyContext, enrichCoOdWithAttendancePunchTimings } = require('../services/odHolidayApplyContextService');
-const { extractISTComponents, getAllDatesInRange, createISTDate } = require('../../shared/utils/dateUtils');
+const { extractISTComponents, getAllDatesInRange, createISTDate, applyLeaveOdDateRangeOverlap, parseCalendarDateAsIST } = require('../../shared/utils/dateUtils');
 
 /** Holiday / week-off for CO: roster row, half roster HOL, attendance status, or OD flagged CO-eligible on that calendar day (apply-time). */
 async function dayQualifiesForHolidayWeekOffCo(od, attendanceDateYmd) {
@@ -295,10 +295,7 @@ exports.getODs = async (req, res) => {
       const placeRegex = new RegExp(`^${String(placeVisited).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
       filter.placeVisited = placeRegex;
     }
-    if (fromDate || toDate) {
-      if (toDate) filter.fromDate = { ...filter.fromDate, $lte: new Date(toDate) };
-      if (fromDate) filter.toDate = { ...filter.toDate, $gte: new Date(fromDate) };
-    }
+    applyLeaveOdDateRangeOverlap(filter, fromDate, toDate);
 
     // Search: by emp_no or employee name (resolve employee ids)
     if (search && String(search).trim()) {
@@ -395,10 +392,7 @@ exports.getMyODs = async (req, res) => {
     };
 
     if (status) filter.status = status;
-    if (fromDate || toDate) {
-      if (toDate) filter.fromDate = { ...filter.fromDate, $lte: new Date(toDate) };
-      if (fromDate) filter.toDate = { ...filter.toDate, $gte: new Date(fromDate) };
-    }
+    applyLeaveOdDateRangeOverlap(filter, fromDate, toDate);
 
     const ods = await OD.find(filter)
       .populate({
@@ -838,9 +832,15 @@ exports.applyOD = async (req, res) => {
 
     const workflowSettings = await resolveLeaveTypeWorkflowSettings('od', employee.division_id?._id || employee.division_id);
 
-    // Calculate number of days
-    const from = new Date(fromDate);
-    const to = new Date(toDate);
+    // Calculate number of days (store calendar bounds as IST midnight, same as Leave)
+    const from = parseCalendarDateAsIST(fromDate);
+    const to = parseCalendarDateAsIST(toDate);
+    if (!from || !to) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid from/to date. Use YYYY-MM-DD.',
+      });
+    }
     let numberOfDays;
     let durationHours = null;
 
@@ -1349,6 +1349,21 @@ exports.updateOD = async (req, res) => {
           newValue = null;
         }
 
+        if (field === 'fromDate' || field === 'toDate') {
+          const parsed = parseCalendarDateAsIST(newValue);
+          if (!parsed) {
+            return; // skip invalid date assignment
+          }
+          newValue = parsed;
+          // Compare by calendar day so identical YMD strings don't create noise
+          if (
+            originalValue &&
+            extractISTComponents(originalValue).dateStr === extractISTComponents(parsed).dateStr
+          ) {
+            return;
+          }
+        }
+
         // Store change
         changes.push({
           field: field,
@@ -1723,16 +1738,7 @@ exports.getPendingApprovals = async (req, res) => {
     }
 
     if (odType) filter.odType = odType;
-    if (fromDate || toDate) {
-      if (toDate) {
-        filter.fromDate = filter.fromDate || {};
-        filter.fromDate.$lte = new Date(toDate);
-      }
-      if (fromDate) {
-        filter.toDate = filter.toDate || {};
-        filter.toDate.$gte = new Date(fromDate);
-      }
-    }
+    applyLeaveOdDateRangeOverlap(filter, fromDate, toDate);
     if (department && department !== 'all') {
       const ids = String(department).split(',').filter(id => id && id !== 'all');
       if (ids.length > 0) filter.department = ids.length > 1 ? { $in: ids } : ids[0];
