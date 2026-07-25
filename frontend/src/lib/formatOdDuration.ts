@@ -19,3 +19,14 @@ export function formatOdDurationHoursParen(hours: number | null | undefined): st
   const formatted = formatOdDurationHours(hours);
   return formatted ? `(${formatted})` : '';
 }
+
+/** Format evidence / shift duration minutes as "Xh Ym". */
+export function formatOdEvidenceMinutes(minutes: number | null | undefined): string {
+  if (minutes == null || !Number.isFinite(Number(minutes))) return '—';
+  const m = Math.max(0, Math.round(Number(minutes)));
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  if (h <= 0) return `${rem} min`;
+  if (rem === 0) return `${h}h`;
+  return `${h}h ${rem}m`;
+}

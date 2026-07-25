@@ -428,6 +428,8 @@ const ODSchema = new mongoose.Schema(
         capturedAt: { type: Date }
       },
       submittedAt: { type: Date },
+      /** Photo EXIF DateTimeOriginal / CreateDate when available */
+      exifDateTime: { type: Date },
     },
 
     // OD end evidence (mandatory before moving to pending)
@@ -447,14 +449,62 @@ const ODSchema = new mongoose.Schema(
         capturedAt: { type: Date }
       },
       submittedAt: { type: Date },
+      exifDateTime: { type: Date },
     },
 
-    // Duration between OD in/out evidence submission
+    // Duration between OD in/out evidence (prefer EXIF times when present)
     evidenceDurationMinutes: {
       type: Number,
       default: null,
       min: 0,
     },
+
+    /**
+     * System classification of regular OD from evidence duration vs rostered shift.
+     * status: full_day | half_day | shortfall | authority_required
+     */
+    durationClassification: {
+      status: {
+        type: String,
+        enum: ['full_day', 'half_day', 'shortfall', 'authority_required', null],
+        default: null,
+      },
+      reason: { type: String, default: '' },
+      requiresAuthorityDecision: { type: Boolean, default: false },
+      tentative: { type: Boolean, default: false },
+      evidenceDurationMinutes: { type: Number, default: null },
+      shiftDurationMinutes: { type: Number, default: null },
+      halfDayMinimumMinutes: { type: Number, default: null },
+      fullDayMinimumMinutes: { type: Number, default: null },
+      usedHalfSegments: { type: Boolean, default: false },
+      startTimeSource: { type: String, default: null },
+      endTimeSource: { type: String, default: null },
+      employeeMessage: { type: String, default: '' },
+      classifiedAt: { type: Date, default: null },
+      systemOdType: { type: String, default: null },
+      systemHalfDayType: { type: String, default: null },
+    },
+
+    /**
+     * Approver decisions + consent for shortfall / authority-required ODs.
+     * Every stage may change half↔full the same way; each entry is stored.
+     */
+    authorityConsent: [
+      {
+        stepRole: { type: String },
+        stepOrder: { type: Number },
+        actionBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        actionByName: { type: String },
+        actionByRole: { type: String },
+        decision: { type: String, enum: ['full_day', 'half_day'] },
+        halfDayType: { type: String, enum: ['first_half', 'second_half', null], default: null },
+        consented: { type: Boolean, default: false },
+        acknowledgeAttendanceOverlap: { type: Boolean, default: false },
+        comments: { type: String, default: '' },
+        warnings: { type: [String], default: [] },
+        at: { type: Date, default: Date.now },
+      },
+    ],
 
     // Continuous GPS trail while OD is draft (web/mobile); capped server-side
     locationTrail: [

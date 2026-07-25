@@ -18,7 +18,31 @@ const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services
 const { appendOdTrailPoints } = require('../services/odTrailService');
 const { emitOdTrailUpdate } = require('../../shared/services/socketService');
 const { isHolidayOrWeekOff, getHolidayWeekOffOdApplyContext, enrichCoOdWithAttendancePunchTimings } = require('../services/odHolidayApplyContextService');
+const {
+  classifyRegularOdFromEvidence,
+  applyClassificationToOd,
+  resolveAuthorityOdDecision,
+  parseEvidenceInstant,
+} = require('../services/odDurationClassificationService');
 const { extractISTComponents, getAllDatesInRange, createISTDate, applyLeaveOdDateRangeOverlap, parseCalendarDateAsIST } = require('../../shared/utils/dateUtils');
+
+function normalizeEvidencePayload(incoming) {
+  if (!incoming || typeof incoming !== 'object') return null;
+  const exifParsed = parseEvidenceInstant(incoming.exifDateTime);
+  return {
+    photoEvidence: incoming.photoEvidence || null,
+    geoLocation: incoming.geoLocation || null,
+    submittedAt: incoming.submittedAt ? new Date(incoming.submittedAt) : new Date(),
+    exifDateTime: exifParsed,
+  };
+}
+
+/** Regular (non-hours, non-CO-hours) OD gets duration classification at OUT. */
+function isDurationClassifiableOd(od) {
+  if (!od) return false;
+  if (String(od.odType_extended || '') === 'hours') return false;
+  return true;
+}
 
 /** Holiday / week-off for CO: roster row, half roster HOL, attendance status, or OD flagged CO-eligible on that calendar day (apply-time). */
 async function dayQualifiesForHolidayWeekOffCo(od, attendanceDateYmd) {
@@ -1155,7 +1179,7 @@ exports.applyOD = async (req, res) => {
       odEndTime: odEndTime || null,
       durationHours: durationHours,
       workflow: workflowData,
-      startEvidence: {
+      startEvidence: normalizeEvidencePayload(startEvidencePayload) || {
         photoEvidence: startEvidencePayload.photoEvidence,
         geoLocation: startEvidencePayload.geoLocation,
         submittedAt: startEvidencePayload.submittedAt || new Date(),
@@ -1163,11 +1187,29 @@ exports.applyOD = async (req, res) => {
       // Backward compatibility fields
       photoEvidence: startEvidencePayload.photoEvidence || null,
       geoLocation: startEvidencePayload.geoLocation || null,
-      endEvidence: endEvidence || null,
+      endEvidence: endEvidence ? normalizeEvidencePayload(endEvidence) : null,
       isCOEligible: isHolWo, // NEW: Flag for frontend display
     });
 
-    if (od.endEvidence?.submittedAt && od.startEvidence?.submittedAt) {
+    // If both evidences present at create (rare), classify regular OD immediately
+    if (
+      od.startEvidence &&
+      od.endEvidence &&
+      hasValidPhotoEvidence(od.endEvidence?.photoEvidence) &&
+      isDurationClassifiableOd(od)
+    ) {
+      try {
+        const classification = await classifyRegularOdFromEvidence({
+          empNo: od.emp_no,
+          dateStr: fromDateStr,
+          startEvidence: od.startEvidence,
+          endEvidence: od.endEvidence,
+        });
+        applyClassificationToOd(od, classification);
+      } catch (e) {
+        console.warn('[OD] classify on apply failed:', e.message);
+      }
+    } else if (od.endEvidence?.submittedAt && od.startEvidence?.submittedAt) {
       od.evidenceDurationMinutes = Math.max(
         0,
         Math.round((new Date(od.endEvidence.submittedAt).getTime() - new Date(od.startEvidence.submittedAt).getTime()) / 60000)
@@ -1458,11 +1500,7 @@ exports.updateOD = async (req, res) => {
     }
 
     if (incomingEndEvidence) {
-      od.endEvidence = {
-        photoEvidence: incomingEndEvidence.photoEvidence || null,
-        geoLocation: incomingEndEvidence.geoLocation || null,
-        submittedAt: incomingEndEvidence.submittedAt ? new Date(incomingEndEvidence.submittedAt) : new Date(),
-      };
+      od.endEvidence = normalizeEvidencePayload(incomingEndEvidence);
     }
 
     const hasStartEvidence = hasValidPhotoEvidence(od.startEvidence?.photoEvidence) && hasValidGeoLocation(od.startEvidence?.geoLocation);
@@ -1491,10 +1529,51 @@ exports.updateOD = async (req, res) => {
       });
     }
 
-    if (od.startEvidence?.submittedAt && od.endEvidence?.submittedAt) {
+    // Duration + shift classification for regular OD (not hours)
+    if (hasStartEvidence && hasEndEvidence && isDurationClassifiableOd(od)) {
+      try {
+        const dateStr = extractISTComponents(od.fromDate).dateStr;
+        const classification = await classifyRegularOdFromEvidence({
+          empNo: od.emp_no,
+          dateStr,
+          startEvidence: od.startEvidence,
+          endEvidence: od.endEvidence,
+        });
+        applyClassificationToOd(od, classification);
+        if (classification.requiresAuthorityDecision && od.workflow?.history) {
+          od.workflow.history.push({
+            step: 'system',
+            action: 'status_changed',
+            actionBy: req.user._id,
+            actionByName: 'System',
+            actionByRole: 'system',
+            comments:
+              classification.employeeMessage ||
+              'OD duration below half-day minimum / could not auto-classify. Tentative half-day pending authority confirmation.',
+            timestamp: new Date(),
+          });
+        }
+      } catch (classifyErr) {
+        console.warn('[OD] duration classification failed:', classifyErr.message);
+        if (od.startEvidence?.submittedAt && od.endEvidence?.submittedAt) {
+          od.evidenceDurationMinutes = Math.max(
+            0,
+            Math.round(
+              (new Date(od.endEvidence.submittedAt).getTime() -
+                new Date(od.startEvidence.submittedAt).getTime()) /
+                60000
+            )
+          );
+        }
+      }
+    } else if (od.startEvidence?.submittedAt && od.endEvidence?.submittedAt) {
       od.evidenceDurationMinutes = Math.max(
         0,
-        Math.round((new Date(od.endEvidence.submittedAt).getTime() - new Date(od.startEvidence.submittedAt).getTime()) / 60000)
+        Math.round(
+          (new Date(od.endEvidence.submittedAt).getTime() -
+            new Date(od.startEvidence.submittedAt).getTime()) /
+            60000
+        )
       );
     }
 
@@ -1817,7 +1896,14 @@ exports.getPendingApprovals = async (req, res) => {
 // @access  Private (HOD, HR, Admin)
 exports.processODAction = async (req, res) => {
   try {
-    const { action, comments } = req.body;
+    const {
+      action,
+      comments,
+      classificationDecision,
+      halfDayType: authorityHalfDayType,
+      consent,
+      acknowledgeAttendanceOverlap,
+    } = req.body;
     const od = await OD.findById(req.params.id);
 
     if (!od) {
@@ -1941,6 +2027,91 @@ exports.processODAction = async (req, res) => {
           od.toDate,
           od.emp_no
         );
+
+        // Shortfall / no-roster authority path: every stage must decide half/full + consent
+        if (
+          isDurationClassifiableOd(od) &&
+          od.durationClassification?.requiresAuthorityDecision
+        ) {
+          if (consent !== true && consent !== 'true') {
+            return res.status(400).json({
+              success: false,
+              error:
+                'This OD did not meet the half-day duration threshold (or could not be auto-classified). ' +
+                'You must confirm consent and choose half day or full day before approving.',
+            });
+          }
+          const decision =
+            classificationDecision === 'full_day' || classificationDecision === 'half_day'
+              ? classificationDecision
+              : null;
+          if (!decision) {
+            return res.status(400).json({
+              success: false,
+              error: 'Select half day or full day for this OD before approving.',
+            });
+          }
+
+          let attendanceFlags = { attFirst: false, attSecond: false };
+          try {
+            const { attendanceHalfPresenceFlags } = require('../../attendance/utils/attendanceHalfPresence');
+            const dateStr = extractISTComponents(od.fromDate).dateStr;
+            const empNoUpper = String(od.emp_no || '').trim().toUpperCase();
+            const daily = await AttendanceDaily.findOne({
+              date: dateStr,
+              employeeNumber: empNoUpper,
+            }).lean();
+            if (daily) {
+              const { getProcessingModeForEmployee } = require('../../attendance/services/processingModeResolutionService');
+              const Emp = require('../../employees/model/Employee');
+              const empDoc = await Emp.findById(od.employeeId).select('division_id department_id').lean();
+              const processingMode = (await getProcessingModeForEmployee(empDoc || {})).mode;
+              attendanceFlags = attendanceHalfPresenceFlags(daily, processingMode);
+            }
+          } catch (attErr) {
+            console.warn('[OD] attendance flags for authority decision:', attErr.message);
+          }
+
+          const resolved = resolveAuthorityOdDecision(
+            attendanceFlags,
+            decision,
+            authorityHalfDayType || od.halfDayType,
+            { acknowledgeAttendanceOverlap: acknowledgeAttendanceOverlap === true || acknowledgeAttendanceOverlap === 'true' }
+          );
+          if (!resolved.ok) {
+            return res.status(400).json({
+              success: false,
+              error: resolved.errors[0] || 'Invalid half/full day decision',
+              suggestedHalfDayType: resolved.suggestedHalfDayType || null,
+              warnings: resolved.warnings || [],
+            });
+          }
+
+          od.odType_extended = resolved.odType_extended;
+          od.isHalfDay = resolved.isHalfDay;
+          od.halfDayType = resolved.halfDayType;
+          od.numberOfDays = resolved.isHalfDay ? 0.5 : 1;
+          if (!Array.isArray(od.authorityConsent)) od.authorityConsent = [];
+          od.authorityConsent.push({
+            stepRole: currentApprover,
+            stepOrder: activeStep?.stepOrder ?? activeStepIndex,
+            actionBy: req.user._id,
+            actionByName: req.user.name,
+            actionByRole: userRole,
+            decision: resolved.odType_extended,
+            halfDayType: resolved.halfDayType,
+            consented: true,
+            acknowledgeAttendanceOverlap:
+              acknowledgeAttendanceOverlap === true || acknowledgeAttendanceOverlap === 'true',
+            comments: comments || '',
+            warnings: resolved.warnings || [],
+            at: new Date(),
+          });
+          if (od.durationClassification) {
+            od.durationClassification.tentative = false;
+          }
+        }
+
         // Conflict check for final step or HR
         const isFinishingChain = (activeStepIndex === od.workflow.approvalChain.length - 1);
         const isFinalAuth = (userRole === od.workflow.finalAuthority);

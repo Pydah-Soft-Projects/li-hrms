@@ -21,6 +21,8 @@ interface PhotoEvidenceData {
         latitude: number;
         longitude: number;
     };
+    /** Photo EXIF DateTimeOriginal / CreateDate when available (ISO string). */
+    exifDateTime?: string;
     locationVerificationStatus?: 'verified' | 'mismatch' | 'unknown'; // Result of comparison
     distanceToDevice?: number; // in meters
     /** True when chosen via gallery / file picker (not live camera). */
@@ -188,6 +190,7 @@ export default function LocationPhotoCapture({
             // 1. Parse EXIF first (needed if device GPS fails but the photo has embedded coordinates)
             setLoadingStep('Analyzing Photo Metadata...');
             let extractedExifLoc: { latitude: number; longitude: number } | undefined = undefined;
+            let extractedExifDateTime: string | undefined = undefined;
             try {
                 const gps = await exifr.gps(file);
                 if (gps) {
@@ -200,8 +203,25 @@ export default function LocationPhotoCapture({
                     setExifLocation(null);
                 }
             } catch (exifErr) {
-                console.warn('Failed to extract EXIF:', exifErr);
+                console.warn('Failed to extract EXIF GPS:', exifErr);
                 setExifLocation(null);
+            }
+            try {
+                const meta = await exifr.parse(file, {
+                    pick: ['DateTimeOriginal', 'CreateDate', 'ModifyDate', 'DateTime'],
+                });
+                const rawDt =
+                    meta?.DateTimeOriginal || meta?.CreateDate || meta?.ModifyDate || meta?.DateTime;
+                if (rawDt) {
+                    const asDate = rawDt instanceof Date ? rawDt : new Date(rawDt);
+                    if (!Number.isNaN(asDate.getTime())) {
+                        extractedExifDateTime = asDate.toISOString();
+                    } else if (typeof rawDt === 'string' && rawDt.trim()) {
+                        extractedExifDateTime = rawDt.trim();
+                    }
+                }
+            } catch (exifDtErr) {
+                console.warn('Failed to extract EXIF datetime:', exifDtErr);
             }
 
             // 2. Device GPS (trail watch / other tabs can hold the sensor — EXIF is fallback)
@@ -280,6 +300,7 @@ export default function LocationPhotoCapture({
                     file,
                     previewUrl: result,
                     exifLocation: extractedExifLoc,
+                    exifDateTime: extractedExifDateTime,
                     locationVerificationStatus: status,
                     distanceToDevice: dist,
                     photoFromDeviceFile,

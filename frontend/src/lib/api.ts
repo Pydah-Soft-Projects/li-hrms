@@ -3734,10 +3734,27 @@ export const api = {
   },
 
   // Process OD action (approve/reject)
-  processODAction: async (id: string, action: 'approve' | 'reject', comments?: string) => {
+  processODAction: async (
+    id: string,
+    action: 'approve' | 'reject',
+    comments?: string,
+    options?: {
+      classificationDecision?: 'full_day' | 'half_day';
+      halfDayType?: 'first_half' | 'second_half' | null;
+      consent?: boolean;
+      acknowledgeAttendanceOverlap?: boolean;
+    }
+  ) => {
     return apiRequest<any>(`/leaves/od/${id}/action`, {
       method: 'PUT',
-      body: JSON.stringify({ action, comments }),
+      body: JSON.stringify({
+        action,
+        comments,
+        classificationDecision: options?.classificationDecision,
+        halfDayType: options?.halfDayType,
+        consent: options?.consent,
+        acknowledgeAttendanceOverlap: options?.acknowledgeAttendanceOverlap,
+      }),
     });
   },
 

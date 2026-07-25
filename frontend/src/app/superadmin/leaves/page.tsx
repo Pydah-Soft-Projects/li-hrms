@@ -79,6 +79,7 @@ import {
   shouldAppendOdWebTrailPoint,
 } from '@/lib/odWebTrailSampling';
 import { getOdDisplayPunchTimings, isCoEligibleOdForPunchDisplay } from '@/lib/odPunchTimings';
+import { formatOdEvidenceMinutes } from '@/lib/formatOdDuration';
 import {
   joinOdTrailRoom,
   leaveOdTrailRoom,
@@ -973,6 +974,11 @@ function LeavesPageContent() {
   const [selectedItem, setSelectedItem] = useState<LeaveApplication | ODApplication | null>(null);
   const [detailType, setDetailType] = useState<'leave' | 'od'>('leave');
   const [actionComment, setActionComment] = useState('');
+  /** Shortfall / authority-required OD: approver must pick half/full + consent. */
+  const [odAuthorityDecision, setOdAuthorityDecision] = useState<'full_day' | 'half_day' | ''>('');
+  const [odAuthorityHalf, setOdAuthorityHalf] = useState<'first_half' | 'second_half'>('first_half');
+  const [odAuthorityConsent, setOdAuthorityConsent] = useState(false);
+  const [odAuthorityAckOverlap, setOdAuthorityAckOverlap] = useState(false);
   const [splitMode, setSplitMode] = useState(false);
   const [splitDrafts, setSplitDrafts] = useState<LeaveSplit[]>([]);
   const [splitWarnings, setSplitWarnings] = useState<string[]>([]);
@@ -1946,6 +1952,7 @@ function LeavesPageContent() {
             photoEvidence: uploadedEvidence,
             geoLocation: geoData,
             submittedAt: new Date().toISOString(),
+            exifDateTime: (odInEvidenceFile as any)?.exifDateTime || undefined,
             photoFromDeviceFile: odInPhotoFromDeviceFile,
           },
           // backward compatibility
@@ -2150,6 +2157,7 @@ function LeavesPageContent() {
           ...(g.accuracy != null ? { accuracy: g.accuracy } : {}),
         },
         submittedAt: new Date().toISOString(),
+        exifDateTime: (odOutEvidenceFile as any).exifDateTime || undefined,
         photoFromDeviceFile: odOutPhotoFromDeviceFile,
       };
 
@@ -2166,9 +2174,31 @@ function LeavesPageContent() {
         if (activeTab === 'pending') {
           await loadPendingData();
         }
-        toast.success(
-          movedToPending ? 'OD OUT submitted. Request moved to pending.' : 'OD OUT evidence submitted.',
-        );
+        const classMsg =
+          (response.data as any)?.durationClassification?.employeeMessage;
+        const needsAuth = (response.data as any)?.durationClassification?.requiresAuthorityDecision;
+        if (needsAuth && classMsg) {
+          Swal.fire({
+            icon: 'warning',
+            title: 'Higher authority review required',
+            text: classMsg,
+          });
+        } else {
+          const classified = (response.data as any)?.durationClassification?.status;
+          const typeLabel =
+            classified === 'full_day'
+              ? 'Full day'
+              : classified === 'half_day'
+                ? 'Half day'
+                : null;
+          toast.success(
+            typeLabel
+              ? `OD OUT submitted as ${typeLabel}. ${movedToPending ? 'Request moved to pending.' : ''}`
+              : movedToPending
+                ? 'OD OUT submitted. Request moved to pending.'
+                : 'OD OUT evidence submitted.'
+          );
+        }
       } else {
         toast.error(response.error || 'Failed to submit OD OUT evidence');
       }
@@ -2814,6 +2844,8 @@ function LeavesPageContent() {
       setSplitErrors([]);
       setSplitSaving(false);
       setActionComment('');
+      setOdAuthorityConsent(false);
+      setOdAuthorityAckOverlap(false);
 
       let enrichedItem: LeaveApplication | ODApplication = item;
       if (type === 'leave') {
@@ -2830,6 +2862,15 @@ function LeavesPageContent() {
         if (response?.success && response.data) {
           enrichedItem = response.data;
         }
+        const dc = (enrichedItem as any)?.durationClassification;
+        setOdAuthorityDecision(
+          dc?.requiresAuthorityDecision
+            ? ((enrichedItem as any)?.odType_extended === 'full_day' ? 'full_day' : 'half_day')
+            : ''
+        );
+        setOdAuthorityHalf(
+          (enrichedItem as any)?.halfDayType === 'second_half' ? 'second_half' : 'first_half'
+        );
       }
 
       setSelectedItem(enrichedItem);
@@ -2972,7 +3013,39 @@ function LeavesPageContent() {
         if (detailType === 'leave') {
           response = await api.processLeaveAction(selectedItem._id, action, actionComment);
         } else {
-          response = await api.processODAction(selectedItem._id, action, actionComment);
+          const dc = (selectedItem as any)?.durationClassification;
+          const needsAuthority = action === 'approve' && !!dc?.requiresAuthorityDecision;
+          if (needsAuthority) {
+            if (!odAuthorityDecision) {
+              Swal.fire({
+                icon: 'warning',
+                title: 'Decision required',
+                text: 'This OD did not meet the half-day duration threshold. Select Half day or Full day before approving.',
+              });
+              return;
+            }
+            if (!odAuthorityConsent) {
+              Swal.fire({
+                icon: 'warning',
+                title: 'Consent required',
+                text: 'Please tick the consent checkbox to confirm your decision for this shortfall OD.',
+              });
+              return;
+            }
+          }
+          response = await api.processODAction(
+            selectedItem._id,
+            action,
+            actionComment,
+            needsAuthority
+              ? {
+                classificationDecision: odAuthorityDecision as 'full_day' | 'half_day',
+                halfDayType: odAuthorityDecision === 'half_day' ? odAuthorityHalf : null,
+                consent: true,
+                acknowledgeAttendanceOverlap: odAuthorityAckOverlap,
+              }
+              : undefined
+          );
         }
       }
 
@@ -3002,6 +3075,11 @@ function LeavesPageContent() {
           title: 'Failed',
           text: response.error || `Failed to ${action}`,
         });
+        const suggested = (response as any)?.suggestedHalfDayType;
+        if (suggested === 'first_half' || suggested === 'second_half') {
+          setOdAuthorityDecision('half_day');
+          setOdAuthorityHalf(suggested);
+        }
       }
     } catch (err: any) {
       Swal.fire({
@@ -4403,6 +4481,12 @@ function LeavesPageContent() {
                       Specific Hours
                     </button>
                   </div>
+                  {formData.odType_extended !== 'hours' && (
+                    <p className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                      You can still pick Full / Half day here as usual. After OD OUT, duration is also auto-checked against the shift
+                      (75% / 40% or half segments). If it falls short, approvers must confirm half/full with consent.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -4846,6 +4930,7 @@ function LeavesPageContent() {
                       setOdInLocationData(loc);
                       setOdInPhotoFromDeviceFile(!!photo.photoFromDeviceFile);
                       (photo.file as any).exifLocation = photo.exifLocation;
+                      (photo.file as any).exifDateTime = photo.exifDateTime;
                     }}
                     onClear={() => {
                       setOdInEvidenceFile(null);
@@ -5854,10 +5939,118 @@ function LeavesPageContent() {
                     </button>
                   )}
 
+                {/* Always show recorded consents after approve/reject (and while pending). */}
+                {detailType === 'od' &&
+                  Array.isArray((selectedItem as any).authorityConsent) &&
+                  (selectedItem as any).authorityConsent.length > 0 && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800/60">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Authority consents recorded
+                      </p>
+                      {(selectedItem as any)?.durationClassification?.requiresAuthorityDecision && (
+                        <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                          Shortfall OD
+                          {(selectedItem as any).durationClassification.evidenceDurationMinutes != null && (
+                            <> · worked {formatOdEvidenceMinutes((selectedItem as any).durationClassification.evidenceDurationMinutes)}</>
+                          )}
+                          {(selectedItem as any).durationClassification.halfDayMinimumMinutes != null && (
+                            <> · half-day min {formatOdEvidenceMinutes((selectedItem as any).durationClassification.halfDayMinimumMinutes)}</>
+                          )}
+                          {' · final type: '}
+                          <span className="font-semibold">
+                            {(selectedItem as any).odType_extended === 'full_day'
+                              ? 'Full day'
+                              : `Half day (${(selectedItem as any).halfDayType === 'second_half' ? '2nd half' : '1st half'})`}
+                          </span>
+                        </p>
+                      )}
+                      <ul className="mt-2 space-y-1.5">
+                        {(selectedItem as any).authorityConsent.map((c: any, i: number) => (
+                          <li key={i} className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
+                            <span className="font-semibold">{(c.actionByName || c.actionByRole || 'Approver')}</span>
+                            {' '}({String(c.stepRole || c.actionByRole || '').toUpperCase() || 'APPROVER'}) confirmed{' '}
+                            <span className="font-bold text-slate-900 dark:text-white">
+                              {c.decision === 'full_day' ? 'Full day' : `Half day (${c.halfDayType === 'second_half' ? '2nd half' : '1st half'})`}
+                            </span>
+                            {c.consented !== false ? ' with consent' : ''}
+                            {c.at ? ` · ${new Date(c.at).toLocaleString()}` : ''}
+                            {c.comments ? (
+                              <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">Note: {c.comments}</div>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                 {/* Approval Actions - only show to current approver */}
                 {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem, detailType) && (
                   <>
                     <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
+
+                    {detailType === 'od' && (selectedItem as any)?.durationClassification?.requiresAuthorityDecision && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-900/20">
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                              Duration shortfall — your decision required
+                            </p>
+                            <p className="mt-1 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+                              {(selectedItem as any).durationClassification.employeeMessage ||
+                                'This OD did not meet the half-day minimum duration for the assigned shift.'}
+                            </p>
+                            <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                              Worked {formatOdEvidenceMinutes((selectedItem as any).durationClassification.evidenceDurationMinutes)}
+                              {(selectedItem as any).durationClassification.halfDayMinimumMinutes != null && (
+                                <> · half-day minimum {formatOdEvidenceMinutes((selectedItem as any).durationClassification.halfDayMinimumMinutes)}</>
+                              )}
+                              {(selectedItem as any).durationClassification.shiftDurationMinutes != null && (
+                                <> · shift {formatOdEvidenceMinutes((selectedItem as any).durationClassification.shiftDurationMinutes)}</>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap items-center gap-3">
+                          <select
+                            value={odAuthorityDecision}
+                            onChange={(e) => setOdAuthorityDecision(e.target.value as 'full_day' | 'half_day' | '')}
+                            className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium dark:border-amber-700 dark:bg-slate-800 dark:text-white"
+                          >
+                            <option value="">Select decision…</option>
+                            <option value="half_day">Half day OD</option>
+                            <option value="full_day">Full day OD</option>
+                          </select>
+                          {odAuthorityDecision === 'half_day' && (
+                            <select
+                              value={odAuthorityHalf}
+                              onChange={(e) => setOdAuthorityHalf(e.target.value as 'first_half' | 'second_half')}
+                              className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium dark:border-amber-700 dark:bg-slate-800 dark:text-white"
+                            >
+                              <option value="first_half">First half</option>
+                              <option value="second_half">Second half</option>
+                            </select>
+                          )}
+                          <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] font-medium text-amber-800 dark:text-amber-300">
+                            <input
+                              type="checkbox"
+                              checked={odAuthorityConsent}
+                              onChange={(e) => setOdAuthorityConsent(e.target.checked)}
+                            />
+                            I consent to this decision
+                          </label>
+                          <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] text-amber-700 dark:text-amber-400">
+                            <input
+                              type="checkbox"
+                              checked={odAuthorityAckOverlap}
+                              onChange={(e) => setOdAuthorityAckOverlap(e.target.checked)}
+                            />
+                            Acknowledge attendance overlap (if any)
+                          </label>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Comment */}
                     <textarea
@@ -5931,6 +6124,7 @@ function LeavesPageContent() {
                   setOdOutLocationData(loc);
                   setOdOutPhotoFromDeviceFile(!!photo.photoFromDeviceFile);
                   (photo.file as any).exifLocation = photo.exifLocation;
+                  (photo.file as any).exifDateTime = photo.exifDateTime;
                 }}
                 onClear={() => {
                   setOdOutEvidenceFile(null);
