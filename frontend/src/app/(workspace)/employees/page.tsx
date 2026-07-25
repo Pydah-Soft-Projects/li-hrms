@@ -85,6 +85,7 @@ import {
 import { getEmployeeGroupedDynamicFieldValue, flattenEmployeeRecordForView, formatEmployeeFieldDisplay, formatSalaryFieldDisplay, getFieldAliases } from '@/lib/employeeDynamicFieldValue';
 import EmployeeFormGroupView from '@/components/employee/EmployeeFormGroupView';
 import { resolveEmployeeOrgRefName } from '@/lib/employeeListDisplay';
+import { pickChangedEmployeeFields, qualificationsChanged } from '@/lib/pickChangedEmployeeFields';
 
 /** Salary finalization stays superadmin-only; workspace can verify and view full application details. */
 const WORKSPACE_SALARY_FINALIZATION_ENABLED = false;
@@ -1570,8 +1571,18 @@ export default function EmployeesPage() {
         ...formData,
         employeeAllowances,
         employeeDeductions,
-        paidLeaves: formData.paidLeaves !== null && formData.paidLeaves !== undefined ? formData.paidLeaves : 0,
-        allottedLeaves: formData.allottedLeaves !== null && formData.allottedLeaves !== undefined ? formData.allottedLeaves : 0,
+        paidLeaves:
+          formData.paidLeaves !== null && formData.paidLeaves !== undefined
+            ? formData.paidLeaves
+            : editingEmployee
+              ? undefined
+              : 0,
+        allottedLeaves:
+          formData.allottedLeaves !== null && formData.allottedLeaves !== undefined
+            ? formData.allottedLeaves
+            : editingEmployee
+              ? undefined
+              : 0,
         ctcSalary: salarySummary.ctcSalary,
         calculatedSalary: salarySummary.netSalary,
       };
@@ -1607,61 +1618,19 @@ export default function EmployeesPage() {
       // Construct FormData for multipart/form-data submission
       const payload = new FormData();
 
-      // OPTIMIZATION: If it's a profile request, only send fields that have actually changed
-      // This solves the "entire data" issue reported by the user.
-      let finalSubmitData = submitData;
-      if (isProfileRequest && editingEmployee) {
-        payload.append('isProfileRequest', 'true');
-        const changedData: any = {};
-        const original = editingEmployee as any;
-
-        Object.entries(submitData).forEach(([key, value]) => {
-          // Always include core identifying fields
-          if (key === 'emp_no' || key === 'employee_name') {
-            changedData[key] = value;
-            return;
-          }
-
-          // Fields to skip in comparison (internal/meta/redundant objects)
-          const skipFields = [
-            '_id', 'createdAt', 'updatedAt', '__v', 'status', 'is_active', 'isProfileRequest',
-            'allData', 'division', 'department', 'designation', 'employee_group', 'employeeGroup',
-            'AllData', 'Division', 'Department', 'Designation', 'EmployeeGroup',
-            'lastLogin', 'last_login', 'updated_at', 'created_at', 'v', '_v'
-          ];
-          if (skipFields.some(sf => sf.toLowerCase() === key.toLowerCase())) return;
-
-          // Field mapping for comparison (e.g. proposedSalary should be checked against gross_salary)
-          const fieldMappings: Record<string, string> = {
-            'proposedSalary': 'gross_salary',
-          };
-          const targetKey = fieldMappings[key] || key;
-
-          // Resolve original value (handle nested dynamicFields)
-          let origValue = original[targetKey];
-          if (origValue === undefined && original.dynamicFields) {
-            origValue = original.dynamicFields[targetKey];
-          }
-
-          // Normalize for comparison
-          const normalize = (v: any) => {
-            if (v === null || v === undefined || v === '' || v === 0 || v === '0') return null;
-            if (typeof v === 'string' && !isNaN(Number(v)) && v.trim() !== '') return Number(v);
-            // Handle empty arrays/objects correctly (redundant changes)
-            if (Array.isArray(v) && v.length === 0) return null;
-            if (typeof v === 'object' && Object.keys(v).length === 0 && !(v instanceof Date)) return null;
-            return v;
-          };
-
-          const normOrig = normalize(origValue);
-          const normNew = normalize(value);
-
-          // Deep comparison using stringify for arrays/objects
-          if (JSON.stringify(normOrig) !== JSON.stringify(normNew)) {
-            changedData[key] = value;
-          }
+      // Direct edit AND profile request: only send fields that actually changed
+      let finalSubmitData: any = submitData;
+      if (editingEmployee) {
+        if (isProfileRequest) {
+          payload.append('isProfileRequest', 'true');
+        }
+        finalSubmitData = pickChangedEmployeeFields(submitData as any, editingEmployee as any, {
+          alwaysIncludeName: false,
         });
-        finalSubmitData = changedData;
+        // Keep emp_no for identity / logging even on partial updates
+        if ((submitData as any).emp_no) {
+          finalSubmitData.emp_no = (submitData as any).emp_no;
+        }
       }
 
       // Append standard fields
@@ -1676,7 +1645,7 @@ export default function EmployeesPage() {
         }
       });
 
-      // Handle Qualifications — profile-aware field mapping
+      // Handle Qualifications — profile-aware field mapping (only when changed or create)
       const qualConfig = await resolveQualConfigForEmployeeForm(
         idFromRef(formData.division_id),
         idFromRef(formData.department_id),
@@ -1702,7 +1671,14 @@ export default function EmployeesPage() {
         }
         return transformedQ;
       });
-      payload.append('qualifications', JSON.stringify(cleanQualifications));
+      const hasQualCertUploads = qualities.some((q: any) => q?.certificateFile instanceof File);
+      const shouldSendQualifications =
+        !editingEmployee ||
+        hasQualCertUploads ||
+        qualificationsChanged(cleanQualifications, editingEmployee as any);
+      if (shouldSendQualifications) {
+        payload.append('qualifications', JSON.stringify(cleanQualifications));
+      }
 
       let response;
       if (editingEmployee) {
@@ -5852,6 +5828,7 @@ export default function EmployeesPage() {
                   designations={filteredDesignations as any}
                   onSettingsLoaded={setFormSettings}
                   isEditingExistingEmployee={!!editingEmployee}
+                  lockOrgFields
                   excludeFields={[
                     ...(userRole === 'hod' ? SENSITIVE_FIELDS : []),
                     ...(!editingEmployee && addFormAutoGenerateEmpNo ? ['emp_no'] : []),

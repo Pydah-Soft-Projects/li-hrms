@@ -25,7 +25,8 @@ const PERMANENT_FIELDS = [
   'gender',
   'marital_status',
   'blood_group',
-  // qualifications is now dynamic (array of objects) - stored in dynamicFields
+  // qualifications is a root schema array (not dynamicFields)
+  'qualifications',
   'experience',
   'address',
   'location',
@@ -81,6 +82,25 @@ const EXCLUDED_FIELDS = [
   'rejectionComments',
   'approvedAt',
   'rejectedAt',
+  // Populated refs / UI meta — never persist into dynamicFields
+  'division',
+  'department',
+  'designation',
+  'employee_group',
+  'employeeGroup',
+  'Division',
+  'Department',
+  'Designation',
+  'EmployeeGroup',
+  'AllData',
+  'allData',
+  'GenQualifications',
+  'AllAllowanceDeductions',
+  'leave_stats',
+  'payroll_stats',
+  'isProfileRequest',
+  'password',
+  'plain_password',
 ];
 
 /**
@@ -130,8 +150,10 @@ exports.extractPermanentFields = (sourceData, overrides = {}) => {
 
   // Extract all permanent fields
   permanentFieldNames.forEach((fieldName) => {
-    if (sourceData[fieldName] !== undefined && sourceData[fieldName] !== null) {
-      permanentFields[fieldName] = sourceData[fieldName];
+    const value = sourceData[fieldName];
+    // Skip undefined/null/empty-string so partial updates never wipe existing root values
+    if (value !== undefined && value !== null && value !== '') {
+      permanentFields[fieldName] = value;
     }
   });
 
@@ -153,22 +175,19 @@ exports.extractPermanentFields = (sourceData, overrides = {}) => {
  * @param {Object} permanentFields - Already extracted permanent fields
  * @returns {Object} Object containing dynamic fields
  */
-exports.extractDynamicFields = (sourceData, permanentFields = null) => {
-  // If permanentFields not provided, extract them first
-  if (!permanentFields) {
-    permanentFields = exports.extractPermanentFields(sourceData);
-  }
-
-  const permanentFieldNames = Object.keys(permanentFields);
+exports.extractDynamicFields = (sourceData, _permanentFields = null) => {
+  // Always use the full schema permanent list — NOT only keys present in this payload.
+  // Using Object.keys(extractedPermanent) wrongly treated missing permanent keys as dynamic.
+  const permanentFieldNames = getPermanentFieldNames();
   const dynamicFields = {};
 
-  // Extract all non-permanent fields
-  Object.keys(sourceData).forEach((key) => {
+  Object.keys(sourceData || {}).forEach((key) => {
     if (
       !permanentFieldNames.includes(key) &&
       !EXCLUDED_FIELDS.includes(key) &&
       !key.startsWith('_') &&
-      key !== '__v'
+      key !== '__v' &&
+      key !== 'dynamicFields'
     ) {
       dynamicFields[key] = sourceData[key];
     }

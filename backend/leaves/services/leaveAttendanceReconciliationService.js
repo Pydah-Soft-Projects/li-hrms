@@ -138,6 +138,31 @@ function addWorkflowHistory(doc, action, comments) {
   });
 }
 
+/**
+ * Save a leave/OD document produced BY reconciliation without re-triggering the
+ * leave/OD post-save side effects (summary recalc → reconciliation). This is the
+ * critical guard that prevents the split-and-recreate feedback loop: every leave
+ * chunk created/edited here would otherwise schedule another reconciliation pass
+ * over its own range, which historically multiplied one approval into ~1000 docs.
+ *
+ * The originating trigger (real approval / edit) still runs summary + pay-register
+ * exactly once, so no downstream data is lost by suppressing these child saves.
+ */
+async function saveWithoutReconcileSideEffects(doc) {
+  if (doc && doc.$locals) {
+    doc.$locals.skipReconcileSideEffects = true;
+  }
+  return doc.save();
+}
+
+/**
+ * Circuit breaker: a single employee can never legitimately have this many
+ * approved leaves (or ODs) overlapping ONE calendar day. If we ever see it, the
+ * data is already in a runaway state — bail out of splitting instead of
+ * multiplying it further, and surface a loud warning for cleanup.
+ */
+const MAX_OVERLAPPING_APPROVED_PER_DAY = 8;
+
 async function splitAndAdjustMultiDayLeave({
   leave,
   dateStr,
@@ -176,7 +201,7 @@ async function splitAndAdjustMultiDayLeave({
     leave.workflow.nextApproverRole = null;
     addWorkflowHistory(leave, 'rejected', `${REMARK_PREFIX} System rejected — ${detail}`);
     appendRemark(leave, `${dateStr}: ${detail}`);
-    await leave.save();
+    await saveWithoutReconcileSideEffects(leave);
     toSync.push(leave);
   } else {
     const narrowMode = mode === 'narrow_second' ? 'narrow_second' : 'narrow_first';
@@ -184,7 +209,7 @@ async function splitAndAdjustMultiDayLeave({
     Object.assign(leave, spanFields);
     addWorkflowHistory(leave, 'status_changed', `${REMARK_PREFIX} System updated — ${detail}`);
     appendRemark(leave, `${dateStr}: ${detail}`);
-    await leave.save();
+    await saveWithoutReconcileSideEffects(leave);
     await leaveRegisterService.addLeaveDebit(leave, null);
     toSync.push(leave);
   }
@@ -197,7 +222,7 @@ async function splitAndAdjustMultiDayLeave({
       splitStatus: null,
       remarks: `${String(base.remarks || '').trim()}${base.remarks ? '\n' : ''}${REMARK_PREFIX} ${dateStr}: System split preserved prior days (${beforeFrom}..${beforeTo}).`,
     });
-    await b.save();
+    await saveWithoutReconcileSideEffects(b);
     await leaveRegisterService.addLeaveDebit(b, null);
     toSync.push(b);
   }
@@ -210,7 +235,7 @@ async function splitAndAdjustMultiDayLeave({
       splitStatus: null,
       remarks: `${String(base.remarks || '').trim()}${base.remarks ? '\n' : ''}${REMARK_PREFIX} ${dateStr}: System split preserved later days (${afterFrom}..${afterTo}).`,
     });
-    await a.save();
+    await saveWithoutReconcileSideEffects(a);
     await leaveRegisterService.addLeaveDebit(a, null);
     toSync.push(a);
   }
@@ -265,7 +290,7 @@ async function splitAndAdjustMultiDayOD({
     od.workflow.nextApproverRole = null;
     addWorkflowHistory(od, 'rejected', `${REMARK_PREFIX} System rejected — ${detail}`);
     appendOdRemark(od, `${dateStr}: ${detail}`);
-    await od.save();
+    await saveWithoutReconcileSideEffects(od);
     toSync.push(od);
   } else {
     od.fromDate = createISTDate(dateStr, '00:00');
@@ -276,7 +301,7 @@ async function splitAndAdjustMultiDayOD({
     od.odType_extended = 'half_day';
     addWorkflowHistory(od, 'status_changed', `${REMARK_PREFIX} System updated — ${detail}`);
     appendOdRemark(od, `${dateStr}: ${detail}`);
-    await od.save();
+    await saveWithoutReconcileSideEffects(od);
     toSync.push(od);
   }
 
@@ -291,7 +316,7 @@ async function splitAndAdjustMultiDayOD({
       odType_extended: 'full_day',
       remarks: `${String(base.remarks || '').trim()}${base.remarks ? '\n' : ''}${REMARK_PREFIX} ${dateStr}: System split preserved prior days (${beforeFrom}..${beforeTo}).`,
     });
-    await b.save();
+    await saveWithoutReconcileSideEffects(b);
     toSync.push(b);
   }
   if (hasAfter) {
@@ -305,7 +330,7 @@ async function splitAndAdjustMultiDayOD({
       odType_extended: 'full_day',
       remarks: `${String(base.remarks || '').trim()}${base.remarks ? '\n' : ''}${REMARK_PREFIX} ${dateStr}: System split preserved later days (${afterFrom}..${afterTo}).`,
     });
-    await a.save();
+    await saveWithoutReconcileSideEffects(a);
     toSync.push(a);
   }
 
@@ -403,7 +428,7 @@ async function reconcileHalfHolidayOdsForDate(employee, dateStr, syncPayRegister
         );
       }
       appendOdRemark(od, `${HALF_HOL_OD_TAG} ${dateStr}: ${detail}`);
-      await od.save();
+      await saveWithoutReconcileSideEffects(od);
       try {
         await syncPayRegisterFromOD(od);
       } catch (e) {
@@ -423,7 +448,7 @@ async function reconcileHalfHolidayOdsForDate(employee, dateStr, syncPayRegister
           `${HALF_HOL_OD_TAG} System updated — ${detail}`
         );
       }
-      await od.save();
+      await saveWithoutReconcileSideEffects(od);
       try {
         await syncPayRegisterFromOD(od);
       } catch (e) {
@@ -502,7 +527,7 @@ async function reconcileHalfHolidayLeavesForDate(employee, dateStr, syncPayRegis
         );
       }
       appendRemark(leave, `${HALF_HOL_LEAVE_TAG} ${dateStr}: ${detail}`);
-      await leave.save();
+      await saveWithoutReconcileSideEffects(leave);
       try {
         await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(
           leave.employeeId,
@@ -563,7 +588,7 @@ async function reconcileHalfHolidayLeavesForDate(employee, dateStr, syncPayRegis
         `${HALF_HOL_LEAVE_TAG} System updated — ${detail}`
       );
     }
-    await leave.save();
+    await saveWithoutReconcileSideEffects(leave);
     if (wasApproved) {
       try {
         await leaveRegisterService.addLeaveDebit(leave, null);
@@ -648,6 +673,15 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
     .select(LEAVE_BOUNDARY_SELECT)
     .lean();
 
+  // Circuit breaker: no employee legitimately has this many approved leaves on one
+  // day. If we hit it, the data is already in a runaway state — do not split further.
+  if (leaves.length > MAX_OVERLAPPING_APPROVED_PER_DAY) {
+    console.error(
+      `[leaveAttendanceReconciliation] ABNORMAL: ${leaves.length} approved leaves overlap ${dateStr} for emp ${employee.emp_no}; skipping split to avoid runaway multiplication.`
+    );
+    return { ran: true, reason: 'too_many_overlapping_leaves', overlapping: leaves.length, results };
+  }
+
   for (const l of leaves) {
     if (String(l.splitStatus || '') === 'split_approved') {
       results.push({ leaveId: l._id, action: 'skip', reason: 'split_approved' });
@@ -720,7 +754,7 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
         });
       }
       appendRemark(leave, `${dateStr}: ${detail}`);
-      await leave.save();
+      await saveWithoutReconcileSideEffects(leave);
 
       try {
         await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(leave.employeeId, leave.fromDate);
@@ -777,7 +811,7 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
           });
         }
         appendRemark(leave, `${dateStr}: ${detail}`);
-        await leave.save();
+        await saveWithoutReconcileSideEffects(leave);
         try {
           await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(leave.employeeId, leave.fromDate);
         } catch (e) {
@@ -844,7 +878,7 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
           continue;
         }
         appendRemark(leave, `${dateStr}: ${detail}`);
-        await leave.save();
+        await saveWithoutReconcileSideEffects(leave);
         try {
           await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(leave.employeeId, leave.fromDate);
         } catch (e) {
@@ -911,7 +945,7 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
           continue;
         }
         appendRemark(leave, `${dateStr}: ${detail}`);
-        await leave.save();
+        await saveWithoutReconcileSideEffects(leave);
         try {
           await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(leave.employeeId, leave.fromDate);
         } catch (e) {
@@ -994,7 +1028,7 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
         });
       }
       appendOdRemark(od, `${dateStr}: ${detail}`);
-      await od.save();
+      await saveWithoutReconcileSideEffects(od);
       try {
         await syncPayRegisterFromOD(od);
       } catch (e) {
@@ -1035,7 +1069,7 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
         });
       }
       appendOdRemark(od, `${dateStr}: ${detail}`);
-      await od.save();
+      await saveWithoutReconcileSideEffects(od);
       try {
         await syncPayRegisterFromOD(od);
       } catch (e) {
@@ -1076,7 +1110,7 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
           timestamp: new Date(),
         });
       }
-      await od.save();
+      await saveWithoutReconcileSideEffects(od);
       try {
         await syncPayRegisterFromOD(od);
       } catch (e) {
@@ -1117,7 +1151,7 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
           timestamp: new Date(),
         });
       }
-      await od.save();
+      await saveWithoutReconcileSideEffects(od);
       try {
         await syncPayRegisterFromOD(od);
       } catch (e) {

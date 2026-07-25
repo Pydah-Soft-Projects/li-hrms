@@ -1177,8 +1177,12 @@ class DeviceService {
                             role: u.role || 0,
                             card: u.cardno || '',
                             password: u.password || '',
+                            lastSyncedAt: new Date(),
+                            lastDeviceId: device.deviceId
                         },
-                        $setOnInsert: { fingerprints: [] } // Init array if new
+                        $addToSet: { deviceIds: device.deviceId },
+                        $pull: { inactiveDeviceIds: device.deviceId },
+                        $setOnInsert: { fingerprints: [] }
                     },
                     { upsert: true }
                 );

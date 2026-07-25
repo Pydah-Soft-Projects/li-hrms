@@ -724,21 +724,41 @@ exports.calculatePayroll = async (req, res) => {
     let regularUsedDynamicOutputColumns = false;
 
     let result;
+    const { calculatePayrollWithSegments } = require('../services/payrollSegmentService');
     if (useDynamic) {
       const config = await PayrollConfiguration.get();
       const outputColumns = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
       if (outputColumns.length > 0) {
         regularUsedDynamicOutputColumns = true;
-        result = await payrollCalculationFromOutputColumnsService.calculatePayrollFromOutputColumns(
+        // Dynamic engine: still run segment planner but single-call fallback if multi not supported deeply
+        const segs = await require('../services/payrollSegmentService').planPayrollSegments(employeeId, month);
+        if (segs.length <= 1) {
+          result = await payrollCalculationFromOutputColumnsService.calculatePayrollFromOutputColumns(
+            employeeId,
+            month,
+            req.user._id,
+            { source: 'payregister', arrearsSettlements: req.body.arrears || [], deductionSettlements: req.body.deductions || [] }
+          );
+          result = { payrollRecord: result.payrollRecord, batchId: result.batchId, payslip: result.payslip };
+        } else {
+          result = await calculatePayrollWithSegments(
+            employeeId,
+            month,
+            req.user._id,
+            { source: 'payregister', arrearsSettlements: req.body.arrears || [], deductionSettlements: req.body.deductions || [] },
+            (eid, mon, uid, opts) =>
+              payrollCalculationService.calculatePayrollNew(eid, mon, uid, opts)
+          );
+        }
+      } else {
+        const options = { source: 'payregister', arrearsSettlements: req.body.arrears || [], deductionSettlements: req.body.deductions || [] };
+        result = await calculatePayrollWithSegments(
           employeeId,
           month,
           req.user._id,
-          { source: 'payregister', arrearsSettlements: req.body.arrears || [], deductionSettlements: req.body.deductions || [] }
+          options,
+          (eid, mon, uid, opts) => payrollCalculationService.calculatePayrollNew(eid, mon, uid, opts)
         );
-        result = { payrollRecord: result.payrollRecord, batchId: result.batchId, payslip: result.payslip };
-      } else {
-        const options = { source: 'payregister', arrearsSettlements: req.body.arrears || [], deductionSettlements: req.body.deductions || [] };
-        result = await payrollCalculationService.calculatePayrollNew(employeeId, month, req.user._id, options);
       }
     } else {
       const options = {
@@ -746,7 +766,13 @@ exports.calculatePayroll = async (req, res) => {
         arrearsSettlements: req.body.arrears || [],
         deductionSettlements: req.body.deductions || [],
       };
-      result = await payrollCalculationService.calculatePayrollNew(employeeId, month, req.user._id, options);
+      result = await calculatePayrollWithSegments(
+        employeeId,
+        month,
+        req.user._id,
+        options,
+        (eid, mon, uid, opts) => payrollCalculationService.calculatePayrollNew(eid, mon, uid, opts)
+      );
     }
 
     let secondSalaryPayRegister = null;

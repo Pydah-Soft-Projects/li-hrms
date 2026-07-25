@@ -615,7 +615,21 @@ async function calculatePayroll(employeeId, month, userId) {
       employeeId,
       employee.emp_no,
       year,
-      monthNum
+      monthNum,
+      segment
+        ? {
+            segmentIndex: segment.segmentIndex || 0,
+            segmentStartDate: segment.segmentStartDate,
+            segmentEndDate: segment.segmentEndDate,
+            division_id: segment.division_id || employee.division_id,
+            department_id: segment.department_id || employee.department_id,
+            grossSalaryUsed: segment.gross_salary != null ? segment.gross_salary : employee.gross_salary,
+          }
+        : {
+            division_id: employee.division_id,
+            department_id: employee.department_id?._id || employee.department_id,
+            grossSalaryUsed: employee.gross_salary,
+          }
     );
 
     // Update payroll record - ensure all required fields are set
@@ -878,6 +892,14 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     const shouldConsumePermission = options.consumeRecalculationPermission !== false;
     const employee = await Employee.findById(employeeId).populate('department_id designation_id division_id');
     if (!employee) throw new Error('Employee not found');
+
+    const segment = options.segment || null;
+    if (segment) {
+      if (segment.gross_salary != null) employee.gross_salary = Number(segment.gross_salary) || 0;
+      if (segment.division_id) employee.division_id = segment.division_id;
+      if (segment.department_id) employee.department_id = segment.department_id;
+    }
+
     // if (!employee.gross_salary || employee.gross_salary <= 0) throw new Error('Employee gross salary is missing or invalid');
     if (!employee.gross_salary || employee.gross_salary <= 0) {
       console.warn(`[Payroll] Warning: Employee ${employee.emp_no} has invalid gross salary (${employee.gross_salary}). Proceeding with 0.`);
@@ -892,20 +914,45 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       const { ensurePayRegisterForPayroll } = require('../../pay-register/services/autoSyncService');
       payRegisterSummary = await ensurePayRegisterForPayroll(employeeId, month);
       if (!payRegisterSummary) throw new Error('Pay register not found for this month');
-      attendanceSummary = {
-        totalPayableShifts: payRegisterSummary.totals.totalPayableShifts || 0,
-        totalOTHours: payRegisterSummary.totals.totalOTHours || 0,
-        totalLeaveDays: payRegisterSummary.totals.totalLeaveDays || 0,
-        totalODDays: payRegisterSummary.totals.totalODDays || 0,
-        totalPresentDays: payRegisterSummary.totals.totalPresentDays || 0,
-        totalDaysInMonth: payRegisterSummary.totalDaysInMonth,
-        totalPaidLeaveDays: payRegisterSummary.totals.totalPaidLeaveDays || 0,
-        totalWeeklyOffs: payRegisterSummary.totals.totalWeeklyOffs || 0,
-        totalHolidays: payRegisterSummary.totals.totalHolidays || 0, // Using field if exists or fallback
-        extraDays: payRegisterSummary.totals.extraDays || 0,
-        lateCount: (payRegisterSummary.totals.lateCount || 0) + (payRegisterSummary.totals.earlyOutCount || 0) || 0,
 
-      };
+      // Mid-period segment: pro-rate totals from dailyRecords in segment window when available
+      if (segment?.segmentStartDate && segment?.segmentEndDate && Array.isArray(payRegisterSummary.dailyRecords) && payRegisterSummary.dailyRecords.length) {
+        const segDays = payRegisterSummary.dailyRecords.filter((d) => {
+          const day = String(d.date || '').slice(0, 10);
+          return day >= segment.segmentStartDate && day <= segment.segmentEndDate;
+        });
+        const fullDays = payRegisterSummary.dailyRecords.length || 1;
+        const ratio = segDays.length / fullDays;
+        const t = payRegisterSummary.totals || {};
+        attendanceSummary = {
+          totalPayableShifts: Math.round(((t.totalPayableShifts || 0) * ratio) * 100) / 100,
+          totalOTHours: Math.round(((t.totalOTHours || 0) * ratio) * 100) / 100,
+          totalLeaveDays: Math.round(((t.totalLeaveDays || 0) * ratio) * 100) / 100,
+          totalODDays: Math.round(((t.totalODDays || 0) * ratio) * 100) / 100,
+          totalPresentDays: Math.round(((t.totalPresentDays || 0) * ratio) * 100) / 100,
+          totalDaysInMonth: segDays.length || payRegisterSummary.totalDaysInMonth,
+          totalPaidLeaveDays: Math.round(((t.totalPaidLeaveDays || 0) * ratio) * 100) / 100,
+          totalWeeklyOffs: Math.round(((t.totalWeeklyOffs || 0) * ratio) * 100) / 100,
+          totalHolidays: Math.round(((t.totalHolidays || 0) * ratio) * 100) / 100,
+          extraDays: Math.round(((t.extraDays || 0) * ratio) * 100) / 100,
+          lateCount: Math.round((((t.lateCount || 0) + (t.earlyOutCount || 0)) * ratio) * 100) / 100 || 0,
+        };
+      } else {
+        attendanceSummary = {
+          totalPayableShifts: payRegisterSummary.totals.totalPayableShifts || 0,
+          totalOTHours: payRegisterSummary.totals.totalOTHours || 0,
+          totalLeaveDays: payRegisterSummary.totals.totalLeaveDays || 0,
+          totalODDays: payRegisterSummary.totals.totalODDays || 0,
+          totalPresentDays: payRegisterSummary.totals.totalPresentDays || 0,
+          totalDaysInMonth: payRegisterSummary.totalDaysInMonth,
+          totalPaidLeaveDays: payRegisterSummary.totals.totalPaidLeaveDays || 0,
+          totalWeeklyOffs: payRegisterSummary.totals.totalWeeklyOffs || 0,
+          totalHolidays: payRegisterSummary.totals.totalHolidays || 0, // Using field if exists or fallback
+          extraDays: payRegisterSummary.totals.extraDays || 0,
+          lateCount: (payRegisterSummary.totals.lateCount || 0) + (payRegisterSummary.totals.earlyOutCount || 0) || 0,
+
+        };
+      }
     } else {
       const doc = await MonthlyAttendanceSummary.findOne({ employeeId, month });
       if (!doc) {
@@ -1313,7 +1360,11 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     let netSalary = baseNet + incentiveAmount;
 
     // Upsert payroll record (mapped to existing schema)
-    let payrollRecord = await PayrollRecord.findOne({ employeeId, month });
+    let payrollRecord = await PayrollRecord.findOne({
+      employeeId,
+      month,
+      segmentIndex: options.segment?.segmentIndex || 0,
+    });
     if (!payrollRecord) {
       payrollRecord = new PayrollRecord({
         employeeId,
@@ -1323,6 +1374,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         year: Number(month.split('-')[0]),
         monthNumber: Number(month.split('-')[1]),
         totalDaysInMonth: monthDays,
+        segmentIndex: options.segment?.segmentIndex || 0,
       });
     }
 

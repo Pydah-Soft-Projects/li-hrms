@@ -10,8 +10,15 @@ const DeviceUser = require('../models/DeviceUser');
 const { getEffectiveOperationMode, resolveLogType } = require('../utils/operationModeResolver');
 const {
     cloneUserToDevices,
-    autoCloneUserWithinCategory
+    autoCloneUserWithinCategory,
+    deactivateUsersOnDevice,
+    activateUsersOnDevice
 } = require('../services/userCloneService');
+const {
+    membershipUpdate,
+    usersOnDeviceQuery,
+    normalizeDeviceId
+} = require('../utils/deviceMembership');
 
 /**
  * Common ADMS Responses
@@ -570,7 +577,8 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
                         { userId: fp.userId },
                         { $pull: { fingerprints: { fingerIndex: fp.fingerIndex } } }
                     );
-                    // Then push the new one
+                    // Then push the new one + record device membership
+                    const mem = membershipUpdate(normalizedSN);
                     await DeviceUser.updateOne(
                         { userId: fp.userId },
                         {
@@ -581,10 +589,9 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
                                     updatedAt: new Date()
                                 }
                             },
-                            $set: {
-                                lastSyncedAt: new Date(),
-                                lastDeviceId: SN
-                            }
+                            $set: mem.$set,
+                            ...(mem.$addToSet ? { $addToSet: mem.$addToSet } : {}),
+                            ...(mem.$pull ? { $pull: mem.$pull } : {})
                         },
                         { upsert: true }
                     );
@@ -599,20 +606,17 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
         if (table === 'FACE') {
             const faces = admsParser.parseBiometricData(rawBody);
             for (const face of faces) {
+                const mem = membershipUpdate(normalizedSN, {
+                    userId: face.userId,
+                    face: {
+                        templateData: face.template,
+                        length: face.size,
+                        updatedAt: new Date()
+                    }
+                });
                 await DeviceUser.findOneAndUpdate(
                     { userId: face.userId },
-                    {
-                        $set: {
-                            userId: face.userId,
-                            face: {
-                                templateData: face.template,
-                                length: face.size,
-                                updatedAt: new Date()
-                            },
-                            lastSyncedAt: new Date(),
-                            lastDeviceId: SN
-                        }
-                    },
+                    mem,
                     { upsert: true }
                 );
             }
@@ -627,21 +631,18 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
                 const data = admsParser.parseKeyValueLine(line);
                 if (data && data.PIN) {
                     const userId = data.PIN;
+                    const mem = membershipUpdate(normalizedSN, {
+                        userId,
+                        photo: {
+                            content: data.CONTENT || '',
+                            fileName: data.FILENAME || '',
+                            size: parseInt(data.SIZE) || 0,
+                            updatedAt: new Date()
+                        }
+                    });
                     await DeviceUser.findOneAndUpdate(
                         { userId: userId },
-                        {
-                            $set: {
-                                userId: userId,
-                                photo: {
-                                    content: data.CONTENT || '',
-                                    fileName: data.FILENAME || '',
-                                    size: parseInt(data.SIZE) || 0,
-                                    updatedAt: new Date()
-                                },
-                                lastSyncedAt: new Date(),
-                                lastDeviceId: SN
-                            }
-                        },
+                        mem,
                         { upsert: true }
                     );
                     autoCloneUserWithinCategory(userId, normalizedSN);
@@ -669,18 +670,37 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
 /**
  * GET /api/adms/users
  * Returns structured device users with biometric info.
- * Query: sn, q (search userId/name), page, limit, light=1 (omit fingerprint/face/photo blobs for dashboard)
+ * Query: sn, status=active|inactive|all, q, page, limit,
+ *        light=1 (omit template blobs), all=1 (ignore sn filter — full golden set)
  */
 router.get('/users', async (req, res) => {
     try {
-        const { sn, q, light } = req.query;
-        const query = {};
-        if (sn) query.lastDeviceId = sn;
+        const { sn, q, light, all } = req.query;
+        const statusRaw = String(req.query.status || 'active').toLowerCase();
+        const membershipStatus = ['active', 'inactive', 'all'].includes(statusRaw)
+            ? statusRaw
+            : 'active';
 
+        const searchParts = [];
         if (q && String(q).trim()) {
             const escaped = String(q).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const rx = new RegExp(escaped, 'i');
-            query.$or = [{ userId: rx }, { name: rx }];
+            searchParts.push({ userId: rx }, { name: rx });
+        }
+
+        let query = {};
+        const wantAll = all === '1' || all === 'true';
+        const deviceSn = normalizeDeviceId(sn);
+
+        if (deviceSn && !wantAll) {
+            const membership = usersOnDeviceQuery(deviceSn, membershipStatus);
+            if (searchParts.length) {
+                query = { $and: [membership, { $or: searchParts }] };
+            } else {
+                query = membership;
+            }
+        } else if (searchParts.length) {
+            query = { $or: searchParts };
         }
 
         const usePaging = req.query.page != null || req.query.limit != null;
@@ -699,15 +719,60 @@ router.get('/users', async (req, res) => {
             mongoQuery = mongoQuery.skip((page - 1) * limit).limit(limit);
         }
 
-        const [users, total] = await Promise.all([
+        const [users, total, devices] = await Promise.all([
             mongoQuery.lean(),
-            usePaging ? DeviceUser.countDocuments(query) : Promise.resolve(null)
+            usePaging ? DeviceUser.countDocuments(query) : Promise.resolve(null),
+            Device.find({}).select('deviceId name').lean()
         ]);
+
+        const deviceNameById = Object.fromEntries(
+            (devices || []).map((d) => [d.deviceId, d.name || d.deviceId])
+        );
+
+        const data = (users || []).map((u) => {
+            const activeIds = Array.isArray(u.deviceIds) && u.deviceIds.length
+                ? [...new Set(u.deviceIds.map(String))]
+                : (u.lastDeviceId && !(u.inactiveDeviceIds || []).includes(u.lastDeviceId)
+                    ? [String(u.lastDeviceId)]
+                    : []);
+            const inactiveIds = Array.isArray(u.inactiveDeviceIds)
+                ? [...new Set(u.inactiveDeviceIds.map(String))]
+                : [];
+
+            let statusOnDevice = 'none';
+            if (deviceSn) {
+                if (inactiveIds.includes(deviceSn)) statusOnDevice = 'inactive';
+                else if (activeIds.includes(deviceSn) || u.lastDeviceId === deviceSn) statusOnDevice = 'active';
+            }
+
+            return {
+                ...u,
+                deviceIds: activeIds,
+                inactiveDeviceIds: inactiveIds,
+                statusOnDevice,
+                devices: activeIds.map((id) => ({
+                    deviceId: id,
+                    name: deviceNameById[id] || id,
+                    isLast: u.lastDeviceId === id,
+                    isSelected: deviceSn ? id === deviceSn : false,
+                    status: 'active'
+                })),
+                inactiveDevices: inactiveIds.map((id) => ({
+                    deviceId: id,
+                    name: deviceNameById[id] || id,
+                    isSelected: deviceSn ? id === deviceSn : false,
+                    status: 'inactive'
+                }))
+            };
+        });
 
         const payload = {
             success: true,
-            count: users.length,
-            data: users
+            count: data.length,
+            data,
+            filter: wantAll ? 'all' : (deviceSn ? 'device' : 'none'),
+            membershipStatus: wantAll ? null : membershipStatus,
+            deviceSn: deviceSn || null
         };
         if (usePaging) {
             payload.total = total;
@@ -718,6 +783,74 @@ router.get('/users', async (req, res) => {
         res.json(payload);
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * POST /api/adms/delete-users
+ * Remove user(s) from a device terminal; keep golden DB record as inactive on that device.
+ * Body: { deviceId, userIds: string[] }
+ */
+router.post('/delete-users', async (req, res) => {
+    try {
+        const { deviceId, userIds } = req.body || {};
+        if (!deviceId) {
+            return res.status(400).json({ success: false, error: 'deviceId is required' });
+        }
+        if (!Array.isArray(userIds) || userIds.length === 0) {
+            return res.status(400).json({ success: false, error: 'userIds array is required' });
+        }
+
+        const result = await deactivateUsersOnDevice(userIds, deviceId);
+
+        res.json({
+            success: result.errors.length === 0,
+            message: `Queued delete on ${result.deviceName || result.deviceId} for ${result.deleted} user(s); marked inactive in database`,
+            data: result
+        });
+    } catch (error) {
+        if (error.code === 'DEVICE_NOT_FOUND') {
+            return res.status(404).json({ success: false, error: error.message });
+        }
+        if (error.code === 'BAD_REQUEST') {
+            return res.status(400).json({ success: false, error: error.message });
+        }
+        logger.error('Error deleting users from device:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/adms/activate-users
+ * Write user(s) back onto a device (profile + biometrics) and mark active in DB.
+ * Body: { deviceId, userIds: string[] }
+ */
+router.post('/activate-users', async (req, res) => {
+    try {
+        const { deviceId, userIds } = req.body || {};
+        if (!deviceId) {
+            return res.status(400).json({ success: false, error: 'deviceId is required' });
+        }
+        if (!Array.isArray(userIds) || userIds.length === 0) {
+            return res.status(400).json({ success: false, error: 'userIds array is required' });
+        }
+
+        const result = await activateUsersOnDevice(userIds, deviceId);
+
+        res.json({
+            success: result.errors.length === 0,
+            message: `Queued activate on ${result.deviceName || result.deviceId} for ${result.activated} user(s); marked active in database`,
+            data: result
+        });
+    } catch (error) {
+        if (error.code === 'DEVICE_NOT_FOUND') {
+            return res.status(404).json({ success: false, error: error.message });
+        }
+        if (error.code === 'BAD_REQUEST') {
+            return res.status(400).json({ success: false, error: error.message });
+        }
+        logger.error('Error activating users on device:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
@@ -990,17 +1123,13 @@ async function parseAndUpsertUserInfoRows(rawBody, serialNumber) {
 
         await DeviceUser.findOneAndUpdate(
             { userId },
-            {
-                $set: {
-                    userId,
-                    name: mergedName,
-                    password: mergedPassword,
-                    card: mergedCard,
-                    role: mergedRole,
-                    lastSyncedAt: new Date(),
-                    lastDeviceId: serialNumber
-                }
-            },
+            membershipUpdate(serialNumber, {
+                userId,
+                name: mergedName,
+                password: mergedPassword,
+                card: mergedCard,
+                role: mergedRole
+            }),
             { upsert: true }
         );
         count++;

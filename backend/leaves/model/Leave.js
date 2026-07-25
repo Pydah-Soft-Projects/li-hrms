@@ -607,6 +607,14 @@ LeaveSchema.post('save', async function () {
       await updateMonthlyRecordOnLeaveAction(this, action);
     }
 
+    // Saves originating from leave⇄attendance reconciliation must NOT schedule the
+    // heavy side effects (summary recalc → reconciliation), otherwise each split
+    // chunk re-runs reconciliation over its own range and multiplies the leave rows.
+    // The originating approval/edit already runs the heavy side effects exactly once.
+    if (this.$locals && this.$locals.skipReconcileSideEffects) {
+      return;
+    }
+
     const { scheduleLeaveStatusSideEffects } = require('../services/leaveApprovalSideEffectsService');
     scheduleLeaveStatusSideEffects(this);
   } catch (error) {

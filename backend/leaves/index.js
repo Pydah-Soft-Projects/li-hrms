@@ -203,6 +203,9 @@ router.get('/dashboard-stats', authorize('employee', 'manager', 'hod', 'hr', 'su
 // Get approved records for a date (for conflict checking)
 router.get('/approved-records', leaveController.getApprovedRecordsForDate);
 
+// Per-day attendance occupancy preview for leave detail / approve screen
+router.get('/:id/attendance-preview', leaveController.getLeaveAttendancePreview);
+
 // Get leave conflicts for attendance date
 router.get('/conflicts', leaveController.getLeaveConflicts);
 

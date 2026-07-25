@@ -47,6 +47,7 @@ const {
   resolveEmployeePortalUserIds,
 } = require('../../shared/utils/scopedNotificationRecipients');
 const { schedulePostVerifyBiometricBackfill } = require('../../attendance/services/postVerifyBiometricBackfillService');
+const { scheduleBiometricDeviceOnboard } = require('../../attendance/services/biometricDeviceLifecycleService');
 const { generateFirstMonthRoster } = require('../../shifts/services/firstMonthRosterService');
 const {
   closeCurrentTenure,
@@ -1130,6 +1131,9 @@ const verifyRejoinApplicationInternal = async (applicationId, approver) => {
     verifiedAt: application.verifiedAt,
     employeeName: application.employee_name,
   });
+
+  // Write biometric user back onto devices they were removed from at leave/LWD+1
+  scheduleBiometricDeviceOnboard(employee.emp_no);
 
   await EmployeeHistory.create({
     emp_no: application.emp_no,

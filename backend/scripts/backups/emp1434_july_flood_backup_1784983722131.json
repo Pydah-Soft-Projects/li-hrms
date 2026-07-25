@@ -1,0 +1,1442 @@
+{
+  "emp": {
+    "_id": "695b8c389fa26faa3ecdce44",
+    "emp_no": "1434"
+  },
+  "july": [
+    {
+      "_id": "6a60ac787aac1ab1251b89c7",
+      "employeeId": "695b8c389fa26faa3ecdce44",
+      "emp_no": "1434",
+      "leaveType": "CCL",
+      "fromDate": "2026-07-07T18:30:00.000Z",
+      "toDate": "2026-07-24T18:30:00.000Z",
+      "numberOfDays": 18,
+      "isHalfDay": false,
+      "halfDayType": null,
+      "fromIsHalfDay": false,
+      "fromHalfDayType": null,
+      "toIsHalfDay": false,
+      "toHalfDayType": null,
+      "purpose": "Personal work",
+      "contactNumber": "9885996555",
+      "leaveNature": "paid",
+      "status": "approved",
+      "workflow": {
+        "currentStepRole": null,
+        "nextApproverRole": null,
+        "currentStep": "completed",
+        "nextApprover": null,
+        "reportingManagerIds": [],
+        "approvalChain": [
+          {
+            "stepOrder": 1,
+            "role": "hod",
+            "label": "HOD Approval",
+            "status": "approved",
+            "isCurrent": false,
+            "_id": "6a60ac787aac1ab1251b89c8",
+            "actionBy": "69a7d4cd279855679f1cea6f",
+            "actionByName": "P V SURYA PRAKASH",
+            "actionByRole": "manager",
+            "comments": "Approved by manager",
+            "updatedAt": "2026-07-25T10:45:12.040Z"
+          },
+          {
+            "stepOrder": 2,
+            "role": "manager",
+            "label": "Manager Approval",
+            "status": "approved",
+            "isCurrent": false,
+            "_id": "6a60ac787aac1ab1251b89c9",
+            "actionBy": "69a7d4cd279855679f1cea6f",
+            "actionByName": "P V SURYA PRAKASH",
+            "actionByRole": "manager",
+            "comments": "Approved by manager",
+            "updatedAt": "2026-07-25T10:45:30.378Z"
+          }
+        ],
+        "history": [
+          {
+            "step": "employee",
+            "action": "submitted",
+            "actionBy": "698c4c7ecb265a311d43979f",
+            "actionByName": "BASHIR HAMADBABU MD",
+            "actionByRole": "hod",
+            "comments": "Leave application submitted",
+            "timestamp": "2026-07-22T11:41:44.692Z",
+            "_id": "6a60ac787aac1ab1251b89ca"
+          },
+          {
+            "step": "hod",
+            "actionBy": "69a7d4cd279855679f1cea6f",
+            "actionByName": "P V SURYA PRAKASH",
+            "actionByRole": "manager",
+            "comments": "Approved by manager",
+            "timestamp": "2026-07-25T10:45:11.777Z",
+            "_id": "6a6493b8413070278073b172"
+          },
+          {
+            "step": "manager",
+            "action": "approved",
+            "actionBy": "69a7d4cd279855679f1cea6f",
+            "actionByName": "P V SURYA PRAKASH",
+            "actionByRole": "manager",
+            "comments": "Approved by manager",
+            "timestamp": "2026-07-25T10:45:29.966Z",
+            "_id": "6a6493ca413070278073b600"
+          }
+        ],
+        "isCompleted": true
+      },
+      "approvals": {
+        "hod": {
+          "status": "approved",
+          "approvedBy": "69a7d4cd279855679f1cea6f",
+          "approvedAt": "2026-07-25T10:45:12.040Z",
+          "comments": "Approved by manager"
+        },
+        "manager": {
+          "status": "approved",
+          "approvedBy": "69a7d4cd279855679f1cea6f",
+          "approvedAt": "2026-07-25T10:45:30.378Z",
+          "comments": "Approved by manager"
+        },
+        "hr": {
+          "status": null
+        },
+        "final": {
+          "status": null
+        }
+      },
+      "division_id": "6954f442d10f48e61660b30b",
+      "division_name": "PYDAH COLLEGE OF ENGG (DIPLOMA)",
+      "department": "6958e3859e4de0c55829c289",
+      "department_id": "6958e3859e4de0c55829c289",
+      "department_name": "OFFICE",
+      "designation": "6957b06190c14ea32bbe4ecf",
+      "attachments": [],
+      "appliedBy": "698c4c7ecb265a311d43979f",
+      "appliedAt": "2026-07-22T11:41:44.693Z",
+      "allowSplitting": true,
+      "splitStatus": null,
+      "splitBy": null,
+      "splitAt": null,
+      "splitNotes": null,
+      "isActive": true,
+      "remarks": null,
+      "splitHistory": [],
+      "changeHistory": [],
+      "createdAt": "2026-07-22T11:41:44.696Z",
+      "updatedAt": "2026-07-25T12:47:24.649Z",
+      "originalLeaveType": "CCL",
+      "__v": 3
+    }
+  ],
+  "years": [
+    {
+      "_id": "69c8da8efcc9e503debbed27",
+      "employeeId": "695b8c389fa26faa3ecdce44",
+      "financialYear": "2026",
+      "__v": 325,
+      "casualBalance": 9.5,
+      "compensatoryOffBalance": 0,
+      "createdAt": "2026-03-29T07:53:52.092Z",
+      "earnedLeaveBalance": 0,
+      "empNo": "1434",
+      "employeeName": "BASHIR HAMADBABU MD",
+      "financialYearEnd": "2026-12-30T18:30:00.000Z",
+      "financialYearStart": "2025-12-31T18:30:00.000Z",
+      "months": [
+        {
+          "poolCarryForwardOut": {
+            "cl": 2,
+            "ccl": 0,
+            "el": 0
+          },
+          "poolCarryForwardIn": {
+            "cl": 0,
+            "ccl": 0,
+            "el": 0
+          },
+          "payrollMonthIndex": 1,
+          "label": "Jan 2026",
+          "payPeriodStart": "2025-12-25T18:30:00.000Z",
+          "payPeriodEnd": "2026-01-25T18:29:00.000Z",
+          "payrollCycleMonth": 1,
+          "payrollCycleYear": 2026,
+          "clCredits": 2,
+          "elCredits": 0,
+          "compensatoryOffs": 0,
+          "lockedCredits": 0,
+          "monthlyApplyCeiling": 0,
+          "monthlyApplyConsumed": 0,
+          "monthlyApplyLocked": 0,
+          "monthlyApplyApproved": 0,
+          "poolCarryForwardFromLabel": "",
+          "transactions": [
+            {
+              "at": "2026-01-25T18:29:00.000Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 2,
+              "openingBalance": 0,
+              "closingBalance": 2,
+              "startDate": "2026-01-25T18:29:00.000Z",
+              "endDate": "2026-01-25T18:29:00.000Z",
+              "reason": "Scheduled CL — Jan 2026: 2 day(s) (policy month 1)",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_CL_SCHEDULE",
+              "includedInPayroll": false,
+              "_id": "69c8da9081f8f9f9eae69d84"
+            },
+            {
+              "at": "2026-06-10T08:30:00.283Z",
+              "leaveType": "CL",
+              "transactionType": "DEBIT",
+              "days": 2,
+              "openingBalance": 2,
+              "closingBalance": 0,
+              "startDate": "2026-01-25T18:29:00.000Z",
+              "endDate": "2026-01-25T18:29:00.000Z",
+              "reason": "Reconciled transfer out unused monthly pool CL from payroll 1/2026 to 2/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_OUT_CL",
+              "includedInPayroll": false,
+              "_id": "6a2920884c3176e56d650664"
+            }
+          ],
+          "poolCarryForwardOutAt": "2026-06-10T08:30:00.283Z",
+          "poolCarryForwardAllocation": {
+            "source": "monthlyTransferReconciliationService",
+            "credits": {
+              "CL": 2,
+              "CCL": 0,
+              "EL": 0
+            },
+            "actualUsed": {
+              "CL": 0,
+              "CCL": 0,
+              "EL": 0
+            },
+            "lockedDeducted": {
+              "CL": 0,
+              "CCL": 0,
+              "EL": 0
+            },
+            "unallocatedLocked": 0,
+            "lockedCreditsReleasedToTransferOut": 0,
+            "carryPosted": {
+              "cl": 2,
+              "ccl": 0,
+              "el": 0
+            },
+            "rollFlags": {
+              "CL": true,
+              "CCL": true,
+              "EL": false,
+              "elInPool": false
+            }
+          },
+          "monthlyApplySyncedAt": "2026-06-10T08:29:55.641Z"
+        },
+        {
+          "poolCarryForwardOut": {
+            "cl": 3,
+            "ccl": 1,
+            "el": 0
+          },
+          "poolCarryForwardIn": {
+            "cl": 2,
+            "ccl": 0,
+            "el": 0
+          },
+          "payrollMonthIndex": 2,
+          "label": "Feb 2026",
+          "payPeriodStart": "2026-01-25T18:30:00.000Z",
+          "payPeriodEnd": "2026-02-25T18:29:00.000Z",
+          "payrollCycleMonth": 2,
+          "payrollCycleYear": 2026,
+          "clCredits": 4,
+          "elCredits": 0,
+          "compensatoryOffs": 1,
+          "lockedCredits": 0,
+          "monthlyApplyCeiling": 5,
+          "monthlyApplyConsumed": 1.5,
+          "monthlyApplyLocked": 0,
+          "monthlyApplyApproved": 1.5,
+          "poolCarryForwardOutAt": "2026-06-10T09:08:21.991Z",
+          "poolCarryForwardFromLabel": "Jan 2026",
+          "transactions": [
+            {
+              "at": "2026-02-25T18:29:00.000Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 2,
+              "openingBalance": 1,
+              "closingBalance": 3,
+              "startDate": "2026-02-25T18:29:00.000Z",
+              "endDate": "2026-02-25T18:29:00.000Z",
+              "reason": "Scheduled CL — Feb 2026: 2 day(s) (policy month 2)",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_CL_SCHEDULE",
+              "includedInPayroll": false,
+              "_id": "69c8da9081f8f9f9eae69d85"
+            },
+            {
+              "at": "2026-04-28T10:08:40.871Z",
+              "leaveType": "CCL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 0,
+              "closingBalance": 1,
+              "startDate": "2026-02-14T18:30:00.000Z",
+              "endDate": "2026-02-14T18:30:00.000Z",
+              "reason": "Compensatory Off for approved OD on holiday/week-off (2026-02-15)",
+              "applicationId": "69ba83b681ae7591897b7a5f",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "OD_HOLIDAY_WO_CO_CREDIT",
+              "includedInPayroll": false,
+              "divisionId": "6954f442d10f48e61660b30b",
+              "departmentId": "6958e3859e4de0c55829c289",
+              "_id": "69f087282614f39377c1d6b6"
+            },
+            {
+              "at": "2026-06-10T08:29:57.034Z",
+              "leaveType": "CL",
+              "transactionType": "DEBIT",
+              "days": 1,
+              "openingBalance": 2,
+              "closingBalance": 1,
+              "startDate": "2026-02-03T00:00:00.000Z",
+              "endDate": "2026-02-03T00:00:00.000Z",
+              "reason": "personal",
+              "applicationId": "69a81dddc129d68273857412",
+              "applicationDate": "2026-03-04T11:56:13.378Z",
+              "approvalDate": "2026-03-04T16:47:06.327Z",
+              "status": "APPROVED",
+              "autoGenerated": false,
+              "autoGeneratedType": null,
+              "includedInPayroll": false,
+              "divisionId": "6954f442d10f48e61660b30b",
+              "departmentId": "6958e3859e4de0c55829c289",
+              "_id": "6a2920854c3176e56d650296"
+            },
+            {
+              "at": "2026-06-10T08:30:00.284Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 2,
+              "openingBalance": 0,
+              "closingBalance": 2,
+              "startDate": "2026-01-25T18:30:00.000Z",
+              "endDate": "2026-01-25T18:30:00.000Z",
+              "reason": "Reconciled transfer in unused monthly pool CL from payroll 1/2026 to 2/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_IN_CL",
+              "includedInPayroll": false,
+              "_id": "6a2920884c3176e56d650665"
+            },
+            {
+              "at": "2026-06-10T09:08:21.992Z",
+              "leaveType": "CL",
+              "transactionType": "DEBIT",
+              "days": 3,
+              "openingBalance": 3,
+              "closingBalance": 0,
+              "startDate": "2026-02-25T18:29:00.000Z",
+              "endDate": "2026-02-25T18:29:00.000Z",
+              "reason": "Reconciled transfer out unused monthly pool CL from payroll 2/2026 to 3/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_OUT_CL",
+              "includedInPayroll": false,
+              "_id": "6a2929859052443a4beac71d"
+            },
+            {
+              "at": "2026-06-10T09:08:21.992Z",
+              "leaveType": "CCL",
+              "transactionType": "DEBIT",
+              "days": 1,
+              "openingBalance": 1,
+              "closingBalance": 0,
+              "startDate": "2026-02-25T18:29:00.000Z",
+              "endDate": "2026-02-25T18:29:00.000Z",
+              "reason": "Reconciled transfer out unused monthly pool CCL from payroll 2/2026 to 3/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_OUT_CCL",
+              "includedInPayroll": false,
+              "_id": "6a2929859052443a4beac71f"
+            }
+          ],
+          "monthlyApplySyncedAt": "2026-06-10T09:08:22.692Z",
+          "poolCarryForwardAllocation": {
+            "source": "monthlyTransferReconciliationService",
+            "credits": {
+              "CL": 4,
+              "CCL": 1,
+              "EL": 0
+            },
+            "actualUsed": {
+              "CL": 1,
+              "CCL": 0,
+              "EL": 0
+            },
+            "lockedDeducted": {
+              "CL": 0,
+              "CCL": 0,
+              "EL": 0
+            },
+            "unallocatedLocked": 0,
+            "lockedCreditsReleasedToTransferOut": 0,
+            "carryPosted": {
+              "cl": 3,
+              "ccl": 1,
+              "el": 0
+            },
+            "rollFlags": {
+              "CL": true,
+              "CCL": true,
+              "EL": false,
+              "elInPool": false
+            }
+          }
+        },
+        {
+          "poolCarryForwardOut": {
+            "cl": 4,
+            "ccl": 1,
+            "el": 0
+          },
+          "poolCarryForwardIn": {
+            "cl": 3,
+            "ccl": 1,
+            "el": 0
+          },
+          "payrollMonthIndex": 3,
+          "label": "Mar 2026",
+          "payPeriodStart": "2026-02-25T18:30:00.000Z",
+          "payPeriodEnd": "2026-03-25T18:29:00.000Z",
+          "payrollCycleMonth": 3,
+          "payrollCycleYear": 2026,
+          "clCredits": 5,
+          "elCredits": 0,
+          "compensatoryOffs": 1,
+          "lockedCredits": 0,
+          "monthlyApplyCeiling": 6,
+          "monthlyApplyConsumed": 2,
+          "monthlyApplyLocked": 0,
+          "monthlyApplyApproved": 2,
+          "poolCarryForwardOutAt": "2026-06-10T09:08:21.992Z",
+          "poolCarryForwardFromLabel": "Feb 2026",
+          "transactions": [
+            {
+              "at": "2026-03-25T18:29:00.000Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 2,
+              "openingBalance": 2,
+              "closingBalance": 4,
+              "startDate": "2026-03-25T18:29:00.000Z",
+              "endDate": "2026-03-25T18:29:00.000Z",
+              "reason": "Scheduled CL — Mar 2026: 2 day(s) (policy month 3)",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_CL_SCHEDULE",
+              "includedInPayroll": false,
+              "_id": "69c8da9081f8f9f9eae69d88"
+            },
+            {
+              "at": "2026-06-10T08:29:58.046Z",
+              "leaveType": "CL",
+              "transactionType": "DEBIT",
+              "days": 1,
+              "openingBalance": 3,
+              "closingBalance": 2,
+              "startDate": "2026-03-17T00:00:00.000Z",
+              "endDate": "2026-03-17T00:00:00.000Z",
+              "reason": "PERSONAL WORK",
+              "applicationId": "69b7c9a8b04c8adb350a020c",
+              "applicationDate": "2026-03-16T09:13:12.817Z",
+              "approvalDate": "2026-03-24T11:58:57.915Z",
+              "status": "APPROVED",
+              "autoGenerated": false,
+              "autoGeneratedType": null,
+              "includedInPayroll": false,
+              "divisionId": "6954f442d10f48e61660b30b",
+              "departmentId": "6958e3859e4de0c55829c289",
+              "_id": "6a2920864c3176e56d65039c"
+            },
+            {
+              "at": "2026-06-10T09:08:21.992Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 3,
+              "openingBalance": 0,
+              "closingBalance": 3,
+              "startDate": "2026-02-25T18:30:00.000Z",
+              "endDate": "2026-02-25T18:30:00.000Z",
+              "reason": "Reconciled transfer in unused monthly pool CL from payroll 2/2026 to 3/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_IN_CL",
+              "includedInPayroll": false,
+              "_id": "6a2929859052443a4beac71e"
+            },
+            {
+              "at": "2026-06-10T09:08:21.992Z",
+              "leaveType": "CCL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 0,
+              "closingBalance": 1,
+              "startDate": "2026-02-25T18:30:00.000Z",
+              "endDate": "2026-02-25T18:30:00.000Z",
+              "reason": "Reconciled transfer in unused monthly pool CCL from payroll 2/2026 to 3/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_IN_CCL",
+              "includedInPayroll": false,
+              "_id": "6a2929859052443a4beac720"
+            },
+            {
+              "at": "2026-06-10T09:08:21.992Z",
+              "leaveType": "CL",
+              "transactionType": "DEBIT",
+              "days": 4,
+              "openingBalance": 4,
+              "closingBalance": 0,
+              "startDate": "2026-03-25T18:29:00.000Z",
+              "endDate": "2026-03-25T18:29:00.000Z",
+              "reason": "Reconciled transfer out unused monthly pool CL from payroll 3/2026 to 4/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_OUT_CL",
+              "includedInPayroll": false,
+              "_id": "6a2929859052443a4beac721"
+            },
+            {
+              "at": "2026-06-10T09:08:21.993Z",
+              "leaveType": "CCL",
+              "transactionType": "DEBIT",
+              "days": 1,
+              "openingBalance": 1,
+              "closingBalance": 0,
+              "startDate": "2026-03-25T18:29:00.000Z",
+              "endDate": "2026-03-25T18:29:00.000Z",
+              "reason": "Reconciled transfer out unused monthly pool CCL from payroll 3/2026 to 4/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_OUT_CCL",
+              "includedInPayroll": false,
+              "_id": "6a2929859052443a4beac723"
+            }
+          ],
+          "poolCarryForwardAllocation": {
+            "source": "monthlyTransferReconciliationService",
+            "credits": {
+              "CL": 5,
+              "CCL": 1,
+              "EL": 0
+            },
+            "actualUsed": {
+              "CL": 1,
+              "CCL": 0,
+              "EL": 0
+            },
+            "lockedDeducted": {
+              "CL": 0,
+              "CCL": 0,
+              "EL": 0
+            },
+            "unallocatedLocked": 0,
+            "lockedCreditsReleasedToTransferOut": 0,
+            "carryPosted": {
+              "cl": 4,
+              "ccl": 1,
+              "el": 0
+            },
+            "rollFlags": {
+              "CL": true,
+              "CCL": true,
+              "EL": false,
+              "elInPool": false
+            }
+          },
+          "monthlyApplySyncedAt": "2026-06-10T09:08:22.890Z"
+        },
+        {
+          "poolCarryForwardOut": {
+            "cl": 4,
+            "ccl": 0,
+            "el": 0
+          },
+          "poolCarryForwardIn": {
+            "cl": 4,
+            "ccl": 1,
+            "el": 0
+          },
+          "payrollMonthIndex": 4,
+          "label": "Apr 2026",
+          "payPeriodStart": "2026-03-25T18:30:00.000Z",
+          "payPeriodEnd": "2026-04-25T18:29:00.000Z",
+          "payrollCycleMonth": 4,
+          "payrollCycleYear": 2026,
+          "clCredits": 5,
+          "elCredits": 0,
+          "compensatoryOffs": 1,
+          "lockedCredits": 0,
+          "monthlyApplyCeiling": 6,
+          "monthlyApplyConsumed": 2,
+          "monthlyApplyLocked": 0,
+          "monthlyApplyApproved": 2,
+          "poolCarryForwardFromLabel": "Mar 2026",
+          "transactions": [
+            {
+              "at": "2026-04-25T18:29:00.000Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 3,
+              "closingBalance": 4,
+              "startDate": "2026-04-25T18:29:00.000Z",
+              "endDate": "2026-04-25T18:29:00.000Z",
+              "reason": "Scheduled CL — Apr 2026: 1 day(s) (policy month 4)",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_CL_SCHEDULE",
+              "includedInPayroll": false,
+              "_id": "69c8da9081f8f9f9eae69d8c"
+            },
+            {
+              "at": "2026-04-24T07:15:44.828Z",
+              "leaveType": "CCL",
+              "transactionType": "DEBIT",
+              "days": 1,
+              "openingBalance": 1,
+              "closingBalance": 0,
+              "startDate": "2026-04-25T00:00:00.000Z",
+              "endDate": "2026-04-25T00:00:00.000Z",
+              "reason": "PERSONAL WORK (CCL WORKED ON 15.02.2026 NCC C CERTIFICATE EXAM AT JNTU",
+              "applicationId": "69e6e9eafa51709097755a00",
+              "applicationDate": "2026-04-21T03:07:22.906Z",
+              "approvalDate": "2026-04-24T07:15:44.071Z",
+              "approvedBy": "69a7d4cd279855679f1cea6f",
+              "status": "APPROVED",
+              "autoGenerated": false,
+              "autoGeneratedType": null,
+              "includedInPayroll": false,
+              "pendingLeavesBeforeAction": 0,
+              "divisionId": "6954f442d10f48e61660b30b",
+              "departmentId": "6958e3859e4de0c55829c289",
+              "_id": "69eb18a0f7a7a43d81ab9f1c"
+            },
+            {
+              "at": "2026-06-10T08:29:59.217Z",
+              "leaveType": "CL",
+              "transactionType": "DEBIT",
+              "days": 1,
+              "openingBalance": 4,
+              "closingBalance": 3,
+              "startDate": "2026-04-13T00:00:00.000Z",
+              "endDate": "2026-04-13T00:00:00.000Z",
+              "reason": "PERSONAL WORK",
+              "applicationId": "69d9f0e01d7a07371907ad5c",
+              "applicationDate": "2026-04-11T06:57:36.666Z",
+              "approvalDate": "2026-04-15T05:32:12.532Z",
+              "status": "APPROVED",
+              "autoGenerated": false,
+              "autoGeneratedType": null,
+              "includedInPayroll": false,
+              "divisionId": "6954f442d10f48e61660b30b",
+              "departmentId": "6958e3859e4de0c55829c289",
+              "_id": "6a2920874c3176e56d6504ab"
+            },
+            {
+              "at": "2026-06-10T09:08:21.993Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 4,
+              "openingBalance": 0,
+              "closingBalance": 4,
+              "startDate": "2026-03-25T18:30:00.000Z",
+              "endDate": "2026-03-25T18:30:00.000Z",
+              "reason": "Reconciled transfer in unused monthly pool CL from payroll 3/2026 to 4/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_IN_CL",
+              "includedInPayroll": false,
+              "_id": "6a2929859052443a4beac722"
+            },
+            {
+              "at": "2026-06-10T09:08:21.993Z",
+              "leaveType": "CCL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 0,
+              "closingBalance": 1,
+              "startDate": "2026-03-25T18:30:00.000Z",
+              "endDate": "2026-03-25T18:30:00.000Z",
+              "reason": "Reconciled transfer in unused monthly pool CCL from payroll 3/2026 to 4/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_IN_CCL",
+              "includedInPayroll": false,
+              "_id": "6a2929859052443a4beac724"
+            },
+            {
+              "at": "2026-06-10T09:08:21.993Z",
+              "leaveType": "CL",
+              "transactionType": "DEBIT",
+              "days": 4,
+              "openingBalance": 4,
+              "closingBalance": 0,
+              "startDate": "2026-04-25T18:29:00.000Z",
+              "endDate": "2026-04-25T18:29:00.000Z",
+              "reason": "Reconciled transfer out unused monthly pool CL from payroll 4/2026 to 5/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_OUT_CL",
+              "includedInPayroll": false,
+              "_id": "6a2929859052443a4beac725"
+            }
+          ],
+          "monthlyApplySyncedAt": "2026-06-10T09:08:23.115Z",
+          "poolCarryForwardOutAt": "2026-06-10T09:08:21.993Z",
+          "poolCarryForwardAllocation": {
+            "source": "monthlyTransferReconciliationService",
+            "credits": {
+              "CL": 5,
+              "CCL": 1,
+              "EL": 0
+            },
+            "actualUsed": {
+              "CL": 1,
+              "CCL": 1,
+              "EL": 0
+            },
+            "lockedDeducted": {
+              "CL": 0,
+              "CCL": 0,
+              "EL": 0
+            },
+            "unallocatedLocked": 0,
+            "lockedCreditsReleasedToTransferOut": 0,
+            "carryPosted": {
+              "cl": 4,
+              "ccl": 0,
+              "el": 0
+            },
+            "rollFlags": {
+              "CL": true,
+              "CCL": true,
+              "EL": false,
+              "elInPool": false
+            }
+          }
+        },
+        {
+          "poolCarryForwardOut": {
+            "cl": 3.5,
+            "ccl": 1,
+            "el": 0
+          },
+          "poolCarryForwardIn": {
+            "cl": 4,
+            "ccl": 0,
+            "el": 0
+          },
+          "payrollMonthIndex": 5,
+          "label": "May 2026",
+          "payPeriodStart": "2026-04-25T18:30:00.000Z",
+          "payPeriodEnd": "2026-05-25T18:29:00.000Z",
+          "payrollCycleMonth": 5,
+          "payrollCycleYear": 2026,
+          "clCredits": 5,
+          "elCredits": 0,
+          "compensatoryOffs": 1,
+          "lockedCredits": 0,
+          "monthlyApplyCeiling": 6,
+          "monthlyApplyConsumed": 1.5,
+          "monthlyApplyLocked": 0,
+          "monthlyApplyApproved": 1.5,
+          "poolCarryForwardFromLabel": "Apr 2026",
+          "transactions": [
+            {
+              "at": "2026-05-25T18:29:00.000Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 2.5,
+              "closingBalance": 3.5,
+              "startDate": "2026-05-25T18:29:00.000Z",
+              "endDate": "2026-05-25T18:29:00.000Z",
+              "reason": "Scheduled CL — May 2026: 1 day(s) (policy month 5)",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_CL_SCHEDULE",
+              "includedInPayroll": false,
+              "_id": "69c8da9081f8f9f9eae69d8e"
+            },
+            {
+              "at": "2026-05-29T09:09:36.998Z",
+              "leaveType": "CCL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 0,
+              "closingBalance": 1,
+              "startDate": "2026-05-23T18:30:00.000Z",
+              "endDate": "2026-05-23T18:30:00.000Z",
+              "reason": "Compensatory Off for approved OD on holiday/week-off (2026-05-24)",
+              "applicationId": "6a13394984a1f9de0b08cae1",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "OD_HOLIDAY_WO_CO_CREDIT",
+              "includedInPayroll": false,
+              "divisionId": "6954f442d10f48e61660b30b",
+              "departmentId": "6958e3859e4de0c55829c289",
+              "_id": "6a1957d0da28eed0c86d09df"
+            },
+            {
+              "at": "2026-06-10T08:29:59.575Z",
+              "leaveType": "CL",
+              "transactionType": "DEBIT",
+              "days": 1,
+              "openingBalance": 4,
+              "closingBalance": 3,
+              "startDate": "2026-05-13T00:00:00.000Z",
+              "endDate": "2026-05-13T00:00:00.000Z",
+              "reason": "PERSONAL WORK",
+              "applicationId": "6a02fac985d89dbc42c41a12",
+              "applicationDate": "2026-05-12T10:02:49.871Z",
+              "approvalDate": "2026-05-14T11:06:40.215Z",
+              "status": "APPROVED",
+              "autoGenerated": false,
+              "autoGeneratedType": null,
+              "includedInPayroll": false,
+              "divisionId": "6954f442d10f48e61660b30b",
+              "departmentId": "6958e3859e4de0c55829c289",
+              "_id": "6a2920874c3176e56d650520"
+            },
+            {
+              "at": "2026-06-10T08:29:59.924Z",
+              "leaveType": "CL",
+              "transactionType": "DEBIT",
+              "days": 0.5,
+              "openingBalance": 3,
+              "closingBalance": 2.5,
+              "startDate": "2026-05-18T00:00:00.000Z",
+              "endDate": "2026-05-18T00:00:00.000Z",
+              "reason": "Personal work",
+              "applicationId": "6a0abf2bd4ebffd25191db04",
+              "applicationDate": "2026-05-18T07:26:35.339Z",
+              "approvalDate": "2026-05-19T07:47:14.724Z",
+              "status": "APPROVED",
+              "autoGenerated": false,
+              "autoGeneratedType": null,
+              "includedInPayroll": false,
+              "divisionId": "6954f442d10f48e61660b30b",
+              "departmentId": "6958e3859e4de0c55829c289",
+              "_id": "6a2920874c3176e56d6505ae"
+            },
+            {
+              "at": "2026-06-10T09:08:21.993Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 4,
+              "openingBalance": 0,
+              "closingBalance": 4,
+              "startDate": "2026-04-25T18:30:00.000Z",
+              "endDate": "2026-04-25T18:30:00.000Z",
+              "reason": "Reconciled transfer in unused monthly pool CL from payroll 4/2026 to 5/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_IN_CL",
+              "includedInPayroll": false,
+              "_id": "6a2929859052443a4beac726"
+            },
+            {
+              "at": "2026-06-10T09:08:21.994Z",
+              "leaveType": "CL",
+              "transactionType": "DEBIT",
+              "days": 3.5,
+              "openingBalance": 3.5,
+              "closingBalance": 0,
+              "startDate": "2026-05-25T18:29:00.000Z",
+              "endDate": "2026-05-25T18:29:00.000Z",
+              "reason": "Reconciled transfer out unused monthly pool CL from payroll 5/2026 to 6/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_OUT_CL",
+              "includedInPayroll": false,
+              "_id": "6a2929859052443a4beac727"
+            },
+            {
+              "at": "2026-06-10T09:08:21.994Z",
+              "leaveType": "CCL",
+              "transactionType": "DEBIT",
+              "days": 1,
+              "openingBalance": 1,
+              "closingBalance": 0,
+              "startDate": "2026-05-25T18:29:00.000Z",
+              "endDate": "2026-05-25T18:29:00.000Z",
+              "reason": "Reconciled transfer out unused monthly pool CCL from payroll 5/2026 to 6/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_OUT_CCL",
+              "includedInPayroll": false,
+              "_id": "6a2929859052443a4beac729"
+            }
+          ],
+          "poolCarryForwardOutAt": "2026-06-10T09:08:21.994Z",
+          "monthlyApplySyncedAt": "2026-06-10T09:08:23.317Z",
+          "poolCarryForwardAllocation": {
+            "source": "monthlyTransferReconciliationService",
+            "credits": {
+              "CL": 5,
+              "CCL": 1,
+              "EL": 0
+            },
+            "actualUsed": {
+              "CL": 1.5,
+              "CCL": 0,
+              "EL": 0
+            },
+            "lockedDeducted": {
+              "CL": 0,
+              "CCL": 0,
+              "EL": 0
+            },
+            "unallocatedLocked": 0,
+            "lockedCreditsReleasedToTransferOut": 0,
+            "carryPosted": {
+              "cl": 3.5,
+              "ccl": 1,
+              "el": 0
+            },
+            "rollFlags": {
+              "CL": true,
+              "CCL": true,
+              "EL": false,
+              "elInPool": false
+            }
+          }
+        },
+        {
+          "poolCarryForwardOut": {
+            "cl": 3.5,
+            "ccl": 1,
+            "el": 0
+          },
+          "poolCarryForwardIn": {
+            "cl": 3.5,
+            "ccl": 1,
+            "el": 0
+          },
+          "payrollMonthIndex": 6,
+          "label": "Jun 2026",
+          "payPeriodStart": "2026-05-25T18:30:00.000Z",
+          "payPeriodEnd": "2026-06-25T18:29:00.000Z",
+          "payrollCycleMonth": 6,
+          "payrollCycleYear": 2026,
+          "clCredits": 4.5,
+          "elCredits": 0,
+          "compensatoryOffs": 1,
+          "lockedCredits": 0,
+          "monthlyApplyCeiling": 5.5,
+          "monthlyApplyConsumed": 1,
+          "monthlyApplyLocked": 0,
+          "monthlyApplyApproved": 1,
+          "poolCarryForwardFromLabel": "May 2026",
+          "transactions": [
+            {
+              "at": "2026-06-25T18:29:00.000Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 2.5,
+              "closingBalance": 3.5,
+              "startDate": "2026-06-25T18:29:00.000Z",
+              "endDate": "2026-06-25T18:29:00.000Z",
+              "reason": "Scheduled CL — Jun 2026: 1 day(s) (policy month 6)",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_CL_SCHEDULE",
+              "includedInPayroll": false,
+              "_id": "69c8da9081f8f9f9eae69d8f"
+            },
+            {
+              "at": "2026-06-10T09:08:21.994Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 3.5,
+              "openingBalance": 0,
+              "closingBalance": 3.5,
+              "startDate": "2026-05-25T18:30:00.000Z",
+              "endDate": "2026-05-25T18:30:00.000Z",
+              "reason": "Reconciled transfer in unused monthly pool CL from payroll 5/2026 to 6/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_IN_CL",
+              "includedInPayroll": false,
+              "_id": "6a2929859052443a4beac728"
+            },
+            {
+              "at": "2026-06-10T09:08:21.994Z",
+              "leaveType": "CCL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 0,
+              "closingBalance": 1,
+              "startDate": "2026-05-25T18:30:00.000Z",
+              "endDate": "2026-05-25T18:30:00.000Z",
+              "reason": "Reconciled transfer in unused monthly pool CCL from payroll 5/2026 to 6/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_IN_CCL",
+              "includedInPayroll": false,
+              "_id": "6a2929859052443a4beac72a"
+            },
+            {
+              "at": "2026-06-23T07:27:55.413Z",
+              "leaveType": "CL",
+              "transactionType": "DEBIT",
+              "days": 1,
+              "openingBalance": 3.5,
+              "closingBalance": 2.5,
+              "startDate": "2026-05-28T18:30:00.000Z",
+              "endDate": "2026-05-28T18:30:00.000Z",
+              "reason": "Personal Work",
+              "applicationId": "6a16a487da28eed0c82e89b0",
+              "applicationDate": "2026-05-27T08:00:07.546Z",
+              "approvalDate": "2026-06-23T07:27:54.445Z",
+              "approvedBy": "69a7d4cd279855679f1cea6f",
+              "status": "APPROVED",
+              "autoGenerated": false,
+              "autoGeneratedType": null,
+              "includedInPayroll": false,
+              "pendingLeavesBeforeAction": 0,
+              "divisionId": "6954f442d10f48e61660b30b",
+              "departmentId": "6958e3859e4de0c55829c289",
+              "_id": "6a3a357ba09a352cc829106d"
+            },
+            {
+              "at": "2026-06-25T18:41:40.102Z",
+              "leaveType": "CL",
+              "transactionType": "DEBIT",
+              "days": 3.5,
+              "openingBalance": 3.5,
+              "closingBalance": 0,
+              "startDate": "2026-06-25T18:29:00.000Z",
+              "endDate": "2026-06-25T18:29:00.000Z",
+              "reason": "Transfer out — unused monthly apply pool CL from payroll 6/2026 → 7/2026 (after CL→CCL→EL priority vs 1 day(s) toward cap).",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_OUT_CL",
+              "includedInPayroll": false,
+              "divisionId": "6954f442d10f48e61660b30b",
+              "departmentId": "6958e3859e4de0c55829c289",
+              "_id": "6a3d7664a09a352cc8c2ccef"
+            },
+            {
+              "at": "2026-06-25T18:41:41.784Z",
+              "leaveType": "CCL",
+              "transactionType": "DEBIT",
+              "days": 1,
+              "openingBalance": 1,
+              "closingBalance": 0,
+              "startDate": "2026-06-25T18:29:00.000Z",
+              "endDate": "2026-06-25T18:29:00.000Z",
+              "reason": "Transfer out — unused monthly apply pool CCL from payroll 6/2026 → 7/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_OUT_CCL",
+              "includedInPayroll": false,
+              "divisionId": "6954f442d10f48e61660b30b",
+              "departmentId": "6958e3859e4de0c55829c289",
+              "_id": "6a3d7665a09a352cc8c2cef8"
+            }
+          ],
+          "monthlyApplySyncedAt": "2026-06-25T18:41:43.709Z",
+          "poolCarryForwardOutAt": "2026-06-25T18:41:39.884Z",
+          "poolCarryForwardAllocation": {
+            "U": 1,
+            "clAlloc": 1,
+            "cclAlloc": 0,
+            "elAlloc": 0,
+            "clRem": 3.5,
+            "cclRem": 1,
+            "elRem": 0,
+            "scheduled": {
+              "cl": 4.5,
+              "ccl": 1,
+              "el": 0
+            },
+            "ledgerUsed": {
+              "cl": 1,
+              "ccl": 0,
+              "el": 0,
+              "clLocked": 0
+            },
+            "monthLocked": 0,
+            "lockedDeducted": {
+              "cl": 0,
+              "ccl": 0,
+              "el": 0
+            },
+            "unallocatedLocked": 0,
+            "carryPosted": {
+              "cl": 3.5,
+              "ccl": 1,
+              "el": 0
+            },
+            "elInPool": false,
+            "policies": {
+              "clRoll": true,
+              "cclRoll": true,
+              "elRoll": false
+            }
+          }
+        },
+        {
+          "poolCarryForwardOut": {
+            "cl": 0,
+            "ccl": 0,
+            "el": 0
+          },
+          "poolCarryForwardIn": {
+            "cl": 3.5,
+            "ccl": 1,
+            "el": 0
+          },
+          "payrollMonthIndex": 7,
+          "label": "Jul 2026",
+          "payPeriodStart": "2026-06-25T18:30:00.000Z",
+          "payPeriodEnd": "2026-07-25T18:29:00.000Z",
+          "payrollCycleMonth": 7,
+          "payrollCycleYear": 2026,
+          "clCredits": 4.5,
+          "elCredits": 0,
+          "compensatoryOffs": 1,
+          "lockedCredits": 0,
+          "monthlyApplyCeiling": 5.5,
+          "monthlyApplyConsumed": 200,
+          "monthlyApplyLocked": 0,
+          "monthlyApplyApproved": 200,
+          "poolCarryForwardFromLabel": "6/2026",
+          "transactions": [
+            {
+              "at": "2026-07-25T18:29:00.000Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 3.5,
+              "closingBalance": 4.5,
+              "startDate": "2026-07-25T18:29:00.000Z",
+              "endDate": "2026-07-25T18:29:00.000Z",
+              "reason": "Scheduled CL — Jul 2026: 1 day(s) (policy month 7)",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_CL_SCHEDULE",
+              "includedInPayroll": false,
+              "_id": "69c8da9081f8f9f9eae69d90"
+            },
+            {
+              "at": "2026-06-25T18:41:40.742Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 3.5,
+              "openingBalance": 0,
+              "closingBalance": 3.5,
+              "startDate": "2026-06-25T18:30:00.000Z",
+              "endDate": "2026-06-25T18:30:00.000Z",
+              "reason": "Transfer in — unused monthly apply pool CL from payroll 6/2026 → 7/2026 (moved to next slot).",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_IN_CL",
+              "includedInPayroll": false,
+              "divisionId": "6954f442d10f48e61660b30b",
+              "departmentId": "6958e3859e4de0c55829c289",
+              "_id": "6a3d7664a09a352cc8c2cded"
+            },
+            {
+              "at": "2026-06-25T18:41:42.449Z",
+              "leaveType": "CCL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 0,
+              "closingBalance": 1,
+              "startDate": "2026-06-25T18:30:00.000Z",
+              "endDate": "2026-06-25T18:30:00.000Z",
+              "reason": "Transfer in — unused monthly apply pool CCL from payroll 6/2026 → 7/2026.",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_POOL_TRANSFER_IN_CCL",
+              "includedInPayroll": false,
+              "divisionId": "6954f442d10f48e61660b30b",
+              "departmentId": "6958e3859e4de0c55829c289",
+              "_id": "6a3d7666a09a352cc8c2cfbf"
+            }
+          ],
+          "monthlyApplySyncedAt": "2026-07-25T10:47:17.020Z",
+          "poolCarryForwardOutAt": null
+        },
+        {
+          "poolCarryForwardOut": {
+            "cl": 0,
+            "ccl": 0,
+            "el": 0
+          },
+          "poolCarryForwardIn": {
+            "cl": 0,
+            "ccl": 0,
+            "el": 0
+          },
+          "payrollMonthIndex": 8,
+          "label": "Aug 2026",
+          "payPeriodStart": "2026-07-25T18:30:00.000Z",
+          "payPeriodEnd": "2026-08-25T18:29:00.000Z",
+          "payrollCycleMonth": 8,
+          "payrollCycleYear": 2026,
+          "clCredits": 1,
+          "elCredits": 0,
+          "compensatoryOffs": 0,
+          "lockedCredits": 0,
+          "monthlyApplyCeiling": 1,
+          "monthlyApplyConsumed": 0,
+          "monthlyApplyLocked": 0,
+          "monthlyApplyApproved": 0,
+          "poolCarryForwardFromLabel": "",
+          "transactions": [
+            {
+              "at": "2026-08-25T18:29:00.000Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 4.5,
+              "closingBalance": 5.5,
+              "startDate": "2026-08-25T18:29:00.000Z",
+              "endDate": "2026-08-25T18:29:00.000Z",
+              "reason": "Scheduled CL — Aug 2026: 1 day(s) (policy month 8)",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_CL_SCHEDULE",
+              "includedInPayroll": false,
+              "_id": "69c8da9081f8f9f9eae69d91"
+            }
+          ],
+          "monthlyApplySyncedAt": "2026-07-25T10:46:47.075Z",
+          "poolCarryForwardOutAt": null
+        },
+        {
+          "poolCarryForwardOut": {
+            "cl": 0,
+            "ccl": 0,
+            "el": 0
+          },
+          "poolCarryForwardIn": {
+            "cl": 0,
+            "ccl": 0,
+            "el": 0
+          },
+          "payrollMonthIndex": 9,
+          "label": "Sep 2026",
+          "payPeriodStart": "2026-08-25T18:30:00.000Z",
+          "payPeriodEnd": "2026-09-25T18:29:00.000Z",
+          "payrollCycleMonth": 9,
+          "payrollCycleYear": 2026,
+          "clCredits": 1,
+          "elCredits": 0,
+          "compensatoryOffs": 0,
+          "lockedCredits": 0,
+          "monthlyApplyCeiling": 1,
+          "monthlyApplyConsumed": 0,
+          "monthlyApplyLocked": 0,
+          "monthlyApplyApproved": 0,
+          "poolCarryForwardFromLabel": "",
+          "transactions": [
+            {
+              "at": "2026-09-25T18:29:00.000Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 5.5,
+              "closingBalance": 6.5,
+              "startDate": "2026-09-25T18:29:00.000Z",
+              "endDate": "2026-09-25T18:29:00.000Z",
+              "reason": "Scheduled CL — Sep 2026: 1 day(s) (policy month 9)",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_CL_SCHEDULE",
+              "includedInPayroll": false,
+              "_id": "69c8da9081f8f9f9eae69d92"
+            }
+          ]
+        },
+        {
+          "poolCarryForwardOut": {
+            "cl": 0,
+            "ccl": 0,
+            "el": 0
+          },
+          "poolCarryForwardIn": {
+            "cl": 0,
+            "ccl": 0,
+            "el": 0
+          },
+          "payrollMonthIndex": 10,
+          "label": "Oct 2026",
+          "payPeriodStart": "2026-09-25T18:30:00.000Z",
+          "payPeriodEnd": "2026-10-25T18:29:00.000Z",
+          "payrollCycleMonth": 10,
+          "payrollCycleYear": 2026,
+          "clCredits": 1,
+          "elCredits": 0,
+          "compensatoryOffs": 0,
+          "lockedCredits": 0,
+          "monthlyApplyCeiling": 1,
+          "monthlyApplyConsumed": 0,
+          "monthlyApplyLocked": 0,
+          "monthlyApplyApproved": 0,
+          "poolCarryForwardFromLabel": "",
+          "transactions": [
+            {
+              "at": "2026-10-25T18:29:00.000Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 6.5,
+              "closingBalance": 7.5,
+              "startDate": "2026-10-25T18:29:00.000Z",
+              "endDate": "2026-10-25T18:29:00.000Z",
+              "reason": "Scheduled CL — Oct 2026: 1 day(s) (policy month 10)",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_CL_SCHEDULE",
+              "includedInPayroll": false,
+              "_id": "69c8da9081f8f9f9eae69d93"
+            }
+          ]
+        },
+        {
+          "poolCarryForwardOut": {
+            "cl": 0,
+            "ccl": 0,
+            "el": 0
+          },
+          "poolCarryForwardIn": {
+            "cl": 0,
+            "ccl": 0,
+            "el": 0
+          },
+          "payrollMonthIndex": 11,
+          "label": "Nov 2026",
+          "payPeriodStart": "2026-10-25T18:30:00.000Z",
+          "payPeriodEnd": "2026-11-25T18:29:00.000Z",
+          "payrollCycleMonth": 11,
+          "payrollCycleYear": 2026,
+          "clCredits": 1,
+          "elCredits": 0,
+          "compensatoryOffs": 0,
+          "lockedCredits": 0,
+          "monthlyApplyCeiling": 1,
+          "monthlyApplyConsumed": 0,
+          "monthlyApplyLocked": 0,
+          "monthlyApplyApproved": 0,
+          "poolCarryForwardFromLabel": "",
+          "transactions": [
+            {
+              "at": "2026-11-25T18:29:00.000Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 7.5,
+              "closingBalance": 8.5,
+              "startDate": "2026-11-25T18:29:00.000Z",
+              "endDate": "2026-11-25T18:29:00.000Z",
+              "reason": "Scheduled CL — Nov 2026: 1 day(s) (policy month 11)",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_CL_SCHEDULE",
+              "includedInPayroll": false,
+              "_id": "69c8da9081f8f9f9eae69d94"
+            }
+          ]
+        },
+        {
+          "poolCarryForwardOut": {
+            "cl": 0,
+            "ccl": 0,
+            "el": 0
+          },
+          "poolCarryForwardIn": {
+            "cl": 0,
+            "ccl": 0,
+            "el": 0
+          },
+          "payrollMonthIndex": 12,
+          "label": "Dec 2026",
+          "payPeriodStart": "2026-11-25T18:30:00.000Z",
+          "payPeriodEnd": "2026-12-25T18:29:00.000Z",
+          "payrollCycleMonth": 12,
+          "payrollCycleYear": 2026,
+          "clCredits": 1,
+          "elCredits": 0,
+          "compensatoryOffs": 0,
+          "lockedCredits": 0,
+          "monthlyApplyCeiling": 1,
+          "monthlyApplyConsumed": 0,
+          "monthlyApplyLocked": 0,
+          "monthlyApplyApproved": 0,
+          "poolCarryForwardFromLabel": "",
+          "transactions": [
+            {
+              "at": "2026-12-25T18:29:00.000Z",
+              "leaveType": "CL",
+              "transactionType": "CREDIT",
+              "days": 1,
+              "openingBalance": 8.5,
+              "closingBalance": 9.5,
+              "startDate": "2026-12-25T18:29:00.000Z",
+              "endDate": "2026-12-25T18:29:00.000Z",
+              "reason": "Scheduled CL — Dec 2026: 1 day(s) (policy month 12)",
+              "status": "APPROVED",
+              "autoGenerated": true,
+              "autoGeneratedType": "MONTHLY_CL_SCHEDULE",
+              "includedInPayroll": false,
+              "_id": "69c8da9081f8f9f9eae69d95"
+            }
+          ]
+        }
+      ],
+      "resetAt": "2026-03-28T18:30:00.000Z",
+      "source": "INITIAL_POLICY_SYNC",
+      "updatedAt": "2026-07-25T12:47:24.436Z",
+      "yearlyCclCreditDaysPosted": 2,
+      "yearlyClCreditDaysPosted": 12.5,
+      "yearlyPolicyClScheduledTotal": 9,
+      "yearlyTransactions": [
+        {
+          "at": "2026-03-28T18:30:00.000Z",
+          "transactionKind": "ADJUSTMENT",
+          "leaveType": "CL",
+          "days": 9,
+          "reason": "Initial policy sync: pool 9 (remaining FY grid 9 + carry 0; full grid before past-zero 15; past slots cleared 6)",
+          "meta": {
+            "fullYearGridSum": 15,
+            "policyRemainingGridOnly": 9,
+            "pastClearedCreditsTotal": 6,
+            "carryForwardAllowed": 0
+          },
+          "_id": "69c8da9081f8f9f9eae69d83"
+        }
+      ]
+    }
+  ]
+}

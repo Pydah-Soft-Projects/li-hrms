@@ -276,6 +276,57 @@ const employeeSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    /**
+     * Biometric device offboarding after LWD+1 (resign/terminate).
+     * Cleared on rejoin when users are written back to devices.
+     */
+    biometricOffboardedAt: {
+      type: Date,
+      default: null,
+    },
+    biometricOffboardDeviceIds: {
+      type: [String],
+      default: [],
+    },
+    /**
+     * Effective-dated division/department/designation timeline.
+     * Master division_id / department_id / designation_id = as-of-today cache.
+     */
+    orgHistory: {
+      type: [
+        {
+          division_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Division', default: null },
+          department_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null },
+          designation_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Designation', default: null },
+          effectiveFrom: { type: Date, required: true },
+          effectiveTo: { type: Date, default: null },
+          source: {
+            type: String,
+            enum: ['hire', 'transfer', 'promotion', 'demotion', 'increment', 'manual_superadmin', 'backfill', 'rejoin'],
+            default: 'backfill',
+          },
+          requestId: { type: mongoose.Schema.Types.ObjectId, ref: 'PromotionTransferRequest', default: null },
+        },
+      ],
+      default: [],
+    },
+    /** Effective-dated gross salary timeline. Master gross_salary = as-of-today cache. */
+    salaryHistory: {
+      type: [
+        {
+          gross_salary: { type: Number, default: 0 },
+          effectiveFrom: { type: Date, required: true },
+          effectiveTo: { type: Date, default: null },
+          source: {
+            type: String,
+            enum: ['hire', 'promotion', 'demotion', 'increment', 'manual_superadmin', 'backfill', 'rejoin'],
+            default: 'backfill',
+          },
+          requestId: { type: mongoose.Schema.Types.ObjectId, ref: 'PromotionTransferRequest', default: null },
+        },
+      ],
+      default: [],
+    },
     /** Full join/leave cycle history (current doj is the latest tenure's joinDate) */
     employmentTenures: {
       type: [

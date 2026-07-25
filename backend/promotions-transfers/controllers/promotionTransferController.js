@@ -378,6 +378,29 @@ exports.createRequest = async (req, res) => {
       docPayload.toDesignationId = des._id;
     }
 
+    // Effect date required for transfer, or promotion/demotion with division/department change
+    const orgDivDeptChange =
+      docPayload.toDivisionId != null || docPayload.toDepartmentId != null;
+    const needsEffectDate =
+      requestType === 'transfer' ||
+      ((requestType === 'promotion' || requestType === 'demotion') && orgDivDeptChange);
+
+    if (needsEffectDate) {
+      const rawEffect = req.body.effectDate;
+      if (!rawEffect) {
+        return res.status(400).json({
+          success: false,
+          message: 'effectDate is required for transfer (and for promotion/demotion when division or department changes)',
+        });
+      }
+      const effectDateObj = new Date(rawEffect);
+      if (Number.isNaN(effectDateObj.getTime())) {
+        return res.status(400).json({ success: false, message: 'Invalid effectDate' });
+      }
+      effectDateObj.setUTCHours(0, 0, 0, 0);
+      docPayload.effectDate = effectDateObj;
+    }
+
     const doc = await PromotionTransferRequest.create(docPayload);
 
     try {
@@ -699,8 +722,21 @@ exports.deleteRequest = async (req, res) => {
 };
 
 async function applyApprovedChanges(doc) {
+  const Employee = require('../../employees/model/Employee');
+  const {
+    applyOrgChange,
+    applySalaryChange,
+    startOfUtcDay,
+  } = require('../../employees/services/employeeTimelineService');
+
   const emp = await Employee.findById(doc.employeeId);
   if (!emp) return;
+
+  const today = startOfUtcDay(new Date());
+  const effectDate = doc.effectDate ? startOfUtcDay(doc.effectDate) : today;
+  const orgChanging =
+    doc.requestType === 'transfer' ||
+    Boolean(doc.toDivisionId || doc.toDepartmentId);
 
   if (doc.requestType === 'promotion' || doc.requestType === 'demotion' || doc.requestType === 'increment') {
     let nextGross = Number(doc.newGrossSalary);
@@ -711,29 +747,68 @@ async function applyApprovedChanges(doc) {
     if (!Number.isFinite(nextGross)) {
       throw new Error('Salary change request is missing newGrossSalary');
     }
-    emp.gross_salary = nextGross;
-    if (doc.proposedDesignationId) {
-      emp.designation_id = doc.proposedDesignationId;
+
+    // Salary effective: prefer effectDate when org also changes; else 1st of effective payroll month
+    let salaryFrom = effectDate;
+    if (!orgChanging && doc.effectivePayrollYear && doc.effectivePayrollMonth) {
+      salaryFrom = startOfUtcDay(
+        new Date(Date.UTC(doc.effectivePayrollYear, doc.effectivePayrollMonth - 1, 1))
+      );
     }
-    // Apply optional org changes captured on the request
-    if (doc.toDivisionId) {
-      emp.division_id = doc.toDivisionId;
+
+    applySalaryChange(emp, {
+      gross_salary: nextGross,
+      effectiveFrom: salaryFrom || today,
+      source: doc.requestType,
+      requestId: doc._id,
+      applyMaster: true,
+    });
+
+    const nextDesig =
+      doc.proposedDesignationId ||
+      (doc.toDesignationId && !doc.proposedDesignationId ? doc.toDesignationId : null);
+
+    if (orgChanging) {
+      if (!effectDate) throw new Error('effectDate required for org change');
+      applyOrgChange(emp, {
+        division_id: doc.toDivisionId || emp.division_id,
+        department_id: doc.toDepartmentId || emp.department_id,
+        designation_id: nextDesig || emp.designation_id,
+        effectiveFrom: effectDate,
+        source: doc.requestType,
+        requestId: doc._id,
+        applyMaster: true,
+      });
+    } else if (nextDesig) {
+      // Designation-only: apply on salary effective date via org segment (same div/dept)
+      applyOrgChange(emp, {
+        division_id: emp.division_id,
+        department_id: emp.department_id,
+        designation_id: nextDesig,
+        effectiveFrom: salaryFrom || today,
+        source: doc.requestType,
+        requestId: doc._id,
+        applyMaster: true,
+      });
     }
-    if (doc.toDepartmentId) {
-      emp.department_id = doc.toDepartmentId;
-    }
-    if (doc.toDesignationId && !doc.proposedDesignationId) {
-      // Fallback: if no separate proposedDesignationId, use the toDesignationId
-      emp.designation_id = doc.toDesignationId;
-    }
+
+    doc.timelineApplied = true;
     await emp.save();
     return;
   }
 
   if (doc.requestType === 'transfer') {
-    emp.division_id = doc.toDivisionId;
-    emp.department_id = doc.toDepartmentId;
-    emp.designation_id = doc.toDesignationId;
+    if (!effectDate) throw new Error('effectDate required for transfer');
+    applyOrgChange(emp, {
+      division_id: doc.toDivisionId,
+      department_id: doc.toDepartmentId,
+      designation_id: doc.toDesignationId,
+      effectiveFrom: effectDate,
+      source: 'transfer',
+      requestId: doc._id,
+      applyMaster: true,
+    });
+    doc.timelineApplied = true;
     await emp.save();
   }
 }

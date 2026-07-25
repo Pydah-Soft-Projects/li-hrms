@@ -8,6 +8,11 @@ const Designation = require('../../departments/model/Designation');
 const EmployeeGroup = require('../../employees/model/EmployeeGroup');
 const SecondSalarySyncService = require('../../payroll/services/secondSalarySyncService');
 const { getTodayISTDateString } = require('../../shared/utils/dateUtils');
+const {
+    promotePermanentFieldsFromDynamic,
+    stripPromotedPermanentFieldsFromDynamic,
+} = require('../../shared/utils/promotePermanentFieldsFromDynamic');
+const { getPermanentFieldNames } = require('../../employee-applications/services/fieldMappingService');
 
 /** Field IDs that store ObjectIds; we show names in template and resolve names on upload */
 const REF_FIELD_IDS = ['division_id', 'department_id', 'designation_id', 'employee_group_id'];
@@ -576,10 +581,25 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
                     return;
                 }
                     if (masterByHeader.has(header)) return;
-                const fieldId = labelToIdMap[normalizedHeader] || STATIC_HEADER_TO_FIELD[normalizedHeader];
+                const fieldIdFromForm = labelToIdMap[normalizedHeader];
+                const fieldIdFromStatic = STATIC_HEADER_TO_FIELD[normalizedHeader];
+                // Prefer Employee schema root IDs over custom form field IDs for known permanent headers
+                // (e.g. "Employee Group" must map to employee_group_id, not a dynamic form field id)
+                let fieldId = fieldIdFromForm || fieldIdFromStatic;
+                if (
+                    fieldIdFromStatic &&
+                    EMPLOYEE_TOP_LEVEL_PATHS.has(fieldIdFromStatic) &&
+                    (!fieldIdFromForm || !EMPLOYEE_TOP_LEVEL_PATHS.has(fieldIdFromForm))
+                ) {
+                    fieldId = fieldIdFromStatic;
+                }
                 if (!fieldId || fieldId === 'emp_no') return;
 
                 let cellValue = row[header];
+                // Skip blank cells so bulk update only writes provided values (partial row safe)
+                if (cellValue === undefined || cellValue === null || String(cellValue).trim() === '') {
+                    return;
+                }
                 if (REF_FIELD_IDS.includes(fieldId)) {
                     const resolved = resolveRefValue(cellValue, fieldId, lookups);
                     if (resolved !== null) {
@@ -639,6 +659,11 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
                     
                     if (EMPLOYEE_TOP_LEVEL_PATHS.has(persistAs)) {
                         doc.set(persistAs, value);
+                        // Remove stale copy from dynamicFields if present
+                        if (doc.dynamicFields && typeof doc.dynamicFields === 'object' && doc.dynamicFields[persistAs] !== undefined) {
+                            delete doc.dynamicFields[persistAs];
+                            doc.markModified('dynamicFields');
+                        }
                     } else {
                         const groupId = fieldIdToGroupId[fieldId];
                         if (groupId === 'salaries') {
@@ -662,6 +687,25 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
                         }
                     }
                 });
+
+                // Lift permanent fields stuck only in dynamicFields onto root, then strip them from dynamic
+                const plain = doc.toObject({ virtuals: false });
+                const lifted = promotePermanentFieldsFromDynamic(plain);
+                for (const name of getPermanentFieldNames()) {
+                    if (
+                        (doc[name] === undefined || doc[name] === null || doc[name] === '') &&
+                        lifted[name] !== undefined &&
+                        lifted[name] !== null &&
+                        lifted[name] !== ''
+                    ) {
+                        doc.set(name, lifted[name]);
+                    }
+                }
+                const strippedDynamic = stripPromotedPermanentFieldsFromDynamic(doc.dynamicFields || {});
+                if (JSON.stringify(strippedDynamic) !== JSON.stringify(doc.dynamicFields || {})) {
+                    doc.dynamicFields = strippedDynamic;
+                    doc.markModified('dynamicFields');
+                }
 
                 await doc.save();
                 updatedCount++;
