@@ -2204,7 +2204,6 @@ export default function EmployeesPage() {
               'Continue and apply change effective today?'
           );
           if (!ok) {
-            setSubmitting(false);
             return;
           }
           finalSubmitData.acknowledgeOrgTimelineRisk = true;
