@@ -1760,7 +1760,8 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
     const secondByEmp = new Map(secondRecords.map((sr) => [(sr.employeeId?._id || sr.employeeId).toString(), sr]));
 
     const config = await PayrollConfiguration.get();
-    const outputColumnsNormalized = normalizeOutputColumns(config?.outputColumns);
+    const exportColumns = outputColumnService.filterOutputColumnsForExport(config?.outputColumns);
+    const outputColumnsNormalized = normalizeOutputColumns(exportColumns);
     const statutoryCodesForBundle = await getStatutoryCodesForPaysheetExpansion();
 
     let regularRows;
@@ -1787,7 +1788,15 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
       );
       await enrichPayslipsLoanRemainingBalance(payslipsReg, payrollRecords);
       const built = buildOutputColumnRows(payslipsReg, payslipsSec, outputColumnsNormalized, statutoryCodesForBundle);
-      if (!regularRows) regularRows = built.regularRows;
+      if (!regularRows) {
+        regularRows = built.regularRows;
+      } else {
+        // Snapshots may include all paysheet columns; project to the export column set.
+        regularRows = outputColumnService.projectRowsToExpandedColumns(
+          regularRows,
+          built.expandedColumns
+        );
+      }
       secondRows = built.secondRows;
       netsReg = payslipsReg.map((p) => Number(p.netSalary) || 0);
       netsSec = payslipsSec.map((p) => (p ? Number(p.netSalary) || 0 : 0));

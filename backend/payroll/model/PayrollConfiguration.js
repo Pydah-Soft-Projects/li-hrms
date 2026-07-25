@@ -46,6 +46,11 @@ const outputColumnSchema = new mongoose.Schema({
   paysheetEditableFieldPath: { type: String, default: '' },
   /** Payslip layout: attendance | earnings | deductions | none (paysheet only). */
   payslipSection: { type: String, enum: ['none', 'attendance', 'earnings', 'deductions'], default: 'none' },
+  /**
+   * When true, column is included in paysheet Excel / PDF exports.
+   * If no column is marked, exports include all output columns (default).
+   */
+  includeInExport: { type: Boolean, default: false },
 }, { _id: false });
 
 const payrollConfigurationSchema = new mongoose.Schema({
@@ -125,6 +130,7 @@ function normalizeConfigPayload(payload = {}) {
         c.paysheetEditableFieldPath != null ? String(c.paysheetEditableFieldPath).trim() : '';
       const rawSection = String(c.payslipSection || 'none').trim().toLowerCase();
       const payslipSection = ['attendance', 'earnings', 'deductions'].includes(rawSection) ? rawSection : 'none';
+      const includeInExport = !!c.includeInExport;
       return {
         header,
         source,
@@ -134,6 +140,7 @@ function normalizeConfigPayload(payload = {}) {
         paysheetEditable,
         paysheetEditableFieldPath,
         payslipSection,
+        includeInExport,
       };
     });
   }

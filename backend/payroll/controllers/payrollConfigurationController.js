@@ -61,6 +61,7 @@ exports.upsertPayrollConfig = async (req, res) => {
             paysheetEditableFieldPath:
               c.paysheetEditableFieldPath != null ? String(c.paysheetEditableFieldPath).trim() : '',
             payslipSection,
+            includeInExport: !!c.includeInExport,
           };
         })
       : [];

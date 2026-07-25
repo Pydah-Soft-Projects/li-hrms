@@ -122,6 +122,52 @@ function toPlainOutputColumns(outputColumns) {
   return outputColumns.map(toPlainOutputColumn);
 }
 
+/**
+ * True when at least one output column is explicitly marked for Excel/PDF export.
+ */
+function hasAnyExportMarkedColumns(outputColumns) {
+  return toPlainOutputColumns(outputColumns).some((c) => !!c.includeInExport);
+}
+
+/**
+ * Columns to include in paysheet Excel/PDF exports.
+ * If nothing is marked includeInExport, returns all columns (legacy default).
+ * Otherwise returns only marked columns (breakdown children inherit when parent is expanded later).
+ */
+function filterOutputColumnsForExport(outputColumns) {
+  const plain = toPlainOutputColumns(outputColumns);
+  if (!plain.length) return [];
+  if (!hasAnyExportMarkedColumns(plain)) return plain;
+  return plain.filter((c) => !!c.includeInExport);
+}
+
+/**
+ * Project paysheet/snapshot rows onto the headers of expanded export columns.
+ * Keeps S.No and any _export* meta keys.
+ */
+function projectRowsToExpandedColumns(rows, expandedColumns) {
+  if (!Array.isArray(rows) || !rows.length) return rows || [];
+  const headers = (expandedColumns || [])
+    .map((c) => (c && c.header != null ? String(c.header).trim() : ''))
+    .filter(Boolean);
+  if (!headers.length) return rows;
+  return rows.map((row) => {
+    const out = {};
+    if (row && Object.prototype.hasOwnProperty.call(row, 'S.No')) {
+      out['S.No'] = row['S.No'];
+    }
+    for (const h of headers) {
+      out[h] = row && Object.prototype.hasOwnProperty.call(row, h) ? row[h] : '';
+    }
+    if (row && typeof row === 'object') {
+      for (const k of Object.keys(row)) {
+        if (k.startsWith('_export')) out[k] = row[k];
+      }
+    }
+    return out;
+  });
+}
+
 // Allow formula to use: numbers, +-*/(),., comma, identifiers, and ? : for ternary
 // extraKeys: Set or Array of allowed variable names (e.g. context keys)
 function isFormulaSafe(formula, extraKeys = null) {
@@ -480,6 +526,9 @@ module.exports = {
   expandOutputColumnsWithBreakdown,
   toPlainOutputColumn,
   toPlainOutputColumns,
+  hasAnyExportMarkedColumns,
+  filterOutputColumnsForExport,
+  projectRowsToExpandedColumns,
   getValueByPath,
   getContextFromPayslip,
   safeEvalFormula,

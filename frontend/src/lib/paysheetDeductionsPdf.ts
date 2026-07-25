@@ -406,18 +406,55 @@ function findOutputColumnForHeader(header: string, outputColumns: PayrollOutputC
     return outputColumns.find((c) => String(c.header || '').trim() === trimmed);
 }
 
+function hasAnyExportMarkedColumns(outputColumns?: PayrollOutputColumn[]): boolean {
+    return !!outputColumns?.some((c) => !!c.includeInExport);
+}
+
+function isDeductionOrStatutoryCumulative(col: PayrollOutputColumn): boolean {
+    const field = String(col.field || '').trim();
+    const headerKey = String(col.header || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '_')
+        .replace(/[^a-z0-9_]/g, '');
+    return (
+        field === 'deductions.deductionsCumulative' ||
+        field === 'deductions.statutoryCumulative' ||
+        headerKey === 'deductions_cumulative' ||
+        headerKey === 'statutory_cumulative' ||
+        headerKey === 'statutory_deductions'
+    );
+}
+
+/** When export marks exist, breakdown headers under marked deduction/statutory cumulatives stay exportable. */
+function markedAllowsDeductionBreakdown(outputColumns?: PayrollOutputColumn[]): boolean {
+    if (!outputColumns?.length) return false;
+    return outputColumns.some((c) => !!c.includeInExport && isDeductionOrStatutoryCumulative(c));
+}
+
 function identifyDeductionColumns(
     headers: string[],
     outputColumns?: PayrollOutputColumn[]
 ): DeductionColumn[] {
     const deductionColumns: DeductionColumn[] = [];
     const seen = new Set<string>();
+    const anyMarked = hasAnyExportMarkedColumns(outputColumns);
+    const allowBreakdown = anyMarked && markedAllowsDeductionBreakdown(outputColumns);
 
     for (const header of headers) {
         if (header === 'S.No' || seen.has(header)) continue;
 
         const configured = outputColumns?.length ? findOutputColumnForHeader(header, outputColumns) : undefined;
         const field = configured?.field ?? '';
+
+        if (anyMarked) {
+            if (configured) {
+                if (!configured.includeInExport) continue;
+            } else if (!allowBreakdown) {
+                // Unconfigured header (e.g. expanded breakdown) with no marked cumulative parent
+                continue;
+            }
+        }
 
         if (isEmployeeOrEarningColumn(header, field)) continue;
         if (isCumulativeOrMetaColumn(header, field)) continue;

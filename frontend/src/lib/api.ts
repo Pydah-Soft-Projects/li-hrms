@@ -317,6 +317,11 @@ export interface PayrollOutputColumn {
   paysheetEditableFieldPath?: string;
   /** Payslip layout section: attendance, earnings, or deductions. */
   payslipSection?: PayslipSectionType;
+  /**
+   * When true, include this column in paysheet Excel / PDF exports.
+   * If no column is marked, exports include all columns (default).
+   */
+  includeInExport?: boolean;
 }
 
 export interface PayslipSectionItem {

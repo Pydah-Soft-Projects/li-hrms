@@ -158,6 +158,7 @@ export default function PayrollConfigPage() {
             ...c,
             order: c.order ?? i,
             payslipSection: c.payslipSection || 'none',
+            includeInExport: !!c.includeInExport,
           }))
         );
       } else {
@@ -243,7 +244,7 @@ export default function PayrollConfigPage() {
   const addOutputColumn = () => {
     setOutputColumns((prev) => [
       ...prev,
-      { header: '', source: 'field', field: 'employee.emp_no', payslipSection: 'none', order: prev.length },
+      { header: '', source: 'field', field: 'employee.emp_no', payslipSection: 'none', includeInExport: false, order: prev.length },
     ]);
   };
 
@@ -598,6 +599,9 @@ export default function PayrollConfigPage() {
               <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
                 Payslip shows columns tagged Attendance, Earnings, or Deductions only.
               </p>
+              <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                Mark &quot;Include in export&quot; for Excel/PDF. If none are marked, all columns are exported.
+              </p>
               <label className="mt-3 inline-flex cursor-pointer items-center gap-2 text-sm text-stone-700 dark:text-stone-300">
                 <input
                   type="checkbox"
@@ -755,6 +759,24 @@ export default function PayrollConfigPage() {
                         <option value="earnings">Earnings</option>
                         <option value="deductions">Deductions</option>
                       </select>
+                      <label
+                        className="mt-2 inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-stone-600 dark:text-stone-400"
+                        title="If any column is marked, only marked columns appear in Excel/PDF export. If none are marked, all columns are exported."
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!!col.includeInExport}
+                          onChange={(e) =>
+                            setOutputColumns((prev) =>
+                              prev.map((c, i) =>
+                                i === index ? { ...c, includeInExport: e.target.checked } : c
+                              )
+                            )
+                          }
+                          style={{ accentColor: 'var(--ps-accent)' }}
+                        />
+                        Include in export
+                      </label>
                     </div>
                     <div className="sm:col-span-2">
                       <LoanFormLabel>Data source</LoanFormLabel>
