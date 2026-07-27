@@ -54,6 +54,7 @@ import { getHoursOdAttendanceSuggestion } from '@/lib/hoursOdAttendanceSuggestio
 import { computeHoursOdCredit, formatMinsAsHm, timeStringsOverlap } from '@/lib/hoursOdOverlap';
 import LeaveApplyDateCheckBanner from '@/components/leave/LeaveApplyDateCheckBanner';
 import LeaveDetailAttendancePreview from '@/components/leave/LeaveDetailAttendancePreview';
+import ODDetailCard from '@/components/od/ODDetailCard';
 import type { LeaveAttendancePreview } from '@/lib/leaveDetailAttendancePreview';
 import {
   calculateLeaveNumberOfDays,
@@ -4184,39 +4185,41 @@ function LeavesPageContent() {
 
       {/* Apply Leave/OD Dialog */}
       {showApplyDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto overscroll-contain px-2 py-3 sm:px-4 sm:py-6">
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApplyDialog(false)} />
-          <div className="relative z-50 my-auto flex h-auto min-h-0 w-full max-w-lg max-h-[min(90dvh,calc(100dvh-3rem))] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
-            <div className="shrink-0 space-y-4 border-b border-slate-100 px-6 pb-4 pt-6 dark:border-slate-800">
+          <div className="relative z-[101] my-auto flex h-auto min-h-0 w-full max-w-md sm:max-w-lg max-h-[min(84dvh,calc(100dvh-5rem))] sm:max-h-[min(92dvh,calc(100dvh-2rem))] flex-col overflow-hidden rounded-2xl sm:rounded-3xl bg-white shadow-2xl dark:bg-slate-900">
+            <div className="shrink-0 space-y-3 sm:space-y-4 border-b border-slate-100 px-4 pb-3 pt-4 sm:px-6 sm:pb-4 sm:pt-6 dark:border-slate-800">
             {/* Type Toggle */}
             <div className="flex gap-2">
               <button
+                type="button"
                 onClick={() => setApplyType('leave')}
-                className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'leave'
+                className={`flex-1 py-1.5 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all ${applyType === 'leave'
                   ? 'bg-blue-500 text-white'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
                   }`}
               >
-                <span className="flex items-center justify-center gap-2">
+                <span className="flex items-center justify-center gap-1.5">
                   <CalendarIcon />
                   Leave
                 </span>
               </button>
               <button
+                type="button"
                 onClick={() => setApplyType('od')}
-                className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'od'
+                className={`flex-1 py-1.5 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all ${applyType === 'od'
                   ? 'bg-purple-500 text-white'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
                   }`}
               >
-                <span className="flex items-center justify-center gap-2">
+                <span className="flex items-center justify-center gap-1.5">
                   <BriefcaseIcon />
                   On Duty
                 </span>
               </button>
             </div>
 
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+            <h2 className="text-base sm:text-xl font-bold text-slate-900 dark:text-white">
               Apply for {applyType === 'leave' ? 'Leave' : 'On Duty'}
             </h2>
             </div>
@@ -5039,143 +5042,815 @@ function LeavesPageContent() {
           }} />
           <div className="relative z-50 my-auto flex h-auto min-h-0 w-full max-w-4xl max-h-[min(90dvh,calc(100dvh-2rem))] flex-col overflow-hidden rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl animate-in zoom-in-95 duration-300">
             {/* Header */}
-            <div className={`shrink-0 w-full min-w-0 overflow-hidden rounded-t-3xl border-b border-white/10 ${detailType === 'leave'
-              ? 'bg-gradient-to-r from-blue-600 to-blue-500'
-              : 'bg-gradient-to-r from-purple-600 to-purple-500'
+            <div className={`relative shrink-0 w-full min-w-0 overflow-hidden rounded-t-3xl border-b border-white/10 ${
+              detailType === 'leave'
+                ? 'bg-indigo-700'
+                : 'bg-slate-700'
               }`}>
-              {detailType === 'od' ? (
-                <div className="box-border w-full min-w-0 px-4 pb-3 pt-3 sm:px-6 sm:pb-4 sm:pt-4" role="region" aria-label="On duty request">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                    <div className="flex min-w-0 w-full items-start gap-3 sm:flex-1 sm:basis-0 sm:gap-4">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-md sm:h-11 sm:w-11">
-                        <Briefcase className="h-5 w-5 text-white sm:h-[22px] sm:w-[22px]" aria-hidden />
+              <div className="absolute inset-0 bg-gradient-to-r from-white/5 via-transparent to-indigo-600/10 pointer-events-none" />
+
+              <div className="relative z-10 px-6 py-4 sm:px-8 sm:py-5">
+                {detailType === 'leave' ? (
+                  <div className="flex items-center justify-between text-white">
+                    <div className="flex items-center gap-3.5">
+                      <div className="h-10 w-10 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center backdrop-blur-md text-white shadow-md">
+                        <Calendar className="w-5 h-5 text-blue-200" />
                       </div>
-                      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-                        <p className="break-words text-lg font-black leading-snug text-white sm:text-xl [overflow-wrap:anywhere]">
-                          {selectedItem.employeeId?.employee_name || `${(selectedItem.employeeId as any)?.first_name || ''} ${(selectedItem.employeeId as any)?.last_name || ''}`.trim() || selectedItem.emp_no}
-                        </p>
-                        <p className="mt-1 text-[11px] font-bold uppercase tracking-tight text-white/85 sm:text-xs">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-base sm:text-lg font-semibold tracking-wide text-white">Leave Application Details</h2>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider bg-white/15 text-white border border-white/20 backdrop-blur-md">Leave</span>
+                        </div>
+                        <p className="text-xs text-white/70 font-normal mt-0.5">Employee leave request record &amp; workflow status</p>
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => { setShowDetailDialog(false); setSelectedItem(null); setIsChangeHistoryExpanded(false); }}
+                      className="h-9 w-9 rounded-full bg-white/10 hover:bg-white/25 active:scale-95 flex items-center justify-center transition-all border border-white/20 text-white/90 hover:text-white shadow-sm" aria-label="Close">
+                      <X className="w-4.5 h-4.5" />
+                    </button>
+                  </div>
+                ) : (
+                  /* OD Header: employee details */
+                  <div className="flex items-center justify-between gap-3 text-white">
+                    {/* Left: Avatar + Employee Info */}
+                    <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 border border-indigo-500 text-white font-bold text-base shadow-md">
+                        {String(
+                          selectedItem.employeeId?.employee_name ||
+                          (selectedItem.employeeId as any)?.first_name ||
+                          selectedItem.emp_no || 'E'
+                        ).charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h2 className="text-base sm:text-lg font-bold text-white truncate">
+                          {selectedItem.employeeId?.employee_name ||
+                            `${(selectedItem.employeeId as any)?.first_name || ''} ${(selectedItem.employeeId as any)?.last_name || ''}`.trim() ||
+                            selectedItem.emp_no || '—'}
+                        </h2>
+                        <p className="text-xs text-slate-200 font-medium mt-1">
                           {formatEmpNoWithDesignation(selectedItem)}
+                          {selectedItem.department?.name && ` · ${selectedItem.department.name}`}
+                          {(selectedItem.appliedAt || selectedItem.createdAt) && ` · Applied ${new Date(selectedItem.appliedAt || selectedItem.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`}
                         </p>
-                        {selectedItem.contactNumber && (
-                          <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-t border-white/15 pt-2 text-[12px] sm:text-[13px]">
-                            <span className="font-black uppercase tracking-wider text-[10px] text-white/65">Contact</span>
-                            <a
-                              href={`tel:${String(selectedItem.contactNumber).replace(/\s+/g, '')}`}
-                              className="font-semibold tabular-nums text-white underline-offset-2 hover:underline"
-                            >
-                              {selectedItem.contactNumber}
-                            </a>
-                          </div>
-                        )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowDetailDialog(false);
-                          setSelectedItem(null);
-                          setIsChangeHistoryExpanded(false);
-                        }}
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20 sm:hidden"
-                        aria-label="Close"
-                      >
-                        <X className="h-4 w-4 text-white" />
-                      </button>
                     </div>
-                    <div className="flex w-full min-w-0 flex-col items-center gap-2 border-t border-white/15 pt-2 sm:w-auto sm:shrink-0 sm:flex-col sm:items-end sm:border-t-0 sm:pt-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowDetailDialog(false);
-                          setSelectedItem(null);
-                          setIsChangeHistoryExpanded(false);
-                        }}
-                        className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20 sm:inline-flex"
-                        aria-label="Close"
-                      >
-                        <X className="h-4 w-4 text-white" />
-                      </button>
-                      <span className={`w-full max-w-md px-3 py-1 text-center text-[10px] font-black uppercase leading-tight tracking-widest sm:max-w-[14rem] sm:text-right ${getStatusColor(selectedItem.status)} rounded-lg border border-white/20`}>
-                        {formatOdLbl(selectedItem.status)}
+                    {/* Right: Status badge + OD badge */}
+                    <div className="flex items-center gap-2.5 shrink-0 self-start">
+                      <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(selectedItem.status)}`}>
+                        {formatLeaveLbl(selectedItem.status)}
                       </span>
-                      <div className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider text-white/80 sm:justify-end">
-                        <Clock3 className="h-3.5 w-3.5 shrink-0" />
-                        <span className="text-center sm:text-right">Applied {formatDate((selectedItem as any).createdAt || selectedItem.appliedAt)}</span>
-                      </div>
+                      <span className="inline-flex items-center px-3 py-1 rounded-md text-xs font-black uppercase tracking-widest bg-indigo-600 text-white border border-indigo-400 shrink-0 shadow-sm">
+                        OD
+                      </span>
                     </div>
                   </div>
-                </div>
-              ) : (
-              <div className="px-6 py-4 sm:px-8 sm:py-6">
-              <div className="flex items-center justify-between text-white">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-md">
-                    <Calendar className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-base sm:text-lg font-black uppercase tracking-wider">
-                      Leave Details
-                    </h2>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      setShowDetailDialog(false);
-                      setSelectedItem(null);
-                      setIsChangeHistoryExpanded(false);
-                    }}
-                    className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
+                )}
               </div>
-              </div>
-              )}
             </div>
 
             {/* Content */}
             <div className={`min-h-0 flex-1 overflow-y-auto overscroll-y-contain ${detailType === 'od' ? 'p-4 sm:p-5 md:p-6 space-y-4' : 'p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8'}`}>
-              {detailType === 'leave' && (
-              <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-6">
-                <div className="min-w-0 flex-1">
-                    <h3 className="font-black text-slate-900 dark:text-white text-xl">
-                      {selectedItem.employeeId?.employee_name || `${(selectedItem.employeeId as any)?.first_name || ''} ${(selectedItem.employeeId as any)?.last_name || ''}`.trim() || selectedItem.emp_no}
-                    </h3>
-                    <p className="text-sm text-slate-500 font-bold uppercase tracking-tight">
-                      {formatEmpNoWithDesignation(selectedItem)}
-                    </p>
-                    <div className="flex gap-2 mt-2">
-                      {selectedItem.department?.name && (
-                        <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">
-                          {selectedItem.department.name}
+              {(() => {
+                // Pre-calculate display data to avoid IIFE parser ambiguity
+                const leave = selectedItem as LeaveApplication;
+                const leaveDisplay = detailType === 'leave' ? getLeaveDetailDisplay({
+                  fromDate: leave.fromDate,
+                  toDate: leave.toDate,
+                  numberOfDays: leave.numberOfDays,
+                  isHalfDay: leave.isHalfDay,
+                  halfDayType: leave.halfDayType as 'first_half' | 'second_half' | null,
+                  fromIsHalfDay: leave.fromIsHalfDay,
+                  fromHalfDayType: leave.fromHalfDayType as 'first_half' | 'second_half' | null,
+                  toIsHalfDay: leave.toIsHalfDay,
+                  toHalfDayType: leave.toHalfDayType as 'first_half' | 'second_half' | null,
+                }) : null;
+
+                const wf = (selectedItem as any).workflow;
+                const chain = wf?.approvalChain;
+                const approvedCount = (chain && Array.isArray(chain)) ? chain.filter((s: any) => s.status === 'approved').length : 0;
+
+                const getFormattedTime = (timeStr: string) => {
+                  if (!timeStr) return 'N/A';
+                  const [h, m] = timeStr.split(':');
+                  if (!h) return 'N/A';
+                  const d = new Date(); d.setHours(parseInt(h), parseInt(m));
+                  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                };
+
+                const punchDetails = isCoEligibleOdForPunchDisplay(selectedItem as any) ? getOdDisplayPunchTimings(selectedItem as any) : null;
+                const hasPunchInfo = punchDetails ? Boolean(punchDetails.start || punchDetails.end || punchDetails.duration !== null) : false;
+
+                // JSX Sections defined as variables to prevent parser ambiguity
+                const employeeHeader = (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60">
+                    <div className="flex items-center gap-3 flex-wrap min-w-0">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white font-semibold text-xs shadow-sm">
+                        {String(
+                          selectedItem.employeeId?.employee_name ||
+                            (selectedItem.employeeId as any)?.first_name ||
+                            selectedItem.emp_no ||
+                            'E'
+                        )
+                          .charAt(0)
+                          .toUpperCase()}
+                      </div>
+                      <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                        <h3 className="font-semibold text-slate-900 dark:text-white text-base truncate">
+                          {selectedItem.employeeId?.employee_name || `${(selectedItem.employeeId as any)?.first_name || ''} ${(selectedItem.employeeId as any)?.last_name || ''}`.trim() || selectedItem.emp_no}
+                        </h3>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-200/80 text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                          {formatEmpNoWithDesignation(selectedItem)}
                         </span>
-                      )}
-                      {selectedItem.designation?.name && (
-                        <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">
-                          {selectedItem.designation.name}
-                        </span>
+                        {selectedItem.department?.name && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800">
+                            {selectedItem.department.name}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0 flex-wrap">
+                      <span className={`px-3 py-1 rounded-xl text-xs font-semibold uppercase tracking-wider border ${getStatusColor(selectedItem.status)}`}>
+                        {formatLeaveLbl(selectedItem.status)}
+                      </span>
+                      <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium text-xs">
+                        <Clock3 className="w-3.5 h-3.5 text-slate-400" />
+                        Applied {formatDate((selectedItem as any).createdAt || selectedItem.appliedAt)}
+                      </div>
+                    </div>
+                  </div>
+                );
+
+                const statsGrid = detailType === 'leave' && leaveDisplay && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-700/30 p-4 sm:p-6 rounded-xl">
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Type</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white truncate" title={leave.leaveType}>
+                        {(leave.leaveType || '-').replace('_', ' ')}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Duration</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">{leaveDisplay.durationText}</p>
+                      {leaveDisplay.durationNote && (
+                        <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{leaveDisplay.durationNote}</p>
                       )}
                     </div>
-                </div>
-                <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto justify-between sm:justify-start">
-                  <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest border ${getStatusColor(selectedItem.status)}`}>
-                    {formatLeaveLbl(selectedItem.status)}
-                  </span>
-                  <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px] uppercase tracking-wider">
-                    <Clock3 className="w-3.5 h-3.5" />
-                    Applied {formatDate((selectedItem as any).createdAt || selectedItem.appliedAt)}
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">From</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(leave.fromDate)}</p>
+                      <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">{leaveDisplay.fromPortion}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">To</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(leave.toDate)}</p>
+                      <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">{leaveDisplay.toPortion}</p>
+                    </div>
                   </div>
-                </div>
-              </div>
-              )}
+                );
 
-              {/* CO Eligibility Indicator */}
-              {detailType === 'od' && isCoEligibleOdForPunchDisplay(selectedItem as any) && (() => {
-                const punchDetails = getOdDisplayPunchTimings(selectedItem as any);
-                const hasPunchInfo = Boolean(punchDetails.start || punchDetails.end || punchDetails.duration !== null);
-                return (
+                const purposeCard = detailType === 'leave' && (
+                  <div className="space-y-6">
+                    <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl">
+                      <p className="text-xs uppercase font-bold text-slate-400 mb-2 tracking-wider">Purpose / Reason</p>
+                      <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                        {selectedItem.purpose || 'No purpose specified'}
+                      </p>
+                    </div>
+                    {selectedItem.contactNumber && (
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
+                        <span className="font-bold text-xs uppercase text-slate-400 tracking-wider sm:min-w-20">Contact:</span>
+                        <span className="font-medium text-slate-900 dark:text-white break-all">{selectedItem.contactNumber}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+
+                const splitBreakdown = detailType === 'leave' && (selectedItem as LeaveApplication)?.splits && (selectedItem as LeaveApplication).splits!.length > 0 && (
+                  <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <p className="text-xs uppercase font-bold text-slate-400 mb-4 tracking-wider">Approved Breakdown</p>
+                    {(selectedItem as LeaveApplication).splitSummary && (
+                      <p className="text-[10px] font-bold text-slate-500 uppercase mb-2">
+                        Approved {((selectedItem as LeaveApplication).splitSummary as LeaveSplitSummary)?.approvedDays ?? 0} / {(selectedItem as LeaveApplication).numberOfDays}
+                      </p>
+                    )}
+                    <div className="space-y-2">
+                      {(selectedItem as LeaveApplication).splits!.map((split, idx) => (
+                        <div key={split._id || `${split.date}-${idx}`} className="flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900/40">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-slate-900 dark:text-white">{formatDate(split.date)}</span>
+                            {split.isHalfDay && (
+                              <span className="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300">
+                                {split.halfDayType === 'first_half' ? 'First Half' : 'Second Half'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                              {split.leaveType}
+                            </span>
+                            <span className={`text-xs px-2 py-1 rounded-full ${split.status === 'approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300' : 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300'}`}>
+                              {split.status}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+
+                const splitEditor = detailType === 'leave' && !['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && (
+                  <div className="rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-md border border-slate-200 dark:border-slate-700 space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Split & Approve</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Split days/half-days and assign leave types before approving.</p>
+                      </div>
+                      <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                        <input
+                          type="checkbox"
+                          checked={splitMode}
+                          onChange={(e) => {
+                            const enable = e.target.checked;
+                            setSplitMode(enable);
+                            if (enable && splitDrafts.length === 0 && detailType === 'leave' && selectedItem) {
+                              setSplitDrafts(buildInitialSplits(selectedItem as LeaveApplication));
+                            }
+                            if (!enable) {
+                              setSplitWarnings([]);
+                              setSplitErrors([]);
+                            }
+                          }}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        Enable split
+                      </label>
+                    </div>
+
+                    {splitMode && (
+                      <>
+                        <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                          <span>Applied: {(selectedItem as LeaveApplication).numberOfDays} day(s)</span>
+                          <span>|</span>
+                          <span>
+                            Approved in splits: {splitDrafts.filter(s => s.status === 'approved').reduce((sum, s) => sum + (s.isHalfDay ? 0.5 : 1), 0)}
+                          </span>
+                          <span>|</span>
+                          <span>
+                            Rejected in splits: {splitDrafts.filter(s => s.status === 'rejected').reduce((sum, s) => sum + (s.isHalfDay ? 0.5 : 1), 0)}
+                          </span>
+                        </div>
+
+                        {splitErrors.length > 0 && (
+                          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/40 dark:text-red-200">
+                            {splitErrors.map((msg, idx) => (
+                              <div key={idx}>• {msg}</div>
+                            ))}
+                          </div>
+                        )}
+                        {splitWarnings.length > 0 && (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                            {splitWarnings.map((msg, idx) => (
+                              <div key={idx}>• {msg}</div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="space-y-3">
+                          {splitDrafts.map((split, idx) => (
+                            <div key={`${split.date}-${idx}`} className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 bg-slate-50/70 dark:bg-slate-900/40">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-semibold text-slate-900 dark:text-white">{formatDate(split.date)}</span>
+                                  <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                    <input
+                                      type="checkbox"
+                                      checked={split.isHalfDay || false}
+                                      onChange={(e) => updateSplitDraft(idx, { isHalfDay: e.target.checked })}
+                                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    Half-day
+                                  </label>
+                                  {split.isHalfDay && (
+                                    <select
+                                      value={split.halfDayType || 'first_half'}
+                                      onChange={(e) => updateSplitDraft(idx, { halfDayType: e.target.value as any })}
+                                      className="text-xs rounded-lg border border-slate-300 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                    >
+                                      <option value="first_half">First Half</option>
+                                      <option value="second_half">Second Half</option>
+                                    </select>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    value={split.leaveType}
+                                    onChange={(e) => updateSplitDraft(idx, { leaveType: e.target.value })}
+                                    className="text-sm rounded-lg border border-slate-300 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                  >
+                                    <option value="">Select Leave Type</option>
+                                    {leaveTypes.map((lt) => (
+                                      <option key={lt.code} value={lt.code}>
+                                        {lt.name || lt.code}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    value={split.status}
+                                    onChange={(e) => updateSplitDraft(idx, { status: e.target.value as 'approved' | 'rejected' })}
+                                    className="text-sm rounded-lg border border-slate-300 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                  >
+                                    <option value="approved">Approve</option>
+                                    <option value="rejected">Reject</option>
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setSplitSaving(true);
+                              await validateSplitsForLeave();
+                              setSplitSaving(false);
+                            }}
+                            className="px-3 py-2 text-sm font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          >
+                            {splitSaving ? 'Validating...' : 'Validate splits'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSplitDrafts(buildInitialSplits(selectedItem as LeaveApplication))}
+                            className="px-3 py-2 text-sm font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          >
+                            Reset to original
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setSplitSaving(true);
+                              const saved = await saveSplits();
+                              if (saved) {
+                                toast.success('Splits saved');
+                                const refreshed = await api.getLeave((selectedItem as LeaveApplication)._id);
+                                if (refreshed?.success && refreshed.data) {
+                                  setSelectedItem(refreshed.data);
+                                  setSplitDrafts(buildInitialSplits(refreshed.data));
+                                }
+                              }
+                              setSplitSaving(false);
+                            }}
+                            className="px-3 py-2 text-sm font-semibold text-white rounded-lg bg-indigo-600 hover:bg-indigo-700"
+                          >
+                            {splitSaving ? 'Saving...' : 'Save splits'}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+
+                const attendancePreview = detailType === 'leave' && (
+                  <LeaveDetailAttendancePreview
+                    preview={leaveAttendancePreview}
+                    loading={leaveAttendancePreviewLoading}
+                    error={leaveAttendancePreviewError}
+                  />
+                );
+
+                const timeline = chain && Array.isArray(chain) && chain.length > 0 && (
+                  <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <p className="text-xs uppercase font-bold text-slate-400 mb-4 tracking-wider">Approval Timeline</p>
+                    <div className="mb-6">
+                      <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1">
+                        <span>{approvedCount} of {chain.length} approved</span>
+                      </div>
+                      <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-green-500 to-green-600 transition-all duration-300"
+                          style={{ width: `${(approvedCount / chain.length) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="relative flex flex-col sm:flex-row items-start justify-between gap-6 sm:gap-4 pt-2">
+                      {/* Horizontal line for desktop, vertical line for mobile */}
+                      <div className="absolute top-[12px] left-3.5 right-3.5 hidden sm:block h-0.5 bg-slate-200 dark:bg-slate-700 z-0" />
+                      <div className="absolute top-[12px] bottom-0 left-[12px] sm:hidden w-0.5 bg-slate-200 dark:bg-slate-700 z-0" />
+
+                      {chain.map((step: any, idx: number) => {
+                        const stepRole = step.role || step.stepRole || 'step';
+                        const label = step.label || `${stepRole.replace('_', ' ')}`;
+                        const isApproved = step.status === 'approved';
+                        const isRejected = step.status === 'rejected';
+                        const isPending = step.status === 'pending';
+                        const nextRole = wf?.nextApproverRole || wf?.nextApprover;
+                        const isCurrent = isPending && (String(nextRole || '').toLowerCase() === String(stepRole).toLowerCase());
+                        const nodeColor = isApproved ? 'bg-green-500 ring-4 ring-green-200 dark:ring-green-900/50' : isRejected ? 'bg-red-500 ring-4 ring-red-200 dark:ring-red-900/50' : isCurrent ? 'bg-blue-500 ring-4 ring-blue-200 dark:ring-blue-900/50' : 'bg-slate-300 dark:bg-slate-600';
+                        return (
+                          <div key={idx} className="relative flex sm:flex-col items-center gap-3 sm:gap-2 flex-1 w-full text-left sm:text-center z-10">
+                            {/* Node Dot */}
+                            <div className={`relative h-6 w-6 rounded-full flex items-center justify-center ${nodeColor} border-2 border-white dark:border-slate-900 shadow-sm shrink-0`}>
+                              {isApproved ? (
+                                <span className="text-[10px] text-white font-bold">✓</span>
+                              ) : isRejected ? (
+                                <span className="text-[10px] text-white font-bold">✗</span>
+                              ) : isCurrent ? (
+                                <span className="text-[10px] text-white font-bold">⏳</span>
+                              ) : (
+                                <span className="text-[8px] text-white font-bold">{idx + 1}</span>
+                              )}
+                            </div>
+
+                            {/* Details container */}
+                            <div className="flex flex-col sm:items-center">
+                              <span className="text-xs font-bold text-slate-900 dark:text-white capitalize">{label}</span>
+                              {isApproved && <span className="text-[9px] font-black tracking-wider text-green-600 dark:text-green-400 uppercase mt-0.5">Approved</span>}
+                              {isRejected && <span className="text-[9px] font-black tracking-wider text-red-600 dark:text-red-400 uppercase mt-0.5">Rejected</span>}
+                              {isCurrent && <span className="text-[9px] font-black tracking-wider text-blue-600 dark:text-blue-400 uppercase mt-0.5">Active</span>}
+                              {isPending && !isCurrent && <span className="text-[9px] font-black tracking-wider text-slate-400 uppercase mt-0.5">Pending</span>}
+
+                              {(isApproved || isRejected) && (
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-tight sm:max-w-[150px]">
+                                  <span className="font-semibold">{step.actionByName || 'Approver'}</span>
+                                  {step.updatedAt && (
+                                    <span className="block text-[9px] opacity-75">
+                                      {new Date(step.updatedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                                    </span>
+                                  )}
+                                </p>
+                              )}
+                              {(isApproved || isRejected) && step.comments && (
+                                <p className="text-[10px] text-slate-400 italic mt-1 leading-tight sm:max-w-[140px] truncate" title={step.comments}>
+                                  "{step.comments}"
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+
+                const changeHistory = selectedItem.changeHistory && selectedItem.changeHistory.length > 0 && (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                    <button
+                      onClick={() => setIsChangeHistoryExpanded(!isChangeHistoryExpanded)}
+                      className="w-full px-4 py-3 flex items-center justify-between bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
+                    >
+                      <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        Change History ({selectedItem.changeHistory.length})
+                      </span>
+                      <svg
+                        className={`w-5 h-5 text-slate-500 transition-transform ${isChangeHistoryExpanded ? 'rotate-180' : ''}`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {isChangeHistoryExpanded && (
+                      <div className="p-4 space-y-3">
+                        {selectedItem.changeHistory.map((change: any, idx: number) => {
+                          const formatValue = (value: any) => {
+                            if (value === null || value === undefined) return 'N/A';
+                            const str = String(value);
+                            if (str.includes('T') || str.includes('-') && str.length > 10) {
+                              try {
+                                const date = new Date(str);
+                                if (!isNaN(date.getTime())) {
+                                  return date.toLocaleDateString('en-IN', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric',
+                                  });
+                                }
+                              } catch (e) {}
+                            }
+                            return str;
+                          };
+
+                          const fieldName = change.field.replace(/([A-Z])/g, ' $1').trim().toUpperCase();
+                          const oldValue = formatValue(change.originalValue);
+                          const newValue = formatValue(change.newValue);
+
+                          return (
+                            <div key={idx} className="p-3 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                              <div className="flex items-start justify-between mb-2">
+                                <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
+                                  {fieldName}
+                                </span>
+                                <span className="text-xs text-slate-500 dark:text-slate-400">
+                                  {new Date(change.modifiedAt).toLocaleString('en-IN', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit',
+                                  })}
+                                </span>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="text-sm text-slate-700 dark:text-slate-300">
+                                  <span className="text-slate-400 dark:text-slate-500 line-through mr-2">
+                                    {oldValue}
+                                  </span>
+                                  <span className="text-green-600 dark:text-green-400 font-semibold">
+                                    → {newValue}
+                                  </span>
+                                </div>
+                                {change.modifiedByName && (
+                                  <div className="text-xs text-slate-600 dark:text-slate-400">
+                                    Modified by <span className="font-medium">{change.modifiedByName}</span>
+                                    {change.modifiedByRole && (
+                                      <span className="text-slate-500"> ({change.modifiedByRole})</span>
+                                    )}
+                                  </div>
+                                )}
+                                {change.reason && (
+                                  <div className="text-xs text-slate-600 dark:text-slate-400 italic pt-1 border-t border-slate-200 dark:border-slate-700">
+                                    Reason: {change.reason}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+
+                const actionSection = (
+                  <div className="space-y-4">
+                    {/* Revoke Button */}
+                    {canRevoke && (selectedItem.status === 'approved' || selectedItem.status === 'hod_approved' || selectedItem.status === 'manager_approved' || selectedItem.status === 'hr_approved') && (
+                      <div className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
+                        <p className="text-xs font-semibold text-orange-800 dark:text-orange-300 mb-2">
+                          ⏰ Revoke Approval (Within 3 hours)
+                        </p>
+                        <textarea
+                          value={revokeReason}
+                          onChange={(e) => setRevokeReason(e.target.value)}
+                          placeholder="Reason for revocation (optional)..."
+                          rows={2}
+                          className="w-full rounded-lg border border-orange-200 bg-white px-3 py-2 text-xs dark:border-orange-700 dark:bg-slate-800 dark:text-white mb-2"
+                        />
+                        <button
+                          onClick={async () => {
+                            try {
+                              const response = detailType === 'leave'
+                                ? await api.revokeLeaveApproval(selectedItem._id, revokeReason)
+                                : await api.revokeODApproval(selectedItem._id, revokeReason);
+
+                              if (response.success) {
+                                Swal.fire({
+                                  icon: 'success',
+                                  title: 'Success!',
+                                  text: `${detailType === 'leave' ? 'Leave' : 'OD'} approval revoked successfully`,
+                                  timer: 2000,
+                                  showConfirmButton: false,
+                                });
+                                setShowDetailDialog(false);
+                                setSelectedItem(null);
+                                setIsChangeHistoryExpanded(false);
+                                loadData();
+                              } else {
+                                Swal.fire({
+                                  icon: 'error',
+                                  title: 'Failed',
+                                  text: response.error || 'Failed to revoke approval',
+                                });
+                              }
+                            } catch (err: any) {
+                              Swal.fire({
+                                icon: 'error',
+                                title: 'Error',
+                                text: err.message || 'Failed to revoke approval',
+                              });
+                            }
+                          }}
+                          className="px-4 py-2.5 text-xs font-semibold text-white bg-orange-500 rounded-xl hover:bg-orange-600 transition-colors"
+                        >
+                          Revoke Approval
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Edit Button */}
+                    {(selectedItem.status !== 'approved' || isSuperAdmin || isSubAdmin || isHR || isManager || isHOD) && (
+                      <button
+                        onClick={() => {
+                          const odItem = selectedItem as any;
+                          setEditFormData({
+                            leaveType: (selectedItem as LeaveApplication).leaveType || '',
+                            odType: (selectedItem as ODApplication).odType || '',
+                            fromDate: formatDateForInput(selectedItem.fromDate),
+                            toDate: formatDateForInput(selectedItem.toDate),
+                            purpose: selectedItem.purpose,
+                            contactNumber: selectedItem.contactNumber || '',
+                            placeVisited: (selectedItem as ODApplication).placeVisited || '',
+                            isHalfDay: selectedItem.isHalfDay || false,
+                            halfDayType: selectedItem.halfDayType || null,
+                            remarks: (selectedItem as any).remarks || '',
+                            status: selectedItem.status,
+                            odType_extended: odItem.odType_extended || 'full_day',
+                            odStartTime: odItem.odStartTime || odItem.od_start_time || '',
+                            odEndTime: odItem.odEndTime || odItem.od_end_time || '',
+                          });
+                          setShowEditDialog(true);
+                        }}
+                        className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors"
+                      >
+                        Edit {detailType === 'leave' ? 'Leave' : 'OD'}
+                      </button>
+                    )}
+
+                    {/* Submit OD OUT */}
+                    {detailType === 'od' &&
+                      selectedItem.status === 'draft' &&
+                      !(selectedItem as any).endEvidence?.submittedAt &&
+                      (
+                        isSuperAdmin ||
+                        isSubAdmin ||
+                        isHR ||
+                        isManager ||
+                        isHOD ||
+                        selectedItem.appliedBy?._id === (auth.getUser() as any)?._id ||
+                        (selectedItem as any).appliedBy === (auth.getUser() as any)?._id
+                      ) && (
+                        <button
+                          onClick={() => setShowOutEvidenceDialog(true)}
+                          className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-purple-600 rounded-xl hover:bg-purple-700 transition-colors"
+                        >
+                          Submit OD OUT
+                        </button>
+                      )}
+
+                    {/* Consents recorded (OD only) */}
+                    {detailType === 'od' &&
+                      Array.isArray((selectedItem as any).authorityConsent) &&
+                      (selectedItem as any).authorityConsent.length > 0 && (
+                        <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800/60">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            Authority consents recorded
+                          </p>
+                          {(selectedItem as any)?.durationClassification?.requiresAuthorityDecision && (
+                            <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                              Shortfall OD
+                              {(selectedItem as any).durationClassification.evidenceDurationMinutes != null && (
+                                <> · worked {formatOdEvidenceMinutes((selectedItem as any).durationClassification.evidenceDurationMinutes)}</>
+                              )}
+                              {(selectedItem as any).durationClassification.halfDayMinimumMinutes != null && (
+                                <> · half-day min {formatOdEvidenceMinutes((selectedItem as any).durationClassification.halfDayMinimumMinutes)}</>
+                              )}
+                              {' · final type: '}
+                              <span className="font-semibold">
+                                {(selectedItem as any).odType_extended === 'full_day'
+                                  ? 'Full day'
+                                  : `Half day (${(selectedItem as any).halfDayType === 'second_half' ? '2nd half' : '1st half'})`}
+                              </span>
+                            </p>
+                          )}
+                          <ul className="mt-2 space-y-1.5">
+                            {(selectedItem as any).authorityConsent.map((c: any, i: number) => (
+                              <li key={i} className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
+                                <span className="font-semibold">{(c.actionByName || c.actionByRole || 'Approver')}</span>
+                                {' '}({String(c.stepRole || c.actionByRole || '').toUpperCase() || 'APPROVER'}) confirmed{' '}
+                                <span className="font-bold text-slate-900 dark:text-white">
+                                  {c.decision === 'full_day' ? 'Full day' : `Half day (${c.halfDayType === 'second_half' ? '2nd half' : '1st half'})`}
+                                </span>
+                                {c.consented !== false ? ' with consent' : ''}
+                                {c.at ? ` · ${new Date(c.at).toLocaleString()}` : ''}
+                                {c.comments ? (
+                                  <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">Note: {c.comments}</div>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                    {/* Take Action */}
+                    {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem, detailType) && (
+                      <>
+                        <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
+
+                        {detailType === 'od' && (selectedItem as any)?.durationClassification?.requiresAuthorityDecision && (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-950/20">
+                            <div className="flex items-start gap-2">
+                              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                                  Duration shortfall — your decision required
+                                </p>
+                                <p className="mt-1 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+                                  {(selectedItem as any).durationClassification.employeeMessage ||
+                                    'This OD did not meet the half-day minimum duration for the assigned shift.'}
+                                </p>
+                                <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                                  Worked {formatOdEvidenceMinutes((selectedItem as any).durationClassification.evidenceDurationMinutes)}
+                                  {(selectedItem as any).durationClassification.halfDayMinimumMinutes != null && (
+                                    <> · half-day minimum {formatOdEvidenceMinutes((selectedItem as any).durationClassification.halfDayMinimumMinutes)}</>
+                                  )}
+                                  {(selectedItem as any).durationClassification.shiftDurationMinutes != null && (
+                                    <> · shift {formatOdEvidenceMinutes((selectedItem as any).durationClassification.shiftDurationMinutes)}</>
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap items-center gap-3">
+                              <select
+                                value={odAuthorityDecision}
+                                onChange={(e) => setOdAuthorityDecision(e.target.value as 'full_day' | 'half_day' | '')}
+                                className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium dark:border-amber-700 dark:bg-slate-800 dark:text-white"
+                              >
+                                <option value="">Select decision…</option>
+                                <option value="half_day">Half day OD</option>
+                                <option value="full_day">Full day OD</option>
+                              </select>
+                              {odAuthorityDecision === 'half_day' && (
+                                <select
+                                  value={odAuthorityHalf}
+                                  onChange={(e) => setOdAuthorityHalf(e.target.value as 'first_half' | 'second_half')}
+                                  className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium dark:border-amber-700 dark:bg-slate-800 dark:text-white"
+                                >
+                                  <option value="first_half">First half</option>
+                                  <option value="second_half">Second half</option>
+                                </select>
+                              )}
+                              <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] font-medium text-amber-800 dark:text-amber-300">
+                                <input
+                                  type="checkbox"
+                                  checked={odAuthorityConsent}
+                                  onChange={(e) => setOdAuthorityConsent(e.target.checked)}
+                                />
+                                I consent to this decision
+                              </label>
+                              <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] text-amber-700 dark:text-amber-400">
+                                <input
+                                  type="checkbox"
+                                  checked={odAuthorityAckOverlap}
+                                  onChange={(e) => setOdAuthorityAckOverlap(e.target.checked)}
+                                />
+                                Acknowledge attendance overlap (if any)
+                              </label>
+                            </div>
+                          </div>
+                        )}
+
+                        <textarea
+                          value={actionComment}
+                          onChange={(e) => setActionComment(e.target.value)}
+                          placeholder="Add a comment (optional)..."
+                          rows={2}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        />
+
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={
+                              isDetailActionBusy() ||
+                              (detailType === 'leave' && Boolean(leaveAttendancePreview?.approveBlocked))
+                            }
+                            title={
+                              detailType === 'leave' && leaveAttendancePreview?.approveBlocked
+                                ? 'Approve disabled: attendance is present on every leave day'
+                                : undefined
+                            }
+                            onClick={() => handleDetailAction('approve')}
+                            className="px-4 py-2.5 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
+                          >
+                            {isDetailActionBusy() ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckIcon />} Approve
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isDetailActionBusy()}
+                            onClick={() => handleDetailAction('reject')}
+                            className="px-4 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
+                          >
+                            {isDetailActionBusy() ? <Loader2 className="w-4 h-4 animate-spin" /> : <XIcon />} Reject
+                          </button>
+                        </div>
+                        {detailType === 'leave' && leaveAttendancePreview?.approveBlocked && (
+                          <p className="text-xs text-rose-600 dark:text-rose-400">
+                            Approve is disabled because attendance covers all days. Use Reject.
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+
+                const coEligibilityIndicator = isCoEligibleOdForPunchDisplay(selectedItem as any) && punchDetails && (
                   <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-200 dark:border-indigo-800/50 animate-in fade-in zoom-in duration-500 mb-4">
                     <div className="flex items-start gap-4">
                       <div className="p-2.5 rounded-xl bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 shrink-0">
@@ -5215,948 +5890,70 @@ function LeavesPageContent() {
                     </div>
                   </div>
                 );
-              })()}
 
-              {/* Stats Grid */}
-              {detailType === 'leave' && (() => {
-                const leave = selectedItem as LeaveApplication;
-                const ld = getLeaveDetailDisplay({
-                  fromDate: leave.fromDate,
-                  toDate: leave.toDate,
-                  numberOfDays: leave.numberOfDays,
-                  isHalfDay: leave.isHalfDay,
-                  halfDayType: leave.halfDayType as 'first_half' | 'second_half' | null,
-                  fromIsHalfDay: leave.fromIsHalfDay,
-                  fromHalfDayType: leave.fromHalfDayType as 'first_half' | 'second_half' | null,
-                  toIsHalfDay: leave.toIsHalfDay,
-                  toHalfDayType: leave.toHalfDayType as 'first_half' | 'second_half' | null,
-                });
+                // Now render 2-column layout for both Leave and OD
                 return (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-700/30 p-4 sm:p-6 rounded-xl">
-                <div className="space-y-1">
-                  <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Type</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white truncate" title={leave.leaveType}>
-                    {(leave.leaveType || '-').replace('_', ' ')}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Duration</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white">{ld.durationText}</p>
-                  {ld.durationNote && (
-                    <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{ld.durationNote}</p>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">From</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(leave.fromDate)}</p>
-                  <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">{ld.fromPortion}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">To</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(leave.toDate)}</p>
-                  <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">{ld.toPortion}</p>
-                </div>
-              </div>
-                );
-              })()}
-
-              {/* Details Content */}
-              <div className="space-y-6">
-                {detailType === 'leave' && (
-                  <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl">
-                    <p className="text-xs uppercase font-bold text-slate-400 mb-2 tracking-wider">Purpose / Reason</p>
-                    <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                      {selectedItem.purpose || 'No purpose specified'}
-                    </p>
-                  </div>
-                )}
-                {detailType === 'leave' && selectedItem.contactNumber && (
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
-                    <span className="font-bold text-xs uppercase text-slate-400 tracking-wider sm:min-w-20">Contact:</span>
-                    <span className="font-medium text-slate-900 dark:text-white break-all">{selectedItem.contactNumber}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Punch Transparency / Time Details */}
-              {detailType === 'od' && (selectedItem as any).odStartTime && (
-                <div className="grid grid-cols-3 gap-4 bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800/50">
-                  <div className="space-y-1">
-                    <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work In</p>
-                    <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                      {(() => {
-                        const [h, m] = ((selectedItem as any).odStartTime || '').split(':');
-                        if (!h) return 'N/A';
-                        const d = new Date(); d.setHours(parseInt(h), parseInt(m));
-                        return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-                      })()}
-                    </p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work Out</p>
-                    <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                      {(() => {
-                        const [h, m] = ((selectedItem as any).odEndTime || '').split(':');
-                        if (!h) return 'N/A';
-                        const d = new Date(); d.setHours(parseInt(h), parseInt(m));
-                        return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-                      })()}
-                    </p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Total Duration</p>
-                    <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                      {(selectedItem as any).durationHours || 0} hrs
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Photo Evidence & Location */}
-              {detailType === 'od' && (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 sm:p-3 dark:border-slate-700 dark:bg-slate-900/50">
-                  <p className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">Request details</p>
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-b border-slate-200 pb-1.5 dark:border-slate-600 sm:grid-cols-4">
-                    <div className="min-w-0">
-                      <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">From</span>
-                      <span className="text-xs font-bold text-slate-900 dark:text-white sm:text-sm">{formatDate(selectedItem.fromDate)}</span>
-                    </div>
-                    <div className="min-w-0">
-                      <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">To</span>
-                      <span className="text-xs font-bold text-slate-900 dark:text-white sm:text-sm">{formatDate(selectedItem.toDate)}</span>
-                    </div>
-                    <div className="min-w-0">
-                      <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Duration</span>
-                      <span className="text-xs font-bold text-slate-900 dark:text-white sm:text-sm">{selectedItem.numberOfDays}d</span>
-                    </div>
-                    <div className="min-w-0">
-                      <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Type</span>
-                      <span className="text-xs font-bold capitalize text-slate-900 dark:text-white sm:text-sm">
-                        {((selectedItem as ODApplication).odType || '-').replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                  </div>
-                  <dl className="mt-1.5 grid grid-cols-2 gap-2 text-sm sm:gap-x-3">
-                    <div className="min-w-0 rounded-md border border-slate-100 bg-white/80 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/40">
-                      <dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">Place of visit</dt>
-                      <dd className="mt-0.5 min-w-0 break-words font-bold leading-snug text-slate-900 dark:text-white">
-                        {(selectedItem as ODApplication).placeVisited || (selectedItem as any).geoLocation?.address || 'No location specified'}
-                      </dd>
-                    </div>
-                    <div className="min-w-0 rounded-md border border-slate-100 bg-white/80 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/40">
-                      <dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">Purpose</dt>
-                      <dd className="mt-0.5 min-w-0 break-words leading-snug text-slate-700 dark:text-slate-300">
-                        {selectedItem.purpose || 'No purpose specified'}
-                      </dd>
-                    </div>
-                  </dl>
-                  <p className="mb-2 mt-2 border-t border-slate-200 pt-2 text-xs font-bold uppercase tracking-wider text-slate-400 dark:border-slate-700">Evidence & Location</p>
-                  {(() => {
-                    const minutes = (selectedItem as any).evidenceDurationMinutes;
-                    if (minutes == null) return null;
-                    const hrs = Math.floor(minutes / 60);
-                    const mins = minutes % 60;
-                    return (
-                      <div className="mb-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                        Total duration between OD IN and OUT: {hrs}h {mins}m
-                      </div>
-                    );
-                  })()}
-                  <div className="space-y-4">
-                    {(() => {
-                      const startEvidence = (selectedItem as any).startEvidence || {
-                        photoEvidence: (selectedItem as any).photoEvidence,
-                        geoLocation: (selectedItem as any).geoLocation,
-                        submittedAt: (selectedItem as any).createdAt || (selectedItem as any).appliedAt,
-                      };
-                      const endEvidence = (selectedItem as any).endEvidence || null;
-                      const showSubmitOdOutInCard =
-                        selectedItem.status === 'draft' &&
-                        !(selectedItem as any).endEvidence?.submittedAt &&
-                        (
-                          isSuperAdmin ||
-                          isSubAdmin ||
-                          isHR ||
-                          isManager ||
-                          isHOD ||
-                          selectedItem.appliedBy?._id === (auth.getUser() as any)?._id ||
-                          (selectedItem as any).appliedBy === (auth.getUser() as any)?._id
-                        );
-                      const rows = [
-                        { title: 'OD IN', data: startEvidence },
-                        { title: 'OD OUT', data: endEvidence },
-                      ];
-                      return (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {rows.map((row) => (
-                            <div key={row.title} className="p-3 rounded-lg bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700">
-                              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                                <p className="text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">{row.title}</p>
-                                <span
-                                  className={`shrink-0 rounded-lg border px-2.5 py-1 text-[11px] font-black tabular-nums ${
-                                    row.data?.submittedAt
-                                      ? 'border-purple-300 bg-purple-100 text-purple-950 dark:border-purple-600 dark:bg-purple-950/70 dark:text-purple-50'
-                                      : 'border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-600 dark:bg-amber-950/50 dark:text-amber-100'
-                                  }`}
-                                >
-                                  {row.data?.submittedAt ? new Date(row.data.submittedAt).toLocaleString() : 'Not submitted'}
-                                </span>
-                              </div>
-                              {row.title === 'OD OUT' && showSubmitOdOutInCard && (
-                                <div className="mb-2 flex flex-col items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2.5 text-center dark:border-purple-900/50 dark:bg-purple-900/25 sm:items-stretch sm:border-0 sm:bg-transparent sm:p-0 sm:text-left dark:sm:bg-transparent">
-                                  <p className="text-[11px] font-semibold leading-snug text-purple-800 dark:text-purple-200 sm:text-xs">
-                                    OD OUT evidence is pending for this draft request.
-                                  </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => setShowOutEvidenceDialog(true)}
-                                    className="mx-auto w-full max-w-xs shrink-0 rounded-lg bg-purple-600 px-3 py-2 text-xs font-bold text-white hover:bg-purple-700 sm:w-auto sm:max-w-none sm:py-1.5"
-                                  >
-                                    Submit OD OUT
-                                  </button>
-                                </div>
-                              )}
-                              {row.data?.photoEvidence?.url ? (
-                                <a href={row.data.photoEvidence.url} target="_blank" rel="noopener noreferrer">
-                                  <img src={row.data.photoEvidence.url} alt={`${row.title} evidence`} className="w-full h-32 rounded-lg object-cover border border-slate-200 dark:border-slate-700 mb-2" />
-                                </a>
-                              ) : (
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Photo not submitted</p>
-                              )}
-                              {row.data?.geoLocation ? (
-                                <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-700">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                    <span className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">Live Location</span>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                                    <div>
-                                      <span className="text-[10px] uppercase font-bold text-slate-400">Lat:</span>
-                                      <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{row.data.geoLocation.latitude?.toFixed(6)}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-[10px] uppercase font-bold text-slate-400">Lon:</span>
-                                      <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{row.data.geoLocation.longitude?.toFixed(6)}</span>
-                                    </div>
-                                    {row.data.geoLocation.address && (
-                                      <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-700 mt-1">
-                                        <span className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Full Address</span>
-                                        <p className="text-slate-700 dark:text-slate-300 leading-tight text-[11px]">{row.data.geoLocation.address}</p>
-                                      </div>
-                                    )}
-                                    <div className="col-span-2 mt-1">
-                                      <a
-                                        href={`https://www.google.com/maps?q=${row.data.geoLocation.latitude},${row.data.geoLocation.longitude}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-semibold text-xs"
-                                      >
-                                        View on Maps
-                                      </a>
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                <p className="text-xs text-slate-500 dark:text-slate-400">Location not submitted</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                    {(() => {
-                      const inGeo = (selectedItem as any).startEvidence?.geoLocation || (selectedItem as any).geoLocation;
-                      const outGeo = (selectedItem as any).endEvidence?.geoLocation || null;
-                      const markers = [];
-                      if (inGeo?.latitude != null && inGeo?.longitude != null) {
-                        markers.push({ latitude: inGeo.latitude, longitude: inGeo.longitude, label: 'IN', address: inGeo.address || null });
-                      }
-                      if (outGeo?.latitude != null && outGeo?.longitude != null) {
-                        markers.push({ latitude: outGeo.latitude, longitude: outGeo.longitude, label: 'OUT', address: outGeo.address || null });
-                      }
-                      if (!markers.length && odRoutePolyline.length < 2) return null;
-                      const au = auth.getUser();
-                      return (
-                        <div className="mt-2">
-                          <span className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Map (IN/OUT)</span>
-                          <DualLocationMap
-                            markers={markers as any}
-                            routePolyline={odRoutePolyline.length >= 2 ? odRoutePolyline : undefined}
-                            height="190px"
-                          />
-                          {canRecordOdLocationTrail(selectedItem as any, au) && (
-                            <div className="mt-1 flex items-center justify-between gap-2">
-                              <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                                Route is recorded while this draft is open (employee device only).
-                              </p>
-                              <span
-                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
-                                  odTrailPublishMode === 'socket'
-                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                                    : odTrailPublishMode === 'http'
-                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                                    : odTrailPublishMode === 'error'
-                                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'
-                                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-                                }`}
-                              >
-                                {odTrailPublishMode === 'socket'
-                                  ? 'Live Socket'
-                                  : odTrailPublishMode === 'http'
-                                  ? 'HTTP Fallback'
-                                  : odTrailPublishMode === 'error'
-                                  ? 'Send Error'
-                                  : 'Awaiting'}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-              )}
-
-              {/* Split Breakdown (read-only) */}
-              {detailType === 'leave' && (selectedItem as LeaveApplication)?.splits && (selectedItem as LeaveApplication).splits!.length > 0 && (
-                <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs uppercase font-bold text-slate-400 mb-4 tracking-wider">Approved Breakdown</p>
-                  {(selectedItem as LeaveApplication).splitSummary && (
-                    <p className="text-[10px] font-bold text-slate-500 uppercase mb-2">
-                      Approved {((selectedItem as LeaveApplication).splitSummary as LeaveSplitSummary)?.approvedDays ?? 0} / {(selectedItem as LeaveApplication).numberOfDays}
-                    </p>
-                  )}
-                  <div className="space-y-2">
-                    {(selectedItem as LeaveApplication).splits!.map((split, idx) => (
-                      <div key={split._id || `${split.date}-${idx}`} className="flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900/40">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-slate-900 dark:text-white">{formatDate(split.date)}</span>
-                          {split.isHalfDay && (
-                            <span className="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300">
-                              {split.halfDayType === 'first_half' ? 'First Half' : 'Second Half'}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
-                            {split.leaveType}
-                          </span>
-                          <span className={`text-xs px-2 py-1 rounded-full ${split.status === 'approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300' : 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300'}`}>
-                            {split.status}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Split Editor for approvers */}
-              {detailType === 'leave' && !['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && (
-                <div className="rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-md border border-slate-200 dark:border-slate-700 space-y-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Split & Approve</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Split days/half-days and assign leave types before approving.</p>
-                    </div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                      <input
-                        type="checkbox"
-                        checked={splitMode}
-                        onChange={(e) => {
-                          const enable = e.target.checked;
-                          setSplitMode(enable);
-                          if (enable && splitDrafts.length === 0 && detailType === 'leave' && selectedItem) {
-                            setSplitDrafts(buildInitialSplits(selectedItem as LeaveApplication));
-                          }
-                          if (!enable) {
-                            setSplitWarnings([]);
-                            setSplitErrors([]);
-                          }
-                        }}
-                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      Enable split
-                    </label>
-                  </div>
-
-                  {splitMode && (
-                    <>
-                      <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
-                        <span>Applied: {(selectedItem as LeaveApplication).numberOfDays} day(s)</span>
-                        <span>|</span>
-                        <span>
-                          Approved in splits: {splitDrafts.filter(s => s.status === 'approved').reduce((sum, s) => sum + (s.isHalfDay ? 0.5 : 1), 0)}
-                        </span>
-                        <span>|</span>
-                        <span>
-                          Rejected in splits: {splitDrafts.filter(s => s.status === 'rejected').reduce((sum, s) => sum + (s.isHalfDay ? 0.5 : 1), 0)}
-                        </span>
-                      </div>
-
-                      {splitErrors.length > 0 && (
-                        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/40 dark:text-red-200">
-                          {splitErrors.map((msg, idx) => (
-                            <div key={idx}>• {msg}</div>
-                          ))}
-                        </div>
-                      )}
-                      {splitWarnings.length > 0 && (
-                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
-                          {splitWarnings.map((msg, idx) => (
-                            <div key={idx}>• {msg}</div>
-                          ))}
-                        </div>
-                      )}
-
-                      <div className="space-y-3">
-                        {splitDrafts.map((split, idx) => (
-                          <div key={`${split.date}-${idx}`} className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 bg-slate-50/70 dark:bg-slate-900/40">
-                            <div className="flex flex-wrap items-center gap-3">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-semibold text-slate-900 dark:text-white">{formatDate(split.date)}</span>
-                                <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-                                  <input
-                                    type="checkbox"
-                                    checked={split.isHalfDay || false}
-                                    onChange={(e) => updateSplitDraft(idx, { isHalfDay: e.target.checked })}
-                                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                  />
-                                  Half-day
-                                </label>
-                                {split.isHalfDay && (
-                                  <select
-                                    value={split.halfDayType || 'first_half'}
-                                    onChange={(e) => updateSplitDraft(idx, { halfDayType: e.target.value as any })}
-                                    className="text-xs rounded-lg border border-slate-300 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                                  >
-                                    <option value="first_half">First Half</option>
-                                    <option value="second_half">Second Half</option>
-                                  </select>
-                                )}
-                              </div>
-
-                              <div className="flex items-center gap-2">
-                                <select
-                                  value={split.leaveType}
-                                  onChange={(e) => updateSplitDraft(idx, { leaveType: e.target.value })}
-                                  className="text-sm rounded-lg border border-slate-300 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                                >
-                                  <option value="">Select Leave Type</option>
-                                  {leaveTypes.map((lt) => (
-                                    <option key={lt.code} value={lt.code}>
-                                      {lt.name || lt.code}
-                                    </option>
-                                  ))}
-                                </select>
-                                <select
-                                  value={split.status}
-                                  onChange={(e) => updateSplitDraft(idx, { status: e.target.value as 'approved' | 'rejected' })}
-                                  className="text-sm rounded-lg border border-slate-300 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                                >
-                                  <option value="approved">Approve</option>
-                                  <option value="rejected">Reject</option>
-                                </select>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            setSplitSaving(true);
-                            await validateSplitsForLeave();
-                            setSplitSaving(false);
-                          }}
-                          className="px-3 py-2 text-sm font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                        >
-                          {splitSaving ? 'Validating...' : 'Validate splits'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSplitDrafts(buildInitialSplits(selectedItem as LeaveApplication))}
-                          className="px-3 py-2 text-sm font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                        >
-                          Reset to original
-                        </button>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            setSplitSaving(true);
-                            const saved = await saveSplits();
-                            if (saved) {
-                              toast.success('Splits saved');
-                              const refreshed = await api.getLeave((selectedItem as LeaveApplication)._id);
-                              if (refreshed?.success && refreshed.data) {
-                                setSelectedItem(refreshed.data);
-                                setSplitDrafts(buildInitialSplits(refreshed.data));
-                              }
-                            }
-                            setSplitSaving(false);
-                          }}
-                          className="px-3 py-2 text-sm font-semibold text-white rounded-lg bg-indigo-600 hover:bg-indigo-700"
-                        >
-                          {splitSaving ? 'Saving...' : 'Save splits'}
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {/* Change History */}
-              {selectedItem.changeHistory && selectedItem.changeHistory.length > 0 && (
-                <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-                  <button
-                    onClick={() => setIsChangeHistoryExpanded(!isChangeHistoryExpanded)}
-                    className="w-full px-4 py-3 flex items-center justify-between bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
-                  >
-                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                      Change History ({selectedItem.changeHistory.length})
-                    </span>
-                    <svg
-                      className={`w-5 h-5 text-slate-500 transition-transform ${isChangeHistoryExpanded ? 'rotate-180' : ''}`}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  {isChangeHistoryExpanded && (
-                    <div className="p-4 space-y-3">
-                      {selectedItem.changeHistory.map((change: any, idx: number) => {
-                        // Format date values
-                        const formatValue = (value: any) => {
-                          if (value === null || value === undefined) return 'N/A';
-                          const str = String(value);
-                          // Check if it's a date string
-                          if (str.includes('T') || str.includes('-') && str.length > 10) {
-                            try {
-                              const date = new Date(str);
-                              if (!isNaN(date.getTime())) {
-                                return date.toLocaleDateString('en-IN', {
-                                  day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric',
-                                });
-                              }
-                            } catch (e) {
-                              // Not a valid date
-                            }
-                          }
-                          return str;
-                        };
-
-                        const fieldName = change.field.replace(/([A-Z])/g, ' $1').trim().toUpperCase();
-                        const oldValue = formatValue(change.originalValue);
-                        const newValue = formatValue(change.newValue);
-
-                        return (
-                          <div key={idx} className="p-3 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                            <div className="flex items-start justify-between mb-2">
-                              <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
-                                {fieldName}
-                              </span>
-                              <span className="text-xs text-slate-500 dark:text-slate-400">
-                                {new Date(change.modifiedAt).toLocaleString('en-IN', {
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  year: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                  second: '2-digit',
-                                })}
-                              </span>
-                            </div>
-                            <div className="space-y-2">
-                              {/* Old and New Value in same line */}
-                              <div className="text-sm text-slate-700 dark:text-slate-300">
-                                <span className="text-slate-400 dark:text-slate-500 line-through mr-2">
-                                  {oldValue}
-                                </span>
-                                <span className="text-green-600 dark:text-green-400 font-semibold">
-                                  → {newValue}
-                                </span>
-                              </div>
-                              {/* Modified By */}
-                              {change.modifiedByName && (
-                                <div className="text-xs text-slate-600 dark:text-slate-400">
-                                  Modified by <span className="font-medium">{change.modifiedByName}</span>
-                                  {change.modifiedByRole && (
-                                    <span className="text-slate-500"> ({change.modifiedByRole})</span>
-                                  )}
-                                </div>
-                              )}
-                              {/* Reason */}
-                              {change.reason && (
-                                <div className="text-xs text-slate-600 dark:text-slate-400 italic pt-1 border-t border-slate-200 dark:border-slate-700">
-                                  Reason: {change.reason}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Approval Steps - Timeline / Progress */}
-              {(() => {
-                const wf = (selectedItem as any).workflow;
-                const chain = wf?.approvalChain;
-                if (!chain || !Array.isArray(chain) || chain.length === 0) return null;
-                const approvedCount = chain.filter((s: any) => s.status === 'approved').length;
-                return (
-                  <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <p className="text-xs uppercase font-bold text-slate-400 mb-4 tracking-wider">Approval Timeline</p>
-                    {/* Progress bar */}
-                    <div className="mb-6">
-                      <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1">
-                        <span>{approvedCount} of {chain.length} approved</span>
-                      </div>
-                      <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-green-500 to-green-600 transition-all duration-300"
-                          style={{ width: `${(approvedCount / chain.length) * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                    {/* Vertical timeline */}
-                    <div className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-700 ml-1">
-                      {chain.map((step: any, idx: number) => {
-                        const stepRole = step.role || step.stepRole || 'step';
-                        const label = step.label || `${stepRole.replace('_', ' ')}`;
-                        const isApproved = step.status === 'approved';
-                        const isRejected = step.status === 'rejected';
-                        const isPending = step.status === 'pending';
-                        const nextRole = wf?.nextApproverRole || wf?.nextApprover;
-                        const isCurrent = isPending && (String(nextRole || '').toLowerCase() === String(stepRole).toLowerCase());
-                        const nodeColor = isApproved ? 'bg-green-500 ring-4 ring-green-200 dark:ring-green-900/50' : isRejected ? 'bg-red-500 ring-4 ring-red-200 dark:ring-red-900/50' : isCurrent ? 'bg-blue-500 ring-4 ring-blue-200 dark:ring-blue-900/50' : 'bg-slate-300 dark:bg-slate-600';
-                        return (
-                          <div key={idx} className="relative pb-6 last:pb-0">
-                            <div className={`absolute -left-[29px] top-0.5 w-4 h-4 rounded-full ${nodeColor} border-2 border-white dark:border-slate-900 shadow-sm`} />
-                            <div className="ml-2">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-bold text-slate-900 dark:text-white capitalize">{label}</span>
-                                {isApproved && <span className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase">✓ Approved</span>}
-                                {isRejected && <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase">✗ Rejected</span>}
-                                {isCurrent && <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase">⏳ Your turn</span>}
-                                {isPending && !isCurrent && <span className="text-[10px] font-bold text-slate-400 uppercase">○ Pending</span>}
-                              </div>
-                              {(isApproved || isRejected) && (
-                                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                                  {step.actionByName || 'Unknown'} ({step.actionByRole || stepRole})
-                                  {step.updatedAt && <span className="ml-1">· {new Date(step.updatedAt).toLocaleString()}</span>}
-                                </p>
-                              )}
-                              {(isApproved || isRejected) && step.comments && (
-                                <p className="text-xs text-slate-500 italic mt-0.5">"{step.comments}"</p>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Action Section */}
-              <div className="space-y-4">
-                {/* Revoke Button - only for approver of last step, within 3 hours */}
-                {canRevoke && (selectedItem.status === 'approved' || selectedItem.status === 'hod_approved' || selectedItem.status === 'manager_approved' || selectedItem.status === 'hr_approved') && (
-                  <div className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
-                    <p className="text-xs font-semibold text-orange-800 dark:text-orange-300 mb-2">
-                      ⏰ Revoke Approval (Within 3 hours)
-                    </p>
-                    <textarea
-                      value={revokeReason}
-                      onChange={(e) => setRevokeReason(e.target.value)}
-                      placeholder="Reason for revocation (optional)..."
-                      rows={2}
-                      className="w-full rounded-lg border border-orange-200 bg-white px-3 py-2 text-xs dark:border-orange-700 dark:bg-slate-800 dark:text-white mb-2"
-                    />
-                    <button
-                      onClick={async () => {
-                        try {
-                          const response = detailType === 'leave'
-                            ? await api.revokeLeaveApproval(selectedItem._id, revokeReason)
-                            : await api.revokeODApproval(selectedItem._id, revokeReason);
-
-                          if (response.success) {
-                            Swal.fire({
-                              icon: 'success',
-                              title: 'Success!',
-                              text: `${detailType === 'leave' ? 'Leave' : 'OD'} approval revoked successfully`,
-                              timer: 2000,
-                              showConfirmButton: false,
-                            });
-                            setShowDetailDialog(false);
-                            setSelectedItem(null);
-                            setIsChangeHistoryExpanded(false);
-                            loadData();
-                          } else {
-                            Swal.fire({
-                              icon: 'error',
-                              title: 'Failed',
-                              text: response.error || 'Failed to revoke approval',
-                            });
-                          }
-                        } catch (err: any) {
-                          Swal.fire({
-                            icon: 'error',
-                            title: 'Error',
-                            text: err.message || 'Failed to revoke approval',
-                          });
-                        }
-                      }}
-                      className="px-4 py-2.5 text-xs font-semibold text-white bg-orange-500 rounded-xl hover:bg-orange-600 transition-colors"
-                    >
-                      Revoke Approval
-                    </button>
-                  </div>
-                )}
-
-                {/* Edit Button (for Super Admin/HR/Manager/HOD - allow approved edits) */}
-                {(selectedItem.status !== 'approved' || isSuperAdmin || isSubAdmin || isHR || isManager || isHOD) && (
-                  <button
-                    onClick={() => {
-                      const odItem = selectedItem as any;
-                      setEditFormData({
-                        leaveType: (selectedItem as LeaveApplication).leaveType || '',
-                        odType: (selectedItem as ODApplication).odType || '',
-                        fromDate: formatDateForInput(selectedItem.fromDate),
-                        toDate: formatDateForInput(selectedItem.toDate),
-                        purpose: selectedItem.purpose,
-                        contactNumber: selectedItem.contactNumber || '',
-                        placeVisited: (selectedItem as ODApplication).placeVisited || '',
-                        isHalfDay: selectedItem.isHalfDay || false,
-                        halfDayType: selectedItem.halfDayType || null,
-                        remarks: (selectedItem as any).remarks || '',
-                        status: selectedItem.status, // Include status for Super Admin
-                        // Hour-based OD fields
-                        odType_extended: odItem.odType_extended || 'full_day',
-                        odStartTime: odItem.odStartTime || odItem.od_start_time || '',
-                        odEndTime: odItem.odEndTime || odItem.od_end_time || '',
-                      });
-                      setShowEditDialog(true);
-                    }}
-                    className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors"
-                  >
-                    Edit {detailType === 'leave' ? 'Leave' : 'OD'}
-                  </button>
-                )}
-
-                {detailType === 'od' &&
-                  selectedItem.status === 'draft' &&
-                  !(selectedItem as any).endEvidence?.submittedAt &&
-                  (
-                    isSuperAdmin ||
-                    isSubAdmin ||
-                    isHR ||
-                    isManager ||
-                    isHOD ||
-                    selectedItem.appliedBy?._id === (auth.getUser() as any)?._id ||
-                    (selectedItem as any).appliedBy === (auth.getUser() as any)?._id
-                  ) && (
-                    <button
-                      onClick={() => setShowOutEvidenceDialog(true)}
-                      className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-purple-600 rounded-xl hover:bg-purple-700 transition-colors"
-                    >
-                      Submit OD OUT
-                    </button>
-                  )}
-
-                {/* Always show recorded consents after approve/reject (and while pending). */}
-                {detailType === 'od' &&
-                  Array.isArray((selectedItem as any).authorityConsent) &&
-                  (selectedItem as any).authorityConsent.length > 0 && (
-                    <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800/60">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Authority consents recorded
-                      </p>
-                      {(selectedItem as any)?.durationClassification?.requiresAuthorityDecision && (
-                        <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
-                          Shortfall OD
-                          {(selectedItem as any).durationClassification.evidenceDurationMinutes != null && (
-                            <> · worked {formatOdEvidenceMinutes((selectedItem as any).durationClassification.evidenceDurationMinutes)}</>
-                          )}
-                          {(selectedItem as any).durationClassification.halfDayMinimumMinutes != null && (
-                            <> · half-day min {formatOdEvidenceMinutes((selectedItem as any).durationClassification.halfDayMinimumMinutes)}</>
-                          )}
-                          {' · final type: '}
-                          <span className="font-semibold">
-                            {(selectedItem as any).odType_extended === 'full_day'
-                              ? 'Full day'
-                              : `Half day (${(selectedItem as any).halfDayType === 'second_half' ? '2nd half' : '1st half'})`}
-                          </span>
-                        </p>
-                      )}
-                      <ul className="mt-2 space-y-1.5">
-                        {(selectedItem as any).authorityConsent.map((c: any, i: number) => (
-                          <li key={i} className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
-                            <span className="font-semibold">{(c.actionByName || c.actionByRole || 'Approver')}</span>
-                            {' '}({String(c.stepRole || c.actionByRole || '').toUpperCase() || 'APPROVER'}) confirmed{' '}
-                            <span className="font-bold text-slate-900 dark:text-white">
-                              {c.decision === 'full_day' ? 'Full day' : `Half day (${c.halfDayType === 'second_half' ? '2nd half' : '1st half'})`}
-                            </span>
-                            {c.consented !== false ? ' with consent' : ''}
-                            {c.at ? ` · ${new Date(c.at).toLocaleString()}` : ''}
-                            {c.comments ? (
-                              <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">Note: {c.comments}</div>
-                            ) : null}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                {detailType === 'leave' && (
-                  <LeaveDetailAttendancePreview
-                    preview={leaveAttendancePreview}
-                    loading={leaveAttendancePreviewLoading}
-                    error={leaveAttendancePreviewError}
-                  />
-                )}
-
-                {/* Approval Actions - only show to current approver */}
-                {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem, detailType) && (
                   <>
-                    <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
-
-                    {detailType === 'od' && (selectedItem as any)?.durationClassification?.requiresAuthorityDecision && (
-                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-900/20">
-                        <div className="flex items-start gap-2">
-                          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                              Duration shortfall — your decision required
-                            </p>
-                            <p className="mt-1 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
-                              {(selectedItem as any).durationClassification.employeeMessage ||
-                                'This OD did not meet the half-day minimum duration for the assigned shift.'}
-                            </p>
-                            <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
-                              Worked {formatOdEvidenceMinutes((selectedItem as any).durationClassification.evidenceDurationMinutes)}
-                              {(selectedItem as any).durationClassification.halfDayMinimumMinutes != null && (
-                                <> · half-day minimum {formatOdEvidenceMinutes((selectedItem as any).durationClassification.halfDayMinimumMinutes)}</>
-                              )}
-                              {(selectedItem as any).durationClassification.shiftDurationMinutes != null && (
-                                <> · shift {formatOdEvidenceMinutes((selectedItem as any).durationClassification.shiftDurationMinutes)}</>
-                              )}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-3 flex flex-wrap items-center gap-3">
-                          <select
-                            value={odAuthorityDecision}
-                            onChange={(e) => setOdAuthorityDecision(e.target.value as 'full_day' | 'half_day' | '')}
-                            className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium dark:border-amber-700 dark:bg-slate-800 dark:text-white"
-                          >
-                            <option value="">Select decision…</option>
-                            <option value="half_day">Half day OD</option>
-                            <option value="full_day">Full day OD</option>
-                          </select>
-                          {odAuthorityDecision === 'half_day' && (
-                            <select
-                              value={odAuthorityHalf}
-                              onChange={(e) => setOdAuthorityHalf(e.target.value as 'first_half' | 'second_half')}
-                              className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium dark:border-amber-700 dark:bg-slate-800 dark:text-white"
-                            >
-                              <option value="first_half">First half</option>
-                              <option value="second_half">Second half</option>
-                            </select>
-                          )}
-                          <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] font-medium text-amber-800 dark:text-amber-300">
-                            <input
-                              type="checkbox"
-                              checked={odAuthorityConsent}
-                              onChange={(e) => setOdAuthorityConsent(e.target.checked)}
-                            />
-                            I consent to this decision
-                          </label>
-                          <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] text-amber-700 dark:text-amber-400">
-                            <input
-                              type="checkbox"
-                              checked={odAuthorityAckOverlap}
-                              onChange={(e) => setOdAuthorityAckOverlap(e.target.checked)}
-                            />
-                            Acknowledge attendance overlap (if any)
-                          </label>
-                        </div>
+                   {detailType === 'leave' ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                      {/* Left Column - Leave */}
+                      <div className="lg:col-span-2 space-y-6">
+                        {employeeHeader}
+                        {statsGrid}
+                        {purposeCard}
+                        {splitBreakdown}
+                        {splitEditor}
+                        {attendancePreview}
+                        {actionSection}
                       </div>
-                    )}
-
-                    {/* Comment */}
-                    <textarea
-                      value={actionComment}
-                      onChange={(e) => setActionComment(e.target.value)}
-                      placeholder="Add a comment (optional)..."
-                      rows={2}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                    />
-
-                    {/* Action Buttons */}
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        disabled={
-                          isDetailActionBusy() ||
-                          (detailType === 'leave' && Boolean(leaveAttendancePreview?.approveBlocked))
-                        }
-                        title={
-                          detailType === 'leave' && leaveAttendancePreview?.approveBlocked
-                            ? 'Approve disabled: attendance is present on every leave day'
-                            : undefined
-                        }
-                        onClick={() => handleDetailAction('approve')}
-                        className="px-4 py-2.5 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
-                      >
-                        {isDetailActionBusy() ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckIcon />} Approve
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isDetailActionBusy()}
-                        onClick={() => handleDetailAction('reject')}
-                        className="px-4 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
-                      >
-                        {isDetailActionBusy() ? <Loader2 className="w-4 h-4 animate-spin" /> : <XIcon />} Reject
-                      </button>
+                      {/* Right Column - Leave */}
+                      <div className="lg:col-span-1 space-y-6">
+                        {timeline}
+                        {changeHistory}
+                      </div>
                     </div>
-                    {detailType === 'leave' && leaveAttendancePreview?.approveBlocked && (
-                      <p className="text-xs text-rose-600 dark:text-rose-400">
-                        Approve is disabled because attendance covers all days. Use Reject.
-                      </p>
-                    )}
+                  ) : (
+                    /* OD: full-width single column, timeline at bottom */
+                    <div className="space-y-6 max-w-none">
+                      <ODDetailCard
+                        data={{
+                          ...(selectedItem as any),
+                          routePolyline: odRoutePolyline,
+                          isCOEligible: isCoEligibleOdForPunchDisplay(selectedItem as any),
+                          coEligibilityInfo: {
+                            isCoEligible: isCoEligibleOdForPunchDisplay(selectedItem as any),
+                            punchDetails,
+                          },
+                          trailPublishMode: odTrailPublishMode,
+                        }}
+                        onSubmitOutClick={() => setShowOutEvidenceDialog(true)}
+                      />
+                      {actionSection}
+                      {timeline}
+                      {changeHistory}
+                    </div>
+                  )}
                   </>
-                )}
-              </div>
+                );
+              })()}
+            </div>
 
-              {/* Footer */}
-              <div className="shrink-0 border-t border-slate-200 bg-slate-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] dark:border-slate-700 dark:bg-slate-900 flex flex-col sm:flex-row gap-3 justify-end items-stretch sm:items-center">
-                <button
-                  onClick={() => {
-                    setShowDetailDialog(false);
-                    setSelectedItem(null);
-                    setIsChangeHistoryExpanded(false);
-                  }}
-                  className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg transition-colors shadow-sm dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
-                >
-                  Close
-                </button>
-              </div>
+            {/* Footer */}
+            <div className="shrink-0 border-t border-slate-200 bg-slate-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] dark:border-slate-700 dark:bg-slate-900 flex flex-col sm:flex-row gap-3 justify-end items-stretch sm:items-center">
+              <button
+                onClick={() => {
+                  setShowDetailDialog(false);
+                  setSelectedItem(null);
+                  setIsChangeHistoryExpanded(false);
+                }}
+                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg transition-colors shadow-sm dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
-      )
-      }
+      )}
 
       {/* OD OUT Evidence Dialog */}
       {showOutEvidenceDialog && selectedItem && detailType === 'od' && (

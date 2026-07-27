@@ -2726,3 +2726,56 @@ exports.updateODOutcome = async (req, res) => {
   }
 };
 
+/**
+ * @desc  Manual retro-CCL sync: credit CCL for approved ODs on dates that were
+ *        later marked as holiday/week-off in the calendar.
+ * @route POST /api/leaves/od/admin/retro-ccl-sync
+ * @access super_admin, sub_admin, hr
+ * @body  { dates: string[], employeeNumbers?: string[], dryRun?: boolean }
+ *        dates:           required — ISO date strings YYYY-MM-DD
+ *        employeeNumbers: optional — filter to specific employees; if omitted, all employees
+ *        dryRun:          optional — if true, simulate without writing (default: false)
+ */
+exports.retroCclSync = async (req, res) => {
+  try {
+    const { dates, employeeNumbers = [], dryRun = false } = req.body || {};
+
+    if (!Array.isArray(dates) || dates.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'dates[] array is required (e.g. ["2026-08-15"])',
+      });
+    }
+
+    // Validate date format
+    const invalidDates = dates.filter((d) => !/^\d{4}-\d{2}-\d{2}$/.test(String(d || '')));
+    if (invalidDates.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid date format (use YYYY-MM-DD): ${invalidDates.join(', ')}`,
+      });
+    }
+
+    const { retroSyncForDates } = require('../services/odCclRetroSyncService');
+    const result = await retroSyncForDates(
+      dates,
+      Array.isArray(employeeNumbers) ? employeeNumbers : [],
+      Boolean(dryRun)
+    );
+
+    return res.status(200).json({
+      success: true,
+      dryRun: Boolean(dryRun),
+      credited: result.credited,
+      skipped: result.skipped,
+      errors: result.errors,
+      details: result.details,
+    });
+  } catch (error) {
+    console.error('[retroCclSync] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Retro CCL sync failed',
+    });
+  }
+};

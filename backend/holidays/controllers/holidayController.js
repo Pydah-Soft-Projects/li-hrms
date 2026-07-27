@@ -299,6 +299,25 @@ async function applyRosterEntriesAndSync(entries, userId) {
     await rosterSyncQueue.add('syncRoster', { entries, userId }).catch((err) =>
         console.error('Failed to enqueue roster sync:', err)
     );
+
+    // Retroactive CCL sync: if any HOL/WO entries were just written and employees already
+    // have approved ODs on those dates (applied before the calendar was updated),
+    // credit their CCL now (isCOEligible was false at apply-time → now qualifies).
+    const holWoEntries = entries.filter((e) => e.status === 'HOL' || e.status === 'WO');
+    if (holWoEntries.length > 0) {
+        setImmediate(async () => {
+            try {
+                const { syncCclForNewHolidayWoEntries } = require('../../leaves/services/odCclRetroSyncService');
+                const r = await syncCclForNewHolidayWoEntries(holWoEntries);
+                if (r.credited > 0) {
+                    console.log(`[Holiday] Retro CCL sync: credited ${r.credited} CCL(s) for ODs on newly-set holiday/week-off days.`);
+                }
+            } catch (retroErr) {
+                console.error('[Holiday] Retro CCL sync failed:', retroErr.message || retroErr);
+            }
+        });
+    }
+
     return { affected: entries.length };
 }
 

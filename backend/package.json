@@ -40,7 +40,11 @@
     "test:optimization-validation": "node scripts/simulate_optimization_validation.js",
     "test:leave-approval-reliability": "node scripts/simulate_leave_approval_reliability.js",
     "report:leave-real-data": "node scripts/report_leave_real_data.js",
-    "test:leave-approval-side-effects": "jest leaves/services/__tests__/leaveApprovalSideEffectsService.test.js --forceExit --no-coverage"
+    "test:leave-approval-side-effects": "jest leaves/services/__tests__/leaveApprovalSideEffectsService.test.js --forceExit --no-coverage",
+    "db:copy-employees": "node scripts/copy_employees_prod_to_local.js --employees-only",
+    "db:copy-employees-july25": "node scripts/copy_employees_prod_to_local.js --employees-only --copy-attendance-date=2026-07-25",
+    "db:copy-all": "node scripts/copy_employees_prod_to_local.js",
+    "db:sync-partial-biometric-july25": "node scripts/sync_partial_biometric.js"
   },
   "keywords": [],
   "author": "",

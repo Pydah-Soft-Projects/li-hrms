@@ -181,7 +181,53 @@ export default function LocationPhotoCapture({
         await proceedWithProcessing(file, photoFromDeviceFile);
     };
 
-    const proceedWithProcessing = async (file: File, photoFromDeviceFile = false) => {
+    const cropImageToSquare = (sourceFile: File): Promise<File> => {
+        return new Promise((resolve) => {
+            const img = new Image();
+            const url = URL.createObjectURL(sourceFile);
+            img.onload = () => {
+                URL.revokeObjectURL(url);
+                if (img.width === img.height) {
+                    resolve(sourceFile);
+                    return;
+                }
+                const size = Math.min(img.width, img.height);
+                const sourceX = (img.width - size) / 2;
+                const sourceY = (img.height - size) / 2;
+
+                const canvas = document.createElement('canvas');
+                canvas.width = size;
+                canvas.height = size;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.drawImage(img, sourceX, sourceY, size, size, 0, 0, size, size);
+                    canvas.toBlob(
+                        (blob) => {
+                            if (blob) {
+                                const croppedFile = new File([blob], sourceFile.name, { type: sourceFile.type || 'image/jpeg' });
+                                (croppedFile as any).exifLocation = (sourceFile as any).exifLocation;
+                                (croppedFile as any).exifDateTime = (sourceFile as any).exifDateTime;
+                                resolve(croppedFile);
+                            } else {
+                                resolve(sourceFile);
+                            }
+                        },
+                        sourceFile.type || 'image/jpeg',
+                        0.92
+                    );
+                } else {
+                    resolve(sourceFile);
+                }
+            };
+            img.onerror = () => {
+                URL.revokeObjectURL(url);
+                resolve(sourceFile);
+            };
+            img.src = url;
+        });
+    };
+
+    const proceedWithProcessing = async (rawFile: File, photoFromDeviceFile = false) => {
         setLoading(true);
         setError(null);
         setLoadingStep('Initializing...');
@@ -189,6 +235,7 @@ export default function LocationPhotoCapture({
         try {
             // 1. Parse EXIF first (needed if device GPS fails but the photo has embedded coordinates)
             setLoadingStep('Analyzing Photo Metadata...');
+            const file = await cropImageToSquare(rawFile);
             let extractedExifLoc: { latitude: number; longitude: number } | undefined = undefined;
             let extractedExifDateTime: string | undefined = undefined;
             try {
@@ -482,29 +529,29 @@ export default function LocationPhotoCapture({
                             </span>
                         </div>
                     ) : (
-                        <div className={`flex flex-col gap-4 transition-all duration-500 ${showCamera ? 'min-h-[420px]' : ''}`}>
+                        <div className={`flex flex-col gap-2.5 sm:gap-4 transition-all duration-500 ${showCamera ? 'min-h-[420px]' : ''}`}>
                             {allowDeviceFileUpload ? (
                                 <>
                                     <label
                                         htmlFor="upload-input"
-                                        className={`group relative cursor-pointer flex flex-col items-center justify-center p-4 sm:p-8 rounded-2xl sm:rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 hover:border-blue-400 dark:border-slate-700 dark:bg-slate-900/50 dark:hover:bg-slate-800 dark:hover:border-blue-600 transition-all duration-300 ${showCamera ? 'min-h-[420px]' : 'min-h-[100px] sm:min-h-[160px]'}`}
+                                        className={`group relative cursor-pointer flex flex-col items-center justify-center p-3 sm:p-6 rounded-xl sm:rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 hover:border-blue-400 dark:border-slate-700 dark:bg-slate-900/50 dark:hover:bg-slate-800 dark:hover:border-blue-600 transition-all duration-300 ${showCamera ? 'min-h-[420px]' : 'min-h-[75px] sm:min-h-[120px]'}`}
                                     >
-                                        <div className="mb-2 sm:mb-4 p-3 sm:p-4 rounded-full bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700 group-hover:scale-110 transition-transform duration-300">
-                                            <svg className="h-6 w-6 sm:h-8 sm:w-8 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <div className="mb-1.5 sm:mb-2.5 p-2 sm:p-3 rounded-full bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700 group-hover:scale-110 transition-transform duration-300">
+                                            <svg className="h-5 w-5 sm:h-7 sm:w-7 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                             </svg>
                                         </div>
                                         <div className="text-center">
-                                            <span className="block text-sm sm:text-base font-semibold text-slate-700 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                                            <span className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400">
                                                 Click to Upload Photo
                                             </span>
-                                            <span className="mt-0.5 sm:mt-1 block text-[10px] sm:text-sm text-slate-500 dark:text-slate-400">
+                                            <span className="mt-0.5 block text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">
                                                 JPG, PNG (Max 20MB)
                                             </span>
                                         </div>
                                     </label>
                                     <div className="flex items-center justify-center">
-                                        <span className="text-[10px] sm:text-xs text-slate-400 uppercase font-medium px-3">OR</span>
+                                        <span className="text-[10px] text-slate-400 uppercase font-medium px-2">OR</span>
                                     </div>
                                 </>
                             ) : (
@@ -516,13 +563,13 @@ export default function LocationPhotoCapture({
                             <button
                                 type="button"
                                 onClick={() => startCamera()}
-                                className="flex items-center justify-center gap-2 p-2.5 sm:p-3 rounded-xl bg-white border border-slate-200 shadow-sm hover:bg-slate-50 hover:border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700 transition-all active:scale-95"
+                                className="flex items-center justify-center gap-2 p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-white border border-slate-200 shadow-sm hover:bg-slate-50 hover:border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700 transition-all active:scale-95"
                             >
-                                <svg className="h-4 w-4 sm:h-5 sm:w-5 text-slate-600 dark:text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <svg className="h-4 w-4 text-slate-600 dark:text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                                 </svg>
-                                <span className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
                                     Take Photo with Camera
                                 </span>
                             </button>
@@ -545,7 +592,7 @@ export default function LocationPhotoCapture({
                             <img
                                 src={preview}
                                 alt="Evidence Preview"
-                                className="w-full h-48 sm:h-24 sm:w-24 rounded-xl object-cover ring-2 ring-white dark:ring-slate-700 shadow-md"
+                                className="w-28 h-28 aspect-square rounded-xl object-cover ring-2 ring-white dark:ring-slate-700 shadow-md shrink-0"
                             />
                             <div className="absolute inset-0 bg-black/20 rounded-xl hidden group-hover:block transition-all" />
                         </div>
