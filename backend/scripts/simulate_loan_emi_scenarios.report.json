@@ -1,0 +1,408 @@
+{
+  "generatedAt": "2026-07-27T08:41:05.898Z",
+  "summary": {
+    "total": 25,
+    "passed": 25,
+    "failed": 0,
+    "byGroup": {
+      "Pre-EMI": {
+        "pass": 8,
+        "fail": 0
+      },
+      "Multi-EMI": {
+        "pass": 7,
+        "fail": 0
+      },
+      "Skip-Interest": {
+        "pass": 5,
+        "fail": 0
+      },
+      "E2E": {
+        "pass": 5,
+        "fail": 0
+      }
+    }
+  },
+  "results": [
+    {
+      "group": "Pre-EMI",
+      "id": "A1",
+      "title": "Immediate commence (0 pre months) — product example base",
+      "status": "PASS",
+      "details": "Tenure interest ₹1,000, pre-EMI ₹0, total ₹11,000, EMI ₹917",
+      "expected": {
+        "tenureInterest": 1000,
+        "preEmiInterest": 0,
+        "totalAmount": 11000
+      },
+      "actual": {
+        "tenureInterest": 1000,
+        "preEmiInterest": 0,
+        "totalAmount": 11000
+      }
+    },
+    {
+      "group": "Pre-EMI",
+      "id": "A2",
+      "title": "EMI commence after 4 months — FRD example",
+      "status": "PASS",
+      "details": "Tenure ₹1,000 + pre-EMI ₹333 = total ₹11,333; EMI ₹944 over 12m",
+      "expected": {
+        "tenureInterest": 1000,
+        "preEmiInterest": 333,
+        "totalAmount": 11333
+      },
+      "actual": {
+        "tenureInterest": 1000,
+        "preEmiInterest": 333,
+        "totalAmount": 11333
+      }
+    },
+    {
+      "group": "Pre-EMI",
+      "id": "A3",
+      "title": "EMI commence after 6 months",
+      "status": "PASS",
+      "details": "Pre-EMI ₹500, total ₹11,500, EMI ₹958",
+      "expected": {
+        "preEmiInterest": 500,
+        "totalAmount": 11500
+      },
+      "actual": {
+        "preEmiInterest": 500,
+        "totalAmount": 11500
+      }
+    },
+    {
+      "group": "Pre-EMI",
+      "id": "A4",
+      "title": "Larger loan ₹50k @ 12% / 24m / 3 pre months",
+      "status": "PASS",
+      "details": "Tenure ₹12,000, pre ₹1,500, total ₹63,500, EMI ₹2,646",
+      "expected": {
+        "tenureInterest": 12000,
+        "preEmiInterest": 1500
+      },
+      "actual": {
+        "tenureInterest": 12000,
+        "preEmiInterest": 1500
+      }
+    },
+    {
+      "group": "Pre-EMI",
+      "id": "A5",
+      "title": "Zero interest rate — no tenure or pre-EMI interest",
+      "status": "PASS",
+      "details": "Total ₹10,000, EMI ₹833",
+      "expected": {
+        "totalAmount": 10000,
+        "preEmiInterest": 0
+      },
+      "actual": {
+        "totalAmount": 10000,
+        "preEmiInterest": 0
+      }
+    },
+    {
+      "group": "Pre-EMI",
+      "id": "A6",
+      "title": "Month gap Jan→May = 4 (interest start → EMI commence)",
+      "status": "PASS",
+      "details": "monthsBetweenYm('2026-01','2026-05') = 4",
+      "expected": 4,
+      "actual": 4
+    },
+    {
+      "group": "Pre-EMI",
+      "id": "A7",
+      "title": "recalculateLoanForEmiCommence locks months + totals",
+      "status": "PASS",
+      "details": "preMonths=4, preInterest=₹333, start=2026-01, commence=2026-05",
+      "expected": {
+        "preEmiMonths": 4,
+        "preEmiInterest": 333
+      },
+      "actual": {
+        "preEmiMonths": 4,
+        "preEmiInterest": 333
+      }
+    },
+    {
+      "group": "Pre-EMI",
+      "id": "A8",
+      "title": "Pre-EMI setting OFF → no extra interest even if months differ",
+      "status": "PASS",
+      "details": "preInterest=₹0, total=₹11,000 (policy OFF)",
+      "expected": {
+        "preEmiInterest": 0,
+        "totalAmount": 11000
+      },
+      "actual": {
+        "preEmiInterest": 0,
+        "totalAmount": 11000
+      }
+    },
+    {
+      "group": "Multi-EMI",
+      "id": "B1",
+      "title": "collect_all — both EMIs deducted",
+      "status": "PASS",
+      "details": "Selected 2 loan(s), skipped 0, payroll deduct ₹8,000",
+      "expected": {
+        "selected": 2,
+        "skipped": 0,
+        "total": 8000
+      },
+      "actual": {
+        "selected": 2,
+        "skipped": 0,
+        "total": 8000
+      }
+    },
+    {
+      "group": "Multi-EMI",
+      "id": "B2",
+      "title": "single_emi_only + oldest_first → only older loan (₹3,000)",
+      "status": "PASS",
+      "details": "Collect loan-old ₹3,000; skip loan-new",
+      "expected": {
+        "selected": "loan-old",
+        "skipped": "loan-new"
+      },
+      "actual": {
+        "selected": "loan-old",
+        "skipped": "loan-new"
+      }
+    },
+    {
+      "group": "Multi-EMI",
+      "id": "B3",
+      "title": "single_emi_only + newest_first → only newer loan (₹5,000)",
+      "status": "PASS",
+      "details": "Collect loan-new ₹5,000; skip loan-old",
+      "expected": {
+        "selected": "loan-new"
+      },
+      "actual": {
+        "selected": "loan-new"
+      }
+    },
+    {
+      "group": "Multi-EMI",
+      "id": "B4",
+      "title": "single_emi_only + highest_emi_first → ₹5,000 loan",
+      "status": "PASS",
+      "details": "Collect loan-new ₹5,000",
+      "expected": {
+        "selected": "loan-new"
+      },
+      "actual": {
+        "selected": "loan-new"
+      }
+    },
+    {
+      "group": "Multi-EMI",
+      "id": "B5",
+      "title": "max_combined_cap ₹5,000 + oldest_first → c+a (₹2k+₹3k), skip b",
+      "status": "PASS",
+      "details": "Selected [c,a] total ₹5,000; skipped [b]",
+      "expected": {
+        "totalMax": 5000,
+        "selected": [
+          "c",
+          "a"
+        ],
+        "skipped": [
+          "b"
+        ]
+      },
+      "actual": {
+        "total": 5000,
+        "selected": [
+          "c",
+          "a"
+        ],
+        "skipped": [
+          "b"
+        ]
+      }
+    },
+    {
+      "group": "Multi-EMI",
+      "id": "B6",
+      "title": "max_combined_cap ₹5,000 + highest_emi_first → take ₹4,000 first",
+      "status": "PASS",
+      "details": "Selected [b:4000] = ₹4,000; skipped 2",
+      "expected": {
+        "first": "b",
+        "totalMax": 5000
+      },
+      "actual": {
+        "first": "b",
+        "total": 4000,
+        "skipped": 2
+      }
+    },
+    {
+      "group": "Multi-EMI",
+      "id": "B7",
+      "title": "single_emi_only with only 1 due loan → collect it (no skip)",
+      "status": "PASS",
+      "details": "Selected 1, skipped 0, amount ₹2,500",
+      "expected": {
+        "selected": 1,
+        "skipped": 0
+      },
+      "actual": {
+        "selected": 1,
+        "skipped": 0
+      }
+    },
+    {
+      "group": "Skip-Interest",
+      "id": "C1",
+      "title": "Skip interest amount = outstanding × (R/12/100)",
+      "status": "PASS",
+      "details": "Outstanding ₹40,000 @ 12% → skip-month interest ₹400",
+      "expected": 400,
+      "actual": 400
+    },
+    {
+      "group": "Skip-Interest",
+      "id": "C2",
+      "title": "Policy defaults / toggles: ON vs OFF read correctly",
+      "status": "PASS",
+      "details": "ON=true, OFF=false (default when unset=true)",
+      "expected": {
+        "on": true,
+        "off": false,
+        "default": true
+      },
+      "actual": {
+        "on": true,
+        "off": false,
+        "default": true
+      }
+    },
+    {
+      "group": "Skip-Interest",
+      "id": "C3",
+      "title": "Setting OFF → skipped loan exists but interest MUST NOT post",
+      "status": "PASS",
+      "details": "Skipped loans=1, accrueInterestOnSkippedEmi=false, wouldPost=false",
+      "expected": {
+        "skipped": 1,
+        "wouldPost": false
+      },
+      "actual": {
+        "skipped": 1,
+        "wouldPost": false
+      }
+    },
+    {
+      "group": "Skip-Interest",
+      "id": "C4",
+      "title": "Setting ON → skipped loan gets one month interest posted",
+      "status": "PASS",
+      "details": "wouldPost=true, interest for skipped loan ≈ ₹417 (then EMI rolls to next month)",
+      "expected": {
+        "wouldPost": true,
+        "interest": 417
+      },
+      "actual": {
+        "wouldPost": true,
+        "interest": 417
+      }
+    },
+    {
+      "group": "Skip-Interest",
+      "id": "C5",
+      "title": "0% interest loan skipped → post amount is ₹0 (nothing to accrue)",
+      "status": "PASS",
+      "details": "skip interest = ₹0",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "group": "E2E",
+      "id": "D1",
+      "title": "Story: interest Jan, EMI May — higher EMI; no deduction before May",
+      "status": "PASS",
+      "details": "Pre months=4, total=₹11,333, EMI=₹944; due in Apr? false; due in May? true",
+      "expected": {
+        "pre": 4,
+        "total": 11333,
+        "aprDue": false,
+        "mayDue": true
+      },
+      "actual": {
+        "pre": 4,
+        "total": 11333,
+        "aprDue": false,
+        "mayDue": true
+      }
+    },
+    {
+      "group": "E2E",
+      "id": "D2",
+      "title": "Story: 2 loans due, single EMI ON, skip interest ON",
+      "status": "PASS",
+      "details": "Payroll deducts ₹2,000 (L1). L2 skipped → interest ₹250 added; L2 EMI due again next month.",
+      "expected": {
+        "deduct": 2000,
+        "skipInterest": 250
+      },
+      "actual": {
+        "deduct": 2000,
+        "skipInterest": 250
+      }
+    },
+    {
+      "group": "E2E",
+      "id": "D3",
+      "title": "Story: 2 loans due, single EMI ON, skip interest OFF",
+      "status": "PASS",
+      "details": "Payroll deducts ₹2,000 (L1). L2 skipped with NO interest. L2 still waits for next eligible payroll.",
+      "expected": {
+        "selected": "L1",
+        "wouldPost": false
+      },
+      "actual": {
+        "selected": "L1",
+        "wouldPost": false
+      }
+    },
+    {
+      "group": "E2E",
+      "id": "D4",
+      "title": "Story: 3×₹2,500 EMIs, cap ₹6,000 → take 2, skip 1",
+      "status": "PASS",
+      "details": "Deduct ₹5,000 from [L1,L2]; skip [L3]",
+      "expected": {
+        "selected": 2,
+        "skipped": 1,
+        "total": 5000
+      },
+      "actual": {
+        "selected": 2,
+        "skipped": 1,
+        "total": 5000
+      }
+    },
+    {
+      "group": "E2E",
+      "id": "D5",
+      "title": "Story: same dates, pre-EMI policy ON vs OFF comparison",
+      "status": "PASS",
+      "details": "ON → total ₹11,333 / EMI ₹944; OFF → total ₹11,000 / EMI ₹917",
+      "expected": {
+        "on": 11333,
+        "off": 11000
+      },
+      "actual": {
+        "on": 11333,
+        "off": 11000
+      }
+    }
+  ]
+}

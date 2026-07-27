@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import { canManageLoans } from '@/lib/permissions';
@@ -30,6 +31,7 @@ import {
 } from '@/lib/loanListUi';
 import { LoanListEmployeeCell } from '@/components/LoanListEmployeeCell';
 import LoanEditDialog, { canShowLoanEditButton } from '@/components/loans/LoanEditDialog';
+import LoanApplyEmiPolicyPreview from '@/components/loans/LoanApplyEmiPolicyPreview';
 import {
   LoansPageShell,
   LoansPageHeader,
@@ -255,6 +257,7 @@ const LoanCardSkeleton = () => (
 );
 
 export default function LoansPage() {
+  const router = useRouter();
   const [viewMode, setViewMode] = useState<'list' | 'card'>('list');
   const [activeTab, setActiveTab] = useState<'loans' | 'advances' | 'pending' | 'guarantor_requests'>('loans');
   const [loans, setLoans] = useState<LoanApplication[]>([]);
@@ -322,7 +325,10 @@ export default function LoansPage() {
     totalInterest: number;
     totalAmount: number;
   } | null>(null);
+  const [emiAppPreview, setEmiAppPreview] = useState<any>(null);
+  const [loadingEmiPreview, setLoadingEmiPreview] = useState(false);
 
+  const [collectGuarantorsOnApply, setCollectGuarantorsOnApply] = useState(false);
   const [guarantorSearch, setGuarantorSearch] = useState('');
   const [showGuarantorDropdown, setShowGuarantorDropdown] = useState(false);
   const [guarantorSearchResults, setGuarantorSearchResults] = useState<Employee[]>([]);
@@ -360,6 +366,7 @@ export default function LoansPage() {
   const [payCycleStartDay, setPayCycleStartDay] = useState(1);
   const [payCycleEndDay, setPayCycleEndDay] = useState<number | null>(null);
   const [finalApprovalPayPeriod, setFinalApprovalPayPeriod] = useState('');
+  const [interestStartPayPeriod, setInterestStartPayPeriod] = useState('');
 
   // User detection on mount
   useEffect(() => {
@@ -420,7 +427,9 @@ export default function LoansPage() {
 
       loadLoanSettings(selectedLoan.requestType);
       const pk = presentPayPeriod?.payrollMonthKey;
-      setFinalApprovalPayPeriod(pk ? payrollMonthKeyToPayPeriodSelectValue(pk) : '__default__');
+      const defaultPeriod = pk ? payrollMonthKeyToPayPeriodSelectValue(pk) : '__default__';
+      setFinalApprovalPayPeriod(defaultPeriod);
+      setInterestStartPayPeriod(defaultPeriod);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showDetailDialog, selectedLoan?._id, presentPayPeriod?.payrollMonthKey]);
@@ -564,6 +573,37 @@ export default function LoansPage() {
       setInterestCalculation(null);
     }
   }, [formData.amount, formData.duration, applyType, loanSettings]);
+
+  useEffect(() => {
+    if (applyType !== 'loan' || !formData.amount || !formData.duration) {
+      setEmiAppPreview(null);
+      return;
+    }
+    const amount = parseFloat(formData.amount);
+    const duration = parseInt(formData.duration, 10);
+    if (!(amount > 0) || !(duration > 0)) {
+      setEmiAppPreview(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        setLoadingEmiPreview(true);
+        const res = await api.getEmiApplicationPreview({
+          amount,
+          duration,
+          empNo: selectedEmployee?.emp_no,
+          employeeId: selectedEmployee?._id,
+        });
+        if (res.success) setEmiAppPreview(res.data);
+        else setEmiAppPreview(null);
+      } catch {
+        setEmiAppPreview(null);
+      } finally {
+        setLoadingEmiPreview(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [applyType, formData.amount, formData.duration, selectedEmployee?._id, selectedEmployee?.emp_no]);
 
   // Fetch eligibility when employee selected for salary advance
   useEffect(() => {
@@ -768,6 +808,15 @@ export default function LoansPage() {
             finalApprovalPayPeriod,
             presentPayPeriod?.payrollMonthKey
           );
+          if (
+            selectedLoan?.requestType === 'loan' &&
+            loanSettings?.settings?.preEmiInterestEnabled !== false
+          ) {
+            payload.interestStartPayrollMonth = payPeriodSelectValueToMonthKey(
+              interestStartPayPeriod,
+              presentPayPeriod?.payrollMonthKey
+            );
+          }
         }
       }
 
@@ -1264,12 +1313,27 @@ export default function LoansPage() {
     return (name[0] || 'E').toUpperCase();
   };
 
-  const openApplyDialog = (type: 'loan' | 'salary_advance') => {
+  const openLoanDetail = (loan: LoanApplication) => {
+    router.push(`/loans/${loan._id}`);
+  };
+
+  const openApplyDialog = async (type: 'loan' | 'salary_advance') => {
     setApplyType(type);
     setFormData({ amount: '', reason: '', duration: '', remarks: '', needAmount: '', guarantorIds: [] });
     setSelectedEmployee(null);
     setEmployeeSearch('');
     setInterestCalculation(null);
+    setEmiAppPreview(null);
+    setCollectGuarantorsOnApply(false);
+    if (type === 'loan') {
+      try {
+        const res = await api.getLoanSettings('loan');
+        const timing = res.data?.guarantorRules?.collectionTiming;
+        setCollectGuarantorsOnApply(timing === 'on_application');
+      } catch {
+        setCollectGuarantorsOnApply(false);
+      }
+    }
     setShowApplyDialog(true);
   };
 
@@ -1294,7 +1358,7 @@ export default function LoansPage() {
         return;
       }
 
-      if (applyType === 'loan' && (!formData.guarantorIds || formData.guarantorIds.length < 2)) {
+      if (applyType === 'loan' && collectGuarantorsOnApply && (!formData.guarantorIds || formData.guarantorIds.length < 2)) {
         setMessage({ type: 'error', text: 'At least 2 unique guarantors are required for loan applications' });
         return;
       }
@@ -1310,7 +1374,9 @@ export default function LoansPage() {
 
       if (applyType === 'loan') {
         payload.duration = parseInt(formData.duration);
-        payload.guarantorIds = formData.guarantorIds;
+        if (collectGuarantorsOnApply && formData.guarantorIds?.length) {
+          payload.guarantorIds = formData.guarantorIds;
+        }
       } else {
         payload.duration = formData.duration ? parseInt(formData.duration) : 1;
       }
@@ -1698,10 +1764,7 @@ export default function LoansPage() {
                             <td className={`px-6 py-4 ${ledgerTableActionsCellClass('right')}`}>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setSelectedLoan(loan);
-                                  setShowDetailDialog(true);
-                                }}
+                                onClick={() => openLoanDetail(loan)}
                                 className={ledgerActionButtonClass('sky', 'outline')}
                                 title="View details"
                               >
@@ -1732,10 +1795,7 @@ export default function LoansPage() {
                         filteredLoansForList.map((loan, idx) => (
                           <div
                             key={loan._id}
-                            onClick={() => {
-                              setSelectedLoan(loan);
-                              setShowDetailDialog(true);
-                            }}
+                            onClick={() => openLoanDetail(loan)}
                             className="group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900"
                           >
                             <div className="flex items-start justify-between mb-4">
@@ -1847,10 +1907,7 @@ export default function LoansPage() {
                             <td className={`px-6 py-4 ${ledgerTableActionsCellClass('right')}`}>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setSelectedLoan(advance);
-                                  setShowDetailDialog(true);
-                                }}
+                                onClick={() => openLoanDetail(advance)}
                                 className={ledgerActionButtonClass('sky', 'outline')}
                                 title="View details"
                               >
@@ -1881,10 +1938,7 @@ export default function LoansPage() {
                         filteredAdvancesForList.map((advance, idx) => (
                           <div
                             key={advance._id}
-                            onClick={() => {
-                              setSelectedLoan(advance);
-                              setShowDetailDialog(true);
-                            }}
+                            onClick={() => openLoanDetail(advance)}
                             className="group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900"
                           >
                             <div className="flex items-start justify-between mb-4">
@@ -1963,10 +2017,7 @@ export default function LoansPage() {
                           <div className="flex gap-3">
                             {hasManagePermission && (
                               <button
-                                onClick={() => {
-                                  setSelectedLoan(loan);
-                                  setShowDetailDialog(true);
-                                }}
+                                onClick={() => openLoanDetail(loan)}
                                 className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-green-500/30 hover:shadow-lg"
                               >
                                 <CheckCircle2 className="w-4 h-4" /> Approve
@@ -1974,10 +2025,7 @@ export default function LoansPage() {
                             )}
                             {hasManagePermission && (
                               <button
-                                onClick={() => {
-                                  setSelectedLoan(loan);
-                                  setShowDetailDialog(true);
-                                }}
+                                onClick={() => openLoanDetail(loan)}
                                 className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-red-600 rounded-xl hover:from-red-600 hover:to-red-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-red-500/30 hover:shadow-lg"
                               >
                                 <XCircle className="w-4 h-4" /> Reject
@@ -2026,10 +2074,7 @@ export default function LoansPage() {
                           <div className="flex gap-3">
                             {hasManagePermission && (
                               <button
-                                onClick={() => {
-                                  setSelectedLoan(advance);
-                                  setShowDetailDialog(true);
-                                }}
+                                onClick={() => openLoanDetail(advance)}
                                 className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-green-500/30 hover:shadow-lg"
                               >
                                 <CheckCircle2 className="w-4 h-4" /> Approve
@@ -2037,10 +2082,7 @@ export default function LoansPage() {
                             )}
                             {hasManagePermission && (
                               <button
-                                onClick={() => {
-                                  setSelectedLoan(advance);
-                                  setShowDetailDialog(true);
-                                }}
+                                onClick={() => openLoanDetail(advance)}
                                 className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-red-600 rounded-xl hover:from-red-600 hover:to-red-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-red-500/30 hover:shadow-lg"
                               >
                                 <XCircle className="w-4 h-4" /> Reject
@@ -2739,6 +2781,12 @@ export default function LoansPage() {
                             onChange={setFinalApprovalPayPeriod}
                             options={finalApprovalPayPeriodOptions}
                             previewLabel={selectedFinalPayPeriodPreview ?? undefined}
+                            showInterestStart={
+                              selectedLoan.requestType === 'loan' &&
+                              loanSettings?.settings?.preEmiInterestEnabled !== false
+                            }
+                            interestStartValue={interestStartPayPeriod}
+                            onInterestStartChange={setInterestStartPayPeriod}
                           />
                         ) : undefined
                       }
@@ -3399,41 +3447,45 @@ export default function LoansPage() {
                   </div>
                 )}
 
-                {/* Interest Calculation Display - Only for loans */}
-                {applyType === 'loan' && interestCalculation && (
-                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-                    <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">Loan Calculation</h4>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">Principal Amount:</span>
-                        <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.principal.toLocaleString()}</span>
-                      </div>
-                      {interestCalculation.interestRate > 0 && (
-                        <>
-                          <div className="flex justify-between">
-                            <span className="text-slate-600 dark:text-slate-400">Interest Rate:</span>
-                            <span className="font-medium text-slate-900 dark:text-slate-100">{interestCalculation.interestRate}% p.a.</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-600 dark:text-slate-400">Total Interest:</span>
-                            <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.totalInterest.toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-600 dark:text-slate-400">Total Amount (Principal + Interest):</span>
-                            <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.totalAmount.toLocaleString()}</span>
-                          </div>
-                        </>
-                      )}
-                      <div className="flex justify-between pt-2 border-t border-blue-200 dark:border-blue-800">
-                        <span className="font-semibold text-blue-900 dark:text-blue-100">EMI per Month:</span>
-                        <span className="font-bold text-blue-900 dark:text-blue-100">₹{interestCalculation.emiAmount.toLocaleString()}</span>
+                {/* Interest / policy / pre-EMI / auto commence — loans only */}
+                {applyType === 'loan' && (loadingEmiPreview || emiAppPreview || interestCalculation) && (
+                  loadingEmiPreview || emiAppPreview ? (
+                    <LoanApplyEmiPolicyPreview preview={emiAppPreview} loading={loadingEmiPreview && !emiAppPreview} />
+                  ) : interestCalculation ? (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+                      <h4 className="mb-3 text-sm font-semibold text-blue-900 dark:text-blue-100">Loan Calculation</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-slate-600 dark:text-slate-400">Principal Amount:</span>
+                          <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.principal.toLocaleString()}</span>
+                        </div>
+                        {interestCalculation.interestRate > 0 && (
+                          <>
+                            <div className="flex justify-between">
+                              <span className="text-slate-600 dark:text-slate-400">Interest Rate:</span>
+                              <span className="font-medium text-slate-900 dark:text-slate-100">{interestCalculation.interestRate}% p.a.</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-600 dark:text-slate-400">Total Interest:</span>
+                              <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.totalInterest.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-600 dark:text-slate-400">Total Amount (Principal + Interest):</span>
+                              <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.totalAmount.toLocaleString()}</span>
+                            </div>
+                          </>
+                        )}
+                        <div className="flex justify-between border-t border-blue-200 pt-2 dark:border-blue-800">
+                          <span className="font-semibold text-blue-900 dark:text-blue-100">EMI per Month:</span>
+                          <span className="font-bold text-blue-900 dark:text-blue-100">₹{interestCalculation.emiAmount.toLocaleString()}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  ) : null
                 )}
 
-                {/* Guarantors Selection - Only for loans */}
-                {applyType === 'loan' && (
+                {/* Guarantors — only when settings require at application */}
+                {applyType === 'loan' && collectGuarantorsOnApply && (
                   <div className="relative mb-4">
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                       Guarantors (Select at least 2) *

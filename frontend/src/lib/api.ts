@@ -549,7 +549,15 @@ export interface ApiResponse<T> {
     /** @deprecated use divisionName */
     sectionName?: string | null;
     divisionName?: string | null;
+    attendanceSummary?: any;
+    employeeExposure?: any;
   };
+  /** GET /loans/:id attendance summary (last 6 months) alongside `data`. */
+  attendanceSummary?: any;
+  /** GET /loans/:id workflow stage / guarantor meta alongside `data`. */
+  workflowMeta?: any;
+  /** GET /loans/:id employee loan exposure alongside `data`. */
+  employeeExposure?: any;
   /** Payroll batch approve failure (400, code MISSING_PAYROLL) */
   missingEmployees?: {
     employeeId?: string;
@@ -4044,6 +4052,31 @@ export const api = {
     });
   },
 
+  /** Preview EMI, pre-EMI, and auto commence month for loan application form */
+  getEmiApplicationPreview: async (params: {
+    amount: number | string;
+    duration: number | string;
+    empNo?: string;
+    employeeId?: string;
+    interestStartPayrollMonth?: string;
+  }) => {
+    const q = new URLSearchParams();
+    q.set('amount', String(params.amount));
+    q.set('duration', String(params.duration));
+    if (params.empNo) q.set('empNo', params.empNo);
+    if (params.employeeId) q.set('employeeId', params.employeeId);
+    if (params.interestStartPayrollMonth) q.set('interestStartPayrollMonth', params.interestStartPayrollMonth);
+    return apiRequest<any>(`/loans/emi-application-preview?${q.toString()}`, { method: 'GET' });
+  },
+
+  // Attendance summary (last 6 months) for loan apply dialog
+  getLoanApplicationAttendanceSummary: async (params: { employeeId: string; empNo: string }) => {
+    const q = new URLSearchParams();
+    q.set('employeeId', params.employeeId);
+    q.set('empNo', params.empNo);
+    return apiRequest<any>(`/loans/attendance-summary-for-application?${q.toString()}`, { method: 'GET' });
+  },
+
   // Update loan/advance
   updateLoan: async (id: string, data: any) => {
     return apiRequest<any>(`/loans/${id}`, {
@@ -4141,6 +4174,28 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ action, remarks }),
     });
+  },
+
+  addLoanGuarantors: async (loanId: string, guarantorIds: string[]) => {
+    return apiRequest<any>(`/loans/${loanId}/guarantors`, {
+      method: 'PUT',
+      body: JSON.stringify({ guarantorIds }),
+    });
+  },
+
+  getGuarantorCandidates: async (params?: {
+    search?: string;
+    limit?: number;
+    loanId?: string;
+    applicantEmployeeId?: string;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.search) qs.append('search', params.search);
+    if (params?.limit) qs.append('limit', String(params.limit));
+    if (params?.loanId) qs.append('loanId', params.loanId);
+    if (params?.applicantEmployeeId) qs.append('applicantEmployeeId', params.applicantEmployeeId);
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return apiRequest<any>(`/loans/guarantor-candidates${query}`, { method: 'GET' });
   },
 
   // Add leave/OD/CCL type

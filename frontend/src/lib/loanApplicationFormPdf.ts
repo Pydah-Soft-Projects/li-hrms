@@ -8,11 +8,30 @@ export type LoanApplicationPdfContext = {
     amount: number;
     drawnOnDate?: string;
     requestType?: string;
+    outstanding?: number | null;
+    emi?: number | null;
+    status?: string;
   } | null;
   grossSalary?: number | null;
   /** @deprecated use divisionName */
   sectionName?: string | null;
   divisionName?: string | null;
+  employeeExposure?: {
+    ownLoans?: Array<{ amount: number; emi: number; outstanding: number; status: string; applicationFormNumber?: number }>;
+    guaranteedLoans?: Array<{ borrowerName?: string; borrowerEmpNo?: string; amount: number; emi: number; outstanding: number; status: string }>;
+    totals?: {
+      ownOutstanding: number;
+      guaranteedOutstanding: number;
+      totalLiability: number;
+      ownEmi: number;
+      guaranteedEmi: number;
+      totalMonthlyExposure: number;
+    };
+  } | null;
+  attendanceSummary?: {
+    last6Months?: Array<{ monthName: string; workingDays: number; present: number; leave: number; lop: number; attendancePercent: number | null }>;
+    overallPercentage?: number | null;
+  } | null;
 };
 
 type FormTheme = {
@@ -618,6 +637,74 @@ function measureOfficialUsePanelHeight(
   return h;
 }
 
+function drawAttendanceSummaryBlock(
+  doc: jsPDF,
+  theme: FormTheme,
+  context: LoanApplicationPdfContext | undefined,
+  layout: { margin: number; contentW: number; innerX: number; innerRight: number; startY: number },
+): number {
+  const summary = context?.attendanceSummary;
+  if (!summary?.last6Months?.length) return layout.startY;
+
+  let y = layout.startY + 6;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...theme.label);
+  doc.text(`Attendance Summary (Last 6 Months) — Overall: ${summary.overallPercentage ?? '—'}%`, layout.innerX, y);
+  y += 5;
+
+  const cols = ['Month', 'Working', 'Present', 'Leave', 'LOP', '%'];
+  const colW = (layout.innerRight - layout.innerX) / cols.length;
+  doc.setFontSize(7);
+  cols.forEach((c, i) => doc.text(c, layout.innerX + i * colW, y));
+  y += 4;
+
+  doc.setFont('helvetica', 'normal');
+  summary.last6Months.forEach((row) => {
+    const vals = [
+      row.monthName || '',
+      String(row.workingDays ?? ''),
+      String(row.present ?? ''),
+      String(row.leave ?? ''),
+      String(row.lop ?? ''),
+      row.attendancePercent != null ? `${row.attendancePercent}%` : '—',
+    ];
+    vals.forEach((v, i) => doc.text(v, layout.innerX + i * colW, y));
+    y += 3.5;
+  });
+  return y + 4;
+}
+
+function drawLiabilitySummaryBlock(
+  doc: jsPDF,
+  theme: FormTheme,
+  context: LoanApplicationPdfContext | undefined,
+  layout: { innerX: number; innerRight: number; startY: number },
+): number {
+  const exp = context?.employeeExposure;
+  if (!exp?.totals) return layout.startY;
+
+  let y = layout.startY + 4;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...theme.label);
+  doc.text('Total Liability Summary', layout.innerX, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  const lines = [
+    `Own outstanding: ${formatRsWhole(exp.totals.ownOutstanding)}`,
+    `Guaranteed outstanding: ${formatRsWhole(exp.totals.guaranteedOutstanding)}`,
+    `Total liability: ${formatRsWhole(exp.totals.totalLiability)}`,
+    `Monthly exposure (EMI): ${formatRsWhole(exp.totals.totalMonthlyExposure)}`,
+  ];
+  lines.forEach((line) => {
+    doc.text(line, layout.innerX, y);
+    y += 4;
+  });
+  return y + 2;
+}
+
 function drawOfficialUseSection(
   doc: jsPDF,
   loan: LoanAdvancePdfLoan,
@@ -789,13 +876,13 @@ export function drawLoanApplicationFormPage(
     startY: headerH + 5,
   });
 
+  const layoutBase = { pageW, margin, contentW, innerX, innerRight };
+  let nextY = drawAttendanceSummaryBlock(doc, theme, context, { ...layoutBase, startY: y });
+  nextY = drawLiabilitySummaryBlock(doc, theme, context, { innerX, innerRight, startY: nextY });
+
   drawOfficialUseSection(doc, loan, theme, context, {
-    pageW,
-    margin,
-    contentW,
-    innerX,
-    innerRight,
-    startY: y,
+    ...layoutBase,
+    startY: nextY,
   });
 }
 

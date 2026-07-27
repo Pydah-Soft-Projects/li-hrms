@@ -15,6 +15,34 @@ import {
 } from '@/components/settings/SettingsPageShell';
 import { settingsInputClass, settingsInputStyle } from '@/lib/settingsUi';
 
+type GuarantorRules = {
+  collectionTiming: 'on_application' | 'on_workflow_stage';
+  minGuarantors: number;
+  maxGuarantors: number;
+  maxGuaranteePercentOfSalary: number;
+  includeOwnEmi: boolean;
+  includeGuaranteedEmi: boolean;
+  minServicePeriodMonths: number;
+  minSalary: number;
+  sameDivisionOnly: boolean;
+  sameDepartmentOnly: boolean;
+  activeEmployeeOnly: boolean;
+};
+
+const DEFAULT_GUARANTOR_RULES: GuarantorRules = {
+  collectionTiming: 'on_workflow_stage',
+  minGuarantors: 2,
+  maxGuarantors: 4,
+  maxGuaranteePercentOfSalary: 60,
+  includeOwnEmi: true,
+  includeGuaranteedEmi: true,
+  minServicePeriodMonths: 0,
+  minSalary: 0,
+  sameDivisionOnly: true,
+  sameDepartmentOnly: false,
+  activeEmployeeOnly: true,
+};
+
 const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) => {
     const [loanSettings, setLoanSettings] = useState({
         maxAmount: 50000,
@@ -22,7 +50,13 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
         isInterestApplicable: false,
         maxTenure: 12,
         allowMultiple: false,
+        multiEmiCollectionMode: 'collect_all' as string,
+        maxCombinedEmiAmount: null as number | null,
+        multiEmiPriority: 'oldest_first' as string,
+        accrueInterestOnSkippedEmi: true,
+        preEmiInterestEnabled: true,
     });
+    const [guarantorRules, setGuarantorRules] = useState<GuarantorRules>(DEFAULT_GUARANTOR_RULES);
     const [workflow, setWorkflow] = useState<WorkflowData>({
         isEnabled: true,
         steps: [],
@@ -40,6 +74,9 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
                 if (res.success && res.data) {
                     if (res.data.settings) setLoanSettings(res.data.settings);
                     if (res.data.workflow) setWorkflow(res.data.workflow);
+                    if (res.data.guarantorRules && type === 'loan') {
+                        setGuarantorRules({ ...DEFAULT_GUARANTOR_RULES, ...res.data.guarantorRules });
+                    }
                 }
             } catch (err) {
                 console.error('Failed to load settings', err);
@@ -55,7 +92,8 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
             setSaving(true);
             await api.saveLoanSettings(type, {
                 settings: loanSettings,
-                workflow: { ...workflow, isEnabled: true }
+                workflow: { ...workflow, isEnabled: true },
+                ...(type === 'loan' ? { guarantorRules } : {}),
             });
             toast.success('Settings updated successfully');
         } catch {
@@ -72,7 +110,7 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
             <SettingsPanelHeader
                 section={type.replace('_', ' ')}
                 title="Capital Disbursement"
-                subtitle="Configure loan/advance parameters and authorization gates."
+                subtitle="Configure loan/advance parameters, guarantor rules, and authorization gates."
             />
 
             <div className="grid grid-cols-1 items-start gap-8 xl:grid-cols-3">
@@ -109,7 +147,7 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
                                 id="loan-interest-applicable"
                                 label="Apply Interest"
                                 description="Enable interest calculation for this type."
-                                checked={loanSettings.isInterestApplicable}
+                                checked={!!loanSettings.isInterestApplicable}
                                 onChange={(next) => setLoanSettings({ ...loanSettings, isInterestApplicable: next })}
                             />
 
@@ -123,12 +161,112 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
                                     style={settingsInputStyle()}
                                 />
                             </SettingsField>
+
+                            {type === 'loan' && (
+                                <>
+                                    <SettingsToggleRow
+                                        id="pre-emi-interest"
+                                        label="Pre-EMI interest"
+                                        description="Charge interest for months between interest start and EMI commence date."
+                                        checked={loanSettings.preEmiInterestEnabled !== false}
+                                        onChange={(next) => setLoanSettings({ ...loanSettings, preEmiInterestEnabled: next })}
+                                    />
+                                    <SettingsField label="Multi-loan EMI collection">
+                                        <select
+                                            value={loanSettings.multiEmiCollectionMode || 'collect_all'}
+                                            onChange={(e) => setLoanSettings({ ...loanSettings, multiEmiCollectionMode: e.target.value })}
+                                            className={settingsInputClass()}
+                                            style={settingsInputStyle()}
+                                        >
+                                            <option value="collect_all">Collect all due EMIs together</option>
+                                            <option value="single_emi_only">Collect only one EMI per payroll</option>
+                                            <option value="max_combined_cap">Cap combined EMI amount</option>
+                                        </select>
+                                    </SettingsField>
+                                    {(loanSettings.multiEmiCollectionMode === 'single_emi_only' ||
+                                        loanSettings.multiEmiCollectionMode === 'max_combined_cap') && (
+                                        <SettingsField label="Which EMI to prefer">
+                                            <select
+                                                value={loanSettings.multiEmiPriority || 'oldest_first'}
+                                                onChange={(e) => setLoanSettings({ ...loanSettings, multiEmiPriority: e.target.value })}
+                                                className={settingsInputClass()}
+                                                style={settingsInputStyle()}
+                                            >
+                                                <option value="oldest_first">Oldest loan first</option>
+                                                <option value="newest_first">Newest loan first</option>
+                                                <option value="highest_emi_first">Highest EMI first</option>
+                                            </select>
+                                        </SettingsField>
+                                    )}
+                                    {loanSettings.multiEmiCollectionMode === 'max_combined_cap' && (
+                                        <SettingsField label="Max combined EMI (₹)">
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                value={loanSettings.maxCombinedEmiAmount ?? ''}
+                                                onChange={(e) =>
+                                                    setLoanSettings({
+                                                        ...loanSettings,
+                                                        maxCombinedEmiAmount: e.target.value ? parseInt(e.target.value, 10) : null,
+                                                    })
+                                                }
+                                                className={settingsInputClass()}
+                                                style={settingsInputStyle()}
+                                            />
+                                        </SettingsField>
+                                    )}
+                                    <SettingsToggleRow
+                                        id="skip-emi-interest"
+                                        label="Accrue interest on skipped EMI"
+                                        description="If an EMI is due but not collected (single/cap mode), post monthly interest and roll the due month forward."
+                                        checked={loanSettings.accrueInterestOnSkippedEmi !== false}
+                                        onChange={(next) => setLoanSettings({ ...loanSettings, accrueInterestOnSkippedEmi: next })}
+                                    />
+                                </>
+                            )}
                         </div>
 
                         <div className="pt-6">
                             <SettingsSaveBar onSave={handleSave} saving={saving} label="Commit Settings" />
                         </div>
                     </SettingsSectionCard>
+
+                    {type === 'loan' && (
+                        <SettingsSectionCard title="Guarantor rules">
+                            <div className="space-y-4">
+                                <SettingsField label="When to collect guarantors">
+                                    <select
+                                        value={guarantorRules.collectionTiming}
+                                        onChange={(e) => setGuarantorRules({ ...guarantorRules, collectionTiming: e.target.value as GuarantorRules['collectionTiming'] })}
+                                        className={settingsInputClass()}
+                                        style={settingsInputStyle()}
+                                    >
+                                        <option value="on_workflow_stage">At configured workflow stage</option>
+                                        <option value="on_application">At application creation</option>
+                                    </select>
+                                </SettingsField>
+                                <SettingsField label="Min guarantors">
+                                    <input type="number" min={1} value={guarantorRules.minGuarantors} onChange={(e) => setGuarantorRules({ ...guarantorRules, minGuarantors: parseInt(e.target.value) || 1 })} className={settingsInputClass()} style={settingsInputStyle()} />
+                                </SettingsField>
+                                <SettingsField label="Max guarantors">
+                                    <input type="number" min={1} value={guarantorRules.maxGuarantors} onChange={(e) => setGuarantorRules({ ...guarantorRules, maxGuarantors: parseInt(e.target.value) || 1 })} className={settingsInputClass()} style={settingsInputStyle()} />
+                                </SettingsField>
+                                <SettingsField label="Max guarantee % of salary">
+                                    <input type="number" min={0} max={100} value={guarantorRules.maxGuaranteePercentOfSalary} onChange={(e) => setGuarantorRules({ ...guarantorRules, maxGuaranteePercentOfSalary: parseFloat(e.target.value) || 60 })} className={settingsInputClass()} style={settingsInputStyle()} />
+                                </SettingsField>
+                                <SettingsField label="Min salary (₹)">
+                                    <input type="number" min={0} value={guarantorRules.minSalary} onChange={(e) => setGuarantorRules({ ...guarantorRules, minSalary: parseInt(e.target.value) || 0 })} className={settingsInputClass()} style={settingsInputStyle()} />
+                                </SettingsField>
+                                <SettingsField label="Min service (months)">
+                                    <input type="number" min={0} value={guarantorRules.minServicePeriodMonths} onChange={(e) => setGuarantorRules({ ...guarantorRules, minServicePeriodMonths: parseInt(e.target.value) || 0 })} className={settingsInputClass()} style={settingsInputStyle()} />
+                                </SettingsField>
+                                <SettingsToggleRow id="gr-own-emi" label="Include own EMI" checked={guarantorRules.includeOwnEmi} onChange={(v) => setGuarantorRules({ ...guarantorRules, includeOwnEmi: v })} />
+                                <SettingsToggleRow id="gr-guaranteed-emi" label="Include guaranteed EMI" checked={guarantorRules.includeGuaranteedEmi} onChange={(v) => setGuarantorRules({ ...guarantorRules, includeGuaranteedEmi: v })} />
+                                <SettingsToggleRow id="gr-same-div" label="Same division only" checked={guarantorRules.sameDivisionOnly} onChange={(v) => setGuarantorRules({ ...guarantorRules, sameDivisionOnly: v })} />
+                                <SettingsToggleRow id="gr-same-dept" label="Same department only" checked={guarantorRules.sameDepartmentOnly} onChange={(v) => setGuarantorRules({ ...guarantorRules, sameDepartmentOnly: v })} />
+                            </div>
+                        </SettingsSectionCard>
+                    )}
                 </div>
 
                 <div className="xl:col-span-2">
@@ -139,6 +277,7 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
                             title="Multi-Level Approval"
                             description="Workflow Engine for capital disbursement."
                             addStepLabel="Append Authorization Level"
+                            showLoanStageCapabilities={type === 'loan'}
                         />
 
                         <div className="pt-6">

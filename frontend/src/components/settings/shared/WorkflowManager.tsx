@@ -25,6 +25,9 @@ export interface WorkflowStep {
     approverRole: string;
     isActive: boolean;
     canEditLWD?: boolean;
+    requireGuarantors?: boolean;
+    verifyAttendance?: boolean;
+    verifyExistingLoans?: boolean;
 }
 
 export interface WorkflowData {
@@ -46,6 +49,7 @@ interface WorkflowManagerProps {
     icon?: LucideIcon;
     addStepLabel?: string;
     isResignationWorkflow?: boolean;
+    showLoanStageCapabilities?: boolean;
 }
 
 const WorkflowManager = ({
@@ -55,7 +59,8 @@ const WorkflowManager = ({
     description = "Workflow Engine for automated authorization.",
     icon: Icon = ShieldCheck,
     addStepLabel = "Add Next Approval Stage",
-    isResignationWorkflow = false
+    isResignationWorkflow = false,
+    showLoanStageCapabilities = false,
 }: WorkflowManagerProps) => {
     const steps = workflow?.steps || [];
 
@@ -209,6 +214,31 @@ const WorkflowManager = ({
                                             </button>
                                             <span className="text-[10px] font-medium uppercase text-stone-500">{step.canEditLWD ? 'Yes' : 'No'}</span>
                                         </div>
+                                    </div>
+                                )}
+                                {showLoanStageCapabilities && (
+                                    <div className="col-span-full flex flex-wrap gap-4 border-t pt-4" style={settingsLedgerBorder}>
+                                        <SettingsToggleRow
+                                            id={`step-${idx}-guarantors`}
+                                            label="Require guarantors at this stage"
+                                            description="Collect and validate guarantors before this step can approve."
+                                            checked={!!step.requireGuarantors}
+                                            onChange={(next) => updateStep(idx, 'requireGuarantors', next)}
+                                        />
+                                        <SettingsToggleRow
+                                            id={`step-${idx}-attendance`}
+                                            label="Verify attendance"
+                                            description="Approver should verify 6-month attendance summary."
+                                            checked={!!step.verifyAttendance}
+                                            onChange={(next) => updateStep(idx, 'verifyAttendance', next)}
+                                        />
+                                        <SettingsToggleRow
+                                            id={`step-${idx}-loans`}
+                                            label="Verify existing loans"
+                                            description="Show own + guaranteed loan liability before approval."
+                                            checked={!!step.verifyExistingLoans}
+                                            onChange={(next) => updateStep(idx, 'verifyExistingLoans', next)}
+                                        />
                                     </div>
                                 )}
                             </div>

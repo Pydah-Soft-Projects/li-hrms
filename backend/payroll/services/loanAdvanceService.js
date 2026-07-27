@@ -5,6 +5,11 @@ const {
   isRepaymentDueForPayrollMonth,
 } = require('../../loans/services/loanHistoryRepairService');
 const { getDueInstallmentAmount } = require('../../loans/services/loanInstallmentScheduleService');
+const {
+  loadLoanEmiPolicy,
+  selectEmisForCollection,
+  skippedMonthInterestAmount,
+} = require('../../loans/services/loanEmiPolicyService');
 
 /**
  * Loan & Advance Processing Service
@@ -34,7 +39,7 @@ async function getActiveLoans(employeeId, payrollMonth = null) {
       'repayment.remainingBalance': { $gt: 0 },
       'loanConfig.emiAmount': { $gt: 0 },
     }).select(
-      '_id loanConfig repayment advanceConfig requestType duration approvals.final.firstDeductionPayrollMonth'
+      '_id loanConfig repayment advanceConfig requestType duration amount appliedAt disbursement approvals.final.firstDeductionPayrollMonth transactions'
     );
 
     return filterLoansForPayrollMonth(loans, payrollMonth);
@@ -75,29 +80,47 @@ async function getActiveAdvances(employeeId, payrollMonth = null) {
 async function calculateTotalEMI(employeeId, payrollMonth = null) {
   try {
     const loans = await getActiveLoans(employeeId, payrollMonth);
+    const policy = await loadLoanEmiPolicy();
 
-    let totalEMI = 0;
-    const emiBreakdown = [];
-
+    const dueItems = [];
     for (const loan of loans) {
       const emiAmount = getDueInstallmentAmount(loan);
       if (emiAmount > 0) {
-        totalEMI += emiAmount;
-        emiBreakdown.push({
+        dueItems.push({
           loanId: loan._id,
+          loan,
           emiAmount: Math.round(emiAmount * 100) / 100,
           scheduledEmi: Number(loan.loanConfig?.emiAmount) || emiAmount,
           installmentNumber: (Number(loan.repayment?.installmentsPaid) || 0) + 1,
+          appliedAt: loan.appliedAt,
+          disbursedAt: loan.disbursement?.disbursedAt,
         });
       }
     }
 
+    const { selectedBreakdown, skippedLoans, mode } = selectEmisForCollection(dueItems, policy);
+
+    // Persist skipped-EMI interest for loans due but not collected this month
+    const skippedInterestPosted = [];
+    if (policy.accrueInterestOnSkippedEmi && payrollMonth && skippedLoans.length > 0) {
+      for (const skipped of skippedLoans) {
+        const posted = await postSkippedEmiInterestForLoan(skipped.loan || skipped.loanId, payrollMonth);
+        if (posted) skippedInterestPosted.push(posted);
+      }
+    }
+
+    const emiBreakdown = selectedBreakdown.map(({ loan, ...rest }) => rest);
+    const totalEMI = emiBreakdown.reduce((s, i) => s + (Number(i.emiAmount) || 0), 0);
     const remainingBalance = loans.reduce((sum, loan) => sum + (loan.repayment?.remainingBalance || 0), 0);
 
     return {
       totalEMI: Math.round(totalEMI * 100) / 100,
       emiBreakdown,
       loanCount: loans.length,
+      selectedLoanCount: emiBreakdown.length,
+      skippedLoanCount: skippedLoans.length,
+      collectionMode: mode,
+      skippedInterestPosted,
       remainingBalance: Math.round(remainingBalance * 100) / 100,
     };
   } catch (error) {
@@ -108,6 +131,77 @@ async function calculateTotalEMI(employeeId, payrollMonth = null) {
       loanCount: 0,
       remainingBalance: 0,
     };
+  }
+}
+
+/**
+ * Post one month of interest when EMI is due but skipped by collection policy.
+ * Idempotent per loan+payroll month via payrollSettlementKey.
+ */
+async function postSkippedEmiInterestForLoan(loanOrId, payrollMonth) {
+  try {
+    const loan =
+      loanOrId && loanOrId._id
+        ? loanOrId
+        : await Loan.findById(loanOrId);
+    if (!loan || loan.requestType !== 'loan') return null;
+
+    const month = String(payrollMonth || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(month)) return null;
+
+    const key = `payroll_month:${month}:interest_skip:${loan._id}`;
+    const already = (loan.transactions || []).some((t) => t.payrollSettlementKey === key);
+    if (already) return null;
+
+    const interestAmt = skippedMonthInterestAmount(loan);
+    if (!(interestAmt > 0)) return null;
+
+    if (!loan.loanConfig) loan.loanConfig = {};
+    loan.loanConfig.totalInterest = (Number(loan.loanConfig.totalInterest) || 0) + interestAmt;
+    loan.loanConfig.totalAmount = (Number(loan.loanConfig.totalAmount) || Number(loan.amount) || 0) + interestAmt;
+    loan.interestAmount = loan.loanConfig.totalInterest;
+
+    if (!loan.repayment) loan.repayment = {};
+    const paid = Number(loan.repayment.totalPaid) || 0;
+    loan.repayment.remainingBalance = Math.max(0, loan.loanConfig.totalAmount - paid);
+
+    // Do NOT advance installmentsPaid — EMI remains due next cycle on same installment index
+    // But shift next due: keep same installment number by NOT incrementing paid;
+    // due month formula uses firstYm + paid, so unpaid installment stays "stuck" on this month.
+    // For skip policy we need the installment to roll to NEXT month without counting as paid.
+    // Store skip marker and bump a virtual offset via loanConfig.skippedEmiMonths.
+    loan.loanConfig.skippedEmiMonths = (Number(loan.loanConfig.skippedEmiMonths) || 0) + 1;
+
+    loan.transactions = loan.transactions || [];
+    loan.transactions.push({
+      transactionType: 'interest_accrual',
+      amount: interestAmt,
+      transactionDate: new Date(),
+      payrollCycle: month,
+      payrollSettlementKey: key,
+      remarks: `Interest accrued — EMI due but not collected in payroll ${month} (multi-EMI policy)`,
+    });
+
+    // Move schedule forward one month without marking installment paid:
+    // bump firstDeductionPayrollMonth? Better: increment installmentsPaid is wrong.
+    // Instead update approvals.final.firstDeduction... no.
+    // Use: set nextPaymentDate to next month AND treat due check as firstYm + paid + skippedOffset.
+    // Simplest robust approach: increment a scheduleOffset on loanConfig used by isRepaymentDueForPayrollMonth.
+
+    loan.loanConfig.scheduleSkipOffset = (Number(loan.loanConfig.scheduleSkipOffset) || 0) + 1;
+    loan.markModified('loanConfig');
+    loan.markModified('transactions');
+    loan.markModified('repayment');
+    await loan.save();
+
+    return {
+      loanId: loan._id,
+      interestAmount: interestAmt,
+      payrollMonth: month,
+    };
+  } catch (err) {
+    console.error('Error posting skipped EMI interest:', err);
+    return null;
   }
 }
 
@@ -665,5 +759,6 @@ module.exports = {
   updateAdvanceRecordsAfterDeduction,
   applyDynamicPayrollLoanAdvance,
   fetchLoanRemainingBalanceByEmployeeIds,
+  postSkippedEmiInterestForLoan,
 };
 

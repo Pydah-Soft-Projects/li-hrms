@@ -54,11 +54,22 @@ router.get('/guarantor-requests', loanController.getGuarantorRequests);
 // Calculate eligibility - MUST be before /:id
 router.get('/calculate-eligibility', loanController.calculateEligibility);
 
+// EMI / pre-EMI / commence preview for loan application form — MUST be before /:id
+router.get('/emi-application-preview', loanController.getEmiApplicationPreview);
+
+// Attendance summary (last 6 months) for loan application form — MUST be before /:id
+router.get(
+  '/attendance-summary-for-application',
+  authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'),
+  loanController.getLoanApplicationAttendanceSummary
+);
+
 // Get single loan - MUST be after all specific routes like /my, /pending-approvals, /calculate-eligibility, /guarantor-requests
 router.get('/:id', loanController.getLoan);
 
 // Process guarantor action
 router.put('/:id/guarantor-action', loanController.processGuarantorAction);
+router.put('/:id/guarantors', loanController.addLoanGuarantors);
 router.put('/:id', loanController.updateLoan);
 
 // Opening balance / repayment correction after disbursement (migration)

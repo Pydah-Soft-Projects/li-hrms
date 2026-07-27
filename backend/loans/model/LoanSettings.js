@@ -114,6 +114,33 @@ const LoanSettingsSchema = new mongoose.Schema(
           default: true,
         },
       },
+
+      // Multi-loan payroll EMI collection (loans only)
+      // collect_all = deduct every due EMI; single_emi_only = one EMI/month; max_combined_cap = sum until cap
+      multiEmiCollectionMode: {
+        type: String,
+        enum: ['collect_all', 'single_emi_only', 'max_combined_cap'],
+        default: 'collect_all',
+      },
+      maxCombinedEmiAmount: {
+        type: Number,
+        default: null,
+      },
+      multiEmiPriority: {
+        type: String,
+        enum: ['oldest_first', 'newest_first', 'highest_emi_first'],
+        default: 'oldest_first',
+      },
+      // When an EMI is due but skipped due to single/cap mode, post monthly interest
+      accrueInterestOnSkippedEmi: {
+        type: Boolean,
+        default: true,
+      },
+      // Charge interest for months between interest-start and EMI commence
+      preEmiInterestEnabled: {
+        type: Boolean,
+        default: true,
+      },
     },
 
     // Workflow configuration
@@ -208,6 +235,55 @@ const LoanSettingsSchema = new mongoose.Schema(
             type: Boolean,
             default: true,
           },
+          // Stage capabilities — configurable gates per approval step
+          requireGuarantors: {
+            type: Boolean,
+            default: false,
+          },
+          verifyAttendance: {
+            type: Boolean,
+            default: false,
+          },
+          verifyComplaints: {
+            type: Boolean,
+            default: false,
+          },
+          verifyExistingLoans: {
+            type: Boolean,
+            default: false,
+          },
+          canEditSanctionedAmount: {
+            type: Boolean,
+            default: false,
+          },
+          canSetInstallments: {
+            type: Boolean,
+            default: false,
+          },
+          canSetRepaymentStartMonth: {
+            type: Boolean,
+            default: false,
+          },
+          canControlInterest: {
+            type: Boolean,
+            default: false,
+          },
+          requireSanctionDocument: {
+            type: Boolean,
+            default: false,
+          },
+          canVerifyBankDetails: {
+            type: Boolean,
+            default: false,
+          },
+          canPrepareRtgs: {
+            type: Boolean,
+            default: false,
+          },
+          canAuthorizeDisbursement: {
+            type: Boolean,
+            default: false,
+          },
         },
       ],
 
@@ -237,6 +313,81 @@ const LoanSettingsSchema = new mongoose.Schema(
           },
         ],
       },
+    },
+
+    // Guarantor collection and validation rules (loans only)
+    guarantorRules: {
+      collectionTiming: {
+        type: String,
+        enum: ['on_application', 'on_workflow_stage'],
+        default: 'on_workflow_stage',
+      },
+      guarantorStageStepOrder: {
+        type: Number,
+        default: null,
+      },
+      minGuarantors: {
+        type: Number,
+        default: 2,
+        min: 0,
+      },
+      maxGuarantors: {
+        type: Number,
+        default: 4,
+        min: 1,
+      },
+      maxGuaranteePercentOfSalary: {
+        type: Number,
+        default: 60,
+        min: 0,
+        max: 100,
+      },
+      includeOwnEmi: {
+        type: Boolean,
+        default: true,
+      },
+      includeGuaranteedEmi: {
+        type: Boolean,
+        default: true,
+      },
+      minServicePeriodMonths: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      minSalary: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      sameDivisionOnly: {
+        type: Boolean,
+        default: true,
+      },
+      sameDepartmentOnly: {
+        type: Boolean,
+        default: false,
+      },
+      activeEmployeeOnly: {
+        type: Boolean,
+        default: true,
+      },
+      countPendingGuarantees: {
+        type: Boolean,
+        default: false,
+      },
+      eligibleDepartments: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Department',
+        },
+      ],
+      eligibleDesignations: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Designation',
+        },
+      ],
     },
 
     // Status configuration

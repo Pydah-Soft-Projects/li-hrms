@@ -15,6 +15,8 @@ import {
 } from '@/lib/loanListUi';
 import { LoanListEmployeeCell } from '@/components/LoanListEmployeeCell';
 import LoanEditDialog, { canShowLoanEditButton } from '@/components/loans/LoanEditDialog';
+import LoanApplyEmiPolicyPreview from '@/components/loans/LoanApplyEmiPolicyPreview';
+import LoanGuarantorPicker from '@/components/loans/LoanGuarantorPicker';
 import {
   LoansPageShell,
   LoansPageHeader,
@@ -246,6 +248,7 @@ export default function LoansPage() {
   const [payCycleStartDay, setPayCycleStartDay] = useState(1);
   const [payCycleEndDay, setPayCycleEndDay] = useState<number | null>(null);
   const [finalApprovalPayPeriod, setFinalApprovalPayPeriod] = useState('');
+  const [interestStartPayPeriod, setInterestStartPayPeriod] = useState('');
 
   // Filter Select states
   const [divisions, setDivisions] = useState<Division[]>([]);
@@ -287,6 +290,7 @@ export default function LoansPage() {
   const [loadingSettlement, setLoadingSettlement] = useState(false);
   const [showSettlementDialog, setShowSettlementDialog] = useState(false);
   const [applyType, setApplyType] = useState<'loan' | 'salary_advance'>('loan');
+  const [collectGuarantorsOnApply, setCollectGuarantorsOnApply] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
@@ -302,10 +306,22 @@ export default function LoansPage() {
     totalInterest: number;
     totalAmount: number;
   } | null>(null);
+  const [emiAppPreview, setEmiAppPreview] = useState<any>(null);
+  const [loadingEmiPreview, setLoadingEmiPreview] = useState(false);
+  const [applyAttendanceSummary, setApplyAttendanceSummary] = useState<any>(null);
+  const [loadingApplyAttendanceSummary, setLoadingApplyAttendanceSummary] = useState(false);
   const [guarantorSearch, setGuarantorSearch] = useState('');
   const [showGuarantorDropdown, setShowGuarantorDropdown] = useState(false);
   const [guarantorSearchResults, setGuarantorSearchResults] = useState<Employee[]>([]);
   const [isGuarantorSearching, setIsGuarantorSearching] = useState(false);
+
+  // Detail dialog: loan attendance summary (last 6 months)
+  const [loanAttendanceSummary, setLoanAttendanceSummary] = useState<any>(null);
+  const [loadingLoanAttendanceSummary, setLoadingLoanAttendanceSummary] = useState(false);
+  const [workflowMeta, setWorkflowMeta] = useState<any>(null);
+  const [attendanceConsentChecked, setAttendanceConsentChecked] = useState(false);
+  const [stageGuarantorIds, setStageGuarantorIds] = useState<string[]>([]);
+  const [savingStageGuarantors, setSavingStageGuarantors] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -373,6 +389,43 @@ export default function LoansPage() {
   useEffect(() => {
     if (showDetailDialog && selectedLoan) {
       loadTransactions(selectedLoan._id);
+
+      // Superadmin detail dialog: refresh loan + attendance + workflow stage meta
+      (async () => {
+        try {
+          if (selectedLoan.requestType === 'loan') {
+            setLoanAttendanceSummary(null);
+            setLoadingLoanAttendanceSummary(true);
+          }
+          setAttendanceConsentChecked(false);
+          const loanRes = await api.getLoan(selectedLoan._id);
+          if (loanRes.success) {
+            if (loanRes.data) setSelectedLoan(loanRes.data);
+            if (loanRes.presentPayPeriod) setPresentPayPeriod(loanRes.presentPayPeriod);
+            setWorkflowMeta(loanRes.workflowMeta || null);
+            if (selectedLoan.requestType === 'loan') {
+              setLoanAttendanceSummary(
+                loanRes.attendanceSummary ||
+                  loanRes.applicationPdfContext?.attendanceSummary ||
+                  null
+              );
+            }
+            const existing = (loanRes.data?.guarantors || []).map((g: any) =>
+              String(g.employeeId?._id || g.employeeId || '')
+            ).filter(Boolean);
+            setStageGuarantorIds(existing);
+          } else {
+            setWorkflowMeta(null);
+            if (selectedLoan.requestType === 'loan') setLoanAttendanceSummary(null);
+          }
+        } catch {
+          setWorkflowMeta(null);
+          if (selectedLoan.requestType === 'loan') setLoanAttendanceSummary(null);
+        } finally {
+          setLoadingLoanAttendanceSummary(false);
+        }
+      })();
+
       // Load settlement preview for loans
       if (selectedLoan.requestType === 'loan' && ['disbursed', 'active'].includes(selectedLoan.status)) {
         loadSettlementPreview(selectedLoan._id);
@@ -393,7 +446,9 @@ export default function LoansPage() {
       loadLoanSettings(selectedLoan.requestType);
 
       const pk = presentPayPeriod?.payrollMonthKey;
-      setFinalApprovalPayPeriod(pk ? payrollMonthKeyToPayPeriodSelectValue(pk) : '__default__');
+      const defaultPeriod = pk ? payrollMonthKeyToPayPeriodSelectValue(pk) : '__default__';
+      setFinalApprovalPayPeriod(defaultPeriod);
+      setInterestStartPayPeriod(defaultPeriod);
     }
   }, [showDetailDialog, selectedLoan?._id, presentPayPeriod?.payrollMonthKey]);
 
@@ -525,6 +580,69 @@ export default function LoansPage() {
     }
   }, [formData.amount, formData.duration, applyType, loanSettings, resolvedLoanSettings]);
 
+  useEffect(() => {
+    if (applyType !== 'loan' || !formData.amount || !formData.duration) {
+      setEmiAppPreview(null);
+      return;
+    }
+    const amount = parseFloat(formData.amount);
+    const duration = parseInt(formData.duration, 10);
+    if (!(amount > 0) || !(duration > 0)) {
+      setEmiAppPreview(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        setLoadingEmiPreview(true);
+        const res = await api.getEmiApplicationPreview({
+          amount,
+          duration,
+          empNo: selectedEmployee?.emp_no,
+          employeeId: selectedEmployee?._id,
+        });
+        if (res.success) setEmiAppPreview(res.data);
+        else setEmiAppPreview(null);
+      } catch {
+        setEmiAppPreview(null);
+      } finally {
+        setLoadingEmiPreview(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [applyType, formData.amount, formData.duration, selectedEmployee?._id, selectedEmployee?.emp_no]);
+
+  // Attendance summary for loan apply dialog (last 6 months)
+  useEffect(() => {
+    if (!showApplyDialog || applyType !== 'loan' || !selectedEmployee) {
+      setApplyAttendanceSummary(null);
+      return;
+    }
+    const employeeId = selectedEmployee._id;
+    const empNo = selectedEmployee.emp_no;
+    if (!employeeId || !empNo) {
+      setApplyAttendanceSummary(null);
+      return;
+    }
+
+    const run = async () => {
+      try {
+        setLoadingApplyAttendanceSummary(true);
+        const res = await api.getLoanApplicationAttendanceSummary({
+          employeeId,
+          empNo,
+        });
+        if (res.success) setApplyAttendanceSummary(res.data || null);
+        else setApplyAttendanceSummary(null);
+      } catch {
+        setApplyAttendanceSummary(null);
+      } finally {
+        setLoadingApplyAttendanceSummary(false);
+      }
+    };
+
+    void run();
+  }, [showApplyDialog, applyType, selectedEmployee?._id, selectedEmployee?.emp_no]);
+
   // Debounced Guarantor Search
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -553,6 +671,33 @@ export default function LoansPage() {
 
     return () => clearTimeout(timer);
   }, [guarantorSearch]);
+
+  const handleSaveStageGuarantors = async () => {
+    if (!selectedLoan) return;
+    const min = workflowMeta?.guarantorRules?.minGuarantors ?? 2;
+    if (stageGuarantorIds.length < min) {
+      toast.error(`Select at least ${min} guarantors`);
+      return;
+    }
+    try {
+      setSavingStageGuarantors(true);
+      const res = await api.addLoanGuarantors(selectedLoan._id, stageGuarantorIds);
+      if (res.success) {
+        toast.success('Guarantors saved');
+        const loanRes = await api.getLoan(selectedLoan._id);
+        if (loanRes.success) {
+          if (loanRes.data) setSelectedLoan(loanRes.data);
+          setWorkflowMeta(loanRes.workflowMeta || null);
+        }
+      } else {
+        toast.error(res.error || 'Failed to save guarantors');
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to save guarantors');
+    } finally {
+      setSavingStageGuarantors(false);
+    }
+  };
 
   // Fetch eligibility when employee selected for salary advance
   useEffect(() => {
@@ -815,6 +960,30 @@ export default function LoansPage() {
       return;
     }
 
+    if (
+      workflowMeta?.currentStage?.verifyAttendance &&
+      !attendanceConsentChecked &&
+      (action === 'approve' || action === 'reject')
+    ) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Attendance verification required',
+        text: 'Confirm you have verified the applicant attendance before approving or rejecting this stage.',
+      });
+      return;
+    }
+
+    if (workflowMeta?.guarantorGateBlocked && (action === 'approve' || action === 'reject')) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Guarantors required',
+        text: workflowMeta?.guarantorStatus
+          ? `Need ${workflowMeta.guarantorStatus.minRequired} accepted guarantor(s). Currently ${workflowMeta.guarantorStatus.acceptedCount} accepted.`
+          : 'Save guarantors and wait until they accept before approving or rejecting this stage.',
+      });
+      return;
+    }
+
     if (action === 'approve' && isFinalApprovalStep) {
       const monthKey = payPeriodSelectValueToMonthKey(
         finalApprovalPayPeriod,
@@ -837,6 +1006,12 @@ export default function LoansPage() {
         comments: actionComment,
       };
 
+      if (action === 'approve' || action === 'reject') {
+        if (workflowMeta?.currentStage?.verifyAttendance) {
+          payload.attendanceVerified = true;
+        }
+      }
+
       if (action === 'approve') {
         if (approvalAmount) payload.approvalAmount = parseFloat(approvalAmount);
         if (approvalInterestRate) payload.approvalInterestRate = parseFloat(approvalInterestRate);
@@ -845,6 +1020,15 @@ export default function LoansPage() {
             finalApprovalPayPeriod,
             presentPayPeriod?.payrollMonthKey
           );
+          if (
+            selectedLoan?.requestType === 'loan' &&
+            loanSettings?.settings?.preEmiInterestEnabled !== false
+          ) {
+            payload.interestStartPayrollMonth = payPeriodSelectValueToMonthKey(
+              interestStartPayPeriod,
+              presentPayPeriod?.payrollMonthKey
+            );
+          }
         }
       }
 
@@ -853,6 +1037,8 @@ export default function LoansPage() {
         setMessage({ type: 'success', text: `Loan ${action}d successfully` });
         setShowDetailDialog(false);
         setActionComment('');
+        setAttendanceConsentChecked(false);
+        setWorkflowMeta(null);
         loadData();
       } else {
         setMessage({ type: 'error', text: response.error || 'Failed to process action' });
@@ -995,7 +1181,14 @@ export default function LoansPage() {
       const summary = txnRes.data.summary;
       await downloadLoanAdvanceRequestPdf(loanRes.data as LoanAdvancePdfLoan, txns, {
         summary,
-        applicationPdfContext: loanRes.applicationPdfContext,
+        applicationPdfContext: {
+          ...(loanRes.applicationPdfContext || {}),
+          // Ensure the PDF always receives the same attendance summary block
+          attendanceSummary:
+            loanRes.attendanceSummary ||
+            loanRes.applicationPdfContext?.attendanceSummary ||
+            null,
+        },
       });
       toast.success('PDF downloaded');
     } catch (err: any) {
@@ -1310,8 +1503,9 @@ export default function LoansPage() {
     return (name[0] || 'E').toUpperCase();
   };
 
-  const openApplyDialog = (type: 'loan' | 'salary_advance') => {
+  const openApplyDialog = async (type: 'loan' | 'salary_advance') => {
     setApplyType(type);
+    setCollectGuarantorsOnApply(false);
     setFormData({
       amount: '',
       reason: '',
@@ -1324,6 +1518,20 @@ export default function LoansPage() {
     setGuarantorSearch('');
     setEmployeeSearch('');
     setInterestCalculation(null);
+    setEmiAppPreview(null);
+    setApplyAttendanceSummary(null);
+    setLoadingApplyAttendanceSummary(false);
+
+    if (type === 'loan') {
+      try {
+        const res = await api.getLoanSettings('loan');
+        const timing = res?.data?.guarantorRules?.collectionTiming;
+        setCollectGuarantorsOnApply(timing === 'on_application');
+      } catch {
+        setCollectGuarantorsOnApply(false);
+      }
+    }
+
     setShowApplyDialog(true);
   };
 
@@ -1343,7 +1551,7 @@ export default function LoansPage() {
         return;
       }
 
-      if (applyType === 'loan' && (!formData.guarantorIds || formData.guarantorIds.length < 2)) {
+      if (applyType === 'loan' && collectGuarantorsOnApply && (!formData.guarantorIds || formData.guarantorIds.length < 2)) {
         setMessage({ type: 'error', text: 'At least 2 guarantors are required for loan applications' });
         return;
       }
@@ -1355,7 +1563,7 @@ export default function LoansPage() {
         remarks: formData.remarks,
         needAmount: formData.needAmount ? parseFloat(formData.needAmount) : undefined,
         empNo: selectedEmployee.emp_no,
-        guarantorIds: formData.guarantorIds,
+        guarantorIds: collectGuarantorsOnApply ? formData.guarantorIds : [],
       };
 
       if (applyType === 'loan') {
@@ -1864,6 +2072,8 @@ export default function LoansPage() {
           setShowPaymentForm(false);
           setShowDisbursementDialog(false);
           setSettlementPreview(null);
+        setLoanAttendanceSummary(null);
+        setLoadingLoanAttendanceSummary(false);
         }}
       >
         {selectedLoan && (
@@ -1879,6 +2089,8 @@ export default function LoansPage() {
                 setShowPaymentForm(false);
                 setShowDisbursementDialog(false);
                 setSettlementPreview(null);
+                setLoanAttendanceSummary(null);
+                setLoadingLoanAttendanceSummary(false);
               }}
               actions={
                 <button
@@ -1976,6 +2188,62 @@ export default function LoansPage() {
                 </div>
               </LoanDetailSection>
 
+              {/* Attendance Summary - ONLY for Loan */}
+              {selectedLoan.requestType === 'loan' && (
+                <LoanDetailSection soft>
+                  <LoanDetailSectionTitle>Attendance Summary (Last 6 Months)</LoanDetailSectionTitle>
+
+                  {loadingLoanAttendanceSummary && (
+                    <div className="text-xs text-blue-700 dark:text-blue-300">Loading attendance summary...</div>
+                  )}
+
+                  {!loadingLoanAttendanceSummary && loanAttendanceSummary && (
+                    <>
+                      <div className="mb-3 text-xs text-slate-600 dark:text-slate-400">
+                        Overall Attendance:{" "}
+                        <span className="font-semibold text-blue-700 dark:text-blue-300">
+                          {loanAttendanceSummary.overallPercentage ?? '—'}%
+                        </span>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-xs">
+                          <thead>
+                            <tr className="text-left text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
+                              <th className="py-2 pr-3 font-semibold">Month</th>
+                              <th className="py-2 pr-3 font-semibold">Working</th>
+                              <th className="py-2 pr-3 font-semibold">Present</th>
+                              <th className="py-2 pr-3 font-semibold">Leave</th>
+                              <th className="py-2 pr-3 font-semibold">LOP</th>
+                              <th className="py-2 font-semibold">% </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(loanAttendanceSummary.last6Months || []).map((row: any) => (
+                              <tr
+                                key={`${row.month ?? row.monthName}`}
+                                className="border-b border-slate-100 dark:border-slate-800"
+                              >
+                                <td className="py-1 pr-3 text-slate-800 dark:text-slate-100">{row.monthName || row.month}</td>
+                                <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.workingDays ?? 0}</td>
+                                <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.present ?? 0}</td>
+                                <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.leave ?? 0}</td>
+                                <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.lop ?? 0}</td>
+                                <td className="py-1 text-slate-700 dark:text-slate-200">{row.attendancePercent ?? '—'}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+
+                  {!loadingLoanAttendanceSummary && !loanAttendanceSummary && (
+                    <div className="text-xs text-slate-500 dark:text-slate-400">No attendance summary found.</div>
+                  )}
+                </LoanDetailSection>
+              )}
+
               {/* Eligibility Information - For Salary Advance (View Only) */}
               {selectedLoan.requestType === 'salary_advance' && eligibilityData && (
                 <LoanDetailSection highlight>
@@ -2032,32 +2300,69 @@ export default function LoansPage() {
               </LoanDetailSection>
 
               {/* Guarantors */}
-              {selectedLoan.guarantors && selectedLoan.guarantors.length > 0 && (
+              {selectedLoan.requestType === 'loan' && (
                 <LoanDetailSection>
-                  <LoanDetailSectionTitle>Guarantors ({selectedLoan.guarantors.length})</LoanDetailSectionTitle>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {selectedLoan.guarantors.map((guarantor, idx) => (
-                      <div key={idx} className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                            {guarantor.name}
-                          </p>
-                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase ${guarantor.status === 'accepted'
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30'
-                            : guarantor.status === 'rejected'
-                              ? 'bg-red-100 text-red-700 dark:bg-red-900/30'
-                              : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30'
-                            }`}>
-                            {guarantor.status}
-                          </span>
+                  <LoanDetailSectionTitle>
+                    Guarantors
+                    {workflowMeta?.guarantorStatus && (
+                      <span className="ml-2 text-xs font-normal normal-case tracking-normal text-slate-500">
+                        ({workflowMeta.guarantorStatus.acceptedCount}/{workflowMeta.guarantorStatus.minRequired} accepted)
+                      </span>
+                    )}
+                  </LoanDetailSectionTitle>
+
+                  {selectedLoan.guarantors && selectedLoan.guarantors.length > 0 ? (
+                    <div className="mb-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {selectedLoan.guarantors.map((guarantor, idx) => (
+                        <div key={idx} className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                              {guarantor.name}
+                            </p>
+                            <span className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase ${guarantor.status === 'accepted'
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30'
+                              : guarantor.status === 'rejected'
+                                ? 'bg-red-100 text-red-700 dark:bg-red-900/30'
+                                : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30'
+                              }`}>
+                              {guarantor.status}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500">{guarantor.emp_no}</p>
                         </div>
-                        <p className="text-xs text-slate-500">{guarantor.emp_no}</p>
-                        {guarantor.remarks && (
-                          <p className="text-xs text-slate-400 mt-1 italic italic truncate">"{guarantor.remarks}"</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mb-3 text-xs text-slate-500">No guarantors assigned yet.</p>
+                  )}
+
+                  {(workflowMeta?.isGuarantorGateActive || workflowMeta?.currentStage?.requireGuarantors) && (
+                    <div className="space-y-3 border-t border-slate-200 pt-3 dark:border-slate-700">
+                      <LoanGuarantorPicker
+                        loanId={selectedLoan._id}
+                        selectedIds={stageGuarantorIds}
+                        onChange={setStageGuarantorIds}
+                        knownPeople={(selectedLoan.guarantors || []).map((g: any) => ({
+                          employeeId: g.employeeId,
+                          emp_no: g.emp_no,
+                          name: g.name,
+                        }))}
+                        minGuarantors={workflowMeta?.guarantorRules?.minGuarantors ?? 2}
+                        maxGuarantors={workflowMeta?.guarantorRules?.maxGuarantors ?? 4}
+                        disabled={savingStageGuarantors}
+                        helperText="This stage requires guarantors. Search and select eligible employees, save them, then wait until they accept before you can approve."
+                      />
+                      <button
+                        type="button"
+                        disabled={savingStageGuarantors}
+                        onClick={() => void handleSaveStageGuarantors()}
+                        className={loansDialogPrimaryButtonClass()}
+                        style={loansDialogPrimaryButtonStyle()}
+                      >
+                        {savingStageGuarantors ? 'Saving…' : 'Save guarantors'}
+                      </button>
+                    </div>
+                  )}
                 </LoanDetailSection>
               )}
 
@@ -2443,8 +2748,23 @@ export default function LoansPage() {
                           onChange={setFinalApprovalPayPeriod}
                           options={finalApprovalPayPeriodOptions}
                           previewLabel={selectedFinalPayPeriodPreview ?? undefined}
+                          showInterestStart={
+                            selectedLoan.requestType === 'loan' &&
+                            loanSettings?.settings?.preEmiInterestEnabled !== false
+                          }
+                          interestStartValue={interestStartPayPeriod}
+                          onInterestStartChange={setInterestStartPayPeriod}
                         />
                       ) : undefined
+                    }
+                    requireAttendanceConsent={!!workflowMeta?.currentStage?.verifyAttendance}
+                    attendanceConsentChecked={attendanceConsentChecked}
+                    onAttendanceConsentChange={setAttendanceConsentChecked}
+                    actionsDisabled={!!workflowMeta?.guarantorGateBlocked}
+                    actionsDisabledReason={
+                      workflowMeta?.guarantorGateBlocked
+                        ? `Guarantors required: ${workflowMeta?.guarantorStatus?.acceptedCount ?? 0}/${workflowMeta?.guarantorStatus?.minRequired ?? 2} accepted before approval can proceed.`
+                        : undefined
                     }
                     comment={actionComment}
                     onCommentChange={setActionComment}
@@ -2712,6 +3032,67 @@ export default function LoansPage() {
                   />
                 </div>
 
+                {/* Attendance Summary - ONLY for Loan */}
+                {applyType === 'loan' && selectedEmployee && (
+                  <div className="mb-4 rounded-xl border border-slate-200 bg-white/60 p-4 dark:border-slate-800 dark:bg-slate-900/30">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-blue-100 mb-3 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      Attendance Summary (Last 6 Months)
+                    </h4>
+
+                    {loadingApplyAttendanceSummary && (
+                      <div className="text-xs text-blue-700 dark:text-blue-300">Loading attendance summary...</div>
+                    )}
+
+                    {!loadingApplyAttendanceSummary && applyAttendanceSummary && (
+                      <>
+                        <div className="mb-3 text-xs text-slate-600 dark:text-slate-400">
+                          Overall Attendance:{" "}
+                          <span className="font-semibold text-blue-700 dark:text-blue-300">
+                            {applyAttendanceSummary.overallPercentage ?? '—'}%
+                          </span>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full text-xs">
+                            <thead>
+                              <tr className="text-left text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
+                                <th className="py-2 pr-3 font-semibold">Month</th>
+                                <th className="py-2 pr-3 font-semibold">Working</th>
+                                <th className="py-2 pr-3 font-semibold">Present</th>
+                                <th className="py-2 pr-3 font-semibold">Leave</th>
+                                <th className="py-2 pr-3 font-semibold">LOP</th>
+                                <th className="py-2 font-semibold">% </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(applyAttendanceSummary.last6Months || []).map((row: any) => (
+                                <tr
+                                  key={`${row.month ?? row.monthName}`}
+                                  className="border-b border-slate-100 dark:border-slate-800"
+                                >
+                                  <td className="py-1 pr-3 text-slate-800 dark:text-slate-100">{row.monthName || row.month}</td>
+                                  <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.workingDays ?? 0}</td>
+                                  <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.present ?? 0}</td>
+                                  <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.leave ?? 0}</td>
+                                  <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.lop ?? 0}</td>
+                                  <td className="py-1 text-slate-700 dark:text-slate-200">{row.attendancePercent ?? '—'}%</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+
+                    {!loadingApplyAttendanceSummary && !applyAttendanceSummary && (
+                      <div className="text-xs text-slate-500 dark:text-slate-400">No attendance summary found.</div>
+                    )}
+                  </div>
+                )}
+
                 {/* Eligibility Calculator - ONLY for Salary Advance */}
                 {applyType === 'salary_advance' && selectedEmployee && (
                   <div className="mb-4">
@@ -2947,41 +3328,45 @@ export default function LoansPage() {
                   </div>
                 )}
 
-                {/* Interest Calculation Display - Only for loans */}
-                {applyType === 'loan' && interestCalculation && (
-                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-                    <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">Loan Calculation</h4>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">Principal Amount:</span>
-                        <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.principal.toLocaleString()}</span>
-                      </div>
-                      {interestCalculation.interestRate > 0 && (
-                        <>
-                          <div className="flex justify-between">
-                            <span className="text-slate-600 dark:text-slate-400">Interest Rate:</span>
-                            <span className="font-medium text-slate-900 dark:text-slate-100">{interestCalculation.interestRate}% p.a.</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-600 dark:text-slate-400">Total Interest:</span>
-                            <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.totalInterest.toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-600 dark:text-slate-400">Total Amount (Principal + Interest):</span>
-                            <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.totalAmount.toLocaleString()}</span>
-                          </div>
-                        </>
-                      )}
-                      <div className="flex justify-between pt-2 border-t border-blue-200 dark:border-blue-800">
-                        <span className="font-semibold text-blue-900 dark:text-blue-100">EMI per Month:</span>
-                        <span className="font-bold text-blue-900 dark:text-blue-100">₹{interestCalculation.emiAmount.toLocaleString()}</span>
+                {/* Interest / policy / pre-EMI / auto commence — loans only */}
+                {applyType === 'loan' && (loadingEmiPreview || emiAppPreview || interestCalculation) && (
+                  loadingEmiPreview || emiAppPreview ? (
+                    <LoanApplyEmiPolicyPreview preview={emiAppPreview} loading={loadingEmiPreview && !emiAppPreview} />
+                  ) : interestCalculation ? (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+                      <h4 className="mb-3 text-sm font-semibold text-blue-900 dark:text-blue-100">Loan Calculation</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-slate-600 dark:text-slate-400">Principal Amount:</span>
+                          <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.principal.toLocaleString()}</span>
+                        </div>
+                        {interestCalculation.interestRate > 0 && (
+                          <>
+                            <div className="flex justify-between">
+                              <span className="text-slate-600 dark:text-slate-400">Interest Rate:</span>
+                              <span className="font-medium text-slate-900 dark:text-slate-100">{interestCalculation.interestRate}% p.a.</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-600 dark:text-slate-400">Total Interest:</span>
+                              <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.totalInterest.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-600 dark:text-slate-400">Total Amount (Principal + Interest):</span>
+                              <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.totalAmount.toLocaleString()}</span>
+                            </div>
+                          </>
+                        )}
+                        <div className="flex justify-between border-t border-blue-200 pt-2 dark:border-blue-800">
+                          <span className="font-semibold text-blue-900 dark:text-blue-100">EMI per Month:</span>
+                          <span className="font-bold text-blue-900 dark:text-blue-100">₹{interestCalculation.emiAmount.toLocaleString()}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  ) : null
                 )}
- 
+
                 {/* Guarantor Selection - Only for loans */}
-                {applyType === 'loan' && (
+                {applyType === 'loan' && collectGuarantorsOnApply && (
                   <div className="space-y-4">
                     <div className="relative guarantor-search-container">
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">

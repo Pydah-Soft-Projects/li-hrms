@@ -135,14 +135,35 @@ function syncRemainingBalanceFromTotals(loan) {
   loan.markModified('repayment');
 }
 
-async function applyRepaymentScheduleFromPayrollMonth(loan, payrollMonthKey) {
+async function applyRepaymentScheduleFromPayrollMonth(loan, payrollMonthKey, opts = {}) {
   const ym = normalizePayrollMonthKey(payrollMonthKey);
   if (!ym) throw new Error('Invalid first deduction payroll month (expected YYYY-MM)');
 
   if (loan.requestType === 'loan') {
+    const {
+      recalculateLoanForEmiCommence,
+      loadLoanEmiPolicy,
+    } = require('./loanEmiPolicyService');
+    const policy = opts.emiPolicy || (await loadLoanEmiPolicy());
+    const interestStart =
+      normalizePayrollMonthKey(opts.interestStartPayrollMonth) ||
+      normalizePayrollMonthKey(loan.loanConfig?.interestStartPayrollMonth) ||
+      ym;
+    if (policy.preEmiInterestEnabled !== false) {
+      recalculateLoanForEmiCommence(loan, {
+        interestStartPayrollMonth: interestStart,
+        emiCommencePayrollMonth: ym,
+        preEmiInterestEnabled: true,
+      });
+    } else if (!loan.loanConfig) {
+      loan.loanConfig = {};
+    }
+    if (!loan.loanConfig) loan.loanConfig = {};
+    loan.loanConfig.emiCommencePayrollMonth = ym;
+    loan.loanConfig.interestStartPayrollMonth = interestStart;
+
     const duration = Math.max(1, getEffectiveInstallmentCount(loan) || Number(loan.duration) || 1);
     const anchors = await computeLoanPayrollAnchorsFromMonthKey(ym, duration);
-    if (!loan.loanConfig) loan.loanConfig = {};
     loan.loanConfig.startDate = anchors.startDate;
     loan.loanConfig.endDate = anchors.endDate;
     if (!loan.repayment) loan.repayment = {};
@@ -183,13 +204,14 @@ async function isRepaymentDueForPayrollMonth(loan, payrollMonth) {
   if (!(remaining > 0)) return false;
 
   const paid = Number(loan.repayment?.installmentsPaid) || 0;
+  const skipOffset = Number(loan.loanConfig?.scheduleSkipOffset) || 0;
   const totalInstallments = getEffectiveInstallmentCount(loan) || Number(loan.duration) || 0;
   if (totalInstallments > 0 && paid >= totalInstallments) return false;
 
   const firstYm = await firstPayrollMonthKeyForRepaymentSchedule(loan);
   if (!firstYm) return false;
 
-  const dueYm = addCalendarMonthsToYm(firstYm, paid);
+  const dueYm = addCalendarMonthsToYm(firstYm, paid + skipOffset);
   return comparePayrollMonthKeys(ym, dueYm) === 0;
 }
 
@@ -224,8 +246,9 @@ async function setNextPaymentDateFromInstallmentsPaid(loan) {
     return;
   }
   const paid = Number(loan.repayment.installmentsPaid) || 0;
+  const skipOffset = Number(loan.loanConfig?.scheduleSkipOffset) || 0;
   const firstYm = await firstPayrollMonthKeyForRepaymentSchedule(loan);
-  const nextYm = addCalendarMonthsToYm(firstYm, paid);
+  const nextYm = addCalendarMonthsToYm(firstYm, paid + skipOffset);
   const [py, pm] = nextYm.split('-').map(Number);
   const pr = await getPayrollDateRange(py, pm);
   loan.repayment.nextPaymentDate = createISTDate(pr.endDate);

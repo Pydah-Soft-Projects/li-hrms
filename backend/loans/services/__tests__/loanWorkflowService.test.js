@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { buildLoanApprovalChain, isLoanFinalApprovalStep } = require('../loanWorkflowService');
+const { buildLoanApprovalChain, isLoanFinalApprovalStep, ensureLoanApprovalChain } = require('../loanWorkflowService');
 
 const settings = {
   workflow: {
@@ -22,7 +22,7 @@ assert.ok(
 const loanAtFinal = {
   workflow: {
     nextApprover: 'final_authority',
-    approvalChain: chain,
+    approvalChain: [...chain, { role: 'final_authority', status: 'pending', isCurrent: true }],
   },
 };
 assert.strictEqual(isLoanFinalApprovalStep(loanAtFinal, settings), true);
@@ -33,6 +33,30 @@ const loanAtHr = {
     approvalChain: chain,
   },
 };
-assert.strictEqual(isLoanFinalApprovalStep(loanAtHr, settings), false);
+// Leave-style: last configured stage (nextStepOnApprove null) is the finishing step
+assert.strictEqual(isLoanFinalApprovalStep(loanAtHr, settings), true);
+
+const loanAtHod = {
+  workflow: {
+    nextApprover: 'hod',
+    approvalChain: chain,
+  },
+};
+assert.strictEqual(isLoanFinalApprovalStep(loanAtHod, settings), false);
+
+const stuck = {
+  workflow: {
+    nextApprover: 'final_authority',
+    currentStep: 'final',
+    approvalChain: [
+      { role: 'hod', status: 'approved', isCurrent: false },
+      { role: 'hr', status: 'pending', isCurrent: false },
+      { role: 'final_authority', status: 'pending', isCurrent: true },
+    ],
+  },
+};
+ensureLoanApprovalChain(stuck, settings);
+assert.strictEqual(stuck.workflow.nextApprover, 'hr');
+assert.ok(!stuck.workflow.approvalChain.some((s) => s.role === 'final_authority'));
 
 console.log('loanWorkflowService.test.js: all assertions passed');

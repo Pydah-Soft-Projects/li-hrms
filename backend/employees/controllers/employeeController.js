@@ -2573,21 +2573,94 @@ exports.exportEmployees = async (req, res) => {
 
     // Create lookup Maps for labels and groupings
     const fieldMap = {};
+    const fieldGroupMap = {};
+    const salaryFieldIds = new Set();
     settings.groups.forEach(group => {
-      group.fields.forEach(field => {
+      (group.fields || []).forEach(field => {
+        if (!field?.id) return;
         fieldMap[field.id] = field.label;
+        fieldGroupMap[field.id] = group.id;
+        if (group.id === 'salaries') salaryFieldIds.add(field.id);
       });
     });
 
+    // Employee records store gross on `gross_salary`; form UI still exposes `proposedSalary`.
+    const EXPORT_FIELD_ALIASES = {
+      proposedSalary: ['gross_salary'],
+      gross_salary: ['proposedSalary'],
+      second_salary: ['secondSalary'],
+      phone_number: ['contact_number'],
+      present_address: ['address'],
+      address: ['present_address'],
+      aadhar_number: ['aadhaar_number', 'aadhar_no'],
+      bank_account_no: ['account_no', 'bank_ac_no', 'bank_account_number', 'account_number'],
+      pf_number: ['pfNumber'],
+      esi_number: ['esiNumber'],
+      bank_name: ['bankName'],
+      bank_place: ['bankPlace'],
+      ifsc_code: ['ifsc'],
+      salary_mode: ['salaryMode'],
+    };
+
+    const isEmptyExportValue = (val) => val === undefined || val === null || val === '';
+
+    const readExportKeys = (obj, keys) => {
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return undefined;
+      for (const key of keys) {
+        if (!isEmptyExportValue(obj[key]) && typeof obj[key] !== 'object') return obj[key];
+      }
+      return undefined;
+    };
+
+    const resolveExportFieldValue = (row, fId) => {
+      const keys = [fId, ...(EXPORT_FIELD_ALIASES[fId] || [])];
+      // proposedSalary on employees means gross salary
+      if (fId === 'proposedSalary') keys.unshift('gross_salary');
+
+      // Salaries group components live on employee.salaries (not dynamicFields)
+      if (salaryFieldIds.has(fId) || fId === 'proposedSalary' || fId === 'gross_salary') {
+        const fromSalaries = readExportKeys(row.salaries, keys);
+        if (fromSalaries !== undefined) return fromSalaries;
+      }
+
+      const fromRoot = readExportKeys(row, keys);
+      if (fromRoot !== undefined) return fromRoot;
+
+      const df = row.dynamicFields;
+      if (df && typeof df === 'object') {
+        const fromFlat = readExportKeys(df, keys);
+        if (fromFlat !== undefined) return fromFlat;
+
+        const groupId = fieldGroupMap[fId];
+        if (groupId) {
+          const fromGroup = readExportKeys(df[groupId], keys);
+          if (fromGroup !== undefined) return fromGroup;
+        }
+
+        for (const bucket of Object.values(df)) {
+          if (!bucket || typeof bucket !== 'object' || Array.isArray(bucket)) continue;
+          const fromNested = readExportKeys(bucket, keys);
+          if (fromNested !== undefined) return fromNested;
+        }
+      }
+
+      // Fallback for non-scalar root values (populated refs, arrays) after scalar miss
+      if (!isEmptyExportValue(row[fId])) return row[fId];
+      return undefined;
+    };
+
+    const getExportColumnLabel = (fId) => {
+      if (fId === 'proposedSalary') {
+        return fieldMap.gross_salary || 'Gross Salary';
+      }
+      return fieldMap[fId] || fId;
+    };
+
     // Preparation for CSV headers/extraction
     const csvFields = fields.map(fId => ({
-      label: fieldMap[fId] || fId,
+      label: getExportColumnLabel(fId),
       value: (row) => {
-        let val = row[fId];
-        // If not at root, check dynamicFields (common in this HRMS for custom fields)
-        if ((val === undefined || val === null) && row.dynamicFields) {
-          val = row.dynamicFields[fId];
-        }
+        let val = resolveExportFieldValue(row, fId);
 
         if (val === undefined || val === null) return '';
 

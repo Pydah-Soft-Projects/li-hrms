@@ -141,7 +141,17 @@ const LoanSchema = new mongoose.Schema(
           step: String,
           action: {
             type: String,
-            enum: ['submitted', 'approved', 'rejected', 'forwarded', 'returned', 'cancelled', 'disbursed', 'status_changed'],
+            enum: [
+              'submitted',
+              'approved',
+              'rejected',
+              'forwarded',
+              'returned',
+              'cancelled',
+              'disbursed',
+              'status_changed',
+              'guarantors_added',
+            ],
           },
           actionBy: {
             type: mongoose.Schema.Types.ObjectId,
@@ -235,6 +245,35 @@ const LoanSchema = new mongoose.Schema(
       totalInterest: {
         type: Number,
         default: 0,
+      },
+      /** Interest for EMI tenure months only */
+      tenureInterest: {
+        type: Number,
+        default: 0,
+      },
+      /** Interest for months before EMI commence */
+      preEmiInterest: {
+        type: Number,
+        default: 0,
+      },
+      preEmiMonths: {
+        type: Number,
+        default: 0,
+      },
+      /** Payroll month when interest clock starts (usually disburse / approval month) */
+      interestStartPayrollMonth: {
+        type: String,
+        trim: true,
+      },
+      /** Payroll month when first EMI is due (same as firstDeductionPayrollMonth when locked) */
+      emiCommencePayrollMonth: {
+        type: String,
+        trim: true,
+      },
+      /** Human-readable why EMI commence was suggested/set (policy) */
+      emiCommenceReason: {
+        type: String,
+        trim: true,
       },
       // Start date for EMI deductions
       startDate: {
@@ -330,7 +369,15 @@ const LoanSchema = new mongoose.Schema(
       {
         transactionType: {
           type: String,
-          enum: ['disbursement', 'emi_payment', 'advance_deduction', 'adjustment', 'refund', 'early_settlement'],
+          enum: [
+            'disbursement',
+            'emi_payment',
+            'advance_deduction',
+            'adjustment',
+            'refund',
+            'early_settlement',
+            'interest_accrual',
+          ],
         },
         amount: Number,
         transactionDate: {

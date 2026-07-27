@@ -68,7 +68,11 @@ export default function EmployeeExportDialog({
 
   const handleSelectAll = () => {
     const allFieldIds: string[] = [];
-    groups.forEach(g => g.fields.forEach((f: any) => allFieldIds.push(f.id)));
+    groups.forEach(g =>
+      (g.fields || []).forEach((f: any) => {
+        if (f?.id && f.isEnabled !== false) allFieldIds.push(f.id);
+      })
+    );
     // Add common fields
     allFieldIds.push('emp_no', 'employee_name', 'division_id', 'department_id', 'designation_id', 'employee_group_id', 'doj', 'is_active');
     setSelectedFields([...new Set(allFieldIds)]);
@@ -186,19 +190,34 @@ export default function EmployeeExportDialog({
               </div>
 
               {/* Dynamic Groups */}
-              {groups.map(group => (
+              {groups.map(group => {
+                const enabledFields = (group.fields || []).filter((f: any) => f && f.id && f.isEnabled !== false);
+                if (enabledFields.length === 0) return null;
+
+                const getExportFieldLabel = (field: any) => {
+                  // On employees, proposedSalary is the gross salary field
+                  if (field.id === 'proposedSalary') {
+                    const grossLabel = groups
+                      .flatMap((g: any) => g.fields || [])
+                      .find((f: any) => f?.id === 'gross_salary')?.label;
+                    return grossLabel || 'Gross Salary';
+                  }
+                  return field.label || field.id;
+                };
+
+                return (
                 <div key={group.id} className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">{group.label}</h4>
                     <button
-                      onClick={() => toggleGroup(group.id, group.fields)}
+                      onClick={() => toggleGroup(group.id, enabledFields)}
                       className="text-[10px] font-bold text-indigo-500 hover:underline"
                     >
-                      {group.fields.every((f: any) => selectedFields.includes(f.id)) ? 'Deselect Group' : 'Select Group'}
+                      {enabledFields.every((f: any) => selectedFields.includes(f.id)) ? 'Deselect Group' : 'Select Group'}
                     </button>
                   </div>
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {group.fields.map((field: any) => (
+                    {enabledFields.map((field: any) => (
                       <label key={field.id} className="flex cursor-pointer items-center gap-2 rounded-lg p-1 hover:bg-slate-50 dark:hover:bg-slate-900">
                         <input
                           type="checkbox"
@@ -206,12 +225,13 @@ export default function EmployeeExportDialog({
                           checked={selectedFields.includes(field.id)}
                           onChange={() => toggleField(field.id)}
                         />
-                        <span className="text-sm text-slate-600 dark:text-slate-400">{field.label}</span>
+                        <span className="text-sm text-slate-600 dark:text-slate-400">{getExportFieldLabel(field)}</span>
                       </label>
                     ))}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

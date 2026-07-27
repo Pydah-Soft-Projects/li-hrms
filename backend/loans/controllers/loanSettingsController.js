@@ -128,7 +128,7 @@ exports.getSettings = async (req, res) => {
 exports.saveSettings = async (req, res) => {
   try {
     const { type } = req.params;
-    const { statuses, workflow, settings } = req.body;
+    const { statuses, workflow, settings, guarantorRules } = req.body;
 
     console.log('=== Save Loan Settings Request ===');
     console.log('Type:', type);
@@ -151,6 +151,7 @@ exports.saveSettings = async (req, res) => {
         statuses: statuses || DEFAULT_STATUSES,
         workflow: workflow || DEFAULT_WORKFLOW,
         settings: settings || {},
+        guarantorRules: type === 'loan' ? guarantorRules || {} : undefined,
         createdBy: req.user._id,
       });
     } else {
@@ -186,6 +187,11 @@ exports.saveSettings = async (req, res) => {
         // Explicitly mark nested objects as modified
         loanSettings.markModified('settings');
         loanSettings.markModified('settings.workspacePermissions');
+      }
+
+      if (guarantorRules && type === 'loan') {
+        loanSettings.guarantorRules = { ...(loanSettings.guarantorRules || {}), ...guarantorRules };
+        loanSettings.markModified('guarantorRules');
       }
     }
 

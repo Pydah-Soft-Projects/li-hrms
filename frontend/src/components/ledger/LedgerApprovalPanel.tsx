@@ -31,6 +31,13 @@ type LedgerApprovalPanelProps = {
   onUpdateLoan?: () => void;
   updating?: boolean;
   finalApprovalBlock?: ReactNode;
+  /** Stage requires attendance verification consent before approve/reject */
+  requireAttendanceConsent?: boolean;
+  attendanceConsentChecked?: boolean;
+  onAttendanceConsentChange?: (checked: boolean) => void;
+  /** Disable approve/reject (e.g. guarantors not satisfied) */
+  actionsDisabled?: boolean;
+  actionsDisabledReason?: string;
   comment: string;
   onCommentChange: (v: string) => void;
   onApprove: () => void;
@@ -55,6 +62,11 @@ export function LedgerApprovalPanel({
   onUpdateLoan,
   updating,
   finalApprovalBlock,
+  requireAttendanceConsent,
+  attendanceConsentChecked,
+  onAttendanceConsentChange,
+  actionsDisabled,
+  actionsDisabledReason,
   comment,
   onCommentChange,
   onApprove,
@@ -65,6 +77,9 @@ export function LedgerApprovalPanel({
 }: LedgerApprovalPanelProps) {
   const amountInvalid = amountValidation?.level === 'error';
   const amountWarn = amountValidation?.level === 'warning';
+  const attendanceBlocks =
+    !!requireAttendanceConsent && attendanceConsentChecked !== true;
+  const buttonsDisabled = !!saving || !!actionsDisabled || attendanceBlocks;
 
   return (
     <LoanDetailSection highlight>
@@ -142,6 +157,27 @@ export function LedgerApprovalPanel({
 
         {finalApprovalBlock}
 
+        {requireAttendanceConsent && (
+          <LoanFormPanel soft>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-stone-300"
+                checked={!!attendanceConsentChecked}
+                onChange={(e) => onAttendanceConsentChange?.(e.target.checked)}
+              />
+              <span className="text-xs leading-relaxed text-stone-700 dark:text-stone-300">
+                I have verified the applicant&apos;s attendance summary for this loan application
+                and confirm it is accurate for this approval stage.
+              </span>
+            </label>
+          </LoanFormPanel>
+        )}
+
+        {actionsDisabled && actionsDisabledReason && (
+          <p className="text-xs font-medium text-amber-700 dark:text-amber-300">{actionsDisabledReason}</p>
+        )}
+
         <div>
           <LoanFormLabel>Comment (optional)</LoanFormLabel>
           <textarea
@@ -158,7 +194,7 @@ export function LedgerApprovalPanel({
           <button
             type="button"
             onClick={onApprove}
-            disabled={saving}
+            disabled={buttonsDisabled}
             className={loansDialogSuccessButtonClass()}
           >
             {approveIcon}
@@ -167,7 +203,7 @@ export function LedgerApprovalPanel({
           <button
             type="button"
             onClick={onReject}
-            disabled={saving}
+            disabled={buttonsDisabled}
             className={loansDialogDangerButtonClass()}
           >
             {rejectIcon}
@@ -218,18 +254,47 @@ export function LedgerFinalApprovalPayPeriod({
   onChange,
   options,
   previewLabel,
+  showInterestStart = false,
+  interestStartValue,
+  onInterestStartChange,
+  preEmiPreview,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: Array<{ value: string; label: string; range: { from: string; to: string } }>;
   previewLabel?: string;
+  /** When true, show interest-start month (pre-EMI window before first EMI). */
+  showInterestStart?: boolean;
+  interestStartValue?: string;
+  onInterestStartChange?: (v: string) => void;
+  preEmiPreview?: ReactNode;
 }) {
   return (
     <LoanFormPanel soft className="space-y-2">
       <p className="text-[10px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--ps-accent-ink)' }}>
         Final approval
       </p>
-      <LoanFormLabel>First deduction pay period *</LoanFormLabel>
+      {showInterestStart && onInterestStartChange && (
+        <>
+          <LoanFormLabel>Interest start pay period</LoanFormLabel>
+          <select
+            value={interestStartValue || value}
+            onChange={(e) => onInterestStartChange(e.target.value)}
+            className={loansFormSelectClass()}
+            style={loansFormInputStyle()}
+          >
+            {options.map((opt) => (
+              <option key={`interest-${opt.value}`} value={opt.value}>
+                {opt.label} ({opt.range.from} → {opt.range.to})
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-stone-500">
+            Interest accrues from this period. If EMI commence is later, pre-EMI interest is added to the total.
+          </p>
+        </>
+      )}
+      <LoanFormLabel>EMI commence / first deduction pay period *</LoanFormLabel>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -243,9 +308,10 @@ export function LedgerFinalApprovalPayPeriod({
         ))}
       </select>
       <p className="text-xs text-stone-500">
-        Next payment due = end of selected period{previewLabel ? ` (${previewLabel})` : ''}. Payroll deducts from
+        First EMI deduction starts this period{previewLabel ? ` (due ${previewLabel})` : ''}. Payroll deducts from
         this period onward.
       </p>
+      {preEmiPreview}
     </LoanFormPanel>
   );
 }

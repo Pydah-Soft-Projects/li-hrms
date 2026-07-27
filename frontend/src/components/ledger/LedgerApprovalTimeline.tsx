@@ -84,7 +84,11 @@ export function LedgerApprovalTimeline({ steps }: { steps: LedgerTimelineStep[] 
                     {step.label}
                   </span>
                   <span className={ledgerStatusBadgeClass(mapStepStatus(step.status))}>
-                    {ledgerStatusBadgeLabel(mapStepStatus(isCurrent ? 'current' : step.status))}
+                    {step.actionByRole && isApproved
+                      ? `${step.actionByRole} approved`
+                      : step.actionByRole && isRejected
+                        ? `${step.actionByRole} rejected`
+                        : ledgerStatusBadgeLabel(mapStepStatus(isCurrent ? 'current' : step.status))}
                   </span>
                 </div>
 

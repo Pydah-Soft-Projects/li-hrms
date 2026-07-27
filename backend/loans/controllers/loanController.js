@@ -61,6 +61,10 @@ function emiResultToLoanConfig(emiResult, extras = {}) {
     requestedDuration: emiResult.requestedDuration,
     totalInterest: emiResult.totalInterest,
     totalAmount: emiResult.totalAmount,
+    tenureInterest: emiResult.tenureInterest,
+    preEmiInterest: emiResult.preEmiInterest ?? 0,
+    preEmiMonths: emiResult.preEmiMonths ?? 0,
+    interestRate: emiResult.interestRate,
     ...extras,
   };
 }
@@ -73,6 +77,18 @@ const {
   syncChainAfterWorkflowAction,
 } = require('../services/loanWorkflowService');
 const { nextLoanApplicationFormNumber } = require('../services/loanApplicationFormSequence');
+const {
+  getGuarantorRulesFromSettings,
+  computeEmployeeLoanExposure,
+  getAttendanceSummaryLast6Months,
+  computeGuarantorFinancials,
+  validateGuarantorEligibility,
+  isGuarantorCollectionAtApplication,
+  areGuarantorsSatisfied,
+  isGuarantorGateActive,
+  mustBlockApprovalForGuarantors,
+  getGuarantorStageStep,
+} = require('../services/loanGuarantorService');
 
 // ============================================
 // NO HARDCODED BYPASS - Uses database setting: workflow.allowHigherAuthorityToApproveLowerLevels
@@ -283,63 +299,113 @@ exports.getMyLoans = async (req, res) => {
 // @access  Private
 exports.getGuarantorCandidates = async (req, res) => {
   try {
-    const { search = '', limit = 60 } = req.query;
+    const { search = '', limit = 60, loanId, applicantEmployeeId } = req.query;
+    const isPrivileged = ['hr', 'hod', 'manager', 'sub_admin', 'super_admin'].includes(req.user.role);
 
-    // Resolve current employee first (supports both employeeRef and emp_no based login)
-    let selfEmployee = null;
-    if (req.user.employeeRef) {
-      selfEmployee = await findEmployeeByIdOrEmpNo(req.user.employeeRef);
-    } else if (req.user.employeeId) {
-      selfEmployee = await findEmployeeByEmpNo(req.user.employeeId);
+    let applicantEmployee = null;
+    let loanSettingsDoc = await LoanSettings.findOne({ type: 'loan', isActive: true }).lean();
+    let excludeLoanId = null;
+
+    if (loanId) {
+      const loan = await Loan.findById(loanId).select('employeeId division_id department requestType').lean();
+      if (!loan) {
+        return res.status(404).json({ success: false, error: 'Loan application not found' });
+      }
+      if (!loan.employeeId) {
+        return res.status(400).json({ success: false, error: 'Loan has no applicant employee' });
+      }
+      applicantEmployee = await Employee.findById(loan.employeeId).lean();
+      excludeLoanId = loan._id;
+      const wfSettings = await resolveLoanWorkflowSettings('loan', loan.division_id);
+      if (wfSettings) loanSettingsDoc = wfSettings;
+    } else if (applicantEmployeeId && isPrivileged) {
+      applicantEmployee = await findEmployeeByIdOrEmpNo(applicantEmployeeId);
+      if (applicantEmployee?.division_id) {
+        const wfSettings = await resolveLoanWorkflowSettings('loan', applicantEmployee.division_id);
+        if (wfSettings) loanSettingsDoc = wfSettings;
+      }
+    } else {
+      // Self-service apply: resolve linked employee for the logged-in user
+      if (req.user.employeeRef) {
+        applicantEmployee = await findEmployeeByIdOrEmpNo(req.user.employeeRef);
+      } else if (req.user.employeeId) {
+        applicantEmployee = await findEmployeeByEmpNo(req.user.employeeId);
+      }
     }
 
-    if (!selfEmployee) {
+    if (!applicantEmployee) {
       return res.status(400).json({
         success: false,
-        message: 'Current user is not linked to an employee record',
+        error: loanId || (applicantEmployeeId && isPrivileged)
+          ? 'Applicant employee could not be resolved for guarantor search'
+          : 'Current user is not linked to an employee record',
       });
     }
 
-    // Keep candidate scope safe: same division and optionally same department.
+    const guarantorRules = getGuarantorRulesFromSettings(loanSettingsDoc);
+
     const baseFilter = {
-      is_active: true,
-      _id: { $ne: selfEmployee._id },
+      is_active: guarantorRules.activeEmployeeOnly !== false ? true : { $in: [true, false] },
+      _id: { $ne: applicantEmployee._id },
     };
-    if (selfEmployee.division_id) {
-      baseFilter.division_id = selfEmployee.division_id;
+    if (guarantorRules.sameDivisionOnly !== false && applicantEmployee.division_id) {
+      baseFilter.division_id = applicantEmployee.division_id;
     }
-    if (selfEmployee.department_id) {
-      baseFilter.department_id = selfEmployee.department_id;
+    if (guarantorRules.sameDepartmentOnly && applicantEmployee.department_id) {
+      baseFilter.department_id = applicantEmployee.department_id;
     }
 
     if (search && String(search).trim()) {
-      const rx = new RegExp(String(search).trim(), 'i');
+      const raw = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rx = new RegExp(raw, 'i');
       baseFilter.$or = [
         { emp_no: rx },
         { employee_name: rx },
+        { first_name: rx },
+        { last_name: rx },
       ];
     }
 
     const max = Math.min(Math.max(parseInt(limit, 10) || 60, 1), 200);
     const employees = await Employee.find(baseFilter)
-      .select('emp_no employee_name department_id designation_id division_id')
+      .select('emp_no employee_name first_name last_name department_id designation_id division_id gross_salary date_of_joining is_active')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
       .sort(EMP_NO_SORT)
       .collation(EMP_NO_COLLATION)
       .limit(max);
 
-    res.status(200).json({
-      success: true,
-      count: employees.length,
-      data: employees.map((e) => ({
+    const data = [];
+    for (const e of employees) {
+      const financials = await computeGuarantorFinancials(e._id, guarantorRules, { excludeLoanId });
+      const eligibility = validateGuarantorEligibility(financials, guarantorRules);
+      data.push({
         _id: e._id,
         emp_no: e.emp_no,
         employee_name: e.employee_name,
         department: e.department_id ? { _id: e.department_id._id, name: e.department_id.name } : null,
         designation: e.designation_id ? { _id: e.designation_id._id, name: e.designation_id.name } : null,
         division_id: e.division_id || null,
-      })),
+        gross_salary: e.gross_salary || 0,
+        eligibility: {
+          eligible: eligibility.eligible,
+          reasons: eligibility.reasons,
+          ownEmi: eligibility.ownEmi,
+          guaranteedEmi: eligibility.guaranteedEmi,
+          totalEmi: eligibility.totalEmi,
+          availableSalary: eligibility.availableSalary,
+          exposurePercent: eligibility.exposurePercent,
+        },
+      });
+    }
+
+    // Prefer eligible people first so the picker is usable
+    data.sort((a, b) => Number(b.eligibility.eligible) - Number(a.eligibility.eligible));
+
+    res.status(200).json({
+      success: true,
+      count: data.length,
+      data,
     });
   } catch (error) {
     console.error('Error fetching guarantor candidates:', error);
@@ -512,6 +578,8 @@ async function ensureLoanApplicationFormNumber(loan) {
 async function buildLoanApplicationPdfContext(loan) {
   const employeeId = loan.employeeId?._id || loan.employeeId;
   let previousAdvance = null;
+  let employeeExposure = null;
+  let attendanceSummary = null;
 
   if (employeeId) {
     const prev = await Loan.findOne({
@@ -522,7 +590,7 @@ async function buildLoanApplicationPdfContext(loan) {
       appliedAt: { $lt: loan.appliedAt || loan.createdAt },
     })
       .sort({ appliedAt: -1 })
-      .select('amount requestType disbursement.disbursedAt appliedAt')
+      .select('amount requestType disbursement.disbursedAt appliedAt loanConfig repayment status')
       .lean();
 
     if (prev) {
@@ -530,8 +598,15 @@ async function buildLoanApplicationPdfContext(loan) {
         amount: prev.amount,
         drawnOnDate: prev.disbursement?.disbursedAt || prev.appliedAt,
         requestType: prev.requestType,
+        outstanding: prev.repayment?.remainingBalance ?? null,
+        emi: prev.loanConfig?.emiAmount ?? null,
+        status: prev.status,
       };
     }
+
+    employeeExposure = await computeEmployeeLoanExposure(employeeId, { excludeLoanId: loan._id });
+    const empNo = loan.emp_no || loan.employeeId?.emp_no;
+    attendanceSummary = await getAttendanceSummaryLast6Months(employeeId, empNo);
   }
 
   const division =
@@ -548,6 +623,8 @@ async function buildLoanApplicationPdfContext(loan) {
     previousAdvance,
     grossSalary: grossSalary != null ? Number(grossSalary) : null,
     divisionName: division || null,
+    employeeExposure,
+    attendanceSummary,
   };
 }
 
@@ -598,17 +675,151 @@ exports.getLoan = async (req, res) => {
     await ensureLoanApplicationFormNumber(loan);
     const applicationPdfContext = await buildLoanApplicationPdfContext(loan);
 
+    const employeeId = loan.employeeId?._id || loan.employeeId;
+    const wfSettingsForMeta = await resolveLoanWorkflowSettings(loan.requestType, loan.division_id?._id || loan.division_id);
+    const guarantorRules = getGuarantorRulesFromSettings(wfSettingsForMeta);
+    const guarantorStageStep = getGuarantorStageStep(wfSettingsForMeta?.workflow, guarantorRules);
+    const guarantorGate = mustBlockApprovalForGuarantors(loan, wfSettingsForMeta);
+    const currentApproverRole = loan.workflow?.nextApprover;
+    const normalizeMetaRole = (role) => {
+      const r = String(role || '').trim();
+      if (['hod', 'manager', 'hr', 'reporting_manager', 'final_authority'].includes(r)) return r;
+      if (r === 'super_admin' || r === 'admin') return 'hr';
+      return 'final_authority';
+    };
+    const currentStageStep =
+      (wfSettingsForMeta?.workflow?.steps || []).find(
+        (s) => s.isActive !== false && normalizeMetaRole(s.approverRole) === currentApproverRole
+      ) || null;
+
     res.status(200).json({
       success: true,
       data: loan,
       presentPayPeriod,
       applicationPdfContext,
+      employeeExposure: applicationPdfContext.employeeExposure,
+      attendanceSummary: applicationPdfContext.attendanceSummary,
+      workflowMeta: {
+        guarantorRules,
+        guarantorStageStep: guarantorStageStep
+          ? { stepOrder: guarantorStageStep.stepOrder, stepName: guarantorStageStep.stepName, approverRole: guarantorStageStep.approverRole }
+          : null,
+        isGuarantorGateActive: isGuarantorGateActive(loan, wfSettingsForMeta),
+        guarantorGateBlocked: guarantorGate.block,
+        guarantorStatus: areGuarantorsSatisfied(loan, guarantorRules),
+        collectGuarantorsOnApply: isGuarantorCollectionAtApplication(guarantorRules),
+        currentStage: currentStageStep
+          ? {
+              stepOrder: currentStageStep.stepOrder,
+              stepName: currentStageStep.stepName,
+              approverRole: currentStageStep.approverRole,
+              requireGuarantors: !!currentStageStep.requireGuarantors,
+              verifyAttendance: !!currentStageStep.verifyAttendance,
+            }
+          : null,
+      },
     });
   } catch (error) {
     console.error('Error fetching loan:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to fetch loan',
+    });
+  }
+};
+
+// @desc    Preview loan EMI / pre-EMI / auto commence for application form
+// @route   GET /api/loans/emi-application-preview
+// @access  Private
+exports.getEmiApplicationPreview = async (req, res) => {
+  try {
+    const amount = parseFloat(req.query.amount);
+    const duration = parseInt(req.query.duration, 10);
+    const empNo = req.query.empNo ? String(req.query.empNo).trim() : '';
+    const employeeIdQ = req.query.employeeId ? String(req.query.employeeId).trim() : '';
+
+    if (!(amount > 0) || !(duration > 0)) {
+      return res.status(400).json({
+        success: false,
+        error: 'amount and duration are required',
+      });
+    }
+
+    let employee = null;
+    if (employeeIdQ) {
+      employee = await findEmployeeByIdOrEmpNo(employeeIdQ);
+    } else if (empNo) {
+      employee = await findEmployeeByEmpNo(empNo);
+    } else if (req.user.employeeRef) {
+      employee = await findEmployeeByIdOrEmpNo(req.user.employeeRef);
+    } else if (req.user.employeeId) {
+      employee = await findEmployeeByEmpNo(req.user.employeeId);
+    }
+
+    const settingsDoc = await LoanSettings.findOne({ type: 'loan', isActive: true });
+    const interestRate =
+      settingsDoc?.settings?.isInterestApplicable === false
+        ? 0
+        : Number(settingsDoc?.settings?.interestRate) || 0;
+
+    const presentPayPeriod = await getPresentPayPeriod();
+    const interestStartYm =
+      normalizePayrollMonthKey(req.query.interestStartPayrollMonth) ||
+      normalizePayrollMonthKey(presentPayPeriod?.payrollMonthKey);
+
+    const { buildEmiApplicationPreview } = require('../services/loanEmiPolicyService');
+    const preview = await buildEmiApplicationPreview({
+      employeeId: employee?._id,
+      amount,
+      duration,
+      interestRate,
+      interestStartPayrollMonth: interestStartYm,
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        ...preview,
+        employee: employee
+          ? { _id: employee._id, emp_no: employee.emp_no, employee_name: employee.employee_name }
+          : null,
+        presentPayPeriod,
+      },
+    });
+  } catch (error) {
+    console.error('getEmiApplicationPreview error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to preview EMI application',
+    });
+  }
+};
+
+// @desc    Loan application attendance summary (last 6 months)
+// @route   GET /api/loans/attendance-summary-for-application
+// @access  Private
+exports.getLoanApplicationAttendanceSummary = async (req, res) => {
+  try {
+    const employeeIdQ = req.query.employeeId ? String(req.query.employeeId).trim() : '';
+    const empNoQ = req.query.empNo ? String(req.query.empNo).trim() : '';
+
+    if (!employeeIdQ || !empNoQ) {
+      return res.status(400).json({
+        success: false,
+        error: 'employeeId and empNo are required',
+      });
+    }
+
+    const attendanceSummary = await getAttendanceSummaryLast6Months(employeeIdQ, empNoQ);
+    return res.json({
+      success: true,
+      data: attendanceSummary,
+    });
+  } catch (error) {
+    console.error('getLoanApplicationAttendanceSummary error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch attendance summary',
     });
   }
 };
@@ -637,11 +848,16 @@ exports.applyLoan = async (req, res) => {
       });
     }
 
-    // Validate guarantors (at least two required for loans)
-    if (requestType === 'loan' && (!guarantorIds || !Array.isArray(guarantorIds) || guarantorIds.length < 2)) {
+    // Load settings early for guarantor collection timing
+    const preSettings = await LoanSettings.findOne({ type: requestType, isActive: true }).lean();
+    const guarantorRules = getGuarantorRulesFromSettings(preSettings);
+    const collectGuarantorsOnApply =
+      requestType === 'loan' && isGuarantorCollectionAtApplication(guarantorRules);
+
+    if (collectGuarantorsOnApply && (!guarantorIds || !Array.isArray(guarantorIds) || guarantorIds.length < (guarantorRules.minGuarantors || 2))) {
       return res.status(400).json({
         success: false,
-        error: 'At least two guarantors are required for a loan application',
+        error: `At least ${guarantorRules.minGuarantors || 2} guarantors are required for a loan application`,
       });
     }
 
@@ -745,10 +961,12 @@ exports.applyLoan = async (req, res) => {
       });
     }
 
-    // Process Guarantors (only for loans)
+    // Process Guarantors (only for loans — at application if configured, else added at workflow stage)
     const processedGuarantors = [];
-    if (requestType === 'loan' && guarantorIds && Array.isArray(guarantorIds)) {
+    if (requestType === 'loan' && guarantorIds && Array.isArray(guarantorIds) && guarantorIds.length > 0) {
       const uniqueGuarantorIds = new Set();
+      const minG = guarantorRules.minGuarantors ?? 2;
+      const maxG = guarantorRules.maxGuarantors ?? 4;
 
       for (const gId of guarantorIds) {
         const guarantor = await findEmployeeByIdOrEmpNo(gId);
@@ -767,7 +985,16 @@ exports.applyLoan = async (req, res) => {
         }
 
         if (uniqueGuarantorIds.has(guarantor._id.toString())) {
-          continue; // Skip duplicate guarantors
+          continue;
+        }
+
+        const financials = await computeGuarantorFinancials(guarantor._id, guarantorRules);
+        const eligibility = validateGuarantorEligibility(financials, guarantorRules);
+        if (!eligibility.eligible) {
+          return res.status(400).json({
+            success: false,
+            error: `Guarantor ${guarantor.employee_name} (${guarantor.emp_no}) is not eligible: ${eligibility.reasons.join('; ')}`,
+          });
         }
 
         uniqueGuarantorIds.add(guarantor._id.toString());
@@ -779,10 +1006,16 @@ exports.applyLoan = async (req, res) => {
         });
       }
 
-      if (processedGuarantors.length < 2) {
+      if (collectGuarantorsOnApply && processedGuarantors.length < minG) {
         return res.status(400).json({
           success: false,
-          error: 'At least two unique guarantors are required',
+          error: `At least ${minG} unique eligible guarantors are required`,
+        });
+      }
+      if (processedGuarantors.length > maxG) {
+        return res.status(400).json({
+          success: false,
+          error: `Maximum ${maxG} guarantors allowed`,
         });
       }
     }
@@ -854,18 +1087,43 @@ exports.applyLoan = async (req, res) => {
 
     if (requestType === 'loan') {
       const interestRate = settings.interestRate || 0;
-      const emiResult = calculateEMI(amount, interestRate, duration);
+      const presentPayPeriod = await getPresentPayPeriod();
+      const interestStartYm =
+        normalizePayrollMonthKey(presentPayPeriod?.payrollMonthKey) ||
+        (() => {
+          const d = new Date();
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        })();
 
-      totalAmount = emiResult.totalAmount;
-      totalInterest = emiResult.totalInterest;
+      const { buildEmiApplicationPreview } = require('../services/loanEmiPolicyService');
+      const preview = await buildEmiApplicationPreview({
+        employeeId: employee._id,
+        amount,
+        duration,
+        interestRate,
+        interestStartPayrollMonth: interestStartYm,
+      });
 
-      const anchors = await computeLoanPayrollAnchors(new Date(), emiResult.totalInstallments || duration);
+      totalAmount = preview.totalAmount;
+      totalInterest = preview.totalInterest;
+
+      const anchors = await computeLoanPayrollAnchors(
+        // Anchor schedule from commence month if delayed
+        (() => {
+          const [y, m] = String(preview.emiCommencePayrollMonth || interestStartYm).split('-').map(Number);
+          return new Date(y, m - 1, 15);
+        })(),
+        preview.totalInstallments || duration
+      );
       firstEmiDueDate = anchors.firstDueDate;
 
-      loanConfig = emiResultToLoanConfig(emiResult, {
+      loanConfig = emiResultToLoanConfig(preview, {
         interestRate,
         startDate: anchors.startDate,
         endDate: anchors.endDate,
+        interestStartPayrollMonth: preview.interestStartPayrollMonth,
+        emiCommencePayrollMonth: preview.emiCommencePayrollMonth,
+        emiCommenceReason: preview.reason,
       });
     } else {
       // Salary advance - calculate per cycle deduction
@@ -1016,6 +1274,131 @@ exports.getGuarantorRequests = async (req, res) => {
       success: false,
       error: error.message || 'Failed to fetch guarantor requests',
     });
+  }
+};
+
+// @desc    Add or update guarantors on a loan (at configured workflow stage)
+// @route   PUT /api/loans/:id/guarantors
+// @access  Private
+exports.addLoanGuarantors = async (req, res) => {
+  try {
+    const { guarantorIds } = req.body;
+    const loan = await Loan.findById(req.params.id)
+      .populate('employeeId', 'employee_name emp_no')
+      .populate('division_id');
+
+    if (!loan) {
+      return res.status(404).json({ success: false, error: 'Loan application not found' });
+    }
+    if (loan.requestType !== 'loan') {
+      return res.status(400).json({ success: false, error: 'Guarantors apply to loans only' });
+    }
+    if (!Array.isArray(guarantorIds) || guarantorIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'guarantorIds array is required' });
+    }
+
+    const settings = await resolveLoanWorkflowSettings('loan', loan.division_id?._id || loan.division_id);
+    const guarantorRules = getGuarantorRulesFromSettings(settings);
+    const minG = guarantorRules.minGuarantors ?? 2;
+    const maxG = guarantorRules.maxGuarantors ?? 4;
+
+    const isOwner = loan.appliedBy?.toString() === req.user._id?.toString();
+    const isAdmin = ['hr', 'sub_admin', 'super_admin', 'manager'].includes(req.user.role);
+    const atGuarantorGate = isGuarantorGateActive(loan, settings);
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ success: false, error: 'Not authorized to add guarantors' });
+    }
+
+    if (!isGuarantorCollectionAtApplication(guarantorRules) && !atGuarantorGate && !isAdmin) {
+      return res.status(400).json({
+        success: false,
+        error: 'Guarantors can only be added at the configured workflow stage',
+        isGuarantorGateActive: atGuarantorGate,
+      });
+    }
+
+    if (['completed', 'cancelled', 'rejected'].includes(loan.status)) {
+      return res.status(400).json({ success: false, error: 'Cannot modify guarantors for this loan status' });
+    }
+
+    const applicantId = loan.employeeId?._id || loan.employeeId;
+    const uniqueIds = new Set();
+    const newGuarantors = [];
+
+    for (const gId of guarantorIds) {
+      const guarantor = await findEmployeeByIdOrEmpNo(gId);
+      if (!guarantor) {
+        return res.status(400).json({ success: false, error: `Guarantor ${gId} not found` });
+      }
+      if (String(guarantor._id) === String(applicantId)) {
+        return res.status(400).json({ success: false, error: 'Applicant cannot be their own guarantor' });
+      }
+      if (uniqueIds.has(String(guarantor._id))) continue;
+
+      const financials = await computeGuarantorFinancials(guarantor._id, guarantorRules, { excludeLoanId: loan._id });
+      const eligibility = validateGuarantorEligibility(financials, guarantorRules);
+      if (!eligibility.eligible) {
+        return res.status(400).json({
+          success: false,
+          error: `Guarantor ${guarantor.employee_name} is not eligible: ${eligibility.reasons.join('; ')}`,
+          eligibility,
+        });
+      }
+
+      uniqueIds.add(String(guarantor._id));
+      const existing = (loan.guarantors || []).find((g) => String(g.employeeId) === String(guarantor._id));
+      newGuarantors.push({
+        employeeId: guarantor._id,
+        emp_no: guarantor.emp_no,
+        name: guarantor.employee_name,
+        status: existing?.status === 'accepted' ? 'accepted' : 'pending',
+        actionAt: existing?.actionAt,
+        remarks: existing?.remarks,
+      });
+    }
+
+    if (newGuarantors.length < minG) {
+      return res.status(400).json({ success: false, error: `At least ${minG} eligible guarantors required` });
+    }
+    if (newGuarantors.length > maxG) {
+      return res.status(400).json({ success: false, error: `Maximum ${maxG} guarantors allowed` });
+    }
+
+    loan.guarantors = newGuarantors;
+    if (!loan.workflow.history) loan.workflow.history = [];
+    loan.workflow.history.push({
+      step: 'guarantor',
+      action: 'guarantors_added',
+      actionBy: req.user._id,
+      actionByName: req.user.name,
+      actionByRole: req.user.role,
+      comments: `${newGuarantors.length} guarantor(s) assigned`,
+      timestamp: new Date(),
+    });
+    await loan.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Guarantors updated successfully',
+      data: loan,
+      guarantorStatus: areGuarantorsSatisfied(loan, guarantorRules),
+    });
+
+    for (const g of newGuarantors.filter((x) => x.status === 'pending')) {
+      notifyWorkflowEvent({
+        module: 'loan',
+        eventType: 'LOAN_GUARANTOR_REQUEST',
+        record: loan,
+        actor: req.user,
+        title: 'Guarantor request',
+        message: `You have been requested as guarantor for loan application ${loan.emp_no}.`,
+        priority: 'medium',
+      }).catch(() => {});
+    }
+  } catch (error) {
+    console.error('Error adding guarantors:', error);
+    res.status(500).json({ success: false, error: error.message || 'Failed to add guarantors' });
   }
 };
 
@@ -1700,7 +2083,7 @@ exports.getPendingApprovals = async (req, res) => {
 // @access  Private (HOD, Manager, HR, Admin)
 exports.processLoanAction = async (req, res) => {
   try {
-    const { action, comments, approvalAmount, approvalInterestRate, firstDeductionPayrollMonth } = req.body;
+    const { action, comments, approvalAmount, approvalInterestRate, firstDeductionPayrollMonth, interestStartPayrollMonth, attendanceVerified } = req.body;
     const loan = await Loan.findById(req.params.id)
       .populate('division_id')
       .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id');
@@ -1754,6 +2137,12 @@ exports.processLoanAction = async (req, res) => {
       }
     }
 
+    // Allow HOD/Manager to process when it's exactly their workflow step.
+    // Without this, workflow approvals get stuck at the HOD/Manager stage.
+    if (!canProcess && ['hod', 'manager'].includes(currentApprover) && userRole === currentApprover) {
+      canProcess = true;
+    }
+
     if (!canProcess && currentApprover === 'reporting_manager') {
       // 1. Check if user is the assigned Reporting Manager
       const targetEmployee = await Employee.findById(loan.employeeId);
@@ -1786,13 +2175,43 @@ exports.processLoanAction = async (req, res) => {
       });
     }
 
+    // DYAMIC WORKFLOW ROUTING ENGINE (resolve current step first so stage capabilities apply)
+    const normalizeWorkflowApproverRole = (role) => {
+      const r = String(role || '').trim();
+      // Only these values are valid for `Loan.workflow.nextApprover` enum.
+      if (['hod', 'manager', 'hr', 'reporting_manager', 'final_authority'].includes(r)) return r;
+      // Higher authorities should not be persisted as nextApprover enum values.
+      if (r === 'super_admin' || r === 'admin') return 'hr';
+      return 'final_authority';
+    };
+
+    const workflowSteps = settings?.workflow?.steps || [];
+    const normalizedWorkflowSteps = workflowSteps.map((s) => ({
+      ...s,
+      approverRole: normalizeWorkflowApproverRole(s.approverRole),
+    }));
+
+    const currentStepConfig = normalizedWorkflowSteps.find(
+      (s) => s.approverRole === currentApprover && s.isActive
+    );
+
     // Handle Updates if provided during approval (Amount or Interest Rate)
-    const isAuthorizedForEdits = ['super_admin', 'hr', 'sub_admin'].includes(userRole);
+    const canEditAmountForStep =
+      currentStepConfig?.canEditSanctionedAmount === true ||
+      ['super_admin', 'hr', 'sub_admin'].includes(userRole);
+    const canEditInterestForStep =
+      currentStepConfig?.canControlInterest === true ||
+      ['super_admin', 'hr', 'sub_admin'].includes(userRole);
     let configChanged = false;
 
-    if (action === 'approve' && isAuthorizedForEdits) {
+    if (action === 'approve') {
       // 1. Handle Interest Rate Update (only for loans)
-      if (loan.requestType === 'loan' && approvalInterestRate !== undefined && !isNaN(parseFloat(approvalInterestRate))) {
+      if (
+        canEditInterestForStep &&
+        loan.requestType === 'loan' &&
+        approvalInterestRate !== undefined &&
+        !isNaN(parseFloat(approvalInterestRate))
+      ) {
         const newRate = parseFloat(approvalInterestRate);
         if (!loan.loanConfig) loan.loanConfig = {};
         if (newRate !== loan.loanConfig.interestRate) {
@@ -1814,7 +2233,12 @@ exports.processLoanAction = async (req, res) => {
       }
 
       // 2. Handle Amount Update
-      if (approvalAmount !== undefined && !isNaN(parseFloat(approvalAmount)) && parseFloat(approvalAmount) !== loan.amount) {
+      if (
+        canEditAmountForStep &&
+        approvalAmount !== undefined &&
+        !isNaN(parseFloat(approvalAmount)) &&
+        parseFloat(approvalAmount) !== loan.amount
+      ) {
         const oldAmount = loan.amount;
         const newAmount = parseFloat(approvalAmount);
         loan.amount = newAmount;
@@ -1843,13 +2267,25 @@ exports.processLoanAction = async (req, res) => {
           applyCalculatedEmiToLoan(loan, emiResult);
         } else {
           // Salary advance - recalculate per cycle deduction
+          if (!loan.advanceConfig) loan.advanceConfig = {};
+          if (!loan.repayment) loan.repayment = {};
           loan.advanceConfig.deductionPerCycle = Math.round(loan.amount / loan.duration);
+          loan.advanceConfig.deductionCycles = loan.duration;
+          loan.repayment.remainingBalance = loan.amount - (loan.repayment.totalPaid || 0);
           loan.repayment.totalInstallments = loan.duration;
         }
       }
     }
 
     // Process based on action
+    const actorRoleLabel = ({
+      super_admin: 'Admin',
+      sub_admin: 'Admin',
+      hr: 'HR',
+      hod: 'HOD',
+      manager: 'Manager',
+    })[userRole] || String(userRole || '').replace(/_/g, ' ');
+
     const historyEntry = {
       step: currentApprover,
       actionBy: req.user._id,
@@ -1858,67 +2294,95 @@ exports.processLoanAction = async (req, res) => {
       comments: comments || '',
       timestamp: new Date(),
     };
+    // Ensure bypass approvals keep the actor identity in stored remarks/comments.
+    let effectiveComments = comments || '';
+    if (!effectiveComments) {
+      effectiveComments = `${actorRoleLabel} action`;
+      historyEntry.comments = effectiveComments;
+    }
 
-    // DYAMIC WORKFLOW ROUTING ENGINE
-    const workflowSteps = settings?.workflow?.steps || [];
-    const currentStepConfig = workflowSteps.find(s => s.approverRole === currentApprover && s.isActive);
-
-    // Determine the next step in the chain
+    // Determine the next step in the chain (leave/OD style: last configured step finishes)
     let nextStepOrder = currentStepConfig ? currentStepConfig.nextStepOnApprove : null;
     let nextRole = null;
     let nextStepEnum = 'completed';
     let isFinalStep = false;
 
+    const mapRoleToStepEnum = (role) => {
+      if (['hod', 'manager', 'hr'].includes(role)) return role;
+      return 'final';
+    };
+
     // Special Logic: If current is the default HOD (not in dynamic steps), move to Step 1
     if (currentApprover === 'hod' && !currentStepConfig) {
-      const firstStep = workflowSteps.find(s => s.stepOrder === 1 && s.isActive);
+      const firstStep = normalizedWorkflowSteps.find((s) => s.stepOrder === 1 && s.isActive);
       if (firstStep) {
         nextRole = firstStep.approverRole;
-        if (['hod', 'manager', 'hr'].includes(nextRole)) nextStepEnum = nextRole;
-        else nextStepEnum = 'final';
+        nextStepEnum = mapRoleToStepEnum(nextRole);
       } else {
-        // No dynamic steps - go to final authority
-        const finalAuth = settings?.workflow?.finalAuthority;
-        if (finalAuth && finalAuth.role) {
-          nextRole = 'final_authority';
-          nextStepEnum = 'final';
+        // No dynamic steps — this HOD action finishes the chain (leave style)
+        isFinalStep = true;
+      }
+    } else if (nextStepOrder !== null && nextStepOrder !== undefined) {
+      const nextStep = normalizedWorkflowSteps.find((s) => s.stepOrder === nextStepOrder && s.isActive);
+      if (nextStep) {
+        nextRole = nextStep.approverRole;
+        nextStepEnum = mapRoleToStepEnum(nextRole);
+      } else {
+        // Broken pointer — finish rather than inventing a final_authority desk
+        isFinalStep = true;
+      }
+    } else if (currentStepConfig) {
+      // nextStepOnApprove is null → this is the last configured stage → complete
+      isFinalStep = true;
+    } else if (currentApprover === 'final_authority') {
+      // Legacy records still sitting on final_authority
+      isFinalStep = true;
+    } else {
+      // Unknown desk with no step config — finish if it is the only pending chain step
+      const chain = loan.workflow?.approvalChain || [];
+      const pending = chain.filter((s) => s.status === 'pending');
+      isFinalStep = pending.length <= 1;
+      if (!isFinalStep) {
+        const nextPending = pending.find((s) => s.role !== currentApprover);
+        if (nextPending) {
+          nextRole = nextPending.role;
+          nextStepEnum = mapRoleToStepEnum(nextRole);
         } else {
           isFinalStep = true;
         }
       }
-    } else if (nextStepOrder !== null) {
-      const nextStep = workflowSteps.find(s => s.stepOrder === nextStepOrder && s.isActive);
-      if (nextStep) {
-        nextRole = nextStep.approverRole;
-        // Map role to workflow enum
-        if (['hod', 'manager', 'hr'].includes(nextRole)) nextStepEnum = nextRole;
-        else nextStepEnum = 'final';
-      }
-    } else {
-      // Check for final authority
-      const finalAuth = settings?.workflow?.finalAuthority;
-      if (finalAuth && finalAuth.role && currentApprover !== 'final_authority') {
-        nextRole = 'final_authority';
-        nextStepEnum = 'final';
-      } else {
-        isFinalStep = true;
-      }
     }
 
-    // AUTH CHECK FOR FOR FINAL AUTHORITY
+    // Higher-authority bypass can complete lower levels in one action only when the
+    // first deduction pay period is provided (explicit finalize). Otherwise advance one step.
+    if (
+      !isFinalStep &&
+      action === 'approve' &&
+      allowBypass &&
+      (isSuperAdmin || isHR) &&
+      !['hr', 'final_authority'].includes(currentApprover) &&
+      firstDeductionPayrollMonth
+    ) {
+      isFinalStep = true;
+    }
+
+    // AUTH CHECK FOR FINAL / LAST STAGE
     if (currentApprover === 'final_authority' || isFinalStep) {
       const finalAuth = settings?.workflow?.finalAuthority;
       let authorized = false;
       if (isSuperAdmin) authorized = true;
+      else if (userRole === currentApprover) authorized = true;
       else if (finalAuth) {
         if (finalAuth.role === 'hr' && userRole === 'hr') {
           if (finalAuth.anyHRCanApprove) authorized = true;
-          else if (finalAuth.authorizedHRUsers?.some(id => id.toString() === req.user._id.toString())) authorized = true;
+          else if (finalAuth.authorizedHRUsers?.some((id) => id.toString() === req.user._id.toString())) authorized = true;
         } else if (finalAuth.role === 'specific_user') {
           if (finalAuth.userId?.toString() === req.user._id.toString()) authorized = true;
+        } else if (normalizeWorkflowApproverRole(finalAuth.role) === currentApprover && userRole === finalAuth.role) {
+          authorized = true;
         }
       } else if (isHR) {
-        authorized = true; // Fallback to HR if no final auth defined
+        authorized = true;
       }
 
       if (!authorized) {
@@ -1927,11 +2391,29 @@ exports.processLoanAction = async (req, res) => {
           error: 'You are not authorized for final authority action.',
         });
       }
-      isFinalStep = true; // Ensure terminal state
+      isFinalStep = true;
     }
 
     switch (action) {
       case 'approve':
+        {
+          if (currentStepConfig?.verifyAttendance === true && attendanceVerified !== true) {
+            return res.status(400).json({
+              success: false,
+              error: 'Please confirm you have verified the applicant attendance before approving this stage.',
+              requiresAttendanceVerification: true,
+            });
+          }
+          const guarantorBlock = mustBlockApprovalForGuarantors(loan, settings);
+          if (guarantorBlock.block) {
+            return res.status(400).json({
+              success: false,
+              error: guarantorBlock.error,
+              guarantorStatus: guarantorBlock,
+              requiresGuarantors: true,
+            });
+          }
+        }
         historyEntry.action = 'approved';
 
         // Apply dynamic status and routing
@@ -1942,7 +2424,8 @@ exports.processLoanAction = async (req, res) => {
 
           // Add special marker for higher authority action in history
           if (allowBypass && (isSuperAdmin || isHR)) {
-            historyEntry.comments = `${comments || ''} (Action by Higher Authority: ${userRole})`;
+            effectiveComments = `${effectiveComments} (Action by Higher Authority: ${req.user.name} [${userRole}])`.trim();
+            historyEntry.comments = effectiveComments;
           }
 
           // Legacy approval record
@@ -1951,7 +2434,7 @@ exports.processLoanAction = async (req, res) => {
               status: 'approved',
               approvedBy: req.user._id,
               approvedAt: new Date(),
-              comments,
+              comments: effectiveComments,
             };
           }
         } else {
@@ -1964,7 +2447,16 @@ exports.processLoanAction = async (req, res) => {
           }
           let lockedPayrollMonth;
           try {
-            lockedPayrollMonth = await applyRepaymentScheduleFromPayrollMonth(loan, firstDeductionPayrollMonth);
+            const interestStart =
+              interestStartPayrollMonth ||
+              loan.loanConfig?.interestStartPayrollMonth ||
+              (() => {
+                const d = new Date();
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+              })();
+            lockedPayrollMonth = await applyRepaymentScheduleFromPayrollMonth(loan, firstDeductionPayrollMonth, {
+              interestStartPayrollMonth: interestStart,
+            });
           } catch (scheduleErr) {
             return res.status(400).json({
               success: false,
@@ -1978,18 +2470,37 @@ exports.processLoanAction = async (req, res) => {
             status: 'approved',
             approvedBy: req.user._id,
             approvedAt: new Date(),
-            comments,
+            comments: effectiveComments,
             firstDeductionPayrollMonth: lockedPayrollMonth,
           };
         }
         break;
 
       case 'reject':
+        if (currentStepConfig?.verifyAttendance === true && attendanceVerified !== true) {
+          return res.status(400).json({
+            success: false,
+            error: 'Please confirm you have verified the applicant attendance before rejecting this stage.',
+            requiresAttendanceVerification: true,
+          });
+        }
+        {
+          const guarantorBlockReject = mustBlockApprovalForGuarantors(loan, settings);
+          if (guarantorBlockReject.block) {
+            return res.status(400).json({
+              success: false,
+              error: guarantorBlockReject.error,
+              guarantorStatus: guarantorBlockReject,
+              requiresGuarantors: true,
+            });
+          }
+        }
         historyEntry.action = 'rejected';
 
         // Add special marker for higher authority rejection
         if (allowBypass && (isSuperAdmin || isHR) && !isFinalStep) {
-          historyEntry.comments = `${comments || ''} (Action by Higher Authority)`;
+          effectiveComments = `${effectiveComments} (Action by Higher Authority: ${req.user.name} [${userRole}])`.trim();
+          historyEntry.comments = effectiveComments;
         }
 
         // Apply dynamic status and routing (moves to next step even on reject as per user request)
@@ -2004,7 +2515,7 @@ exports.processLoanAction = async (req, res) => {
               status: 'rejected',
               approvedBy: req.user._id,
               approvedAt: new Date(),
-              comments,
+              comments: effectiveComments,
             };
           }
         } else {
@@ -2016,7 +2527,7 @@ exports.processLoanAction = async (req, res) => {
             status: 'rejected',
             approvedBy: req.user._id,
             approvedAt: new Date(),
-            comments,
+            comments: effectiveComments,
           };
         }
         break;
@@ -2033,8 +2544,8 @@ exports.processLoanAction = async (req, res) => {
           };
 
           // Logic for manual forward would go here
-          loan.workflow.currentStep = 'hr';
-          loan.workflow.nextApprover = 'hr';
+          loan.workflow.currentStep = nextStepEnum;
+          loan.workflow.nextApprover = nextRole;
         }
         break;
 
@@ -2045,8 +2556,12 @@ exports.processLoanAction = async (req, res) => {
     syncChainAfterWorkflowAction(loan, {
       currentApprover,
       action: historyEntry.action,
-      isFinalStep: action === 'approve' && loan.workflow.currentStep === 'completed',
+      isFinalStep: loan.workflow.currentStep === 'completed',
       nextRole: loan.workflow.nextApprover,
+      actionByName: historyEntry.actionByName,
+      actionByRole: historyEntry.actionByRole,
+      comments: historyEntry.comments,
+      timestamp: historyEntry.timestamp,
     });
     ensureLoanApprovalChain(loan, settings);
     loan.workflow.nextApproverRole = loan.workflow.nextApprover;
@@ -2188,14 +2703,25 @@ exports.disburseLoan = async (req, res) => {
       });
     }
 
-    // Check if all guarantors have accepted
-    const pendingGuarantors = loan.guarantors.filter((g) => g.status !== 'accepted');
-    if (pendingGuarantors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: `Cannot disburse: ${pendingGuarantors.length} guarantor(s) have not yet accepted the request`,
-        pendingGuarantors: pendingGuarantors.map((g) => g.name),
-      });
+    // Check guarantors when loan requires them
+    const wfSettingsDisburse = await resolveLoanWorkflowSettings(loan.requestType, loan.division_id);
+    const guarantorRulesDisburse = getGuarantorRulesFromSettings(wfSettingsDisburse);
+    if (loan.requestType === 'loan' && (loan.guarantors?.length > 0 || !isGuarantorCollectionAtApplication(guarantorRulesDisburse))) {
+      const minG = guarantorRulesDisburse.minGuarantors ?? 2;
+      if ((loan.guarantors || []).length < minG) {
+        return res.status(400).json({
+          success: false,
+          error: `Cannot disburse: at least ${minG} guarantor(s) required`,
+        });
+      }
+      const pendingGuarantors = loan.guarantors.filter((g) => g.status !== 'accepted');
+      if (pendingGuarantors.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: `Cannot disburse: ${pendingGuarantors.length} guarantor(s) have not yet accepted the request`,
+          pendingGuarantors: pendingGuarantors.map((g) => g.name),
+        });
+      }
     }
 
     // Only HR and Admin can disburse
@@ -2216,7 +2742,11 @@ exports.disburseLoan = async (req, res) => {
       }
       let lockedPayrollMonth;
       try {
-        lockedPayrollMonth = await applyRepaymentScheduleFromPayrollMonth(loan, firstDeductionPayrollMonth);
+        const d = new Date();
+        const disburseYm = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        lockedPayrollMonth = await applyRepaymentScheduleFromPayrollMonth(loan, firstDeductionPayrollMonth, {
+          interestStartPayrollMonth: disburseYm,
+        });
       } catch (scheduleErr) {
         return res.status(400).json({
           success: false,
@@ -2233,6 +2763,51 @@ exports.disburseLoan = async (req, res) => {
       }
       loan.approvals.final.firstDeductionPayrollMonth = lockedPayrollMonth;
       loan.markModified('approvals');
+    } else if (loan.requestType === 'loan' && !(Number(loan.repayment?.totalPaid) > 0)) {
+      // Re-verify EMI commence / pre-EMI against CURRENT policy using only other disbursed/active loans
+      try {
+        const d = new Date();
+        const disburseYm = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const {
+          buildEmiApplicationPreview,
+        } = require('../services/loanEmiPolicyService');
+        const rate = Number(loan.loanConfig?.interestRate) || 0;
+        const preview = await buildEmiApplicationPreview({
+          employeeId: loan.employeeId,
+          amount: loan.amount,
+          duration: loan.duration,
+          interestRate: rate,
+          interestStartPayrollMonth: disburseYm,
+          excludeLoanId: loan._id,
+        });
+
+        const commence =
+          normalizePayrollMonthKey(firstDeductionPayrollMonth) ||
+          normalizePayrollMonthKey(preview.emiCommencePayrollMonth) ||
+          normalizePayrollMonthKey(loan.approvals?.final?.firstDeductionPayrollMonth) ||
+          normalizePayrollMonthKey(loan.loanConfig?.emiCommencePayrollMonth) ||
+          disburseYm;
+
+        await applyRepaymentScheduleFromPayrollMonth(loan, commence, {
+          interestStartPayrollMonth: disburseYm,
+        });
+
+        if (!loan.loanConfig) loan.loanConfig = {};
+        loan.loanConfig.emiCommenceReason = preview.reason;
+        if (
+          normalizePayrollMonthKey(loan.loanConfig.emiCommencePayrollMonth) !==
+          normalizePayrollMonthKey(preview.emiCommencePayrollMonth)
+        ) {
+          loan.loanConfig.emiCommenceReason = `${preview.reason} (Disbursement used commence ${commence}; policy suggestion was ${preview.emiCommencePayrollMonth}.)`;
+        }
+        if (loan.approvals?.final) {
+          loan.approvals.final.firstDeductionPayrollMonth = commence;
+          loan.markModified('approvals');
+        }
+        loan.markModified('loanConfig');
+      } catch (e) {
+        console.warn('[Disburse] Policy re-verify skipped:', e.message);
+      }
     }
 
     loan.status = 'disbursed';
