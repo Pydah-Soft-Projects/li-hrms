@@ -23,12 +23,15 @@
 
 const OD = require('../model/OD');
 const Employee = require('../../employees/model/Employee');
+require('../../departments/model/Department');
+require('../../departments/model/Designation');
+require('../../departments/model/Division');
 const LeaveRegisterYear = require('../model/LeaveRegisterYear');
 const leaveRegisterService = require('./leaveRegisterService');
 const { isHolidayOrWeekOff } = require('./odHolidayApplyContextService');
 const { getRosterHalfHolidayForEmployeeDate } = require('./odHalfHolidayRosterService');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
-const { extractISTComponents, createISTDate, getAllDatesInRange } = require('../../shared/utils/dateUtils');
+const { extractISTComponents, createISTDate, getAllDatesInRange, isYmdInInclusiveRange } = require('../../shared/utils/dateUtils');
 
 /**
  * Check if there is already a CCL credit of type OD_HOLIDAY_WO_CO_CREDIT
@@ -105,10 +108,18 @@ async function syncCclForNewHolidayWoEntries(rosterEntries, options = {}) {
 
   // Filter: only HOL or WO entries (status-based calendar days)
   const holWoEntries = (rosterEntries || []).filter(
-    (e) => e.status === 'HOL' || e.status === 'WO'
+    (e) =>
+      e.status === 'HOL' ||
+      e.status === 'WO' ||
+      e.firstHalfStatus === 'HOL' ||
+      e.firstHalfStatus === 'WO' ||
+      e.secondHalfStatus === 'HOL' ||
+      e.secondHalfStatus === 'WO'
   );
 
   if (holWoEntries.length === 0) return result;
+
+  console.log(`[OD-CCL-RETRO] Beginning retroactive CCL sync check for ${holWoEntries.length} calendar HOL/WO entries.`);
 
   // Group by date for batch processing
   const byDate = new Map();
@@ -127,6 +138,7 @@ async function syncCclForNewHolidayWoEntries(rosterEntries, options = {}) {
       if (onProgress) onProgress({ processed, total, dateStr, empNo });
 
       try {
+        console.log(`[OD-CCL-RETRO] Checking approved ODs for Employee ${empNo} on holiday/week-off date ${dateStr}...`);
         // Find all approved ODs for this employee on this date
         const dayStart = createISTDate(dateStr, '00:00');
         const dayEnd = createISTDate(dateStr, '23:59');
@@ -141,29 +153,39 @@ async function syncCclForNewHolidayWoEntries(rosterEntries, options = {}) {
           .lean();
 
         if (ods.length === 0) {
+          console.log(`[OD-CCL-RETRO] No approved ODs found for Employee ${empNo} on ${dateStr}.`);
           result.skipped++;
           result.details.push({ empNo, dateStr, reason: 'no_approved_od' });
           continue;
         }
 
         for (const od of ods) {
-          const odDateStr = extractISTComponents(od.fromDate).dateStr;
-          // Only process ODs whose fromDate falls on this specific calendar day
-          if (odDateStr !== dateStr) continue;
+          const startYmd = extractISTComponents(od.fromDate).dateStr;
+          const endYmd = extractISTComponents(od.toDate).dateStr;
+          // Only process ODs where the holiday date falls within the OD's date range
+          if (!isYmdInInclusiveRange(dateStr, startYmd, endYmd)) continue;
 
-          // Skip if already flagged and credited
-          const alreadyHasCredit = await hasExistingCclCredit(od.employeeId, dateStr);
-          if (alreadyHasCredit) {
+           // Re-evaluate qualification using updated roster
+          const qualifies = await dateQualifiesForCo(empNo, dateStr, od.isCOEligible);
+          if (!qualifies) {
+            console.log(`[OD-CCL-RETRO] Skipped Employee ${empNo} on ${dateStr} (OD ${od._id}) because the date does not qualify for Comp Off.`);
             result.skipped++;
-            result.details.push({ empNo, dateStr, odId: String(od._id), reason: 'credit_already_exists' });
+            result.details.push({ empNo, dateStr, odId: String(od._id), reason: 'not_qualified_after_check' });
             continue;
           }
 
-          // Re-evaluate qualification using updated roster
-          const qualifies = await dateQualifiesForCo(empNo, dateStr, od.isCOEligible);
-          if (!qualifies) {
+          // If the day qualifies, update isCOEligible to true on the OD document if not already set
+          if (!dryRun && od.isCOEligible !== true) {
+            console.log(`[OD-CCL-RETRO] Updating isCOEligible to true on OD ${od._id} for Employee ${empNo} on ${dateStr}`);
+            await OD.updateOne({ _id: od._id }, { $set: { isCOEligible: true } });
+          }
+
+          // Skip if already flagged and credited in the leave register
+          const alreadyHasCredit = await hasExistingCclCredit(od.employeeId, dateStr);
+          if (alreadyHasCredit) {
+            console.log(`[OD-CCL-RETRO] Skipped Employee ${empNo} on ${dateStr} (OD ${od._id}) because a CCL credit already exists in the register.`);
             result.skipped++;
-            result.details.push({ empNo, dateStr, odId: String(od._id), reason: 'not_qualified_after_check' });
+            result.details.push({ empNo, dateStr, odId: String(od._id), reason: 'credit_already_exists' });
             continue;
           }
 
@@ -175,8 +197,6 @@ async function syncCclForNewHolidayWoEntries(rosterEntries, options = {}) {
           );
 
           if (!dryRun) {
-            // Update isCOEligible on the OD document
-            await OD.updateOne({ _id: od._id }, { $set: { isCOEligible: true } });
 
             // Load employee details for the ledger
             const emp = await Employee.findById(od.employeeId)

@@ -224,7 +224,7 @@ export default function UsersPage() {
   const [employeeFormData, setEmployeeFormData] = useState<UserFormData>({
     employeeId: '',
     email: '',
-    role: 'employee',
+    role: 'sub_admin',
     departmentType: 'single',
     departments: [],
     autoGeneratePassword: true,
@@ -903,7 +903,7 @@ export default function UsersPage() {
     setEmployeeFormData({
       employeeId: '',
       email: '',
-      role: 'employee',
+      role: 'sub_admin',
       departmentType: 'single',
       departments: [],
       autoGeneratePassword: true,
@@ -1160,14 +1160,121 @@ export default function UsersPage() {
   }
 
   const hdrOutlineBtn =
-    'inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[10px] font-semibold uppercase tracking-wide transition hover:opacity-80 disabled:opacity-40';
+    'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 text-xs font-semibold tracking-wide text-slate-700 transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-800 dark:bg-stone-950 dark:hover:bg-slate-900 dark:text-slate-350 active:scale-[0.98]';
   const hdrPrimaryBtn =
-    'inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2.5 text-[10px] font-semibold uppercase tracking-wide text-white transition hover:opacity-90 disabled:opacity-40';
+    'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-4.5 text-xs font-semibold tracking-wide text-white transition hover:opacity-90 disabled:opacity-40 shadow-sm active:scale-[0.98]';
   const hdrFieldClass =
-    'h-7 border bg-white px-2 text-[11px] text-stone-900 transition focus:outline-none focus:ring-1 focus:ring-[color:var(--ps-accent)] dark:bg-stone-950 dark:text-stone-100';
+    'h-9 rounded-full border border-slate-200 bg-white px-3.5 text-xs font-medium text-slate-750 transition focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-800 dark:bg-stone-950 dark:text-stone-100';
 
   return (
     <LoansPageShell>
+      <style>{`
+        /* Soft and round container cards */
+        header.mb-5 {
+          border-radius: 1.5rem !important;
+          border-color: rgba(226, 232, 240, 0.8) !important;
+          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05) !important;
+        }
+        .dark header.mb-5 {
+          border-color: rgba(30, 41, 59, 0.6) !important;
+        }
+
+        /* Stat grid item split cards */
+        section.mb-5 {
+          display: flex !important;
+          flex-wrap: wrap !important;
+          gap: 12px !important;
+          background: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
+        }
+        section.mb-5 > div {
+          flex: 1 1 150px !important;
+          border-radius: 1.25rem !important;
+          border: 1px solid rgba(226, 232, 240, 0.8) !important;
+          box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+        }
+        section.mb-5 > div:not(.text-white) {
+          background-color: #fff !important;
+        }
+        .dark section.mb-5 > div:not(.text-white) {
+          background-color: rgb(15 15 15) !important;
+        }
+        section.mb-5 > div.text-white {
+          border: none !important;
+        }
+
+        /* Main table content panel round */
+        div.overflow-hidden.border.bg-white {
+          border-radius: 1.5rem !important;
+          border-color: rgba(226, 232, 240, 0.8) !important;
+          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05) !important;
+        }
+        .dark div.overflow-hidden.border.bg-white {
+          border-color: rgba(30, 41, 59, 0.6) !important;
+          background-color: rgb(15 15 15) !important;
+        }
+
+        /* Avatars rounded-full */
+        .rounded-md.font-semibold.text-white {
+          border-radius: 9999px !important;
+        }
+        
+        /* Role badges and access scope chips rounded-full */
+        span.inline-flex.items-center.gap-1.5.rounded,
+        span.rounded.border.px-2.py-0.5,
+        span.rounded.border.px-2.py-0.5.text-\[10px\] {
+          border-radius: 9999px !important;
+          padding-left: 0.625rem !important;
+          padding-right: 0.625rem !important;
+          font-weight: 600 !important;
+        }
+
+        /* Action buttons rounded-full */
+        td button.h-7.w-7, td button.inline-flex.h-7 {
+          border-radius: 9999px !important;
+          width: 2rem !important;
+          height: 2rem !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          transition: all 0.2s !important;
+        }
+        td button.h-7.w-7:hover {
+          transform: scale(1.08) !important;
+        }
+
+        /* Table head styling */
+        tr.bg-\[var\(--ps-accent-soft\)\] th {
+          padding-top: 1rem !important;
+          padding-bottom: 1rem !important;
+          color: var(--ps-accent-ink) !important;
+          font-size: 11px !important;
+          font-weight: 700 !important;
+        }
+
+        /* Table rows vertical spacing */
+        tbody tr td {
+          padding-top: 1rem !important;
+          padding-bottom: 1rem !important;
+        }
+
+        /* Dialog buttons rounded-full */
+        .rounded-md.px-4.py-2.5.text-xs,
+        .rounded-md.border.px-4.py-2.5.text-xs,
+        .rounded-md.border.px-3.py-2.text-xs,
+        button[type="submit"].rounded-xl,
+        button.flex-1.rounded-xl {
+          border-radius: 9999px !important;
+          padding-left: 1.5rem !important;
+          padding-right: 1.5rem !important;
+        }
+
+        /* Form inputs rounded-xl/2xl */
+        input.w-full, select.w-full {
+          border-radius: 1rem !important;
+        }
+      `}</style>
       <LoansPageHeader
         dense
         layout="toolbar"
@@ -1179,13 +1286,13 @@ export default function UsersPage() {
             <div aria-hidden className="min-w-0" />
             <div className="flex shrink-0 flex-nowrap items-center gap-1.5">
               <div className="relative w-28 sm:w-36">
-                <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-stone-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
                 <input
                   type="text"
                   placeholder="Search…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className={`${hdrFieldClass} w-full pl-7`}
+                  className={`${hdrFieldClass} w-full pl-9 pr-3`}
                   style={loansFormInputStyle()}
                 />
               </div>
