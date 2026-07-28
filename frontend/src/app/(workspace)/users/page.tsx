@@ -30,6 +30,7 @@ import {
 import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
 import ModuleGranularPermissionToggles from '@/components/users/ModuleGranularPermissionToggles';
 import ModulePermissionBadges, { moduleShouldShowInPermissionView } from '@/components/users/ModulePermissionBadges';
+import { expandLegacyPromotionTransferPermissions } from '@/lib/userFeaturePermissions';
 import Spinner from '@/components/Spinner';
 import {
   buildDivisionMappingFromDepartment,
@@ -360,7 +361,7 @@ export default function UsersPage() {
       if (customRole) {
         setFormData(prev => ({
           ...prev,
-          featureControl: customRole.activeModules || [],
+          featureControl: expandLegacyPromotionTransferPermissions(customRole.activeModules || []),
           dataScope: 'department' // Default for custom roles, user can adjust
         }));
         return;
@@ -374,7 +375,7 @@ export default function UsersPage() {
           const defaultScope = formData.role === 'manager' ? 'division' : (formData.role === 'hod' ? 'department' : 'all');
           setFormData(prev => ({
             ...prev,
-            featureControl: res.data?.value?.activeModules || [],
+            featureControl: expandLegacyPromotionTransferPermissions(res.data?.value?.activeModules || []),
             dataScope: defaultScope as DataScope
           }));
         }
@@ -819,7 +820,7 @@ export default function UsersPage() {
           : (finalMapping || []).flatMap((m) => m.departments || []),
       password: '',
       autoGeneratePassword: false,
-      featureControl: user.featureControl || [],
+      featureControl: expandLegacyPromotionTransferPermissions(user.featureControl || []),
       dataScope: resolvedDataScope,
       allowedDivisions:
         user.allowedDivisions?.map((d) => (typeof d === 'string' ? d : d?._id)) ||
@@ -2092,7 +2093,9 @@ export default function UsersPage() {
                               onChange={(e) => {
                                 const roleId = e.target.value;
                                 const customRole = customRoles.find(r => r._id === roleId);
-                                const newPermissions = customRole ? (customRole.activeModules || []) : employeeFormData.featureControl;
+                                const newPermissions = expandLegacyPromotionTransferPermissions(
+                                  customRole ? (customRole.activeModules || []) : employeeFormData.featureControl
+                                );
 
                                 const keepMapping = scopingRolesKeepMapping(roleId) && scopingRolesKeepMapping(employeeFormData.role);
                                 setEmployeeFormData({
@@ -2484,7 +2487,9 @@ export default function UsersPage() {
                                 onChange={(e) => {
                                   const roleId = e.target.value;
                                   const customRole = customRoles.find(r => r._id === roleId);
-                                  const newPermissions = customRole ? (customRole.activeModules || []) : formData.featureControl;
+                                  const newPermissions = expandLegacyPromotionTransferPermissions(
+                                    customRole ? (customRole.activeModules || []) : formData.featureControl
+                                  );
 
                                   const keepMapping = scopingRolesKeepMapping(roleId) && scopingRolesKeepMapping(formData.role);
                                   setFormData({
@@ -3140,8 +3145,11 @@ export default function UsersPage() {
                           ) : (
                             <div className="space-y-6">
                               {MODULE_CATEGORIES.map(category => {
+                                const viewFc = expandLegacyPromotionTransferPermissions(
+                                  selectedViewUser.featureControl
+                                );
                                 const modulesWithPerms = category.modules.filter((m) =>
-                                  moduleShouldShowInPermissionView(m as any, selectedViewUser.featureControl)
+                                  moduleShouldShowInPermissionView(m as any, viewFc)
                                 );
 
                                 if (modulesWithPerms.length === 0) return null;
@@ -3160,7 +3168,7 @@ export default function UsersPage() {
                                           <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">{m.label}</span>
                                           <ModulePermissionBadges
                                             module={m as any}
-                                            featureControl={selectedViewUser.featureControl}
+                                            featureControl={viewFc}
                                             variant="matrix"
                                           />
                                         </div>

@@ -57,7 +57,9 @@ function getWorkedHalfFromInThumbOnlyLocal(inTime, startStr, endStr) {
 
 
 /**
- * Punch hours clipped to the assigned shift window (same basis as legacy statusDuration).
+ * Punch hours clipped to the assigned shift window [start, end].
+ * Pre-shift and post-shift time are excluded from present-duration gating;
+ * post-shift time is extra/OT only (computed separately).
  */
 function computeClippedPunchHours(pShift, dateStr) {
   if (!pShift?.inTime || !pShift?.outTime) return 0;
@@ -78,8 +80,9 @@ function computeClippedPunchHours(pShift, dateStr) {
   }
 
   const effectiveIn = new Date(Math.max(punchIn.getTime(), shiftStart.getTime()));
-  const effectiveOut = punchOut;
-  return Math.max(0, (effectiveOut - effectiveIn) / 3600000);
+  const effectiveOut = new Date(Math.min(punchOut.getTime(), shiftEnd.getTime()));
+  if (effectiveOut <= effectiveIn) return 0;
+  return (effectiveOut - effectiveIn) / 3600000;
 }
 
 /**

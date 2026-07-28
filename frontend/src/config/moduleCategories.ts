@@ -14,7 +14,8 @@ export const MODULE_CATEGORIES = [
         icon: '👥',
         modules: [
             { code: 'EMPLOYEES', label: 'Employees', href: '/employees', verifiable: true, bankable: true, editable: true, secondSalaryEditable: true },
-            { code: 'PROMOTIONS_TRANSFERS', label: 'Promotions & Transfers', href: '/promotions-transfers' },
+            { code: 'PROMOTIONS', label: 'Promotions', href: '/promotions-transfers' },
+            { code: 'TRANSFERS', label: 'Transfers', href: '/promotions-transfers' },
             { code: 'RESIGNATION', label: 'Resignations', href: '/resignations', terminable: true },
             { code: 'EMPLOYEE_BIRTHDAYS', label: 'Birthdays', href: '/employee-birthdays' },
             { code: 'ASSETS_MANAGEMENT', label: 'Assets', href: '/assets-management' },
@@ -107,6 +108,10 @@ const MODULE_CODE_ALIASES: Record<string, string[]> = {
     LOANS_SALARY_ADVANCE: ['LOANS', 'LOAN'],
     ATTENDANCE_AUDIT: ['AUDITS'],
     AUDITS: ['ATTENDANCE_AUDIT'],
+    // Combined nav item + legacy key; split modules also accept the legacy combined grant
+    PROMOTIONS_TRANSFERS: ['PROMOTIONS', 'TRANSFERS'],
+    PROMOTIONS: ['PROMOTIONS_TRANSFERS'],
+    TRANSFERS: ['PROMOTIONS_TRANSFERS'],
 };
 
 function moduleCodesToCheck(moduleCode: string): string[] {

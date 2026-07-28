@@ -381,7 +381,7 @@ const defaultModules = [
   {
     name: 'Promotions & Transfers',
     code: 'PROMOTIONS_TRANSFERS',
-    description: 'Salary promotions and internal transfers with approval workflow',
+    description: 'Salary promotions and internal transfers (nav). Grant PROMOTIONS and/or TRANSFERS in user featureControl.',
     icon: 'trending-up',
     route: '/promotions-transfers',
     category: 'hr',

@@ -314,8 +314,10 @@ async function recalculateShiftMetrics(pShift, employeeNumber, date, approvedODs
     const expectedDuration = shiftAssignment.expectedHours || 8;
     let statusDuration = 0;
     if (punchIn && punchOut && shiftStart) {
+        // Present duration = overlap with [shiftStart, shiftEnd] only (post-end is extra).
         const effectiveIn = new Date(Math.max(punchIn.getTime(), shiftStart.getTime()));
-        statusDuration = Math.max(0, (punchOut - effectiveIn) / 3600000);
+        const effectiveOut = new Date(Math.min(punchOut.getTime(), shiftEnd.getTime()));
+        statusDuration = Math.max(0, (effectiveOut - effectiveIn) / 3600000);
     } else if (punchIn && punchOut) {
         statusDuration = pShift.workingHours;
     }
@@ -701,9 +703,10 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                 const isOvernightSeg = timeToMinutes(split.assignedShift.endTime) < timeToMinutes(split.assignedShift.startTime);
                                 const shiftEnd = timeStringToDate(split.assignedShift.endTime, formatDate(sIn), isOvernightSeg);
 
-                                // Effective Duration (Clipped)
+                                // Present duration = overlap with [shiftStart, shiftEnd] only.
+                                // Post-shift-end time is extra and must not inflate PRESENT / fold decisions.
                                 const effectiveIn = new Date(Math.max(sIn.getTime(), shiftStart.getTime()));
-                                const effectiveOut = sOut;
+                                const effectiveOut = new Date(Math.min(sOut.getTime(), shiftEnd.getTime()));
                                 const effectiveDurationMs = Math.max(0, effectiveOut - effectiveIn);
                                 const effectiveWorking = (effectiveDurationMs / 3600000) + (split.extraHours || 0);
 
@@ -1055,11 +1058,11 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                 // Calculate Status based on rules
                 const expectedDuration = (shiftAssignment && shiftAssignment.expectedHours) || 8;
 
-                // Calculate Effective Duration for Status Determination
+                // Present duration = overlap with [shiftStart, shiftEnd] only (post-end is extra).
                 let statusDuration = 0;
                 if (punchIn && punchOut && shiftStart) {
                     const effectiveIn = new Date(Math.max(punchIn.getTime(), shiftStart.getTime()));
-                    const effectiveOut = punchOut;
+                    const effectiveOut = new Date(Math.min(punchOut.getTime(), shiftEnd.getTime()));
                     statusDuration = Math.max(0, (effectiveOut - effectiveIn) / 3600000);
                 } else if (punchIn && punchOut) {
                     statusDuration = pShift.workingHours;
@@ -1195,6 +1198,15 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         console.log(`[Multi-Shift Processing] Updating daily record with ${totals.totalShifts} shift(s)`);
 
         let dailyRecord = await AttendanceDaily.findOne({ employeeNumber, date });
+
+        // Week-off / holiday day status must stay WEEK_OFF / HOLIDAY.
+        // Work done that day is reflected on shift rows only (auto-OD uses those hours).
+        if (
+            dailyRecord
+            && (dailyRecord.status === 'WEEK_OFF' || dailyRecord.status === 'HOLIDAY')
+        ) {
+            updateData.status = dailyRecord.status;
+        }
 
         // Keep manually corrected attendance immutable ONLY during completed payroll periods.
         const isManualImmutable = !!dailyRecord && dailyRecord.locked === true;

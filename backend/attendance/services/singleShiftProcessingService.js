@@ -911,6 +911,15 @@ async function upsertDaily(employeeNumber, date, updateData) {
   if (isManualImmutable) {
     return dailyRecord;
   }
+  // Week-off / holiday day status stays; work is on shift rows only.
+  if (
+    dailyRecord
+    && (dailyRecord.status === 'WEEK_OFF' || dailyRecord.status === 'HOLIDAY')
+    && updateData
+    && Object.prototype.hasOwnProperty.call(updateData, 'status')
+  ) {
+    updateData = { ...updateData, status: dailyRecord.status };
+  }
   if (!dailyRecord) {
     dailyRecord = new AttendanceDaily({ employeeNumber, date, ...updateData });
   } else {

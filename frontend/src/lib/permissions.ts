@@ -432,28 +432,117 @@ export function canManageResignationRequest(
 }
 
 // ==========================================
-// PROMOTIONS & TRANSFERS
+// PROMOTIONS & TRANSFERS (split modules + legacy combined key)
 // ==========================================
+
+export type PtRequestType = 'promotion' | 'demotion' | 'transfer' | 'increment';
+
+/** Salary-path types live under PROMOTIONS; org-move-only under TRANSFERS. */
+export function isPromotionRequestType(requestType: string | null | undefined): boolean {
+    return requestType === 'promotion' || requestType === 'demotion' || requestType === 'increment';
+}
+
+export function isTransferRequestType(requestType: string | null | undefined): boolean {
+    return requestType === 'transfer';
+}
+
+function canViewPromotionsModule(user: User): boolean {
+    return canViewFeature(user, 'PROMOTIONS') || canViewFeature(user, 'PROMOTIONS_TRANSFERS');
+}
+
+function canManagePromotionsModule(user: User): boolean {
+    return canManageFeature(user, 'PROMOTIONS') || canManageFeature(user, 'PROMOTIONS_TRANSFERS');
+}
+
+function canViewTransfersModule(user: User): boolean {
+    return canViewFeature(user, 'TRANSFERS') || canViewFeature(user, 'PROMOTIONS_TRANSFERS');
+}
+
+function canManageTransfersModule(user: User): boolean {
+    return canManageFeature(user, 'TRANSFERS') || canManageFeature(user, 'PROMOTIONS_TRANSFERS');
+}
 
 export function canViewPromotionTransfer(user: User): boolean {
     if (user.role === 'super_admin') return true;
-    return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager', 'employee']) && canViewFeature(user, 'PROMOTIONS_TRANSFERS');
+    return (
+        hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager', 'employee']) &&
+        (canViewPromotionsModule(user) || canViewTransfersModule(user))
+    );
+}
+
+export function canViewPromotionRequests(user: User): boolean {
+    if (user.role === 'super_admin') return true;
+    return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager', 'employee']) && canViewPromotionsModule(user);
+}
+
+export function canViewTransferRequests(user: User): boolean {
+    if (user.role === 'super_admin') return true;
+    return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager', 'employee']) && canViewTransfersModule(user);
+}
+
+export function canViewPtRequestType(user: User, requestType: string | null | undefined): boolean {
+    if (isTransferRequestType(requestType)) return canViewTransferRequests(user);
+    if (isPromotionRequestType(requestType)) return canViewPromotionRequests(user);
+    return canViewPromotionTransfer(user);
+}
+
+/** Create/manage promotions, demotions, or increments. */
+export function canCreatePromotion(user: User): boolean {
+    if (user.role === 'super_admin') return true;
+    return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager', 'employee']) && canManagePromotionsModule(user);
+}
+
+/** Create/manage transfers. */
+export function canCreateTransfer(user: User): boolean {
+    if (user.role === 'super_admin') return true;
+    return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager', 'employee']) && canManageTransfersModule(user);
 }
 
 export function canCreatePromotionTransfer(user: User): boolean {
+    return canCreatePromotion(user) || canCreateTransfer(user);
+}
+
+export function canCreatePtRequestType(user: User, requestType: string | null | undefined): boolean {
+    if (isTransferRequestType(requestType)) return canCreateTransfer(user);
+    if (isPromotionRequestType(requestType)) return canCreatePromotion(user);
+    return false;
+}
+
+export function canApprovePromotion(user: User): boolean {
     if (user.role === 'super_admin') return true;
-    return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager', 'employee']) && canManageFeature(user, 'PROMOTIONS_TRANSFERS');
+    return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager']) && canManagePromotionsModule(user);
+}
+
+export function canApproveTransfer(user: User): boolean {
+    if (user.role === 'super_admin') return true;
+    return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager']) && canManageTransfersModule(user);
 }
 
 export function canApprovePromotionTransfer(user: User): boolean {
-    if (user.role === 'super_admin') return true;
-    return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager']) && canManageFeature(user, 'PROMOTIONS_TRANSFERS');
+    return canApprovePromotion(user) || canApproveTransfer(user);
+}
+
+export function canApprovePtRequestType(user: User, requestType: string | null | undefined): boolean {
+    if (isTransferRequestType(requestType)) return canApproveTransfer(user);
+    if (isPromotionRequestType(requestType)) return canApprovePromotion(user);
+    return false;
 }
 
 /** Hard-delete requests (super/sub-admin only; server enforces scope and blocks approved rows). */
 export function canDeletePromotionTransferRequest(user: User): boolean {
     if (user.role === 'super_admin') return true;
-    return user.role === 'sub_admin' && canManageFeature(user, 'PROMOTIONS_TRANSFERS');
+    return (
+        user.role === 'sub_admin' &&
+        (canManagePromotionsModule(user) || canManageTransfersModule(user))
+    );
+}
+
+export function canDeletePtRequestType(user: User, requestType: string | null | undefined): boolean {
+    if (user.role === 'super_admin') return true;
+    if (user.role !== 'sub_admin') return false;
+    if (isTransferRequestType(requestType)) return canManageTransfersModule(user);
+    if (isPromotionRequestType(requestType)) return canManagePromotionsModule(user);
+    return false;
 }
 
 // ==========================================

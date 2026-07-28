@@ -25,6 +25,7 @@ import {
 import {
   getAccessLevelLabel,
 } from '@/lib/modulePermissionLabels';
+import { expandLegacyPromotionTransferPermissions } from '@/lib/userFeaturePermissions';
 import {
   LoanDetailDialog,
   LoanDetailDialogBody,
@@ -40,7 +41,8 @@ const availableModules: { id: string; label: string }[] = [
   { id: 'EMPLOYEES', label: 'Employees' },
   { id: 'ASSETS_MANAGEMENT', label: 'Assets Management' },
   { id: 'RESIGNATION', label: 'Resignations' },
-  { id: 'PROMOTIONS_TRANSFERS', label: 'Promotions & Transfers' },
+  { id: 'PROMOTIONS', label: 'Promotions' },
+  { id: 'TRANSFERS', label: 'Transfers' },
   { id: 'ATTENDANCE', label: 'Attendance' },
   { id: 'ATTENDANCE_AUDIT', label: 'Audits' },
   { id: 'LEAVE_OD', label: 'Leave & OD' },
@@ -64,12 +66,13 @@ type FeatureControlRole = 'employee' | 'hod' | 'hr' | 'manager';
 /** Normalize stored activeModules: plain "MODULE" → "MODULE:write" so UI and save use :read/:write consistently */
 function normalizeActiveModules(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter((v): v is string => typeof v === 'string').map((v) => {
+  const normalized = raw.filter((v): v is string => typeof v === 'string').map((v) => {
     const s = String(v).trim();
     if (!s) return null;
     if (s.includes(':')) return s; // already "MODULE:read" or "MODULE:write"
     return `${s}:write`; // legacy plain id → treat as write
   }).filter(Boolean) as string[];
+  return expandLegacyPromotionTransferPermissions(normalized);
 }
 
 const FeatureControlSettings = () => {
@@ -276,9 +279,10 @@ const FeatureControlSettings = () => {
 
   /** Current permission state for a module from activeModules array */
   const getModuleState = (state: string[], moduleId: string): 'disabled' | 'read' | 'write' => {
-    if (state.includes(`${moduleId}:write`)) return 'write';
-    if (state.includes(moduleId)) return 'write'; // legacy plain id
-    if (state.includes(`${moduleId}:read`)) return 'read';
+    const expanded = expandLegacyPromotionTransferPermissions(state);
+    if (expanded.includes(`${moduleId}:write`)) return 'write';
+    if (expanded.includes(moduleId)) return 'write'; // legacy plain id
+    if (expanded.includes(`${moduleId}:read`)) return 'read';
     return 'disabled';
   };
 
@@ -291,8 +295,9 @@ const FeatureControlSettings = () => {
       manager: [featureControlManager, setFeatureControlManager],
     };
     const [current, setter] = setters[role];
-    const state = getModuleState(current, moduleId);
-    const without = current.filter((id) => id !== moduleId && id !== `${moduleId}:read` && id !== `${moduleId}:write`);
+    const expanded = expandLegacyPromotionTransferPermissions(current);
+    const state = getModuleState(expanded, moduleId);
+    const without = expanded.filter((id) => id !== moduleId && id !== `${moduleId}:read` && id !== `${moduleId}:write`);
     if (state === 'disabled') {
       setter([...without, `${moduleId}:read`]);
     } else if (state === 'read') {
@@ -306,7 +311,7 @@ const FeatureControlSettings = () => {
     const role = customRoles.find((r) => r._id === roleId);
     if (!role) return;
 
-    const current = role.activeModules || [];
+    const current = expandLegacyPromotionTransferPermissions(role.activeModules || []);
     const state = getModuleState(current, moduleId);
     const without = current.filter((id) => id !== moduleId && id !== `${moduleId}:read` && id !== `${moduleId}:write`);
 

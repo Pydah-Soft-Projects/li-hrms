@@ -86,3 +86,40 @@ export const SECOND_SALARY_TOGGLE_TITLE =
 
 export const VERIFY_EMPLOYEES_TOGGLE_TITLE =
   'Verify: access Applications tab, create applications, and verify employee applications. Independent of Read/Write.';
+
+const LEGACY_PT = 'PROMOTIONS_TRANSFERS';
+
+/**
+ * Expand legacy combined PROMOTIONS_TRANSFERS grants into separate PROMOTIONS + TRANSFERS
+ * keys for the user-management UI. Removes the legacy keys so saves persist the split model.
+ */
+export function expandLegacyPromotionTransferPermissions(
+  featureControl: string[] | undefined | null
+): string[] {
+  const list = Array.isArray(featureControl) ? [...featureControl] : [];
+  const hasLegacyPlain = list.includes(LEGACY_PT);
+  const hasLegacyRead = list.includes(`${LEGACY_PT}:read`);
+  const hasLegacyWrite = list.includes(`${LEGACY_PT}:write`);
+
+  if (!hasLegacyPlain && !hasLegacyRead && !hasLegacyWrite) {
+    return list;
+  }
+
+  const next = new Set(
+    list.filter(
+      (p) => p !== LEGACY_PT && p !== `${LEGACY_PT}:read` && p !== `${LEGACY_PT}:write`
+    )
+  );
+
+  if (hasLegacyPlain || hasLegacyWrite) {
+    next.add('PROMOTIONS:read');
+    next.add('PROMOTIONS:write');
+    next.add('TRANSFERS:read');
+    next.add('TRANSFERS:write');
+  } else if (hasLegacyRead) {
+    next.add('PROMOTIONS:read');
+    next.add('TRANSFERS:read');
+  }
+
+  return Array.from(next);
+}

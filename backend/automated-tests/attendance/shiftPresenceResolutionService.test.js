@@ -139,10 +139,42 @@ describe('shiftPresenceResolutionService', () => {
     expect(pShift.status).toBe('HALF_DAY');
   });
 
-  test('computeClippedPunchHours clips to shift window', () => {
+  test('computeClippedPunchHours clips early arrival to shift start', () => {
     const pShift = baseShift('08:00', '21:00');
     const hours = computeClippedPunchHours(pShift, DATE);
     expect(hours).toBe(12);
+  });
+
+  test('computeClippedPunchHours clips late stay to shift end (post-end is not present)', () => {
+    const pShift = baseShift('09:00', '23:00');
+    const hours = computeClippedPunchHours(pShift, DATE);
+    expect(hours).toBe(12);
+  });
+
+  test('computeClippedPunchHours clips both early arrival and late stay', () => {
+    const pShift = baseShift('08:00', '23:00');
+    const hours = computeClippedPunchHours(pShift, DATE);
+    expect(hours).toBe(12);
+  });
+
+  test('late stay past end does not inflate shift_level PRESENT via post-end hours', async () => {
+    // In-window only 14:00–21:00 = 7h (< 75% of 12). Old logic counted to 23:00 = 9h and wrongly PRESENT.
+    const pShift = baseShift('14:00', '23:00');
+    pShift.punchHours = 9;
+    pShift.workingHours = 9;
+
+    await resolveShiftPresence({
+      pShift,
+      dateStr: DATE,
+      employeeNumber: 'EMP001',
+      graceOpts: grace,
+      shiftDoc: pydahsoftShift,
+      applyEdgePermissions: false,
+    });
+
+    expect(computeClippedPunchHours(pShift, DATE)).toBe(7);
+    expect(pShift.presenceResolutionPath).not.toBe('shift_level');
+    expect(pShift.status).not.toBe('PRESENT');
   });
 
   describe('shifts without halves configured', () => {

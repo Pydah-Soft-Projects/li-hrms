@@ -5,9 +5,14 @@ import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import {
   canApprovePromotionTransfer,
-  canCreatePromotionTransfer,
-  canDeletePromotionTransferRequest,
+  canApprovePtRequestType,
+  canCreatePromotion,
+  canCreatePtRequestType,
+  canCreateTransfer,
+  canDeletePtRequestType,
   canViewPromotionTransfer,
+  canViewPtRequestType,
+  type PtRequestType,
 } from '@/lib/permissions';
 import { toast } from 'react-toastify';
 import {
@@ -401,7 +406,9 @@ export default function PromotionsTransfersPage() {
   const canCancelRequest = useCallback(
     (r: PtRequest) => {
       if (r.status !== 'pending' || !user) return false;
-      if (['super_admin', 'sub_admin'].includes(String(user.role))) return true;
+      if (['super_admin', 'sub_admin'].includes(String(user.role))) {
+        return canCreatePtRequestType(user as any, r.requestType);
+      }
       const rid = (r.requestedBy as { _id?: string })?._id;
       if (rid && String(rid) === String(user.id)) return true;
       if (isEmployee && String(r.emp_no) === String(user.emp_no || user.employeeId || '').toUpperCase()) return true;
@@ -411,16 +418,42 @@ export default function PromotionsTransfersPage() {
   );
 
   const canView = useMemo(() => (user ? canViewPromotionTransfer(user as any) : false), [user]);
-  const canCreate = useMemo(() => (user ? canCreatePromotionTransfer(user as any) : false), [user]);
+  const canCreatePromo = useMemo(() => (user ? canCreatePromotion(user as any) : false), [user]);
+  const canCreateXfer = useMemo(() => (user ? canCreateTransfer(user as any) : false), [user]);
+  const canCreate = useMemo(() => canCreatePromo || canCreateXfer, [canCreatePromo, canCreateXfer]);
   const canApprove = useMemo(() => (user ? canApprovePromotionTransfer(user as any) : false), [user]);
-  const canDelete = useMemo(() => (user ? canDeletePromotionTransferRequest(user as any) : false), [user]);
+
+  const allowedCreateTypes = useMemo(() => {
+    const types: PtRequestType[] = [];
+    if (canCreatePromo) {
+      types.push('promotion', 'demotion', 'increment');
+    }
+    if (canCreateXfer) {
+      types.push('transfer');
+    }
+    return types;
+  }, [canCreatePromo, canCreateXfer]);
+
+  const defaultCreateType = useMemo((): PtRequestType => {
+    if (canCreatePromo) return 'promotion';
+    if (canCreateXfer) return 'transfer';
+    return 'promotion';
+  }, [canCreatePromo, canCreateXfer]);
 
   const canDeleteRow = useCallback(
     (r: PtRequest) => {
-      if (!canDelete) return false;
+      if (!user || !canDeletePtRequestType(user as any, r.requestType)) return false;
       return ['pending', 'rejected', 'cancelled'].includes(r.status);
     },
-    [canDelete]
+    [user]
+  );
+
+  const canApproveDetail = useCallback(
+    (r: PtRequest | null) => {
+      if (!user || !r) return false;
+      return canApprovePtRequestType(user as any, r.requestType);
+    },
+    [user]
   );
 
   /** Load department options for the modal without clearing the list when division is missing (employee may only have department). */
@@ -558,6 +591,7 @@ export default function PromotionsTransfersPage() {
 
   const handleBulkSave = async () => {
     const toCreate = bulkRows.filter((r) => {
+      if (!user || !canCreatePtRequestType(user as any, r.requestType)) return false;
       const type = r.requestType;
       // For promotion/demotion, check if gross salary changed and is > 0
       if (type === 'promotion' || type === 'demotion') {
@@ -688,8 +722,18 @@ export default function PromotionsTransfersPage() {
       .catch(() => {});
   }, [user, canView, loadData]);
 
+  useEffect(() => {
+    if (allowedCreateTypes.length === 0) return;
+    if (!allowedCreateTypes.includes(formType)) {
+      setFormType(defaultCreateType);
+    }
+    if (!allowedCreateTypes.includes(bulkType)) {
+      setBulkType(defaultCreateType);
+    }
+  }, [allowedCreateTypes, defaultCreateType, formType, bulkType]);
+
   const openCreateModal = async () => {
-    setFormType('promotion');
+    setFormType(defaultCreateType);
     setSelectedEmpNo('');
     setSelectedMonthLabel('');
     setNewGrossSalaryInput('');
@@ -995,6 +1039,14 @@ export default function PromotionsTransfersPage() {
       toast.error('Select employee');
       return;
     }
+    if (!user || !canCreatePtRequestType(user as any, formType)) {
+      toast.error(
+        formType === 'transfer'
+          ? 'You do not have write access for Transfers'
+          : 'You do not have write access for Promotions'
+      );
+      return;
+    }
     setSubmitting(true);
     try {
       if (formType === 'transfer') {
@@ -1106,13 +1158,16 @@ export default function PromotionsTransfersPage() {
 
   const filtered = useMemo(() => {
     const src = tab === 'pending' ? pendingList : list;
+    const visible = user
+      ? src.filter((r) => canViewPtRequestType(user as any, r.requestType))
+      : src;
     const q = search.trim().toLowerCase();
-    if (!q) return src;
-    return src.filter((r) => {
+    if (!q) return visible;
+    return visible.filter((r) => {
       const name = r.employeeId?.employee_name?.toLowerCase() || '';
       return r.emp_no.toLowerCase().includes(q) || name.includes(q);
     });
-  }, [list, pendingList, tab, search]);
+  }, [list, pendingList, tab, search, user]);
 
   const showBulkTargetOrgColumn = useMemo(
     () => bulkRows.some((r) => r.requestType !== 'increment'),
@@ -1312,10 +1367,10 @@ export default function PromotionsTransfersPage() {
                     onChange={(e) => setBulkType(e.target.value as any)}
                     className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-3.5 py-2 text-sm focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
                   >
-                    <option value="promotion">Promotion</option>
-                    <option value="demotion">Demotion</option>
-                    <option value="transfer">Transfer</option>
-                    <option value="increment">Increment</option>
+                    {allowedCreateTypes.includes('promotion') && <option value="promotion">Promotion</option>}
+                    {allowedCreateTypes.includes('demotion') && <option value="demotion">Demotion</option>}
+                    {allowedCreateTypes.includes('transfer') && <option value="transfer">Transfer</option>}
+                    {allowedCreateTypes.includes('increment') && <option value="increment">Increment</option>}
                   </select>
                 </div>
                 <div className="space-y-1.5">
@@ -1412,10 +1467,10 @@ export default function PromotionsTransfersPage() {
                                 }}
                                 className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-[11px] focus:ring-1 focus:ring-indigo-500 outline-none transition-all font-medium"
                               >
-                                <option value="promotion">Promotion</option>
-                                <option value="demotion">Demotion</option>
-                                <option value="transfer">Transfer</option>
-                                <option value="increment">Increment</option>
+                                {allowedCreateTypes.includes('promotion') && <option value="promotion">Promotion</option>}
+                                {allowedCreateTypes.includes('demotion') && <option value="demotion">Demotion</option>}
+                                {allowedCreateTypes.includes('transfer') && <option value="transfer">Transfer</option>}
+                                {allowedCreateTypes.includes('increment') && <option value="increment">Increment</option>}
                               </select>
                             </td>
                             {showBulkTargetOrgColumn && (
@@ -1931,10 +1986,10 @@ export default function PromotionsTransfersPage() {
                     }
                   }}
                 >
-                  <option value="promotion">Promotion</option>
-                  <option value="demotion">Demotion</option>
-                  <option value="transfer">Transfer</option>
-                  <option value="increment">Increment</option>
+                  {allowedCreateTypes.includes('promotion') && <option value="promotion">Promotion</option>}
+                  {allowedCreateTypes.includes('demotion') && <option value="demotion">Demotion</option>}
+                  {allowedCreateTypes.includes('transfer') && <option value="transfer">Transfer</option>}
+                  {allowedCreateTypes.includes('increment') && <option value="increment">Increment</option>}
                 </select>
               </div>
 
@@ -2077,7 +2132,7 @@ export default function PromotionsTransfersPage() {
                 </>
               )}
 
-              {formType === 'transfer' && (
+              {formType === 'transfer' && canCreatePromo && (
                 <div>
                   <label className="text-xs font-semibold text-slate-500 uppercase">Amount (optional)</label>
                   <input
@@ -2319,7 +2374,7 @@ export default function PromotionsTransfersPage() {
                   {detail.workflow?.approvalChain && detail.workflow.approvalChain.length > 0 && (
                     <PromotionApprovalTimeline workflow={detail.workflow} />
                   )}
-                  {detail.status === 'pending' && canApprove && (
+                  {detail.status === 'pending' && canApproveDetail(detail) && (
                     <>
                       <textarea
                         className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"

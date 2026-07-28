@@ -17,6 +17,13 @@ const {
 } = require('../../shared/middleware/dataScopeMiddleware');
 const { resolvePromotionTransferWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const { buildApprovalChain, chainStepLabel } = require('../utils/promotionWorkflowUtils');
+const {
+  assertCanManageRequestType,
+  assertCanViewRequestType,
+  canViewAny,
+  loadPtActor,
+  requestTypeVisibilityFilter,
+} = require('../utils/promotionTransferAccess');
 
 /** Normalize stored chain rows so API always returns a clear approver-type label (HOD, manager, etc.). */
 function hydrateApprovalChainLabels(doc) {
@@ -156,6 +163,13 @@ exports.createRequest = async (req, res) => {
         success: false,
         message: 'requestType must be promotion, demotion, transfer, or increment',
       });
+    }
+
+    const actor = await loadPtActor(req);
+    try {
+      assertCanManageRequestType(actor || req.user, requestType);
+    } catch (authErr) {
+      return res.status(authErr.statusCode || 403).json({ success: false, message: authErr.message });
     }
 
     const resolved = await resolveTargetEmployee(req);
@@ -446,6 +460,11 @@ exports.createRequest = async (req, res) => {
 
 exports.getPendingApprovals = async (req, res) => {
   try {
+    const actor = await loadPtActor(req);
+    if (!canViewAny(actor || req.user)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to view promotions or transfers' });
+    }
+
     const userRole = (req.user.role || '').toLowerCase();
     const isSuperOrSubAdmin = ['super_admin', 'sub_admin'].includes(userRole);
 
@@ -473,6 +492,11 @@ exports.getPendingApprovals = async (req, res) => {
       };
     }
 
+    const typeFilter = requestTypeVisibilityFilter(actor || req.user);
+    if (typeFilter) {
+      filter = filter.$and ? { $and: [...filter.$and, typeFilter] } : { $and: [filter, typeFilter] };
+    }
+
     const list = await PromotionTransferRequest.find(filter)
       .populate('employeeId', 'employee_name emp_no department_id division_id designation_id gross_salary')
       .populate('requestedBy', 'name email')
@@ -496,6 +520,11 @@ exports.getPendingApprovals = async (req, res) => {
 
 exports.getRequests = async (req, res) => {
   try {
+    const actor = await loadPtActor(req);
+    if (!canViewAny(actor || req.user)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to view promotions or transfers' });
+    }
+
     const { emp_no } = req.query;
     const userRole = (req.user.role || '').toLowerCase();
     const isSuperOrSubAdmin = ['super_admin', 'sub_admin'].includes(userRole);
@@ -522,10 +551,23 @@ exports.getRequests = async (req, res) => {
       filter = { $and: [jurisdictionFilter, visibilityFilter] };
     }
 
+    const typeFilter = requestTypeVisibilityFilter(actor || req.user);
+    if (typeFilter) {
+      if (filter.$and) {
+        filter = { $and: [...filter.$and, typeFilter] };
+      } else if (Object.keys(filter).length) {
+        filter = { $and: [filter, typeFilter] };
+      } else {
+        filter = typeFilter;
+      }
+    }
+
     if (emp_no) {
       const empFilter = { emp_no: String(emp_no).toUpperCase() };
       if (filter.$and) {
         filter = { $and: [...filter.$and, empFilter] };
+      } else if (Object.keys(filter).length) {
+        filter = { $and: [filter, empFilter] };
       } else {
         filter = empFilter;
       }
@@ -567,6 +609,13 @@ exports.getRequestById = async (req, res) => {
 
     if (!doc) {
       return res.status(404).json({ success: false, message: 'Request not found' });
+    }
+
+    const actor = await loadPtActor(req);
+    try {
+      assertCanViewRequestType(actor || req.user, doc.requestType);
+    } catch (authErr) {
+      return res.status(authErr.statusCode || 403).json({ success: false, message: authErr.message });
     }
 
     const userRole = (req.user.role || '').toLowerCase();
@@ -619,6 +668,15 @@ exports.cancelRequest = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized to cancel this request' });
     }
 
+    if (isSuperOrSub && !isRequester && !isSubject) {
+      const actor = await loadPtActor(req);
+      try {
+        assertCanManageRequestType(actor || req.user, doc.requestType);
+      } catch (authErr) {
+        return res.status(authErr.statusCode || 403).json({ success: false, message: authErr.message });
+      }
+    }
+
     doc.status = 'cancelled';
     doc.workflow.isCompleted = true;
     doc.workflow.currentStepRole = null;
@@ -667,6 +725,13 @@ exports.deleteRequest = async (req, res) => {
         message:
           'Cannot delete an approved request. The employee record may already reflect this promotion or transfer.',
       });
+    }
+
+    const actor = await loadPtActor(req);
+    try {
+      assertCanManageRequestType(actor || req.user, doc.requestType);
+    } catch (authErr) {
+      return res.status(authErr.statusCode || 403).json({ success: false, message: authErr.message });
     }
 
     const userRole = (req.user.role || '').toLowerCase();
@@ -825,6 +890,13 @@ exports.approveOrReject = async (req, res) => {
     hydrateApprovalChainLabels(doc);
     if (doc.status !== 'pending') {
       return res.status(400).json({ success: false, message: 'Request is no longer pending' });
+    }
+
+    const actor = await loadPtActor(req);
+    try {
+      assertCanManageRequestType(actor || req.user, doc.requestType);
+    } catch (authErr) {
+      return res.status(authErr.statusCode || 403).json({ success: false, message: authErr.message });
     }
 
     const emp = doc.employeeId;

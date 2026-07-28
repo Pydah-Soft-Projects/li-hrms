@@ -19,6 +19,7 @@ import {
 } from '@/lib/modulePermissionLabels';
 import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
 import ModuleGranularPermissionToggles from '@/components/users/ModuleGranularPermissionToggles';
+import { expandLegacyPromotionTransferPermissions } from '@/lib/userFeaturePermissions';
 import Spinner from '@/components/Spinner';
 import {
   buildDivisionMappingFromDepartment,
@@ -369,7 +370,7 @@ export default function UsersPage() {
       if (customRole) {
         setFormData(prev => ({
           ...prev,
-          featureControl: customRole.activeModules || [],
+          featureControl: expandLegacyPromotionTransferPermissions(customRole.activeModules || []),
           dataScope: 'department'
         }));
         return;
@@ -383,7 +384,7 @@ export default function UsersPage() {
           const defaultScope = formData.role === 'manager' ? 'division' : (formData.role === 'hod' ? 'department' : 'all');
           setFormData(prev => ({
             ...prev,
-            featureControl: res.data?.value?.activeModules || [],
+            featureControl: expandLegacyPromotionTransferPermissions(res.data?.value?.activeModules || []),
             dataScope: defaultScope as DataScope
           }));
         }
@@ -836,7 +837,7 @@ export default function UsersPage() {
           : (finalMapping || []).flatMap((m) => m.departments || []),
       password: '',
       autoGeneratePassword: false,
-      featureControl: user.featureControl || [],
+      featureControl: expandLegacyPromotionTransferPermissions(user.featureControl || []),
       dataScope: resolvedDataScope,
       allowedDivisions:
         user.allowedDivisions?.map((d) => (typeof d === 'string' ? d : d?._id)) ||
@@ -1508,7 +1509,9 @@ export default function UsersPage() {
                                 onChange={(e) => {
                                   const roleId = e.target.value;
                                   const customRole = customRoles.find(r => r._id === roleId);
-                                  const newPermissions = customRole ? (customRole.activeModules || []) : formData.featureControl;
+                                  const newPermissions = expandLegacyPromotionTransferPermissions(
+                                    customRole ? (customRole.activeModules || []) : formData.featureControl
+                                  );
 
                                   const keepMapping = scopingRolesKeepMapping(roleId) && scopingRolesKeepMapping(formData.role);
                                   setFormData({
@@ -2074,7 +2077,9 @@ export default function UsersPage() {
                               onChange={(e) => {
                                 const roleId = e.target.value;
                                 const customRole = customRoles.find(r => r._id === roleId);
-                                const newPermissions = customRole ? (customRole.activeModules || []) : employeeFormData.featureControl;
+                                const newPermissions = expandLegacyPromotionTransferPermissions(
+                                  customRole ? (customRole.activeModules || []) : employeeFormData.featureControl
+                                );
 
                                 const keepMapping = scopingRolesKeepMapping(roleId) && scopingRolesKeepMapping(employeeFormData.role);
                                 setEmployeeFormData({
@@ -2509,7 +2514,9 @@ export default function UsersPage() {
                                 onChange={(e) => {
                                   const roleId = e.target.value;
                                   const customRole = customRoles.find(r => r._id === roleId);
-                                  const newPermissions = customRole ? (customRole.activeModules || []) : formData.featureControl;
+                                  const newPermissions = expandLegacyPromotionTransferPermissions(
+                                    customRole ? (customRole.activeModules || []) : formData.featureControl
+                                  );
 
                                   const keepMapping = scopingRolesKeepMapping(roleId) && scopingRolesKeepMapping(formData.role);
                                   setFormData({
