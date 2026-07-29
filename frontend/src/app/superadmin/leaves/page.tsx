@@ -5090,7 +5090,7 @@ function LeavesPageContent() {
                         <p className="text-xs text-slate-200 font-medium mt-1">
                           {formatEmpNoWithDesignation(selectedItem)}
                           {selectedItem.department?.name && ` · ${selectedItem.department.name}`}
-                          {(selectedItem.appliedAt || selectedItem.createdAt) && ` · Applied ${new Date(selectedItem.appliedAt || selectedItem.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+                          {(selectedItem.appliedAt || (selectedItem as any).createdAt) && ` · Applied ${new Date(selectedItem.appliedAt || (selectedItem as any).createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`}
                         </p>
                       </div>
                     </div>

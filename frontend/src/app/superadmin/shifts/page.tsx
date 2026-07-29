@@ -895,9 +895,9 @@ export default function ShiftsPage() {
 
         {/* Create/Edit Shift Dialog */}
         {showForm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-            <div className="w-full max-w-7xl rounded-2xl border border-slate-200 bg-white my-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-              <div className="sticky top-0 mb-3 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900 rounded-t-2xl">
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+            <div className="w-full max-w-7xl rounded-2xl border border-slate-200 bg-white mt-2 mb-20 sm:my-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900 flex flex-col overflow-hidden max-h-[calc(100vh-7rem)] sm:max-h-[calc(100vh-2rem)]">
+              <div className="sticky top-0 mb-3 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900 rounded-t-2xl shrink-0">
                 <div>
                   <h2 className="text-sm font-bold text-slate-900 dark:text-white">
                     {editingShift ? 'Edit Shift' : 'Create New Shift'}
@@ -915,7 +915,7 @@ export default function ShiftsPage() {
                   </svg>
                 </button>
               </div>
-              <form onSubmit={handleSubmit} className="overflow-y-auto px-4 pb-4" style={{ maxHeight: 'calc(100vh - 8rem)' }}>
+              <form onSubmit={handleSubmit} className="flex-1 min-h-0 overflow-y-auto px-4 pb-8 sm:pb-4">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3">
                   {/* COLUMN 1: Shift Configuration */}
                   <div className="space-y-4">

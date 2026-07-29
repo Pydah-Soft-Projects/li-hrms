@@ -821,14 +821,14 @@ export default function ShiftsPage() {
 
         {/* Create/Edit Shift Dialog */}
         {showForm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-            <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white my-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-              <div className="sticky top-0 mb-5 flex items-center justify-between border-b border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900 rounded-t-2xl">
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+            <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white mt-2 mb-20 sm:my-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900 flex flex-col overflow-hidden max-h-[calc(100vh-7rem)] sm:max-h-[calc(100vh-2rem)]">
+              <div className="sticky top-0 mb-3 flex items-center justify-between border-b border-slate-200 bg-white p-4 sm:p-5 dark:border-slate-700 dark:bg-slate-900 rounded-t-2xl shrink-0">
                 <div>
-                  <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                  <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
                     {editingShift ? 'Edit Shift' : 'Create New Shift'}
                   </h2>
-                  <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
+                  <p className="mt-0.5 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400">
                     {editingShift ? 'Update shift information' : 'Add a new shift to the system'}
                   </p>
                 </div>
@@ -842,7 +842,7 @@ export default function ShiftsPage() {
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit} className="overflow-y-auto px-5 pb-5" style={{ maxHeight: 'calc(100vh - 10rem)' }}>
+              <form onSubmit={handleSubmit} className="flex-1 min-h-0 overflow-y-auto px-4 pb-8 sm:px-5 sm:pb-5">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {/* COLUMN 1: Basic Shift Info */}
                   <div className="space-y-3">
@@ -1207,9 +1207,12 @@ export default function ShiftsPage() {
 
               return (
                 <div key={division._id} className="space-y-4">
-                  <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                    <div className="h-6 w-1 rounded-full bg-orange-500" />
-                    {division.name} <span className="text-sm font-normal text-slate-500">Division Defaults</span>
+                  <h2 className="text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-200 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span className="flex items-center gap-2">
+                      <span className="h-5 w-1 rounded-full bg-orange-500" />
+                      {division.name}
+                    </span>
+                    <span className="text-xs sm:text-sm font-normal text-slate-500 dark:text-slate-400">Division Defaults</span>
                   </h2>
                   {renderShiftsDisplay(divisionShifts)}
                 </div>
@@ -1251,9 +1254,12 @@ export default function ShiftsPage() {
                 <div key={dept._id} className="space-y-4">
                   {allDeptShifts.length > 0 && (
                     <>
-                      <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                        <div className="h-6 w-1 rounded-full bg-purple-500" />
-                        {dept.name} <span className="text-sm font-normal text-slate-500">Department Specific</span>
+                      <h2 className="text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-200 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span className="flex items-center gap-2">
+                          <span className="h-5 w-1 rounded-full bg-purple-500" />
+                          {dept.name}
+                        </span>
+                        <span className="text-xs sm:text-sm font-normal text-slate-500 dark:text-slate-400">Department Specific</span>
                       </h2>
                       {renderShiftsDisplay(allDeptShifts)}
                     </>
@@ -1295,9 +1301,12 @@ export default function ShiftsPage() {
 
                           return (
                             <div key={des._id} className="space-y-3">
-                              <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                                <div className="h-2 w-2 rounded-full bg-indigo-400" />
-                                {des.name} <span className="text-xs font-normal text-slate-400">Designation Shifts</span>
+                              <h3 className="text-base sm:text-lg font-semibold text-slate-700 dark:text-slate-300 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                                <span className="flex items-center gap-2">
+                                  <span className="h-2 w-2 rounded-full bg-indigo-400" />
+                                  {des.name}
+                                </span>
+                                <span className="text-[10px] sm:text-xs font-normal text-slate-400 dark:text-slate-500">Designation Shifts</span>
                               </h3>
                               {renderShiftsDisplay(resolvedDesShifts)}
                             </div>
