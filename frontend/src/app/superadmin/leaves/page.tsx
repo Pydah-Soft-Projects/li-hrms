@@ -2149,6 +2149,18 @@ function LeavesPageContent() {
       };
       const capturedAtIso =
         g.capturedAt instanceof Date ? g.capturedAt.toISOString() : g.capturedAt;
+      // Retrieve locally saved location trail points
+      const localKey = `od_trail_${String(selectedItem._id)}`;
+      let locationTrail = undefined;
+      try {
+        const stored = localStorage.getItem(localKey);
+        if (stored) {
+          locationTrail = JSON.parse(stored);
+        }
+      } catch (e) {
+        console.error('Failed to parse local location trail points:', e);
+      }
+
       const endEvidence = {
         photoEvidence: {
           url: uploadRes.url,
@@ -2167,8 +2179,12 @@ function LeavesPageContent() {
         photoFromDeviceFile: odOutPhotoFromDeviceFile,
       };
 
-      const response = await api.updateOD(selectedItem._id, { endEvidence });
+      const response = await api.updateOD(selectedItem._id, { 
+        endEvidence,
+        ...(locationTrail && locationTrail.length > 0 ? { locationTrail } : {})
+      });
       if (response.success) {
+        localStorage.removeItem(localKey);
         const movedToPending = response?.data?.status === 'pending';
         setShowOutEvidenceDialog(false);
         setOdOutEvidenceFile(null);
@@ -2282,34 +2298,9 @@ function LeavesPageContent() {
     if (!canRecordOdLocationTrail(od, au) || !od?._id) return undefined;
 
     const odId = String(od._id);
-    const buffer: Array<{
-      latitude: number;
-      longitude: number;
-      capturedAt: string;
-      accuracy?: number;
-      heading?: number;
-      speed?: number;
-    }> = [];
     let lastLat: number | null = null;
     let lastLng: number | null = null;
     let lastSend = 0;
-
-    const flush = async () => {
-      if (buffer.length === 0) return;
-      const chunk = buffer.splice(0, buffer.length);
-      try {
-        const pushedBySocket = await publishOdTrailPoints(odId, chunk, 'web');
-        if (!pushedBySocket) {
-          await api.appendODLocationTrail(odId, { points: chunk, client: 'web' });
-          setOdTrailPublishMode('http');
-        } else {
-          setOdTrailPublishMode('socket');
-        }
-      } catch {
-        setOdTrailPublishMode('error');
-        /* ignore */
-      }
-    };
 
     const onReading = (pos: GeolocationPosition) => {
       const lat = pos.coords.latitude;
@@ -2322,28 +2313,40 @@ function LeavesPageContent() {
       const acc = pos.coords.accuracy;
       const h = pos.coords.heading;
       const sp = pos.coords.speed;
-      buffer.push({
+      
+      const newPoint = {
         latitude: lat,
         longitude: lng,
         capturedAt: new Date().toISOString(),
         accuracy: acc != null && Number.isFinite(acc) && acc <= 1e6 ? acc : undefined,
         heading: h != null && Number.isFinite(h) ? h : undefined,
         speed: sp != null && Number.isFinite(sp) ? sp : undefined,
-      });
-      if (buffer.length >= OD_WEB_TRAIL_BATCH_FLUSH) void flush();
+        source: 'web',
+      };
+
+      const localKey = `od_trail_${odId}`;
+      let points = [];
+      try {
+        const stored = localStorage.getItem(localKey);
+        if (stored) points = JSON.parse(stored);
+      } catch (e) {
+        console.error('Failed to parse local points:', e);
+      }
+      points.push(newPoint);
+      localStorage.setItem(localKey, JSON.stringify(points));
+      
+      // Update publish mode display state
+      setOdTrailPublishMode('http');
     };
 
-    const flushInterval = window.setInterval(() => void flush(), OD_WEB_TRAIL_FLUSH_MS);
     const watchId = navigator.geolocation.watchPosition(onReading, () => {}, OD_WEB_TRAIL_POSITION_OPTIONS);
     const pollInterval = window.setInterval(() => {
       navigator.geolocation.getCurrentPosition(onReading, () => {}, OD_WEB_TRAIL_POSITION_OPTIONS);
     }, OD_WEB_TRAIL_POLL_MS);
 
     return () => {
-      window.clearInterval(flushInterval);
       window.clearInterval(pollInterval);
       navigator.geolocation.clearWatch(watchId);
-      void flush();
     };
   }, [odLocationTrailWatchKey]);
 

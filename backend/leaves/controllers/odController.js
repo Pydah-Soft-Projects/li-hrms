@@ -1329,7 +1329,8 @@ exports.updateOD = async (req, res) => {
       'odType', 'fromDate', 'toDate', 'purpose', 'placeVisited', 'placesVisited',
       'contactNumber', 'isHalfDay', 'halfDayType', 'expectedOutcome', 'travelDetails', 'remarks',
       'odType_extended', 'odStartTime', 'odEndTime', 'durationHours', // NEW: Hour-based OD fields
-      'photoEvidence', 'geoLocation', 'startEvidence', 'endEvidence' // Evidence fields
+      'photoEvidence', 'geoLocation', 'startEvidence', 'endEvidence', // Evidence fields
+      'locationTrail' // Add locationTrail to allowed updates for single-request submission
     ];
 
     // Super Admin can also change status
@@ -1419,17 +1420,36 @@ exports.updateOD = async (req, res) => {
           }
         }
 
+        if (field === 'locationTrail') {
+          if (Array.isArray(newValue)) {
+            newValue = newValue.map((p) => ({
+              latitude: Number(p.latitude),
+              longitude: Number(p.longitude),
+              capturedAt: p.capturedAt ? new Date(p.capturedAt) : new Date(),
+              address: p.address ? String(p.address).slice(0, 500) : undefined,
+              accuracy: p.accuracy != null && Number.isFinite(Number(p.accuracy)) ? Number(p.accuracy) : undefined,
+              heading: p.heading != null && Number.isFinite(Number(p.heading)) ? Number(p.heading) : undefined,
+              speed: p.speed != null && Number.isFinite(Number(p.speed)) ? Number(p.speed) : undefined,
+              source: p.source || 'unknown',
+            }));
+          } else {
+            return; // skip if invalid
+          }
+        }
+
         // Store change
-        changes.push({
-          field: field,
-          originalValue: originalValue,
-          newValue: newValue,
-          modifiedBy: req.user._id,
-          modifiedByName: req.user.name,
-          modifiedByRole: req.user.role,
-          modifiedAt: new Date(),
-          reason: req.body.changeReason || null,
-        });
+        if (field !== 'locationTrail') {
+          changes.push({
+            field: field,
+            originalValue: originalValue,
+            newValue: newValue,
+            modifiedBy: req.user._id,
+            modifiedByName: req.user.name,
+            modifiedByRole: req.user.role,
+            modifiedAt: new Date(),
+            reason: req.body.changeReason || null,
+          });
+        }
 
         od[field] = newValue;
       }

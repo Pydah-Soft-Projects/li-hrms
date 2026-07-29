@@ -215,9 +215,20 @@ export function ODDetailCard({ data, onSubmitOutClick, className = '', compact =
   const odDatesStr = fromStr === toStr ? fromStr : `${fromStr} - ${toStr}`;
 
   if (inGeo?.latitude != null && inGeo?.longitude != null) {
+    let lat = inGeo.latitude;
+    let lng = inGeo.longitude;
+    // If IN and OUT are close or at the exact same coordinates, shift IN slightly to the east (aligns with going path)
+    if (
+      outGeo?.latitude != null &&
+      outGeo?.longitude != null &&
+      Math.abs(inGeo.latitude - outGeo.latitude) < 0.0008 &&
+      Math.abs(inGeo.longitude - outGeo.longitude) < 0.0008
+    ) {
+      lng += 0.0007;
+    }
     mapMarkers.push({
-      latitude: inGeo.latitude,
-      longitude: inGeo.longitude,
+      latitude: lat,
+      longitude: lng,
       label: 'OD IN',
       address: inGeo.address || null,
       photoUrl: inPhoto,
@@ -226,9 +237,20 @@ export function ODDetailCard({ data, onSubmitOutClick, className = '', compact =
     });
   }
   if (outGeo?.latitude != null && outGeo?.longitude != null) {
+    let lat = outGeo.latitude;
+    let lng = outGeo.longitude;
+    // If IN and OUT are close or at the exact same coordinates, shift OUT slightly to the west (aligns with returning path)
+    if (
+      inGeo?.latitude != null &&
+      inGeo?.longitude != null &&
+      Math.abs(inGeo.latitude - outGeo.latitude) < 0.0008 &&
+      Math.abs(inGeo.longitude - outGeo.longitude) < 0.0008
+    ) {
+      lng -= 0.0007;
+    }
     mapMarkers.push({
-      latitude: outGeo.latitude,
-      longitude: outGeo.longitude,
+      latitude: lat,
+      longitude: lng,
       label: 'OD OUT',
       address: outGeo.address || null,
       photoUrl: outPhoto,
