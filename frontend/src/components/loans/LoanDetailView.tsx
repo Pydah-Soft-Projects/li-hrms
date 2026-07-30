@@ -288,7 +288,7 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
   ]);
 
   const showGuarantorPicker =
-    loan?.requestType === 'loan' &&
+    ['loan', 'salary_advance'].includes(loan?.requestType) &&
     (workflowMeta?.isGuarantorGateActive || hasManagePermission) &&
     !['completed', 'cancelled', 'rejected', 'disbursed', 'active'].includes(loan?.status);
 
@@ -588,7 +588,7 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
             </LoanDetailSection>
           )}
 
-          {loan.requestType === 'loan' && (
+          {['loan', 'salary_advance'].includes(loan.requestType) && (
             <LoanDetailSection soft>
               <LoanDetailSectionTitle>
                 <ShieldCheck className="mr-1 inline h-4 w-4" />

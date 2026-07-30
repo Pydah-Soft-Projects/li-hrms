@@ -74,7 +74,7 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
                 if (res.success && res.data) {
                     if (res.data.settings) setLoanSettings(res.data.settings);
                     if (res.data.workflow) setWorkflow(res.data.workflow);
-                    if (res.data.guarantorRules && type === 'loan') {
+                    if (res.data.guarantorRules) {
                         setGuarantorRules({ ...DEFAULT_GUARANTOR_RULES, ...res.data.guarantorRules });
                     }
                 }
@@ -93,7 +93,7 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
             await api.saveLoanSettings(type, {
                 settings: loanSettings,
                 workflow: { ...workflow, isEnabled: true },
-                ...(type === 'loan' ? { guarantorRules } : {}),
+                guarantorRules,
             });
             toast.success('Settings updated successfully');
         } catch {
@@ -231,8 +231,7 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
                         </div>
                     </SettingsSectionCard>
 
-                    {type === 'loan' && (
-                        <SettingsSectionCard title="Guarantor rules">
+                    <SettingsSectionCard title="Guarantor rules">
                             <div className="space-y-4">
                                 <SettingsField label="When to collect guarantors">
                                     <select
@@ -266,7 +265,6 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
                                 <SettingsToggleRow id="gr-same-dept" label="Same department only" checked={guarantorRules.sameDepartmentOnly} onChange={(v) => setGuarantorRules({ ...guarantorRules, sameDepartmentOnly: v })} />
                             </div>
                         </SettingsSectionCard>
-                    )}
                 </div>
 
                 <div className="xl:col-span-2">
@@ -277,7 +275,7 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
                             title="Multi-Level Approval"
                             description="Workflow Engine for capital disbursement."
                             addStepLabel="Append Authorization Level"
-                            showLoanStageCapabilities={type === 'loan'}
+                            showLoanStageCapabilities
                         />
 
                         <div className="pt-6">

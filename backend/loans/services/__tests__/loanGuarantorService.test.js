@@ -91,6 +91,14 @@ function testGuarantorGateActive() {
     guarantors: [{ status: 'accepted' }, { status: 'accepted' }],
   };
   assert.strictEqual(mustBlockApprovalForGuarantors(loanWithGuarantors, settings).block, false);
+
+  const advanceAtGate = {
+    requestType: 'salary_advance',
+    workflow: { nextApprover: 'hr' },
+    guarantors: [],
+  };
+  assert.strictEqual(isGuarantorGateActive(advanceAtGate, settings), true);
+  assert.strictEqual(mustBlockApprovalForGuarantors(advanceAtGate, settings).block, true);
 }
 
 function testGetGuarantorStageStep() {

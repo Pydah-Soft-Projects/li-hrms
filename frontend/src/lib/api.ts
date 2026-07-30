@@ -4188,12 +4188,14 @@ export const api = {
     limit?: number;
     loanId?: string;
     applicantEmployeeId?: string;
+    requestType?: 'loan' | 'salary_advance';
   }) => {
     const qs = new URLSearchParams();
     if (params?.search) qs.append('search', params.search);
     if (params?.limit) qs.append('limit', String(params.limit));
     if (params?.loanId) qs.append('loanId', params.loanId);
     if (params?.applicantEmployeeId) qs.append('applicantEmployeeId', params.applicantEmployeeId);
+    if (params?.requestType) qs.append('requestType', params.requestType);
     const query = qs.toString() ? `?${qs.toString()}` : '';
     return apiRequest<any>(`/loans/guarantor-candidates${query}`, { method: 'GET' });
   },

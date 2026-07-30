@@ -299,11 +299,14 @@ exports.getMyLoans = async (req, res) => {
 // @access  Private
 exports.getGuarantorCandidates = async (req, res) => {
   try {
-    const { search = '', limit = 60, loanId, applicantEmployeeId } = req.query;
+    const { search = '', limit = 60, loanId, applicantEmployeeId, requestType: requestTypeQ } = req.query;
     const isPrivileged = ['hr', 'hod', 'manager', 'sub_admin', 'super_admin'].includes(req.user.role);
+    let settingsType = ['loan', 'salary_advance'].includes(String(requestTypeQ || ''))
+      ? String(requestTypeQ)
+      : 'loan';
 
     let applicantEmployee = null;
-    let loanSettingsDoc = await LoanSettings.findOne({ type: 'loan', isActive: true }).lean();
+    let loanSettingsDoc = await LoanSettings.findOne({ type: settingsType, isActive: true }).lean();
     let excludeLoanId = null;
 
     if (loanId) {
@@ -316,13 +319,16 @@ exports.getGuarantorCandidates = async (req, res) => {
       }
       applicantEmployee = await Employee.findById(loan.employeeId).lean();
       excludeLoanId = loan._id;
-      const wfSettings = await resolveLoanWorkflowSettings('loan', loan.division_id);
+      settingsType = loan.requestType === 'salary_advance' ? 'salary_advance' : 'loan';
+      const wfSettings = await resolveLoanWorkflowSettings(settingsType, loan.division_id);
       if (wfSettings) loanSettingsDoc = wfSettings;
     } else if (applicantEmployeeId && isPrivileged) {
       applicantEmployee = await findEmployeeByIdOrEmpNo(applicantEmployeeId);
       if (applicantEmployee?.division_id) {
-        const wfSettings = await resolveLoanWorkflowSettings('loan', applicantEmployee.division_id);
+        const wfSettings = await resolveLoanWorkflowSettings(settingsType, applicantEmployee.division_id);
         if (wfSettings) loanSettingsDoc = wfSettings;
+      } else {
+        loanSettingsDoc = await LoanSettings.findOne({ type: settingsType, isActive: true }).lean();
       }
     } else {
       // Self-service apply: resolve linked employee for the logged-in user
@@ -330,6 +336,10 @@ exports.getGuarantorCandidates = async (req, res) => {
         applicantEmployee = await findEmployeeByIdOrEmpNo(req.user.employeeRef);
       } else if (req.user.employeeId) {
         applicantEmployee = await findEmployeeByEmpNo(req.user.employeeId);
+      }
+      if (applicantEmployee?.division_id) {
+        const wfSettings = await resolveLoanWorkflowSettings(settingsType, applicantEmployee.division_id);
+        if (wfSettings) loanSettingsDoc = wfSettings;
       }
     }
 
@@ -851,13 +861,12 @@ exports.applyLoan = async (req, res) => {
     // Load settings early for guarantor collection timing
     const preSettings = await LoanSettings.findOne({ type: requestType, isActive: true }).lean();
     const guarantorRules = getGuarantorRulesFromSettings(preSettings);
-    const collectGuarantorsOnApply =
-      requestType === 'loan' && isGuarantorCollectionAtApplication(guarantorRules);
+    const collectGuarantorsOnApply = isGuarantorCollectionAtApplication(guarantorRules);
 
     if (collectGuarantorsOnApply && (!guarantorIds || !Array.isArray(guarantorIds) || guarantorIds.length < (guarantorRules.minGuarantors || 2))) {
       return res.status(400).json({
         success: false,
-        error: `At least ${guarantorRules.minGuarantors || 2} guarantors are required for a loan application`,
+        error: `At least ${guarantorRules.minGuarantors || 2} guarantors are required for this application`,
       });
     }
 
@@ -961,9 +970,14 @@ exports.applyLoan = async (req, res) => {
       });
     }
 
-    // Process Guarantors (only for loans — at application if configured, else added at workflow stage)
+    // Process Guarantors (loan + salary advance — at application if configured, else at workflow stage)
     const processedGuarantors = [];
-    if (requestType === 'loan' && guarantorIds && Array.isArray(guarantorIds) && guarantorIds.length > 0) {
+    if (
+      ['loan', 'salary_advance'].includes(requestType) &&
+      guarantorIds &&
+      Array.isArray(guarantorIds) &&
+      guarantorIds.length > 0
+    ) {
       const uniqueGuarantorIds = new Set();
       const minG = guarantorRules.minGuarantors ?? 2;
       const maxG = guarantorRules.maxGuarantors ?? 4;
@@ -1290,14 +1304,14 @@ exports.addLoanGuarantors = async (req, res) => {
     if (!loan) {
       return res.status(404).json({ success: false, error: 'Loan application not found' });
     }
-    if (loan.requestType !== 'loan') {
-      return res.status(400).json({ success: false, error: 'Guarantors apply to loans only' });
+    if (!['loan', 'salary_advance'].includes(loan.requestType)) {
+      return res.status(400).json({ success: false, error: 'Guarantors apply to loans and salary advances only' });
     }
     if (!Array.isArray(guarantorIds) || guarantorIds.length === 0) {
       return res.status(400).json({ success: false, error: 'guarantorIds array is required' });
     }
 
-    const settings = await resolveLoanWorkflowSettings('loan', loan.division_id?._id || loan.division_id);
+    const settings = await resolveLoanWorkflowSettings(loan.requestType, loan.division_id?._id || loan.division_id);
     const guarantorRules = getGuarantorRulesFromSettings(settings);
     const minG = guarantorRules.minGuarantors ?? 2;
     const maxG = guarantorRules.maxGuarantors ?? 4;
@@ -2703,10 +2717,19 @@ exports.disburseLoan = async (req, res) => {
       });
     }
 
-    // Check guarantors when loan requires them
+    // Check guarantors when the application is configured to require them (loan + salary advance)
     const wfSettingsDisburse = await resolveLoanWorkflowSettings(loan.requestType, loan.division_id);
     const guarantorRulesDisburse = getGuarantorRulesFromSettings(wfSettingsDisburse);
-    if (loan.requestType === 'loan' && (loan.guarantors?.length > 0 || !isGuarantorCollectionAtApplication(guarantorRulesDisburse))) {
+    const guarantorStageConfigured = !!getGuarantorStageStep(
+      wfSettingsDisburse?.workflow,
+      guarantorRulesDisburse
+    );
+    const requiresGuarantorsForDisburse =
+      ['loan', 'salary_advance'].includes(loan.requestType) &&
+      ((loan.guarantors || []).length > 0 ||
+        isGuarantorCollectionAtApplication(guarantorRulesDisburse) ||
+        guarantorStageConfigured);
+    if (requiresGuarantorsForDisburse) {
       const minG = guarantorRulesDisburse.minGuarantors ?? 2;
       if ((loan.guarantors || []).length < minG) {
         return res.status(400).json({

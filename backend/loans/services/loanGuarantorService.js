@@ -36,7 +36,11 @@ function round2(n) {
 }
 
 function getLoanEmiAmount(loan) {
-  if (!loan || loan.requestType !== 'loan') return 0;
+  if (!loan) return 0;
+  if (loan.requestType === 'salary_advance') {
+    return Number(loan.advanceConfig?.deductionPerCycle || 0);
+  }
+  if (loan.requestType !== 'loan') return 0;
   return Number(loan.loanConfig?.emiAmount || loan.repayment?.emiAmount || 0);
 }
 
@@ -51,7 +55,7 @@ function getLoanOutstanding(loan) {
 
 function mapLoanExposureRow(loan, role) {
   const outstanding = getLoanOutstanding(loan);
-  const emi = loan.requestType === 'loan' ? getLoanEmiAmount(loan) : Number(loan.advanceConfig?.deductionPerCycle || 0);
+  const emi = getLoanEmiAmount(loan);
   const isRunning = RUNNING_LOAN_STATUSES.includes(loan.status) || loan.status === 'active';
   return {
     loanId: String(loan._id),
@@ -108,7 +112,7 @@ async function computeEmployeeLoanExposure(employeeId, { excludeLoanId } = {}) {
 
   const guaranteedLoansRaw = await Loan.find({
     isActive: true,
-    requestType: 'loan',
+    requestType: { $in: ['loan', 'salary_advance'] },
     status: { $nin: ['cancelled', 'rejected', 'draft'] },
     'guarantors.employeeId': employeeId,
     ...excludeFilter,
@@ -312,7 +316,9 @@ function isGuarantorCollectionAtApplication(guarantorRules) {
 }
 
 function areGuarantorsSatisfied(loan, guarantorRules) {
-  if (loan.requestType !== 'loan') return { satisfied: true, pending: [] };
+  if (!['loan', 'salary_advance'].includes(loan.requestType)) {
+    return { satisfied: true, pending: [] };
+  }
   const min = guarantorRules?.minGuarantors ?? 2;
   const guarantors = loan.guarantors || [];
   const accepted = guarantors.filter((g) => g.status === 'accepted');
@@ -327,7 +333,7 @@ function areGuarantorsSatisfied(loan, guarantorRules) {
 }
 
 function isGuarantorGateActive(loan, settings) {
-  if (loan.requestType !== 'loan') return false;
+  if (!['loan', 'salary_advance'].includes(loan.requestType)) return false;
   const guarantorRules = getGuarantorRulesFromSettings(settings);
   if (isGuarantorCollectionAtApplication(guarantorRules)) return false;
   const stageStep = getGuarantorStageStep(settings?.workflow, guarantorRules);

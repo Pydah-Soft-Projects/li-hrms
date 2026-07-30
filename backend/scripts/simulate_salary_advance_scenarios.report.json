@@ -1,0 +1,346 @@
+{
+  "generatedAt": "2026-07-30T05:19:46.250Z",
+  "module": "salary_advance",
+  "summary": {
+    "total": 22,
+    "passed": 22,
+    "failed": 0,
+    "byGroup": {
+      "Deduction": {
+        "pass": 6,
+        "fail": 0
+      },
+      "Guarantors": {
+        "pass": 6,
+        "fail": 0
+      },
+      "Workflow": {
+        "pass": 5,
+        "fail": 0
+      },
+      "E2E": {
+        "pass": 5,
+        "fail": 0
+      }
+    }
+  },
+  "results": [
+    {
+      "group": "Deduction",
+      "id": "A1",
+      "title": "Single-cycle advance ₹10,000 / 1",
+      "status": "PASS",
+      "details": "Deduct ₹10,000 × 1 cycle(s)",
+      "expected": {
+        "deductionPerCycle": 10000,
+        "cycles": 1
+      },
+      "actual": {
+        "deductionPerCycle": 10000,
+        "cycles": 1
+      }
+    },
+    {
+      "group": "Deduction",
+      "id": "A2",
+      "title": "3-cycle advance ₹12,000 / 3",
+      "status": "PASS",
+      "details": "Deduct ₹4,000 × 3 = ₹12,000",
+      "expected": {
+        "deductionPerCycle": 4000,
+        "total": 12000
+      },
+      "actual": {
+        "deductionPerCycle": 4000,
+        "total": 12000
+      }
+    },
+    {
+      "group": "Deduction",
+      "id": "A3",
+      "title": "Rounding: ₹10,000 / 3 → ₹3,333/cycle (same as applyLoan)",
+      "status": "PASS",
+      "details": "Per cycle ₹3,333; rounded total ₹9,999 (gap ₹1)",
+      "expected": {
+        "deductionPerCycle": 3333,
+        "gap": 1
+      },
+      "actual": {
+        "deductionPerCycle": 3333,
+        "gap": 1
+      }
+    },
+    {
+      "group": "Deduction",
+      "id": "A4",
+      "title": "5-cycle advance ₹25,000 / 5",
+      "status": "PASS",
+      "details": "Deduct ₹5,000 × 5",
+      "expected": {
+        "deductionPerCycle": 5000
+      },
+      "actual": {
+        "deductionPerCycle": 5000
+      }
+    },
+    {
+      "group": "Deduction",
+      "id": "A5",
+      "title": "Exposure EMI uses advance deductionPerCycle",
+      "status": "PASS",
+      "details": "getLoanEmiAmount(advance) = ₹4,000",
+      "expected": {
+        "emi": 4000
+      },
+      "actual": {
+        "emi": 4000
+      }
+    },
+    {
+      "group": "Deduction",
+      "id": "A6",
+      "title": "Outstanding prefers remainingBalance",
+      "status": "PASS",
+      "details": "Outstanding ₹8,000",
+      "expected": {
+        "outstanding": 8000
+      },
+      "actual": {
+        "outstanding": 8000
+      }
+    },
+    {
+      "group": "Guarantors",
+      "id": "B1",
+      "title": "Collect guarantors on application",
+      "status": "PASS",
+      "details": "timing=on_application, min=2",
+      "expected": {
+        "onApplication": true,
+        "min": 2
+      },
+      "actual": {
+        "onApplication": true,
+        "min": 2
+      }
+    },
+    {
+      "group": "Guarantors",
+      "id": "B2",
+      "title": "Guarantor stage resolves to HR step",
+      "status": "PASS",
+      "details": "Stage=HR role=hr",
+      "expected": {
+        "role": "hr"
+      },
+      "actual": {
+        "role": "hr"
+      }
+    },
+    {
+      "group": "Guarantors",
+      "id": "B3",
+      "title": "Advance at guarantor stage without guarantors → blocked",
+      "status": "PASS",
+      "details": "Guarantors required before proceeding: need 2 accepted guarantor(s). Currently 0 accepted, 0 pending.",
+      "expected": {
+        "active": true,
+        "block": true
+      },
+      "actual": {
+        "active": true,
+        "block": true
+      }
+    },
+    {
+      "group": "Guarantors",
+      "id": "B4",
+      "title": "Advance with 2 accepted guarantors → can approve",
+      "status": "PASS",
+      "details": "accepted 2/2",
+      "expected": {
+        "satisfied": true,
+        "block": false
+      },
+      "actual": {
+        "satisfied": true,
+        "block": false
+      }
+    },
+    {
+      "group": "Guarantors",
+      "id": "B5",
+      "title": "Advance at HOD (non-guarantor stage) → not blocked",
+      "status": "PASS",
+      "details": "Gate inactive on HOD desk",
+      "expected": {
+        "active": false
+      },
+      "actual": {
+        "active": false
+      }
+    },
+    {
+      "group": "Guarantors",
+      "id": "B6",
+      "title": "One pending guarantor → not satisfied",
+      "status": "PASS",
+      "details": "accepted=1, pending=1",
+      "expected": {
+        "satisfied": false,
+        "pending": 1
+      },
+      "actual": {
+        "satisfied": false,
+        "pending": 1
+      }
+    },
+    {
+      "group": "Workflow",
+      "id": "C1",
+      "title": "No synthetic Final Authority row for salary advance settings",
+      "status": "PASS",
+      "details": "Chain roles: hod → hr",
+      "expected": {
+        "hasFinal": false,
+        "hasHr": true
+      },
+      "actual": {
+        "hasFinal": false,
+        "hasHr": true
+      }
+    },
+    {
+      "group": "Workflow",
+      "id": "C2",
+      "title": "Last configured HR stage is final (leave style)",
+      "status": "PASS",
+      "details": "HR final=true, HOD final=false",
+      "expected": {
+        "hrFinal": true,
+        "hodFinal": false
+      },
+      "actual": {
+        "hrFinal": true,
+        "hodFinal": false
+      }
+    },
+    {
+      "group": "Workflow",
+      "id": "C3",
+      "title": "HR stage carries verifyAttendance + requireGuarantors capabilities",
+      "status": "PASS",
+      "details": "Both stage gates configured on final HR desk",
+      "expected": {
+        "verifyAttendance": true,
+        "requireGuarantors": true
+      },
+      "actual": {
+        "verifyAttendance": true,
+        "requireGuarantors": true
+      }
+    },
+    {
+      "group": "Workflow",
+      "id": "C4",
+      "title": "Attendance consent required before approve/reject",
+      "status": "PASS",
+      "details": "Missing attendanceVerified → stage action blocked",
+      "expected": {
+        "blocked": true
+      },
+      "actual": {
+        "blocked": true
+      }
+    },
+    {
+      "group": "Workflow",
+      "id": "C5",
+      "title": "Attendance consent provided → action allowed",
+      "status": "PASS",
+      "details": "attendanceVerified=true clears gate",
+      "expected": {
+        "blocked": false
+      },
+      "actual": {
+        "blocked": false
+      }
+    },
+    {
+      "group": "E2E",
+      "id": "D1",
+      "title": "Story: ₹15k / 3 cycles, guarantors on apply, HR final + attendance",
+      "status": "PASS",
+      "details": "Deduction ₹5,000/cycle · onApply=true · HR final=true",
+      "expected": {
+        "perCycle": 5000,
+        "onApply": true,
+        "hrFinal": true
+      },
+      "actual": {
+        "perCycle": 5000,
+        "onApply": true,
+        "hrFinal": true
+      }
+    },
+    {
+      "group": "E2E",
+      "id": "D2",
+      "title": "Story: guarantors at HR stage — empty blocks, accepted clears",
+      "status": "PASS",
+      "details": "empty→block=true, ready→block=false",
+      "expected": {
+        "empty": true,
+        "ready": false
+      },
+      "actual": {
+        "empty": true,
+        "ready": false
+      }
+    },
+    {
+      "group": "E2E",
+      "id": "D3",
+      "title": "Story: two running advances — combined monthly exposure",
+      "status": "PASS",
+      "details": "A ₹4,000 + B ₹3,000 = ₹7,000/month",
+      "expected": {
+        "combined": 7000
+      },
+      "actual": {
+        "combined": 7000
+      }
+    },
+    {
+      "group": "E2E",
+      "id": "D4",
+      "title": "Story: Manager → HR chain completes on HR approve (no extra final desk)",
+      "status": "PASS",
+      "details": "Roles: hod → manager → hr",
+      "expected": {
+        "hasFinal": false
+      },
+      "actual": {
+        "hasFinal": false,
+        "roles": [
+          "hod",
+          "manager",
+          "hr"
+        ]
+      }
+    },
+    {
+      "group": "E2E",
+      "id": "D5",
+      "title": "Story: Admin acting on HR stage shows Admin approved/rejected",
+      "status": "PASS",
+      "details": "actionByRole super_admin → display \"Admin\"",
+      "expected": {
+        "label": "Admin"
+      },
+      "actual": {
+        "label": "Admin"
+      }
+    }
+  ]
+}

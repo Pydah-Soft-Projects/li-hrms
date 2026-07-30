@@ -1,0 +1,319 @@
+{
+  "generatedAt": "2026-07-30T05:19:53.381Z",
+  "module": "salary_advance",
+  "employee": {
+    "_id": "695b8b939fa26faa3ecdc9ad",
+    "emp_no": "2016",
+    "name": "DIVYA GADIRAJU",
+    "gross_salary": 30000
+  },
+  "actor": {
+    "_id": "6954da05d4e7e1205f450bec",
+    "name": "Sriram Pydah",
+    "role": "super_admin"
+  },
+  "presentPayrollMonth": "2026-08",
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0
+  },
+  "results": [
+    {
+      "id": "SA1",
+      "title": "Single-cycle advance · no guarantor stage · attendance OFF",
+      "advanceId": "6a6adef7da295b4634c01def",
+      "formNumber": 1,
+      "status": "pending",
+      "amount": 8000,
+      "duration": 1,
+      "deductionCycles": 1,
+      "deductionPerCycle": 8000,
+      "deductionStartCycle": "2026-08",
+      "nextApprover": "hod",
+      "settings": {
+        "guarantorRules": {
+          "collectionTiming": "on_workflow_stage",
+          "minGuarantors": 2,
+          "maxGuarantors": 4
+        },
+        "workflowSteps": [
+          {
+            "stepOrder": 1,
+            "stepName": "HOD Approval",
+            "approverRole": "hod",
+            "requireGuarantors": false,
+            "verifyAttendance": false,
+            "nextStepOnApprove": 2
+          },
+          {
+            "stepOrder": 2,
+            "stepName": "HR Approval",
+            "approverRole": "hr",
+            "requireGuarantors": false,
+            "verifyAttendance": false,
+            "nextStepOnApprove": null
+          }
+        ]
+      },
+      "analysis": {
+        "collectGuarantorsOnApply": false,
+        "guarantorStageRole": null,
+        "guarantorStageName": null,
+        "gateActiveAtStart": false,
+        "gateBlockedAtStart": false,
+        "verifyAttendanceOnCurrent": false,
+        "verifyAttendanceOnFinal": false,
+        "isFinalAtStart": false,
+        "chainRoles": [
+          "hod",
+          "hr"
+        ],
+        "hasSyntheticFinal": false
+      },
+      "checks": {
+        "deductionOk": true,
+        "noSyntheticFinal": true,
+        "collectOnApplyMatches": true,
+        "allPass": true
+      }
+    },
+    {
+      "id": "SA2",
+      "title": "3-cycle advance · guarantors on application",
+      "advanceId": "6a6adef8da295b4634c01df9",
+      "formNumber": 2,
+      "status": "pending",
+      "amount": 15000,
+      "duration": 3,
+      "deductionCycles": 3,
+      "deductionPerCycle": 5000,
+      "deductionStartCycle": "2026-08",
+      "nextApprover": "hod",
+      "settings": {
+        "guarantorRules": {
+          "collectionTiming": "on_application",
+          "minGuarantors": 2,
+          "maxGuarantors": 4
+        },
+        "workflowSteps": [
+          {
+            "stepOrder": 1,
+            "stepName": "HOD Approval",
+            "approverRole": "hod",
+            "requireGuarantors": false,
+            "verifyAttendance": false,
+            "nextStepOnApprove": 2
+          },
+          {
+            "stepOrder": 2,
+            "stepName": "HR Approval",
+            "approverRole": "hr",
+            "requireGuarantors": false,
+            "verifyAttendance": true,
+            "nextStepOnApprove": null
+          }
+        ]
+      },
+      "analysis": {
+        "collectGuarantorsOnApply": true,
+        "guarantorStageRole": null,
+        "guarantorStageName": null,
+        "gateActiveAtStart": false,
+        "gateBlockedAtStart": false,
+        "verifyAttendanceOnCurrent": false,
+        "verifyAttendanceOnFinal": true,
+        "isFinalAtStart": false,
+        "chainRoles": [
+          "hod",
+          "hr"
+        ],
+        "hasSyntheticFinal": false
+      },
+      "checks": {
+        "deductionOk": true,
+        "noSyntheticFinal": true,
+        "collectOnApplyMatches": true,
+        "allPass": true
+      }
+    },
+    {
+      "id": "SA3",
+      "title": "3-cycle · guarantors at HR stage · attendance verify",
+      "advanceId": "6a6adef8da295b4634c01e03",
+      "formNumber": 3,
+      "status": "pending",
+      "amount": 12000,
+      "duration": 3,
+      "deductionCycles": 3,
+      "deductionPerCycle": 4000,
+      "deductionStartCycle": "2026-08",
+      "nextApprover": "hod",
+      "settings": {
+        "guarantorRules": {
+          "collectionTiming": "on_workflow_stage",
+          "minGuarantors": 2,
+          "maxGuarantors": 4
+        },
+        "workflowSteps": [
+          {
+            "stepOrder": 1,
+            "stepName": "HOD Approval",
+            "approverRole": "hod",
+            "requireGuarantors": false,
+            "verifyAttendance": false,
+            "nextStepOnApprove": 2
+          },
+          {
+            "stepOrder": 2,
+            "stepName": "HR + Guarantors",
+            "approverRole": "hr",
+            "requireGuarantors": true,
+            "verifyAttendance": true,
+            "nextStepOnApprove": null
+          }
+        ]
+      },
+      "analysis": {
+        "collectGuarantorsOnApply": false,
+        "guarantorStageRole": "hr",
+        "guarantorStageName": "HR + Guarantors",
+        "gateActiveAtStart": false,
+        "gateBlockedAtStart": false,
+        "verifyAttendanceOnCurrent": false,
+        "verifyAttendanceOnFinal": true,
+        "isFinalAtStart": false,
+        "chainRoles": [
+          "hod",
+          "hr"
+        ],
+        "hasSyntheticFinal": false
+      },
+      "checks": {
+        "deductionOk": true,
+        "noSyntheticFinal": true,
+        "collectOnApplyMatches": true,
+        "allPass": true
+      }
+    },
+    {
+      "id": "SA4",
+      "title": "5-cycle · Manager→HR · attendance on final",
+      "advanceId": "6a6adef8da295b4634c01e0d",
+      "formNumber": 4,
+      "status": "pending",
+      "amount": 25000,
+      "duration": 5,
+      "deductionCycles": 5,
+      "deductionPerCycle": 5000,
+      "deductionStartCycle": "2026-08",
+      "nextApprover": "hod",
+      "settings": {
+        "guarantorRules": {
+          "collectionTiming": "on_workflow_stage",
+          "minGuarantors": 2,
+          "maxGuarantors": 4
+        },
+        "workflowSteps": [
+          {
+            "stepOrder": 1,
+            "stepName": "Manager Approval",
+            "approverRole": "manager",
+            "requireGuarantors": false,
+            "verifyAttendance": false,
+            "nextStepOnApprove": 2
+          },
+          {
+            "stepOrder": 2,
+            "stepName": "HR Final",
+            "approverRole": "hr",
+            "requireGuarantors": false,
+            "verifyAttendance": true,
+            "nextStepOnApprove": null
+          }
+        ]
+      },
+      "analysis": {
+        "collectGuarantorsOnApply": false,
+        "guarantorStageRole": null,
+        "guarantorStageName": null,
+        "gateActiveAtStart": false,
+        "gateBlockedAtStart": false,
+        "verifyAttendanceOnCurrent": false,
+        "verifyAttendanceOnFinal": true,
+        "isFinalAtStart": false,
+        "chainRoles": [
+          "hod",
+          "manager",
+          "hr"
+        ],
+        "hasSyntheticFinal": false
+      },
+      "checks": {
+        "deductionOk": true,
+        "noSyntheticFinal": true,
+        "collectOnApplyMatches": true,
+        "allPass": true
+      }
+    },
+    {
+      "id": "SA5",
+      "title": "2-cycle · guarantors at HOD · no attendance",
+      "advanceId": "6a6adef9da295b4634c01e18",
+      "formNumber": 5,
+      "status": "pending",
+      "amount": 10000,
+      "duration": 2,
+      "deductionCycles": 2,
+      "deductionPerCycle": 5000,
+      "deductionStartCycle": "2026-08",
+      "nextApprover": "hod",
+      "settings": {
+        "guarantorRules": {
+          "collectionTiming": "on_workflow_stage",
+          "minGuarantors": 2,
+          "maxGuarantors": 3
+        },
+        "workflowSteps": [
+          {
+            "stepOrder": 1,
+            "stepName": "HOD + Guarantors",
+            "approverRole": "hod",
+            "requireGuarantors": true,
+            "verifyAttendance": false,
+            "nextStepOnApprove": 2
+          },
+          {
+            "stepOrder": 2,
+            "stepName": "HR Approval",
+            "approverRole": "hr",
+            "requireGuarantors": false,
+            "verifyAttendance": false,
+            "nextStepOnApprove": null
+          }
+        ]
+      },
+      "analysis": {
+        "collectGuarantorsOnApply": false,
+        "guarantorStageRole": "hod",
+        "guarantorStageName": "HOD + Guarantors",
+        "gateActiveAtStart": true,
+        "gateBlockedAtStart": true,
+        "verifyAttendanceOnCurrent": false,
+        "verifyAttendanceOnFinal": false,
+        "isFinalAtStart": false,
+        "chainRoles": [
+          "hod",
+          "hr"
+        ],
+        "hasSyntheticFinal": false
+      },
+      "checks": {
+        "deductionOk": true,
+        "noSyntheticFinal": true,
+        "collectOnApplyMatches": true,
+        "allPass": true
+      }
+    }
+  ]
+}

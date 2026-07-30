@@ -151,7 +151,7 @@ exports.saveSettings = async (req, res) => {
         statuses: statuses || DEFAULT_STATUSES,
         workflow: workflow || DEFAULT_WORKFLOW,
         settings: settings || {},
-        guarantorRules: type === 'loan' ? guarantorRules || {} : undefined,
+        guarantorRules: guarantorRules || {},
         createdBy: req.user._id,
       });
     } else {
@@ -189,7 +189,7 @@ exports.saveSettings = async (req, res) => {
         loanSettings.markModified('settings.workspacePermissions');
       }
 
-      if (guarantorRules && type === 'loan') {
+      if (guarantorRules) {
         loanSettings.guarantorRules = { ...(loanSettings.guarantorRules || {}), ...guarantorRules };
         loanSettings.markModified('guarantorRules');
       }

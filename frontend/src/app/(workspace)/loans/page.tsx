@@ -683,7 +683,7 @@ export default function LoansPage() {
     fetchResolvedSettings();
   }, [selectedEmployee, applyType]);
 
-  // Debounced Guarantor Search
+  // Debounced Guarantor Search (eligibility-aware for loan + salary advance)
   useEffect(() => {
     const timer = setTimeout(async () => {
       if (!guarantorSearch.trim()) {
@@ -694,23 +694,38 @@ export default function LoansPage() {
 
       setIsGuarantorSearching(true);
       try {
-        const res = await api.getEmployees({
-          is_active: true,
-          search: guarantorSearch,
-          limit: 10
-        });
-        if (res.success && res.data) {
-          setGuarantorSearchResults(res.data);
+        if (selectedEmployee?._id) {
+          const res = await api.getGuarantorCandidates({
+            search: guarantorSearch,
+            applicantEmployeeId: selectedEmployee._id,
+            requestType: applyType,
+            limit: 20,
+          });
+          if (res.success && res.data) {
+            setGuarantorSearchResults(
+              (res.data as any[]).filter((c) => c.eligibility?.eligible !== false)
+            );
+          } else {
+            setGuarantorSearchResults([]);
+          }
+        } else {
+          const res = await api.getEmployees({
+            is_active: true,
+            search: guarantorSearch,
+            limit: 10,
+          });
+          if (res.success && res.data) setGuarantorSearchResults(res.data);
         }
       } catch (error) {
         console.error('Error searching guarantors:', error);
+        setGuarantorSearchResults([]);
       } finally {
         setIsGuarantorSearching(false);
       }
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [guarantorSearch]);
+  }, [guarantorSearch, selectedEmployee?._id, applyType]);
 
   const loadData = async () => {
     try {
@@ -1325,14 +1340,12 @@ export default function LoansPage() {
     setInterestCalculation(null);
     setEmiAppPreview(null);
     setCollectGuarantorsOnApply(false);
-    if (type === 'loan') {
-      try {
-        const res = await api.getLoanSettings('loan');
-        const timing = res.data?.guarantorRules?.collectionTiming;
-        setCollectGuarantorsOnApply(timing === 'on_application');
-      } catch {
-        setCollectGuarantorsOnApply(false);
-      }
+    try {
+      const res = await api.getLoanSettings(type);
+      const timing = res.data?.guarantorRules?.collectionTiming;
+      setCollectGuarantorsOnApply(timing === 'on_application');
+    } catch {
+      setCollectGuarantorsOnApply(false);
     }
     setShowApplyDialog(true);
   };
@@ -1358,8 +1371,8 @@ export default function LoansPage() {
         return;
       }
 
-      if (applyType === 'loan' && collectGuarantorsOnApply && (!formData.guarantorIds || formData.guarantorIds.length < 2)) {
-        setMessage({ type: 'error', text: 'At least 2 unique guarantors are required for loan applications' });
+      if (collectGuarantorsOnApply && (!formData.guarantorIds || formData.guarantorIds.length < 2)) {
+        setMessage({ type: 'error', text: 'At least 2 unique guarantors are required for this application' });
         return;
       }
 
@@ -1370,13 +1383,11 @@ export default function LoansPage() {
         remarks: formData.remarks,
         needAmount: formData.needAmount ? parseFloat(formData.needAmount) : undefined,
         empNo: selectedEmployee.emp_no,
+        guarantorIds: collectGuarantorsOnApply ? formData.guarantorIds : [],
       };
 
       if (applyType === 'loan') {
         payload.duration = parseInt(formData.duration);
-        if (collectGuarantorsOnApply && formData.guarantorIds?.length) {
-          payload.guarantorIds = formData.guarantorIds;
-        }
       } else {
         payload.duration = formData.duration ? parseInt(formData.duration) : 1;
       }
@@ -2372,7 +2383,9 @@ export default function LoansPage() {
                 </LoanDetailSection>
 
                 {/* Guarantors Status */}
-                {selectedLoan.requestType === 'loan' && selectedLoan.guarantors && selectedLoan.guarantors.length > 0 && (
+                {['loan', 'salary_advance'].includes(selectedLoan.requestType) &&
+                  selectedLoan.guarantors &&
+                  selectedLoan.guarantors.length > 0 && (
                   <LoanDetailSection>
                     <LoanDetailSectionTitle>
                       Guarantor Status ({selectedLoan.guarantors.filter(g => g.status === 'accepted').length}/{selectedLoan.guarantors.length} Accepted)
@@ -3485,7 +3498,7 @@ export default function LoansPage() {
                 )}
 
                 {/* Guarantors — only when settings require at application */}
-                {applyType === 'loan' && collectGuarantorsOnApply && (
+                {collectGuarantorsOnApply && (
                   <div className="relative mb-4">
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                       Guarantors (Select at least 2) *
