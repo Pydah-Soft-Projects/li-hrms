@@ -99,6 +99,27 @@ export function buildRosterApiParams(q: RosterListQuery, opts?: { paginate?: boo
   };
 }
 
+/** Normalize emp_no for roster Map keys (parseRosterEntries stores uppercase). */
+export function rosterEmpKey(empNo: string | null | undefined): string {
+  return String(empNo || '').toUpperCase();
+}
+
+/** Look up a roster row with case-normalized emp_no. */
+export function getRosterRow(
+  roster: RosterState,
+  empNo: string | null | undefined
+): Record<string, RosterCell> {
+  return roster.get(rosterEmpKey(empNo)) || {};
+}
+
+/** Comma-separated emp numbers for GET /shifts/roster?employeeNumbers= (scoped page pin). */
+export function toRosterEmployeeNumbersParam(employees: { emp_no?: string }[]): string | undefined {
+  const nums = employees
+    .map((e) => rosterEmpKey(e.emp_no))
+    .filter(Boolean);
+  return nums.length ? nums.join(',') : undefined;
+}
+
 function parseHalfStatus(v?: string | null): RosterCell['firstHalfStatus'] {
   if (v === 'WO' || v === 'HOL') return v;
   return undefined;
@@ -128,7 +149,7 @@ export function parseRosterEntries(
 ): RosterState {
   const map = new Map<string, Record<string, RosterCell>>();
   entries.forEach((e) => {
-    const empNo = String(e.employeeNumber || '').toUpperCase();
+    const empNo = rosterEmpKey(e.employeeNumber);
     const dateKey = normalizeRosterDateKey(e.date);
     if (!empNo || !dateKey) return;
     if (!map.has(empNo)) map.set(empNo, {});

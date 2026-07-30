@@ -1,4 +1,5 @@
 import { RosterCell, RosterState } from './types';
+import { rosterEmpKey } from './utils';
 
 /** Weekday 0–6 (Sun–Sat) → cell template from one reference employee row */
 export type WeekdayPattern = Record<number, RosterCell | undefined>;
@@ -77,11 +78,11 @@ export function copyRowToTargets(
   days: string[],
   getDoj: (empNo: string) => string | null
 ): { empNo: string; date: string; cell: RosterCell }[] {
-  const sourceRow = roster.get(sourceEmpNo) || {};
+  const sourceRow = roster.get(rosterEmpKey(sourceEmpNo)) || {};
   const updates: { empNo: string; date: string; cell: RosterCell }[] = [];
 
   targetEmpNos.forEach((target) => {
-    if (target === sourceEmpNo) return;
+    if (rosterEmpKey(target) === rosterEmpKey(sourceEmpNo)) return;
     const dojStr = getDoj(target);
     days.forEach((d) => {
       if (dojStr && d < dojStr) return;

@@ -21,8 +21,11 @@ import {
   formatMonthInput,
   formatSimpleDate,
   getDaysInRange,
+  getRosterRow,
   parseRosterEntries,
+  rosterEmpKey,
   shiftLabel,
+  toRosterEmployeeNumbersParam,
 } from './utils';
 import {
   applyWeekdayPatternToDays,
@@ -238,20 +241,23 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
     setLoading(true);
     try {
       const empParams = buildEmployeeListParams(listQuery);
-      const rosterParams = buildRosterApiParams(listQuery);
-
-      const [empRes, rosterRes] = await Promise.all([
-        api.getEmployeesSummary(empParams) as Promise<{
-          data: Employee[];
-          pagination?: { totalPages: number; total: number };
-        }>,
-        api.getRoster(month, rosterParams),
-      ]);
+      // Employees are scope-filtered; roster is not. Load employees first, then pin roster
+      // to that page via employeeNumbers so cells match the rows shown.
+      const empRes = (await api.getEmployeesSummary(empParams)) as {
+        data: Employee[];
+        pagination?: { totalPages: number; total: number };
+      };
 
       const empList = empRes.data || [];
       setEmployees(empList);
       setTotalPages(empRes.pagination?.totalPages || 1);
       setTotalEmployees(empRes.pagination?.total || empList.length);
+
+      const employeeNumbers = toRosterEmployeeNumbersParam(empList);
+      const rosterRes = await api.getRoster(month, {
+        ...buildRosterApiParams(listQuery, { paginate: false }),
+        ...(employeeNumbers ? { employeeNumbers } : {}),
+      });
 
       const rosterData = rosterRes.data as {
         entries: { employeeNumber: string; date: string; shiftId?: string; status?: string }[];
@@ -403,15 +409,16 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
       setRoster((prev) => {
         const next = new Map(prev);
         updates.forEach(({ empNo, date, cell }) => {
-          const row = { ...(next.get(empNo) || {}) };
+          const key = rosterEmpKey(empNo);
+          const row = { ...(next.get(key) || {}) };
           row[date] = cell;
-          next.set(empNo, row);
+          next.set(key, row);
         });
         return next;
       });
       setDirtyKeys((prev) => {
         const next = new Set(prev);
-        updates.forEach(({ empNo, date }) => next.add(`${empNo}|${date}`));
+        updates.forEach(({ empNo, date }) => next.add(`${rosterEmpKey(empNo)}|${date}`));
         return next;
       });
     },
@@ -433,7 +440,7 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
 
   const applyDayToRestOfWeek = useCallback(
     (empNo: string, sourceDate: string) => {
-      const sourceCell = roster.get(empNo)?.[sourceDate];
+      const sourceCell = getRosterRow(roster, empNo)[sourceDate];
       if (!sourceCell?.shiftId && !sourceCell?.status) {
         toast.error('Select a shift or off type first');
         return;
@@ -462,7 +469,11 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
     setFillPreviousLoading(true);
     try {
       const prevMonth = navigateMonthStr(month, 'prev');
-      const res = await api.getRoster(prevMonth, buildRosterApiParams(listQuery, { paginate: false }));
+      const employeeNumbers = toRosterEmployeeNumbersParam(employees);
+      const res = await api.getRoster(prevMonth, {
+        ...buildRosterApiParams(listQuery, { paginate: false }),
+        ...(employeeNumbers ? { employeeNumbers } : {}),
+      });
       const entries =
         (res.data as { entries?: { employeeNumber: string; date: string; shiftId?: string | null; status?: string }[] })
           ?.entries || [];
@@ -494,7 +505,7 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
         toast.error('No employees on this page to build template from');
         return;
       }
-      const row = roster.get(ref.emp_no) || {};
+      const row = getRosterRow(roster, ref.emp_no);
       const pattern = buildWeekdayPatternFromRow(row, days);
       if (Object.keys(pattern).length === 0) {
         toast.error('Reference row has no assignments to save');
@@ -552,22 +563,23 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
     (empNo: string, shiftId: string | null, status?: 'WO' | 'HOL') => {
       const emp = employees.find((e) => e.emp_no === empNo);
       const dojStr = emp?.doj ? format(parseISO(emp.doj), 'yyyy-MM-dd') : null;
+      const key = rosterEmpKey(empNo);
       setRoster((prev) => {
         const next = new Map(prev);
-        const row = { ...(next.get(empNo) || {}) };
+        const row = { ...(next.get(key) || {}) };
         days.forEach((d) => {
           if (dojStr && d < dojStr) return;
           if (shiftId && (row[d]?.status === 'WO' || row[d]?.status === 'HOL')) return;
           row[d] = { shiftId, status };
         });
-        next.set(empNo, row);
+        next.set(key, row);
         return next;
       });
       setDirtyKeys((prev) => {
         const next = new Set(prev);
         days.forEach((d) => {
           if (dojStr && d < dojStr) return;
-          next.add(`${empNo}|${d}`);
+          next.add(`${key}|${d}`);
         });
         return next;
       });
@@ -597,7 +609,7 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
       const updates: { empNo: string; date: string; cell: RosterCell }[] = [];
       targets.forEach((emp) => {
         const dojStr = getDojStr(emp.emp_no);
-        const row = roster.get(emp.emp_no) || {};
+        const row = getRosterRow(roster, emp.emp_no);
         days.forEach((d) => {
           if (dojStr && d < dojStr) return;
           if (!activeWeekdays.includes(weekdays[new Date(d).getDay()])) return;
@@ -699,9 +711,7 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
       }[] = [];
       dirtyKeys.forEach((key) => {
         const [empNo, date] = key.split('|');
-        const row = roster.get(empNo);
-        if (!row) return;
-        const cell = row[date];
+        const cell = getRosterRow(roster, empNo)[date];
         const hasHalf = cell?.firstHalfStatus || cell?.secondHalfStatus;
         if (cell?.shiftId || cell?.status || hasHalf) {
           entries.push({
@@ -745,7 +755,7 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
     if (activeTab !== 'assigned') return [];
     const summary: AssignmentSummaryItem[] = [];
     employees.forEach((emp) => {
-      const row = roster.get(emp.emp_no) || {};
+      const row = getRosterRow(roster, emp.emp_no);
       const shiftMap = new Map<string | null, { label: string; dates: string[] }>();
       Object.entries(row).forEach(([date, cell]) => {
         const isWO = cell?.status === 'WO';
@@ -804,33 +814,37 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
         : 'All';
       const deptName = selectedDept ? departments.find((d) => d._id === selectedDept)?.name || 'Dept' : 'All';
       const exportEmpParams = buildEmployeeListParams({ ...listQuery, page: 1, limit: 500 });
-      const [allEmpsRes, allRosterRes, xlsxMod] = await Promise.all([
-        (async () => {
-          const all: Employee[] = [];
-          let exportPage = 1;
-          let exportTotalPages = 1;
-          do {
-            const res = (await api.getEmployeesSummary({
-              ...exportEmpParams,
-              page: exportPage,
-              limit: 500,
-            })) as { data?: Employee[]; pagination?: { totalPages: number } };
-            if (res.data?.length) all.push(...res.data);
-            exportTotalPages = res.pagination?.totalPages || 1;
-            exportPage += 1;
-          } while (exportPage <= exportTotalPages);
-          return { data: all };
-        })(),
-        api.getRoster(month, buildRosterApiParams({ ...listQuery, page: 1, limit: 500 }, { paginate: false })),
-        import('xlsx'),
-      ]);
-      const XLSX: typeof import('xlsx') = (xlsxMod as { default?: typeof import('xlsx') }).default ?? xlsxMod;
+      const allEmpsRes = await (async () => {
+        const all: Employee[] = [];
+        let exportPage = 1;
+        let exportTotalPages = 1;
+        do {
+          const res = (await api.getEmployeesSummary({
+            ...exportEmpParams,
+            page: exportPage,
+            limit: 500,
+          })) as { data?: Employee[]; pagination?: { totalPages: number } };
+          if (res.data?.length) all.push(...res.data);
+          exportTotalPages = res.pagination?.totalPages || 1;
+          exportPage += 1;
+        } while (exportPage <= exportTotalPages);
+        return { data: all };
+      })();
       const allEmps = (allEmpsRes.data || []) as {
         emp_no: string;
         employee_name?: string;
         division?: { name: string };
         department?: { name: string };
       }[];
+      const employeeNumbers = toRosterEmployeeNumbersParam(allEmps);
+      const [allRosterRes, xlsxMod] = await Promise.all([
+        api.getRoster(month, {
+          ...buildRosterApiParams({ ...listQuery, page: 1, limit: 500 }, { paginate: false }),
+          ...(employeeNumbers ? { employeeNumbers } : {}),
+        }),
+        import('xlsx'),
+      ]);
+      const XLSX: typeof import('xlsx') = (xlsxMod as { default?: typeof import('xlsx') }).default ?? xlsxMod;
       const allRosterData = allRosterRes.data as {
         entries: { employeeNumber: string; date: string; shiftId?: string; status?: string }[];
       } | null;
@@ -848,7 +862,7 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
           emp.department?.name || '-',
         ];
         days.forEach((d) => {
-          const cell = (fullMap.get(emp.emp_no) || {})[d];
+          const cell = getRosterRow(fullMap, emp.emp_no)[d];
           if (cell?.status === 'WO') row.push('WO');
           else if (cell?.status === 'HOL') row.push('HOL');
           else if (cell?.shiftId) row.push(shiftLabel(shifts.find((s) => s._id === cell.shiftId)));
@@ -890,7 +904,7 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
       filteredEmployees.forEach((emp) => {
         const dojStr = getDojStr(emp.emp_no);
         if (dojStr && date < dojStr) return;
-        const row = roster.get(emp.emp_no) || {};
+        const row = getRosterRow(roster, emp.emp_no);
         if (value.shiftId && !value.status && (row[date]?.status === 'WO' || row[date]?.status === 'HOL')) {
           return;
         }

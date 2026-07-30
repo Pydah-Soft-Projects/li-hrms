@@ -6,6 +6,7 @@ import { format, parseISO } from 'date-fns';
 import { ChevronLeft, ChevronRight, Plus, Users, Hash, X, LayoutGrid } from 'lucide-react';
 import { Employee, Shift } from '@/lib/api';
 import { RosterCell, RosterGridProps } from '@/lib/shiftRoster/types';
+import { getRosterRow, rosterEmpKey } from '@/lib/shiftRoster/utils';
 import EmployeeQuickAssign from '@/components/shift-roster/EmployeeQuickAssign';
 import RosterEmployeeIdentity from '@/components/shift-roster/RosterEmployeeIdentity';
 
@@ -276,7 +277,7 @@ const RosterRow = memo(({
         cell={row[d] || { shiftId: null }}
         isHoliday={empHolidays.has(d)}
         isWeekend={new Date(d).getDay() === 0 || new Date(d).getDay() === 6}
-        isDirty={dirtyKeys.has(`${emp.emp_no}|${d}`)}
+        isDirty={dirtyKeys.has(`${rosterEmpKey(emp.emp_no)}|${d}`)}
         shiftById={shiftById}
         doj={emp.doj}
         onOpenEditor={onOpenEditor}
@@ -577,7 +578,7 @@ const RosterGrid = memo((props: RosterGridProps) => {
 
   const handleOpenEditor = useCallback((empNo: string, date: string, el: HTMLElement) => {
     setQuickAssign(null);
-    const cell = roster.get(empNo)?.[date] || { shiftId: null };
+    const cell = getRosterRow(roster, empNo)[date] || { shiftId: null };
     setEditor({ kind: 'cell', empNo, date, anchor: anchorFromEl(el), cell });
   }, [roster]);
 
@@ -709,7 +710,7 @@ const RosterGrid = memo((props: RosterGridProps) => {
                   key={emp.emp_no}
                   emp={emp}
                   days={days}
-                  row={roster.get(emp.emp_no) || {}}
+                  row={getRosterRow(roster, emp.emp_no)}
                   empHolidays={holidayCache.get(emp.emp_no) || new Set()}
                   shifts={shifts}
                   shiftById={shiftById}

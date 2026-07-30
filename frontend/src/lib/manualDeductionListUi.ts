@@ -95,29 +95,44 @@ export function deductionMatchesTab(row: ManualDeductionListRow, activeTab: stri
   return row.status === activeTab;
 }
 
-/** Departments available when one or more divisions are selected (loans page pattern). */
+/** True if a department document is linked to the given division id. */
+function departmentBelongsToDivision(dept: any, divId: string): boolean {
+  const selected = String(divId);
+  // Primary: Department.divisions[] (actual model — not division_id)
+  const divLinks = (dept?.divisions ?? []) as any[];
+  if (divLinks.some((x) => String(x?._id ?? x) === selected)) return true;
+  // Legacy single-field shapes
+  if (dept?.division_id && String(dept.division_id?._id ?? dept.division_id) === selected) return true;
+  if (dept?.division && String(dept.division?._id ?? dept.division) === selected) return true;
+  return false;
+}
+
+/**
+ * Departments available when one or more divisions are selected.
+ * Prefer Department.divisions[] membership (scope-filtered departments list) over
+ * Division.departments master links — those can be incomplete while employees still load.
+ * Division.departments is only a fallback when a dept doc has no division linkage fields.
+ */
 export function departmentsForDivisionFilter(
   divisions: any[],
   departments: any[],
   filterDivisions: string[],
 ): any[] {
   if (filterDivisions.length === 0) return departments;
-  const allowed = new Set<string>();
-  for (const divId of filterDivisions) {
-    const div = divisions.find((d: any) => String(d._id) === String(divId));
-    const deptIds = ((div?.departments ?? []) as any[]).map((d: any) => (typeof d === 'string' ? d : d?._id));
-    if (deptIds.length) {
-      deptIds.forEach((id) => {
-        if (id) allowed.add(String(id));
-      });
-    } else {
-      departments
-        .filter((d: any) => String(d.division_id || d.division) === String(divId))
-        .forEach((d: any) => allowed.add(String(d._id)));
+
+  const selected = filterDivisions.map(String);
+  const linkedOnDivision = new Set<string>();
+  for (const divId of selected) {
+    const div = divisions.find((d: any) => String(d._id) === divId);
+    for (const d of (div?.departments ?? []) as any[]) {
+      const id = typeof d === 'string' ? d : d?._id;
+      if (id) linkedOnDivision.add(String(id));
     }
   }
-  if (allowed.size === 0) {
-    return departments.filter((d: any) => filterDivisions.includes(String(d.division_id || d.division)));
-  }
-  return departments.filter((d: any) => allowed.has(String(d._id)));
+
+  return departments.filter((dept: any) => {
+    if (selected.some((divId) => departmentBelongsToDivision(dept, divId))) return true;
+    // Fallback for dept docs missing divisions[]: still allow Division.departments links
+    return linkedOnDivision.has(String(dept._id));
+  });
 }

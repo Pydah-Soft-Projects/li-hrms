@@ -90,7 +90,7 @@ async function withRetry(label, fn) {
 
 async function copyDatabase() {
   const prodUri = process.env.MONGODB_ATLAS_URI || process.env.MONGODB_URI;
-  const localUri = process.env.LOCAL_COPY_URI || 'mongodb://127.0.0.1:27017/ravi-1';
+  const localUri = process.env.LOCAL_COPY_URI || 'mongodb://127.0.0.1:27017/ravi-2';
 
   if (!prodUri) {
     console.error('Missing MONGODB_ATLAS_URI (or MONGODB_URI) in backend/.env');
