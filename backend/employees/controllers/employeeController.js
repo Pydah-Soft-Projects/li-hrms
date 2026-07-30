@@ -795,6 +795,16 @@ exports.createEmployee = async (req, res) => {
       }
     }
 
+    // Keep Department ↔ Division master links in sync with the employee assignment
+    if (employeeData.department_id && employeeData.division_id) {
+      try {
+        const { ensureDepartmentLinkedToDivision } = require('../../departments/services/departmentDivisionLinkService');
+        await ensureDepartmentLinkedToDivision(employeeData.department_id, employeeData.division_id);
+      } catch (linkErr) {
+        console.warn('[createEmployee] dept↔division auto-link skipped:', linkErr.message);
+      }
+    }
+
     // Validate designation if provided
     if (employeeData.designation_id) {
       const desig = await Designation.findById(employeeData.designation_id);
@@ -1284,6 +1294,20 @@ exports.updateEmployee = async (req, res) => {
           success: false,
           message: 'Invalid department ID',
         });
+      }
+    }
+
+    // Keep Department ↔ Division master links in sync when org assignment changes
+    {
+      const deptId = employeeData.department_id || existingEmployee.department_id;
+      const divId = employeeData.division_id || existingEmployee.division_id;
+      if (deptId && divId) {
+        try {
+          const { ensureDepartmentLinkedToDivision } = require('../../departments/services/departmentDivisionLinkService');
+          await ensureDepartmentLinkedToDivision(deptId, divId);
+        } catch (linkErr) {
+          console.warn('[updateEmployee] dept↔division auto-link skipped:', linkErr.message);
+        }
       }
     }
 

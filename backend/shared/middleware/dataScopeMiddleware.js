@@ -432,6 +432,8 @@ function buildMetadataScopeFilter(user, modelName, selectedDivisionId = null) {
 
                 const specificDepts = (mapping.departments || []).map(d => (d?._id || d).toString());
                 if (specificDepts.length > 0) {
+                    // Mapped department IDs are authoritative — do not also require Department.divisions
+                    // (master links are often incomplete while employees / attendance still show those depts).
                     filter._id = { $in: specificDepts.map(toObjectId) };
                 } else {
                     filter.divisions = toObjectId(selectedDivisionId);
@@ -443,7 +445,8 @@ function buildMetadataScopeFilter(user, modelName, selectedDivisionId = null) {
                     const depts = (m.departments || []).map(d => (d?._id || d).toString());
 
                     if (depts.length > 0) {
-                        return { divisions: toObjectId(divId), _id: { $in: depts.map(toObjectId) } };
+                        // Same as selectedDivisionId path: mapping.departments alone is enough
+                        return { _id: { $in: depts.map(toObjectId) } };
                     } else {
                         return { divisions: toObjectId(divId) };
                     }

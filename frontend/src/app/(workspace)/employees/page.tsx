@@ -58,6 +58,7 @@ import {
   EMPLOYEE_TEMPLATE_SAMPLE,
   validateEmployeeRow,
   ParsedRow,
+  BULK_DEFAULT_QUALIFICATION_STATUS,
 } from '@/lib/bulkUpload';
 import {
   appendOverallCertificateStatusToSetting,
@@ -6327,13 +6328,18 @@ export default function EmployeesPage() {
                   }
 
                   // Handle special case for qualifications if enabled
-                  if (formSettings?.qualifications?.isEnabled && row.qualifications) {
-                    const qualDef = {
-                      type: 'array',
-                      itemType: 'object',
-                      fields: formSettings.qualifications.fields
-                    };
-                    employeeData.qualifications = parseDynamicField(row.qualifications, qualDef);
+                  if (formSettings?.qualifications?.isEnabled !== false) {
+                    if (row.qualifications) {
+                      const qualDef = {
+                        type: 'array',
+                        itemType: 'object',
+                        fields: formSettings?.qualifications?.fields
+                      };
+                      employeeData.qualifications = parseDynamicField(row.qualifications, qualDef);
+                    }
+                    // Bulk default: overall status = partial when sheet omits it
+                    const qs = String(employeeData.qualificationStatus ?? row.qualificationStatus ?? '').trim();
+                    employeeData.qualificationStatus = qs || BULK_DEFAULT_QUALIFICATION_STATUS;
                   }
 
                   batchData.push(employeeData);

@@ -250,23 +250,30 @@ export const parseFile = (file: File): Promise<BulkUploadResult> => {
           return;
         }
 
-        // Get headers from first row
-        const headers = Object.keys(jsonData[0]);
+        // Get headers from first row and map aliases → canonical field keys
+        const rawHeaders = Object.keys(jsonData[0]);
+        const headerKeyMap = new Map<string, string>();
+        for (const raw of rawHeaders) {
+          headerKeyMap.set(raw, resolveBulkHeaderKey(raw));
+        }
+        const headers = Array.from(new Set(Array.from(headerKeyMap.values()).filter(Boolean)));
 
         // Clean and normalize data
         const cleanedData = jsonData.map((row, index) => {
           const cleanedRow: ParsedRow = { _rowIndex: index + headerRowIndex + 2 }; // Corrected index
-          for (const key of headers) {
-            let value: string | number | boolean | null = row[key] as string | number | boolean | null;
+          for (const rawKey of rawHeaders) {
+            const key = headerKeyMap.get(rawKey) || rawKey;
+            let value: string | number | boolean | null = row[rawKey] as string | number | boolean | null;
 
             // Trim strings if it is one
             if (typeof value === 'string') {
               value = value.trim();
             }
 
-            // More robust date helper
-            const isDateField = key.toLowerCase().includes('dob') || key.toLowerCase().includes('doj') ||
-              key.toLowerCase().includes('date');
+            // More robust date helper (check original + mapped header)
+            const keyForDate = `${rawKey} ${key}`.toLowerCase();
+            const isDateField = keyForDate.includes('dob') || keyForDate.includes('doj') ||
+              keyForDate.includes('date');
 
             if (isDateField && value !== undefined && value !== null && value !== '') {
               try {
@@ -534,7 +541,30 @@ const HEADER_MAP: { [key: string]: string } = {
   'employee group': 'group_name',
   'employee_group': 'group_name',
   'employee_group_name': 'group_name',
+  'qualificationstatus': 'qualificationStatus',
+  'qualification status': 'qualificationStatus',
+  'overall qualification status': 'qualificationStatus',
+  'cert status': 'qualificationStatus',
+  'certificate status': 'qualificationStatus',
 };
+
+/** Map Excel header labels (and common aliases) to canonical bulk field keys. */
+export function resolveBulkHeaderKey(rawKey: string): string {
+  const trimmed = String(rawKey ?? '').trim();
+  if (!trimmed) return trimmed;
+  const lower = trimmed.toLowerCase();
+  const spaced = lower.replace(/[_\s]+/g, ' ').trim();
+  const underscored = lower.replace(/[\s]+/g, '_');
+  const compact = lower.replace(/[_\s]+/g, '');
+  const candidates = [trimmed, lower, spaced, underscored, compact];
+  for (const c of candidates) {
+    if (HEADER_MAP[c]) return HEADER_MAP[c];
+  }
+  return trimmed;
+}
+
+/** Default overall qualification status for bulk employee applications ("partial"). */
+export const BULK_DEFAULT_QUALIFICATION_STATUS = 'partial_verified';
 
 /**
  * Validate employee row with robust field mapping and normalization

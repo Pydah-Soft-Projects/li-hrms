@@ -109,9 +109,10 @@ function departmentBelongsToDivision(dept: any, divId: string): boolean {
 
 /**
  * Departments available when one or more divisions are selected.
- * Prefer Department.divisions[] membership (scope-filtered departments list) over
- * Division.departments master links — those can be incomplete while employees still load.
- * Division.departments is only a fallback when a dept doc has no division linkage fields.
+ * Matches attendance / employees filter behavior:
+ * 1) Prefer Division.departments (already scope-mapped by GET /divisions)
+ * 2) Union with catalog depts linked via Department.divisions[] / legacy fields
+ *    so incomplete master links on either side do not hide in-scope departments.
  */
 export function departmentsForDivisionFilter(
   divisions: any[],
@@ -121,18 +122,49 @@ export function departmentsForDivisionFilter(
   if (filterDivisions.length === 0) return departments;
 
   const selected = filterDivisions.map(String);
-  const linkedOnDivision = new Set<string>();
+  const byId = new Map<string, any>();
+
   for (const divId of selected) {
     const div = divisions.find((d: any) => String(d._id) === divId);
-    for (const d of (div?.departments ?? []) as any[]) {
-      const id = typeof d === 'string' ? d : d?._id;
-      if (id) linkedOnDivision.add(String(id));
+    const nested = div?.departments;
+    if (!Array.isArray(nested) || nested.length === 0) continue;
+
+    for (const x of nested) {
+      if (!x) continue;
+      if (typeof x === 'string') {
+        const fromCatalog = departments.find((d: any) => String(d._id) === String(x));
+        const dept = fromCatalog || { _id: String(x), name: String(x) };
+        byId.set(String(dept._id), dept);
+      } else {
+        const id = String(x._id);
+        const fromCatalog = departments.find((d: any) => String(d._id) === id);
+        byId.set(id, fromCatalog || { _id: id, name: x.name || 'Department', code: x.code });
+      }
     }
   }
 
-  return departments.filter((dept: any) => {
-    if (selected.some((divId) => departmentBelongsToDivision(dept, divId))) return true;
-    // Fallback for dept docs missing divisions[]: still allow Division.departments links
-    return linkedOnDivision.has(String(dept._id));
-  });
+  for (const dept of departments) {
+    if (selected.some((divId) => departmentBelongsToDivision(dept, divId))) {
+      byId.set(String(dept._id), dept);
+    }
+  }
+
+  // Single college selected (workspace auto-select): keep scoped catalog depts not yet linked
+  if (selected.length === 1 && byId.size === 0) {
+    return departments;
+  }
+  if (selected.length === 1) {
+    for (const dept of departments) {
+      const divLinks = (dept?.divisions ?? []) as any[];
+      if (!divLinks || divLinks.length === 0) {
+        byId.set(String(dept._id), dept);
+      }
+    }
+  }
+
+  if (byId.size > 0) return Array.from(byId.values());
+
+  return departments.filter((dept: any) =>
+    selected.some((divId) => departmentBelongsToDivision(dept, divId)),
+  );
 }

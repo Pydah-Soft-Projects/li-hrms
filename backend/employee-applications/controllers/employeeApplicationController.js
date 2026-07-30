@@ -696,8 +696,14 @@ exports.bulkCreateApplications = async (req, res) => {
           throw new Error('Employee number is required when auto-generate is off');
         }
 
-        // Validation
+        // Validation — bulk defaults overall qualification status to "partial" when missing
         if (settings) {
+          if (settings.qualifications?.isEnabled !== false) {
+            const qs = appData.qualificationStatus != null ? String(appData.qualificationStatus).trim() : '';
+            if (!qs) {
+              appData.qualificationStatus = 'partial_verified';
+            }
+          }
           const validation = await validateFormData(appData, settings);
           if (!validation.isValid) {
             throw new Error(`Validation: ${Object.values(validation.errors).flat().join(', ')}`);
@@ -1277,6 +1283,16 @@ const verifySingleApplicationInternal = async (applicationId, approver) => {
   try {
     createdEmployee = await Employee.create(employeeData);
     results.mongodb = true;
+
+    // Keep Department ↔ Division master links in sync for workspace metadata scope
+    if (createdEmployee.department_id && createdEmployee.division_id) {
+      try {
+        const { ensureDepartmentLinkedToDivision } = require('../../departments/services/departmentDivisionLinkService');
+        await ensureDepartmentLinkedToDivision(createdEmployee.department_id, createdEmployee.division_id);
+      } catch (linkErr) {
+        console.warn('[VerifyApplication] dept↔division auto-link skipped:', linkErr.message);
+      }
+    }
 
     recordInitialTenure(createdEmployee, finalDOJ);
     await createdEmployee.save();

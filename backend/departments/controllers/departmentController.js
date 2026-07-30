@@ -65,18 +65,30 @@ exports.getAllDepartments = async (req, res) => {
   try {
     const { isActive, division } = req.query;
     const cacheService = require('../../shared/services/cacheService');
+    const {
+      getDivisionWideIds,
+      expandDepartmentQueryForDivisionWideScope,
+    } = require('../services/departmentDivisionLinkService');
     const userId = (req.user && (req.user._id || req.user.userId)) ? String(req.user._id || req.user.userId) : 'anon';
     const cacheKey = `departments:user_${userId}:${isActive || 'any'}:${division || 'all'}`;
+    const scopedUser = req.scopedUser || req.user;
+    const divisionWide = getDivisionWideIds(scopedUser, division || null).length > 0;
 
-    const cachedDepts = await cacheService.get(cacheKey);
-    if (cachedDepts && Array.isArray(cachedDepts)) {
-      console.log(`[Cache] Serving departments from cache: ${cacheKey}`);
-      return res.status(200).json({
-        success: true,
-        count: cachedDepts.length,
-        data: cachedDepts,
-        _cached: true
-      });
+    // Division-wide workspace users must not keep a stale limited department list in cache
+    // (employee-backed depts / healed links would stay hidden for up to TTL).
+    if (!divisionWide) {
+      const cachedDepts = await cacheService.get(cacheKey);
+      if (cachedDepts && Array.isArray(cachedDepts)) {
+        console.log(`[Cache] Serving departments from cache: ${cacheKey}`);
+        return res.status(200).json({
+          success: true,
+          count: cachedDepts.length,
+          data: cachedDepts,
+          _cached: true
+        });
+      }
+    } else {
+      await cacheService.del(cacheKey);
     }
 
     let query = {};
@@ -93,6 +105,19 @@ exports.getAllDepartments = async (req, res) => {
 
     // Note: 'division' from req.query is already handled by applyMetadataScopeFilter middleware
     // which populates req.metadataScopeFilter with the correct divisions filter.
+
+    // Division-wide workspace users: include departments that have employees in their
+    // college even when Department.divisions master link was missing (heal + expand).
+    try {
+      const expanded = await expandDepartmentQueryForDivisionWideScope(
+        query,
+        scopedUser,
+        division || null
+      );
+      query = expanded.query;
+    } catch (linkErr) {
+      console.warn('[getAllDepartments] division-wide expand skipped:', linkErr.message);
+    }
 
     console.log('Executing Department Query:', JSON.stringify(query));
 
@@ -116,7 +141,10 @@ exports.getAllDepartments = async (req, res) => {
       .lean();
 
     const data = Array.isArray(departments) ? departments : [];
-    await cacheService.set(cacheKey, data, 600);
+    // Cache only non-division-wide results; division-wide lists stay fresh from employee sync
+    if (!divisionWide) {
+      await cacheService.set(cacheKey, data, 600);
+    }
 
     res.status(200).json({
       success: true,

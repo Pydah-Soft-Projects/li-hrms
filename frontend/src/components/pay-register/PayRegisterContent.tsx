@@ -581,7 +581,8 @@ export function PayRegisterContent({
 
   const loadDivisions = async () => {
     try {
-      const response = await api.getDivisions(); // Assuming getDivisions exists and returns all
+      // Same as attendance / employees: active divisions with scope-mapped departments
+      const response = await api.getDivisions(true);
       if (response.success) {
         setDivisions(response.data || []);
       }
