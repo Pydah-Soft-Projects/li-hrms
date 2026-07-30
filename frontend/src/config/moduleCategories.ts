@@ -39,6 +39,7 @@ export const MODULE_CATEGORIES = [
             { code: 'LEAVE_OD', label: 'Leave & OD', href: '/leaves', fileUploadable: true },
             { code: 'LEAVE_REGISTER', label: 'Leave Register', href: '/leave-register' },
             { code: 'CCL', label: 'CCL', href: '/ccl' },
+            { code: 'COMPLAINTS', label: 'Complaints', href: '/complaints' },
             { code: 'OT_PERMISSIONS', label: 'OT & Permissions', href: '/ot-permissions' },
             { code: 'SHIFT_ROSTER', label: 'Shift Roster', href: '/shift-roster' },
             { code: 'SHIFTS', label: 'Shifts', href: '/shifts' },

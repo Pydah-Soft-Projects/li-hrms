@@ -59,7 +59,8 @@ export type SettingsTabType =
   | 'ot'
   | 'permissions'
   | 'communications'
-  | 'feature_control';
+  | 'feature_control'
+  | 'complaints';
 
 const VALID_TABS: SettingsTabType[] = [
   'general',
@@ -81,6 +82,7 @@ const VALID_TABS: SettingsTabType[] = [
   'permissions',
   'communications',
   'feature_control',
+  'complaints',
 ];
 
 const MENU_ITEMS = [
@@ -95,6 +97,7 @@ const MENU_ITEMS = [
   { id: 'ccl', label: 'Comp. Casual Leave (CCL)', icon: Zap, color: 'text-amber-500', group: 'Human Resources' },
   { id: 'resignation', label: 'Resignation Policy', icon: LogOut, color: 'text-orange-500', group: 'Human Resources' },
   { id: 'promotions_transfers', label: 'Promotions & Transfers', icon: Award, color: 'text-violet-500', group: 'Human Resources' },
+  { id: 'complaints', label: 'Complaints Settings', icon: AlertTriangle, color: 'text-rose-500', group: 'Human Resources' },
   { id: 'shift', label: 'Shift Schedules', icon: Clock, color: 'text-amber-500', group: 'Operations' },
   { id: 'attendance', label: 'Attendance Sync', icon: Zap, color: 'text-yellow-500', group: 'Operations' },
   { id: 'attendance_deductions', label: 'Deduction Rules', icon: AlertTriangle, color: 'text-rose-500', group: 'Operations' },
@@ -186,6 +189,8 @@ export default function SettingsHubClient() {
         return <CommunicationSettings />;
       case 'feature_control':
         return <FeatureControlSettings />;
+      case 'complaints':
+        return <LeaveSettings type="complaint" />;
       default:
         return <GeneralSettings />;
     }

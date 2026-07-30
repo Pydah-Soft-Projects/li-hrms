@@ -175,6 +175,26 @@ async function resolvePromotionTransferWorkflowSettings(divisionId) {
   return { workflow };
 }
 
+async function resolveComplaintWorkflowSettings(divisionId) {
+  let settings = await LeaveSettings.getActiveSettings('complaint');
+  if (!settings) {
+    const defaultWf = {
+      isEnabled: true,
+      steps: [],
+      finalAuthority: { role: 'hr', anyHRCanApprove: true },
+    };
+    const wf = await applyDivisionWorkflowOverride(defaultWf, divisionId, 'complaint');
+    return {
+      type: 'complaint',
+      workflow: wf,
+      settings: {},
+    };
+  }
+  const plain = toPlain(settings);
+  plain.workflow = await applyDivisionWorkflowOverride(plain.workflow, divisionId, 'complaint');
+  return plain;
+}
+
 module.exports = {
   mergeWorkflowObjects,
   applyDivisionWorkflowOverride,
@@ -182,4 +202,5 @@ module.exports = {
   resolveLoanWorkflowSettings,
   resolvePermissionWorkflowSettings,
   resolvePromotionTransferWorkflowSettings,
+  resolveComplaintWorkflowSettings,
 };

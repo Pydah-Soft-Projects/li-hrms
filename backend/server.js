@@ -115,6 +115,10 @@ app.use('/api/workspaces', workspaceRoutes);
 const leaveRoutes = require('./leaves/index.js');
 app.use('/api/leaves', leaveRoutes);
 
+// Complaints routes
+const complaintRoutes = require('./complaints/index.js');
+app.use('/api/complaints', complaintRoutes);
+
 // Resignation policy and requests
 const resignationRoutes = require('./resignations/index.js');
 app.use('/api/resignations', resignationRoutes);

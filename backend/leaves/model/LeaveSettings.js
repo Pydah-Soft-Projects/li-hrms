@@ -9,7 +9,7 @@ const LeaveSettingsSchema = new mongoose.Schema(
     // Settings type - leave, od, or ccl
     type: {
       type: String,
-      enum: ['leave', 'od', 'ccl'],
+      enum: ['leave', 'od', 'ccl', 'complaint'],
       required: true,
     },
 

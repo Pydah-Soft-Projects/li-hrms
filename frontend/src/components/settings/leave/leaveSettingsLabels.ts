@@ -1,4 +1,4 @@
-export type LeaveSettingsKind = 'leave' | 'od' | 'ccl';
+export type LeaveSettingsKind = 'leave' | 'od' | 'ccl' | 'complaint';
 
 type LeaveSettingsCopy = {
   panelTitle: string;
@@ -72,6 +72,24 @@ const COPY: Record<LeaveSettingsKind, LeaveSettingsCopy> = {
     futureDescription: 'Allow employees to apply for future dates.',
     policyTip:
       'Restricting backdated applications helps in timely attendance processing. For CCL claims, we recommend a max backdated period of 3–7 days.',
+  },
+  complaint: {
+    panelTitle: 'Complaint Settings',
+    panelSubtitle: 'Configure complaint categories and workflows.',
+    typesSectionTitle: 'Complaint Types',
+    typesTitle: 'Available complaint types',
+    typesDescription: 'Define codes and names for supported complaint categories.',
+    typesEmpty: 'No complaint types defined. Click "Add type" to start.',
+    saveTypesLabel: 'Save Complaint Types',
+    namePlaceholder: 'Full Name (e.g. Harassment)',
+    paidLabel: 'Active Type',
+    unpaidLabel: 'Inactive Type',
+    backdatedTitle: 'Backdated Submissions',
+    backdatedDescription: 'Allow employees to submit complaints for past dates.',
+    futureTitle: 'Future Dated Submissions',
+    futureDescription: 'Allow employees to submit complaints for future dates.',
+    policyTip:
+      'Setting up workflows ensures complaints are correctly routed to Reporting Managers, HODs, or HR.',
   },
 };
 
