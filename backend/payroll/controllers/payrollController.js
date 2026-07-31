@@ -17,6 +17,7 @@ const {
   enrichExportRowsWithOrg,
   refreshEmployeeFieldColumnsOnRows,
   tryBuildRegularRowsFromSnapshots,
+  tryBuildSecondSalaryRowsFromSnapshots,
   enrichPayslipsLoanRemainingBalance,
 } = require('../utils/paysheetBundleExport');
 const User = require('../../users/model/User');
@@ -777,9 +778,9 @@ exports.calculatePayroll = async (req, res) => {
 
     let secondSalaryPayRegister = null;
     try {
-      const { isSuperAdmin } = require('../../employees/utils/employeeFeatureAccess');
+      // Follow-up 2nd salary for any role authorized on POST /payroll/calculate when the org feature is on.
       const secondOn = await isSecondSalaryGloballyEnabled();
-      const emp = secondOn && isSuperAdmin(req.user) ? await Employee.findById(employeeId).select('second_salary') : null;
+      const emp = secondOn ? await Employee.findById(employeeId).select('second_salary') : null;
       if (emp && Number(emp.second_salary) > 0) {
         const { calculateSecondSalaryForPayRegister } = require('../services/secondSalaryCalculationService');
         const SecondSalaryBatchService = require('../services/secondSalaryBatchService');
@@ -1823,9 +1824,30 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
           built.expandedColumns
         );
       }
-      secondRows = built.secondRows;
+      // Prefer frozen kind:second_salary snapshots (same as GET /paysheet?secondSalary=1).
+      secondRows = await tryBuildSecondSalaryRowsFromSnapshots(
+        payrollRecords,
+        secondByEmp,
+        month,
+        outputColumnsNormalized,
+        built.secondRows,
+        payslipsSec
+      );
+      if (!secondRows) {
+        secondRows = built.secondRows;
+      } else {
+        secondRows = outputColumnService.projectRowsToExpandedColumns(
+          secondRows,
+          built.expandedColumns
+        );
+      }
       netsReg = payslipsReg.map((p) => Number(p.netSalary) || 0);
-      netsSec = payslipsSec.map((p) => (p ? Number(p.netSalary) || 0 : 0));
+      netsSec = secondRows.map((row, i) => {
+        if (!payslipsSec[i]) return 0;
+        const fromSnap = Number(row?.['NET SALARY'] ?? row?.['FINAL SALARY']);
+        if (Number.isFinite(fromSnap)) return fromSnap;
+        return Number(payslipsSec[i].netSalary) || 0;
+      });
     } else {
       const payslips = await buildPayslipsFromStoredPayrollRecords(payrollRecords, month);
       if (!payslips.length) {

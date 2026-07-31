@@ -1138,6 +1138,80 @@ async function tryBuildRegularRowsFromSnapshots(payrollRecords, month, outputCol
 }
 
 /**
+ * Load frozen 2nd-salary paysheet rows from PayrollPayslipSnapshot (kind: second_salary).
+ * Same rule as GET /paysheet?secondSalary=1: all employees who have a SecondSalaryRecord
+ * must have a snapshot, otherwise fall back to rebuilding from records.
+ * Employees without 2nd salary keep fallbackSecondRows (zeros / identity).
+ *
+ * @param {Object[]} payrollRecords - regular payroll rows (defines export order)
+ * @param {Map<string, Object>} secondByEmp - employeeId -> SecondSalaryRecord
+ * @param {string} month
+ * @param {Object[]} outputColumnsNormalized
+ * @param {Record<string, unknown>[]} fallbackSecondRows - from buildOutputColumnRows
+ * @param {Object[]} payslipsSecOrNull - paired payslip shapes (null when no 2nd salary)
+ * @returns {Promise<Record<string, unknown>[]|null>}
+ */
+async function tryBuildSecondSalaryRowsFromSnapshots(
+  payrollRecords,
+  secondByEmp,
+  month,
+  outputColumnsNormalized,
+  fallbackSecondRows,
+  payslipsSecOrNull
+) {
+  if (!Array.isArray(payrollRecords) || payrollRecords.length === 0) return null;
+  if (!(secondByEmp instanceof Map) || secondByEmp.size === 0) return null;
+  try {
+    const PaysheetAdjustmentRequest = require('../model/PaysheetAdjustmentRequest');
+    const PayrollPayslipSnapshot = require('../model/PayrollPayslipSnapshot');
+    const paysheetAdjustmentsActive = await PaysheetAdjustmentRequest.exists({
+      month,
+      status: { $in: ['pending', 'approved'] },
+    });
+    if (paysheetAdjustmentsActive) return null;
+
+    const withSecondIds = payrollRecords
+      .map((r) => (r.employeeId?._id || r.employeeId)?.toString())
+      .filter((id) => id && secondByEmp.has(id));
+    if (!withSecondIds.length) return null;
+
+    const snaps = await PayrollPayslipSnapshot.find({
+      month,
+      kind: 'second_salary',
+      employeeId: { $in: withSecondIds },
+    }).lean();
+    const snapMap = new Map(snaps.map((s) => [String(s.employeeId), s]));
+    const allPresent = withSecondIds.every((id) => snapMap.has(String(id)));
+    if (!allPresent) {
+      console.warn(
+        `[paysheetBundleExport] 2nd salary snapshots incomplete (${snaps.length}/${withSecondIds.length}); rebuilding from SecondSalaryRecord`
+      );
+      return null;
+    }
+
+    const payslipsForRefresh = (payrollRecords || []).map((r, index) => {
+      const sec = Array.isArray(payslipsSecOrNull) ? payslipsSecOrNull[index] : null;
+      if (sec) return sec;
+      return emptyPayslipFromRegular(payrollRecordToPayslipShape(r));
+    });
+
+    let rows = payrollRecords.map((r, index) => {
+      const id = String(r.employeeId?._id || r.employeeId);
+      if (snapMap.has(id)) {
+        return { 'S.No': index + 1, ...(snapMap.get(id)?.row || {}) };
+      }
+      const fallback = Array.isArray(fallbackSecondRows) ? fallbackSecondRows[index] : null;
+      return fallback ? { ...fallback, 'S.No': index + 1 } : { 'S.No': index + 1 };
+    });
+    rows = refreshEmployeeFieldColumnsOnRows(rows, payslipsForRefresh, outputColumnsNormalized);
+    return rows;
+  } catch (e) {
+    console.warn('[paysheetBundleExport] 2nd salary snapshot read failed:', e.message);
+    return null;
+  }
+}
+
+/**
  * Fill loanAdvance.remainingBalance on payslip shapes when absent on PayrollRecord
  * (older records calculated before the field was persisted).
  */
@@ -1214,6 +1288,7 @@ module.exports = {
   enrichExportRowsWithOrg,
   refreshEmployeeFieldColumnsOnRows,
   tryBuildRegularRowsFromSnapshots,
+  tryBuildSecondSalaryRowsFromSnapshots,
   enrichPayslipsLoanRemainingBalance,
   netDiffFromRowsDefault,
 };

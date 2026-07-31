@@ -199,8 +199,22 @@ const startWorkers = () => {
                 const bulkArrears = job.data.arrears;
                 const bulkDeductions = job.data.deductions;
 
-                const secondSalaryEmployees = employees.filter((e) => Number(e.second_salary) > 0);
+                const { isSecondSalaryGloballyEnabled } = require('../../settings/secondSalaryFeatureGate');
+                const secondSalaryGloballyOn = await isSecondSalaryGloballyEnabled();
+                // Same roles that can queue pay-register bulk calc may run 2nd salary when the org feature is on.
+                const mayPostSecondSalary = secondSalaryGloballyOn;
+                const secondSalaryEmployees = mayPostSecondSalary
+                    ? employees.filter((e) => Number(e.second_salary) > 0)
+                    : [];
                 const overallTotal = employees.length + secondSalaryEmployees.length;
+
+                if (!secondSalaryGloballyOn) {
+                    console.log('[Worker] 2nd salary phase skipped: enable_second_salary is off');
+                } else if (secondSalaryEmployees.length === 0) {
+                    console.log('[Worker] 2nd salary phase: no employees with second_salary > 0');
+                } else {
+                    console.log(`[Worker] 2nd salary phase will run for ${secondSalaryEmployees.length} employee(s) after regular payroll`);
+                }
 
                 for (let i = 0; i < employees.length; i++) {
                     const employee = employees[i];
@@ -267,20 +281,11 @@ const startWorkers = () => {
                 }
                 console.log(`[Worker] Bulk regular payroll calculation complete`);
 
-                const { isSecondSalaryGloballyEnabled } = require('../../settings/secondSalaryFeatureGate');
-                const { isSuperAdmin } = require('../../employees/utils/employeeFeatureAccess');
-                const User = require('../../users/model/User');
-                const bulkUser = userId ? await User.findById(userId).select('role roles featureControl').lean() : null;
-                const bulkUserForAuth = bulkUser
-                  ? { role: bulkUser.role, roles: bulkUser.roles, featureControl: bulkUser.featureControl }
-                  : null;
-                const secondSalaryGloballyOn = await isSecondSalaryGloballyEnabled();
-                const mayPostSecondSalary = secondSalaryGloballyOn && isSuperAdmin(bulkUserForAuth);
                 const { calculateSecondSalaryForPayRegister } = require('../../payroll/services/secondSalaryCalculationService');
                 const SecondSalaryBatchService = require('../../payroll/services/secondSalaryBatchService');
                 const secondBatchIds = new Set();
 
-                for (let j = 0; mayPostSecondSalary && j < secondSalaryEmployees.length; j++) {
+                for (let j = 0; j < secondSalaryEmployees.length; j++) {
                     const employee = secondSalaryEmployees[j];
                     try {
                         const { arrearsSettlements, deductionSettlements } = settlementsForEmployee(
@@ -327,7 +332,12 @@ const startWorkers = () => {
             console.error(`[Worker] Payroll job ${job.id} failed:`, error.message);
             throw error;
         }
-    }, { connection: redisConfig });
+    }, {
+        connection: redisConfig,
+        // Long pay-register bulk jobs (regular + 2nd salary) can run 30+ minutes; keep the lock alive.
+        lockDuration: 30 * 60 * 1000,
+        stalledInterval: 60 * 1000,
+    });
 
     // Application Action Worker
     const applicationWorker = new Worker('applicationQueue', async (job) => {

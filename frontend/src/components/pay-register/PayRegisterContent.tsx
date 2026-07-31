@@ -1813,6 +1813,7 @@ export function PayRegisterContent({
       toast: true,
       position: 'top-end'
     });
+    let jobQueued = false;
     try {
       const requestData = {
         month: monthStr,
@@ -1851,6 +1852,7 @@ export function PayRegisterContent({
           if (selectedDepartment) {
             consumeDepartmentPermission(selectedDepartment);
           }
+          jobQueued = true;
           setCalculatingJobId(response.jobId || null);
           Swal.fire({
             icon: 'info',
@@ -1951,7 +1953,8 @@ export function PayRegisterContent({
         text: error?.message || 'Failed to calculate payroll',
       });
     } finally {
-      setBulkCalculating(false);
+      // Keep calculating state while a background job is polled via calculatingJobId.
+      if (!jobQueued) setBulkCalculating(false);
     }
   };
 
