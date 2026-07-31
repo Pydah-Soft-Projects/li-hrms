@@ -841,6 +841,30 @@ export default function EmployeesPage() {
     loadEmployeeLeaveRegister();
   }, [employeeViewTab, leaveRegisterCycleRange.end, leaveRegisterCycleRange.start, viewingEmployee?._id]);
 
+  useEffect(() => {
+    const loadEmployeeHistory = async () => {
+      const empNo = viewingEmployee?.emp_no;
+      if (!empNo || employeeViewTab !== 'history') {
+        return;
+      }
+      try {
+        setEmployeeHistoryLoading(true);
+        const response = await api.getEmployeeHistory(String(empNo));
+        if (response?.success && Array.isArray(response.data)) {
+          setEmployeeHistory(response.data);
+        } else {
+          setEmployeeHistory([]);
+        }
+      } catch (err) {
+        console.error('Failed to load employee history:', err);
+        setEmployeeHistory([]);
+      } finally {
+        setEmployeeHistoryLoading(false);
+      }
+    };
+    loadEmployeeHistory();
+  }, [employeeViewTab, viewingEmployee?.emp_no]);
+
   const payrollCycleType = useMemo(() => {
     return payrollCycleStartDay <= 1 ? 'Calendar Month' : 'Custom Cycle';
   }, [payrollCycleStartDay]);
@@ -7007,16 +7031,27 @@ export default function EmployeesPage() {
 
                   {employeeViewTab === 'history' && (
                     <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/60">
-                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Employee History</h3>
+                      <h3 className="mb-1 text-lg font-semibold text-slate-900 dark:text-slate-100">Employee History</h3>
+                      <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                        Profile changes, resignations, rejoins, promotions, and access activity. Leave &amp; OD are under Leaves Register.
+                      </p>
                       {employeeHistoryLoading && (
                         <p className="text-sm text-slate-500 dark:text-slate-400">Loading history…</p>
                       )}
-                      {!employeeHistoryLoading && employeeHistory.length === 0 && (
-                        <p className="text-sm text-slate-500 dark:text-slate-400">No history recorded for this employee yet.</p>
-                      )}
-                      {!employeeHistoryLoading && employeeHistory.length > 0 && (
+                      {!employeeHistoryLoading && (() => {
+                        const profileHistory = employeeHistory.filter(
+                          (h: any) => !h.event?.startsWith('leave_') && !h.event?.startsWith('od_')
+                        );
+                        if (profileHistory.length === 0) {
+                          return (
+                            <p className="text-sm text-slate-500 dark:text-slate-400">
+                              No history recorded for this employee yet.
+                            </p>
+                          );
+                        }
+                        return (
                         <ol className="relative space-y-4 border-l border-slate-200 pl-4 text-sm dark:border-slate-700">
-                          {employeeHistory.filter((h: any) => !h.event?.startsWith('leave_') && !h.event?.startsWith('od_')).map((h: any, index: number) => {
+                          {profileHistory.map((h: any, index: number) => {
                             const ts = h.timestamp || h.created_at;
                             const when = ts ? new Date(ts).toLocaleString() : '-';
                             const actor = h.performedByName || 'System';
@@ -7033,8 +7068,13 @@ export default function EmployeesPage() {
                               resignation_step_rejected: 'Resignation step rejected',
                               resignation_final_approved: 'Resignation fully approved',
                               resignation_rejected: 'Resignation rejected',
+                              resignation_workflow_reopened: 'Resignation workflow reopened',
+                              termination_final_approved: 'Termination approved',
                               left_date_set: 'Left date set',
                               left_date_cleared: 'Left date cleared',
+                              rejoin_requested: 'Rejoin requested',
+                              rejoin_verified: 'Rejoin verified',
+                              rejoin_salary_approved: 'Rejoin salary approved',
                               leave_applied: 'Leave applied',
                               leave_approved: 'Leave approved',
                               leave_rejected: 'Leave rejected',
@@ -7048,6 +7088,16 @@ export default function EmployeesPage() {
                               user_activated: 'User activated',
                               user_deactivated: 'User deactivated',
                               user_deleted: 'User deleted',
+                              system_auto_deactivation: 'Auto deactivated',
+                              birthday_wish_sent: 'Birthday wish sent',
+                              status_deactivated: 'Status deactivated',
+                              promotion_transfer_submitted: 'Promotion / transfer submitted',
+                              promotion_transfer_step_approved: 'Promotion / transfer step approved',
+                              promotion_transfer_step_rejected: 'Promotion / transfer step rejected',
+                              promotion_transfer_final_approved: 'Promotion / transfer approved',
+                              promotion_transfer_rejected: 'Promotion / transfer rejected',
+                              promotion_transfer_cancelled: 'Promotion / transfer cancelled',
+                              promotion_transfer_deleted: 'Promotion / transfer deleted',
                             };
                             const label = labelMap[h.event] || h.event || 'Event';
                             const rawChanges = h.details?.changes;
@@ -7131,10 +7181,18 @@ export default function EmployeesPage() {
                             let pillBg = 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200';
 
                             const ev = h.event as string;
-                            if (ev?.startsWith('resignation') || ev === 'left_date_set' || ev === 'left_date_cleared') {
+                            if (ev?.startsWith('resignation') || ev === 'left_date_set' || ev === 'left_date_cleared' || ev === 'termination_final_approved') {
                               ringColor = 'border-orange-500';
                               cardBorder = 'border-orange-200 dark:border-orange-700/70';
                               pillBg = 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200';
+                            } else if (ev?.startsWith('rejoin_')) {
+                              ringColor = 'border-teal-500';
+                              cardBorder = 'border-teal-200 dark:border-teal-700/70';
+                              pillBg = 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200';
+                            } else if (ev?.startsWith('promotion_transfer')) {
+                              ringColor = 'border-indigo-500';
+                              cardBorder = 'border-indigo-200 dark:border-indigo-700/70';
+                              pillBg = 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200';
                             } else if (ev?.startsWith('leave_')) {
                               ringColor = 'border-emerald-500';
                               cardBorder = 'border-emerald-200 dark:border-emerald-700/70';
@@ -7143,11 +7201,11 @@ export default function EmployeesPage() {
                               ringColor = 'border-sky-500';
                               cardBorder = 'border-sky-200 dark:border-sky-700/70';
                               pillBg = 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200';
-                            } else if (ev === 'credentials_resent' || ev === 'password_reset' || ev?.startsWith('user_')) {
+                            } else if (ev === 'credentials_resent' || ev === 'password_reset' || ev?.startsWith('user_') || ev === 'system_auto_deactivation' || ev === 'status_deactivated') {
                               ringColor = 'border-violet-500';
                               cardBorder = 'border-violet-200 dark:border-violet-700/70';
                               pillBg = 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200';
-                            } else if (ev === 'employee_updated') {
+                            } else if (ev === 'employee_updated' || ev === 'data_updated') {
                               ringColor = 'border-amber-500';
                               cardBorder = 'border-amber-200 dark:border-amber-700/70';
                               pillBg = 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200';
@@ -7236,7 +7294,8 @@ export default function EmployeesPage() {
                             );
                           })}
                         </ol>
-                      )}
+                        );
+                      })()}
                     </div>
                   )}
 
