@@ -261,11 +261,11 @@ export function canManageAllowances(user: User): boolean {
 }
 
 export function canViewLoans(user: User): boolean {
-    return hasAnyRole(user, ['sub_admin', 'hr', 'manager', 'employee']) && canViewFeature(user, 'LOANS');
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'manager', 'employee']) && canViewFeature(user, 'LOANS');
 }
 
 export function canManageLoans(user: User): boolean {
-    return hasAnyRole(user, ['sub_admin', 'hr', 'manager', 'employee']) && canManageFeature(user, 'LOANS');
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'manager', 'employee']) && canManageFeature(user, 'LOANS');
 }
 
 export function canViewArrears(user: User): boolean {

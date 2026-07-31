@@ -17,6 +17,7 @@ import { LoanListEmployeeCell } from '@/components/LoanListEmployeeCell';
 import LoanEditDialog, { canShowLoanEditButton } from '@/components/loans/LoanEditDialog';
 import LoanApplyEmiPolicyPreview from '@/components/loans/LoanApplyEmiPolicyPreview';
 import LoanGuarantorPicker from '@/components/loans/LoanGuarantorPicker';
+import LoanEmployeeExposureSections from '@/components/loans/LoanEmployeeExposureSections';
 import {
   LoansPageShell,
   LoansPageHeader,
@@ -318,6 +319,7 @@ export default function LoansPage() {
   // Detail dialog: loan attendance summary (last 6 months)
   const [loanAttendanceSummary, setLoanAttendanceSummary] = useState<any>(null);
   const [loadingLoanAttendanceSummary, setLoadingLoanAttendanceSummary] = useState(false);
+  const [employeeExposure, setEmployeeExposure] = useState<any>(null);
   const [workflowMeta, setWorkflowMeta] = useState<any>(null);
   const [attendanceConsentChecked, setAttendanceConsentChecked] = useState(false);
   const [stageGuarantorIds, setStageGuarantorIds] = useState<string[]>([]);
@@ -395,6 +397,7 @@ export default function LoansPage() {
         try {
           if (selectedLoan) {
             setLoanAttendanceSummary(null);
+            setEmployeeExposure(null);
             setLoadingLoanAttendanceSummary(true);
           }
           setAttendanceConsentChecked(false);
@@ -408,6 +411,11 @@ export default function LoansPage() {
                 loanRes.applicationPdfContext?.attendanceSummary ||
                 null
             );
+            setEmployeeExposure(
+              loanRes.employeeExposure ||
+                loanRes.applicationPdfContext?.employeeExposure ||
+                null
+            );
             const existing = (loanRes.data?.guarantors || []).map((g: any) =>
               String(g.employeeId?._id || g.employeeId || '')
             ).filter(Boolean);
@@ -415,10 +423,12 @@ export default function LoansPage() {
           } else {
             setWorkflowMeta(null);
             setLoanAttendanceSummary(null);
+            setEmployeeExposure(null);
           }
         } catch {
           setWorkflowMeta(null);
           setLoanAttendanceSummary(null);
+          setEmployeeExposure(null);
         } finally {
           setLoadingLoanAttendanceSummary(false);
         }
@@ -2255,6 +2265,8 @@ export default function LoansPage() {
                   )}
                 </LoanDetailSection>
               )}
+
+              <LoanEmployeeExposureSections exposure={employeeExposure} />
 
               {/* Eligibility Information - For Salary Advance (View Only) */}
               {selectedLoan.requestType === 'salary_advance' && eligibilityData && (

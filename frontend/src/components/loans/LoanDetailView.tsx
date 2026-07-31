@@ -27,6 +27,7 @@ import {
   loansDialogOutlineButtonStyle,
 } from '@/components/loans/LoanDetailDialogShell';
 import LoanEditDialog, { canShowLoanEditButton } from '@/components/loans/LoanEditDialog';
+import LoanEmployeeExposureSections from '@/components/loans/LoanEmployeeExposureSections';
 import LoanGuarantorPicker from '@/components/loans/LoanGuarantorPicker';
 import {
   LedgerApprovalPanel,
@@ -62,20 +63,6 @@ const STATUS_COLORS: Record<string, string> = {
 function getStatusColor(status: string) {
   return STATUS_COLORS[status] || 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400';
 }
-
-type ExposureRow = {
-  loanId: string;
-  applicationFormNumber?: number | null;
-  requestType: string;
-  borrowerName?: string | null;
-  borrowerEmpNo?: string | null;
-  amount: number;
-  emi: number;
-  outstanding: number;
-  status: string;
-  isRunning: boolean;
-  guarantorStatus?: string | null;
-};
 
 type AttendanceMonth = {
   month: string;
@@ -421,8 +408,6 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
 
   if (!loan) return null;
 
-  const totals = employeeExposure?.totals;
-
   return (
     <LoansPageShell>
       <ToastContainer position="top-right" autoClose={3000} />
@@ -552,41 +537,7 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
             </LoanDetailSection>
           )}
 
-          <LoanDetailSection soft>
-            <LoanDetailSectionTitle>Existing loans (as borrower)</LoanDetailSectionTitle>
-            {(employeeExposure?.ownLoans as ExposureRow[])?.length ? (
-              <ExposureTable rows={employeeExposure.ownLoans} />
-            ) : (
-              <p className="text-sm text-slate-500">No prior loan records.</p>
-            )}
-          </LoanDetailSection>
-
-          <LoanDetailSection soft>
-            <LoanDetailSectionTitle>Loans as guarantor</LoanDetailSectionTitle>
-            {(employeeExposure?.guaranteedLoans as ExposureRow[])?.length ? (
-              <ExposureTable rows={employeeExposure.guaranteedLoans} showBorrower />
-            ) : (
-              <p className="text-sm text-slate-500">Not standing as guarantor on any loan.</p>
-            )}
-          </LoanDetailSection>
-
-          {totals && (
-            <LoanDetailSection highlight>
-              <LoanDetailSectionTitle>Total liability summary</LoanDetailSectionTitle>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <LoanDetailField label="Own outstanding">{formatRs(totals.ownOutstanding)}</LoanDetailField>
-                <LoanDetailField label="Guaranteed outstanding">{formatRs(totals.guaranteedOutstanding)}</LoanDetailField>
-                <LoanDetailField label="Total liability">
-                  <span className="font-bold text-rose-600">{formatRs(totals.totalLiability)}</span>
-                </LoanDetailField>
-                <LoanDetailField label="Own EMI">{formatRs(totals.ownEmi)}</LoanDetailField>
-                <LoanDetailField label="Guaranteed EMI">{formatRs(totals.guaranteedEmi)}</LoanDetailField>
-                <LoanDetailField label="Monthly exposure">
-                  <span className="font-bold">{formatRs(totals.totalMonthlyExposure)}</span>
-                </LoanDetailField>
-              </div>
-            </LoanDetailSection>
-          )}
+          <LoanEmployeeExposureSections exposure={employeeExposure} />
 
           {['loan', 'salary_advance'].includes(loan.requestType) && (
             <LoanDetailSection soft>
@@ -770,38 +721,5 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
         />
       )}
     </LoansPageShell>
-  );
-}
-
-function ExposureTable({ rows, showBorrower }: { rows: ExposureRow[]; showBorrower?: boolean }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-xs">
-        <thead>
-          <tr className="border-b border-slate-200 text-left text-slate-500 dark:border-slate-700">
-            <th className="px-2 py-2">Ref</th>
-            {showBorrower && <th className="px-2 py-2">Borrower</th>}
-            <th className="px-2 py-2">Amount</th>
-            <th className="px-2 py-2">EMI</th>
-            <th className="px-2 py-2">Outstanding</th>
-            <th className="px-2 py-2">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.loanId} className="border-b border-slate-100 dark:border-slate-800">
-              <td className="px-2 py-2">{row.applicationFormNumber || row.loanId.slice(-6)}</td>
-              {showBorrower && (
-                <td className="px-2 py-2">{row.borrowerName} ({row.borrowerEmpNo})</td>
-              )}
-              <td className="px-2 py-2">{formatRs(row.amount)}</td>
-              <td className="px-2 py-2">{formatRs(row.emi)}</td>
-              <td className="px-2 py-2">{formatRs(row.outstanding)}</td>
-              <td className="px-2 py-2 capitalize">{row.status?.replace(/_/g, ' ')}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
   );
 }
