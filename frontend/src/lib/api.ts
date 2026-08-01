@@ -199,6 +199,24 @@ export interface PayrollBatch {
       designation_name?: string;
       doj?: string;
     }[];
+    salaryHeldEmployees?: string[];
+    salaryHeldEmployeeDetails?: {
+      employeeId?: string;
+      emp_no?: string;
+      employee_name?: string;
+      department_name?: string;
+      designation_name?: string;
+      doj?: string;
+      salaryHoldReason?: string | null;
+    }[];
+    continuousAbsentEmployees?: {
+      emp_no?: string;
+      employee_name?: string;
+      employeeId?: string;
+      fromDate?: string;
+      toDate?: string;
+      days?: number;
+    }[];
     approvedWithExclusions?: boolean;
     excludedEmployeeCount?: number;
     excludedEmployeeDetails?: {
@@ -1193,6 +1211,15 @@ export interface Employee {
   created_at?: string;
   updated_at?: string;
   salaryStatus?: 'pending_approval' | 'approved';
+  salaryOnHold?: boolean;
+  salaryHoldReason?: string | null;
+  salaryHeldAt?: string | null;
+  continuousAbsent?: {
+    active?: boolean;
+    fromDate?: string;
+    toDate?: string;
+    days?: number;
+  } | null;
   qualificationStatus?: string;
   // Populated fields (from virtuals or population)
   department?: any;
@@ -2680,6 +2707,19 @@ export const api = {
     return apiRequest<any>(`/employees/${empNo}/left-date`, {
       method: 'PUT',
       body: JSON.stringify({ leftDate, leftReason }),
+    });
+  },
+
+  holdEmployeeSalary: async (empNo: string, reason: string) => {
+    return apiRequest<any>(`/employees/${encodeURIComponent(empNo)}/salary-hold`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  releaseEmployeeSalaryHold: async (empNo: string) => {
+    return apiRequest<any>(`/employees/${encodeURIComponent(empNo)}/salary-hold`, {
+      method: 'DELETE',
     });
   },
 

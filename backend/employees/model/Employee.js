@@ -388,6 +388,34 @@ const employeeSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    /** Manual salary hold — excluded from paysheet / batch payout lists until released */
+    salaryOnHold: {
+      type: Boolean,
+      default: false,
+    },
+    salaryHoldReason: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    salaryHeldAt: {
+      type: Date,
+      default: null,
+    },
+    salaryHeldBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    salaryHoldReleasedAt: {
+      type: Date,
+      default: null,
+    },
+    salaryHoldReleasedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     // Employee-level deduction flags (default true = apply deduction). Used by payroll for statutory & attendance.
     applyProfessionTax: { type: Boolean, default: true },
     applyESI: { type: Boolean, default: true },

@@ -195,7 +195,7 @@ exports.getBatchEmployeePayrolls = async (req, res) => {
                 path: 'employeePayrolls',
                 populate: {
                     path: 'employeeId',
-                    select: 'emp_no employee_name department_id designation_id location bank_account_no pf_number esi_number salaryStatus',
+                    select: 'emp_no employee_name department_id designation_id location bank_account_no pf_number esi_number salaryStatus salaryOnHold salaryHoldReason',
                     populate: [
                         { path: 'department_id', select: 'name' },
                         { path: 'designation_id', select: 'name' }
@@ -211,7 +211,9 @@ exports.getBatchEmployeePayrolls = async (req, res) => {
         }
 
         const { filterPayrollRecordsExcludingSalaryPending } = require('../../shared/utils/salaryPendingUtils');
-        const visiblePayrolls = filterPayrollRecordsExcludingSalaryPending(batch.employeePayrolls || []);
+        const { filterPayrollRecordsExcludingSalaryHeld } = require('../../shared/utils/salaryHoldUtils');
+        let visiblePayrolls = filterPayrollRecordsExcludingSalaryPending(batch.employeePayrolls || []);
+        visiblePayrolls = filterPayrollRecordsExcludingSalaryHeld(visiblePayrolls);
 
         res.status(200).json({
             success: true,

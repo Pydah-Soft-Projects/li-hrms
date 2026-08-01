@@ -949,7 +949,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     });
 
     let employeeQueryExec = Employee.find(employeeQuery)
-      .select('_id employee_name emp_no department_id designation_id leftDate leftReason qualificationStatus salaryStatus')
+      .select('_id employee_name emp_no department_id designation_id leftDate leftReason qualificationStatus salaryStatus salaryOnHold salaryHoldReason salaryHeldAt')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
       .sort(EMP_NO_SORT)
@@ -1046,6 +1046,33 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
 
       return buildStubPayRegisterRow(employee, month, startDate, endDate, totalDays, payrollId);
     });
+
+    // Continuous 3-day ABSENT (scan through max(periodEnd, today) for incomplete-batch warnings)
+    try {
+      const {
+        buildIncompleteBatchAbsentScanRange,
+        mapContinuousAbsentForEmployees,
+      } = require('../../shared/utils/continuousAbsentUtils');
+      const scan = buildIncompleteBatchAbsentScanRange(startDate, endDate);
+      if (scan) {
+        const absentMap = await mapContinuousAbsentForEmployees(
+          employees.map((e) => e.emp_no),
+          scan.scanFrom,
+          scan.scanTo,
+          3
+        );
+        for (const row of results) {
+          const empNo = String(row.employeeId?.emp_no || row.emp_no || '').toUpperCase();
+          const window = absentMap.get(empNo) || null;
+          row.continuousAbsent = window;
+          if (row.employeeId && typeof row.employeeId === 'object') {
+            row.employeeId.continuousAbsent = window;
+          }
+        }
+      }
+    } catch (absentErr) {
+      console.warn('[Pay Register] continuousAbsent attach skipped:', absentErr.message);
+    }
 
     const finalResults = status ? results.filter((r) => r.status === status) : results;
 

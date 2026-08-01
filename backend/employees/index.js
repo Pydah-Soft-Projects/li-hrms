@@ -66,6 +66,10 @@ router.put('/:empNo', authorize('manager', 'super_admin', 'sub_admin', 'hr'), up
 // Set employee left date (Super Admin, Sub Admin, HR)
 router.put('/:empNo/left-date', authorize('manager', 'super_admin', 'sub_admin', 'hr'), employeeController.setLeftDate);
 
+// Salary hold / release (Super Admin, Sub Admin, HR)
+router.post('/:empNo/salary-hold', authorize('super_admin', 'sub_admin', 'hr'), employeeController.holdEmployeeSalary);
+router.delete('/:empNo/salary-hold', authorize('super_admin', 'sub_admin', 'hr'), employeeController.releaseEmployeeSalaryHold);
+
 // Remove employee left date / Reactivate (Super Admin, Sub Admin, HR)
 router.delete('/:empNo/left-date', authorize('manager', 'super_admin', 'sub_admin', 'hr'), employeeController.removeLeftDate);
 

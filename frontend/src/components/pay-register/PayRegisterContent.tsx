@@ -15,6 +15,7 @@ import {
 function PayRegisterEmployeeBlock({
   source,
   lookups,
+  batchComplete = false,
 }: {
   source: {
     employee_name?: string;
@@ -24,9 +25,13 @@ function PayRegisterEmployeeBlock({
     division?: string;
     qualificationStatus?: string;
     salaryStatus?: string;
+    salaryOnHold?: boolean;
+    salaryHoldReason?: string | null;
+    continuousAbsent?: { active?: boolean; fromDate?: string; toDate?: string; days?: number } | null;
     employeeId?: Employee | null;
   };
   lookups?: { divisions?: Division[]; departments?: { _id?: string; name?: string }[] };
+  batchComplete?: boolean;
 }) {
   const d = resolveEmployeeListDisplayParts(
     {
@@ -51,9 +56,28 @@ function PayRegisterEmployeeBlock({
     (source.employeeId &&
       typeof source.employeeId === 'object' &&
       (source.employeeId as Employee).salaryStatus === 'pending_approval');
+  const salaryOnHold =
+    source.salaryOnHold === true ||
+    (source.employeeId &&
+      typeof source.employeeId === 'object' &&
+      (source.employeeId as Employee).salaryOnHold === true);
+  const holdReason =
+    source.salaryHoldReason ||
+    (source.employeeId && typeof source.employeeId === 'object'
+      ? (source.employeeId as Employee).salaryHoldReason
+      : undefined);
+  const continuousAbsent =
+    !batchComplete &&
+    (source.continuousAbsent?.active
+      ? source.continuousAbsent
+      : source.employeeId &&
+          typeof source.employeeId === 'object' &&
+          (source.employeeId as any).continuousAbsent?.active
+        ? (source.employeeId as any).continuousAbsent
+        : null);
   const initial = (d.name.charAt(0) || 'E').toUpperCase();
   return (
-    <div className="flex min-w-0 items-start gap-2" title={[d.tooltip, showCert ? `Cert: ${certLabel}` : ''].filter(Boolean).join(' | ')}>
+    <div className="flex min-w-0 items-start gap-2" title={[d.tooltip, showCert ? `Cert: ${certLabel}` : '', continuousAbsent ? `Continuous absent ${continuousAbsent.fromDate} → ${continuousAbsent.toDate}` : '', salaryOnHold ? `Salary hold: ${holdReason || ''}` : ''].filter(Boolean).join(' | ')}>
       {d.profilePhoto ? (
         <img src={d.profilePhoto} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700" />
       ) : (
@@ -64,7 +88,7 @@ function PayRegisterEmployeeBlock({
       <div className="min-w-0 flex-1">
         <div className="truncate text-[11px] font-semibold text-slate-900 dark:text-white">{d.name}</div>
         {d.empDesigLine ? <div className="mt-0.5 truncate text-[9px] text-slate-600 dark:text-slate-400">{d.empDesigLine}</div> : null}
-        {(d.deptDivLine || showCert || salaryPending) ? (
+        {(d.deptDivLine || showCert || salaryPending || salaryOnHold || continuousAbsent) ? (
           <div className="mt-0.5 flex flex-wrap items-center gap-1 truncate text-[9px] text-slate-500 dark:text-slate-400">
             {d.deptDivLine ? <span className="truncate">{d.deptDivLine}</span> : null}
             {showCert ? (
@@ -82,6 +106,28 @@ function PayRegisterEmployeeBlock({
                 {(d.deptDivLine || showCert) ? <span>•</span> : null}
                 <span className="inline-flex max-w-full truncate rounded bg-indigo-500/15 px-1 py-0 text-[8px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
                   Salary Pending
+                </span>
+              </>
+            ) : null}
+            {salaryOnHold ? (
+              <>
+                {(d.deptDivLine || showCert || salaryPending) ? <span>•</span> : null}
+                <span
+                  className="inline-flex max-w-full truncate rounded bg-amber-500/15 px-1 py-0 text-[8px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300"
+                  title={holdReason || 'Salary on hold'}
+                >
+                  Salary Hold
+                </span>
+              </>
+            ) : null}
+            {continuousAbsent ? (
+              <>
+                {(d.deptDivLine || showCert || salaryPending || salaryOnHold) ? <span>•</span> : null}
+                <span
+                  className="inline-flex max-w-full truncate rounded bg-rose-500/15 px-1 py-0 text-[8px] font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300"
+                  title={`Continuous absent ${continuousAbsent.fromDate} → ${continuousAbsent.toDate} (${continuousAbsent.days} days). Verify before completing this batch.`}
+                >
+                  3d Absent {continuousAbsent.fromDate}→{continuousAbsent.toDate}
                 </span>
               </>
             ) : null}
@@ -2790,8 +2836,14 @@ export function PayRegisterContent({
                                   department: row.department,
                                   division: row.division,
                                   qualificationStatus: row.qualificationStatus,
+                                  salaryStatus: (row as any).salaryStatus,
+                                  salaryOnHold: (row as any).salaryOnHold,
+                                  salaryHoldReason: (row as any).salaryHoldReason,
+                                  continuousAbsent: (row as any).continuousAbsent,
+                                  employeeId: (row as any).employeeId,
                                 }}
                                 lookups={{ divisions, departments }}
+                                batchComplete={false}
                               />
                             </td>
                             <td className="px-2 py-2 align-middle text-slate-700 dark:text-slate-300 max-w-[140px] truncate" title={row.division || undefined}>
@@ -3000,6 +3052,27 @@ export function PayRegisterContent({
                     employee && 'salaryStatus' in employee
                       ? (employee as Employee).salaryStatus === 'pending_approval'
                       : false;
+                  const salaryOnHold =
+                    employee && 'salaryOnHold' in employee
+                      ? (employee as Employee).salaryOnHold === true
+                      : (row.pr as any).salaryOnHold === true;
+                  const continuousAbsent =
+                    (row.pr as any).continuousAbsent?.active
+                      ? (row.pr as any).continuousAbsent
+                      : (employee as any)?.continuousAbsent?.active
+                        ? (employee as any).continuousAbsent
+                        : null;
+                  const deptIdForBatch =
+                    employee && typeof (employee as any).department_id === 'object'
+                      ? String((employee as any).department_id?._id || '')
+                      : employee && (employee as any).department_id
+                        ? String((employee as any).department_id)
+                        : '';
+                  const batchStatusForRow = deptIdForBatch
+                    ? departmentBatchStatus.get(deptIdForBatch)?.status
+                    : undefined;
+                  const showContinuousAbsent =
+                    Boolean(continuousAbsent) && batchStatusForRow !== 'complete';
                   const leftDate = employee && 'leftDate' in employee ? (employee as any).leftDate : null;
                   const leftDateStr = leftDate ? (typeof leftDate === 'string' ? new Date(leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '') : '';
                   return (
@@ -3042,6 +3115,28 @@ export function PayRegisterContent({
                                   title="Salary not finalized — excluded from paysheet and batch approval until approved on employee profile"
                                 >
                                   Salary Pending
+                                </span>
+                              </>
+                            ) : null}
+                            {salaryOnHold ? (
+                              <>
+                                <span>•</span>
+                                <span
+                                  className="inline-flex max-w-full shrink-0 truncate rounded bg-amber-500/15 px-1 py-0 text-[8px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300"
+                                  title={(employee as Employee)?.salaryHoldReason || 'Salary on hold — excluded from paysheet'}
+                                >
+                                  Salary Hold
+                                </span>
+                              </>
+                            ) : null}
+                            {showContinuousAbsent ? (
+                              <>
+                                <span>•</span>
+                                <span
+                                  className="inline-flex max-w-full shrink-0 truncate rounded bg-rose-500/15 px-1 py-0 text-[8px] font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300"
+                                  title={`Continuous absent ${continuousAbsent.fromDate} → ${continuousAbsent.toDate} (${continuousAbsent.days} days). Verify before completing this batch.`}
+                                >
+                                  3d Absent {continuousAbsent.fromDate}→{continuousAbsent.toDate}
                                 </span>
                               </>
                             ) : null}
@@ -3551,6 +3646,16 @@ export function PayRegisterContent({
                         employee && 'salaryStatus' in employee
                           ? (employee as Employee).salaryStatus === 'pending_approval'
                           : false;
+                      const salaryOnHoldDaily =
+                        employee && 'salaryOnHold' in employee
+                          ? (employee as Employee).salaryOnHold === true
+                          : (pr as any).salaryOnHold === true;
+                      const continuousAbsentDaily =
+                        (pr as any).continuousAbsent?.active
+                          ? (pr as any).continuousAbsent
+                          : (employee as any)?.continuousAbsent?.active
+                            ? (employee as any).continuousAbsent
+                            : null;
                       const leftDateDaily = employee && 'leftDate' in employee ? (employee as any).leftDate : null;
                       const leftDateStrDaily = leftDateDaily ? (typeof leftDateDaily === 'string' ? new Date(leftDateDaily).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '') : '';
 
@@ -3563,6 +3668,8 @@ export function PayRegisterContent({
 
                       const batchInfo = deptId ? departmentBatchStatus.get(deptId) : null;
                       const batchStatus = batchInfo?.status || 'pending';
+                      const showContinuousAbsentDaily =
+                        Boolean(continuousAbsentDaily) && batchStatus !== 'complete';
                       const hasPermission = deptId ? hasEffectivePermission(deptId, batchInfo || null) : false;
 
                       const isLocked = batchStatus === 'freeze' || batchStatus === 'complete' || (batchStatus === 'approved' && !hasPermission);
@@ -3681,6 +3788,28 @@ export function PayRegisterContent({
                                       title="Salary not finalized"
                                     >
                                       Salary Pending
+                                    </span>
+                                  </>
+                                ) : null}
+                                {salaryOnHoldDaily ? (
+                                  <>
+                                    <span>•</span>
+                                    <span
+                                      className="inline-flex max-w-full shrink-0 truncate rounded bg-amber-500/15 px-1 py-0 text-[8px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300"
+                                      title={(employee as Employee)?.salaryHoldReason || 'Salary on hold'}
+                                    >
+                                      Salary Hold
+                                    </span>
+                                  </>
+                                ) : null}
+                                {showContinuousAbsentDaily ? (
+                                  <>
+                                    <span>•</span>
+                                    <span
+                                      className="inline-flex max-w-full shrink-0 truncate rounded bg-rose-500/15 px-1 py-0 text-[8px] font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300"
+                                      title={`Continuous absent ${continuousAbsentDaily.fromDate} → ${continuousAbsentDaily.toDate}. Verify before completing this batch.`}
+                                    >
+                                      3d Absent {continuousAbsentDaily.fromDate}→{continuousAbsentDaily.toDate}
                                     </span>
                                   </>
                                 ) : null}

@@ -6426,6 +6426,69 @@ export default function EmployeesPage() {
                     >
                       Edit
                     </button>
+                    {viewingEmployee.salaryOnHold ? (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const ok = await alertConfirm('Release salary hold?', 'Employee will be included in paysheet again after release.');
+                          if (!ok) return;
+                          try {
+                            const res = await api.releaseEmployeeSalaryHold(viewingEmployee.emp_no);
+                            if (res.success) {
+                              alertSuccess('Released', 'Salary hold released.');
+                              setViewingEmployee((prev) =>
+                                prev ? { ...prev, salaryOnHold: false, salaryHoldReason: null } : prev
+                              );
+                            } else {
+                              alertError('Failed', res.message || 'Could not release hold');
+                            }
+                          } catch (e: any) {
+                            alertError('Error', e?.message || 'Could not release hold');
+                          }
+                        }}
+                        className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+                      >
+                        Release Salary Hold
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const { value: reason } = await Swal.fire({
+                            title: 'Hold salary',
+                            input: 'text',
+                            inputLabel: 'Reason (required)',
+                            inputPlaceholder: 'e.g. Continuous absent — verify before pay',
+                            showCancelButton: true,
+                            confirmButtonText: 'Hold',
+                            inputValidator: (v) => (!String(v || '').trim() ? 'Reason is required' : undefined),
+                          });
+                          if (!reason) return;
+                          try {
+                            const res = await api.holdEmployeeSalary(viewingEmployee.emp_no, String(reason).trim());
+                            if (res.success) {
+                              alertSuccess('On hold', 'Salary put on hold — excluded from paysheet.');
+                              setViewingEmployee((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      salaryOnHold: true,
+                                      salaryHoldReason: String(reason).trim(),
+                                    }
+                                  : prev
+                              );
+                            } else {
+                              alertError('Failed', res.message || 'Could not hold salary');
+                            }
+                          } catch (e: any) {
+                            alertError('Error', e?.message || 'Could not hold salary');
+                          }
+                        }}
+                        className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+                      >
+                        Hold Salary
+                      </button>
+                    )}
                     <button
                       onClick={() => { setShowViewDialog(false); setCertificatePreviewUrl(null); }}
                       className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"

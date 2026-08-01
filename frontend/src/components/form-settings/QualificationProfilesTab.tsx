@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import Spinner from '@/components/Spinner';
+import { MultiSelect } from '@/components/MultiSelect';
 import { alertSuccess, alertError, alertConfirm } from '@/lib/customSwal';
 import { GraduationCap, Plus, Trash2, Copy, Pencil } from 'lucide-react';
 import type { QualificationField } from './FormSettingsBuilder';
@@ -19,10 +20,15 @@ import {
   cloneQualificationsConfigForDraft,
   globalQualificationsFromFormSettings,
   QUALIFICATION_SCOPE_LABELS,
-  QUALIFICATION_SCOPE_REQUIRED,
   type QualificationScopeType,
   type QualificationsConfig,
 } from '@/lib/qualificationProfile';
+import {
+  expandScopeCombos,
+  scopeNeeds,
+  deptDivisionId,
+  type DeptMeta,
+} from '@/lib/qualificationProfileMultiSelect';
 import { settingsLedgerBorder, settingsSaveButtonClass, settingsSaveButtonStyle } from '@/lib/settingsUi';
 
 const SCOPE_TYPE_OPTIONS = Object.entries(QUALIFICATION_SCOPE_LABELS) as Array<[QualificationScopeType, string]>;
@@ -59,10 +65,6 @@ function refId(ref: { _id?: string } | string | null | undefined): string {
   return String(ref);
 }
 
-function scopeNeeds(scopeType: QualificationScopeType, field: 'division_id' | 'department_id' | 'designation_id') {
-  return QUALIFICATION_SCOPE_REQUIRED[scopeType].includes(field);
-}
-
 type Props = {
   globalQualifications?: QualificationsConfig | null;
 };
@@ -72,39 +74,61 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
   const [saving, setSaving] = useState(false);
   const [profiles, setProfiles] = useState<ProfileListItem[]>([]);
   const [divisions, setDivisions] = useState<Array<{ _id: string; name: string }>>([]);
-  const [departments, setDepartments] = useState<Array<{ _id: string; name: string; division_id?: string }>>([]);
+  const [departments, setDepartments] = useState<DeptMeta[]>([]);
   const [designations, setDesignations] = useState<Array<{ _id: string; name: string; department?: string }>>([]);
   const [scopeType, setScopeType] = useState<QualificationScopeType>('department_designation');
-  const [divisionId, setDivisionId] = useState('');
-  const [departmentId, setDepartmentId] = useState('');
-  const [designationId, setDesignationId] = useState('');
+  const [divisionIds, setDivisionIds] = useState<string[]>([]);
+  const [departmentIds, setDepartmentIds] = useState<string[]>([]);
+  const [designationIds, setDesignationIds] = useState<string[]>([]);
   const [draft, setDraft] = useState<QualificationsConfig & { _id?: string }>(emptyDraft());
   const [showAddQualField, setShowAddQualField] = useState(false);
   const [editingQualFieldId, setEditingQualFieldId] = useState<string | null>(null);
   const [newQualField, setNewQualField] = useState<QualificationColumnDraft>(emptyQualificationColumnDraft());
 
-  const requiredFields = useMemo(() => QUALIFICATION_SCOPE_REQUIRED[scopeType], [scopeType]);
-
   const selectionComplete = useMemo(() => {
-    if (scopeNeeds(scopeType, 'division_id') && !divisionId) return false;
-    if (scopeNeeds(scopeType, 'department_id') && !departmentId) return false;
-    if (scopeNeeds(scopeType, 'designation_id') && !designationId) return false;
+    if (scopeNeeds(scopeType, 'division_id') && divisionIds.length === 0) return false;
+    if (scopeNeeds(scopeType, 'department_id') && departmentIds.length === 0) return false;
+    if (scopeNeeds(scopeType, 'designation_id') && designationIds.length === 0) return false;
     return true;
-  }, [scopeType, divisionId, departmentId, designationId]);
+  }, [scopeType, divisionIds, departmentIds, designationIds]);
+
+  const scopeCombos = useMemo(
+    () =>
+      selectionComplete
+        ? expandScopeCombos(scopeType, divisionIds, departmentIds, designationIds, departments)
+        : [],
+    [selectionComplete, scopeType, divisionIds, departmentIds, designationIds, departments]
+  );
+
+  const isMultiScope = scopeCombos.length > 1;
 
   const scopedDepartments = useMemo(() => {
-    if (!scopeNeeds(scopeType, 'division_id') || !divisionId) return departments;
+    if (!scopeNeeds(scopeType, 'division_id') || divisionIds.length === 0) return departments;
+    const selected = new Set(divisionIds.map(String));
     return departments.filter((d) => {
-      const dDiv = (d as { division_id?: string | { _id?: string } }).division_id;
-      const dDivId = typeof dDiv === 'object' ? dDiv?._id : dDiv;
-      return !dDivId || String(dDivId) === divisionId;
+      const linked = deptDivisionId(d);
+      return !linked || selected.has(linked);
     });
-  }, [departments, divisionId, scopeType]);
+  }, [departments, divisionIds, scopeType]);
 
   const scopedDesignations = useMemo(() => {
-    if (!scopeNeeds(scopeType, 'department_id') || !departmentId) return designations;
-    return designations.filter((d) => !d.department || String(d.department) === departmentId);
-  }, [designations, departmentId, scopeType]);
+    if (!scopeNeeds(scopeType, 'department_id') || departmentIds.length === 0) return designations;
+    const selected = new Set(departmentIds.map(String));
+    return designations.filter((d) => !d.department || selected.has(String(d.department)));
+  }, [designations, departmentIds, scopeType]);
+
+  const divisionOptions = useMemo(
+    () => divisions.map((d) => ({ id: String(d._id), name: d.name })),
+    [divisions]
+  );
+  const departmentOptions = useMemo(
+    () => scopedDepartments.map((d) => ({ id: String(d._id), name: d.name })),
+    [scopedDepartments]
+  );
+  const designationOptions = useMemo(
+    () => scopedDesignations.map((d) => ({ id: String(d._id), name: d.name })),
+    [scopedDesignations]
+  );
 
   const loadMeta = useCallback(async () => {
     const [divRes, deptRes, desRes, profileRes] = await Promise.all([
@@ -131,15 +155,21 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
   }, [loadMeta]);
 
   const loadDraftForSelection = useCallback(async () => {
-    if (!selectionComplete) {
+    if (!selectionComplete || scopeCombos.length === 0) {
       setDraft(emptyDraft());
       return;
     }
+    // Single combo → load existing profile. Multi → keep editor content, clear saved id (batch apply).
+    if (scopeCombos.length !== 1) {
+      setDraft((prev) => ({ ...prev, _id: undefined }));
+      return;
+    }
+    const combo = scopeCombos[0];
     const res = await api.lookupQualificationProfile({
       scopeType,
-      divisionId: divisionId || undefined,
-      departmentId: departmentId || undefined,
-      designationId: designationId || undefined,
+      divisionId: combo.division_id || undefined,
+      departmentId: combo.department_id || undefined,
+      designationId: combo.designation_id || undefined,
     });
     if (res.success && res.data) {
       const p = res.data as ProfileListItem;
@@ -153,7 +183,7 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
     } else {
       setDraft(emptyDraft());
     }
-  }, [scopeType, divisionId, departmentId, designationId, selectionComplete]);
+  }, [scopeType, selectionComplete, scopeCombos]);
 
   useEffect(() => {
     void loadDraftForSelection();
@@ -161,14 +191,52 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
 
   const handleScopeTypeChange = (next: QualificationScopeType) => {
     setScopeType(next);
-    if (!scopeNeeds(next, 'division_id')) setDivisionId('');
-    if (!scopeNeeds(next, 'department_id')) setDepartmentId('');
-    if (!scopeNeeds(next, 'designation_id')) setDesignationId('');
+    if (!scopeNeeds(next, 'division_id')) setDivisionIds([]);
+    if (!scopeNeeds(next, 'department_id')) setDepartmentIds([]);
+    if (!scopeNeeds(next, 'designation_id')) setDesignationIds([]);
+  };
+
+  const handleDivisionChange = (ids: string[]) => {
+    setDivisionIds(ids);
+    if (!scopeNeeds(scopeType, 'department_id')) return;
+
+    const allowedDeptIds = new Set(
+      departments
+        .filter((d) => {
+          const linked = deptDivisionId(d);
+          return !linked || ids.includes(linked);
+        })
+        .map((d) => String(d._id))
+    );
+    setDepartmentIds((prev) => {
+      const nextDepts = prev.filter((id) => allowedDeptIds.has(id));
+      if (scopeNeeds(scopeType, 'designation_id')) {
+        const allowedDes = new Set(
+          designations
+            .filter((d) => !d.department || nextDepts.includes(String(d.department)))
+            .map((d) => String(d._id))
+        );
+        setDesignationIds((prevDes) => prevDes.filter((id) => allowedDes.has(id)));
+      }
+      return nextDepts;
+    });
+  };
+
+  const handleDepartmentChange = (ids: string[]) => {
+    setDepartmentIds(ids);
+    if (scopeNeeds(scopeType, 'designation_id')) {
+      const allowed = new Set(
+        designations
+          .filter((d) => !d.department || ids.includes(String(d.department)))
+          .map((d) => String(d._id))
+      );
+      setDesignationIds((prev) => prev.filter((id) => allowed.has(id)));
+    }
   };
 
   const handleCopyFromGlobal = async () => {
-    if (!selectionComplete) {
-      alertError('Select scope first', 'Choose all required org fields for this profile type before copying.');
+    if (!selectionComplete || scopeCombos.length === 0) {
+      alertError('Select scope first', 'Choose at least one value for each required org field before copying.');
       return;
     }
     try {
@@ -208,7 +276,7 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
       }));
       alertSuccess(
         'Copied from global',
-        `Loaded ${source.fields.length} column(s) and ${(source.defaultRows || []).length} pre-filled row(s). Click Save profile to store them.`
+        `Loaded ${source.fields.length} column(s) and ${(source.defaultRows || []).length} pre-filled row(s). Click Save to apply to ${scopeCombos.length} scope(s).`
       );
     } catch (err: unknown) {
       alertError('Error', err instanceof Error ? err.message : 'Failed to copy global config');
@@ -216,28 +284,57 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
   };
 
   const handleSaveProfile = async () => {
-    if (!selectionComplete) {
-      alertError('Missing selection', `Complete all required fields for "${QUALIFICATION_SCOPE_LABELS[scopeType]}".`);
+    if (!selectionComplete || scopeCombos.length === 0) {
+      alertError('Missing selection', `Select at least one value for each required field for "${QUALIFICATION_SCOPE_LABELS[scopeType]}".`);
       return;
+    }
+    if (scopeCombos.length > 1) {
+      const ok = await alertConfirm(
+        `Save to ${scopeCombos.length} scopes?`,
+        `The same qualification columns/rows will be upserted for each selected combination under "${QUALIFICATION_SCOPE_LABELS[scopeType]}".`
+      );
+      if (!ok) return;
     }
     try {
       setSaving(true);
-      const res = await api.upsertQualificationProfile({
-        scopeType,
-        division_id: scopeNeeds(scopeType, 'division_id') ? divisionId : null,
-        department_id: scopeNeeds(scopeType, 'department_id') ? departmentId : null,
-        designation_id: scopeNeeds(scopeType, 'designation_id') ? designationId : null,
-        isEnabled: draft.isEnabled,
-        enableCertificateUpload: draft.enableCertificateUpload,
-        fields: draft.fields,
-        defaultRows: draft.defaultRows || [],
-      });
-      if (res.success) {
-        alertSuccess('Saved', `Qualification profile saved (${QUALIFICATION_SCOPE_LABELS[scopeType]}).`);
-        await loadMeta();
-        if (res.data?._id) setDraft((prev) => ({ ...prev, _id: res.data._id }));
+      let okCount = 0;
+      let failCount = 0;
+      let lastId: string | undefined;
+      for (const combo of scopeCombos) {
+        const res = await api.upsertQualificationProfile({
+          scopeType,
+          division_id: combo.division_id,
+          department_id: combo.department_id,
+          designation_id: combo.designation_id,
+          isEnabled: draft.isEnabled,
+          enableCertificateUpload: draft.enableCertificateUpload,
+          fields: draft.fields,
+          defaultRows: draft.defaultRows || [],
+        });
+        if (res.success) {
+          okCount += 1;
+          if (res.data?._id) lastId = String(res.data._id);
+        } else {
+          failCount += 1;
+        }
+      }
+      await loadMeta();
+      if (okCount > 0 && failCount === 0) {
+        alertSuccess(
+          'Saved',
+          scopeCombos.length === 1
+            ? `Qualification profile saved (${QUALIFICATION_SCOPE_LABELS[scopeType]}).`
+            : `Saved qualification config to ${okCount} scope(s).`
+        );
+        if (scopeCombos.length === 1 && lastId) {
+          setDraft((prev) => ({ ...prev, _id: lastId }));
+        } else {
+          setDraft((prev) => ({ ...prev, _id: undefined }));
+        }
+      } else if (okCount > 0) {
+        alertError('Partial save', `Saved ${okCount}, failed ${failCount}. Check selections and try again.`);
       } else {
-        alertError('Save failed', res.message || 'Could not save profile');
+        alertError('Save failed', 'Could not save any qualification profiles.');
       }
     } catch (err: unknown) {
       alertError('Error', err instanceof Error ? err.message : 'Failed to save profile');
@@ -247,6 +344,10 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
   };
 
   const handleDeleteProfile = async () => {
+    if (isMultiScope) {
+      alertError('Select one scope', 'Delete works for a single division/department/designation combination. Narrow your selection first.');
+      return;
+    }
     if (!draft._id) {
       alertError('Nothing to delete', 'No saved profile for this scope selection.');
       return;
@@ -305,9 +406,9 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
   const loadProfileFromList = (p: ProfileListItem) => {
     const st = (p.scopeType || 'department_designation') as QualificationScopeType;
     setScopeType(st);
-    setDivisionId(refId(p.division_id));
-    setDepartmentId(refId(p.department_id));
-    setDesignationId(refId(p.designation_id));
+    setDivisionIds(refId(p.division_id) ? [refId(p.division_id)] : []);
+    setDepartmentIds(refId(p.department_id) ? [refId(p.department_id)] : []);
+    setDesignationIds(refId(p.designation_id) ? [refId(p.designation_id)] : []);
   };
 
   if (loading) {
@@ -326,8 +427,9 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
           <div>
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Scoped qualification profiles</h3>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              Configure qualifications at division, department, designation, or any combination. The system picks the most
-              specific matching profile; otherwise it falls back to global default on the Form fields tab.
+              Configure qualifications at division, department, designation, or any combination. Multi-select divisions
+              and departments to apply the same columns/rows to several scopes at once. The system still picks the most
+              specific matching profile per employee; otherwise it falls back to global default on the Form fields tab.
             </p>
             <p className="mt-2 text-xs text-violet-800 dark:text-violet-300">
               Resolution order (most specific wins): Division+Dept+Designation → Dept+Designation → Division+Designation
@@ -354,66 +456,49 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
         </div>
 
         {scopeNeeds(scopeType, 'division_id') ? (
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Division</label>
-            <select
-              value={divisionId}
-              onChange={(e) => {
-                setDivisionId(e.target.value);
-                if (scopeNeeds(scopeType, 'department_id')) setDepartmentId('');
-                if (scopeNeeds(scopeType, 'designation_id')) setDesignationId('');
-              }}
-              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-            >
-              <option value="">Select division</option>
-              {divisions.map((d) => (
-                <option key={d._id} value={d._id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+          <div className="sm:col-span-2 lg:col-span-2">
+            <MultiSelect
+              label="Division(s)"
+              options={divisionOptions}
+              selectedIds={divisionIds}
+              onChange={handleDivisionChange}
+              placeholder="Select one or more divisions"
+            />
           </div>
         ) : null}
 
         {scopeNeeds(scopeType, 'department_id') ? (
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
-            <select
-              value={departmentId}
-              onChange={(e) => {
-                setDepartmentId(e.target.value);
-                if (scopeNeeds(scopeType, 'designation_id')) setDesignationId('');
-              }}
-              disabled={scopeNeeds(scopeType, 'division_id') && !divisionId}
-              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-            >
-              <option value="">Select department</option>
-              {scopedDepartments.map((d) => (
-                <option key={d._id} value={d._id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+          <div className="sm:col-span-2 lg:col-span-2">
+            <MultiSelect
+              label="Department(s)"
+              options={departmentOptions}
+              selectedIds={departmentIds}
+              onChange={handleDepartmentChange}
+              placeholder="Select one or more departments"
+              disabled={scopeNeeds(scopeType, 'division_id') && divisionIds.length === 0}
+            />
           </div>
         ) : null}
 
         {scopeNeeds(scopeType, 'designation_id') ? (
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Designation</label>
-            <select
-              value={designationId}
-              onChange={(e) => setDesignationId(e.target.value)}
-              disabled={scopeNeeds(scopeType, 'department_id') && !departmentId}
-              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-            >
-              <option value="">Select designation</option>
-              {scopedDesignations.map((d) => (
-                <option key={d._id} value={d._id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+          <div className="sm:col-span-2 lg:col-span-2">
+            <MultiSelect
+              label="Designation(s)"
+              options={designationOptions}
+              selectedIds={designationIds}
+              onChange={setDesignationIds}
+              placeholder="Select one or more designations"
+              disabled={scopeNeeds(scopeType, 'department_id') && departmentIds.length === 0}
+            />
           </div>
+        ) : null}
+
+        {selectionComplete && scopeCombos.length > 0 ? (
+          <p className="sm:col-span-2 lg:col-span-4 text-xs text-violet-700 dark:text-violet-300">
+            Will apply to <span className="font-semibold">{scopeCombos.length}</span> scope
+            {scopeCombos.length === 1 ? '' : 's'}
+            {isMultiScope ? ' (same config upserted for each combination)' : ''}.
+          </p>
         ) : null}
 
         <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-4">
@@ -429,13 +514,17 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
           <button
             type="button"
             onClick={() => void handleSaveProfile()}
-            disabled={saving || !selectionComplete}
+            disabled={saving || !selectionComplete || scopeCombos.length === 0}
             className={settingsSaveButtonClass()}
             style={settingsSaveButtonStyle()}
           >
-            {saving ? 'Saving…' : 'Save profile'}
+            {saving
+              ? 'Saving…'
+              : scopeCombos.length > 1
+                ? `Save to ${scopeCombos.length} scopes`
+                : 'Save profile'}
           </button>
-          {draft._id ? (
+          {draft._id && !isMultiScope ? (
             <button
               type="button"
               onClick={() => void handleDeleteProfile()}
@@ -449,7 +538,7 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
         </div>
       </div>
 
-      {selectionComplete ? (
+      {selectionComplete && scopeCombos.length > 0 ? (
         <div
           className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900/40"
           style={settingsLedgerBorder}
@@ -706,7 +795,7 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
         </div>
       ) : (
         <p className="text-sm text-slate-500">
-          Select scope type and required org fields to edit a profile.
+          Select scope type and at least one value for each required org field to edit a profile.
         </p>
       )}
 

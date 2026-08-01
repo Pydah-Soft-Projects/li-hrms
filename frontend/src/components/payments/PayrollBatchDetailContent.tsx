@@ -484,6 +484,52 @@ export function PayrollBatchDetailContent({
                   </LoanFormError>
                 )}
 
+              {(batch.validationStatus?.salaryHeldEmployeeDetails?.length ?? 0) > 0 &&
+                batch.status !== "complete" && (
+                  <LoanFormError>
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div>
+                        <p className="font-semibold">Salary on hold</p>
+                        <p className="mt-1 text-sm">
+                          These employees are excluded from paysheet export and this batch payout list until hold is released.
+                        </p>
+                        <ul className="mt-2 space-y-1 text-sm">
+                          {(batch.validationStatus?.salaryHeldEmployeeDetails || []).map((e) => (
+                            <li key={e.employeeId || e.emp_no}>
+                              {e.emp_no} — {e.employee_name}
+                              {e.salaryHoldReason ? ` (${e.salaryHoldReason})` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </LoanFormError>
+                )}
+
+              {(batch.validationStatus?.continuousAbsentEmployees?.length ?? 0) > 0 &&
+                batch.status !== "complete" && (
+                  <LoanFormError>
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div>
+                        <p className="font-semibold">Continuous 3-day absent</p>
+                        <p className="mt-1 text-sm">
+                          Verify these employees before completing this batch. Streak can include days after this pay period when the batch is still open.
+                        </p>
+                        <ul className="mt-2 space-y-1 text-sm">
+                          {(batch.validationStatus?.continuousAbsentEmployees || []).map((e) => (
+                            <li key={e.emp_no}>
+                              {e.emp_no} — {e.employee_name}: {e.fromDate} → {e.toDate}
+                              {e.days ? ` (${e.days} days)` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </LoanFormError>
+                )}
+
               {batch.validationStatus &&
                 !batch.validationStatus.allEmployeesCalculated &&
                 batch.status === "pending" && (

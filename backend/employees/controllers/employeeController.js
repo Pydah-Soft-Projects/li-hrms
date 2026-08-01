@@ -2733,3 +2733,101 @@ exports.mapListEmployeeRow = mapListEmployeeRow;
 exports.EMPLOYEE_LIST_SELECT = EMPLOYEE_LIST_SELECT;
 exports.applyDepartmentIdFilter = applyDepartmentIdFilter;
 exports.buildUserMapForEmployeeDocs = buildUserMapForEmployeeDocs;
+
+/**
+ * @desc    Put employee salary on hold (excluded from paysheet until released)
+ * @route   POST /api/employees/:empNo/salary-hold
+ */
+exports.holdEmployeeSalary = async (req, res) => {
+  try {
+    const empNo = String(req.params.empNo || '').trim().toUpperCase();
+    const reason = String(req.body?.reason || '').trim();
+    if (!empNo) {
+      return res.status(400).json({ success: false, message: 'Employee number is required' });
+    }
+    if (!reason) {
+      return res.status(400).json({ success: false, message: 'Hold reason is required' });
+    }
+    const employee = await Employee.findOne({ emp_no: empNo });
+    if (!employee) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+    employee.salaryOnHold = true;
+    employee.salaryHoldReason = reason;
+    employee.salaryHeldAt = new Date();
+    employee.salaryHeldBy = req.user?._id || null;
+    employee.salaryHoldReleasedAt = null;
+    employee.salaryHoldReleasedBy = null;
+    await employee.save();
+
+    await EmployeeHistory.create({
+      emp_no: employee.emp_no,
+      event: 'data_updated',
+      performedBy: req.user?._id,
+      performedByName: req.user?.name || null,
+      performedByRole: req.user?.role || null,
+      details: { action: 'salary_hold', reason },
+      comments: `Salary put on hold: ${reason}`,
+    }).catch(() => {});
+
+    return res.status(200).json({
+      success: true,
+      message: 'Salary put on hold',
+      data: {
+        emp_no: employee.emp_no,
+        salaryOnHold: true,
+        salaryHoldReason: employee.salaryHoldReason,
+        salaryHeldAt: employee.salaryHeldAt,
+      },
+    });
+  } catch (error) {
+    console.error('[holdEmployeeSalary]', error);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to hold salary' });
+  }
+};
+
+/**
+ * @desc    Release employee salary hold
+ * @route   DELETE /api/employees/:empNo/salary-hold
+ */
+exports.releaseEmployeeSalaryHold = async (req, res) => {
+  try {
+    const empNo = String(req.params.empNo || '').trim().toUpperCase();
+    if (!empNo) {
+      return res.status(400).json({ success: false, message: 'Employee number is required' });
+    }
+    const employee = await Employee.findOne({ emp_no: empNo });
+    if (!employee) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+    const previousReason = employee.salaryHoldReason;
+    employee.salaryOnHold = false;
+    employee.salaryHoldReason = null;
+    employee.salaryHoldReleasedAt = new Date();
+    employee.salaryHoldReleasedBy = req.user?._id || null;
+    await employee.save();
+
+    await EmployeeHistory.create({
+      emp_no: employee.emp_no,
+      event: 'data_updated',
+      performedBy: req.user?._id,
+      performedByName: req.user?.name || null,
+      performedByRole: req.user?.role || null,
+      details: { action: 'salary_hold_release', previousReason },
+      comments: 'Salary hold released',
+    }).catch(() => {});
+
+    return res.status(200).json({
+      success: true,
+      message: 'Salary hold released',
+      data: {
+        emp_no: employee.emp_no,
+        salaryOnHold: false,
+        salaryHoldReleasedAt: employee.salaryHoldReleasedAt,
+      },
+    });
+  } catch (error) {
+    console.error('[releaseEmployeeSalaryHold]', error);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to release salary hold' });
+  }
+};

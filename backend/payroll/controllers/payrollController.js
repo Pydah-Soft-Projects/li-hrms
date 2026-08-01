@@ -1446,7 +1446,7 @@ exports.getPaysheetData = async (req, res) => {
         .populate({
           path: 'employeeId',
           select:
-            'employee_name first_name last_name emp_no department_id division_id designation_id employee_group_id location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate salaries salaryStatus',
+            'employee_name first_name last_name emp_no department_id division_id designation_id employee_group_id location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate salaries salaryStatus salaryOnHold salaryHoldReason',
           populate: [
             { path: 'department_id', select: 'name' },
             { path: 'division_id', select: 'name' },
@@ -1460,8 +1460,10 @@ exports.getPaysheetData = async (req, res) => {
 
       const { filterPayrollRecordsByPayPeriodScope } = require('../services/payrollEmployeeQueryHelper');
       const { filterPayrollRecordsExcludingSalaryPending, findSalaryPendingInEmployeeQuery } = require('../../shared/utils/salaryPendingUtils');
+      const { filterPayrollRecordsExcludingSalaryHeld, findSalaryHeldInEmployeeQuery } = require('../../shared/utils/salaryHoldUtils');
       let filtered = filterPayrollRecordsByPayPeriodScope(records, payrollRangeStart, payrollRangeEnd);
       filtered = filterPayrollRecordsExcludingSalaryPending(filtered);
+      filtered = filterPayrollRecordsExcludingSalaryHeld(filtered);
 
       // Prefer frozen snapshots for historical stability (if available for all rows)
       if (filtered.length > 0) {
@@ -1748,7 +1750,7 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
       .populate({
         path: 'employeeId',
         select:
-          'employee_name emp_no first_name last_name department_id division_id designation_id gross_salary salaries location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate salaryStatus',
+          'employee_name emp_no first_name last_name department_id division_id designation_id gross_salary salaries location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate salaryStatus salaryOnHold salaryHoldReason',
         populate: [
           { path: 'department_id', select: 'name' },
           { path: 'division_id', select: 'name' },
@@ -1767,10 +1769,13 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
 
     const { filterPayrollRecordsByPayPeriodScope, buildPaysheetEmployeeFilter } = require('../services/payrollEmployeeQueryHelper');
     const { filterPayrollRecordsExcludingSalaryPending, findSalaryPendingInEmployeeQuery } = require('../../shared/utils/salaryPendingUtils');
+    const { filterPayrollRecordsExcludingSalaryHeld, findSalaryHeldInEmployeeQuery } = require('../../shared/utils/salaryHoldUtils');
     payrollRecords = filterPayrollRecordsByPayPeriodScope(payrollRecords, payrollRangeStart, payrollRangeEnd);
     payrollRecords = filterPayrollRecordsExcludingSalaryPending(payrollRecords);
+    payrollRecords = filterPayrollRecordsExcludingSalaryHeld(payrollRecords);
 
     let salaryPendingEmployees = [];
+    let salaryHeldEmployees = [];
     if (!employeeIds) {
       const scopePending =
         req.scopeFilter && typeof req.scopeFilter === 'object' && Object.keys(req.scopeFilter).length > 0
@@ -1790,9 +1795,11 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
           designationId: desFilt,
           employeeGroupId: groupFilt,
           skipSalaryApprovedFilter: true,
+          skipSalaryHoldFilter: true,
         }
       );
       salaryPendingEmployees = await findSalaryPendingInEmployeeQuery(pendingEmpQuery);
+      salaryHeldEmployees = await findSalaryHeldInEmployeeQuery(pendingEmpQuery);
     }
 
     const orderIndex = new Map(targetEmployeeIds.map((id, i) => [id, i]));
@@ -1960,6 +1967,7 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
       exportMeta,
       secondSalaryEnabled,
       salaryPendingEmployees,
+      salaryHeldEmployees,
     });
     const formatSuffix = bundleFormat === 'by_department' ? '_by_dept' : '';
     const filename = `paysheet_bundle_${month}${formatSuffix}${departmentId && departmentId !== 'all' ? `_dept_${departmentId}` : ''}.xlsx`;

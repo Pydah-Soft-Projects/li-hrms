@@ -548,6 +548,22 @@ const payrollRecordSchema = new mongoose.Schema(
       ref: 'PayrollBatch',
     },
 
+    /** Batch-scoped salary hold — excluded from paysheet until released on this record */
+    salaryOnHold: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    salaryHoldReason: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    salaryHeldAt: { type: Date, default: null },
+    salaryHeldBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    salaryHoldReleasedAt: { type: Date, default: null },
+    salaryHoldReleasedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+
     // Additional metadata
     notes: {
       type: String,

@@ -37,6 +37,12 @@ const payrollPayslipSnapshotSchema = new mongoose.Schema(
     headers: { type: [String], default: [] }, // ordered header list
     row: { type: mongoose.Schema.Types.Mixed, default: {} }, // { [header]: value }
 
+    /** Mirrored from PayrollRecord at freeze/snapshot time */
+    salaryOnHold: { type: Boolean, default: false, index: true },
+    salaryHoldReason: { type: String, trim: true, default: null },
+    salaryHeldAt: { type: Date, default: null },
+    salaryHeldBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+
     generatedAt: { type: Date, default: Date.now, index: true },
     generatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     source: { type: String, default: 'dynamic_engine' },

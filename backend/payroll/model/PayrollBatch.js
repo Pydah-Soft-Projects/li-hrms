@@ -108,6 +108,19 @@ const validationStatusSchema = new mongoose.Schema({
         ref: 'Employee'
     }],
     salaryPendingEmployeeDetails: [missingEmployeeDetailSchema],
+    salaryHeldEmployees: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Employee'
+    }],
+    salaryHeldEmployeeDetails: [missingEmployeeDetailSchema],
+    continuousAbsentEmployees: [{
+        emp_no: String,
+        employee_name: String,
+        employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
+        fromDate: String,
+        toDate: String,
+        days: Number,
+    }],
     lastValidatedAt: Date
 }, { _id: false });
 
@@ -325,7 +338,7 @@ payrollBatchSchema.methods.validateBatch = async function () {
         rangeEnd
     );
 
-    const allEmployees = await Employee.find(empQuery).select('_id salaryStatus');
+    const allEmployees = await Employee.find(empQuery).select('_id emp_no employee_name salaryStatus');
 
     const salaryPendingEmployeeIds = allEmployees
         .filter((e) => e.salaryStatus !== 'approved')
@@ -339,9 +352,18 @@ payrollBatchSchema.methods.validateBatch = async function () {
     // and see which employeeIds they belong to.
     const payrollRecords = await PayrollRecord.find({
         _id: { $in: this.employeePayrolls }
-    }).select('employeeId');
+    })
+        .select('employeeId salaryOnHold salaryHoldReason salaryHeldAt emp_no')
+        .populate({
+            path: 'employeeId',
+            select: 'emp_no employee_name department_id designation_id doj',
+            populate: [
+                { path: 'department_id', select: 'name' },
+                { path: 'designation_id', select: 'name' },
+            ],
+        });
 
-    const payrollEmployeeIds = payrollRecords.map(p => p.employeeId.toString());
+    const payrollEmployeeIds = payrollRecords.map(p => p.employeeId?._id?.toString?.() || p.employeeId.toString());
 
     // Missing payroll only among salary-approved employees in scope
     const missingEmployeeIds = eligibleEmployeeIds.filter((id) => !payrollEmployeeIds.includes(id));
@@ -350,8 +372,44 @@ payrollBatchSchema.methods.validateBatch = async function () {
         resolveMissingEmployeeDetails,
     } = require('../utils/payrollBatchValidationMessages');
     const { resolveSalaryPendingEmployeeDetails } = require('../../shared/utils/salaryPendingUtils');
+    const { resolveSalaryHeldDetailsFromRecords } = require('../../shared/utils/salaryHoldUtils');
+    const {
+        buildIncompleteBatchAbsentScanRange,
+        mapContinuousAbsentForEmployees,
+    } = require('../../shared/utils/continuousAbsentUtils');
+
     const missingEmployeeDetails = await resolveMissingEmployeeDetails(missingEmployeeIds);
     const salaryPendingEmployeeDetails = await resolveSalaryPendingEmployeeDetails(salaryPendingEmployeeIds);
+    const salaryHeldEmployeeDetails = await resolveSalaryHeldDetailsFromRecords(payrollRecords);
+    const salaryHeldEmployeeIds = salaryHeldEmployeeDetails.map((d) => d.employeeId).filter(Boolean);
+
+    let continuousAbsentEmployees = [];
+    if (this.status !== 'complete') {
+        const scan = buildIncompleteBatchAbsentScanRange(startDate, endDate);
+        if (scan) {
+            const absentMap = await mapContinuousAbsentForEmployees(
+                allEmployees.map((e) => e.emp_no),
+                scan.scanFrom,
+                scan.scanTo,
+                3
+            );
+            continuousAbsentEmployees = allEmployees
+                .map((e) => {
+                    const w = absentMap.get(String(e.emp_no || '').toUpperCase());
+                    if (!w?.active) return null;
+                    return {
+                        emp_no: e.emp_no,
+                        employee_name: e.employee_name,
+                        employeeId: e._id,
+                        fromDate: w.fromDate,
+                        toDate: w.toDate,
+                        days: w.days,
+                    };
+                })
+                .filter(Boolean)
+                .sort((a, b) => String(a.emp_no).localeCompare(String(b.emp_no)));
+        }
+    }
 
     this.validationStatus = {
         allEmployeesCalculated: missingEmployeeIds.length === 0,
@@ -359,6 +417,9 @@ payrollBatchSchema.methods.validateBatch = async function () {
         missingEmployeeDetails,
         salaryPendingEmployees: salaryPendingEmployeeIds,
         salaryPendingEmployeeDetails,
+        salaryHeldEmployees: salaryHeldEmployeeIds,
+        salaryHeldEmployeeDetails,
+        continuousAbsentEmployees,
         lastValidatedAt: new Date()
     };
 

@@ -23,6 +23,9 @@ const {
     filterPayrollRecordsExcludingSalaryPending,
     isEmployeeSalaryPending,
 } = require('../../shared/utils/salaryPendingUtils');
+const {
+    setPayrollRecordsSalaryHold,
+} = require('../../shared/utils/salaryHoldUtils');
 
 /**
  * PayrollBatch Service
@@ -617,7 +620,7 @@ class PayrollBatchService {
                     path: 'employeePayrolls',
                     populate: {
                         path: 'employeeId',
-                        select: 'emp_no employee_name department_id designation_id salaryStatus',
+                        select: 'emp_no employee_name department_id designation_id salaryStatus qualificationStatus',
                         populate: [
                             { path: 'department_id', select: 'name' },
                             { path: 'designation_id', select: 'name' },
@@ -635,6 +638,41 @@ class PayrollBatchService {
 
             if (batch && Array.isArray(batch.employeePayrolls)) {
                 batch.employeePayrolls = filterPayrollRecordsExcludingSalaryPending(batch.employeePayrolls);
+                // Keep salary-held records visible so batch UI can select/hold/release them
+            }
+
+            if (batch && batch.status !== 'complete' && Array.isArray(batch.employeePayrolls)) {
+                try {
+                    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+                    const {
+                        buildIncompleteBatchAbsentScanRange,
+                        mapContinuousAbsentForEmployees,
+                    } = require('../../shared/utils/continuousAbsentUtils');
+                    const [y, m] = String(batch.month || '').split('-').map(Number);
+                    const { startDate, endDate } = await getPayrollDateRange(y, m);
+                    const scan = buildIncompleteBatchAbsentScanRange(startDate, endDate);
+                    if (scan) {
+                        const empNos = batch.employeePayrolls
+                            .map((r) => r.employeeId?.emp_no)
+                            .filter(Boolean);
+                        const absentMap = await mapContinuousAbsentForEmployees(
+                            empNos,
+                            scan.scanFrom,
+                            scan.scanTo,
+                            3
+                        );
+                        for (const row of batch.employeePayrolls) {
+                            const empNo = String(row.employeeId?.emp_no || '').toUpperCase();
+                            const window = absentMap.get(empNo) || null;
+                            if (row.employeeId && typeof row.employeeId === 'object') {
+                                row.employeeId.continuousAbsent = window;
+                            }
+                            row.continuousAbsent = window;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[PayrollBatch] continuousAbsent attach skipped:', e.message);
+                }
             }
 
             await PayrollBatchService.enrichValidationStatusForResponse(batch);
