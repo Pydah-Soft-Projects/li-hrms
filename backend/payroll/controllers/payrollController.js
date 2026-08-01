@@ -1765,7 +1765,7 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
     const payrollRangeStart = new Date(`${rangeStartStr}T00:00:00.000Z`);
     const payrollRangeEnd = new Date(`${rangeEndStr}T23:59:59.999Z`);
 
-    const { filterPayrollRecordsByPayPeriodScope } = require('../services/payrollEmployeeQueryHelper');
+    const { filterPayrollRecordsByPayPeriodScope, buildPaysheetEmployeeFilter } = require('../services/payrollEmployeeQueryHelper');
     const { filterPayrollRecordsExcludingSalaryPending, findSalaryPendingInEmployeeQuery } = require('../../shared/utils/salaryPendingUtils');
     payrollRecords = filterPayrollRecordsByPayPeriodScope(payrollRecords, payrollRangeStart, payrollRangeEnd);
     payrollRecords = filterPayrollRecordsExcludingSalaryPending(payrollRecords);
@@ -1776,13 +1776,22 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
         req.scopeFilter && typeof req.scopeFilter === 'object' && Object.keys(req.scopeFilter).length > 0
           ? req.scopeFilter
           : null;
-      const pendingEmpQuery = await buildPaysheetEmployeeFilter(scopePending, divF, depF, rangeStart, rangeEnd, {
-        status: status || undefined,
-        search: search || undefined,
-        designationId: desFilt,
-        employeeGroupId: groupFilt,
-        skipSalaryApprovedFilter: true,
-      });
+      const divPending = divisionId && divisionId !== 'all' ? divisionId : undefined;
+      const depPending = departmentId && departmentId !== 'all' ? departmentId : undefined;
+      const pendingEmpQuery = await buildPaysheetEmployeeFilter(
+        scopePending,
+        divPending,
+        depPending,
+        payrollRangeStart,
+        payrollRangeEnd,
+        {
+          status: status || undefined,
+          search: search || undefined,
+          designationId: desFilt,
+          employeeGroupId: groupFilt,
+          skipSalaryApprovedFilter: true,
+        }
+      );
       salaryPendingEmployees = await findSalaryPendingInEmployeeQuery(pendingEmpQuery);
     }
 
