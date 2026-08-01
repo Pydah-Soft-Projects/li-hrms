@@ -87,7 +87,7 @@ const employeeSchema = new mongoose.Schema(
     },
     qualificationStatus: {
       type: String,
-      default: 'not_submitted',
+      default: 'partial_verified',
       trim: true,
     },
     experience: {

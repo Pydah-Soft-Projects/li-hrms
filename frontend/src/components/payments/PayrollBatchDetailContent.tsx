@@ -18,11 +18,15 @@ import { api, PayrollBatch, PayrollBatchStatus } from "@/lib/api";
 import Spinner from "@/components/Spinner";
 import { MissingPayrollEmployeesAlert } from "@/components/payments/MissingPayrollEmployeesAlert";
 import MissingPayrollWarningDialog from "@/components/payments/MissingPayrollWarningDialog";
+import SalaryPendingWarningDialog from "@/components/payments/SalaryPendingWarningDialog";
 import {
   collectApproveValidationIssues,
+  collectSalaryPendingValidationIssues,
   isMissingPayrollError,
+  isSalaryPendingError,
   payRegisterPathFromIssues,
   type BatchPayrollValidationIssue,
+  type SalaryPendingValidationIssue,
 } from "@/lib/payrollBatchValidation";
 import {
   LoansPageShell,
@@ -110,6 +114,8 @@ export function PayrollBatchDetailContent({
   const [permissionActionLoading, setPermissionActionLoading] = useState(false);
   const [missingPayrollWarningOpen, setMissingPayrollWarningOpen] = useState(false);
   const [missingPayrollIssues, setMissingPayrollIssues] = useState<BatchPayrollValidationIssue[]>([]);
+  const [salaryPendingWarningOpen, setSalaryPendingWarningOpen] = useState(false);
+  const [salaryPendingIssues, setSalaryPendingIssues] = useState<SalaryPendingValidationIssue[]>([]);
   const [proceedAnywayLoading, setProceedAnywayLoading] = useState(false);
 
   useEffect(() => {
@@ -149,6 +155,14 @@ export function PayrollBatchDetailContent({
     return true;
   };
 
+  const showSalaryPendingWarning = (issues: SalaryPendingValidationIssue[]) => {
+    if (!issues.length) return false;
+    setSalaryPendingIssues(issues);
+    setSalaryPendingWarningOpen(true);
+    setOpenDialog(false);
+    return true;
+  };
+
   const handleProceedAnywayApprove = async () => {
     if (!batch || !missingPayrollIssues.length) return;
     try {
@@ -177,6 +191,10 @@ export function PayrollBatchDetailContent({
       setActionLoading(true);
 
       if (actionType === "approve" || actionType === "unfreeze") {
+        const salaryPrecheck = await collectSalaryPendingValidationIssues([batch]);
+        if (salaryPrecheck.length && showSalaryPendingWarning(salaryPrecheck)) {
+          return;
+        }
         const precheck = await collectApproveValidationIssues([batch]);
         if (precheck.length && showMissingPayrollWarning(precheck)) {
           return;
@@ -202,6 +220,19 @@ export function PayrollBatchDetailContent({
         toast.success(`Batch ${actionLabels[actionType]} successfully`);
         setOpenDialog(false);
         fetchBatchDetails();
+      } else if (
+        (actionType === "approve" || actionType === "unfreeze") &&
+        ((response as any)?.salaryPendingEmployees?.length || isSalaryPendingError(response?.message, (response as any)?.code))
+      ) {
+        const pending = (response as any).salaryPendingEmployees || [];
+        showSalaryPendingWarning([
+          {
+            batchId: String(batch._id),
+            batchLabel: batch.department?.name || batch.batchNumber,
+            month: batch.month,
+            salaryPendingEmployees: pending,
+          },
+        ]);
       } else if (
         (actionType === "approve" || actionType === "unfreeze") &&
         ((response as any)?.missingEmployees?.length || isMissingPayrollError(response?.message))
@@ -431,6 +462,26 @@ export function PayrollBatchDetailContent({
                       />
                     </div>
                   </LoanFormInfo>
+                )}
+
+              {(batch.validationStatus?.salaryPendingEmployeeDetails?.length ?? 0) > 0 &&
+                batch.status === "pending" && (
+                  <LoanFormError>
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div>
+                        <p className="font-semibold">Salary pending approval</p>
+                        <p className="mt-1 text-sm">
+                          These employees are excluded from this batch until salary is finalized on the employee profile and payroll is recalculated.
+                        </p>
+                        <div className="mt-2 text-sm">
+                          <MissingPayrollEmployeesAlert
+                            details={batch.validationStatus?.salaryPendingEmployeeDetails}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </LoanFormError>
                 )}
 
               {batch.validationStatus &&
@@ -720,6 +771,17 @@ export function PayrollBatchDetailContent({
         payRegisterBasePath={payRegisterBasePath}
         onProceedAnyway={handleProceedAnywayApprove}
         proceedAnywayLoading={proceedAnywayLoading}
+      />
+
+      <SalaryPendingWarningDialog
+        open={salaryPendingWarningOpen}
+        onClose={() => setSalaryPendingWarningOpen(false)}
+        employees={salaryPendingIssues.flatMap((i) => i.salaryPendingEmployees)}
+        summary={
+          salaryPendingIssues.length
+            ? `Finalize salary for the employee(s) below, recalculate payroll, then approve batch ${salaryPendingIssues[0]?.batchLabel || ""}.`
+            : undefined
+        }
       />
 
       <LoanDetailDialog open={openDialog && !!actionType} onClose={() => setOpenDialog(false)} maxWidth="max-w-md">

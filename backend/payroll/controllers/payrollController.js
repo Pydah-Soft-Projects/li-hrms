@@ -708,6 +708,16 @@ exports.calculatePayroll = async (req, res) => {
       });
     }
 
+    const { isEmployeeSalaryPending } = require('../../shared/utils/salaryPendingUtils');
+    const empCheck = await Employee.findById(employeeId).select('emp_no employee_name salaryStatus').lean();
+    if (isEmployeeSalaryPending(empCheck)) {
+      return res.status(400).json({
+        success: false,
+        code: 'SALARY_PENDING',
+        message: `Salary is not finalized for ${empCheck?.emp_no || 'this employee'}. Approve salary on the employee profile before calculating payroll.`,
+      });
+    }
+
     // Validate month format
     if (!/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
@@ -1436,7 +1446,7 @@ exports.getPaysheetData = async (req, res) => {
         .populate({
           path: 'employeeId',
           select:
-            'employee_name first_name last_name emp_no department_id division_id designation_id employee_group_id location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate salaries',
+            'employee_name first_name last_name emp_no department_id division_id designation_id employee_group_id location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate salaries salaryStatus',
           populate: [
             { path: 'department_id', select: 'name' },
             { path: 'division_id', select: 'name' },
@@ -1449,7 +1459,9 @@ exports.getPaysheetData = async (req, res) => {
         .lean();
 
       const { filterPayrollRecordsByPayPeriodScope } = require('../services/payrollEmployeeQueryHelper');
+      const { filterPayrollRecordsExcludingSalaryPending, findSalaryPendingInEmployeeQuery } = require('../../shared/utils/salaryPendingUtils');
       let filtered = filterPayrollRecordsByPayPeriodScope(records, payrollRangeStart, payrollRangeEnd);
+      filtered = filterPayrollRecordsExcludingSalaryPending(filtered);
 
       // Prefer frozen snapshots for historical stability (if available for all rows)
       if (filtered.length > 0) {
@@ -1736,7 +1748,7 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
       .populate({
         path: 'employeeId',
         select:
-          'employee_name emp_no first_name last_name department_id division_id designation_id gross_salary salaries location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate',
+          'employee_name emp_no first_name last_name department_id division_id designation_id gross_salary salaries location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate salaryStatus',
         populate: [
           { path: 'department_id', select: 'name' },
           { path: 'division_id', select: 'name' },
@@ -1754,7 +1766,25 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
     const payrollRangeEnd = new Date(`${rangeEndStr}T23:59:59.999Z`);
 
     const { filterPayrollRecordsByPayPeriodScope } = require('../services/payrollEmployeeQueryHelper');
+    const { filterPayrollRecordsExcludingSalaryPending, findSalaryPendingInEmployeeQuery } = require('../../shared/utils/salaryPendingUtils');
     payrollRecords = filterPayrollRecordsByPayPeriodScope(payrollRecords, payrollRangeStart, payrollRangeEnd);
+    payrollRecords = filterPayrollRecordsExcludingSalaryPending(payrollRecords);
+
+    let salaryPendingEmployees = [];
+    if (!employeeIds) {
+      const scopePending =
+        req.scopeFilter && typeof req.scopeFilter === 'object' && Object.keys(req.scopeFilter).length > 0
+          ? req.scopeFilter
+          : null;
+      const pendingEmpQuery = await buildPaysheetEmployeeFilter(scopePending, divF, depF, rangeStart, rangeEnd, {
+        status: status || undefined,
+        search: search || undefined,
+        designationId: desFilt,
+        employeeGroupId: groupFilt,
+        skipSalaryApprovedFilter: true,
+      });
+      salaryPendingEmployees = await findSalaryPendingInEmployeeQuery(pendingEmpQuery);
+    }
 
     const orderIndex = new Map(targetEmployeeIds.map((id, i) => [id, i]));
     payrollRecords.sort((a, b) => {
@@ -1920,6 +1950,7 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
       format: bundleFormat,
       exportMeta,
       secondSalaryEnabled,
+      salaryPendingEmployees,
     });
     const formatSuffix = bundleFormat === 'by_department' ? '_by_dept' : '';
     const filename = `paysheet_bundle_${month}${formatSuffix}${departmentId && departmentId !== 'all' ? `_dept_${departmentId}` : ''}.xlsx`;
@@ -3204,7 +3235,7 @@ exports.getDeductionsAnalytics = async (req, res) => {
  */
 exports.calculatePayrollBulk = async (req, res) => {
   try {
-    const { month, divisionId, departmentId, strategy, arrears, deductions, search, employeeGroupId } = req.body;
+    const { month, divisionId, departmentId, strategy, arrears, deductions, search, employeeGroupId, preview } = req.body;
 
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
@@ -3245,14 +3276,43 @@ exports.calculatePayrollBulk = async (req, res) => {
     console.log('[Bulk Payroll] Req.scopeFilter keys:', req.scopeFilter ? Object.keys(req.scopeFilter).length : 0);
     console.log('[Bulk Payroll] Filters - Division:', divF, 'Department:', depF, 'Month:', month, 'Search:', searchTrim || '(none)', 'Group:', groupF || '(none)');
 
-    const employees = await Employee.find(query).select('_id');
+    const employees = await Employee.find(query)
+      .select('_id emp_no employee_name salaryStatus department_id designation_id doj')
+      .populate('department_id', 'name')
+      .populate('designation_id', 'name')
+      .lean();
 
-    console.log('[Bulk Payroll] Found employees:', employees.length);
+    const { isEmployeeSalaryPending } = require('../../shared/utils/salaryPendingUtils');
+    const { mapEmployeeToDetail } = require('../utils/payrollBatchValidationMessages');
 
-    if (!employees || employees.length === 0) {
+    const eligibleEmployees = employees.filter((e) => !isEmployeeSalaryPending(e));
+    const salaryPendingEmployees = employees
+      .filter((e) => isEmployeeSalaryPending(e))
+      .map((e) => mapEmployeeToDetail(e, e._id.toString()))
+      .sort((a, b) => String(a.emp_no).localeCompare(String(b.emp_no)));
+
+    console.log('[Bulk Payroll] Found employees:', employees.length, 'eligible:', eligibleEmployees.length, 'salary pending:', salaryPendingEmployees.length);
+
+    if (preview) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          totalInScope: employees.length,
+          eligibleCount: eligibleEmployees.length,
+          salaryPendingEmployees,
+        },
+      });
+    }
+
+    if (!eligibleEmployees || eligibleEmployees.length === 0) {
       return res.status(200).json({
         success: false,
-        message: 'No employees found matching the filters (active or left in this payroll month)',
+        code: salaryPendingEmployees.length ? 'SALARY_PENDING' : undefined,
+        message:
+          salaryPendingEmployees.length > 0
+            ? 'All employees in scope have salary pending approval. Finalize salary before calculating payroll.'
+            : 'No employees found matching the filters (active or left in this payroll month)',
+        data: { salaryPendingEmployees },
       });
     }
 
@@ -3268,6 +3328,7 @@ exports.calculatePayrollBulk = async (req, res) => {
       strategy,
       userId: req.user._id,
       scopeFilter: scopeFilterForJob,
+      employeeIds: eligibleEmployees.map((e) => e._id.toString()),
       arrears: Array.isArray(arrears) ? arrears : [],
       deductions: Array.isArray(deductions) ? deductions : [],
     });
@@ -3278,7 +3339,9 @@ exports.calculatePayrollBulk = async (req, res) => {
       message: 'Bulk payroll calculation queued',
       jobId: job.id,
       data: {
-        totalEmployees: employees.length
+        totalEmployees: eligibleEmployees.length,
+        skippedSalaryPending: salaryPendingEmployees.length,
+        salaryPendingEmployees,
       }
     });
 

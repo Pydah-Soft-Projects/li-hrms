@@ -6,6 +6,11 @@ import { useRouter } from "next/navigation";
 import Link from 'next/link';
 import { parseFile } from '@/lib/bulkUpload';
 import { resolveEmployeeListDisplayParts } from '@/lib/employeeListDisplay';
+import {
+  DEFAULT_QUALIFICATION_STATUS_OPTIONS,
+  overallQualificationStatusLabel,
+  qualificationStatusBadgeClass,
+} from '@/lib/qualificationStatus';
 
 function PayRegisterEmployeeBlock({
   source,
@@ -17,6 +22,8 @@ function PayRegisterEmployeeBlock({
     designation?: string;
     department?: string;
     division?: string;
+    qualificationStatus?: string;
+    salaryStatus?: string;
     employeeId?: Employee | null;
   };
   lookups?: { divisions?: Division[]; departments?: { _id?: string; name?: string }[] };
@@ -32,9 +39,21 @@ function PayRegisterEmployeeBlock({
     },
     lookups,
   );
+  const certStatus =
+    source.qualificationStatus ??
+    (source.employeeId && typeof source.employeeId === 'object'
+      ? (source.employeeId as Employee).qualificationStatus
+      : undefined);
+  const certLabel = overallQualificationStatusLabel(certStatus, DEFAULT_QUALIFICATION_STATUS_OPTIONS);
+  const showCert = Boolean(certStatus && String(certStatus).trim());
+  const salaryPending =
+    source.salaryStatus === 'pending_approval' ||
+    (source.employeeId &&
+      typeof source.employeeId === 'object' &&
+      (source.employeeId as Employee).salaryStatus === 'pending_approval');
   const initial = (d.name.charAt(0) || 'E').toUpperCase();
   return (
-    <div className="flex min-w-0 items-start gap-2" title={d.tooltip}>
+    <div className="flex min-w-0 items-start gap-2" title={[d.tooltip, showCert ? `Cert: ${certLabel}` : ''].filter(Boolean).join(' | ')}>
       {d.profilePhoto ? (
         <img src={d.profilePhoto} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700" />
       ) : (
@@ -45,7 +64,29 @@ function PayRegisterEmployeeBlock({
       <div className="min-w-0 flex-1">
         <div className="truncate text-[11px] font-semibold text-slate-900 dark:text-white">{d.name}</div>
         {d.empDesigLine ? <div className="mt-0.5 truncate text-[9px] text-slate-600 dark:text-slate-400">{d.empDesigLine}</div> : null}
-        {d.deptDivLine ? <div className="mt-0.5 truncate text-[9px] text-slate-500 dark:text-slate-400">{d.deptDivLine}</div> : null}
+        {(d.deptDivLine || showCert || salaryPending) ? (
+          <div className="mt-0.5 flex flex-wrap items-center gap-1 truncate text-[9px] text-slate-500 dark:text-slate-400">
+            {d.deptDivLine ? <span className="truncate">{d.deptDivLine}</span> : null}
+            {showCert ? (
+              <>
+                {d.deptDivLine ? <span>•</span> : null}
+                <span
+                  className={`inline-flex max-w-full truncate rounded px-1 py-0 text-[8px] font-semibold uppercase tracking-wide ${qualificationStatusBadgeClass(certStatus)}`}
+                >
+                  {certLabel}
+                </span>
+              </>
+            ) : null}
+            {salaryPending ? (
+              <>
+                {(d.deptDivLine || showCert) ? <span>•</span> : null}
+                <span className="inline-flex max-w-full truncate rounded bg-indigo-500/15 px-1 py-0 text-[8px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
+                  Salary Pending
+                </span>
+              </>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -264,6 +305,7 @@ export function PayRegisterContent({
       division?: string;
       department?: string;
       designation?: string;
+      qualificationStatus?: string;
     }>
   >([]);
   const [loadingSyncLockedList, setLoadingSyncLockedList] = useState(false);
@@ -1636,6 +1678,15 @@ export function PayRegisterContent({
       // Check for BATCH_LOCKED error
       // API might return error message in err.message. Check if it contains specific text or if err object has code
       // Note: frontend api wrapper might throw Error(message), so we might check message content
+      if (err.message && (err.message.includes('SALARY_PENDING') || err.message.toLowerCase().includes('salary is not finalized'))) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Salary not finalized',
+          text: err.message || 'Approve salary on the employee profile before calculating payroll.',
+        });
+        return;
+      }
+
       if (err.message && (err.message.includes('BATCH_LOCKED') || err.message.includes('Recalculation requires permission'))) {
         // Try to extract batchId if possible. Since standard Error doesn't have custom props, 
         // we might need to rely on the backend response.
@@ -1815,7 +1866,7 @@ export function PayRegisterContent({
     });
     let jobQueued = false;
     try {
-      const requestData = {
+      const previewBase = {
         month: monthStr,
         divisionId: filterDivisions.length ? filterDivisions.join(',') : undefined,
         departmentId: filterDepartments.length ? filterDepartments.join(',') : undefined,
@@ -1825,6 +1876,35 @@ export function PayRegisterContent({
             ? selectedEmployeeGroup
             : undefined,
         strategy: payrollStrategy,
+      };
+
+      const previewRes = await api.calculatePayrollBulk({ ...previewBase, preview: true });
+      const pendingList = (previewRes as any)?.data?.salaryPendingEmployees as
+        | Array<{ emp_no?: string; employee_name?: string }>
+        | undefined;
+      if (previewRes.success && pendingList && pendingList.length > 0) {
+        const previewHtml = pendingList
+          .slice(0, 12)
+          .map((e) => `<li>${e.emp_no || '—'} — ${e.employee_name || 'Unknown'}</li>`)
+          .join('');
+        const more =
+          pendingList.length > 12 ? `<p class="mt-2 text-sm">+${pendingList.length - 12} more</p>` : '';
+        const confirm = await Swal.fire({
+          icon: 'warning',
+          title: 'Salary pending in scope',
+          html: `<p class="text-sm mb-2">${pendingList.length} employee(s) have salary not finalized. They will be <strong>skipped</strong> during bulk calculation.</p><ul class="text-left text-sm max-h-40 overflow-y-auto">${previewHtml}</ul>${more}`,
+          showCancelButton: true,
+          confirmButtonText: 'Continue (skip them)',
+          cancelButtonText: 'Cancel',
+        });
+        if (!confirm.isConfirmed) {
+          setBulkCalculating(false);
+          return;
+        }
+      }
+
+      const requestData = {
+        ...previewBase,
         arrears: selectedArrears
           .filter((a) => a.employeeId != null)
           .map((a) => ({
@@ -1854,11 +1934,15 @@ export function PayRegisterContent({
           }
           jobQueued = true;
           setCalculatingJobId(response.jobId || null);
+          const skipped = (response as any)?.data?.skippedSalaryPending ?? 0;
           Swal.fire({
             icon: 'info',
             title: 'Calculation Queued',
-            text: 'Bulk payroll calculation has been queued. You can track progress below.',
-            timer: 2000,
+            text:
+              skipped > 0
+                ? `Bulk payroll queued for ${(response as any)?.data?.totalEmployees ?? 'eligible'} employee(s). ${skipped} salary-pending employee(s) skipped.`
+                : 'Bulk payroll calculation has been queued. You can track progress below.',
+            timer: 2500,
             showConfirmButton: false,
             toast: true,
             position: 'top-end'
@@ -2667,11 +2751,18 @@ export function PayRegisterContent({
                         <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                           Designation
                         </th>
+                        <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                          Cert Status
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-600">
                       {syncModalLockedRows.map((row) => {
                         const idStr = String(row.employeeId);
+                        const certLabel = overallQualificationStatusLabel(
+                          row.qualificationStatus,
+                          DEFAULT_QUALIFICATION_STATUS_OPTIONS,
+                        );
                         return (
                           <tr key={idStr} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
                             <td className="px-2 py-2 text-center align-middle">
@@ -2698,6 +2789,7 @@ export function PayRegisterContent({
                                   designation: row.designation,
                                   department: row.department,
                                   division: row.division,
+                                  qualificationStatus: row.qualificationStatus,
                                 }}
                                 lookups={{ divisions, departments }}
                               />
@@ -2710,6 +2802,18 @@ export function PayRegisterContent({
                             </td>
                             <td className="px-2 py-2 align-middle text-slate-700 dark:text-slate-300 max-w-[160px] truncate" title={row.designation || undefined}>
                               {row.designation || '—'}
+                            </td>
+                            <td className="px-2 py-2 align-middle">
+                              {row.qualificationStatus && String(row.qualificationStatus).trim() ? (
+                                <span
+                                  className={`inline-flex max-w-full truncate rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${qualificationStatusBadgeClass(row.qualificationStatus)}`}
+                                  title={certLabel}
+                                >
+                                  {certLabel}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -2887,6 +2991,15 @@ export function PayRegisterContent({
                         ? row.pr.employeeId.department_id.name
                         : ''
                       : '';
+                  const certStatus =
+                    employee && 'qualificationStatus' in employee
+                      ? (employee as Employee).qualificationStatus
+                      : undefined;
+                  const certLabel = overallQualificationStatusLabel(certStatus, DEFAULT_QUALIFICATION_STATUS_OPTIONS);
+                  const salaryPending =
+                    employee && 'salaryStatus' in employee
+                      ? (employee as Employee).salaryStatus === 'pending_approval'
+                      : false;
                   const leftDate = employee && 'leftDate' in employee ? (employee as any).leftDate : null;
                   const leftDateStr = leftDate ? (typeof leftDate === 'string' ? new Date(leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '') : '';
                   return (
@@ -2910,6 +3023,28 @@ export function PayRegisterContent({
                               </span>
                             )}
                             {department && <span className="truncate">• {department}</span>}
+                            {certStatus && String(certStatus).trim() ? (
+                              <>
+                                <span>•</span>
+                                <span
+                                  className={`inline-flex max-w-full shrink-0 truncate rounded px-1 py-0 text-[8px] font-semibold uppercase tracking-wide ${qualificationStatusBadgeClass(certStatus)}`}
+                                  title={`Certificate status: ${certLabel}`}
+                                >
+                                  {certLabel}
+                                </span>
+                              </>
+                            ) : null}
+                            {salaryPending ? (
+                              <>
+                                <span>•</span>
+                                <span
+                                  className="inline-flex max-w-full shrink-0 truncate rounded bg-indigo-500/15 px-1 py-0 text-[8px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300"
+                                  title="Salary not finalized — excluded from paysheet and batch approval until approved on employee profile"
+                                >
+                                  Salary Pending
+                                </span>
+                              </>
+                            ) : null}
                           </div>
                           {leftDateStr && (
                             <div className="text-[9px] text-amber-600 dark:text-amber-400 font-medium mt-0.5" title="Left in this payroll period">
@@ -3407,6 +3542,15 @@ export function PayRegisterContent({
                       const department = typeof pr.employeeId === 'object' && pr.employeeId.department_id
                         ? (typeof pr.employeeId.department_id === 'object' ? pr.employeeId.department_id.name : '')
                         : '';
+                      const certStatusDaily =
+                        employee && 'qualificationStatus' in employee
+                          ? (employee as Employee).qualificationStatus
+                          : undefined;
+                      const certLabelDaily = overallQualificationStatusLabel(certStatusDaily, DEFAULT_QUALIFICATION_STATUS_OPTIONS);
+                      const salaryPendingDaily =
+                        employee && 'salaryStatus' in employee
+                          ? (employee as Employee).salaryStatus === 'pending_approval'
+                          : false;
                       const leftDateDaily = employee && 'leftDate' in employee ? (employee as any).leftDate : null;
                       const leftDateStrDaily = leftDateDaily ? (typeof leftDateDaily === 'string' ? new Date(leftDateDaily).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '') : '';
 
@@ -3518,6 +3662,28 @@ export function PayRegisterContent({
                                   </span>
                                 )}
                                 {department && <span className="truncate">• {department}</span>}
+                                {certStatusDaily && String(certStatusDaily).trim() ? (
+                                  <>
+                                    <span>•</span>
+                                    <span
+                                      className={`inline-flex max-w-full shrink-0 truncate rounded px-1 py-0 text-[8px] font-semibold uppercase tracking-wide ${qualificationStatusBadgeClass(certStatusDaily)}`}
+                                      title={`Certificate status: ${certLabelDaily}`}
+                                    >
+                                      {certLabelDaily}
+                                    </span>
+                                  </>
+                                ) : null}
+                                {salaryPendingDaily ? (
+                                  <>
+                                    <span>•</span>
+                                    <span
+                                      className="inline-flex max-w-full shrink-0 truncate rounded bg-indigo-500/15 px-1 py-0 text-[8px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300"
+                                      title="Salary not finalized"
+                                    >
+                                      Salary Pending
+                                    </span>
+                                  </>
+                                ) : null}
                               </div>
                             </div>
                           </td>

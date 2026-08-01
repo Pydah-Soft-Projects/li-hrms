@@ -195,7 +195,7 @@ exports.getBatchEmployeePayrolls = async (req, res) => {
                 path: 'employeePayrolls',
                 populate: {
                     path: 'employeeId',
-                    select: 'emp_no employee_name department_id designation_id location bank_account_no pf_number esi_number',
+                    select: 'emp_no employee_name department_id designation_id location bank_account_no pf_number esi_number salaryStatus',
                     populate: [
                         { path: 'department_id', select: 'name' },
                         { path: 'designation_id', select: 'name' }
@@ -210,10 +210,13 @@ exports.getBatchEmployeePayrolls = async (req, res) => {
             });
         }
 
+        const { filterPayrollRecordsExcludingSalaryPending } = require('../../shared/utils/salaryPendingUtils');
+        const visiblePayrolls = filterPayrollRecordsExcludingSalaryPending(batch.employeePayrolls || []);
+
         res.status(200).json({
             success: true,
-            count: batch.employeePayrolls.length,
-            data: batch.employeePayrolls
+            count: visiblePayrolls.length,
+            data: visiblePayrolls
         });
     } catch (error) {
         console.error('Error fetching batch employee payrolls:', error);
@@ -261,6 +264,9 @@ exports.approveBatch = async (req, res) => {
         };
         if (error.code === 'MISSING_PAYROLL' && error.missingEmployees) {
             payload.missingEmployees = error.missingEmployees;
+        }
+        if (error.code === 'SALARY_PENDING' && error.salaryPendingEmployees) {
+            payload.salaryPendingEmployees = error.salaryPendingEmployees;
         }
         res.status(400).json(payload);
     }
@@ -464,7 +470,7 @@ const bulkChangeBatchStatus = async (req, res, targetStatus, verbLabel) => {
         } catch (error) {
             const entry = { batchId, error: error.message };
             if (error.code) entry.code = error.code;
-            if (error.missingEmployees) entry.missingEmployees = error.missingEmployees;
+            if (error.salaryPendingEmployees) entry.salaryPendingEmployees = error.salaryPendingEmployees;
             errors.push(entry);
         }
     }

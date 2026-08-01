@@ -11,11 +11,21 @@ export const QUALIFICATION_VERIFICATION_VALUES = [
 
 export type QualificationVerificationValue = (typeof QUALIFICATION_VERIFICATION_VALUES)[number];
 
+/** Per-row qualification card stages (certificates table). */
 export const DEFAULT_QUALIFICATION_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'verified', label: 'Verified' },
   { value: 'partial_verified', label: 'Partially verified' },
   { value: 'taken', label: 'Taken' },
   { value: 'not_submitted', label: 'Not submitted' },
+];
+
+/**
+ * Overall employee certificate status presets (manage dialog + employee select).
+ * Only Verified + Partially verified are built-in; org may add custom values via Add +.
+ */
+export const OVERALL_CERTIFICATE_STATUS_PRESETS: { value: string; label: string }[] = [
+  { value: 'verified', label: 'Verified' },
+  { value: 'partial_verified', label: 'Partially verified' },
 ];
 
 /**
@@ -25,7 +35,7 @@ export const DEFAULT_QUALIFICATION_STATUS_OPTIONS: { value: string; label: strin
 export const OVERALL_CERTIFICATE_STATUS_SELECT_ADD_SENTINEL =
   '__li_hrms_overall_cert_status_add__';
 
-const PRESET_OVERALL_VALUES = new Set(DEFAULT_QUALIFICATION_STATUS_OPTIONS.map((o) => o.value));
+const PRESET_OVERALL_VALUES = new Set(OVERALL_CERTIFICATE_STATUS_PRESETS.map((o) => o.value));
 
 /** True when overall status value is one of the four built-in certificate stages. */
 export function isPresetOverallCertificateStatusValue(value: string | undefined | null): boolean {
@@ -160,7 +170,7 @@ export function mergeOverallQualificationStatusOptions(args: {
   const map = new Map<string, { value: string; label: string }>();
 
   if (args.includePresetDefaults !== false) {
-    DEFAULT_QUALIFICATION_STATUS_OPTIONS.forEach((o) => map.set(o.value, { ...o }));
+    OVERALL_CERTIFICATE_STATUS_PRESETS.forEach((o) => map.set(o.value, { ...o }));
   }
 
   const raw = args.settingList;
@@ -182,7 +192,7 @@ export function mergeOverallQualificationStatusOptions(args: {
     map.set(cur, { value: cur, label: cur });
   }
 
-  const presetOrder = DEFAULT_QUALIFICATION_STATUS_OPTIONS.map((x) => x.value);
+  const presetOrder = OVERALL_CERTIFICATE_STATUS_PRESETS.map((x) => x.value);
   const preset = presetOrder.filter((v) => map.has(v)).map((v) => map.get(v)!);
   const rest = [...map.values()]
     .filter((o) => !presetOrder.includes(o.value))

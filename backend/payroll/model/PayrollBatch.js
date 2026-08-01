@@ -103,6 +103,11 @@ const validationStatusSchema = new mongoose.Schema({
     },
     excludedEmployeeCount: Number,
     excludedEmployeeDetails: [missingEmployeeDetailSchema],
+    salaryPendingEmployees: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Employee'
+    }],
+    salaryPendingEmployeeDetails: [missingEmployeeDetailSchema],
     lastValidatedAt: Date
 }, { _id: false });
 
@@ -320,9 +325,14 @@ payrollBatchSchema.methods.validateBatch = async function () {
         rangeEnd
     );
 
-    const allEmployees = await Employee.find(empQuery).select('_id');
+    const allEmployees = await Employee.find(empQuery).select('_id salaryStatus');
 
-    const allEmployeeIds = allEmployees.map(e => e._id.toString());
+    const salaryPendingEmployeeIds = allEmployees
+        .filter((e) => e.salaryStatus !== 'approved')
+        .map((e) => e._id.toString());
+    const eligibleEmployeeIds = allEmployees
+        .filter((e) => e.salaryStatus === 'approved')
+        .map((e) => e._id.toString());
 
     // Get employees with payroll in this batch
     // We need to find the PayrollRecords that correspond to the IDs in this.employeePayrolls
@@ -333,18 +343,22 @@ payrollBatchSchema.methods.validateBatch = async function () {
 
     const payrollEmployeeIds = payrollRecords.map(p => p.employeeId.toString());
 
-    // Find missing employees
-    const missingEmployeeIds = allEmployeeIds.filter(id => !payrollEmployeeIds.includes(id));
+    // Missing payroll only among salary-approved employees in scope
+    const missingEmployeeIds = eligibleEmployeeIds.filter((id) => !payrollEmployeeIds.includes(id));
 
     const {
         resolveMissingEmployeeDetails,
     } = require('../utils/payrollBatchValidationMessages');
+    const { resolveSalaryPendingEmployeeDetails } = require('../../shared/utils/salaryPendingUtils');
     const missingEmployeeDetails = await resolveMissingEmployeeDetails(missingEmployeeIds);
+    const salaryPendingEmployeeDetails = await resolveSalaryPendingEmployeeDetails(salaryPendingEmployeeIds);
 
     this.validationStatus = {
         allEmployeesCalculated: missingEmployeeIds.length === 0,
         missingEmployees: missingEmployeeIds,
         missingEmployeeDetails,
+        salaryPendingEmployees: salaryPendingEmployeeIds,
+        salaryPendingEmployeeDetails,
         lastValidatedAt: new Date()
     };
 

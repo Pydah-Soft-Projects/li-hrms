@@ -106,6 +106,10 @@ async function buildPaysheetEmployeeFilter(scopeFilter, divisionId, departmentId
     if (grpF) parts.push({ employee_group_id: grpF });
     parts.push({ is_active: false });
     await appendEmployeeSearchCondition(parts, search);
+    if (!options.skipSalaryApprovedFilter) {
+      const { salaryApprovedQueryFragment } = require('../../shared/utils/salaryPendingUtils');
+      parts.push(salaryApprovedQueryFragment());
+    }
     return parts.length === 1 ? parts[0] : { $and: parts };
   }
 
@@ -113,6 +117,10 @@ async function buildPaysheetEmployeeFilter(scopeFilter, divisionId, departmentId
   if (desF) conditions.push({ designation_id: desF });
   if (grpF) conditions.push({ employee_group_id: grpF });
   if (status === 'active') conditions.push({ is_active: true });
+  if (!options.skipSalaryApprovedFilter) {
+    const { salaryApprovedQueryFragment } = require('../../shared/utils/salaryPendingUtils');
+    conditions.push(salaryApprovedQueryFragment());
+  }
   await appendEmployeeSearchCondition(conditions, search);
   return conditions.length === 1 ? conditions[0] : { $and: conditions };
 }

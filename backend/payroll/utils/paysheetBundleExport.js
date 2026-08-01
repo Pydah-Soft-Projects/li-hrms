@@ -854,7 +854,22 @@ function buildTitleBlockRows(meta, salaryKindLabel) {
   return block;
 }
 
-function buildCombinedSheetAoa(rows, meta, salaryKindLabel) {
+function appendSalaryPendingFooterRows(aoa, merges, pendingEmployees, colCount) {
+  if (!Array.isArray(pendingEmployees) || pendingEmployees.length === 0) return;
+  aoa.push([]);
+  pushMergedBannerRow(
+    aoa,
+    merges,
+    'SALARY PENDING — excluded from paysheet (finalize salary on employee profile, then recalculate payroll)',
+    colCount
+  );
+  pendingEmployees.forEach((emp, idx) => {
+    const label = `${idx + 1}. ${emp.emp_no || '—'} — ${emp.employee_name || 'Unknown'}`;
+    pushMergedBannerRow(aoa, merges, label, colCount);
+  });
+}
+
+function buildCombinedSheetAoa(rows, meta, salaryKindLabel, salaryPendingEmployees = []) {
   const numbered = renumberSerial(rows);
   const { headers, dataRows } = objectRowsToTable(numbered);
   const titleBlock = buildTitleBlockRows(meta, salaryKindLabel);
@@ -863,12 +878,13 @@ function buildCombinedSheetAoa(rows, meta, salaryKindLabel) {
     ? buildAggregateDataRow(numbered, headers, 'GRAND TOTAL')
     : null;
   const aoa = [...titleBlock, ...tableHeader, ...dataRows, ...(grandTotalRow ? [grandTotalRow] : [])];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
   const merges = [];
   const lastCol = Math.max(headers.length - 1, 0);
+  appendSalaryPendingFooterRows(aoa, merges, salaryPendingEmployees, lastCol + 1);
   for (let r = 0; r < titleBlock.length; r += 1) {
     merges.push({ s: { r, c: 0 }, e: { r, c: lastCol } });
   }
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
   const colWidths = [{ wch: 6 }];
   for (let c = 1; c < headers.length; c += 1) colWidths.push({ wch: 14 });
   const headerRowIndex = titleBlock.length;
@@ -913,7 +929,7 @@ function pushMergedBannerRow(aoa, merges, text, colCount) {
   }
 }
 
-function buildByDepartmentSheetAoa(rows, meta, salaryKindLabel) {
+function buildByDepartmentSheetAoa(rows, meta, salaryKindLabel, salaryPendingEmployees = []) {
   const groups = groupRowsByDivisionDepartment(rows);
   const sample = rows[0]
     ? objectRowsToTable(renumberSerial([rows[0]]), { hideOrgColumns: true })
@@ -970,6 +986,8 @@ function buildByDepartmentSheetAoa(rows, meta, salaryKindLabel) {
     aoa.push([]);
   }
 
+  appendSalaryPendingFooterRows(aoa, merges, salaryPendingEmployees, colCount);
+
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const lastCol = Math.max(colCount - 1, 0);
   for (const m of merges) {
@@ -1003,6 +1021,9 @@ function writeBundleBuffer(regularRows, secondRows, netDiffResolver, options = {
     filterLines: [],
   };
   const secondSalaryEnabled = options.secondSalaryEnabled === true;
+  const salaryPendingEmployees = Array.isArray(options.salaryPendingEmployees)
+    ? options.salaryPendingEmployees
+    : [];
 
   const regularForMainSheet = secondSalaryEnabled
     ? appendSecondSalaryComparisonColumns(regularRows, secondRows, netDiffResolver)
@@ -1013,7 +1034,7 @@ function writeBundleBuffer(regularRows, secondRows, netDiffResolver, options = {
   if (format === 'by_department') {
     XLSX.utils.book_append_sheet(
       wb,
-      buildByDepartmentSheetAoa(regularForMainSheet, meta, 'REGULAR SALARY'),
+      buildByDepartmentSheetAoa(regularForMainSheet, meta, 'REGULAR SALARY', salaryPendingEmployees),
       'Regular'
     );
     if (secondSalaryEnabled) {
@@ -1026,7 +1047,7 @@ function writeBundleBuffer(regularRows, secondRows, netDiffResolver, options = {
   } else {
     XLSX.utils.book_append_sheet(
       wb,
-      buildCombinedSheetAoa(regularForMainSheet, meta, 'REGULAR SALARY'),
+      buildCombinedSheetAoa(regularForMainSheet, meta, 'REGULAR SALARY', salaryPendingEmployees),
       'Regular'
     );
     if (secondSalaryEnabled) {

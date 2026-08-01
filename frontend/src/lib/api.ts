@@ -190,6 +190,15 @@ export interface PayrollBatch {
       designation_name?: string;
       doj?: string;
     }[];
+    salaryPendingEmployees?: string[];
+    salaryPendingEmployeeDetails?: {
+      employeeId?: string;
+      emp_no?: string;
+      employee_name?: string;
+      department_name?: string;
+      designation_name?: string;
+      doj?: string;
+    }[];
     approvedWithExclusions?: boolean;
     excludedEmployeeCount?: number;
     excludedEmployeeDetails?: {
@@ -4972,6 +4981,7 @@ export const api = {
     search?: string;
     employeeGroupId?: string;
     strategy?: string;
+    preview?: boolean;
     /** Per-employee arrears (employeeId required); same semantics as single calculate body.arrears */
     arrears?: Array<{ arrearId: string; amount: number; employeeId: string }>;
     /** Per-employee manual deductions (employeeId required); same as single calculate body.deductions */
@@ -5277,6 +5287,15 @@ export const api = {
       allEmployeesCalculated: boolean;
       missingEmployees?: string[];
       missingEmployeeDetails?: {
+        employeeId?: string;
+        emp_no?: string;
+        employee_name?: string;
+        department_name?: string;
+        designation_name?: string;
+        doj?: string;
+      }[];
+      salaryPendingEmployees?: string[];
+      salaryPendingEmployeeDetails?: {
         employeeId?: string;
         emp_no?: string;
         employee_name?: string;

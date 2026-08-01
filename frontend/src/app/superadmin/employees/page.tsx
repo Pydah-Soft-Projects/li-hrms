@@ -49,6 +49,7 @@ import {
   mergeOverallQualificationStatusOptions,
   OVERALL_CERTIFICATE_STATUS_SELECT_ADD_SENTINEL,
   overallQualificationStatusLabel,
+  qualificationStatusBadgeClass,
   sanitizeOverallQualificationStatusStore,
 } from '@/lib/qualificationStatus';
 import {
@@ -510,7 +511,7 @@ export default function EmployeesPage() {
     qualificationStatus?: string;
     paidLeaves?: number;
     casualLeaves?: number;
-  }>({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'not_submitted', paidLeaves: 0, casualLeaves: 0 });
+  }>({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'partial_verified', paidLeaves: 0, casualLeaves: 0 });
   const [qualificationStatusesSetting, setQualificationStatusesSetting] = useState<unknown>(null);
   const [addOverallCertDialogOpen, setAddOverallCertDialogOpen] = useState(false);
   const [addOverallCertSubmitting, setAddOverallCertSubmitting] = useState(false);
@@ -2878,8 +2879,46 @@ export default function EmployeesPage() {
     try {
       if (employee.emp_no) {
         const response = await api.getEmployee(employee.emp_no);
-        if (response.success && response.data) {
-          setViewingEmployee(flattenEmployeeRecordForView(response.data as any) as Employee);
+        const fullEmp =
+          response.success && response.data
+            ? (flattenEmployeeRecordForView(response.data as any) as Employee)
+            : (flattenEmployeeRecordForView(employee as any) as Employee);
+        setViewingEmployee(fullEmp);
+
+        // Finalize Salary UI needs the verified application attached.
+        // Opening from Employees tab used to clear selectedApplication, so the section stayed hidden
+        // even when salaryStatus was pending_approval (or a verified app existed only after Applications load).
+        const needsFinalize =
+          fullEmp.salaryStatus === 'pending_approval' ||
+          applications.some((a) => a.emp_no === fullEmp.emp_no && a.status === 'verified');
+
+        if (needsFinalize) {
+          let verifiedApp =
+            applications.find((a) => a.emp_no === fullEmp.emp_no && a.status === 'verified') || null;
+          if (!verifiedApp) {
+            const appsRes = await api.getEmployeeApplications({
+              status: 'verified',
+              search: fullEmp.emp_no,
+            });
+            if (appsRes.success && Array.isArray(appsRes.data)) {
+              verifiedApp =
+                appsRes.data.find(
+                  (a: EmployeeApplication) =>
+                    String(a.emp_no || '').toUpperCase() === String(fullEmp.emp_no || '').toUpperCase() &&
+                    a.status === 'verified'
+                ) || null;
+              if (verifiedApp) {
+                setApplications((prev) => {
+                  if (prev.some((p) => p._id === verifiedApp!._id)) return prev;
+                  return [...prev, verifiedApp!];
+                });
+              }
+            }
+          }
+          if (verifiedApp) {
+            setSelectedApplication(verifiedApp);
+            initApprovalState(verifiedApp);
+          }
         }
       }
     } catch {
@@ -3213,7 +3252,7 @@ export default function EmployeesPage() {
           doj: '',
           comments: '',
           qualifications: [],
-          qualificationStatus: 'not_submitted',
+          qualificationStatus: 'partial_verified',
           paidLeaves: 0,
           casualLeaves: 0
         });
@@ -3246,7 +3285,7 @@ export default function EmployeesPage() {
         setViewingEmployee(null);
         setSelectedApplication(null);
 
-        setApprovalData({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'not_submitted', paidLeaves: 0, casualLeaves: 0 });
+        setApprovalData({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'partial_verified', paidLeaves: 0, casualLeaves: 0 });
         loadApplications();
       } else {
         setError(response.message || 'Failed to reject application');
@@ -4393,6 +4432,9 @@ export default function EmployeesPage() {
                             Department
                           </th>
                           <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                            Cert Status
+                          </th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             Phone
                           </th>
                           <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
@@ -4409,7 +4451,7 @@ export default function EmployeesPage() {
                       <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                         {employees.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                            <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                               No employees found matching your criteria
                             </td>
                           </tr>
@@ -4449,6 +4491,12 @@ export default function EmployeesPage() {
                               </td>
                               <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                 {employee.department?.name || '-'}
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4">
+                                <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${qualificationStatusBadgeClass(employee.qualificationStatus)}`}>
+                                  {isVerifiedOverallStatusForIcon(employee.qualificationStatus) ? <CheckCircle className="w-3 h-3" /> : <LucideClock className="w-3 h-3" />}
+                                  {overallQualificationStatusLabel(employee.qualificationStatus, overallCertificateStatusOptions)}
+                                </span>
                               </td>
                               <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                 {employee.phone_number || '-'}
@@ -6321,11 +6369,13 @@ export default function EmployeesPage() {
                         Verify
                       </button>
                     )}
-                    {activeTab === 'applications' && selectedApplication?.status === 'verified' && canFinalizeSalary({ role: userRole } as any) && (
+                    {(pendingAppForViewing || (selectedApplication?.status === 'verified' && viewingEmployee.salaryStatus === 'pending_approval')) && canFinalizeSalary({ role: userRole } as any) && (
                       <button
                         onClick={() => {
-                          if (selectedApplication) {
-                            initApprovalState(selectedApplication);
+                          const app = selectedApplication?.status === 'verified' ? selectedApplication : pendingAppForViewing;
+                          if (app) {
+                            setSelectedApplication(app);
+                            initApprovalState(app);
                           }
                           setEmployeeViewTab('profile');
                           setTimeout(() => {
@@ -6398,6 +6448,8 @@ export default function EmployeesPage() {
                           {pendingAppForViewing && (
                             <button
                               onClick={() => {
+                                setSelectedApplication(pendingAppForViewing);
+                                initApprovalState(pendingAppForViewing);
                                 setEmployeeViewTab('profile');
                                 setTimeout(() => {
                                   const element = document.getElementById('salary-approval-section');
@@ -6857,7 +6909,8 @@ export default function EmployeesPage() {
                       </div>
 
                       {/* Integrated Salary Approval Section (Consolidated Flow) */}
-                      {pendingAppForViewing && selectedApplication && (
+                      {((pendingAppForViewing && (selectedApplication || pendingAppForViewing)) ||
+                        (selectedApplication?.status === 'verified' && viewingEmployee.salaryStatus === 'pending_approval')) && (
                         <div id="salary-approval-section" className="mb-6 overflow-hidden rounded-2xl border-2 border-green-200 bg-green-50/50 shadow-sm dark:border-green-800 dark:bg-green-900/20">
                           <div className="border-b border-green-100 bg-green-100/30 px-5 py-3 dark:border-green-800 dark:bg-green-950/30">
                             <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-green-800 dark:text-green-400">
@@ -6881,7 +6934,12 @@ export default function EmployeesPage() {
                                     onWheel={(e) => e.currentTarget.blur()}
                                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
                                   />
-                                  <p className="mt-1.5 text-[10px] text-slate-500">Proposed by HR: ₹{selectedApplication.proposedSalary.toLocaleString()}</p>
+                                  <p className="mt-1.5 text-[10px] text-slate-500">
+                                    Proposed by HR: ₹
+                                    {Number(
+                                      (selectedApplication || pendingAppForViewing)?.proposedSalary || 0
+                                    ).toLocaleString()}
+                                  </p>
                                 </div>
 
                                 {secondSalaryEnabled ? (

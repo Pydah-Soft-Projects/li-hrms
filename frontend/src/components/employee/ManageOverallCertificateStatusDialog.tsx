@@ -145,7 +145,7 @@ export default function ManageOverallCertificateStatusDialog({
             Certificate statuses
           </h3>
           <p className="mt-1 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            Built-in rows follow the four verification stages. Custom values are shared across the organization. Edit labels,
+            Built-in rows are Verified and Partially verified. Custom values are shared across the organization. Edit labels,
             remove unused custom entries, or add a new status below.
           </p>
         </div>

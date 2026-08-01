@@ -727,7 +727,7 @@ exports.getLockedSummaryEmployees = async (req, res) => {
       .select('employeeId emp_no')
       .populate({
         path: 'employeeId',
-        select: 'employee_name emp_no department_id division_id designation_id employee_group_id',
+        select: 'employee_name emp_no department_id division_id designation_id employee_group_id qualificationStatus',
         populate: [
           { path: 'department_id', select: 'name' },
           { path: 'division_id', select: 'name' },
@@ -779,6 +779,7 @@ exports.getLockedSummaryEmployees = async (req, res) => {
         division: typeof divObj === 'object' && divObj !== null && divObj.name ? String(divObj.name) : '',
         department: typeof deptObj === 'object' && deptObj !== null && deptObj.name ? String(deptObj.name) : '',
         designation: typeof desigObj === 'object' && desigObj !== null && desigObj.name ? String(desigObj.name) : '',
+        qualificationStatus: emp.qualificationStatus || '',
       });
     }
 
@@ -948,7 +949,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     });
 
     let employeeQueryExec = Employee.find(employeeQuery)
-      .select('_id employee_name emp_no department_id designation_id leftDate leftReason')
+      .select('_id employee_name emp_no department_id designation_id leftDate leftReason qualificationStatus salaryStatus')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
       .sort(EMP_NO_SORT)

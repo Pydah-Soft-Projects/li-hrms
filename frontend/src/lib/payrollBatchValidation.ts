@@ -29,6 +29,39 @@ export function isMissingPayrollError(message?: string, code?: string): boolean 
   return Boolean(message?.toLowerCase().includes("payroll not calculated"));
 }
 
+export function isSalaryPendingError(message?: string, code?: string): boolean {
+  if (code === "SALARY_PENDING") return true;
+  return Boolean(message?.toLowerCase().includes("salary pending") || message?.toLowerCase().includes("finalize salary"));
+}
+
+export type SalaryPendingValidationIssue = {
+  batchId: string;
+  batchLabel: string;
+  month: string;
+  salaryPendingEmployees: MissingEmployeeDetail[];
+};
+
+/** Run server validation before approve; returns batches with salary-pending employees in scope. */
+export async function collectSalaryPendingValidationIssues(
+  batches: PayrollBatch[],
+): Promise<SalaryPendingValidationIssue[]> {
+  const results = await Promise.all(
+    batches.map(async (batch) => {
+      const res = await api.validatePayrollBatch(String(batch._id));
+      if (!res.success || !res.data) return null;
+      const pending = res.data.salaryPendingEmployeeDetails || [];
+      if (!pending.length) return null;
+      return {
+        batchId: String(batch._id),
+        batchLabel: batch.department?.name || batch.batchNumber || "Batch",
+        month: batch.month,
+        salaryPendingEmployees: pending,
+      };
+    }),
+  );
+  return results.filter((r): r is SalaryPendingValidationIssue => r !== null);
+}
+
 /** Parse employee labels from approval error message (fallback when API has no structured list). */
 export function parseMissingPayrollErrorMessage(message: string): MissingEmployeeDetail[] {
   const lower = message.toLowerCase();

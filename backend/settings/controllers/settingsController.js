@@ -66,8 +66,6 @@ exports.getSetting = async (req, res) => {
         'qualification_statuses': [
           { value: 'verified', label: 'Verified' },
           { value: 'partial_verified', label: 'Partially verified' },
-          { value: 'taken', label: 'Taken' },
-          { value: 'not_submitted', label: 'Not submitted' },
         ],
         'default_apply_statutory_deductions': true,
         'default_apply_attendance_deductions': true,

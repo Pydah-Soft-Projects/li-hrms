@@ -18,6 +18,11 @@ const {
     resolveMissingEmployeeDetails,
     createMissingPayrollApprovalError,
 } = require('../utils/payrollBatchValidationMessages');
+const {
+    createSalaryPendingApprovalError,
+    filterPayrollRecordsExcludingSalaryPending,
+    isEmployeeSalaryPending,
+} = require('../../shared/utils/salaryPendingUtils');
 
 /**
  * PayrollBatch Service
@@ -239,6 +244,11 @@ class PayrollBatchService {
             // Additional validation for specific transitions
             if (newStatus === 'approved') {
                 await batch.validate();
+                const salaryPendingDetails = batch.validationStatus.salaryPendingEmployeeDetails || [];
+                if (salaryPendingDetails.length > 0) {
+                    throw createSalaryPendingApprovalError(salaryPendingDetails);
+                }
+
                 if (!batch.validationStatus.allEmployeesCalculated) {
                     let details = batch.validationStatus.missingEmployeeDetails || [];
                     if (!details.length && batch.validationStatus.missingEmployees?.length) {
@@ -576,19 +586,26 @@ class PayrollBatchService {
      * Get batch with all details
      */
     static async enrichValidationStatusForResponse(batch) {
-        if (!batch?.validationStatus || batch.validationStatus.allEmployeesCalculated) {
+        if (!batch?.validationStatus) {
             return batch;
         }
         if (batch.validationStatus.missingEmployeeDetails?.length) {
-            return batch;
+            // continue to salary pending enrichment below
+        } else if (batch.validationStatus.missingEmployees?.length) {
+            const details = await resolveMissingEmployeeDetails(
+                batch.validationStatus.missingEmployees
+            );
+            batch.validationStatus.missingEmployeeDetails = details;
         }
-        if (!batch.validationStatus.missingEmployees?.length) {
-            return batch;
+        if (
+            !batch.validationStatus.salaryPendingEmployeeDetails?.length &&
+            batch.validationStatus.salaryPendingEmployees?.length
+        ) {
+            const { resolveSalaryPendingEmployeeDetails } = require('../../shared/utils/salaryPendingUtils');
+            batch.validationStatus.salaryPendingEmployeeDetails = await resolveSalaryPendingEmployeeDetails(
+                batch.validationStatus.salaryPendingEmployees
+            );
         }
-        const details = await resolveMissingEmployeeDetails(
-            batch.validationStatus.missingEmployees
-        );
-        batch.validationStatus.missingEmployeeDetails = details;
         return batch;
     }
 
@@ -596,7 +613,17 @@ class PayrollBatchService {
         try {
             const batch = await PayrollBatch.findById(batchId)
                 .populate('department', 'name code')
-                .populate('employeePayrolls')
+                .populate({
+                    path: 'employeePayrolls',
+                    populate: {
+                        path: 'employeeId',
+                        select: 'emp_no employee_name department_id designation_id salaryStatus',
+                        populate: [
+                            { path: 'department_id', select: 'name' },
+                            { path: 'designation_id', select: 'name' },
+                        ],
+                    },
+                })
                 .populate('createdBy', 'name email')
                 .populate('approvedBy', 'name email')
                 .populate('freezedBy', 'name email')
@@ -605,6 +632,10 @@ class PayrollBatchService {
                 .populate('recalculationPermission.grantedBy', 'name email')
                 .populate('recalculationPermission.requestedBy', 'name email')
                 .populate('recalculationHistory.recalculatedBy', 'name email');
+
+            if (batch && Array.isArray(batch.employeePayrolls)) {
+                batch.employeePayrolls = filterPayrollRecordsExcludingSalaryPending(batch.employeePayrolls);
+            }
 
             await PayrollBatchService.enrichValidationStatusForResponse(batch);
 

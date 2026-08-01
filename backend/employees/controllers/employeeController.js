@@ -336,7 +336,7 @@ const mapListEmployeeRow = (emp) => ({
   ...mapSummaryEmployeeRow(emp),
   gross_salary:
     emp.gross_salary !== undefined && emp.gross_salary !== null ? Number(emp.gross_salary) : null,
-  qualificationStatus: emp.qualificationStatus || 'not_submitted',
+  qualificationStatus: emp.qualificationStatus || 'partial_verified',
   salaryStatus: emp.salaryStatus || null,
 });
 

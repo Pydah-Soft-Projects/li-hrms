@@ -218,6 +218,12 @@ const startWorkers = () => {
 
                 for (let i = 0; i < employees.length; i++) {
                     const employee = employees[i];
+                    if (employee.salaryStatus !== 'approved') {
+                        console.log(
+                            `[Worker] Skipping ${employee.emp_no || employee._id}: salary pending approval`
+                        );
+                        continue;
+                    }
                     try {
                         if (opts.source === 'payregister' || !useLegacy) {
                             await ensurePayRegisterForPayroll(employee._id.toString(), month);
@@ -287,6 +293,9 @@ const startWorkers = () => {
 
                 for (let j = 0; j < secondSalaryEmployees.length; j++) {
                     const employee = secondSalaryEmployees[j];
+                    if (employee.salaryStatus !== 'approved') {
+                        continue;
+                    }
                     try {
                         const { arrearsSettlements, deductionSettlements } = settlementsForEmployee(
                             employee._id,
