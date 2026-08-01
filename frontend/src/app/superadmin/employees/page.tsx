@@ -2917,7 +2917,7 @@ export default function EmployeesPage() {
           }
           if (verifiedApp) {
             setSelectedApplication(verifiedApp);
-            initApprovalState(verifiedApp);
+            initApprovalState(verifiedApp, fullEmp.doj);
           }
         }
       }
@@ -3296,20 +3296,36 @@ export default function EmployeesPage() {
     }
   };
 
-  const initApprovalState = (application: EmployeeApplication) => {
-    setSelectedApplication(application);
-    // Use application DOJ if available, otherwise default to today
-    let dojValue = '';
-    if (application.doj) {
-      try {
-        dojValue = new Date(application.doj).toISOString().split('T')[0];
-      } catch (e) {
-        console.error('Error parsing application DOJ:', e);
-        dojValue = new Date().toISOString().split('T')[0];
+  const toDateInputValue = (value?: string | Date | null) => {
+    if (!value) return '';
+    try {
+      if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+        return value.slice(0, 10);
       }
-    } else {
-      dojValue = new Date().toISOString().split('T')[0];
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toISOString().split('T')[0];
+    } catch {
+      return '';
     }
+  };
+
+  const initApprovalState = (application: EmployeeApplication, employeeDoj?: string | Date | null) => {
+    setSelectedApplication(application);
+    // Prefer application DOJ, then employee DOJ already on record. Today only as last resort.
+    const linkedEmployeeDoj =
+      employeeDoj ??
+      (viewingEmployee &&
+      String(viewingEmployee.emp_no || '').toUpperCase() === String(application.emp_no || '').toUpperCase()
+        ? viewingEmployee.doj
+        : undefined) ??
+      employees.find(
+        (e) => String(e.emp_no || '').toUpperCase() === String(application.emp_no || '').toUpperCase()
+      )?.doj;
+    const dojValue =
+      toDateInputValue(application.doj) ||
+      toDateInputValue(linkedEmployeeDoj) ||
+      new Date().toISOString().split('T')[0];
 
     setApprovalData({
       approvedSalary: application.approvedSalary || application.proposedSalary,
@@ -5400,7 +5416,7 @@ export default function EmployeesPage() {
                           className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
                         />
                         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                          Specify the employee's joining date
+                          Defaults to the joining date already on record. Change only if it needs updating.
                         </p>
                       </div>
                     </div>
@@ -6375,7 +6391,7 @@ export default function EmployeesPage() {
                           const app = selectedApplication?.status === 'verified' ? selectedApplication : pendingAppForViewing;
                           if (app) {
                             setSelectedApplication(app);
-                            initApprovalState(app);
+                            initApprovalState(app, viewingEmployee.doj);
                           }
                           setEmployeeViewTab('profile');
                           setTimeout(() => {
@@ -6449,7 +6465,7 @@ export default function EmployeesPage() {
                             <button
                               onClick={() => {
                                 setSelectedApplication(pendingAppForViewing);
-                                initApprovalState(pendingAppForViewing);
+                                initApprovalState(pendingAppForViewing, viewingEmployee.doj);
                                 setEmployeeViewTab('profile');
                                 setTimeout(() => {
                                   const element = document.getElementById('salary-approval-section');
