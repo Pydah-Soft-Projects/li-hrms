@@ -4,6 +4,7 @@
 
 const PayrollRecord = require('../../payroll/model/PayrollRecord');
 const PayrollPayslipSnapshot = require('../../payroll/model/PayrollPayslipSnapshot');
+const PayrollSalaryHoldHistory = require('../../payroll/model/PayrollSalaryHoldHistory');
 const Employee = require('../../employees/model/Employee');
 const {
   mapEmployeeToDetail,
@@ -74,21 +75,45 @@ async function findSalaryHeldPayrollRecords({ month, employeeIds, payrollRecordI
     .sort((a, b) => String(a.emp_no).localeCompare(String(b.emp_no)));
 }
 
-async function findSalaryHeldInEmployeeQuery(employeeQuery) {
-  const q =
-    employeeQuery && typeof employeeQuery === 'object'
-      ? { $and: [employeeQuery, { salaryOnHold: true }] }
-      : { salaryOnHold: true };
+async function findSalaryHeldPayrollRecordsInEmployeeScope(employeeQuery, options = {}) {
+  const { month } = options || {};
+  const baseQuery = employeeQuery && typeof employeeQuery === 'object' ? employeeQuery : {};
 
-  const docs = await Employee.find(q)
-    .select('_id emp_no employee_name doj department_id designation_id salaryStatus salaryOnHold salaryHoldReason')
+  const employeeDocs = await Employee.find(baseQuery)
+    .select('_id emp_no employee_name doj department_id designation_id salaryStatus')
     .populate('department_id', 'name')
     .populate('designation_id', 'name')
     .lean();
 
+  const employeeIds = (employeeDocs || [])
+    .map((d) => d?._id)
+    .filter(Boolean)
+    .map((id) => (typeof id === 'object' && id.toString ? id.toString() : String(id)));
+
+  if (!employeeIds.length) return [];
+
+  const q = { salaryOnHold: true, employeeId: { $in: employeeIds } };
+  if (month) q.month = month;
+
+  const docs = await PayrollRecord.find(q)
+    .select('_id emp_no employeeId salaryOnHold salaryHoldReason salaryHeldAt month')
+    .populate({
+      path: 'employeeId',
+      select: 'emp_no employee_name department_id designation_id doj',
+      populate: [
+        { path: 'department_id', select: 'name' },
+        { path: 'designation_id', select: 'name' },
+      ],
+    })
+    .lean();
+
   return docs
-    .map((d) => mapEmployeeToDetail(d, d._id.toString()))
+    .map(mapHeldRecordDetail)
     .sort((a, b) => String(a.emp_no).localeCompare(String(b.emp_no)));
+}
+
+async function findSalaryHeldInEmployeeQuery(employeeQuery, options = {}) {
+  return findSalaryHeldPayrollRecordsInEmployeeScope(employeeQuery, options);
 }
 
 function buildSalaryHeldMessage(details) {
@@ -138,6 +163,7 @@ async function setPayrollRecordsSalaryHold({
   const heldEmpIds = [];
 
   for (const rec of records) {
+    const previousReason = rec.salaryHoldReason || null;
     if (hold) {
       rec.salaryOnHold = true;
       rec.salaryHoldReason = String(reason).trim();
@@ -153,6 +179,19 @@ async function setPayrollRecordsSalaryHold({
     }
     await rec.save();
     heldEmpIds.push(rec.employeeId);
+
+    await PayrollSalaryHoldHistory.create({
+      payrollRecordId: rec._id,
+      employeeId: rec.employeeId,
+      emp_no: rec.emp_no || '',
+      month: rec.month || null,
+      action: hold ? 'hold' : 'release',
+      reason: hold ? String(reason).trim() : null,
+      performedBy: userId || null,
+      performedByName: null,
+      performedAt: now,
+      previousReason,
+    }).catch(() => {});
 
     await PayrollPayslipSnapshot.updateMany(
       { payrollRecordId: rec._id, kind: 'regular' },
@@ -199,6 +238,7 @@ module.exports = {
   filterPayrollRecordsExcludingSalaryHeld,
   resolveSalaryHeldDetailsFromRecords,
   findSalaryHeldPayrollRecords,
+  findSalaryHeldPayrollRecordsInEmployeeScope,
   buildSalaryHeldMessage,
   setPayrollRecordsSalaryHold,
   mapHeldRecordDetail,

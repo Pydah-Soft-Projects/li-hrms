@@ -620,7 +620,7 @@ class PayrollBatchService {
                     path: 'employeePayrolls',
                     populate: {
                         path: 'employeeId',
-                        select: 'emp_no employee_name department_id designation_id salaryStatus qualificationStatus',
+                        select: 'emp_no employee_name department_id designation_id division_id profilePhoto salaryStatus qualificationStatus salaryOnHold salaryHoldReason',
                         populate: [
                             { path: 'department_id', select: 'name' },
                             { path: 'designation_id', select: 'name' },

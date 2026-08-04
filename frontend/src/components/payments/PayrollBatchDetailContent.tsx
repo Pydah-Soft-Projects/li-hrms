@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Save, FileDown, Lock, Unlock } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast, ToastContainer } from "react-toastify";
@@ -16,6 +17,12 @@ import {
 } from "lucide-react";
 import { api, PayrollBatch, PayrollBatchStatus } from "@/lib/api";
 import Spinner from "@/components/Spinner";
+import { resolveEmployeeListDisplayParts } from "@/lib/employeeListDisplay";
+import {
+  DEFAULT_QUALIFICATION_STATUS_OPTIONS,
+  overallQualificationStatusLabel,
+  qualificationStatusBadgeClass,
+} from "@/lib/qualificationStatus";
 import { MissingPayrollEmployeesAlert } from "@/components/payments/MissingPayrollEmployeesAlert";
 import MissingPayrollWarningDialog from "@/components/payments/MissingPayrollWarningDialog";
 import SalaryPendingWarningDialog from "@/components/payments/SalaryPendingWarningDialog";
@@ -91,6 +98,111 @@ const actionDialogTitle: Record<string, string> = {
   unfreeze: "Unfreeze Batch (Revert to Approved)",
 };
 
+function PayrollBatchEmployeeCell({
+  source,
+  batchComplete = false,
+}: {
+  source: {
+    employee_name?: string;
+    emp_no?: string;
+    designation?: string;
+    department?: string;
+    division?: string;
+    qualificationStatus?: string;
+    salaryStatus?: string;
+    salaryOnHold?: boolean;
+    salaryHoldReason?: string | null;
+    continuousAbsent?: { active?: boolean; fromDate?: string; toDate?: string; days?: number } | null;
+    employeeId?: any;
+  };
+  batchComplete?: boolean;
+}) {
+  const d = resolveEmployeeListDisplayParts(
+    {
+      employeeId: source.employeeId,
+      employee_name: source.employee_name,
+      emp_no: source.emp_no,
+      designation: source.designation,
+      department: source.department,
+      division_id: source.division,
+    },
+    undefined,
+  );
+  const certStatus =
+    source.qualificationStatus ??
+    (source.employeeId && typeof source.employeeId === "object" ? source.employeeId.qualificationStatus : undefined);
+  const certLabel = overallQualificationStatusLabel(certStatus, DEFAULT_QUALIFICATION_STATUS_OPTIONS);
+  const showCert = Boolean(certStatus && String(certStatus).trim());
+  const salaryPending =
+    source.salaryStatus === "pending_approval" ||
+    (source.employeeId && typeof source.employeeId === "object" && source.employeeId.salaryStatus === "pending_approval");
+  const salaryOnHold =
+    source.salaryOnHold === true ||
+    (source.employeeId && typeof source.employeeId === "object" && source.employeeId.salaryOnHold === true);
+  const holdReason = source.salaryHoldReason || (source.employeeId && typeof source.employeeId === "object" ? source.employeeId.salaryHoldReason : undefined);
+  const continuousAbsent =
+    !batchComplete &&
+    (source.continuousAbsent?.active
+      ? source.continuousAbsent
+      : source.employeeId && typeof source.employeeId === "object" && source.employeeId.continuousAbsent?.active
+        ? source.employeeId.continuousAbsent
+        : null);
+  const initial = (d.name.charAt(0) || "E").toUpperCase();
+
+  return (
+    <div className="flex min-w-0 items-start gap-2" title={[d.tooltip, showCert ? `Cert: ${certLabel}` : "", continuousAbsent ? `Continuous absent ${continuousAbsent.fromDate} → ${continuousAbsent.toDate}` : "", salaryOnHold ? `Salary hold: ${holdReason || ""}` : ""].filter(Boolean).join(" | ")}>
+      {d.profilePhoto ? (
+        <img src={d.profilePhoto} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700" />
+      ) : (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-400 to-slate-600 text-[10px] font-semibold text-white">
+          {initial}
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[11px] font-semibold text-slate-900 dark:text-white">{d.name}</div>
+        {d.empDesigLine ? <div className="mt-0.5 truncate text-[9px] text-slate-600 dark:text-slate-400">{d.empDesigLine}</div> : null}
+        {(d.deptDivLine || showCert || salaryPending || salaryOnHold || continuousAbsent) ? (
+          <div className="mt-0.5 flex flex-wrap items-center gap-1 truncate text-[9px] text-slate-500 dark:text-slate-400">
+            {d.deptDivLine ? <span className="truncate">{d.deptDivLine}</span> : null}
+            {showCert ? (
+              <>
+                {d.deptDivLine ? <span>•</span> : null}
+                <span className={`inline-flex max-w-full truncate rounded px-1 py-0 text-[8px] font-semibold uppercase tracking-wide ${qualificationStatusBadgeClass(certStatus)}`}>
+                  {certLabel}
+                </span>
+              </>
+            ) : null}
+            {salaryPending ? (
+              <>
+                {(d.deptDivLine || showCert) ? <span>•</span> : null}
+                <span className="inline-flex max-w-full truncate rounded bg-indigo-500/15 px-1 py-0 text-[8px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
+                  Salary Pending
+                </span>
+              </>
+            ) : null}
+            {salaryOnHold ? (
+              <>
+                {(d.deptDivLine || showCert || salaryPending) ? <span>•</span> : null}
+                <span className="inline-flex max-w-full truncate rounded bg-amber-500/15 px-1 py-0 text-[8px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300" title={holdReason || "Salary on hold"}>
+                  Salary Hold
+                </span>
+              </>
+            ) : null}
+            {continuousAbsent ? (
+              <>
+                {(d.deptDivLine || showCert || salaryPending || salaryOnHold) ? <span>•</span> : null}
+                <span className="inline-flex max-w-full truncate rounded bg-rose-500/15 px-1 py-0 text-[8px] font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300" title={`Continuous absent ${continuousAbsent.fromDate} → ${continuousAbsent.toDate} (${continuousAbsent.days} days). Verify before completing this batch.`}>
+                  3d Absent {continuousAbsent.fromDate}→{continuousAbsent.toDate}
+                </span>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export type PayrollBatchDetailContentProps = {
   payRegisterBasePath: string;
   paymentsListPath: string;
@@ -117,12 +229,23 @@ export function PayrollBatchDetailContent({
   const [salaryPendingWarningOpen, setSalaryPendingWarningOpen] = useState(false);
   const [salaryPendingIssues, setSalaryPendingIssues] = useState<SalaryPendingValidationIssue[]>([]);
   const [proceedAnywayLoading, setProceedAnywayLoading] = useState(false);
+  const [selectedPayrollRecordIds, setSelectedPayrollRecordIds] = useState<string[]>([]);
+  const [holdReason, setHoldReason] = useState("");
+  const [holdActionLoading, setHoldActionLoading] = useState(false);
+  const [holdHistory, setHoldHistory] = useState<any[]>([]);
+  const [holdHistoryLoading, setHoldHistoryLoading] = useState(false);
 
   useEffect(() => {
     if (batchId) {
       fetchBatchDetails();
     }
   }, [batchId]);
+
+  useEffect(() => {
+    if (activeTab === "employees") {
+      loadHoldHistory();
+    }
+  }, [activeTab, batchId]);
 
   const fetchBatchDetails = async () => {
     try {
@@ -138,6 +261,94 @@ export function PayrollBatchDetailContent({
       toast.error("Error loading batch details");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadHoldHistory = async () => {
+    if (!batchId) return;
+    try {
+      setHoldHistoryLoading(true);
+      const response = await api.getBatchSalaryHoldHistory(batchId);
+      if (response?.success) {
+        setHoldHistory(response.data || []);
+      }
+    } catch (error) {
+      console.error("Error loading salary hold history:", error);
+    } finally {
+      setHoldHistoryLoading(false);
+    }
+  };
+
+  const handleTogglePayrollSelection = (payrollRecordId: string) => {
+    setSelectedPayrollRecordIds((prev) =>
+      prev.includes(payrollRecordId) ? prev.filter((id) => id !== payrollRecordId) : [...prev, payrollRecordId]
+    );
+  };
+
+  const handleApplyHold = async () => {
+    if (!batchId || !selectedPayrollRecordIds.length || !holdReason.trim()) {
+      toast.error("Select employees and provide a reason to hold salary.");
+      return;
+    }
+    try {
+      setHoldActionLoading(true);
+      const response = await api.holdBatchSalary(batchId, {
+        payrollRecordIds: selectedPayrollRecordIds,
+        reason: holdReason.trim(),
+      });
+      if (response?.success) {
+        toast.success("Salary hold applied to selected employees");
+        setHoldReason("");
+        setSelectedPayrollRecordIds([]);
+        await fetchBatchDetails();
+        await loadHoldHistory();
+      } else {
+        toast.error(response?.message || "Failed to apply hold");
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to apply hold");
+    } finally {
+      setHoldActionLoading(false);
+    }
+  };
+
+  const handleReleaseHold = async () => {
+    if (!batchId || !selectedPayrollRecordIds.length) {
+      toast.error("Select employees to release the hold.");
+      return;
+    }
+    try {
+      setHoldActionLoading(true);
+      const response = await api.releaseBatchSalary(batchId, { payrollRecordIds: selectedPayrollRecordIds });
+      if (response?.success) {
+        toast.success("Salary hold released for selected employees");
+        setHoldReason("");
+        setSelectedPayrollRecordIds([]);
+        await fetchBatchDetails();
+        await loadHoldHistory();
+      } else {
+        toast.error(response?.message || "Failed to release hold");
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to release hold");
+    } finally {
+      setHoldActionLoading(false);
+    }
+  };
+
+  const handleExportHeldSalaryPdf = async () => {
+    if (!batchId) return;
+    try {
+      const blob = await api.exportBatchHeldSalaryPdf(batchId);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `salary-hold-list-${batch?.batchNumber || batchId}.pdf`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+      toast.success("Held salary report exported");
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to export report");
     }
   };
 
@@ -444,6 +655,56 @@ export function PayrollBatchDetailContent({
         ]}
       />
 
+      {activeTab === "employees" && (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Salary hold controls</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Select one or more employees below, add a reason, and apply or release the hold for this batch.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleApplyHold}
+                disabled={holdActionLoading || !selectedPayrollRecordIds.length || !holdReason.trim()}
+                className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Lock className="h-4 w-4" />
+                {holdActionLoading ? "Working…" : "Hold selected"}
+              </button>
+              <button
+                type="button"
+                onClick={handleReleaseHold}
+                disabled={holdActionLoading || !selectedPayrollRecordIds.length}
+                className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Unlock className="h-4 w-4" />
+                {holdActionLoading ? "Working…" : "Release selected"}
+              </button>
+              <button
+                type="button"
+                onClick={handleExportHeldSalaryPdf}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                <FileDown className="h-4 w-4" />
+                Export held list
+              </button>
+            </div>
+          </div>
+          <div className="mt-3">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">Hold reason</label>
+            <textarea
+              value={holdReason}
+              onChange={(e) => setHoldReason(e.target.value)}
+              className="min-h-[80px] w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-slate-800"
+              placeholder="Enter the reason for holding salary for the selected employees"
+            />
+          </div>
+        </div>
+      )}
+
       <LoansContentPanel>
         {activeTab === "overview" && (
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -656,6 +917,7 @@ export function PayrollBatchDetailContent({
             <table className="w-full text-sm">
               <thead>
                 <tr className={loansTableHeadClass()} style={loansTableHeadStyle()}>
+                  <th className="px-4 py-3 text-left font-semibold">Select</th>
                   <th className="px-4 py-3 text-left font-semibold">Employee</th>
                   <th className="px-4 py-3 text-right font-semibold">Basic pay</th>
                   <th className="px-4 py-3 text-right font-semibold">Allowances</th>
@@ -675,6 +937,21 @@ export function PayrollBatchDetailContent({
                       (typeof empPayroll.employeeId?.designation === "object" &&
                         empPayroll.employeeId?.designation?.name) ||
                       "";
+                    const batchContinuousAbsentEntry =
+                      batch.validationStatus?.continuousAbsentEmployees?.find((entry: any) => {
+                        const empNo = String(empPayroll.employeeId?.emp_no || empPayroll.emp_no || "").toUpperCase();
+                        return String(entry.emp_no || "").toUpperCase() === empNo;
+                      });
+                    const rowContinuousAbsent =
+                      empPayroll.continuousAbsent ||
+                      (batchContinuousAbsentEntry
+                        ? {
+                            active: true,
+                            fromDate: batchContinuousAbsentEntry.fromDate,
+                            toDate: batchContinuousAbsentEntry.toDate,
+                            days: batchContinuousAbsentEntry.days,
+                          }
+                        : null);
                     return (
                       <tr
                         key={empPayroll._id}
@@ -682,26 +959,36 @@ export function PayrollBatchDetailContent({
                         style={{ borderColor: "var(--ps-accent-border)" }}
                       >
                         <td className="px-4 py-3">
-                          <div
-                            className="min-w-0"
-                            title={[empPayroll.employeeId?.name || empPayroll.emp_no || "—", designation, empPayroll.emp_no]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          >
-                            <div className="truncate font-medium text-stone-900 dark:text-stone-100">
-                              {empPayroll.employeeId?.name || empPayroll.emp_no || "—"}
-                            </div>
-                            {designation ? (
-                              <div className="mt-0.5 truncate text-[10px] italic text-stone-500">
-                                {String(designation)}
-                              </div>
-                            ) : null}
-                            {empPayroll.emp_no ? (
-                              <div className="mt-0.5 truncate text-[10px] text-stone-400">
-                                {empPayroll.emp_no}
-                              </div>
-                            ) : null}
-                          </div>
+                          <input
+                            type="checkbox"
+                            checked={selectedPayrollRecordIds.includes(empPayroll._id)}
+                            onChange={() => handleTogglePayrollSelection(empPayroll._id)}
+                            className="h-4 w-4 rounded border-slate-300"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <PayrollBatchEmployeeCell
+                            source={{
+                              employee_name: empPayroll.employeeId?.employee_name || empPayroll.employeeId?.name,
+                              emp_no: empPayroll.employeeId?.emp_no || empPayroll.emp_no,
+                              designation,
+                              department:
+                                typeof empPayroll.employeeId?.department_id === "object"
+                                  ? empPayroll.employeeId.department_id?.name
+                                  : empPayroll.employeeId?.department_id,
+                              division:
+                                typeof empPayroll.employeeId?.division_id === "object"
+                                  ? empPayroll.employeeId.division_id?.name
+                                  : empPayroll.employeeId?.division_id,
+                              qualificationStatus: empPayroll.employeeId?.qualificationStatus,
+                              salaryStatus: empPayroll.employeeId?.salaryStatus,
+                              salaryOnHold: empPayroll.salaryOnHold ?? empPayroll.employeeId?.salaryOnHold,
+                              salaryHoldReason: empPayroll.salaryHoldReason ?? empPayroll.employeeId?.salaryHoldReason,
+                              continuousAbsent: rowContinuousAbsent,
+                              employeeId: empPayroll.employeeId,
+                            }}
+                            batchComplete={batch.status === "complete"}
+                          />
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums">
                           {formatCurrency(empPayroll.earnings?.basicPay || 0)}
@@ -729,7 +1016,7 @@ export function PayrollBatchDetailContent({
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-4 py-12 text-center text-stone-500">
+                    <td colSpan={9} className="px-4 py-12 text-center text-stone-500">
                       No employee payrolls found in this batch.
                     </td>
                   </tr>
@@ -740,9 +1027,48 @@ export function PayrollBatchDetailContent({
         )}
 
         {activeTab === "history" && (
-          <LoanDetailSection>
-            <LoanDetailSectionTitle>Batch activity history</LoanDetailSectionTitle>
-            <div className="space-y-6">
+          <div className="space-y-6">
+            <LoanDetailSection>
+              <LoanDetailSectionTitle>Salary hold history</LoanDetailSectionTitle>
+              {holdHistoryLoading ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-stone-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading hold history…
+                </div>
+              ) : holdHistory.length > 0 ? (
+                <div className="space-y-3">
+                  {holdHistory.map((item: any) => (
+                    <div key={item._id} className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-sm dark:border-amber-900/40 dark:bg-amber-950/20">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="font-semibold text-slate-900 dark:text-slate-100">
+                            {item.action === "hold" ? "Salary hold applied" : "Salary hold released"}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {item.emp_no || "—"} · {item.previousReason ? `Previous: ${item.previousReason}` : "No previous reason"}
+                          </p>
+                        </div>
+                        <time className="text-xs text-slate-500">
+                          {new Date(item.performedAt || item.createdAt).toLocaleString()}
+                        </time>
+                      </div>
+                      <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">
+                        {item.reason || "No reason provided"}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        By {item.performedBy?.name || "Unknown user"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="py-4 text-sm text-stone-500">No salary-hold activity yet.</p>
+              )}
+            </LoanDetailSection>
+
+            <LoanDetailSection>
+              <LoanDetailSectionTitle>Batch activity history</LoanDetailSectionTitle>
+              <div className="space-y-6">
               {[
                 ...(batch.statusHistory || []).map((h) => ({ ...h, type: "status_change" as const, date: h.changedAt })),
                 ...(batch.recalculationHistory || []).map((h) => ({
@@ -802,11 +1128,12 @@ export function PayrollBatchDetailContent({
                   </div>
                 ))}
 
-              {!batch.statusHistory?.length && !batch.recalculationHistory?.length && (
-                <p className="py-8 text-center text-sm text-stone-500">No activity history found.</p>
-              )}
-            </div>
-          </LoanDetailSection>
+                {!batch.statusHistory?.length && !batch.recalculationHistory?.length && (
+                  <p className="py-8 text-center text-sm text-stone-500">No activity history found.</p>
+                )}
+              </div>
+            </LoanDetailSection>
+          </div>
         )}
       </LoansContentPanel>
 

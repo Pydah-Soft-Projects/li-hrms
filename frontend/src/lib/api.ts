@@ -5322,6 +5322,33 @@ export const api = {
     return apiRequest<any>(`/payroll-batch/${id}`, { method: 'GET' });
   },
 
+  holdBatchSalary: async (id: string, payload: { payrollRecordIds: string[]; reason: string }) => {
+    return apiRequest<any>(`/payroll-batch/${id}/hold-salary`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  releaseBatchSalary: async (id: string, payload: { payrollRecordIds: string[] }) => {
+    return apiRequest<any>(`/payroll-batch/${id}/release-salary`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  getBatchSalaryHoldHistory: async (id: string) => {
+    return apiRequest<any>(`/payroll-batch/${id}/salary-hold-history`, { method: 'GET' });
+  },
+
+  exportBatchHeldSalaryPdf: async (id: string) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const response = await fetch(`${API_BASE_URL}/payroll-batch/${id}/export-held-salary-pdf`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error('Export failed');
+    return response.blob();
+  },
+
   validatePayrollBatch: async (id: string) => {
     return apiRequest<{
       allEmployeesCalculated: boolean;

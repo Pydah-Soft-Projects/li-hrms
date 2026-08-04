@@ -1461,7 +1461,7 @@ exports.getPaysheetData = async (req, res) => {
 
       const { filterPayrollRecordsByPayPeriodScope } = require('../services/payrollEmployeeQueryHelper');
       const { filterPayrollRecordsExcludingSalaryPending, findSalaryPendingInEmployeeQuery } = require('../../shared/utils/salaryPendingUtils');
-      const { filterPayrollRecordsExcludingSalaryHeld, findSalaryHeldInEmployeeQuery } = require('../../shared/utils/salaryHoldUtils');
+      const { filterPayrollRecordsExcludingSalaryHeld, findSalaryHeldPayrollRecordsInEmployeeScope } = require('../../shared/utils/salaryHoldUtils');
       let filtered = filterPayrollRecordsByPayPeriodScope(records, payrollRangeStart, payrollRangeEnd);
       filtered = filterPayrollRecordsExcludingSalaryPending(filtered);
       filtered = filterPayrollRecordsExcludingSalaryHeld(filtered);
@@ -1770,7 +1770,7 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
 
     const { filterPayrollRecordsByPayPeriodScope, buildPaysheetEmployeeFilter } = require('../services/payrollEmployeeQueryHelper');
     const { filterPayrollRecordsExcludingSalaryPending, findSalaryPendingInEmployeeQuery } = require('../../shared/utils/salaryPendingUtils');
-    const { filterPayrollRecordsExcludingSalaryHeld, findSalaryHeldInEmployeeQuery } = require('../../shared/utils/salaryHoldUtils');
+    const { filterPayrollRecordsExcludingSalaryHeld, findSalaryHeldPayrollRecordsInEmployeeScope } = require('../../shared/utils/salaryHoldUtils');
     payrollRecords = filterPayrollRecordsByPayPeriodScope(payrollRecords, payrollRangeStart, payrollRangeEnd);
     payrollRecords = filterPayrollRecordsExcludingSalaryPending(payrollRecords);
     payrollRecords = filterPayrollRecordsExcludingSalaryHeld(payrollRecords);
@@ -1800,7 +1800,7 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
         }
       );
       salaryPendingEmployees = await findSalaryPendingInEmployeeQuery(pendingEmpQuery);
-      salaryHeldEmployees = await findSalaryHeldInEmployeeQuery(pendingEmpQuery);
+      salaryHeldEmployees = await findSalaryHeldPayrollRecordsInEmployeeScope(pendingEmpQuery, { month });
     }
 
     const orderIndex = new Map(targetEmployeeIds.map((id, i) => [id, i]));

@@ -8,6 +8,10 @@ router.post('/calculate', protect, payrollBatchController.calculatePayrollBatch)
 router.get('/', protect, payrollBatchController.getPayrollBatches);
 router.get('/:id', protect, payrollBatchController.getPayrollBatch);
 router.get('/:id/employees', protect, payrollBatchController.getBatchEmployeePayrolls);
+router.get('/:id/salary-hold-history', protect, payrollBatchController.getBatchSalaryHoldHistory);
+router.get('/:id/export-held-salary-pdf', protect, payrollBatchController.exportBatchHeldSalaryPdf);
+router.post('/:id/hold-salary', protect, payrollBatchController.holdBatchSalary);
+router.post('/:id/release-salary', protect, payrollBatchController.releaseBatchSalary);
 router.delete('/:id', protect, payrollBatchController.deleteBatch);
 
 // Status Management

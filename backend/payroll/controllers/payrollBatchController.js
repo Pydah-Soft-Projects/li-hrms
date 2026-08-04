@@ -1,5 +1,8 @@
+const PDFDocument = require('pdfkit');
 const PayrollBatchService = require('../services/payrollBatchService');
 const PayrollBatch = require('../model/PayrollBatch');
+const PayrollSalaryHoldHistory = require('../model/PayrollSalaryHoldHistory');
+const { setPayrollRecordsSalaryHold } = require('../../shared/utils/salaryHoldUtils');
 
 /**
  * @desc    Create payroll batch for department(s)
@@ -195,7 +198,7 @@ exports.getBatchEmployeePayrolls = async (req, res) => {
                 path: 'employeePayrolls',
                 populate: {
                     path: 'employeeId',
-                    select: 'emp_no employee_name department_id designation_id location bank_account_no pf_number esi_number salaryStatus salaryOnHold salaryHoldReason',
+                    select: 'emp_no employee_name department_id designation_id division_id profilePhoto location bank_account_no pf_number esi_number salaryStatus qualificationStatus salaryOnHold salaryHoldReason',
                     populate: [
                         { path: 'department_id', select: 'name' },
                         { path: 'designation_id', select: 'name' }
@@ -226,6 +229,129 @@ exports.getBatchEmployeePayrolls = async (req, res) => {
             success: false,
             message: error.message || 'Error fetching employee payrolls'
         });
+    }
+};
+
+exports.holdBatchSalary = async (req, res) => {
+    try {
+        const batch = await PayrollBatch.findById(req.params.id);
+        if (!batch) {
+            return res.status(404).json({ success: false, message: 'Payroll batch not found' });
+        }
+
+        const { payrollRecordIds, reason } = req.body || {};
+        const ids = Array.isArray(payrollRecordIds) ? payrollRecordIds.filter(Boolean) : [];
+        if (!ids.length) {
+            return res.status(400).json({ success: false, message: 'Select at least one employee payroll row' });
+        }
+        const trimmedReason = String(reason || '').trim();
+        if (!trimmedReason) {
+            return res.status(400).json({ success: false, message: 'Hold reason is required' });
+        }
+
+        const result = await setPayrollRecordsSalaryHold({
+            payrollRecordIds: ids,
+            hold: true,
+            reason: trimmedReason,
+            userId: req.user?._id || req.user?.id || null,
+            batchId: batch._id,
+        });
+
+        res.status(200).json({ success: true, message: 'Salary hold applied', data: result });
+    } catch (error) {
+        console.error('Error holding batch salaries:', error);
+        res.status(500).json({ success: false, message: error.message || 'Failed to hold salary' });
+    }
+};
+
+exports.releaseBatchSalary = async (req, res) => {
+    try {
+        const batch = await PayrollBatch.findById(req.params.id);
+        if (!batch) {
+            return res.status(404).json({ success: false, message: 'Payroll batch not found' });
+        }
+
+        const { payrollRecordIds } = req.body || {};
+        const ids = Array.isArray(payrollRecordIds) ? payrollRecordIds.filter(Boolean) : [];
+        if (!ids.length) {
+            return res.status(400).json({ success: false, message: 'Select at least one employee payroll row' });
+        }
+
+        const result = await setPayrollRecordsSalaryHold({
+            payrollRecordIds: ids,
+            hold: false,
+            reason: '',
+            userId: req.user?._id || req.user?.id || null,
+            batchId: batch._id,
+        });
+
+        res.status(200).json({ success: true, message: 'Salary hold released', data: result });
+    } catch (error) {
+        console.error('Error releasing batch salaries:', error);
+        res.status(500).json({ success: false, message: error.message || 'Failed to release salary hold' });
+    }
+};
+
+exports.getBatchSalaryHoldHistory = async (req, res) => {
+    try {
+        const batch = await PayrollBatch.findById(req.params.id);
+        if (!batch) {
+            return res.status(404).json({ success: false, message: 'Payroll batch not found' });
+        }
+
+        const payrollRecordIds = (batch.employeePayrolls || []).map((item) => item?.toString?.() || item);
+        const history = await PayrollSalaryHoldHistory.find({
+            payrollRecordId: { $in: payrollRecordIds.filter(Boolean) },
+        })
+            .populate('performedBy', 'name email')
+            .sort({ performedAt: -1 })
+            .lean();
+
+        res.status(200).json({ success: true, data: history });
+    } catch (error) {
+        console.error('Error fetching batch salary hold history:', error);
+        res.status(500).json({ success: false, message: error.message || 'Failed to load history' });
+    }
+};
+
+exports.exportBatchHeldSalaryPdf = async (req, res) => {
+    try {
+        const batch = await PayrollBatch.findById(req.params.id);
+        if (!batch) {
+            return res.status(404).json({ success: false, message: 'Payroll batch not found' });
+        }
+
+        const PayrollRecord = require('../model/PayrollRecord');
+        const payrollRecords = await PayrollRecord.find({ _id: { $in: batch.employeePayrolls || [] }, salaryOnHold: true })
+            .populate({ path: 'employeeId', select: 'emp_no employee_name' })
+            .sort({ emp_no: 1 })
+            .lean();
+
+        const doc = new PDFDocument({ margin: 36 });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="salary-hold-list-${batch.batchNumber || batch._id}.pdf"`);
+        doc.pipe(res);
+
+        doc.fontSize(18).text(`Salary Hold Report - ${batch.batchNumber || batch._id}`, { align: 'left' });
+        doc.moveDown(0.5);
+        doc.fontSize(10).text(`Month: ${batch.month || ''}`);
+        doc.moveDown(0.6);
+        doc.fontSize(11).text('Employee Code | Employee Name | Reason | Held At');
+        doc.moveDown(0.4);
+        doc.fontSize(10);
+        if (!payrollRecords.length) {
+            doc.text('No salary-held employees found for this batch.');
+        } else {
+            payrollRecords.forEach((record) => {
+                const line = `${record.emp_no || ''} | ${record.employeeId?.employee_name || record.employeeId?.emp_no || 'Unknown'} | ${record.salaryHoldReason || '—'} | ${record.salaryHeldAt ? new Date(record.salaryHeldAt).toLocaleString() : '—'}`;
+                doc.text(line, { width: 500, lineGap: 2 });
+                doc.moveDown(0.2);
+            });
+        }
+        doc.end();
+    } catch (error) {
+        console.error('Error exporting batch held salary PDF:', error);
+        res.status(500).json({ success: false, message: error.message || 'Failed to export PDF' });
     }
 };
 
