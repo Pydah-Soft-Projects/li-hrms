@@ -4,6 +4,7 @@
 
 const PayrollRecord = require('../../payroll/model/PayrollRecord');
 const PayrollPayslipSnapshot = require('../../payroll/model/PayrollPayslipSnapshot');
+const Employee = require('../../employees/model/Employee');
 const {
   mapEmployeeToDetail,
   formatEmployeeLabel,
@@ -70,6 +71,23 @@ async function findSalaryHeldPayrollRecords({ month, employeeIds, payrollRecordI
 
   return docs
     .map(mapHeldRecordDetail)
+    .sort((a, b) => String(a.emp_no).localeCompare(String(b.emp_no)));
+}
+
+async function findSalaryHeldInEmployeeQuery(employeeQuery) {
+  const q =
+    employeeQuery && typeof employeeQuery === 'object'
+      ? { $and: [employeeQuery, { salaryOnHold: true }] }
+      : { salaryOnHold: true };
+
+  const docs = await Employee.find(q)
+    .select('_id emp_no employee_name doj department_id designation_id salaryStatus salaryOnHold salaryHoldReason')
+    .populate('department_id', 'name')
+    .populate('designation_id', 'name')
+    .lean();
+
+  return docs
+    .map((d) => mapEmployeeToDetail(d, d._id.toString()))
     .sort((a, b) => String(a.emp_no).localeCompare(String(b.emp_no)));
 }
 
@@ -184,4 +202,5 @@ module.exports = {
   buildSalaryHeldMessage,
   setPayrollRecordsSalaryHold,
   mapHeldRecordDetail,
+  findSalaryHeldInEmployeeQuery,
 };

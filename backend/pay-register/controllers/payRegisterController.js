@@ -1272,6 +1272,71 @@ function payRegisterSummaryFromDailyRecords(dailyRecords = []) {
   return { halfDays };
 }
 
+function getEmploymentBoundaryDateStrs(employeeDoc) {
+  const dojStr = employeeDoc?.doj ? dayjs(employeeDoc.doj).tz('Asia/Kolkata').format('YYYY-MM-DD') : null;
+  const leftDateStr = employeeDoc?.leftDate ? dayjs(employeeDoc.leftDate).tz('Asia/Kolkata').format('YYYY-MM-DD') : null;
+  return { dojStr, leftDateStr };
+}
+
+function isDateWithinEmploymentBounds(dateStr, dojStr, leftDateStr) {
+  if (!dateStr) return false;
+  if (dojStr && dateStr < dojStr) return false;
+  if (leftDateStr && dateStr > leftDateStr) return false;
+  return true;
+}
+
+function countEmploymentEligibleDates(startDate, endDate, employeeDoc = null) {
+  const { dojStr, leftDateStr } = getEmploymentBoundaryDateStrs(employeeDoc);
+  if (!startDate || !endDate) return 0;
+
+  let count = 0;
+  let cursor = dayjs(startDate);
+  const last = dayjs(endDate);
+
+  while (cursor.isBefore(last) || cursor.isSame(last, 'day')) {
+    const dStr = cursor.format('YYYY-MM-DD');
+    if (isDateWithinEmploymentBounds(dStr, dojStr, leftDateStr)) count += 1;
+    cursor = cursor.add(1, 'day');
+  }
+
+  return count;
+}
+
+function filterPdfSummaryTotalsForEmploymentBounds(dailyRecords = [], totals = {}, startDate, endDate, employeeDoc = null) {
+  const { dojStr, leftDateStr } = getEmploymentBoundaryDateStrs(employeeDoc);
+  const inRange = Array.isArray(dailyRecords) ? dailyRecords.filter((record) => {
+    const raw = record && record.date ? String(record.date).slice(0, 10) : null;
+    if (!raw) return false;
+    if (startDate && raw < startDate) return false;
+    if (endDate && raw > endDate) return false;
+    if (dojStr && raw < dojStr) return false;
+    if (leftDateStr && raw > leftDateStr) return false;
+    return true;
+  }) : [];
+
+  if (inRange.length === 0) {
+    return {
+      ...totals,
+      totalPresentDays: 0,
+      totalAbsentDays: 0,
+      totalPaidLeaveDays: 0,
+      totalLopDays: 0,
+      totalODDays: 0,
+      totalWeeklyOffs: 0,
+      totalHolidays: 0,
+      totalLeaveDays: 0,
+      totalDaysInMonth: countEmploymentEligibleDates(startDate, endDate, employeeDoc),
+    };
+  }
+
+  const recalculated = calculateTotals(inRange);
+  return {
+    ...totals,
+    ...recalculated,
+    totalDaysInMonth: countEmploymentEligibleDates(startDate, endDate, employeeDoc),
+  };
+}
+
 function drawPayRegisterPdfHeader(doc, title, subTitle) {
   const pageWidth = doc.page.width;
   doc.fillColor('#4f46e5').rect(0, 0, pageWidth, 45).fill();
@@ -1279,6 +1344,10 @@ function drawPayRegisterPdfHeader(doc, title, subTitle) {
   doc.fontSize(8).font('Helvetica').text(subTitle, 25, 30);
   return 60;
 }
+
+exports.filterPdfSummaryTotalsForEmploymentBounds = filterPdfSummaryTotalsForEmploymentBounds;
+exports.countEmploymentEligibleDates = countEmploymentEligibleDates;
+exports.isDateWithinEmploymentBounds = isDateWithinEmploymentBounds;
 
 function drawPayRegisterPdfTable(doc, headers, rows, startX, startY, colWidths, options = {}) {
   const {
@@ -1730,25 +1799,27 @@ exports.exportSummaryPDF = async (req, res) => {
           const pr = prMap.get(String(emp._id));
           const totals = pr?.totals || {};
           const dailyRecords = Array.isArray(pr?.dailyRecords) ? pr.dailyRecords : [];
+          const filteredTotals = filterPdfSummaryTotalsForEmploymentBounds(dailyRecords, totals, startDate, endDate, emp);
           const dailyMap = new Map(dailyRecords.map((record) => [record.date, record]));
+          const eligibleDayCount = countEmploymentEligibleDates(startDate, endDate, emp);
           
-          const totalPresent = Number(totals.totalPresentDays) || 0;
-          const totalAbsent = Number(totals.totalAbsentDays) || 0;
-          const totalLeaves = Number(totals.totalLeaveDays) || 0;
-          const paidLeaves = Number(totals.totalPaidLeaveDays) || 0;
+          const totalPresent = Number(filteredTotals.totalPresentDays) || 0;
+          const totalAbsent = Number(filteredTotals.totalAbsentDays) || 0;
+          const totalLeaves = Number(filteredTotals.totalLeaveDays) || 0;
+          const paidLeaves = Number(filteredTotals.totalPaidLeaveDays) || 0;
           const lopLeaves = Math.max(0, totalLeaves - paidLeaves);
-          const totalOD = Number(totals.totalODDays) || 0;
-          const lateCount = (Number(totals.lateCount) || 0) + (Number(totals.earlyOutCount) || 0);
+          const totalOD = Number(filteredTotals.totalODDays) || 0;
+          const lateCount = (Number(filteredTotals.lateCount) || 0) + (Number(filteredTotals.earlyOutCount) || 0);
           
-          const weekOffs = Number(totals.totalWeeklyOffs) || 0;
-          const holidays = Number(totals.totalHolidays) || 0;
-          const monthDays = Number(totals.totalDaysInMonth) || daysArray.length;
+          const weekOffs = Number(filteredTotals.totalWeeklyOffs) || 0;
+          const holidays = Number(filteredTotals.totalHolidays) || 0;
+          const monthDays = eligibleDayCount || daysArray.length;
           
-          const lopDed = Number(totals.totalLopDays) || 0;
+          const lopDed = Number(filteredTotals.totalLopDays) || 0;
           const attDed = Number(pr?.totalAttendanceDeductionDays) || 0;
           
           // Paid Days = Total Days - Absent - LOP - Att.Ded
-          const paidDays = monthDays - totalAbsent - lopDed - attDed;
+          const paidDays = Math.max(0, monthDays - totalAbsent - lopDed - attDed);
 
           const designationLabel = emp.designation_id?.name || '-';
 

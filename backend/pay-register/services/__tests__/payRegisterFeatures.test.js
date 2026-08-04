@@ -238,6 +238,45 @@ describe('Pay Register — employee filter (multi division/department)', () => {
   });
 });
 
+describe('Pay Register — PDF summary employment bounds', () => {
+  test('filters out dates before DOJ and after left date for export summary totals', () => {
+    const ctrl = require('../../controllers/payRegisterController');
+    const totals = {
+      totalPresentDays: 10,
+      totalAbsentDays: 5,
+      totalPaidLeaveDays: 2,
+      totalLopDays: 1,
+      totalODDays: 1,
+      totalWeeklyOffs: 2,
+      totalHolidays: 3,
+    };
+    const dailyRecords = [
+      { date: '2026-04-01', status: 'present' },
+      { date: '2026-04-05', status: 'present' },
+      { date: '2026-04-10', status: 'absent' },
+      { date: '2026-04-12', status: 'leave', leaveNature: 'paid' },
+      { date: '2026-04-20', status: 'leave', leaveNature: 'lop' },
+      { date: '2026-03-30', status: 'present' },
+      { date: '2026-04-30', status: 'present' },
+    ];
+
+    const adjusted = ctrl.filterPdfSummaryTotalsForEmploymentBounds(
+      dailyRecords,
+      totals,
+      '2026-04-01',
+      '2026-04-25'
+    );
+
+    expect(adjusted.totalPresentDays).toBe(2);
+    expect(adjusted.totalAbsentDays).toBe(1);
+    expect(adjusted.totalPaidLeaveDays).toBe(1);
+    expect(adjusted.totalLopDays).toBe(1);
+    expect(adjusted.totalODDays).toBe(0);
+    expect(adjusted.totalWeeklyOffs).toBe(0);
+    expect(adjusted.totalHolidays).toBe(0);
+  });
+});
+
 describe('Pay Register — API routes registered', () => {
   test('modifications export routes are declared in pay-register index', () => {
     const fs = require('fs');

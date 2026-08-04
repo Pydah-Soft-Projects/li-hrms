@@ -535,16 +535,38 @@ const REGULAR_NET_SALARY_HEADER = 'Regular Net Salary';
 const SECOND_NET_SALARY_HEADER = '2nd Net Salary';
 const DELTA_NET_HEADER = 'Δ Net (2nd − Regular)';
 
+function normalizeExpenseHeaderKey(key) {
+  return String(key ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
 function netSalaryFromRow(row) {
   if (!row || typeof row !== 'object') return 0;
+
+  const directCandidates = ['netSalary', 'finalSalary', 'netPay', 'netsalary', 'finalsalary', 'netpay'];
+  for (const key of directCandidates) {
+    if (row[key] != null && row[key] !== '') {
+      const n = Number(row[key]);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+
   for (const k of Object.keys(row)) {
     if (k.startsWith('_')) continue;
-    const norm = String(k).toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (norm === 'netsalary' || norm === 'finalsalary') {
+    const norm = normalizeExpenseHeaderKey(k);
+    if (
+      norm === 'netsalary' ||
+      norm === 'finalsalary' ||
+      norm === 'netpay' ||
+      norm === 'netpaysalary'
+    ) {
       const n = Number(row[k]);
       return Number.isFinite(n) ? n : 0;
     }
   }
+
   return 0;
 }
 
@@ -1097,9 +1119,35 @@ function writeBundleBuffer(regularRows, secondRows, netDiffResolver, options = {
 }
 
 function netDiffFromRowsDefault(reg, sec) {
-  const nReg = Number(reg['NET SALARY'] ?? reg['FINAL SALARY'] ?? 0);
-  const nSec = Number(sec['NET SALARY'] ?? sec['FINAL SALARY'] ?? 0);
+  const nReg = netSalaryFromRow(reg);
+  const nSec = netSalaryFromRow(sec);
   return nSec - nReg;
+}
+
+function resolveNetSalaryDeltasByEmployee(regularRows = [], secondRows = []) {
+  const regMap = new Map();
+  const secMap = new Map();
+
+  for (const row of regularRows) {
+    const empCode = String(row?._exportEmpNo ?? row?.['Employee Code'] ?? row?.['Employee Number'] ?? row?.emp_no ?? '').trim();
+    if (!empCode) continue;
+    regMap.set(empCode, netSalaryFromRow(row));
+  }
+
+  for (const row of secondRows) {
+    const empCode = String(row?._exportEmpNo ?? row?.['Employee Code'] ?? row?.['Employee Number'] ?? row?.emp_no ?? '').trim();
+    if (!empCode) continue;
+    secMap.set(empCode, netSalaryFromRow(row));
+  }
+
+  const out = {};
+  const keys = new Set([...regMap.keys(), ...secMap.keys()]);
+  for (const empCode of [...keys].sort()) {
+    const regNet = regMap.get(empCode) ?? 0;
+    const secNet = secMap.get(empCode) ?? 0;
+    out[empCode] = secNet - regNet;
+  }
+  return out;
 }
 
 /** PF / ESI / PT codes for paysheet column expansion when saved records have no statutory breakdown yet */
@@ -1345,4 +1393,6 @@ module.exports = {
   tryBuildSecondSalaryRowsFromSnapshots,
   enrichPayslipsLoanRemainingBalance,
   netDiffFromRowsDefault,
+  netSalaryFromRow,
+  resolveNetSalaryDeltasByEmployee,
 };

@@ -19,6 +19,7 @@ const {
   tryBuildRegularRowsFromSnapshots,
   tryBuildSecondSalaryRowsFromSnapshots,
   enrichPayslipsLoanRemainingBalance,
+  resolveNetSalaryDeltasByEmployee,
 } = require('../utils/paysheetBundleExport');
 const User = require('../../users/model/User');
 const Settings = require('../../settings/model/Settings');
@@ -1962,7 +1963,16 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
       regularRows,
     });
     const secondSalaryEnabled = await isSecondSalaryGloballyEnabled();
-    const buf = writeBundleBuffer(regularRows, secondRows, (reg, sec, i) => netsSec[i] - netsReg[i], {
+
+    const netDeltaByEmployee = resolveNetSalaryDeltasByEmployee(regularRows, secondRows);
+    const buf = writeBundleBuffer(regularRows, secondRows, (reg, sec, i) => {
+      const empCode = String(reg?._exportEmpNo ?? reg?.['Employee Code'] ?? reg?.['Employee Number'] ?? reg?.emp_no ?? '').trim();
+      if (empCode && Object.prototype.hasOwnProperty.call(netDeltaByEmployee, empCode)) {
+        return netDeltaByEmployee[empCode];
+      }
+      return (Number(sec?.['NET SALARY'] ?? sec?.['FINAL SALARY'] ?? sec?.['Net Salary'] ?? sec?.['net salary'] ?? 0) || 0) -
+        (Number(reg?.['NET SALARY'] ?? reg?.['FINAL SALARY'] ?? reg?.['Net Salary'] ?? reg?.['net salary'] ?? 0) || 0);
+    }, {
       format: bundleFormat,
       exportMeta,
       secondSalaryEnabled,
