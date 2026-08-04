@@ -118,15 +118,15 @@ export default function QualificationProfilesTab({ globalQualifications }: Props
   }, [designations, departmentIds, scopeType]);
 
   const divisionOptions = useMemo(
-    () => divisions.map((d) => ({ id: String(d._id), name: d.name })),
+    () => divisions.map((d) => ({ id: String(d._id), name: d.name ?? "" })),
     [divisions]
   );
   const departmentOptions = useMemo(
-    () => scopedDepartments.map((d) => ({ id: String(d._id), name: d.name })),
+    () => scopedDepartments.map((d) => ({ id: String(d._id), name: d.name ?? "" })),
     [scopedDepartments]
   );
   const designationOptions = useMemo(
-    () => scopedDesignations.map((d) => ({ id: String(d._id), name: d.name })),
+    () => scopedDesignations.map((d) => ({ id: String(d._id), name: d.name ?? "" })),
     [scopedDesignations]
   );
 

@@ -5,6 +5,7 @@ import { Save, FileDown, Lock, Unlock } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast, ToastContainer } from "react-toastify";
+import { alertConfirm, alertError, ledgerSwalFire } from "@/lib/customSwal";
 import {
   ArrowLeft,
   RefreshCw,
@@ -285,8 +286,9 @@ export function PayrollBatchDetailContent({
     );
   };
 
-  const handleApplyHold = async () => {
-    if (!batchId || !selectedPayrollRecordIds.length || !holdReason.trim()) {
+  const handleApplyHold = async (reasonOverride?: string) => {
+    const reason = (reasonOverride ?? holdReason).trim();
+    if (!batchId || !selectedPayrollRecordIds.length || !reason) {
       toast.error("Select employees and provide a reason to hold salary.");
       return;
     }
@@ -294,7 +296,7 @@ export function PayrollBatchDetailContent({
       setHoldActionLoading(true);
       const response = await api.holdBatchSalary(batchId, {
         payrollRecordIds: selectedPayrollRecordIds,
-        reason: holdReason.trim(),
+        reason,
       });
       if (response?.success) {
         toast.success("Salary hold applied to selected employees");
@@ -661,14 +663,44 @@ export function PayrollBatchDetailContent({
             <div>
               <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Salary hold controls</p>
               <p className="text-xs text-amber-700 dark:text-amber-400">
-                Select one or more employees below, add a reason, and apply or release the hold for this batch.
+                Select one or more employees below, then use the buttons to hold or release salary for this batch.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={handleApplyHold}
-                disabled={holdActionLoading || !selectedPayrollRecordIds.length || !holdReason.trim()}
+                onClick={async () => {
+                  if (!selectedPayrollRecordIds.length) {
+                    toast.error("Select employees first.");
+                    return;
+                  }
+                  const result = await ledgerSwalFire({
+                    title: "Hold salary",
+                    text: "Enter the reason for holding salary for the selected employees",
+                    input: "textarea",
+                    inputLabel: "Reason",
+                    inputPlaceholder: "Enter the reason here...",
+                    showCancelButton: true,
+                    confirmButtonText: "Hold",
+                    confirmVariant: "primary",
+                    size: "md",
+                    inputValidator: (value) => {
+                      if (!value || !value.trim()) {
+                        return "Please enter a reason.";
+                      }
+                      return undefined;
+                    },
+                  });
+                  if (!result.isConfirmed) return;
+                  const reason = result.value?.toString().trim();
+                  if (!reason) {
+                    void alertError("Reason required", "Please enter a reason to hold salary.");
+                    return;
+                  }
+                  setHoldReason(reason);
+                  void handleApplyHold(reason);
+                }}
+                disabled={holdActionLoading || !selectedPayrollRecordIds.length}
                 className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Lock className="h-4 w-4" />
@@ -676,7 +708,20 @@ export function PayrollBatchDetailContent({
               </button>
               <button
                 type="button"
-                onClick={handleReleaseHold}
+                onClick={async () => {
+                  if (!selectedPayrollRecordIds.length) {
+                    toast.error("Select employees first.");
+                    return;
+                  }
+                  const result = await alertConfirm(
+                    "Release salary hold",
+                    "Release salary hold for the selected employees?",
+                    "Release"
+                  );
+                  if (result.isConfirmed) {
+                    void handleReleaseHold();
+                  }
+                }}
                 disabled={holdActionLoading || !selectedPayrollRecordIds.length}
                 className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -692,15 +737,6 @@ export function PayrollBatchDetailContent({
                 Export held list
               </button>
             </div>
-          </div>
-          <div className="mt-3">
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">Hold reason</label>
-            <textarea
-              value={holdReason}
-              onChange={(e) => setHoldReason(e.target.value)}
-              className="min-h-[80px] w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-slate-800"
-              placeholder="Enter the reason for holding salary for the selected employees"
-            />
           </div>
         </div>
       )}
