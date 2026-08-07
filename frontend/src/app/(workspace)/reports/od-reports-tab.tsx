@@ -313,7 +313,7 @@ export default function ODReportsTab() {
                         </div>
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                         <button
                             onClick={handleExport}
                             disabled={loading || loadingXlsx}
@@ -345,7 +345,7 @@ export default function ODReportsTab() {
                         </h4>
                         {fetchingFilters && <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-500" />}
                     </div>
-                    <div className="p-5 grid gap-4 grid-cols-2">
+                    <div className="p-5 grid gap-4 grid-cols-1 sm:grid-cols-2">
                         <MultiSelect
                             label="Division"
                             options={divisions.map(d => ({ id: d._id, name: d.name }))}

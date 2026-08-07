@@ -764,7 +764,7 @@ export default function AttendanceReportsTab() {
                         </button>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <button
                         onClick={() => {
                             setDivisionIds([]);
@@ -774,14 +774,14 @@ export default function AttendanceReportsTab() {
                             setDesignations(allDesignations);
                             setDrilldownLevel('all');
                         }}
-                        className="h-10 px-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                        className="h-10 px-3 sm:px-4 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                     >
                         <X className="h-4 w-4" />
                         Clear
                     </button>
                     <button
                         onClick={() => loadReport(1)}
-                        className="h-10 px-6 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 transition-all flex items-center gap-2"
+                        className="h-10 px-4 sm:px-6 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 transition-all flex items-center gap-2"
                         disabled={loading}
                     >
                         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
@@ -789,7 +789,7 @@ export default function AttendanceReportsTab() {
                     </button>
                     <button
                         onClick={() => setIsExportDialogOpen(true)}
-                        className="h-10 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95 flex items-center gap-2"
+                        className="h-10 px-3 sm:px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95 flex items-center gap-2"
                         title="Advanced Export (Filters & Custom Range)"
                     >
                         <Download className="h-4 w-4" />
@@ -797,7 +797,7 @@ export default function AttendanceReportsTab() {
                     </button>
                     <button
                         onClick={() => handleExport('pdf', true)}
-                        className="h-10 px-4 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-rose-200 dark:shadow-none active:scale-95 flex items-center gap-2"
+                        className="h-10 px-3 sm:px-4 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-rose-200 dark:shadow-none active:scale-95 flex items-center gap-2"
                         title="Quick Download PDF (Current Filters)"
                     >
                         <Download className="h-4 w-4" />
@@ -816,7 +816,7 @@ export default function AttendanceReportsTab() {
                         </h4>
                         {fetchingFilters && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />}
                     </div>
-                    <div className="p-5 grid gap-4 grid-cols-2">
+                    <div className="p-5 grid gap-4 grid-cols-1 sm:grid-cols-2">
                         <MultiSelect
                             label="Division"
                             options={divisions.map(d => ({ id: d._id, name: d.name }))}

@@ -46,6 +46,10 @@ const employeeHistorySchema = new mongoose.Schema(
                 'od_applied',
                 'od_approved',
                 'od_rejected',
+                // Complaint lifecycle
+                'complaint_submitted',
+                'complaint_approved',
+                'complaint_rejected',
                 // Credentials & access
                 'credentials_resent',
                 'password_reset',

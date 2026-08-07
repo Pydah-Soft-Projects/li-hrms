@@ -83,6 +83,7 @@ export const SIDEBAR_MODULE_ICONS: Record<string, SidebarIcon> = {
   LEAVE_OD: Briefcase,
   LEAVE_REGISTER: ScrollText,
   CCL: Gift,
+  COMPLAINTS: AlertTriangle,
   SHIFTS: Watch,
   DIVISIONS: Building2,
   DEPARTMENTS: Building,
@@ -150,6 +151,7 @@ export const SUPERADMIN_NAV_CATEGORIES: SidebarNavCategory[] = [
       { code: 'LEAVE_OD', label: 'Leave & OD', href: `${SUPERADMIN_PREFIX}/leaves`, icon: Briefcase },
       { code: 'LEAVE_REGISTER', label: 'Leave Register', href: `${SUPERADMIN_PREFIX}/leave-register`, icon: ScrollText },
       { code: 'CCL', label: 'CCL', href: `${SUPERADMIN_PREFIX}/ccl`, icon: Gift },
+      { code: 'COMPLAINTS', label: 'Complaints', href: `${SUPERADMIN_PREFIX}/complaints`, icon: AlertTriangle },
       { code: 'OT_PERMISSIONS', label: 'OT & Permissions', href: `${SUPERADMIN_PREFIX}/ot-permissions`, icon: Timer },
       { code: 'SHIFT_ROSTER', label: 'Shift Roster', href: `${SUPERADMIN_PREFIX}/shift-roster`, icon: CalendarDays },
       { code: 'SHIFTS', label: 'Shifts', href: `${SUPERADMIN_PREFIX}/shifts`, icon: Watch },
@@ -262,6 +264,7 @@ export const WORKSPACE_NAV_CATEGORIES: SidebarNavCategory[] = [
       { code: 'LEAVE_OD', label: 'Leave & OD', href: '/leaves', icon: Briefcase },
       { code: 'LEAVE_REGISTER', label: 'Leave Register', href: '/leave-register', icon: ScrollText },
       { code: 'CCL', label: 'CCL', href: '/ccl', icon: Gift },
+      { code: 'COMPLAINTS', label: 'Complaints', href: '/complaints', icon: AlertTriangle },
       { code: 'OT_PERMISSIONS', label: 'OT & Permissions', href: '/ot-permissions', icon: Timer },
       { code: 'SHIFT_ROSTER', label: 'Shift Roster', href: '/shift-roster', icon: CalendarDays },
       { code: 'SHIFTS', label: 'Shifts', href: '/shifts', icon: Watch },
@@ -340,6 +343,7 @@ export const SIDEBAR_SHORT_LABELS: Record<string, string> = {
   LEAVE_OD: 'L/OD',
   LEAVE_REGISTER: 'Leave',
   CCL: 'CCL',
+  COMPLAINTS: 'Complaints',
   OT_PERMISSIONS: 'OT',
   SHIFT_ROSTER: 'Roster',
   SHIFTS: 'Shift',
@@ -397,6 +401,7 @@ const WORKSPACE_PATH_CHECKS: Record<string, (pathname: string) => boolean> = {
   EMPLOYEE_GROUPS: (p) => p === '/employee-groups',
   LOANS: (p) => p === '/loans',
   LIVE_ATTENDANCE: (p) => p === '/live-attendance',
+  COMPLAINTS: (p) => p === '/complaints',
 };
 
 export function isWorkspacePathActive(code: string, href: string, pathname: string): boolean {

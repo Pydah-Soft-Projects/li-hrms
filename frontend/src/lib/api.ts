@@ -3851,29 +3851,29 @@ export const api = {
   // LEAVE/OD SETTINGS
   // ==========================================
 
-  // Get leave/OD/CCL settings
-  getLeaveSettings: async (type: 'leave' | 'od' | 'ccl') => {
+  // Get leave/OD/CCL/complaint settings
+  getLeaveSettings: async (type: 'leave' | 'od' | 'ccl' | 'complaint') => {
     return apiRequest<any>(`/leaves/settings/${type}`, { method: 'GET' });
   },
 
-  // Save leave/OD/CCL settings
-  saveLeaveSettings: async (type: 'leave' | 'od' | 'ccl', data: any) => {
+  // Save leave/OD/CCL/complaint settings
+  saveLeaveSettings: async (type: 'leave' | 'od' | 'ccl' | 'complaint', data: any) => {
     return apiRequest<any>(`/leaves/settings/${type}`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
-  // Update leave/OD/CCL settings (alias for saveLeaveSettings)
-  updateLeaveSettings: async (type: 'leave' | 'od' | 'ccl', data: any) => {
+  // Update leave/OD/CCL/complaint settings (alias for saveLeaveSettings)
+  updateLeaveSettings: async (type: 'leave' | 'od' | 'ccl' | 'complaint', data: any) => {
     return apiRequest<any>(`/leaves/settings/${type}`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
-  // Get leave/OD/CCL types
-  getLeaveTypes: async (type: 'leave' | 'od' | 'ccl') => {
+  // Get leave/OD/CCL/complaint types
+  getLeaveTypes: async (type: 'leave' | 'od' | 'ccl' | 'complaint') => {
     return apiRequest<any>(`/leaves/types/${type}`, { method: 'GET' });
   },
 
@@ -4249,8 +4249,8 @@ export const api = {
     return apiRequest<any>(`/loans/guarantor-candidates${query}`, { method: 'GET' });
   },
 
-  // Add leave/OD/CCL type
-  addLeaveType: async (type: 'leave' | 'od' | 'ccl', data: any) => {
+  // Add leave/OD/CCL/complaint type
+  addLeaveType: async (type: 'leave' | 'od' | 'ccl' | 'complaint', data: any) => {
     return apiRequest<any>(`/leaves/types/${type}`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -4262,6 +4262,39 @@ export const api = {
   // Initialize default settings
   initializeLeaveSettings: async () => {
     return apiRequest<any>('/leaves/settings/initialize', { method: 'POST' });
+  },
+
+  // ==========================================
+  // COMPLAINTS MODULE
+  // ==========================================
+  applyComplaint: async (data: { employeeId?: string; empNo?: string; complaintType: string; imageUrl?: string; remarks: string }) => {
+    return apiRequest<any>('/complaints', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  getMyComplaints: async () => {
+    return apiRequest<any>('/complaints/my', { method: 'GET' });
+  },
+  getPendingComplaintApprovals: async () => {
+    return apiRequest<any>('/complaints/pending-approvals', { method: 'GET' });
+  },
+  getComplaints: async () => {
+    return apiRequest<any>('/complaints', { method: 'GET' });
+  },
+  getComplaintDetails: async (id: string) => {
+    return apiRequest<any>(`/complaints/${id}`, { method: 'GET' });
+  },
+  processComplaintAction: async (id: string, action: 'approve' | 'reject', comments: string) => {
+    return apiRequest<any>(`/complaints/${id}/action`, {
+      method: 'PUT',
+      body: JSON.stringify({ action, comments }),
+    });
+  },
+  cancelComplaint: async (id: string) => {
+    return apiRequest<any>(`/complaints/${id}/cancel`, {
+      method: 'PUT',
+    });
   },
 
   // ==========================================

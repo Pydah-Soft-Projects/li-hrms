@@ -166,14 +166,14 @@ export default function LeaveApplyDateCheckBanner({
 
   return (
     <div
-      className={`rounded-2xl border p-4 shadow-sm ${s.wrap} ${className}`}
+      className={`rounded-xl sm:rounded-2xl border p-3 sm:p-4 shadow-sm ${s.wrap} ${className}`}
       role="status"
       aria-live="polite"
     >
-      <div className="flex gap-3">
-        <Icon className={`h-5 w-5 shrink-0 mt-0.5 ${s.icon}`} aria-hidden />
-        <div className="min-w-0 flex-1 space-y-3">
-          <p className={`text-sm font-bold leading-snug ${s.title}`}>{state.headline}</p>
+      <div className="flex gap-2.5 sm:gap-3">
+        <Icon className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 mt-0.5 ${s.icon}`} aria-hidden />
+        <div className="min-w-0 flex-1 space-y-2 sm:space-y-3">
+          <p className={`text-xs sm:text-sm font-bold leading-snug ${s.title}`}>{state.headline}</p>
           <HighlightedGuidanceText text={state.body} highlightClass={s.highlight} />
 
           {state.dateFullyCovered && state.coverage && (

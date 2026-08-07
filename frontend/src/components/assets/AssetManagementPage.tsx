@@ -176,14 +176,14 @@ function Modal({
 
   return (
     <div className={`fixed inset-0 ${stackClassName} flex items-center justify-center bg-slate-950/50 p-4`}>
-      <div className={`w-full ${maxWidthClassName} rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900`}>
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-800">
+      <div className={`w-full ${maxWidthClassName} rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900 max-h-[90vh] flex flex-col overflow-hidden`}>
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-800 shrink-0">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h2>
           <button type="button" onClick={onClose} className="text-sm text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">
             Close
           </button>
         </div>
-        <div className="max-h-[80vh] overflow-y-auto p-6">{children}</div>
+        <div className="flex-1 min-h-0 overflow-y-auto p-6">{children}</div>
       </div>
     </div>
   );
@@ -295,26 +295,26 @@ function UploadField({
 
   return (
     <>
-      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 transition hover:border-indigo-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-indigo-800">
-        <label className="mb-3 block text-sm font-semibold text-slate-800 dark:text-slate-100">{label}</label>
+      <div className="space-y-1">
+        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{label}</label>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center transition hover:border-indigo-400 hover:bg-indigo-50/40 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/20">
+          <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-4 py-4 text-center transition hover:border-indigo-400 hover:bg-indigo-50/40 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/20">
             <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Choose file</span>
-            <span className="mt-1 text-xs text-slate-500">Image or PDF</span>
+            <span className="mt-0.5 text-xs text-slate-500">Image or PDF</span>
             <input type="file" accept={accept} onChange={(e) => onFileChange(e.target.files?.[0])} className="hidden" />
           </label>
           <button
             type="button"
             onClick={() => setShowCameraModal(true)}
-            className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-indigo-300 bg-indigo-50/60 px-4 py-6 text-center transition hover:border-indigo-400 hover:bg-indigo-100/60 dark:border-indigo-800 dark:bg-indigo-950/25 dark:hover:border-indigo-700"
+            className="flex flex-col items-center justify-center rounded-xl border border-dashed border-indigo-300 bg-indigo-50/60 px-4 py-4 text-center transition hover:border-indigo-400 hover:bg-indigo-100/60 dark:border-indigo-800 dark:bg-indigo-950/25 dark:hover:border-indigo-700"
           >
             <span className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Use camera</span>
-            <span className="mt-1 text-xs text-indigo-500 dark:text-indigo-400">Capture and upload image</span>
+            <span className="mt-0.5 text-xs text-indigo-500 dark:text-indigo-400">Capture image</span>
           </button>
         </div>
-        {uploadingField === fieldKey && <p className="mt-2 text-xs text-slate-500">Uploading...</p>}
+        {uploadingField === fieldKey && <p className="mt-1 text-xs text-slate-500">Uploading...</p>}
         {value && (
-          <a className="mt-3 inline-flex rounded-xl bg-indigo-50 px-3 py-2 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:text-indigo-300" href={value} target="_blank" rel="noreferrer">
+          <a className="mt-2 inline-flex rounded-xl bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:text-indigo-300" href={value} target="_blank" rel="noreferrer">
             View uploaded file
           </a>
         )}
@@ -771,11 +771,11 @@ export default function AssetManagementPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Assets Management</h1>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+            <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">
               {canManage
                 ? 'Create assets, assign them to employees, and track returns with evidence and signatures.'
                 : 'View your assigned assets and submit returns with photo evidence and signature.'}
-            </p>
+            </div>
           </div>
           {canManage && (
             <div className="flex shrink-0 flex-wrap items-center gap-3">
@@ -1386,25 +1386,25 @@ export default function AssetManagementPage() {
         title={editingAssetId ? 'Edit Asset' : 'Create Asset'}
         onClose={resetAssetForm}
       >
-        <form onSubmit={submitAsset} className="grid gap-5 lg:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-            <label className="mb-2 block text-sm font-semibold text-slate-800 dark:text-slate-100">Asset name</label>
+        <form onSubmit={submitAsset} className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Asset name</label>
             <input className={searchInputClassName} placeholder="Enter asset name" value={assetForm.name} onChange={(e) => setAssetForm((prev) => ({ ...prev, name: e.target.value }))} required />
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-            <label className="mb-2 block text-sm font-semibold text-slate-800 dark:text-slate-100">Price</label>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Price</label>
             <input className={searchInputClassName} placeholder="Enter asset price" type="number" min="0" step="0.01" value={assetForm.price} onChange={(e) => setAssetForm((prev) => ({ ...prev, price: e.target.value }))} />
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/40 lg:col-span-2">
-            <label className="mb-2 block text-sm font-semibold text-slate-800 dark:text-slate-100">Asset details</label>
-            <textarea className={`${searchInputClassName} min-h-[110px]`} placeholder="Add asset details" value={assetForm.details} onChange={(e) => setAssetForm((prev) => ({ ...prev, details: e.target.value }))} />
+          <div className="space-y-1 lg:col-span-2">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Asset details</label>
+            <textarea className={`${searchInputClassName} min-h-[90px]`} placeholder="Add asset details" value={assetForm.details} onChange={(e) => setAssetForm((prev) => ({ ...prev, details: e.target.value }))} />
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-            <label className="mb-3 block text-sm font-semibold text-slate-800 dark:text-slate-100">Visibility</label>
-            <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Visibility</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {(['universal', 'division'] as AssetScope[]).map((scope) => {
                 const active = assetForm.visibilityScope === scope;
                 return (
@@ -1412,22 +1412,22 @@ export default function AssetManagementPage() {
                     key={scope}
                     type="button"
                     onClick={() => setAssetForm((prev) => ({ ...prev, visibilityScope: scope, division_id: scope === 'division' ? prev.division_id : '' }))}
-                    className={`rounded-2xl border px-4 py-4 text-left transition ${
+                    className={`rounded-2xl border px-4 py-3 text-left transition ${
                       active
                         ? 'border-indigo-500 bg-indigo-50 shadow-sm dark:border-indigo-500 dark:bg-indigo-950/30'
                         : 'border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/40 dark:border-slate-700 dark:bg-slate-900'
                     }`}
                   >
-                    <div className="font-semibold text-slate-900 dark:text-white">{scope === 'universal' ? 'Universal' : 'Particular Division'}</div>
-                    <div className="mt-1 text-xs text-slate-500">{scope === 'universal' ? 'Visible across all divisions' : 'Restricted to one division'}</div>
+                    <div className="font-semibold text-slate-900 dark:text-white text-sm">{scope === 'universal' ? 'Universal' : 'Particular Division'}</div>
+                    <div className="mt-0.5 text-xs text-slate-500">{scope === 'universal' ? 'Visible across all divisions' : 'Restricted to one division'}</div>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-            <label className="mb-2 block text-sm font-semibold text-slate-800 dark:text-slate-100">Division</label>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Division</label>
             <select className={searchInputClassName} value={assetForm.division_id} onChange={(e) => setAssetForm((prev) => ({ ...prev, division_id: e.target.value }))} disabled={assetForm.visibilityScope !== 'division'}>
               <option value="">Select division</option>
               {divisions.map((division) => (
@@ -1438,13 +1438,13 @@ export default function AssetManagementPage() {
             </select>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-            <label className="mb-2 block text-sm font-semibold text-slate-800 dark:text-slate-100">Expiry date</label>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Expiry date</label>
             <input className={searchInputClassName} type="date" value={assetForm.expiryDate} onChange={(e) => setAssetForm((prev) => ({ ...prev, expiryDate: e.target.value }))} />
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-            <label className="mb-2 block text-sm font-semibold text-slate-800 dark:text-slate-100">Status</label>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</label>
             <select className={searchInputClassName} value={assetForm.status} onChange={(e) => setAssetForm((prev) => ({ ...prev, status: e.target.value as AssetFormState['status'] }))}>
               <option value="available">Available</option>
               <option value="retired">Retired</option>
@@ -1470,16 +1470,16 @@ export default function AssetManagementPage() {
             onFileChange={(file) => void handleFileUpload(file, 'billUrl', setAssetForm)}
           />
 
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm font-medium text-slate-700 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-200 lg:col-span-2">
-            <input type="checkbox" checked={assetForm.isActive} onChange={(e) => setAssetForm((prev) => ({ ...prev, isActive: e.target.checked }))} />
+          <label className="flex items-center gap-3 text-sm font-semibold text-slate-700 dark:text-slate-200 lg:col-span-2 py-1">
+            <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" checked={assetForm.isActive} onChange={(e) => setAssetForm((prev) => ({ ...prev, isActive: e.target.checked }))} />
             Asset is active
           </label>
 
-          <div className="flex gap-3 lg:col-span-2">
-            <button type="submit" disabled={saving} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+          <div className="flex gap-3 lg:col-span-2 pt-2">
+            <button type="submit" disabled={saving} className="rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 shadow-md transition-colors">
               {saving ? 'Saving...' : editingAssetId ? 'Update Asset' : 'Create Asset'}
             </button>
-            <button type="button" onClick={resetAssetForm} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+            <button type="button" onClick={resetAssetForm} className="rounded-xl border border-slate-300 px-6 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors">
               Cancel
             </button>
           </div>

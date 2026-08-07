@@ -52,6 +52,7 @@ import {
   type LeaveBoundaryInput,
 } from '@/lib/leaveDayRange';
 import LeaveDayPortionControls from '@/components/leave/LeaveDayPortionControls';
+import ODDetailCard from '@/components/od/ODDetailCard';
 import {
   buildStatusLabelMap,
   formatLeaveStatusLabel as fmtLeaveStatus,
@@ -2554,6 +2555,18 @@ function LeavesPageContent() {
       };
       const capturedAtIso =
         g.capturedAt instanceof Date ? g.capturedAt.toISOString() : g.capturedAt;
+      // Retrieve locally saved location trail points
+      const localKey = `od_trail_${String(selectedItem._id)}`;
+      let locationTrail = undefined;
+      try {
+        const stored = localStorage.getItem(localKey);
+        if (stored) {
+          locationTrail = JSON.parse(stored);
+        }
+      } catch (e) {
+        console.error('Failed to parse local location trail points:', e);
+      }
+
       const endEvidence = {
         photoEvidence: {
           url: uploadRes.url,
@@ -2572,8 +2585,12 @@ function LeavesPageContent() {
         photoFromDeviceFile: odOutPhotoFromDeviceFile,
       };
 
-      const response = await api.updateOD(selectedItem._id, { endEvidence });
+      const response = await api.updateOD(selectedItem._id, { 
+        endEvidence,
+        ...(locationTrail && locationTrail.length > 0 ? { locationTrail } : {})
+      });
       if (response.success) {
+        localStorage.removeItem(localKey);
         setShowOutEvidenceDialog(false);
         setOdOutEvidenceFile(null);
         setOdOutLocationData(null);
@@ -2682,34 +2699,9 @@ function LeavesPageContent() {
     if (!canRecordOdLocationTrail(od, currentUser) || !od?._id) return undefined;
 
     const odId = String(od._id);
-    const buffer: Array<{
-      latitude: number;
-      longitude: number;
-      capturedAt: string;
-      accuracy?: number;
-      heading?: number;
-      speed?: number;
-    }> = [];
     let lastLat: number | null = null;
     let lastLng: number | null = null;
     let lastSend = 0;
-
-    const flush = async () => {
-      if (buffer.length === 0) return;
-      const chunk = buffer.splice(0, buffer.length);
-      try {
-        const pushedBySocket = await publishOdTrailPoints(odId, chunk, 'web');
-        if (!pushedBySocket) {
-          await api.appendODLocationTrail(odId, { points: chunk, client: 'web' });
-          setOdTrailPublishMode('http');
-        } else {
-          setOdTrailPublishMode('socket');
-        }
-      } catch {
-        setOdTrailPublishMode('error');
-        /* ignore */
-      }
-    };
 
     const onReading = (pos: GeolocationPosition) => {
       const lat = pos.coords.latitude;
@@ -2722,28 +2714,40 @@ function LeavesPageContent() {
       const acc = pos.coords.accuracy;
       const h = pos.coords.heading;
       const sp = pos.coords.speed;
-      buffer.push({
+      
+      const newPoint = {
         latitude: lat,
         longitude: lng,
         capturedAt: new Date().toISOString(),
         accuracy: acc != null && Number.isFinite(acc) && acc <= 1e6 ? acc : undefined,
         heading: h != null && Number.isFinite(h) ? h : undefined,
         speed: sp != null && Number.isFinite(sp) ? sp : undefined,
-      });
-      if (buffer.length >= OD_WEB_TRAIL_BATCH_FLUSH) void flush();
+        source: 'web',
+      };
+
+      const localKey = `od_trail_${odId}`;
+      let points = [];
+      try {
+        const stored = localStorage.getItem(localKey);
+        if (stored) points = JSON.parse(stored);
+      } catch (e) {
+        console.error('Failed to parse local points:', e);
+      }
+      points.push(newPoint);
+      localStorage.setItem(localKey, JSON.stringify(points));
+      
+      // Update publish mode display state
+      setOdTrailPublishMode('http');
     };
 
-    const flushInterval = window.setInterval(() => void flush(), OD_WEB_TRAIL_FLUSH_MS);
     const watchId = navigator.geolocation.watchPosition(onReading, () => {}, OD_WEB_TRAIL_POSITION_OPTIONS);
     const pollInterval = window.setInterval(() => {
       navigator.geolocation.getCurrentPosition(onReading, () => {}, OD_WEB_TRAIL_POSITION_OPTIONS);
     }, OD_WEB_TRAIL_POLL_MS);
 
     return () => {
-      window.clearInterval(flushInterval);
       window.clearInterval(pollInterval);
       navigator.geolocation.clearWatch(watchId);
-      void flush();
     };
   }, [odLocationTrailWatchKey]);
 
@@ -5557,54 +5561,54 @@ function LeavesPageContent() {
         </div >
 
         {showApplyDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:p-4">
-            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowApplyDialog(false)} />
-            <div className="relative z-50 my-auto flex h-auto min-h-0 w-full max-w-lg max-h-[min(90dvh,calc(100dvh-3rem))] flex-col overflow-hidden rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl animate-in zoom-in-95 duration-300">
-              <div className="shrink-0 space-y-4 border-b border-slate-100/80 px-5 pb-4 pt-5 dark:border-slate-800/80 sm:px-8 sm:pb-5 sm:pt-8">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto overscroll-contain px-2 py-3 sm:px-4 sm:py-6">
+            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowApplyDialog(false)} />
+            <div className="relative z-[101] my-auto flex h-auto min-h-0 w-full max-w-md sm:max-w-lg max-h-[min(84dvh,calc(100dvh-5rem))] sm:max-h-[min(92dvh,calc(100dvh-2rem))] flex-col overflow-hidden rounded-2xl sm:rounded-3xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl animate-in zoom-in-95 duration-300">
+              <div className="shrink-0 space-y-3 sm:space-y-4 border-b border-slate-100/80 px-4 pb-3 pt-4 dark:border-slate-800/80 sm:px-6 sm:pb-4 sm:pt-6">
               {/* Type Toggle */}
-              <div className="inline-flex w-full p-1 rounded-2xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 mb-0 sm:mb-0">
+              <div className="inline-flex w-full p-1 rounded-xl sm:rounded-2xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 mb-0">
                 <button
                   type="button"
                   onClick={() => setApplyType('leave')}
-                  className={`flex-1 py-2 sm:py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${applyType === 'leave'
+                  className={`flex-1 py-1.5 sm:py-2.5 rounded-lg sm:rounded-xl font-black text-[10px] sm:text-xs uppercase tracking-wider transition-all ${applyType === 'leave'
                     ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm shadow-blue-500/10'
                     : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                     }`}
                 >
-                  <div className="flex items-center justify-center px-2 gap-1">
-                    <Calendar className="w-4 h-4" />
+                  <div className="flex items-center justify-center px-1 sm:px-2 gap-1 sm:gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     Leave
                   </div>
                 </button>
                 <button
                   type="button"
                   onClick={() => setApplyType('od')}
-                  className={`flex-1 py-2 sm:py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${applyType === 'od'
+                  className={`flex-1 py-1.5 sm:py-2.5 rounded-lg sm:rounded-xl font-black text-[10px] sm:text-xs uppercase tracking-wider transition-all ${applyType === 'od'
                     ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 shadow-sm shadow-purple-500/10'
                     : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                     }`}
                 >
-                  <div className="flex items-center justify-center gap-2">
-                    <Briefcase className="w-4 h-4" />
+                  <div className="flex items-center justify-center px-1 sm:px-2 gap-1 sm:gap-1.5">
+                    <Briefcase className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     On Duty
                   </div>
                 </button>
               </div>
 
               <div className="hidden sm:block">
-                <h2 className="text-lg sm:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
+                <h2 className="text-base sm:text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
                   New {applyType === 'leave' ? 'Leave' : 'OD'} Application
                 </h2>
-                <p className="text-slate-500 dark:text-slate-400 mt-1 text-xs sm:text-sm">Please fill in the details of your request.</p>
+                <p className="text-slate-500 dark:text-slate-400 mt-0.5 text-xs">Please fill in the details of your request.</p>
               </div>
               </div>
 
               <form onSubmit={handleApply} className="flex min-h-0 flex-1 flex-col">
-                <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-4 space-y-4 sm:px-8 sm:py-5">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-3 space-y-3 sm:px-6 sm:py-4 sm:space-y-4">
                 {/* Apply For - Employee Selection (Hidden for Employees) */}
                 {currentUser?.role !== 'employee' && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
                       Apply For Employee *
                     </label>
                     <div className="relative">
@@ -5626,17 +5630,17 @@ function LeavesPageContent() {
 
                 {/* Type Selection */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+                  <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     {applyType === 'leave' ? 'Leave Type' : 'OD Type'} *
                   </label>
                   {((applyType === 'leave' && leaveTypes.length === 1) || (applyType === 'od' && odTypes.length === 1)) ? (
-                    <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-700 dark:text-white">
+                    <div className="w-full rounded-lg sm:rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs sm:px-4 sm:py-2.5 sm:text-sm dark:border-slate-700 dark:bg-slate-700 dark:text-white">
                       <span className="font-medium">
                         {applyType === 'leave'
                           ? leaveOdTypeOptionLabel(leaveTypes[0])
                           : leaveOdTypeOptionLabel(odTypes[0])}
                       </span>
-                      <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">(Only type available)</span>
+                      <span className="ml-2 text-[11px] text-slate-500 dark:text-slate-400">(Only type available)</span>
                     </div>
                   ) : (
                     <select
@@ -5649,7 +5653,7 @@ function LeavesPageContent() {
                         }
                       }}
                       required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      className="w-full rounded-lg sm:rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     >
                       <option value="">Select {applyType === 'leave' ? 'leave' : 'OD'} type</option>
                       {(applyType === 'leave' ? leaveTypes : odTypes).map((type) => {
@@ -5667,36 +5671,35 @@ function LeavesPageContent() {
 
                 {applyType === 'leave' && isCapTrackedLeave && (
                   <section
-                    className="rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-900/40 shadow-sm overflow-hidden"
+                    className="rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-900/40 shadow-sm overflow-hidden"
                     aria-label="Monthly leave apply limit for selected leave type"
                   >
-                    <div className="px-4 py-3 sm:px-5 sm:py-3.5 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-slate-50 to-blue-50/40 dark:from-slate-800/80 dark:to-slate-900/40 flex justify-between items-start gap-3">
+                    <div className="px-3.5 py-2.5 sm:px-5 sm:py-3 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-slate-50 to-blue-50/40 dark:from-slate-800/80 dark:to-slate-900/40 flex justify-between items-start gap-2 sm:gap-3">
                       <div>
-                        <h3 className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
+                        <h3 className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-400">
                           Monthly apply limit
                         </h3>
-                        <p className="mt-0.5 text-[11px] leading-snug text-slate-500 dark:text-slate-400 max-w-xl">
-                          Days still allowed for {selectedLeaveTypeUpper} this payroll period (per-type monthly cap and FY
-                          balance). Pending and approved requests count.
+                        <p className="mt-0.5 text-[10px] sm:text-[11px] leading-snug text-slate-500 dark:text-slate-400 max-w-xl">
+                          Days still allowed for {selectedLeaveTypeUpper} this payroll period (per-type monthly cap and FY balance).
                         </p>
                       </div>
-                      {clBalanceLoading && <Loader2 className="w-4 h-4 shrink-0 animate-spin text-blue-500 mt-0.5" />}
+                      {clBalanceLoading && <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 animate-spin text-blue-500 mt-0.5" />}
                     </div>
 
-                    <div className="p-4 sm:p-5 space-y-4">
+                    <div className="p-3 sm:p-4 space-y-3">
                       {!canFetchCLBalance || !hasValidEmployeeId ? (
-                        <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-4">
+                        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 text-center py-2.5">
                           {currentUser?.role === 'employee'
                             ? 'Employee profile is required to load limits.'
                             : 'Pick an employee to load this period’s limits.'}
                         </p>
                       ) : clBalanceLoading ? (
                         <div className="flex flex-col gap-2 py-2">
-                          <div className="h-10 w-full bg-slate-100 dark:bg-slate-800 rounded-xl animate-pulse" />
+                          <div className="h-8 w-full bg-slate-100 dark:bg-slate-800 rounded-lg animate-pulse" />
                           <div className="h-3 w-2/3 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
                         </div>
                       ) : applyPeriodContext && (!applyPeriodContext.hasYearDoc || !applyPeriodContext.hasSlot) ? (
-                        <div className="rounded-xl border border-amber-200/80 bg-amber-50/90 dark:border-amber-900/40 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+                        <div className="rounded-lg sm:rounded-xl border border-amber-200/80 bg-amber-50/90 dark:border-amber-900/40 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
                           No leave register row for this payroll period yet. Limits appear after the financial year register exists.
                         </div>
                       ) : clBalanceForMonth !== null ? (
@@ -5715,25 +5718,25 @@ function LeavesPageContent() {
                               ceiling > 0 ? Math.min(100, Math.round((consumed / ceiling) * 100)) : 0;
                             const depleted = remaining <= 0;
                             return (
-                              <div className="space-y-3">
-                                <div className="flex flex-wrap items-end justify-between gap-3">
+                              <div className="space-y-2.5">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
                                   <div>
-                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                    <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                                       Can still apply (this period)
                                     </p>
-                                    <div className="mt-1 flex items-baseline gap-2">
+                                    <div className="mt-0.5 flex items-baseline gap-1.5">
                                       <span
-                                        className={`text-3xl font-black tabular-nums tracking-tight ${depleted ? 'text-rose-600 dark:text-rose-400' : 'text-blue-600 dark:text-blue-400'}`}
+                                        className={`text-xl sm:text-2xl font-black tabular-nums tracking-tight ${depleted ? 'text-rose-600 dark:text-rose-400' : 'text-blue-600 dark:text-blue-400'}`}
                                       >
                                         {remaining}
                                       </span>
-                                      <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                                         day{remaining === 1 ? '' : 's'}
                                       </span>
                                     </div>
                                   </div>
                                   <span
-                                    className={`inline-flex items-center rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider ${depleted ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-200' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200'}`}
+                                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${depleted ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-200' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200'}`}
                                   >
                                     {depleted ? 'Cap used' : 'Room left'}
                                   </span>
@@ -5741,14 +5744,14 @@ function LeavesPageContent() {
 
                                 {ceiling > 0 && (
                                   <div>
-                                    <div className="flex justify-between text-[11px] text-slate-500 dark:text-slate-400 mb-1">
+                                    <div className="flex justify-between text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mb-1">
                                       <span>
                                         Used {consumed} of {ceiling} (locked {locked} · approved {approved})
                                       </span>
-                                      <span className="tabular-nums">{pct}%</span>
+                                      <span className="tabular-nums font-bold">{pct}%</span>
                                     </div>
                                     <div
-                                      className="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden"
+                                      className="h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden"
                                       role="progressbar"
                                       aria-valuenow={pct}
                                       aria-valuemin={0}
@@ -5764,7 +5767,7 @@ function LeavesPageContent() {
                                 )}
 
                                 {applyPeriodContext?.payrollLabel && (
-                                  <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                                  <p className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
                                     Payroll period:{' '}
                                     <span className="font-bold text-slate-900 dark:text-white">
                                       {applyPeriodContext.payrollLabel}
@@ -5775,15 +5778,12 @@ function LeavesPageContent() {
                             );
                           })()}
 
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/30 p-3 space-y-2">
-                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+                            <div className="rounded-lg sm:rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/30 p-2.5 sm:p-3 space-y-1.5">
+                              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
                                 This period ({selectedLeaveTypeUpper})
                               </p>
-                              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
-                                Type-specific scheduled credit and cap for selected leave type.
-                              </p>
-                              <dl className="space-y-2 text-xs">
+                              <dl className="space-y-1 text-[11px] sm:text-xs">
                                 <div className="flex justify-between gap-2">
                                   <dt className="text-slate-500 dark:text-slate-400">Scheduled {selectedLeaveTypeUpper}</dt>
                                   <dd className="font-bold tabular-nums text-slate-900 dark:text-white">
@@ -5807,15 +5807,11 @@ function LeavesPageContent() {
                               </dl>
                             </div>
 
-                            <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-3 space-y-2">
-                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                            <div className="rounded-lg sm:rounded-xl border border-slate-100 dark:border-slate-800 p-2.5 sm:p-3 space-y-1.5">
+                              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
                                 This payroll period
                               </p>
-                              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
-                                Pool credits left after pending/approved use (CL + CCL
-                                {applyPeriodContext?.includeELInMonthlyPool ? ' + EL' : ''}).
-                              </p>
-                              <div className="flex justify-between gap-2 text-xs">
+                              <div className="flex justify-between gap-2 text-[11px] sm:text-xs">
                                 <span className="text-slate-500 dark:text-slate-400">Pool left</span>
                                 <span className="font-bold tabular-nums text-slate-900 dark:text-white">
                                   {applyPeriodContext
@@ -5823,7 +5819,7 @@ function LeavesPageContent() {
                                     : '—'}
                                 </span>
                               </div>
-                              <div className="flex justify-between gap-2 text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
+                              <div className="flex justify-between gap-2 text-[11px] sm:text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
                                 <span className="text-slate-600 dark:text-slate-300 font-medium">
                                   {selectedLeaveTypeUpper} balance (FY)
                                 </span>
@@ -5837,15 +5833,15 @@ function LeavesPageContent() {
                           </div>
 
                           {!formData.fromDate && (
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400">
                               Limits shown for today&apos;s payroll period until you choose a from date.
                             </p>
                           )}
 
                           {(pendingDaysInCycle ?? 0) > 0 && (
-                            <div className="flex items-center justify-between gap-3 rounded-xl border border-orange-200 dark:border-orange-900/40 bg-orange-50/90 dark:bg-orange-950/25 px-3 py-2.5 text-sm text-orange-900 dark:text-orange-100">
-                              <span className="flex items-center gap-2 font-semibold">
-                                <AlertCircle className="w-4 h-4 shrink-0" />
+                            <div className="flex items-center justify-between gap-2 rounded-lg sm:rounded-xl border border-orange-200 dark:border-orange-900/40 bg-orange-50/90 dark:bg-orange-950/25 px-2.5 py-2 text-xs text-orange-900 dark:text-orange-100">
+                              <span className="flex items-center gap-1.5 font-semibold">
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                                 Already pending this period
                               </span>
                               <span className="font-black tabular-nums">{pendingDaysInCycle ?? 0} day(s)</span>
@@ -5853,14 +5849,13 @@ function LeavesPageContent() {
                           )}
 
                           {capLeaveDepleted && (
-                            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-800 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
-                              No {selectedLeaveTypeUpper} days left for this payroll period. Change the from date to
-                              another period or pick a different leave type.
+                            <div className="rounded-lg sm:rounded-xl border border-red-200 bg-red-50 px-2.5 py-2 text-xs font-semibold text-red-800 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
+                              No {selectedLeaveTypeUpper} days left for this payroll period. Change the from date or pick another leave type.
                             </div>
                           )}
                         </>
                       ) : (
-                        <p className="text-sm text-red-600 dark:text-red-400 text-center py-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/40">
+                        <p className="text-xs sm:text-sm text-red-600 dark:text-red-400 text-center py-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/40">
                           Could not load limit information. Please try again.
                         </p>
                       )}
@@ -5871,12 +5866,12 @@ function LeavesPageContent() {
                 {/* OD Type Extended Selector */}
                 {applyType === 'od' && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-3">Duration Type</label>
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Duration Type</label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={() => setFormData({ ...formData, odType_extended: 'full_day', isHalfDay: false, halfDayType: null as any })}
-                        className={`py-2 px-2 sm:py-2.5 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-all ${formData.odType_extended !== 'hours'
+                        className={`py-1.5 px-2 sm:py-2 sm:px-3 rounded-lg text-xs font-semibold transition-all ${formData.odType_extended !== 'hours'
                           ? 'bg-purple-500 text-white shadow-md'
                           : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
                           }`}
@@ -5886,7 +5881,7 @@ function LeavesPageContent() {
                       <button
                         type="button"
                         onClick={() => setFormData({ ...formData, odType_extended: 'hours', isHalfDay: false })}
-                        className={`py-2 px-2 sm:py-2.5 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-all ${formData.odType_extended === 'hours'
+                        className={`py-1.5 px-2 sm:py-2 sm:px-3 rounded-lg text-xs font-semibold transition-all ${formData.odType_extended === 'hours'
                           ? 'bg-purple-500 text-white shadow-md'
                           : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
                           }`}
@@ -5895,9 +5890,8 @@ function LeavesPageContent() {
                       </button>
                     </div>
                     {formData.odType_extended !== 'hours' && (
-                      <p className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-                        Half day vs full day is set automatically from your OD IN/OUT photo times versus your shift.
-                        If duration is too short, a tentative half-day is placed and your approver must confirm.
+                      <p className="mt-1 text-[10px] leading-tight text-slate-500 dark:text-slate-400">
+                        Half day vs full day is set automatically from OD photo times versus your shift.
                       </p>
                     )}
                   </div>
@@ -5911,7 +5905,7 @@ function LeavesPageContent() {
                     const { minDate: singleMin, maxDate: singleMax } = getPolicyDateBounds(policy);
                     return (
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">{applyType === 'od' ? 'Date *' : 'Date *'}</label>
+                        <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Date *</label>
                         <input
                           type="date"
                           min={singleMin}
@@ -5919,7 +5913,7 @@ function LeavesPageContent() {
                           value={formData.fromDate}
                           onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
                           required
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          className="w-full rounded-lg sm:rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
                     );
@@ -5954,10 +5948,10 @@ function LeavesPageContent() {
                         : 0;
 
                     return (
-                      <div className="space-y-2">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5 sm:space-y-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-4">
                           <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">From Date *</label>
+                            <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">From Date *</label>
                             <input
                               type="date"
                               min={fromMin}
@@ -5983,7 +5977,7 @@ function LeavesPageContent() {
                                 });
                               }}
                               required
-                              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                              className="w-full rounded-lg sm:rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                             />
                             {applyType === 'leave' && formData.fromDate && (
                               <LeaveDayPortionControls
@@ -6021,13 +6015,13 @@ function LeavesPageContent() {
                               />
                             )}
                             {applyLeavePayrollPeriod && (
-                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                Payroll period (IST): {applyLeavePayrollPeriod.from} → {applyLeavePayrollPeriod.to}. To date cannot cross into the next period.
+                              <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                                Payroll: {applyLeavePayrollPeriod.from} → {applyLeavePayrollPeriod.to}
                               </p>
                             )}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">To Date *</label>
+                            <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">To Date *</label>
                             <input
                               type="date"
                               min={formData.fromDate || fromMin}
@@ -6040,14 +6034,14 @@ function LeavesPageContent() {
                                   toDate = payrollPeriodEnd;
                                   toast.info(
                                     applyLeavePayrollPeriod
-                                      ? `To date capped to payroll period end (${applyLeavePayrollPeriod.to}). Submit a separate leave for the next period.`
+                                      ? `To date capped to payroll period end (${applyLeavePayrollPeriod.to}).`
                                       : 'To date capped to payroll period end.'
                                   );
                                 }
                                 if (maxToDateISO && toDate > maxToDateISO) {
                                   toDate = maxToDateISO;
                                   toast.info(
-                                    `${selectedLeaveTypeUpper} allowed for this period: up to ${clBalanceForMonth} days; To date capped.`
+                                    `${selectedLeaveTypeUpper} allowed: up to ${clBalanceForMonth} days; To date capped.`
                                   );
                                 }
                                 if (policyMax && toDate > policyMax) toDate = policyMax;
@@ -6064,7 +6058,7 @@ function LeavesPageContent() {
                                 setFormData({ ...formData, toDate });
                               }}
                               required
-                              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                              className="w-full rounded-lg sm:rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                             />
                             {leaveMultiDay && (
                               <LeaveDayPortionControls
@@ -6076,8 +6070,8 @@ function LeavesPageContent() {
                               />
                             )}
                             {isCLFullDay && maxToDateISO && formData.toDate > maxToDateISO && (
-                              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                                Max {clBalanceForMonth} days for {selectedLeaveTypeUpper} in this pay period.
+                              <p className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                                Max {clBalanceForMonth} days for {selectedLeaveTypeUpper}.
                               </p>
                             )}
                           </div>
@@ -6095,25 +6089,19 @@ function LeavesPageContent() {
 
                 {/* Holiday Indicator for OD */}
                 {applyType === 'od' && holidayInfo && holidayInfo.isHolidayOrWeekOff && (
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-200 dark:border-indigo-800/50 animate-in fade-in zoom-in duration-500">
-                    <div className="flex items-start gap-4">
-                      <div className="p-2.5 rounded-xl bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 shrink-0">
-                        <Star className="w-5 h-5 fill-current" />
+                  <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-200 dark:border-indigo-800/50 animate-in fade-in zoom-in duration-300">
+                    <div className="flex items-start gap-2.5 sm:gap-3">
+                      <div className="p-1.5 sm:p-2 rounded-lg bg-indigo-500 text-white shadow-md shadow-indigo-500/20 shrink-0">
+                        <Star className="w-4 h-4 fill-current" />
                       </div>
                       <div>
-                        <p className="text-sm font-black text-indigo-900 dark:text-indigo-100 uppercase tracking-tight">Premium Reward</p>
-                        <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80 leading-relaxed font-medium mt-1">
-                          {holidayInfo.message}. Selected day is holiday so this OD contributes to your compensatory off not on the working day.
+                        <p className="text-xs font-black text-indigo-900 dark:text-indigo-100 uppercase tracking-tight">Premium Reward</p>
+                        <p className="text-[11px] text-indigo-700/80 dark:text-indigo-300/80 leading-snug font-medium mt-0.5">
+                          {holidayInfo.message}. Selected day is a holiday/week-off so this OD contributes to compensatory off.
                         </p>
                         {holidayInfo.hasPunches && holidayInfo.suggestedOdTypeExtended && (
-                          <p className="text-xs text-emerald-800/90 dark:text-emerald-300/90 font-semibold mt-2">
+                          <p className="text-[11px] text-emerald-800/90 dark:text-emerald-300/90 font-semibold mt-1">
                             Biometric / attendance: ~{holidayInfo.totalWorkingHours != null ? `${Number(holidayInfo.totalWorkingHours).toFixed(1)}h worked` : 'punches found'}.
-                            Suggested: {holidayInfo.suggestedOdTypeExtended === 'full_day' ? 'Full day' : 'Half day'} (you can change type below).
-                          </p>
-                        )}
-                        {holidayInfo.isHolidayOrWeekOff && holidayInfo.hasPunches === false && (
-                          <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mt-2">
-                            No qualifying punches for this day yet — choose full day, half day, or hours as usual.
                           </p>
                         )}
                       </div>
@@ -6153,29 +6141,29 @@ function LeavesPageContent() {
 
                 {/* Hour-Based OD - Time Pickers */}
                 {applyType === 'od' && formData.odType_extended === 'hours' && (
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Start Time *</label>
+                      <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Start Time *</label>
                       <input
                         type="time"
                         value={formData.odStartTime || ''}
                         onChange={(e) => setFormData({ ...formData, odStartTime: e.target.value })}
                         required
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        className="w-full rounded-lg sm:rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">End Time *</label>
+                      <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">End Time *</label>
                       <input
                         type="time"
                         value={formData.odEndTime || ''}
                         onChange={(e) => setFormData({ ...formData, odEndTime: e.target.value })}
                         required
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        className="w-full rounded-lg sm:rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                       />
                     </div>
                     {formData.odStartTime && formData.odEndTime && (
-                      <div className="col-span-2 p-3 rounded-lg bg-white dark:bg-slate-800 border border-fuchsia-200 dark:border-fuchsia-700 space-y-2">
+                      <div className="col-span-2 p-2.5 sm:p-3 rounded-lg bg-white dark:bg-slate-800 border border-fuchsia-200 dark:border-fuchsia-700 space-y-1.5 text-xs">
                         {(() => {
                           const [startH, startM] = formData.odStartTime!.split(':').map(Number);
                           const [endH, endM] = formData.odEndTime!.split(':').map(Number);
@@ -6183,12 +6171,12 @@ function LeavesPageContent() {
                           const endMin = endH * 60 + endM;
 
                           if (startMin >= endMin) {
-                            return <p className="text-sm text-red-600 dark:text-red-400">End time must be after start time</p>;
+                            return <p className="text-xs font-medium text-red-600 dark:text-red-400">End time must be after start time</p>;
                           }
 
                           const durationMin = endMin - startMin;
                           if (durationMin > 480) {
-                            return <p className="text-sm text-red-600 dark:text-red-400">Maximum duration is 8 hours</p>;
+                            return <p className="text-xs font-medium text-red-600 dark:text-red-400">Maximum duration is 8 hours</p>;
                           }
 
                           const credit = computeHoursOdCredit({
@@ -6200,51 +6188,24 @@ function LeavesPageContent() {
                             punchOutTime: approvedRecordsInfo?.attendanceInfo?.punchOutTime,
                           });
 
-                          const att = approvedRecordsInfo?.attendanceInfo;
-                          const punchLabel =
-                            att?.punchInTime || att?.punchOutTime
-                              ? `Punches ${att.punchInTime || '—'}–${att.punchOutTime || '—'}`
-                              : null;
-                          const shiftLabel =
-                            att?.shiftStartTime && att?.shiftEndTime
-                              ? `Shift ${att.shiftStartTime}–${att.shiftEndTime}`
-                              : null;
-
                           return (
                             <>
-                              <p className="text-sm font-medium text-fuchsia-700 dark:text-fuchsia-300">
-                                Requested: {formatMinsAsHm(durationMin)}
-                                {' · '}
-                                Estimated credit: {formatMinsAsHm(credit.creditableMinutes)}
+                              <p className="text-xs font-semibold text-fuchsia-700 dark:text-fuchsia-300">
+                                Requested: {formatMinsAsHm(durationMin)} · Credit: {formatMinsAsHm(credit.creditableMinutes)}
                               </p>
-                              {(punchLabel || shiftLabel) && (
-                                <p className="text-xs text-slate-600 dark:text-slate-400">
-                                  {[shiftLabel, punchLabel].filter(Boolean).join(' · ')}
-                                </p>
-                              )}
                               {credit.fullyCoveredByPunches && (
-                                <p className="text-sm text-red-600 dark:text-red-400">
+                                <p className="text-xs text-red-600 dark:text-red-400">
                                   Fully covered by punches — no gap to credit.
                                 </p>
                               )}
-                              {credit.partialPunchOverlap && !credit.fullyCoveredByPunches && (
-                                <p className="text-xs text-amber-700 dark:text-amber-300">
-                                  Partial overlap with punches; only the gap counts toward attendance.
-                                </p>
-                              )}
-                              {credit.odOutsideShift && (
-                                <p className="text-xs text-amber-700 dark:text-amber-300">
-                                  Outside shift window — may not improve attendance.
-                                </p>
-                              )}
                               {credit.suggestedGaps.length > 0 && credit.fullyCoveredByPunches && (
-                                <div className="flex flex-wrap gap-2 pt-1">
+                                <div className="flex flex-wrap gap-1.5 pt-1">
                                   {credit.suggestedGaps.map((gap) => (
                                     <button
                                       key={gap.kind}
                                       type="button"
                                       onClick={() => applyHoursOdSuggestion(gap.startTime, gap.endTime)}
-                                      className="text-xs font-semibold rounded-lg px-2.5 py-1.5 bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/40 dark:text-fuchsia-200"
+                                      className="text-[11px] font-semibold rounded-md px-2 py-1 bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/40 dark:text-fuchsia-200"
                                     >
                                       Use {gap.label}
                                     </button>
@@ -6263,13 +6224,13 @@ function LeavesPageContent() {
                   <div
                     ref={halfDayControlsRef}
                     id="leave-apply-half-day-controls"
-                    className="flex flex-wrap items-center gap-4 rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-800/40"
+                    className="flex flex-wrap items-center gap-2.5 rounded-lg sm:rounded-xl border border-slate-200/80 bg-slate-50/80 p-2.5 dark:border-slate-700 dark:bg-slate-800/40 text-xs"
                   >
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Select half</span>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Select half</span>
                     <select
                       value={formData.halfDayType || 'first_half'}
                       onChange={(e) => setFormData({ ...formData, halfDayType: e.target.value as any })}
-                      className="rounded-lg border-2 border-blue-300 bg-white px-3 py-1.5 text-sm font-semibold dark:border-blue-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                      className="rounded-lg border-2 border-blue-300 bg-white px-2.5 py-1 text-xs font-semibold dark:border-blue-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                     >
                       <option value="first_half">First Half</option>
                       <option value="second_half">Second Half</option>
@@ -6279,28 +6240,28 @@ function LeavesPageContent() {
 
                 {/* Purpose */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Purpose *</label>
+                  <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Purpose *</label>
                   <textarea
                     value={formData.purpose}
                     onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
                     required
                     rows={2}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="w-full rounded-lg sm:rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     placeholder="Reason..."
                   />
                 </div>
 
                 {/* OD Specific - Place & Evidence */}
                 {applyType === 'od' && (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Place to Visit *</label>
+                      <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Place to Visit *</label>
                       <input
                         type="text"
                         value={formData.placeVisited}
                         onChange={(e) => setFormData({ ...formData, placeVisited: e.target.value })}
                         required
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        className="w-full rounded-lg sm:rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         placeholder="Location"
                       />
                     </div>
@@ -6327,46 +6288,45 @@ function LeavesPageContent() {
 
                 {/* Contact Number */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Contact Number *</label>
+                  <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Contact Number *</label>
                   <input
                     type="tel"
                     value={formData.contactNumber}
                     onChange={(e) => setFormData({ ...formData, contactNumber: e.target.value })}
                     required
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="w-full rounded-lg sm:rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
 
                 {/* Remarks */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Remarks</label>
+                  <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Remarks</label>
                   <input
                     type="text"
                     value={formData.remarks}
                     onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="w-full rounded-lg sm:rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
 
                 {applyDateBlocked && applyDateCheckState?.dateFullyCovered && (
-                  <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200">
+                  <div className="mt-3 rounded-lg sm:rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200">
                     This date is already complete for both halves. Pick another date if you need to apply{' '}
                     {applyType === 'leave' ? 'leave' : 'OD'}.
                   </div>
                 )}
                 {capLeaveDepleted && (
-                  <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-semibold text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
-                    No {selectedLeaveTypeUpper} days left for this payroll period. Change the from date or leave type to
-                    continue.
+                  <div className="mt-3 rounded-lg sm:rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
+                    No {selectedLeaveTypeUpper} days left for this payroll period. Change the from date or leave type to continue.
                   </div>
                 )}
                 </div>
 
-                <div className="flex shrink-0 gap-3 border-t border-slate-100 bg-white/95 px-5 py-4 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 sm:px-8 sm:py-5 pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
+                <div className="flex shrink-0 gap-2.5 sm:gap-3 border-t border-slate-100 bg-white/95 px-4 py-3 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 sm:px-6 sm:py-4 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
                   <button
                     type="button"
                     onClick={() => setShowApplyDialog(false)}
-                    className="flex-1 py-2.5 sm:py-3 text-sm font-bold text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 active:scale-95 transition-all"
+                    className="flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-bold text-slate-700 bg-slate-100 rounded-lg sm:rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 active:scale-95 transition-all"
                   >
                     Cancel
                   </button>
@@ -6378,7 +6338,7 @@ function LeavesPageContent() {
                       capLeaveDepleted ||
                       applyDateBlocked
                     }
-                    className={`flex-1 py-2.5 sm:py-3 text-sm font-bold text-white rounded-xl transition-all ${(loading ||
+                    className={`flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-bold text-white rounded-lg sm:rounded-xl transition-all ${(loading ||
                       !isFormValid() ||
                       capLeaveDepleted ||
                       applyDateBlocked)
@@ -6397,889 +6357,637 @@ function LeavesPageContent() {
               </form>
             </div>
           </div>
-        )
-        }
+        )}
 
         {/* Detail Dialog */}
         {
           showDetailDialog && selectedItem && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:p-4">
-              <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowDetailDialog(false)} />
-              <div className="relative z-50 my-auto flex h-auto min-h-0 w-full max-w-4xl max-h-[min(90dvh,calc(100dvh-2rem))] flex-col overflow-hidden rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto overscroll-contain px-2 py-3 sm:px-4 sm:py-6">
+              <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowDetailDialog(false)} />
+              <div className="relative z-[101] my-auto flex h-auto min-h-0 w-full max-w-4xl max-h-[min(84dvh,calc(100dvh-5rem))] sm:max-h-[min(90dvh,calc(100dvh-2rem))] flex-col overflow-hidden rounded-2xl sm:rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl animate-in zoom-in-95 duration-300">
                 {/* Header */}
-                <div className={`shrink-0 w-full min-w-0 overflow-hidden rounded-t-3xl border-b border-white/10 ${detailType === 'leave'
-                  ? 'bg-gradient-to-r from-blue-600 to-blue-500'
-                  : 'bg-gradient-to-r from-purple-600 to-purple-500'
+                <div className={`relative shrink-0 w-full min-w-0 overflow-hidden rounded-t-3xl border-b border-white/10 ${
+                  detailType === 'leave'
+                    ? 'bg-indigo-700'
+                    : 'bg-slate-700'
                   }`}>
-                  {detailType === 'od' ? (
-                    <div className="box-border w-full min-w-0 px-4 pb-3 pt-3 sm:px-6 sm:pb-4 sm:pt-4" role="region" aria-label="On duty request">
-                      {/* Mobile: stack so the name row is never squeezed beside a wide status column (fixes one-letter-per-line wrap). */}
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                        <div className="flex min-w-0 w-full items-start gap-3 sm:flex-1 sm:basis-0 sm:gap-4">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-md sm:h-11 sm:w-11">
-                            <Briefcase className="h-5 w-5 text-white sm:h-[22px] sm:w-[22px]" aria-hidden />
-                          </div>
-                          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-                            <div className="min-w-0 [&_*]:text-white/90 [&_span]:text-white/85" title={[String(selectedItem!.employeeId?.employee_name || selectedItem!.emp_no || '—'), getItemDesignationName(selectedItem), String(selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no ?? '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm !text-white break-words text-lg font-black leading-snug sm:text-xl [overflow-wrap:anywhere]`}>
-    {selectedItem!.employeeId?.employee_name || selectedItem!.emp_no || '—'}
-  </div>
-  {getItemDesignationName(selectedItem) ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {getItemDesignationName(selectedItem)}
-    </div>
-  ) : null}
-  {selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no}</div>
-  ) : null}
-</div>
-                            {selectedItem!.contactNumber && (
-                              <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-t border-white/15 pt-2 text-[12px] sm:text-[13px]">
-                                <span className="font-black uppercase tracking-wider text-[10px] text-white/65">Contact</span>
-                                <a
-                                  href={`tel:${String(selectedItem!.contactNumber).replace(/\s+/g, '')}`}
-                                  className="font-semibold tabular-nums text-white underline-offset-2 hover:underline"
-                                >
-                                  {selectedItem!.contactNumber}
-                                </a>
-                              </div>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setShowDetailDialog(false)}
-                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20 sm:hidden"
-                            aria-label="Close"
-                          >
-                            <X className="h-4 w-4 text-white" />
-                          </button>
-                        </div>
-                        <div className="flex w-full min-w-0 flex-col items-center gap-2 border-t border-white/15 pt-2 sm:w-auto sm:shrink-0 sm:flex-col sm:items-end sm:border-t-0 sm:pt-0">
-                          <button
-                            type="button"
-                            onClick={() => setShowDetailDialog(false)}
-                            className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20 sm:inline-flex"
-                            aria-label="Close"
-                          >
-                            <X className="h-4 w-4 text-white" />
-                          </button>
-                          <span className={`w-full max-w-md px-3 py-1 text-center text-[10px] font-black uppercase leading-tight tracking-widest sm:max-w-[14rem] sm:text-right ${getStatusColor(selectedItem!.status)} rounded-lg border border-white/20`}>
-                            {formatOdLbl(selectedItem!.status)}
-                          </span>
-                          <div className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider text-white/80 sm:justify-end">
-                            <Clock3 className="h-3.5 w-3.5 shrink-0" />
-                            <span className="text-center sm:text-right">Applied {formatDate((selectedItem! as any).createdAt || selectedItem!.appliedAt)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                  <div className="px-6 py-4 sm:px-8 sm:py-6">
-                  <div className="flex items-center justify-between text-white">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-md">
-                        <Calendar className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h2 className="text-base sm:text-lg font-black uppercase tracking-wider">
-                          Leave Details
-                        </h2>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setShowDetailDialog(false)}
-                        className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                  </div>
-                  )}
-                </div>
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/5 via-transparent to-indigo-600/10 pointer-events-none" />
 
-                {/* Content */}
-                <div className={`min-h-0 flex-1 overflow-y-auto overscroll-y-contain ${detailType === 'od' ? 'p-4 sm:p-5 md:p-6 space-y-4' : 'p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8'}`}>
-                  {detailType === 'leave' && (
-                  <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-6">
-                    <div className="min-w-0 flex-1">
-                        <div className="min-w-0" title={[String(selectedItem!.employeeId?.employee_name || selectedItem!.emp_no || '—'), getItemDesignationName(selectedItem), String(selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no ?? '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {selectedItem!.employeeId?.employee_name || selectedItem!.emp_no || '—'}
-  </div>
-  {getItemDesignationName(selectedItem) ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {getItemDesignationName(selectedItem)}
-    </div>
-  ) : null}
-  {selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no}</div>
-  ) : null}
-</div>
-                        <div className="flex gap-2 mt-2">
-                          {selectedItem!.department?.name && (
-                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">
-                              {selectedItem!.department.name}
-                            </span>
-                          )}
-                          {selectedItem!.designation?.name && (
-                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">
-                              {selectedItem!.designation.name}
-                            </span>
-                          )}
-                        </div>
-                    </div>
-
-                    <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto justify-between sm:justify-start">
-                      <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest border ${getStatusColor(selectedItem!.status)}`}>
-                        {formatLeaveLbl(selectedItem!.status)}
-                      </span>
-                      <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px] uppercase tracking-wider">
-                        <Clock3 className="w-3.5 h-3.5" />
-                        Applied {formatDate((selectedItem! as any).createdAt || selectedItem!.appliedAt)}
-                      </div>
-                    </div>
-                  </div>
-                  )}
-
-                  {/* CO Eligibility Indicator */}
-                  {detailType === 'od' && isCoEligibleOdForPunchDisplay(selectedItem as any) && (() => {
-                    const punchDetails = getOdDisplayPunchTimings(selectedItem as any);
-                    const hasPunchInfo = Boolean(punchDetails.start || punchDetails.end || punchDetails.duration !== null);
-                    return (
-                      <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-200 dark:border-indigo-800/50 animate-in fade-in zoom-in duration-500">
-                        <div className="flex items-start gap-4">
-                          <div className="p-2.5 rounded-xl bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 shrink-0">
-                            <Star className="w-5 h-5 fill-current" />
+                  <div className="relative z-10 px-6 py-4 sm:px-8 sm:py-5">
+                    {detailType === 'leave' ? (
+                      <div className="flex items-center justify-between text-white">
+                        <div className="flex items-center gap-3.5">
+                          <div className="h-10 w-10 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center backdrop-blur-md text-white shadow-md">
+                            <Calendar className="w-5 h-5 text-blue-200" />
                           </div>
                           <div>
-                            <p className="text-sm font-black text-indigo-900 dark:text-indigo-100 uppercase tracking-tight">Premium Reward</p>
-                            <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80 leading-relaxed font-medium mt-1">
-                              This OD contributes to your compensatory off as it was applied on a holiday or week-off.
+                            <div className="flex items-center gap-2">
+                              <h2 className="text-base sm:text-lg font-semibold tracking-wide text-white">Leave Application Details</h2>
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider bg-white/15 text-white border border-white/20 backdrop-blur-md">Leave</span>
+                            </div>
+                            <p className="text-xs text-white/70 font-normal mt-0.5">Employee leave request record &amp; workflow status</p>
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => setShowDetailDialog(false)}
+                          className="h-9 w-9 rounded-full bg-white/10 hover:bg-white/25 active:scale-95 flex items-center justify-center transition-all border border-white/20 text-white/90 hover:text-white shadow-sm" aria-label="Close">
+                          <X className="w-4.5 h-4.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      /* OD Header: employee details */
+                      <div className="flex items-center justify-between gap-3 text-white">
+                        {/* Left: Avatar + Employee Info */}
+                        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 border border-indigo-500 text-white font-bold text-base shadow-md">
+                            {String(
+                              selectedItem!.employeeId?.employee_name ||
+                              (selectedItem!.employeeId as any)?.first_name ||
+                              selectedItem!.emp_no || 'E'
+                            ).charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h2 className="text-base sm:text-lg font-bold text-white truncate">
+                              {selectedItem!.employeeId?.employee_name ||
+                                `${(selectedItem!.employeeId as any)?.first_name || ''} ${(selectedItem!.employeeId as any)?.last_name || ''}`.trim() ||
+                                selectedItem!.emp_no || '—'}
+                            </h2>
+                            <p className="text-xs text-slate-200 font-medium mt-1">
+                              {[selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no, getItemDesignationName(selectedItem)].filter(Boolean).join(' · ')}
+                              {selectedItem!.department?.name && ` · ${selectedItem!.department.name}`}
+                              {(selectedItem!.appliedAt || (selectedItem as any).createdAt) && ` · Applied ${new Date(selectedItem!.appliedAt || (selectedItem as any).createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`}
                             </p>
-                            {hasPunchInfo && (
-                              <div className="mt-3 flex flex-wrap items-center justify-center gap-2 rounded-xl border border-emerald-300/70 bg-emerald-50/90 px-3 py-2 text-center shadow-sm dark:border-emerald-700/60 dark:bg-emerald-900/30">
-                                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
-                                  Attendance
-                                </span>
-                                <span className="text-sm font-bold text-emerald-900 dark:text-emerald-100">
-                                  {punchDetails.start && punchDetails.end ? `${punchDetails.start} - ${punchDetails.end}` : 'Captured from attendance'}
-                                </span>
-                                {punchDetails.duration != null && (
-                                  <span className="rounded-full bg-emerald-600/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                                    {(() => {
-                                      const totalMinutes = Math.round(Number(punchDetails.duration) * 60);
-                                      const hours = Math.floor(totalMinutes / 60);
-                                      const minutes = totalMinutes % 60;
-                                      return `${hours}:${minutes.toString().padStart(2, '0')}`;
-                                    })()}
-                                  </span>
-                                )}
-                                {punchDetails.fromAttendance && (
-                                  <span className="text-[11px] font-medium text-emerald-700/80 dark:text-emerald-300/80">
-                                    from attendance
-                                  </span>
-                                )}
-                              </div>
+                          </div>
+                        </div>
+                        {/* Right: Status badge + OD badge */}
+                        <div className="flex items-center gap-2.5 shrink-0 self-start">
+                          <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(selectedItem!.status)}`}>
+                            {formatLeaveLbl(selectedItem!.status)}
+                          </span>
+                          <span className="inline-flex items-center px-3 py-1 rounded-md text-xs font-black uppercase tracking-widest bg-indigo-600 text-white border border-indigo-400 shrink-0 shadow-sm">
+                            OD
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+              {/* Content */}
+              <div className={`min-h-0 flex-1 overflow-y-auto overscroll-y-contain ${detailType === 'od' ? 'p-4 sm:p-5 md:p-6 space-y-4' : 'p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8'}`}>
+                {(() => {
+                  const punchDetails = isCoEligibleOdForPunchDisplay(selectedItem as any) ? getOdDisplayPunchTimings(selectedItem as any) : null;
+                  // 1. Employee Header
+                  const employeeHeader = (
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60">
+                        <div className="flex items-center gap-3 flex-wrap min-w-0">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white font-semibold text-xs shadow-sm">
+                            {String(
+                              selectedItem!.employeeId?.employee_name ||
+                                (selectedItem!.employeeId as any)?.first_name ||
+                                selectedItem!.emp_no ||
+                                'E'
+                            )
+                              .charAt(0)
+                              .toUpperCase()}
+                          </div>
+                          <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                            <h3 className="font-semibold text-slate-900 dark:text-white text-base truncate">
+                              {selectedItem!.employeeId?.employee_name || selectedItem!.emp_no || '—'}
+                            </h3>
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-200/80 text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                              {[selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no, getItemDesignationName(selectedItem)].filter(Boolean).join(' · ')}
+                            </span>
+                            {selectedItem!.department?.name && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800">
+                                {selectedItem!.department.name}
+                              </span>
                             )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0 flex-wrap">
+                          <span className={`px-3 py-1 rounded-xl text-xs font-semibold uppercase tracking-wider border ${getStatusColor(selectedItem!.status)}`}>
+                            {formatLeaveLbl(selectedItem!.status)}
+                          </span>
+                          <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium text-xs">
+                            <Clock3 className="w-3.5 h-3.5 text-slate-400" />
+                            Applied {formatDate((selectedItem! as any).createdAt || selectedItem!.appliedAt)}
                           </div>
                         </div>
                       </div>
                     );
-                  })()}
 
-                  {/* Stats Grid - Cleaner Look */}
-                  {detailType === 'leave' && (() => {
-                    const leave = selectedItem! as LeaveApplication;
-                    const ld = getLeaveDetailDisplay({
-                      fromDate: leave.fromDate,
-                      toDate: leave.toDate,
-                      numberOfDays: leave.numberOfDays,
-                      isHalfDay: leave.isHalfDay,
-                      halfDayType: leave.halfDayType as 'first_half' | 'second_half' | null,
-                      fromIsHalfDay: leave.fromIsHalfDay,
-                      fromHalfDayType: leave.fromHalfDayType as 'first_half' | 'second_half' | null,
-                      toIsHalfDay: leave.toIsHalfDay,
-                      toHalfDayType: leave.toHalfDayType as 'first_half' | 'second_half' | null,
-                    });
-                    return (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-700/30 p-4 sm:p-6 rounded-xl">
-                    <div className="space-y-1">
-                      <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">Type</p>
-                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white truncate" title={leave.leaveType}>
-                        {(leave.leaveType || '').replace('_', ' ')}
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">Duration</p>
-                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{ld.durationText}</p>
-                      {ld.durationNote && (
-                        <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{ld.durationNote}</p>
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">From</p>
-                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{formatDate(leave.fromDate)}</p>
-                      <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">{ld.fromPortion}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">To</p>
-                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{formatDate(leave.toDate)}</p>
-                      <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">{ld.toPortion}</p>
-                    </div>
-                  </div>
-                    );
-                  })()}
+                    // 2. Stats Grid
+                    const statsGrid = detailType === 'leave' && (() => {
+                      const leave = selectedItem! as LeaveApplication;
+                      const ld = getLeaveDetailDisplay({
+                        fromDate: leave.fromDate,
+                        toDate: leave.toDate,
+                        numberOfDays: leave.numberOfDays,
+                        isHalfDay: leave.isHalfDay,
+                        halfDayType: leave.halfDayType as 'first_half' | 'second_half' | null,
+                        fromIsHalfDay: leave.fromIsHalfDay,
+                        fromHalfDayType: leave.fromHalfDayType as 'first_half' | 'second_half' | null,
+                        toIsHalfDay: leave.toIsHalfDay,
+                        toHalfDayType: leave.toHalfDayType as 'first_half' | 'second_half' | null,
+                      });
+                      return (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-700/30 p-4 sm:p-6 rounded-xl">
+                          <div className="space-y-1">
+                            <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">Type</p>
+                            <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white truncate" title={leave.leaveType}>
+                              {(leave.leaveType || '').replace('_', ' ')}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">Duration</p>
+                            <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{ld.durationText}</p>
+                            {ld.durationNote && (
+                              <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{ld.durationNote}</p>
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">From</p>
+                            <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{formatDate(leave.fromDate)}</p>
+                            <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">{ld.fromPortion}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">To</p>
+                            <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{formatDate(leave.toDate)}</p>
+                            <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">{ld.toPortion}</p>
+                          </div>
+                        </div>
+                      );
+                    })();
 
-                  {/* Punch Transparency / Time Details (Visible if populated) */}
-                  {detailType === 'od' && (selectedItem as ODApplication).odStartTime && (
-                    <div className="grid grid-cols-3 gap-4 bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800/50">
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work In</p>
-                        <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                          {(() => {
-                            const [h, m] = ((selectedItem as ODApplication).odStartTime || '').split(':');
-                            if (!h) return 'N/A';
-                            const date = new Date();
-                            date.setHours(parseInt(h), parseInt(m));
-                            return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-                          })()}
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Work Out</p>
-                        <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                          {(() => {
-                            const [h, m] = ((selectedItem as ODApplication).odEndTime || '').split(':');
-                            if (!h) return 'N/A';
-                            const date = new Date();
-                            date.setHours(parseInt(h), parseInt(m));
-                            return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-                          })()}
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Total Duration</p>
-                        <p className="text-sm font-black text-purple-700 dark:text-purple-300">
-                          {(selectedItem as ODApplication).durationHours || 0} hrs
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-6">
-                    {detailType === 'leave' && (
-                      <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl">
-                        <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 mb-2 tracking-wider">Purpose / Reason</p>
-                        <p className="text-[13px] sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                          {selectedItem!.purpose || 'No purpose specified'}
-                        </p>
-                      </div>
-                    )}
-
-                    {detailType === 'leave' && selectedItem!.contactNumber && (
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-[13px] sm:text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
-                        <span className="font-bold text-[10px] sm:text-xs uppercase text-slate-400 tracking-wider sm:min-w-20">Contact:</span>
-                        <span className="font-medium text-slate-900 dark:text-white break-all">{selectedItem!.contactNumber}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {detailType === 'od' && (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 sm:p-3 dark:border-slate-700 dark:bg-slate-900/50">
-                      <p className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">Request details</p>
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-b border-slate-200 pb-1.5 dark:border-slate-600 sm:grid-cols-4">
-                        <div className="min-w-0">
-                          <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">From</span>
-                          <span className="text-xs font-bold text-slate-900 dark:text-white sm:text-sm">{formatDate(selectedItem!.fromDate)}</span>
-                        </div>
-                        <div className="min-w-0">
-                          <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">To</span>
-                          <span className="text-xs font-bold text-slate-900 dark:text-white sm:text-sm">{formatDate(selectedItem!.toDate)}</span>
-                        </div>
-                        <div className="min-w-0">
-                          <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Duration</span>
-                          <span className="text-xs font-bold text-slate-900 dark:text-white sm:text-sm">{selectedItem!.numberOfDays}d</span>
-                        </div>
-                        <div className="min-w-0">
-                          <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Type</span>
-                          <span className="text-xs font-bold capitalize text-slate-900 dark:text-white sm:text-sm">
-                            {(((selectedItem! as ODApplication).odType) || '-').replace(/_/g, ' ')}
-                          </span>
-                        </div>
-                      </div>
-                      <dl className="mt-1.5 grid grid-cols-2 gap-2 text-sm sm:gap-x-3">
-                        <div className="min-w-0 rounded-md border border-slate-100 bg-white/80 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/40">
-                          <dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">Place of visit</dt>
-                          <dd className="mt-0.5 min-w-0 break-words font-bold leading-snug text-slate-900 dark:text-white">
-                            {(selectedItem as ODApplication).placeVisited || (selectedItem as any).geoLocation?.address || 'No location specified'}
-                          </dd>
-                        </div>
-                        <div className="min-w-0 rounded-md border border-slate-100 bg-white/80 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/40">
-                          <dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">Purpose</dt>
-                          <dd className="mt-0.5 min-w-0 break-words leading-snug text-slate-700 dark:text-slate-300">
+                    // 3. Purpose Card
+                    const purposeCard = detailType === 'leave' && (
+                      <div className="space-y-6">
+                        <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl">
+                          <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 mb-2 tracking-wider">Purpose / Reason</p>
+                          <p className="text-[13px] sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
                             {selectedItem!.purpose || 'No purpose specified'}
-                          </dd>
+                          </p>
                         </div>
-                      </dl>
-                      <p className="mb-2 mt-2 border-t border-slate-200 pt-2 text-xs font-bold uppercase tracking-wider text-slate-400 dark:border-slate-700">Evidence & Location</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                        {(() => {
-                          const minutes = (selectedItem as any).evidenceDurationMinutes;
-                          if (minutes == null) return null;
-                          const hrs = Math.floor(minutes / 60);
-                          const mins = minutes % 60;
-                          return (
-                            <div className="sm:col-span-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                              Total duration between OD IN and OUT: {hrs}h {mins}m
-                            </div>
-                          );
-                        })()}
-                        {(() => {
-                          const startEvidence = (selectedItem as any).startEvidence || {
-                            photoEvidence: (selectedItem as any).photoEvidence,
-                            geoLocation: (selectedItem as any).geoLocation,
-                            submittedAt: (selectedItem as any).createdAt || (selectedItem as any).appliedAt,
-                          };
-                          const endEvidence = (selectedItem as any).endEvidence || null;
-                          const showSubmitOdOutInCard = canSubmitOdOutFromDetails(selectedItem as any, currentUser);
 
-                          const evidenceCards = [
-                            { title: 'OD IN', data: startEvidence },
-                            { title: 'OD OUT', data: endEvidence },
-                          ];
+                        {selectedItem!.contactNumber && (
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-[13px] sm:text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
+                            <span className="font-bold text-[10px] sm:text-xs uppercase text-slate-400 tracking-wider sm:min-w-20">Contact:</span>
+                            <span className="font-medium text-slate-900 dark:text-white break-all">{selectedItem!.contactNumber}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
 
-                          return evidenceCards.map((entry) => (
-                            <div key={entry.title} className="space-y-3 p-3 rounded-xl bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 shadow-sm">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <p className="text-[11px] font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider">{entry.title}</p>
-                                <span
-                                  className={`shrink-0 rounded-lg border px-2.5 py-1 text-[11px] font-black tabular-nums ${
-                                    entry.data?.submittedAt
-                                      ? 'border-purple-300 bg-purple-100 text-purple-950 dark:border-purple-600 dark:bg-purple-950/70 dark:text-purple-50'
-                                      : 'border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-600 dark:bg-amber-950/50 dark:text-amber-100'
-                                  }`}
-                                >
-                                  {entry.data?.submittedAt ? new Date(entry.data.submittedAt).toLocaleString() : 'Not submitted'}
-                                </span>
-                              </div>
-                              {entry.title === 'OD OUT' && showSubmitOdOutInCard && (
-                                <div className="flex flex-col items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2.5 text-center dark:border-purple-900/50 dark:bg-purple-900/25 sm:items-stretch sm:border-0 sm:bg-transparent sm:p-0 sm:text-left dark:sm:bg-transparent">
-                                  <p className="text-[11px] font-semibold leading-snug text-purple-800 dark:text-purple-200 sm:text-xs">
-                                    OD OUT evidence is pending for this draft request.
-                                  </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => setShowOutEvidenceDialog(true)}
-                                    className="mx-auto w-full max-w-xs shrink-0 rounded-lg bg-purple-600 px-3 py-2 text-xs font-bold text-white hover:bg-purple-700 sm:w-auto sm:max-w-none sm:py-1.5"
-                                  >
-                                    Submit OD OUT
-                                  </button>
-                                </div>
-                              )}
-                              {entry.data?.photoEvidence?.url ? (
-                                <a
-                                  href={entry.data.photoEvidence.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="block"
-                                >
-                                  <img
-                                    src={entry.data.photoEvidence.url}
-                                    alt={`${entry.title} evidence`}
-                                    className="w-full h-36 rounded-lg object-cover border border-slate-200 dark:border-slate-600"
-                                  />
-                                </a>
-                              ) : (
-                                <p className="text-xs text-slate-500 dark:text-slate-400">Photo not submitted</p>
-                              )}
-                              {entry.data?.geoLocation ? (
-                                <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-700">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                    <span className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">Live Location</span>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                                    <div>
-                                      <span className="text-[10px] uppercase font-bold text-slate-400">Lat:</span>
-                                      <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{entry.data.geoLocation.latitude?.toFixed(6)}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-[10px] uppercase font-bold text-slate-400">Lon:</span>
-                                      <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{entry.data.geoLocation.longitude?.toFixed(6)}</span>
-                                    </div>
-                                    {entry.data.geoLocation.address && (
-                                      <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-700 mt-1">
-                                        <span className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Full Address</span>
-                                        <p className="text-slate-700 dark:text-slate-300 leading-tight text-[11px]">{entry.data.geoLocation.address}</p>
-                                      </div>
-                                    )}
-                                    <div className="col-span-2 mt-1">
-                                      <a
-                                        href={`https://www.google.com/maps?q=${entry.data.geoLocation.latitude},${entry.data.geoLocation.longitude}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-semibold text-xs"
-                                      >
-                                        View on Maps
-                                      </a>
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                <p className="text-xs text-slate-500 dark:text-slate-400">Location not submitted</p>
-                              )}
-                            </div>
-                          ));
-                        })()}
-                      </div>
-                      <div className="space-y-4">
-                        {(() => {
-                          const inGeo = (selectedItem as any).startEvidence?.geoLocation || (selectedItem as any).geoLocation;
-                          const outGeo = (selectedItem as any).endEvidence?.geoLocation || null;
-                          const markers = [];
-                          if (inGeo?.latitude != null && inGeo?.longitude != null) {
-                            markers.push({
-                              latitude: inGeo.latitude,
-                              longitude: inGeo.longitude,
-                              label: 'IN',
-                              address: inGeo.address || null,
-                            });
-                          }
-                          if (outGeo?.latitude != null && outGeo?.longitude != null) {
-                            markers.push({
-                              latitude: outGeo.latitude,
-                              longitude: outGeo.longitude,
-                              label: 'OUT',
-                              address: outGeo.address || null,
-                            });
-                          }
-                          if (!markers.length && odRoutePolyline.length < 2) return null;
-                          return (
-                            <div className="p-1 pb-0 rounded-xl bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
-                              <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest p-3 pb-2">Map Preview (IN/OUT)</span>
-                              <DualLocationMap
-                                markers={markers as any}
-                                routePolyline={odRoutePolyline.length >= 2 ? odRoutePolyline : undefined}
-                                height="170px"
-                                className="rounded-b-lg"
-                              />
-                              {canRecordOdLocationTrail(selectedItem as any, currentUser) && (
-                                <div className="px-3 pb-2 flex items-center justify-between gap-2">
-                                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                                    Route is recorded while this draft is open (employee device only).
-                                  </p>
-                                  <span
-                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
-                                      odTrailPublishMode === 'socket'
-                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                                        : odTrailPublishMode === 'http'
-                                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                                        : odTrailPublishMode === 'error'
-                                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'
-                                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-                                    }`}
-                                  >
-                                    {odTrailPublishMode === 'socket'
-                                      ? 'Live Socket'
-                                      : odTrailPublishMode === 'http'
-                                      ? 'HTTP Fallback'
-                                      : odTrailPublishMode === 'error'
-                                      ? 'Send Error'
-                                      : 'Awaiting'}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  )}
-                  {/* Approval Steps - Timeline / Progress */}
-                  {((selectedItem as any).workflow?.approvalChain?.length > 0) && (
-                    <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl overflow-hidden scrollbar-hide">
-                      <p className="text-xs uppercase font-bold text-slate-400 mb-4 tracking-wider">Approval Timeline</p>
-                      {/* Progress bar */}
-                      <div className="mb-6">
-                        <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1">
-                          <span>{((selectedItem as any).workflow.approvalChain as any[]).filter((s: any) => s.status === 'approved').length} of {((selectedItem as any).workflow.approvalChain as any[]).length} approved</span>
-                        </div>
-                        <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-green-500 to-green-600 transition-all duration-300"
-                            style={{ width: `${(((selectedItem as any).workflow.approvalChain as any[]).filter((s: any) => s.status === 'approved').length / ((selectedItem as any).workflow.approvalChain as any[]).length) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                      {/* Vertical timeline */}
-                      <div className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-700 ml-1">
-                        {((selectedItem as any).workflow.approvalChain as any[]).map((step: any, idx: number) => {
-                          const stepRole = step.role || step.stepRole || 'step';
-                          const label = step.label || `${stepRole.replace('_', ' ')}`;
-                          const isApproved = step.status === 'approved';
-                          const isRejected = step.status === 'rejected';
-                          const isPending = step.status === 'pending';
-                          const nextRole = (selectedItem as any).workflow?.nextApproverRole || (selectedItem as any).workflow?.nextApprover;
-                          const isCurrent = isPending && (String(nextRole || '').toLowerCase() === String(stepRole).toLowerCase());
-                          const nodeColor = isApproved ? 'bg-green-500 ring-4 ring-green-200 dark:ring-green-900/50' : isRejected ? 'bg-red-500 ring-4 ring-red-200 dark:ring-red-900/50' : isCurrent ? 'bg-blue-500 ring-4 ring-blue-200 dark:ring-blue-900/50' : 'bg-slate-300 dark:bg-slate-600';
-                          return (
-                            <div key={idx} className="relative pb-6 last:pb-0">
-                              <div className={`absolute -left-[29px] top-0.5 w-4 h-4 rounded-full ${nodeColor} border-2 border-white dark:border-slate-900 shadow-sm`} />
-                              <div className="ml-2">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-bold text-slate-900 dark:text-white capitalize">{label}</span>
-                                  {isApproved && <span className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase">✓ Approved</span>}
-                                  {isRejected && <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase">✗ Rejected</span>}
-                                  {isCurrent && <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase">⏳ Your turn</span>}
-                                  {isPending && !isCurrent && <span className="text-[10px] font-bold text-slate-400 uppercase">○ Pending</span>}
-                                </div>
-                                {(isApproved || isRejected) && (
-                                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                                    {step.actionByName || 'Unknown'} ({step.actionByRole || stepRole})
-                                    {step.updatedAt && <span className="ml-1 inline-block">· {new Date(step.updatedAt).toLocaleString()}</span>}
-                                  </p>
-                                )}
-                                {(isApproved || isRejected) && step.comments && (
-                                  <p className="text-xs text-slate-500 italic mt-0.5">"{step.comments}"</p>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Change History Section */}
-                  {selectedItem.changeHistory && selectedItem.changeHistory.length > 0 && (
-                    <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
-                      <button
-                        onClick={() => setIsChangeHistoryExpanded(!isChangeHistoryExpanded)}
-                        className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
-                      >
-                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest">
-                          Edit History ({selectedItem.changeHistory.length})
-                        </span>
-                        <svg
-                          className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${isChangeHistoryExpanded ? 'rotate-180' : ''}`}
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
+                    // 4. Split Breakdown
+                    const splitBreakdown = detailType === 'leave' && (selectedItem as LeaveApplication)?.splits && (selectedItem as LeaveApplication).splits!.length > 0 && (
+                      <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
+                        <button
+                          onClick={() => setIsBreakdownExpanded(!isBreakdownExpanded)}
+                          className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-700/30 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest"
                         >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
-                      {isChangeHistoryExpanded && (
-                        <div className="p-4 space-y-4 bg-white dark:bg-slate-900 max-h-[300px] overflow-y-auto">
-                          {selectedItem.changeHistory.map((change: any, idx: number) => {
-                            const formatValue = (value: any) => {
-                              if (value === null || value === undefined) return 'N/A';
-                              const str = String(value);
-                              if (str.includes('T') || (str.includes('-') && str.length > 10)) {
-                                try {
-                                  const date = new Date(str);
-                                  if (!isNaN(date.getTime())) {
-                                    return date.toLocaleDateString('en-IN', {
-                                      day: '2-digit',
-                                      month: 'short',
-                                      year: 'numeric',
-                                    });
-                                  }
-                                } catch (e) { }
-                              }
-                              return str;
-                            };
-
-                            const fieldName = change.field.replace(/([A-Z])/g, ' $1').trim().toUpperCase();
-                            const oldValue = formatValue(change.originalValue);
-                            const newValue = formatValue(change.newValue);
-
-                            return (
-                              <div key={idx} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 hover:shadow-sm transition-shadow">
-                                <div className="flex items-start justify-between mb-2">
-                                  <span className="px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
-                                    {fieldName}
-                                  </span>
-                                  <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                                    {new Date(change.modifiedAt).toLocaleString('en-IN', {
-                                      day: '2-digit',
-                                      month: '2-digit',
-                                      year: '2-digit',
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                    })}
-                                  </span>
+                          <span>Breakdown ({((selectedItem as LeaveApplication).splitSummary as LeaveSplitSummary)?.approvedDays ?? 0}/{(selectedItem as LeaveApplication).numberOfDays} Approved)</span>
+                          <svg
+                            className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${isBreakdownExpanded ? 'rotate-180' : ''}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {isBreakdownExpanded && (
+                          <div className="divide-y divide-slate-100 dark:divide-slate-700 max-h-40 overflow-y-auto">
+                            {(selectedItem as LeaveApplication).splits!.map((split, idx) => (
+                              <div key={idx} className="flex justify-between px-4 py-2.5 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-slate-700 dark:text-slate-300">{formatDate(split.date)}</span>
+                                  {split.isHalfDay && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 uppercase font-black">
+                                      {split.halfDayType === 'first_half' ? '1st' : '2nd'}
+                                    </span>
+                                  )}
                                 </div>
-                                <div className="flex flex-wrap items-center gap-2 text-xs mb-2">
-                                  <span className="text-slate-400 line-through truncate max-w-[120px]">{oldValue}</span>
-                                  <svg className="w-3 h-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-                                  <span className="text-green-600 dark:text-green-400 font-bold truncate max-w-[120px]">{newValue}</span>
-                                </div>
-                                {change.modifiedByName && (
-                                  <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
-                                    <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-                                    <span>By {change.modifiedByName}</span>
-                                    {change.modifiedByRole && <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 text-[9px] uppercase font-bold">{change.modifiedByRole}</span>}
+                                <span className={`capitalize font-bold ${split.status === 'approved' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{split.status}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+
+                    // 5. Split Editor
+                    const splitEditor = detailType === 'leave' && currentUser?.role !== 'employee' && !['rejected', 'cancelled'].includes(selectedItem.status) && (
+                      <div className="rounded-2xl bg-slate-50 dark:bg-slate-900/50 p-6 border border-slate-200 dark:border-slate-700 space-y-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Split & Decision</p>
+                            <p className="text-[10px] text-slate-500 font-medium uppercase tracking-tight mt-1">Manage individual day approvals</p>
+                          </div>
+                          <label className="flex items-center gap-3 cursor-pointer group">
+                            <input
+                              type="checkbox"
+                              checked={splitMode}
+                              onChange={(e) => {
+                                const enable = e.target.checked;
+                                setSplitMode(enable);
+                                if (enable && splitDrafts.length === 0 && detailType === 'leave' && selectedItem) {
+                                  setSplitDrafts(buildInitialSplits(selectedItem as LeaveApplication));
+                                }
+                                if (!enable) {
+                                  setSplitWarnings([]);
+                                  setSplitErrors([]);
+                                }
+                              }}
+                              className="w-5 h-5 rounded-lg border-2 border-slate-300 text-blue-600 focus:ring-blue-500 transition-all group-hover:border-blue-400"
+                            />
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">Enable Split</span>
+                          </label>
+                        </div>
+
+                        {splitMode && (
+                          <div className="animate-in fade-in slide-in-from-top-2 duration-300 space-y-4">
+                            <div className="flex flex-wrap gap-3 p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm">
+                              <div className="flex flex-col">
+                                <span className="text-[9px] uppercase font-black text-slate-400">Total</span>
+                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{(selectedItem as LeaveApplication).numberOfDays}d</span>
+                              </div>
+                              <div className="w-px h-6 bg-slate-100 dark:bg-slate-700" />
+                              <div className="flex flex-col">
+                                <span className="text-[9px] uppercase font-black text-green-500">Approved</span>
+                                <span className="text-xs font-bold text-green-600 dark:text-green-400">{splitDrafts.filter(s => s.status === 'approved').reduce((sum, s) => sum + (s.isHalfDay ? 0.5 : 1), 0)}d</span>
+                              </div>
+                              <div className="w-px h-6 bg-slate-100 dark:bg-slate-700" />
+                              <div className="flex flex-col">
+                                <span className="text-[9px] uppercase font-black text-red-500">Rejected</span>
+                                <span className="text-xs font-bold text-red-600 dark:text-red-400">{splitDrafts.filter(s => s.status === 'rejected').reduce((sum, s) => sum + (s.isHalfDay ? 0.5 : 1), 0)}d</span>
+                              </div>
+                            </div>
+
+                            {splitErrors.length > 0 && (
+                              <div className="rounded-xl border border-red-200 bg-red-50/50 px-4 py-3 text-[11px] font-bold text-red-600 animate-pulse">
+                                {splitErrors.map((msg, idx) => (
+                                  <div key={idx} className="flex items-center gap-2">
+                                    <div className="w-1 h-1 rounded-full bg-red-500" />
+                                    {msg}
                                   </div>
-                                )}
-                                {change.reason && (
-                                  <p className="mt-2 text-[10px] text-slate-500 italic leading-relaxed border-t border-slate-100 dark:border-slate-700 pt-2">
-                                    Reason: {change.reason}
-                                  </p>
-                                )}
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="space-y-2 max-h-[280px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700">
+                              {splitDrafts.map((split, idx) => (
+                                <div key={`${split.date}-${idx}`} className="group flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 p-3 bg-white dark:bg-slate-800 hover:border-blue-400/50 transition-all">
+                                  <div className="flex items-center gap-3">
+                                    <div className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">{formatDate(split.date)}</div>
+                                    <label className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-500 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={split.isHalfDay || false}
+                                        onChange={(e) => updateSplitDraft(idx, { isHalfDay: e.target.checked })}
+                                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                      />
+                                      Half
+                                    </label>
+                                    {split.isHalfDay && (
+                                      <select
+                                        value={split.halfDayType || 'first_half'}
+                                        onChange={(e) => updateSplitDraft(idx, { halfDayType: e.target.value as any })}
+                                        className="text-[10px] font-bold h-7 rounded-lg border border-slate-200 bg-slate-50 px-2 dark:border-slate-700 dark:bg-slate-900 dark:text-white outline-none focus:border-blue-400"
+                                      >
+                                        <option value="first_half">1st Half</option>
+                                        <option value="second_half">2nd Half</option>
+                                      </select>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-2 ml-auto">
+                                    <select
+                                      value={split.leaveType}
+                                      onChange={(e) => updateSplitDraft(idx, { leaveType: e.target.value })}
+                                      className="text-[10px] font-bold h-8 rounded-lg border border-slate-200 bg-white px-2 dark:border-slate-700 dark:bg-slate-900 dark:text-white outline-none focus:border-blue-400"
+                                    >
+                                      <option value="">Select Type</option>
+                                      {leaveTypes.map((lt) => {
+                                        const v = leaveOdTypeOptionKey(lt);
+                                        if (!v) return null;
+                                        return (
+                                          <option key={v} value={v}>
+                                            {leaveOdTypeOptionLabel(lt)}
+                                          </option>
+                                        );
+                                      })}
+                                    </select>
+                                    <select
+                                      value={split.status}
+                                      onChange={(e) => updateSplitDraft(idx, { status: e.target.value as 'approved' | 'rejected' })}
+                                      className={`text-[10px] font-black h-8 rounded-lg border px-2 outline-none uppercase tracking-wider ${split.status === 'approved'
+                                        ? 'border-green-200 bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800'
+                                        : 'border-red-200 bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800'
+                                        }`}
+                                    >
+                                      <option value="approved">Approve</option>
+                                      <option value="rejected">Reject</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  setSplitSaving(true);
+                                  await validateSplitsForLeave();
+                                  setSplitSaving(false);
+                                }}
+                                className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 transition-colors"
+                              >
+                                {splitSaving ? 'Validating...' : 'Validate'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  setSplitSaving(true);
+                                  const saved = await saveSplits();
+                                  if (saved) {
+                                    toast.success('Splits updated');
+                                    const res = await api.getLeave((selectedItem as LeaveApplication)._id);
+                                    if (res?.success) {
+                                      setSelectedItem(res.data);
+                                      setSplitDrafts(buildInitialSplits(res.data));
+                                    }
+                                  }
+                                  setSplitSaving(false);
+                                }}
+                                className="flex-[2] py-2 text-[10px] font-black uppercase tracking-widest rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all active:scale-[0.98]"
+                              >
+                                {splitSaving ? 'Saving...' : 'Apply Splits'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+
+                    // 6. Attendance Preview
+                    const attendancePreview = detailType === 'leave' && (
+                      <LeaveDetailAttendancePreview
+                        preview={leaveAttendancePreview}
+                        loading={leaveAttendancePreviewLoading}
+                        error={leaveAttendancePreviewError}
+                        className="mb-4"
+                      />
+                    );
+
+                    // 7. Timeline
+                    const timeline = ((selectedItem as any).workflow?.approvalChain?.length > 0) && (
+                      <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl overflow-hidden scrollbar-hide">
+                        <p className="text-xs uppercase font-bold text-slate-400 mb-4 tracking-wider">Approval Timeline</p>
+                        <div className="mb-6">
+                          <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1">
+                            <span>{((selectedItem as any).workflow.approvalChain as any[]).filter((s: any) => s.status === 'approved').length} of {((selectedItem as any).workflow.approvalChain as any[]).length} approved</span>
+                          </div>
+                          <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-green-500 to-green-600 transition-all duration-300"
+                              style={{ width: `${(((selectedItem as any).workflow.approvalChain as any[]).filter((s: any) => s.status === 'approved').length / ((selectedItem as any).workflow.approvalChain as any[]).length) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="relative flex flex-col sm:flex-row items-start justify-between gap-6 sm:gap-4 pt-2">
+                          {/* Horizontal line for desktop, vertical line for mobile */}
+                          <div className="absolute top-[12px] left-3.5 right-3.5 hidden sm:block h-0.5 bg-slate-200 dark:bg-slate-700 z-0" />
+                          <div className="absolute top-[12px] bottom-0 left-[12px] sm:hidden w-0.5 bg-slate-200 dark:bg-slate-700 z-0" />
+
+                          {((selectedItem as any).workflow.approvalChain as any[]).map((step: any, idx: number) => {
+                            const stepRole = step.role || step.stepRole || 'step';
+                            const label = step.label || `${stepRole.replace('_', ' ')}`;
+                            const isApproved = step.status === 'approved';
+                            const isRejected = step.status === 'rejected';
+                            const isPending = step.status === 'pending';
+                            const nextRole = (selectedItem as any).workflow?.nextApproverRole || (selectedItem as any).workflow?.nextApprover;
+                            const isCurrent = isPending && (String(nextRole || '').toLowerCase() === String(stepRole).toLowerCase());
+                            const nodeColor = isApproved ? 'bg-green-500 ring-4 ring-green-200 dark:ring-green-900/50' : isRejected ? 'bg-red-500 ring-4 ring-red-200 dark:ring-red-900/50' : isCurrent ? 'bg-blue-500 ring-4 ring-blue-200 dark:ring-blue-900/50' : 'bg-slate-300 dark:bg-slate-600';
+                            return (
+                              <div key={idx} className="relative flex sm:flex-col items-center gap-3 sm:gap-2 flex-1 w-full text-left sm:text-center z-10">
+                                {/* Node Dot */}
+                                <div className={`relative h-6 w-6 rounded-full flex items-center justify-center ${nodeColor} border-2 border-white dark:border-slate-900 shadow-sm shrink-0`}>
+                                  {isApproved ? (
+                                    <span className="text-[10px] text-white font-bold">✓</span>
+                                  ) : isRejected ? (
+                                    <span className="text-[10px] text-white font-bold">✗</span>
+                                  ) : isCurrent ? (
+                                    <span className="text-[10px] text-white font-bold">⏳</span>
+                                  ) : (
+                                    <span className="text-[8px] text-white font-bold">{idx + 1}</span>
+                                  )}
+                                </div>
+
+                                {/* Details container */}
+                                <div className="flex flex-col sm:items-center">
+                                  <span className="text-xs font-bold text-slate-900 dark:text-white capitalize">{label}</span>
+                                  {isApproved && <span className="text-[9px] font-black tracking-wider text-green-600 dark:text-green-400 uppercase mt-0.5">Approved</span>}
+                                  {isRejected && <span className="text-[9px] font-black tracking-wider text-red-600 dark:text-red-400 uppercase mt-0.5">Rejected</span>}
+                                  {isCurrent && <span className="text-[9px] font-black tracking-wider text-blue-600 dark:text-blue-400 uppercase mt-0.5">Active</span>}
+                                  {isPending && !isCurrent && <span className="text-[9px] font-black tracking-wider text-slate-400 uppercase mt-0.5">Pending</span>}
+
+                                  {(isApproved || isRejected) && (
+                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-tight sm:max-w-[150px]">
+                                      <span className="font-semibold">{step.actionByName || 'Approver'}</span>
+                                      {step.updatedAt && (
+                                        <span className="block text-[9px] opacity-75">
+                                          {new Date(step.updatedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                                        </span>
+                                      )}
+                                    </p>
+                                  )}
+                                  {(isApproved || isRejected) && step.comments && (
+                                    <p className="text-[10px] text-slate-400 italic mt-1 leading-tight sm:max-w-[140px] truncate" title={step.comments}>
+                                      "{step.comments}"
+                                    </p>
+                                  )}
+                                </div>
                               </div>
                             );
                           })}
                         </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Split Breakdown (Spacious) */}
-                  {detailType === 'leave' && (selectedItem as LeaveApplication)?.splits && (selectedItem as LeaveApplication).splits!.length > 0 && (
-                    <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
-                      <button
-                        onClick={() => setIsBreakdownExpanded(!isBreakdownExpanded)}
-                        className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-700/30 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest"
-                      >
-                        <span>Breakdown ({((selectedItem as LeaveApplication).splitSummary as LeaveSplitSummary)?.approvedDays ?? 0}/{(selectedItem as LeaveApplication).numberOfDays} Approved)</span>
-                        <svg
-                          className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${isBreakdownExpanded ? 'rotate-180' : ''}`}
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
-                      {isBreakdownExpanded && (
-                        <div className="divide-y divide-slate-100 dark:divide-slate-700 max-h-40 overflow-y-auto">
-                          {(selectedItem as LeaveApplication).splits!.map((split, idx) => (
-                            <div key={idx} className="flex justify-between px-4 py-2.5 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                              <div className="flex items-center gap-2">
-                                <span className="text-slate-700 dark:text-slate-300">{formatDate(split.date)}</span>
-                                {split.isHalfDay && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 uppercase font-black">
-                                    {split.halfDayType === 'first_half' ? '1st' : '2nd'}
-                                  </span>
-                                )}
-                              </div>
-                              <span className={`capitalize font-bold ${split.status === 'approved' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{split.status}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Interactive Split Editor (For Approvers/Admins) */}
-                  {detailType === 'leave' && currentUser?.role !== 'employee' && !['rejected', 'cancelled'].includes(selectedItem.status) && (
-                    <div className="rounded-2xl bg-slate-50 dark:bg-slate-900/50 p-6 border border-slate-200 dark:border-slate-700 space-y-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Split & Decision</p>
-                          <p className="text-[10px] text-slate-500 font-medium uppercase tracking-tight mt-1">Manage individual day approvals</p>
-                        </div>
-                        <label className="flex items-center gap-3 cursor-pointer group">
-                          <input
-                            type="checkbox"
-                            checked={splitMode}
-                            onChange={(e) => {
-                              const enable = e.target.checked;
-                              setSplitMode(enable);
-                              if (enable && splitDrafts.length === 0 && detailType === 'leave' && selectedItem) {
-                                setSplitDrafts(buildInitialSplits(selectedItem as LeaveApplication));
-                              }
-                              if (!enable) {
-                                setSplitWarnings([]);
-                                setSplitErrors([]);
-                              }
-                            }}
-                            className="w-5 h-5 rounded-lg border-2 border-slate-300 text-blue-600 focus:ring-blue-500 transition-all group-hover:border-blue-400"
-                          />
-                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">Enable Split</span>
-                        </label>
                       </div>
+                    );
 
-                      {splitMode && (
-                        <div className="animate-in fade-in slide-in-from-top-2 duration-300 space-y-4">
-                          <div className="flex flex-wrap gap-3 p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm">
-                            <div className="flex flex-col">
-                              <span className="text-[9px] uppercase font-black text-slate-400">Total</span>
-                              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{(selectedItem as LeaveApplication).numberOfDays}d</span>
-                            </div>
-                            <div className="w-px h-6 bg-slate-100 dark:bg-slate-700" />
-                            <div className="flex flex-col">
-                              <span className="text-[9px] uppercase font-black text-green-500">Approved</span>
-                              <span className="text-xs font-bold text-green-600 dark:text-green-400">{splitDrafts.filter(s => s.status === 'approved').reduce((sum, s) => sum + (s.isHalfDay ? 0.5 : 1), 0)}d</span>
-                            </div>
-                            <div className="w-px h-6 bg-slate-100 dark:bg-slate-700" />
-                            <div className="flex flex-col">
-                              <span className="text-[9px] uppercase font-black text-red-500">Rejected</span>
-                              <span className="text-xs font-bold text-red-600 dark:text-red-400">{splitDrafts.filter(s => s.status === 'rejected').reduce((sum, s) => sum + (s.isHalfDay ? 0.5 : 1), 0)}d</span>
-                            </div>
-                          </div>
+                    // 8. Change History
+                    const changeHistory = selectedItem.changeHistory && selectedItem.changeHistory.length > 0 && (
+                      <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
+                        <button
+                          onClick={() => setIsChangeHistoryExpanded(!isChangeHistoryExpanded)}
+                          className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
+                        >
+                          <span className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest">
+                            Edit History ({selectedItem.changeHistory.length})
+                          </span>
+                          <svg
+                            className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${isChangeHistoryExpanded ? 'rotate-180' : ''}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {isChangeHistoryExpanded && (
+                          <div className="p-4 space-y-4 bg-white dark:bg-slate-900 max-h-[300px] overflow-y-auto">
+                            {selectedItem.changeHistory.map((change: any, idx: number) => {
+                              const formatValue = (value: any) => {
+                                if (value === null || value === undefined) return 'N/A';
+                                const str = String(value);
+                                if (str.includes('T') || (str.includes('-') && str.length > 10)) {
+                                  try {
+                                    const date = new Date(str);
+                                    if (!isNaN(date.getTime())) {
+                                      return date.toLocaleDateString('en-IN', {
+                                        day: '2-digit',
+                                        month: 'short',
+                                        year: 'numeric',
+                                      });
+                                    }
+                                  } catch (e) { }
+                                }
+                                return str;
+                              };
 
-                          {splitErrors.length > 0 && (
-                            <div className="rounded-xl border border-red-200 bg-red-50/50 px-4 py-3 text-[11px] font-bold text-red-600 animate-pulse">
-                              {splitErrors.map((msg, idx) => (
-                                <div key={idx} className="flex items-center gap-2">
-                                  <div className="w-1 h-1 rounded-full bg-red-500" />
-                                  {msg}
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                              const fieldName = change.field.replace(/([A-Z])/g, ' $1').trim().toUpperCase();
+                              const oldValue = formatValue(change.originalValue);
+                              const newValue = formatValue(change.newValue);
 
-                          <div className="space-y-2 max-h-[280px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700">
-                            {splitDrafts.map((split, idx) => (
-                              <div key={`${split.date}-${idx}`} className="group flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 p-3 bg-white dark:bg-slate-800 hover:border-blue-400/50 transition-all">
-                                <div className="flex items-center gap-3">
-                                  <div className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">{formatDate(split.date)}</div>
-                                  <label className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-500 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={split.isHalfDay || false}
-                                      onChange={(e) => updateSplitDraft(idx, { isHalfDay: e.target.checked })}
-                                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                    />
-                                    Half
-                                  </label>
-                                  {split.isHalfDay && (
-                                    <select
-                                      value={split.halfDayType || 'first_half'}
-                                      onChange={(e) => updateSplitDraft(idx, { halfDayType: e.target.value as any })}
-                                      className="text-[10px] font-bold h-7 rounded-lg border border-slate-200 bg-slate-50 px-2 dark:border-slate-700 dark:bg-slate-900 dark:text-white outline-none focus:border-blue-400"
-                                    >
-                                      <option value="first_half">1st Half</option>
-                                      <option value="second_half">2nd Half</option>
-                                    </select>
+                              return (
+                                <div key={idx} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 hover:shadow-sm transition-shadow">
+                                  <div className="flex items-start justify-between mb-2">
+                                    <span className="px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+                                      {fieldName}
+                                    </span>
+                                    <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                                      {new Date(change.modifiedAt).toLocaleString('en-IN', {
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        year: '2-digit',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                      })}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2 text-xs mb-2">
+                                    <span className="text-slate-400 line-through truncate max-w-[120px]">{oldValue}</span>
+                                    <svg className="w-3 h-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                                    <span className="text-green-600 dark:text-green-400 font-bold truncate max-w-[120px]">{newValue}</span>
+                                  </div>
+                                  {change.modifiedByName && (
+                                    <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
+                                      <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                                      <span>By {change.modifiedByName}</span>
+                                      {change.modifiedByRole && <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 text-[9px] uppercase font-bold">{change.modifiedByRole}</span>}
+                                    </div>
+                                  )}
+                                  {change.reason && (
+                                    <p className="mt-2 text-[10px] text-slate-500 italic leading-relaxed border-t border-slate-100 dark:border-slate-700 pt-2">
+                                      Reason: {change.reason}
+                                    </p>
                                   )}
                                 </div>
-
-                                <div className="flex items-center gap-2 ml-auto">
-                                  <select
-                                    value={split.leaveType}
-                                    onChange={(e) => updateSplitDraft(idx, { leaveType: e.target.value })}
-                                    className="text-[10px] font-bold h-8 rounded-lg border border-slate-200 bg-white px-2 dark:border-slate-700 dark:bg-slate-900 dark:text-white outline-none focus:border-blue-400"
-                                  >
-                                    <option value="">Select Type</option>
-                                    {leaveTypes.map((lt) => {
-                                      const v = leaveOdTypeOptionKey(lt);
-                                      if (!v) return null;
-                                      return (
-                                        <option key={v} value={v}>
-                                          {leaveOdTypeOptionLabel(lt)}
-                                        </option>
-                                      );
-                                    })}
-                                  </select>
-                                  <select
-                                    value={split.status}
-                                    onChange={(e) => updateSplitDraft(idx, { status: e.target.value as 'approved' | 'rejected' })}
-                                    className={`text-[10px] font-black h-8 rounded-lg border px-2 outline-none uppercase tracking-wider ${split.status === 'approved'
-                                      ? 'border-green-200 bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800'
-                                      : 'border-red-200 bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800'
-                                      }`}
-                                  >
-                                    <option value="approved">Approve</option>
-                                    <option value="rejected">Reject</option>
-                                  </select>
-                                </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
-
-                          <div className="flex gap-2 pt-2">
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                setSplitSaving(true);
-                                await validateSplitsForLeave();
-                                setSplitSaving(false);
-                              }}
-                              className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 transition-colors"
-                            >
-                              {splitSaving ? 'Validating...' : 'Validate'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                setSplitSaving(true);
-                                const saved = await saveSplits();
-                                if (saved) {
-                                  toast.success('Splits updated');
-                                  const res = await api.getLeave((selectedItem as LeaveApplication)._id);
-                                  if (res?.success) {
-                                    setSelectedItem(res.data);
-                                    setSplitDrafts(buildInitialSplits(res.data));
-                                  }
-                                }
-                                setSplitSaving(false);
-                              }}
-                              className="flex-[2] py-2 text-[10px] font-black uppercase tracking-widest rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all active:scale-[0.98]"
-                            >
-                              {splitSaving ? 'Saving...' : 'Apply Splits'}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {detailType === 'leave' && (
-                    <LeaveDetailAttendancePreview
-                      preview={leaveAttendancePreview}
-                      loading={leaveAttendancePreviewLoading}
-                      error={leaveAttendancePreviewError}
-                      className="mb-4"
-                    />
-                  )}
-
-                  {/* Revoke / Edit Actions */}
-                  <div className="flex flex-col gap-3">
-                    {/* Revoke - visible if canRevoke is true (actor or admin, within 48hr) */}
-                    {canRevoke && currentUser?.role !== 'employee' && (
-                      <div className="flex flex-col gap-3 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800/50 rounded-xl">
-                        <div className="flex items-center gap-2 mb-1">
-                          <RotateCw className="w-4 h-4 text-orange-500" />
-                          <span className="text-xs font-bold text-orange-700 dark:text-orange-400 uppercase tracking-wider">Revoke Action</span>
-                        </div>
-                        <p className="text-[10px] text-orange-600 dark:text-orange-500 leading-relaxed mb-1">
-                          You can revert the last approval or rejection. This will return the request to its previous state.
-                        </p>
-                        <div className="flex gap-2">
-                          <input
-                            value={revokeReason}
-                            onChange={(e) => setRevokeReason(e.target.value)}
-                            className="flex-1 text-xs border border-orange-200 dark:border-orange-800 rounded-lg px-3 py-2 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 dark:bg-slate-900 dark:text-white"
-                            placeholder="Reason for revoking..."
-                          />
-                          <button
-                            onClick={async () => {
-                              if (!revokeReason) return toast.error('Reason required');
-                              try {
-                                const res = detailType === 'leave' ? await api.revokeLeaveApproval(selectedItem._id, revokeReason) : await api.revokeODApproval(selectedItem._id, revokeReason);
-                                if (res.success) {
-                                  setShowDetailDialog(false);
-                                  loadData();
-                                  toast.success('Action revoked and status reverted');
-                                } else {
-                                  toast.error(res.error || 'Failed to revoke');
-                                }
-                              } catch (e) { toast.error('An error occurred during revocation'); }
-                            }}
-                            className="px-4 py-2 bg-orange-500 text-white text-xs font-bold rounded-lg hover:bg-orange-600 transition-colors shadow-sm"
-                          >
-                            Revoke
-                          </button>
-                        </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </div>
+                    );
+
+                    // 9. Revoke Actions
+                    const revokeActions = (
+                      <div className="flex flex-col gap-3">
+                        {canRevoke && currentUser?.role !== 'employee' && (
+                          <div className="flex flex-col gap-3 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800/50 rounded-xl">
+                            <div className="flex items-center gap-2 mb-1">
+                              <RotateCw className="w-4 h-4 text-orange-500" />
+                              <span className="text-xs font-bold text-orange-700 dark:text-orange-400 uppercase tracking-wider">Revoke Action</span>
+                            </div>
+                            <p className="text-[10px] text-orange-600 dark:text-orange-500 leading-relaxed mb-1">
+                              You can revert the last approval or rejection. This will return the request to its previous state.
+                            </p>
+                            <div className="flex gap-2">
+                              <input
+                                value={revokeReason}
+                                onChange={(e) => setRevokeReason(e.target.value)}
+                                className="flex-1 text-xs border border-orange-200 dark:border-orange-800 rounded-lg px-3 py-2 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 dark:bg-slate-900 dark:text-white"
+                                placeholder="Reason for revoking..."
+                              />
+                              <button
+                                onClick={async () => {
+                                  if (!revokeReason) return toast.error('Reason required');
+                                  try {
+                                    const res = detailType === 'leave' ? await api.revokeLeaveApproval(selectedItem._id, revokeReason) : await api.revokeODApproval(selectedItem._id, revokeReason);
+                                    if (res.success) {
+                                      setShowDetailDialog(false);
+                                      loadData();
+                                      toast.success('Action revoked and status reverted');
+                                    } else {
+                                      toast.error(res.error || 'Failed to revoke');
+                                    }
+                                  } catch (e) { toast.error('An error occurred during revocation'); }
+                                }}
+                                className="px-4 py-2 bg-orange-500 text-white text-xs font-bold rounded-lg hover:bg-orange-600 transition-colors shadow-sm"
+                              >
+                                Revoke
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+
+                    // Now render layout: 3-col for Leave, single-col for OD
+                    return (
+                      detailType === 'leave' ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                          {/* Left Column - Leave */}
+                          <div className="lg:col-span-2 space-y-6">
+                            {employeeHeader}
+                            {statsGrid}
+                            {purposeCard}
+                            {splitBreakdown}
+                            {splitEditor}
+                            {attendancePreview}
+                            {revokeActions}
+                          </div>
+                          {/* Right Column - Leave */}
+                          <div className="lg:col-span-1 space-y-6">
+                            {timeline}
+                            {changeHistory}
+                          </div>
+                        </div>
+                      ) : (
+                        /* OD: full-width, timeline at bottom */
+                        <div className="space-y-6 max-w-none">
+                          <ODDetailCard
+                            data={{
+                              ...(selectedItem as any),
+                              routePolyline: odRoutePolyline,
+                              isCOEligible: isCoEligibleOdForPunchDisplay(selectedItem as any),
+                              coEligibilityInfo: {
+                                isCoEligible: isCoEligibleOdForPunchDisplay(selectedItem as any),
+                                punchDetails,
+                              },
+                              trailPublishMode: odTrailPublishMode,
+                            }}
+                            onSubmitOutClick={() => setShowOutEvidenceDialog(true)}
+                          />
+                          {revokeActions}
+                          {timeline}
+                          {changeHistory}
+                        </div>
+                      )
+                    );
+              })()}
+            </div>
 
                 <div className="shrink-0 border-t border-slate-200 bg-slate-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] dark:border-slate-700 dark:bg-slate-900 flex flex-col gap-3">
                   {/* Always show recorded consents after approve/reject (and while pending). */}

@@ -1313,14 +1313,14 @@ export default function PromotionsTransfersPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-2 sm:p-6 max-w-6xl mx-auto space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <ArrowRightLeft className="w-7 h-7 text-indigo-600" />
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <ArrowRightLeft className="w-6 h-6 sm:w-7 sm:h-7 text-indigo-600" />
             Promotions & Transfers
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
             Payroll-cycle promotions and internal transfers with approval workflow.
           </p>
         </div>
@@ -1328,9 +1328,9 @@ export default function PromotionsTransfersPage() {
           <button
             type="button"
             onClick={openCreateModal}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white px-4 py-2.5 text-sm font-semibold hover:bg-indigo-700"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white px-3.5 py-2 text-xs font-semibold hover:bg-indigo-700 sm:px-4 sm:py-2.5 sm:text-sm"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             New request
           </button>
         )}
@@ -1342,15 +1342,15 @@ export default function PromotionsTransfersPage() {
           <button
             type="button"
             onClick={() => setBulkSectionOpen((o) => !o)}
-            className="flex w-full items-center justify-between p-5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+            className="flex w-full items-center justify-between p-3.5 sm:p-5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
           >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30">
-                <Users className="h-5 w-5 text-indigo-600" />
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 shrink-0">
+                <Users className="h-4.5 w-4.5 sm:h-5 sm:w-5 text-indigo-600" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white line-clamp-1">Bulk create requests</h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400 font-normal"> Load employees to submit multiple promotions or transfers at once.</p>
+                <h3 className="text-sm sm:text-lg font-bold text-slate-900 dark:text-white line-clamp-1">Bulk create requests</h3>
+                <p className="text-[11px] sm:text-sm text-slate-500 dark:text-slate-400 font-normal"> Load employees to submit multiple promotions or transfers at once.</p>
               </div>
             </div>
             <span className="text-slate-400 transition-transform duration-200" style={{ transform: bulkSectionOpen ? 'rotate(180deg)' : 'none' }}>
@@ -1565,11 +1565,11 @@ export default function PromotionsTransfersPage() {
                     </table>
                   </div>
 
-                  <div className="flex items-center justify-between gap-4 pt-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4">
                     <p className="text-xs text-slate-500 italic">
                       {bulkRows.length} employee(s) loaded. Clear rows with no changes before submitting.
                     </p>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
                       <button
                         type="button"
                         onClick={() => setBulkRows([])}
@@ -1594,32 +1594,34 @@ export default function PromotionsTransfersPage() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 items-center">
-        <button
-          type="button"
-          onClick={() => setTab('all')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium ${
-            tab === 'all'
-              ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-          }`}
-        >
-          All
-        </button>
-        {canApprove && (
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => setTab('pending')}
+            onClick={() => setTab('all')}
             className={`px-4 py-2 rounded-lg text-sm font-medium ${
-              tab === 'pending'
+              tab === 'all'
                 ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200'
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
             }`}
           >
-            Pending my action
+            All
           </button>
-        )}
-        <div className="relative flex-1 min-w-[200px] max-w-md ml-auto">
+          {canApprove && (
+            <button
+              type="button"
+              onClick={() => setTab('pending')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                tab === 'pending'
+                  ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              Pending my action
+            </button>
+          )}
+        </div>
+        <div className="relative w-full sm:max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
@@ -1638,134 +1640,253 @@ export default function PromotionsTransfersPage() {
         ) : filtered.length === 0 ? (
           <p className="py-12 text-center text-slate-500">No requests</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 dark:bg-slate-800/80 text-left">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">Employee</th>
-                  <th className="px-4 py-3 font-semibold">Type</th>
-                  <th className="px-4 py-3 font-semibold">Summary</th>
-                  <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 py-3 font-semibold w-28">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filtered.map((r) => (
-                  <tr key={r._id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                    <td className="px-4 py-3">
-                      <div className="min-w-0" title={[String(r.employeeId?.employee_name || r.emp_no || '—'), ((typeof r.employeeId?.designation_id === 'object' && r.employeeId?.designation_id?.name) ? String(r.employeeId.designation_id.name) : (typeof r.employeeId?.designation === 'object' && r.employeeId?.designation?.name) ? String(r.employeeId.designation.name) : ''), String(r.emp_no || '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {r.employeeId?.employee_name || r.emp_no || '—'}
-  </div>
-  {((typeof r.employeeId?.designation_id === 'object' && r.employeeId?.designation_id?.name) ? String(r.employeeId.designation_id.name) : (typeof r.employeeId?.designation === 'object' && r.employeeId?.designation?.name) ? String(r.employeeId.designation.name) : '') ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {((typeof r.employeeId?.designation_id === 'object' && r.employeeId?.designation_id?.name) ? String(r.employeeId.designation_id.name) : (typeof r.employeeId?.designation === 'object' && r.employeeId?.designation?.name) ? String(r.employeeId.designation.name) : '')}
-    </div>
-  ) : null}
-  {r.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{r.emp_no}</div>
-  ) : null}
-</div>
-                    </td>
-                    <td className="px-4 py-3 capitalize">{r.requestType}</td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                      {r.requestType === 'promotion' || r.requestType === 'demotion' || r.requestType === 'increment' ? (
-                        <span className="text-xs leading-relaxed">
-                          {r.requestType === 'increment' && r.incrementAmount != null ? (
-                            <>
-                              <span className="font-medium text-slate-800 dark:text-slate-200">
-                                {formatSalary(r.previousGrossSalary)} → {formatSalary(r.newGrossSalary)}
-                              </span>
-                              <span className="text-slate-500 dark:text-slate-400">
-                                {' '}
-                                (+{formatSalary(r.incrementAmount)} increment)
-                              </span>
-                            </>
-                          ) : r.newGrossSalary != null ? (
-                            <>
-                              <span className="font-medium text-slate-800 dark:text-slate-200">
-                                {formatSalary(r.previousGrossSalary)} → {formatSalary(r.newGrossSalary)}
-                              </span>
-                              {promotionDelta(r.previousGrossSalary, r.newGrossSalary) != null && (
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 dark:bg-slate-800/80 text-left">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">Employee</th>
+                    <th className="px-4 py-3 font-semibold">Type</th>
+                    <th className="px-4 py-3 font-semibold">Summary</th>
+                    <th className="px-4 py-3 font-semibold">Status</th>
+                    <th className="px-4 py-3 font-semibold w-28">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filtered.map((r) => (
+                    <tr key={r._id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                      <td className="px-4 py-3">
+                        <div className="min-w-0" title={[String(r.employeeId?.employee_name || r.emp_no || '—'), ((typeof r.employeeId?.designation_id === 'object' && r.employeeId?.designation_id?.name) ? String(r.employeeId.designation_id.name) : (typeof r.employeeId?.designation === 'object' && r.employeeId?.designation?.name) ? String(r.employeeId.designation.name) : ''), String(r.emp_no || '')].filter(Boolean).join(' · ')}>
+                          <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+                            {r.employeeId?.employee_name || r.emp_no || '—'}
+                          </div>
+                          {((typeof r.employeeId?.designation_id === 'object' && r.employeeId?.designation_id?.name) ? String(r.employeeId.designation_id.name) : (typeof r.employeeId?.designation === 'object' && r.employeeId?.designation?.name) ? String(r.employeeId.designation.name) : '') ? (
+                            <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+                              {((typeof r.employeeId?.designation_id === 'object' && r.employeeId?.designation_id?.name) ? String(r.employeeId.designation_id.name) : (typeof r.employeeId?.designation === 'object' && r.employeeId?.designation?.name) ? String(r.employeeId.designation.name) : '')}
+                            </div>
+                          ) : null}
+                          {r.emp_no ? (
+                            <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{r.emp_no}</div>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 capitalize">{r.requestType}</td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                        {r.requestType === 'promotion' || r.requestType === 'demotion' || r.requestType === 'increment' ? (
+                          <span className="text-xs leading-relaxed">
+                            {r.requestType === 'increment' && r.incrementAmount != null ? (
+                              <>
+                                <span className="font-medium text-slate-800 dark:text-slate-200">
+                                  {formatSalary(r.previousGrossSalary)} → {formatSalary(r.newGrossSalary)}
+                                </span>
                                 <span className="text-slate-500 dark:text-slate-400">
                                   {' '}
-                                  (
-                                  {promotionDelta(r.previousGrossSalary, r.newGrossSalary)! >= 0 ? '+' : ''}
-                                  {formatSalary(promotionDelta(r.previousGrossSalary, r.newGrossSalary)!)})
+                                  (+{formatSalary(r.incrementAmount)} increment)
                                 </span>
-                              )}
-                            </>
-                          ) : r.incrementAmount != null ? (
-                            <span>+{formatSalary(r.incrementAmount)}</span>
-                          ) : (
-                            <span>—</span>
-                          )}
-                          <span className="text-slate-400"> · </span>
-                          {r.effectivePayrollYear}-{String(r.effectivePayrollMonth || '').padStart(2, '0')}
+                              </>
+                            ) : r.newGrossSalary != null ? (
+                              <>
+                                <span className="font-medium text-slate-800 dark:text-slate-200">
+                                  {formatSalary(r.previousGrossSalary)} → {formatSalary(r.newGrossSalary)}
+                                </span>
+                                {promotionDelta(r.previousGrossSalary, r.newGrossSalary) != null && (
+                                  <span className="text-slate-500 dark:text-slate-400">
+                                    {' '}
+                                    (
+                                    {promotionDelta(r.previousGrossSalary, r.newGrossSalary)! >= 0 ? '+' : ''}
+                                    {formatSalary(promotionDelta(r.previousGrossSalary, r.newGrossSalary)!)})
+                                  </span>
+                                )}
+                              </>
+                            ) : r.incrementAmount != null ? (
+                              <span>+{formatSalary(r.incrementAmount)}</span>
+                            ) : (
+                              <span>—</span>
+                            )}
+                            <span className="text-slate-400"> · </span>
+                            {r.effectivePayrollYear}-{String(r.effectivePayrollMonth || '').padStart(2, '0')}
+                          </span>
+                        ) : (
+                          <span className="text-xs">
+                            {r.fromDepartmentId?.name || '—'} → {r.toDepartmentId?.name || '—'}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${statusClass(r.status)}`}>
+                          {r.status}
                         </span>
-                      ) : (
-                        <span className="text-xs">
-                          {r.fromDepartmentId?.name || '—'} → {r.toDepartmentId?.name || '—'}
-                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => openDetail(r._id)}
+                          className="text-indigo-600 hover:underline inline-flex items-center gap-1"
+                        >
+                          <Eye className="w-4 h-4" />
+                          View
+                        </button>
+                        {canCancelRequest(r) && (
+                          <button
+                            type="button"
+                            onClick={() => doCancel(r._id)}
+                            className="block mt-1 text-xs text-red-600 hover:underline"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                        {canDeleteRow(r) && (
+                          <button
+                            type="button"
+                            disabled={deletingId === r._id}
+                            onClick={() => doDelete(r._id)}
+                            className="mt-1 inline-flex items-center gap-1 text-xs text-red-700 dark:text-red-400 hover:underline disabled:opacity-50"
+                          >
+                            {deletingId === r._id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-3 h-3" />
+                            )}
+                            Delete
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Cards List View */}
+            <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+              {filtered.map((r) => (
+                <div key={r._id} className="p-3 space-y-2.5 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                  <div className="flex justify-between items-start gap-2">
+                    <div>
+                      <div className="font-semibold text-slate-900 dark:text-white text-[13px] leading-snug">
+                        {r.employeeId?.employee_name || r.emp_no || '—'}
+                      </div>
+                      {((typeof r.employeeId?.designation_id === 'object' && r.employeeId?.designation_id?.name) ? String(r.employeeId.designation_id.name) : (typeof r.employeeId?.designation === 'object' && r.employeeId?.designation?.name) ? String(r.employeeId.designation.name) : '') && (
+                        <div className="mt-0.5 text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+                          {((typeof r.employeeId?.designation_id === 'object' && r.employeeId?.designation_id?.name) ? String(r.employeeId.designation_id.name) : (typeof r.employeeId?.designation === 'object' && r.employeeId?.designation?.name) ? String(r.employeeId.designation.name) : '')}
+                        </div>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${statusClass(r.status)}`}>
-                        {r.status}
+                      {r.emp_no && (
+                        <div className="mt-0.5 text-[9px] text-slate-500 dark:text-slate-400 font-mono">
+                          {r.emp_no}
+                        </div>
+                      )}
+                    </div>
+                    <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0 ${statusClass(r.status)}`}>
+                      {r.status}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px] pt-0.5">
+                    <div>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Request Type</span>
+                      <span className="font-medium text-slate-800 dark:text-slate-200 capitalize">{r.requestType}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block font-sans">
+                        {r.requestType === 'promotion' || r.requestType === 'demotion' || r.requestType === 'increment' ? 'Effective Cycle' : 'Transfer Details'}
                       </span>
-                    </td>
-                    <td className="px-4 py-3">
+                      <span className="font-medium text-slate-800 dark:text-slate-200 truncate block">
+                        {r.requestType === 'promotion' || r.requestType === 'demotion' || r.requestType === 'increment' ? (
+                          `${r.effectivePayrollYear}-${String(r.effectivePayrollMonth || '').padStart(2, '0')}`
+                        ) : (
+                          `${r.fromDepartmentId?.name || '—'} → ${r.toDepartmentId?.name || '—'}`
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  {(r.requestType === 'promotion' || r.requestType === 'demotion' || r.requestType === 'increment') && (
+                    <div className="bg-slate-50 dark:bg-slate-800/30 rounded-lg p-2 text-[11px]">
+                      <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Salary Impact</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {r.requestType === 'increment' && r.incrementAmount != null ? (
+                          <>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">
+                              {formatSalary(r.previousGrossSalary)} → {formatSalary(r.newGrossSalary)}
+                            </span>
+                            <span className="text-slate-500 dark:text-slate-400 text-[9px]">
+                              (+{formatSalary(r.incrementAmount)} increment)
+                            </span>
+                          </>
+                        ) : r.newGrossSalary != null ? (
+                          <>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">
+                              {formatSalary(r.previousGrossSalary)} → {formatSalary(r.newGrossSalary)}
+                            </span>
+                            {promotionDelta(r.previousGrossSalary, r.newGrossSalary) != null && (
+                              <span className="text-slate-500 dark:text-slate-400 text-[9px]">
+                                ({promotionDelta(r.previousGrossSalary, r.newGrossSalary)! >= 0 ? '+' : ''}
+                                {formatSalary(promotionDelta(r.previousGrossSalary, r.newGrossSalary)!)})
+                              </span>
+                            )}
+                          </>
+                        ) : r.incrementAmount != null ? (
+                          <span className="font-semibold">+{formatSalary(r.incrementAmount)}</span>
+                        ) : (
+                          <span>—</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-3 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => openDetail(r._id)}
+                      className="text-indigo-600 hover:underline inline-flex items-center gap-1 text-[11px] font-semibold"
+                    >
+                      <Eye className="w-3 h-3" />
+                      View Details
+                    </button>
+                    {canCancelRequest(r) && (
                       <button
                         type="button"
-                        onClick={() => openDetail(r._id)}
-                        className="text-indigo-600 hover:underline inline-flex items-center gap-1"
+                        onClick={() => doCancel(r._id)}
+                        className="text-red-600 hover:underline text-[11px] font-semibold"
                       >
-                        <Eye className="w-4 h-4" />
-                        View
+                        Cancel
                       </button>
-                      {canCancelRequest(r) && (
-                        <button
-                          type="button"
-                          onClick={() => doCancel(r._id)}
-                          className="block mt-1 text-xs text-red-600 hover:underline"
-                        >
-                          Cancel
-                        </button>
-                      )}
-                      {canDeleteRow(r) && (
-                        <button
-                          type="button"
-                          disabled={deletingId === r._id}
-                          onClick={() => doDelete(r._id)}
-                          className="mt-1 inline-flex items-center gap-1 text-xs text-red-700 dark:text-red-400 hover:underline disabled:opacity-50"
-                        >
-                          {deletingId === r._id ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-3 h-3" />
-                          )}
-                          Delete
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    )}
+                    {canDeleteRow(r) && (
+                      <button
+                        type="button"
+                        disabled={deletingId === r._id}
+                        onClick={() => doDelete(r._id)}
+                        className="inline-flex items-center gap-1 text-[11px] text-red-700 dark:text-red-400 hover:underline disabled:opacity-50 font-semibold"
+                      >
+                        {deletingId === r._id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3 h-3" />
+                        )}
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
       {modalOpen && (
-        <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
-          <div className="bg-white dark:bg-slate-900 w-full sm:max-w-5xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto shadow-xl">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-5xl rounded-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] shadow-xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800 shrink-0">
               <h2 className="font-semibold text-lg">New request</h2>
               <button type="button" onClick={() => setModalOpen(false)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4">
+            <div className="p-4 flex-1 min-h-0 overflow-y-auto">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-4">
                   {!isEmployee ? (
@@ -1898,7 +2019,7 @@ export default function PromotionsTransfersPage() {
                           No pay-register/payroll data found for this range.
                         </div>
                       ) : (
-                        <div className="max-h-56 overflow-y-auto">
+                        <div className="max-h-56 overflow-y-auto overflow-x-auto">
                           <table className="w-full text-xs">
                             <thead className="sticky top-0 bg-white dark:bg-slate-900">
                               <tr className="text-slate-500">
@@ -2259,8 +2380,8 @@ export default function PromotionsTransfersPage() {
       )}
 
       {detail && (
-        <div className="fixed inset-0 z-[210] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
-          <div className="bg-white dark:bg-slate-900 w-full sm:max-w-5xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] shadow-xl flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-5xl rounded-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] shadow-xl flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800 shrink-0">
               <h2 className="font-semibold">Request detail</h2>
               <button type="button" onClick={() => setDetail(null)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
@@ -2270,8 +2391,8 @@ export default function PromotionsTransfersPage() {
 
             <div className="flex-1 min-h-0 flex flex-col text-sm">
               {/* Row 1: summary (left) + workflow & actions (right) */}
-              <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
-                <div className="min-h-0 overflow-y-auto p-4 space-y-3">
+              <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
+                <div className="p-4 space-y-3 lg:overflow-y-auto lg:min-h-0">
                   <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Employee</p>
                     <div className="min-w-0" title={[String(detail.employeeId?.employee_name || detail.emp_no || '—'), ((typeof detail.employeeId?.designation_id === 'object' && detail.employeeId?.designation_id?.name) ? String(detail.employeeId.designation_id.name) : (typeof detail.employeeId?.designation === 'object' && detail.employeeId?.designation?.name) ? String(detail.employeeId.designation.name) : ''), String(detail.emp_no || '')].filter(Boolean).join(' · ')}>
@@ -2370,7 +2491,7 @@ export default function PromotionsTransfersPage() {
                   )}
                 </div>
 
-                <div className="min-h-0 overflow-y-auto p-4 space-y-3">
+                <div className="p-4 space-y-3 lg:overflow-y-auto lg:min-h-0">
                   {detail.workflow?.approvalChain && detail.workflow.approvalChain.length > 0 && (
                     <PromotionApprovalTimeline workflow={detail.workflow} />
                   )}

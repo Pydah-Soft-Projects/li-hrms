@@ -3,11 +3,14 @@
 import { useEffect, useState } from 'react';
 import { Expand, X } from 'lucide-react';
 
-interface MarkerPoint {
+export interface MarkerPoint {
   latitude: number;
   longitude: number;
   label: string;
   address?: string | null;
+  photoUrl?: string | null;
+  timestamp?: string | number | Date | null;
+  odDateRange?: string | null;
 }
 
 export interface RoutePolylinePoint {

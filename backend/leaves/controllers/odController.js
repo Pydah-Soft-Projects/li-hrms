@@ -1329,7 +1329,8 @@ exports.updateOD = async (req, res) => {
       'odType', 'fromDate', 'toDate', 'purpose', 'placeVisited', 'placesVisited',
       'contactNumber', 'isHalfDay', 'halfDayType', 'expectedOutcome', 'travelDetails', 'remarks',
       'odType_extended', 'odStartTime', 'odEndTime', 'durationHours', // NEW: Hour-based OD fields
-      'photoEvidence', 'geoLocation', 'startEvidence', 'endEvidence' // Evidence fields
+      'photoEvidence', 'geoLocation', 'startEvidence', 'endEvidence', // Evidence fields
+      'locationTrail' // Add locationTrail to allowed updates for single-request submission
     ];
 
     // Super Admin can also change status
@@ -1419,17 +1420,36 @@ exports.updateOD = async (req, res) => {
           }
         }
 
+        if (field === 'locationTrail') {
+          if (Array.isArray(newValue)) {
+            newValue = newValue.map((p) => ({
+              latitude: Number(p.latitude),
+              longitude: Number(p.longitude),
+              capturedAt: p.capturedAt ? new Date(p.capturedAt) : new Date(),
+              address: p.address ? String(p.address).slice(0, 500) : undefined,
+              accuracy: p.accuracy != null && Number.isFinite(Number(p.accuracy)) ? Number(p.accuracy) : undefined,
+              heading: p.heading != null && Number.isFinite(Number(p.heading)) ? Number(p.heading) : undefined,
+              speed: p.speed != null && Number.isFinite(Number(p.speed)) ? Number(p.speed) : undefined,
+              source: p.source || 'unknown',
+            }));
+          } else {
+            return; // skip if invalid
+          }
+        }
+
         // Store change
-        changes.push({
-          field: field,
-          originalValue: originalValue,
-          newValue: newValue,
-          modifiedBy: req.user._id,
-          modifiedByName: req.user.name,
-          modifiedByRole: req.user.role,
-          modifiedAt: new Date(),
-          reason: req.body.changeReason || null,
-        });
+        if (field !== 'locationTrail') {
+          changes.push({
+            field: field,
+            originalValue: originalValue,
+            newValue: newValue,
+            modifiedBy: req.user._id,
+            modifiedByName: req.user.name,
+            modifiedByRole: req.user.role,
+            modifiedAt: new Date(),
+            reason: req.body.changeReason || null,
+          });
+        }
 
         od[field] = newValue;
       }
@@ -2726,3 +2746,56 @@ exports.updateODOutcome = async (req, res) => {
   }
 };
 
+/**
+ * @desc  Manual retro-CCL sync: credit CCL for approved ODs on dates that were
+ *        later marked as holiday/week-off in the calendar.
+ * @route POST /api/leaves/od/admin/retro-ccl-sync
+ * @access super_admin, sub_admin, hr
+ * @body  { dates: string[], employeeNumbers?: string[], dryRun?: boolean }
+ *        dates:           required — ISO date strings YYYY-MM-DD
+ *        employeeNumbers: optional — filter to specific employees; if omitted, all employees
+ *        dryRun:          optional — if true, simulate without writing (default: false)
+ */
+exports.retroCclSync = async (req, res) => {
+  try {
+    const { dates, employeeNumbers = [], dryRun = false } = req.body || {};
+
+    if (!Array.isArray(dates) || dates.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'dates[] array is required (e.g. ["2026-08-15"])',
+      });
+    }
+
+    // Validate date format
+    const invalidDates = dates.filter((d) => !/^\d{4}-\d{2}-\d{2}$/.test(String(d || '')));
+    if (invalidDates.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid date format (use YYYY-MM-DD): ${invalidDates.join(', ')}`,
+      });
+    }
+
+    const { retroSyncForDates } = require('../services/odCclRetroSyncService');
+    const result = await retroSyncForDates(
+      dates,
+      Array.isArray(employeeNumbers) ? employeeNumbers : [],
+      Boolean(dryRun)
+    );
+
+    return res.status(200).json({
+      success: true,
+      dryRun: Boolean(dryRun),
+      credited: result.credited,
+      skipped: result.skipped,
+      errors: result.errors,
+      details: result.details,
+    });
+  } catch (error) {
+    console.error('[retroCclSync] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Retro CCL sync failed',
+    });
+  }
+};

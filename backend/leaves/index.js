@@ -85,6 +85,9 @@ router.get('/od/:id', odController.getOD);
 // Append draft OD GPS trail points (continuous tracking while draft)
 router.post('/od/:id/location-trail', odController.appendODLocationTrail);
 
+// Admin: Retroactive CCL sync — credit CCL for approved ODs on dates set as holiday/WO after apply
+router.post('/od/admin/retro-ccl-sync', authorize('hr', 'sub_admin', 'super_admin'), odController.retroCclSync);
+
 // Apply for OD
 router.post('/od', odController.applyOD);
 

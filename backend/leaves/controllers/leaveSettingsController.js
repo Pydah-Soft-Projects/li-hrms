@@ -26,6 +26,9 @@ const DEFAULT_OD_TYPES = [
   { code: 'OT', name: 'Other', description: 'Other official duty', color: '#6b7280', sortOrder: 7 },
 ];
 
+// Default Complaint types
+const DEFAULT_COMPLAINT_TYPES = [];
+
 // Default statuses
 const DEFAULT_STATUSES = [
   { code: 'draft', name: 'Draft', description: 'Not yet submitted', color: '#9ca3af', canEmployeeEdit: true, canEmployeeCancel: true, sortOrder: 1 },
@@ -48,17 +51,17 @@ exports.getSettings = async (req, res) => {
   try {
     const { type } = req.params;
 
-    if (!['leave', 'od', 'ccl'].includes(type)) {
+    if (!['leave', 'od', 'ccl', 'complaint'].includes(type)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid type. Must be "leave", "od", or "ccl"',
+        error: 'Invalid type. Must be "leave", "od", "ccl", or "complaint"',
       });
     }
 
     let settings = await LeaveSettings.findOne({ type, isActive: true });
 
     // CCL doesn't use types array; workflow only
-    const defaultTypes = type === 'leave' ? DEFAULT_LEAVE_TYPES : (type === 'od' ? DEFAULT_OD_TYPES : []);
+    const defaultTypes = type === 'leave' ? DEFAULT_LEAVE_TYPES : (type === 'od' ? DEFAULT_OD_TYPES : (type === 'complaint' ? DEFAULT_COMPLAINT_TYPES : []));
     // If no settings exist, return defaults
     if (!settings) {
       settings = {
@@ -131,10 +134,10 @@ exports.saveSettings = async (req, res) => {
     console.log('Body:', JSON.stringify(req.body, null, 2));
     console.log('Settings received:', JSON.stringify(settings, null, 2));
 
-    if (!['leave', 'od', 'ccl'].includes(type)) {
+    if (!['leave', 'od', 'ccl', 'complaint'].includes(type)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid type. Must be "leave", "od", or "ccl"',
+        error: 'Invalid type. Must be "leave", "od", "ccl", or "complaint"',
       });
     }
 
@@ -193,8 +196,7 @@ exports.saveSettings = async (req, res) => {
       // Create new
       leaveSettings = new LeaveSettings({
         type,
-        types: types || (type === 'leave' ? DEFAULT_LEAVE_TYPES : DEFAULT_OD_TYPES),
-        types: types || (type === 'leave' ? DEFAULT_LEAVE_TYPES : DEFAULT_OD_TYPES),
+        types: types || (type === 'leave' ? DEFAULT_LEAVE_TYPES : (type === 'od' ? DEFAULT_OD_TYPES : (type === 'complaint' ? DEFAULT_COMPLAINT_TYPES : []))),
         statuses: statuses || DEFAULT_STATUSES,
         workflow: workflow || {},
         settings: settings || {},
@@ -228,7 +230,7 @@ exports.getTypes = async (req, res) => {
   try {
     const { type } = req.params;
 
-    if (!['leave', 'od'].includes(type)) {
+    if (!['leave', 'od', 'complaint'].includes(type)) {
       return res.status(400).json({
         success: false,
         error: 'Invalid type',
@@ -236,7 +238,7 @@ exports.getTypes = async (req, res) => {
     }
 
     const settings = await LeaveSettings.findOne({ type, isActive: true });
-    const types = settings?.types || (type === 'leave' ? DEFAULT_LEAVE_TYPES : DEFAULT_OD_TYPES);
+    const types = settings?.types || (type === 'leave' ? DEFAULT_LEAVE_TYPES : (type === 'od' ? DEFAULT_OD_TYPES : (type === 'complaint' ? DEFAULT_COMPLAINT_TYPES : [])));
 
     // Filter to active types only
     const activeTypes = types.filter(t => t.isActive !== false);
@@ -262,7 +264,7 @@ exports.addType = async (req, res) => {
     const { type } = req.params;
     const typeData = req.body;
 
-    if (!['leave', 'od', 'ccl'].includes(type)) {
+    if (!['leave', 'od', 'ccl', 'complaint'].includes(type)) {
       return res.status(400).json({
         success: false,
         error: 'Invalid type',
@@ -282,7 +284,7 @@ exports.addType = async (req, res) => {
       // Create settings with defaults plus new type
       settings = new LeaveSettings({
         type,
-        types: type === 'leave' ? [...DEFAULT_LEAVE_TYPES, typeData] : [...DEFAULT_OD_TYPES, typeData],
+        types: type === 'leave' ? [...DEFAULT_LEAVE_TYPES, typeData] : (type === 'od' ? [...DEFAULT_OD_TYPES, typeData] : (type === 'complaint' ? [...DEFAULT_COMPLAINT_TYPES, typeData] : [typeData])),
         statuses: DEFAULT_STATUSES,
         createdBy: req.user._id,
       });

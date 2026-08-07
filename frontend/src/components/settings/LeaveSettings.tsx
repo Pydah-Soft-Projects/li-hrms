@@ -16,7 +16,7 @@ import LeavePolicy from './leave/LeavePolicy';
 import LeaveWorkflow from './leave/LeaveWorkflow';
 import { leaveSettingsLabels, normalizeLeaveTypeItem, serializeLeaveTypesForSave } from './leave/leaveSettingsLabels';
 
-const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) => {
+const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' | 'complaint' }) => {
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
 

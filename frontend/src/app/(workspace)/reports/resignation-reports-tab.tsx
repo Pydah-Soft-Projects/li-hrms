@@ -767,7 +767,7 @@ export default function ResignationReportsTab() {
                     </p>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     <button
                         onClick={handleExportPDF}
                         disabled={loadingExportPdf || loadingExportExcel || loadingData}
@@ -795,7 +795,7 @@ export default function ResignationReportsTab() {
                         <Filter className="h-3.5 w-3.5" />
                         Hierarchy Filters
                     </h4>
-                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm dark:bg-slate-900 dark:border-slate-800 p-5 grid gap-4 grid-cols-2">
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm dark:bg-slate-900 dark:border-slate-800 p-5 grid gap-4 grid-cols-1 sm:grid-cols-2">
                         <MultiSelect
                             label="Division"
                             options={divisions.map(d => ({ id: d._id, name: d.name }))}
