@@ -4556,6 +4556,16 @@ export default function AttendancePage() {
                                   Partial
                                 </th>
                               );
+                            case 'absent':
+                              return (
+                                <th
+                                  key={colKey}
+                                  className={`w-[70px] ${edge} border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-red-700 dark:border-slate-700 dark:bg-red-900/20 bg-red-50`}
+                                  title="Absent days"
+                                >
+                                  Absent
+                                </th>
+                              );
                             case 'weekOffs':
                               return (
                                 <th
@@ -5218,6 +5228,17 @@ export default function AttendancePage() {
                                             className={`${edge} border-slate-200 bg-amber-50 px-2 py-2 text-center text-[11px] font-bold text-amber-900 dark:border-slate-700 dark:bg-amber-900/20 dark:text-amber-200 cursor-pointer hover:bg-amber-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'partial' ? 'ring-2 ring-amber-500 ring-inset shadow-inner' : ''}`}
                                           >
                                             {partialContributionTotal.toFixed(2)}
+                                          </td>
+                                        );
+                                      case 'absent':
+                                        return (
+                                          <td
+                                            key={colKey}
+                                            title="Click: highlight absent days"
+                                            onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'absent', 'absent', item)}
+                                            className={`${edge} border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300 cursor-pointer hover:bg-red-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'absent' ? 'ring-2 ring-red-500 ring-inset shadow-inner' : ''}`}
+                                          >
+                                            {monthAbsentUnits}
                                           </td>
                                         );
                                       case 'weekOffs':
