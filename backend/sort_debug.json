@@ -1,9 +1,0 @@
-{
-  "query": {
-    "view": "summary",
-    "is_active": "true",
-    "search": "2144",
-    "limit": "50"
-  },
-  "date": "2026-08-08T04:57:55.058Z"
-}

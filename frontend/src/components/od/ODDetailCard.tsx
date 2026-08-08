@@ -328,6 +328,10 @@ export function ODDetailCard({ data, onSubmitOutClick, className = '', compact =
   const singleLat = inGeo?.latitude ?? data.photoEvidence?.exifLocation?.latitude;
   const singleLng = inGeo?.longitude ?? data.photoEvidence?.exifLocation?.longitude;
 
+  const hasBiometric = Boolean(data.coEligibilityInfo?.punchDetails?.start || data.coEligibilityInfo?.punchDetails?.end);
+  const hasPhotoEvidence = Boolean(data.startEvidence?.submittedAt || data.endEvidence?.submittedAt);
+  const bothTimingsPresent = hasBiometric && hasPhotoEvidence;
+
   return (
     <div className={`relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg dark:border-slate-800 dark:bg-slate-900 ${className}`}>
       <div className="p-5 sm:p-6 space-y-6">
@@ -537,131 +541,90 @@ export function ODDetailCard({ data, onSubmitOutClick, className = '', compact =
               </div>
             )}
 
-            {/* 2. Biometric Punches (Taken from Attendance) */}
-            {(data.coEligibilityInfo?.punchDetails?.start || data.coEligibilityInfo?.punchDetails?.end) && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/10 p-4 dark:border-emerald-800/40 dark:bg-emerald-950/20">
-                <div className="flex items-center gap-1.5 text-emerald-750 dark:text-emerald-400 mb-3">
-                  <Clock3 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <span className="text-xs font-black uppercase tracking-wider">Biometric Punches (Taken from Attendance)</span>
-                </div>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex items-center gap-6 flex-wrap">
-                    {data.coEligibilityInfo.punchDetails.start && (
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white font-semibold">
-                          <Clock className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Work In</p>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white">
-                            {formatTime(data.coEligibilityInfo.punchDetails.start)}
-                          </p>
-                        </div>
+            {/* Timings Side-by-Side: Biometric Punches vs. Photo Evidence */}
+            {(hasBiometric || hasPhotoEvidence) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* 2. Biometric Punches (Taken from Attendance) */}
+                {hasBiometric && (
+                  <div className={`relative rounded-xl p-5 border transition-all duration-300 ${bothTimingsPresent ? '' : 'md:col-span-2'} ${
+                    data.isCOEligible 
+                      ? 'border-emerald-500 bg-gradient-to-br from-emerald-50/15 to-emerald-500/[0.06] dark:border-emerald-500/80 dark:from-emerald-950/20 dark:to-emerald-500/[0.03] ring-1 ring-emerald-500/10 shadow-md' 
+                      : 'border-slate-200 bg-slate-50/50 dark:border-slate-800/65 dark:bg-slate-850/25 opacity-75 hover:opacity-100'
+                  }`}>
+                    {data.isCOEligible && (
+                      <span className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white dark:bg-emerald-500 flex items-center gap-1 shadow-sm">
+                        <CheckCircle2 className="w-3 h-3" /> Used for OD Duration
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-400 mb-1">
+                      <Clock3 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span className="text-xs font-black uppercase tracking-wider">Biometric Punches</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mb-3.5">Taken from Attendance Logs</p>
+                    
+                    <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Work In</p>
+                        <p className="text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 truncate">
+                          {data.coEligibilityInfo?.punchDetails?.start ? formatTime(data.coEligibilityInfo.punchDetails.start) : '—'}
+                        </p>
                       </div>
-                    )}
-
-                    {data.coEligibilityInfo.punchDetails.start && data.coEligibilityInfo.punchDetails.end && (
-                      <div className="hidden sm:block text-slate-350 dark:text-slate-650">
-                        <ArrowRight className="w-4 h-4" />
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Work Out</p>
+                        <p className="text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 truncate">
+                          {data.coEligibilityInfo?.punchDetails?.end ? formatTime(data.coEligibilityInfo.punchDetails.end) : '—'}
+                        </p>
                       </div>
-                    )}
-
-                    {data.coEligibilityInfo.punchDetails.end && (
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white font-semibold">
-                          <Clock className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Work Out</p>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white">
-                            {formatTime(data.coEligibilityInfo.punchDetails.end)}
-                          </p>
-                        </div>
+                      <div className="border-l border-slate-200 dark:border-slate-700/60 pl-3">
+                        <p className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider">Duration</p>
+                        <p className="text-sm font-black text-indigo-600 dark:text-indigo-400 mt-0.5 truncate">
+                          {formatHoursMins(calculateTimeDuration(data.coEligibilityInfo?.punchDetails?.start, data.coEligibilityInfo?.punchDetails?.end)) || '—'}
+                        </p>
                       </div>
-                    )}
-
-                    {data.coEligibilityInfo.punchDetails.start && data.coEligibilityInfo.punchDetails.end && (
-                      <>
-                        <div className="hidden sm:block text-slate-350 dark:text-slate-650 font-light">|</div>
-                        <div className="flex items-center gap-2.5">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white font-semibold">
-                            <Clock3 className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Duration</p>
-                            <p className="text-sm font-bold text-slate-900 dark:text-white">
-                              {formatHoursMins(calculateTimeDuration(data.coEligibilityInfo.punchDetails.start, data.coEligibilityInfo.punchDetails.end)) || '—'}
-                            </p>
-                          </div>
-                        </div>
-                      </>
-                    )}
+                    </div>
                   </div>
-                </div>
-              </div>
-            )}
+                )}
 
-            {/* 3. Photo Evidence Timestamps (Taken from OD Images) */}
-            {(data.startEvidence?.submittedAt || data.endEvidence?.submittedAt) && (
-              <div className="rounded-xl border border-purple-200 bg-purple-50/10 p-4 dark:border-purple-800/40 dark:bg-purple-950/20">
-                <div className="flex items-center gap-1.5 text-purple-750 dark:text-purple-400 mb-3">
-                  <Clock3 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  <span className="text-xs font-black uppercase tracking-wider">Photo Evidence Timestamps (Taken from OD Images)</span>
-                </div>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex items-center gap-6 flex-wrap">
-                    {data.startEvidence?.submittedAt && (
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-600 text-white font-semibold">
-                          <Clock className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Check In Photo</p>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white">
-                            {formatTime(data.startEvidence.submittedAt)}
-                          </p>
-                        </div>
+                {/* 3. Photo Evidence Timestamps (Taken from OD Images) */}
+                {hasPhotoEvidence && (
+                  <div className={`relative rounded-xl p-5 border transition-all duration-300 ${bothTimingsPresent ? '' : 'md:col-span-2'} ${
+                    !data.isCOEligible 
+                      ? 'border-purple-500 bg-gradient-to-br from-purple-50/15 to-purple-500/[0.06] dark:border-purple-500/80 dark:from-purple-950/20 dark:to-purple-500/[0.03] ring-1 ring-purple-500/10 shadow-md' 
+                      : 'border-slate-200 bg-slate-50/50 dark:border-slate-800/65 dark:bg-slate-800/20 opacity-75 hover:opacity-100'
+                  }`}>
+                    {!data.isCOEligible && (
+                      <span className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-600 text-white dark:bg-purple-500 flex items-center gap-1 shadow-sm">
+                        <CheckCircle2 className="w-3 h-3" /> Used for OD Duration
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1.5 text-purple-800 dark:text-purple-400 mb-1">
+                      <Clock3 className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                      <span className="text-xs font-black uppercase tracking-wider">Photo Evidence Timestamps</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mb-3.5">Taken from OD Images</p>
+
+                    <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Check In Photo</p>
+                        <p className="text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 truncate">
+                          {data.startEvidence?.submittedAt ? formatTime(data.startEvidence.submittedAt) : '—'}
+                        </p>
                       </div>
-                    )}
-
-                    {data.startEvidence?.submittedAt && data.endEvidence?.submittedAt && (
-                      <div className="hidden sm:block text-slate-350 dark:text-slate-650">
-                        <ArrowRight className="w-4 h-4" />
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Check Out Photo</p>
+                        <p className="text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 truncate">
+                          {data.endEvidence?.submittedAt ? formatTime(data.endEvidence.submittedAt) : '—'}
+                        </p>
                       </div>
-                    )}
-
-                    {data.endEvidence?.submittedAt && (
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-600 text-white font-semibold">
-                          <Clock className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Check Out Photo</p>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white">
-                            {formatTime(data.endEvidence.submittedAt)}
-                          </p>
-                        </div>
+                      <div className="border-l border-slate-200 dark:border-slate-700/60 pl-3">
+                        <p className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider">Duration</p>
+                        <p className="text-sm font-black text-indigo-600 dark:text-indigo-400 mt-0.5 truncate">
+                          {formatHoursMins(calculateTimeDuration(data.startEvidence?.submittedAt, data.endEvidence?.submittedAt)) || '—'}
+                        </p>
                       </div>
-                    )}
-
-                    {data.startEvidence?.submittedAt && data.endEvidence?.submittedAt && (
-                      <>
-                        <div className="hidden sm:block text-slate-350 dark:text-slate-650 font-light">|</div>
-                        <div className="flex items-center gap-2.5">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white font-semibold">
-                            <Clock3 className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Duration</p>
-                            <p className="text-sm font-bold text-slate-900 dark:text-white">
-                              {formatHoursMins(calculateTimeDuration(data.startEvidence.submittedAt, data.endEvidence.submittedAt)) || '—'}
-                            </p>
-                          </div>
-                        </div>
-                      </>
-                    )}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
           </div>

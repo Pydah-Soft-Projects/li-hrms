@@ -564,12 +564,7 @@ exports.getAllEmployees = async (req, res) => {
     let sortObj = EMP_NO_SORT;
     let collationObj = EMP_NO_COLLATION;
 
-    const fs = require('fs');
-    try {
-      fs.writeFileSync('sort_debug.json', JSON.stringify({ query: req.query, date: new Date() }, null, 2));
-    } catch (e) {
-      console.error('Failed to write sort_debug.json:', e);
-    }
+
 
     console.log('[backend] getAllEmployees sorting params:', { sortBy, sortOrder });
 
