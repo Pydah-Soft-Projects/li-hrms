@@ -7,9 +7,13 @@ jest.mock('../../../attendance/model/AttendanceDaily', () => ({
 jest.mock('../../../shifts/model/PreScheduledShift', () => ({
   findOne: jest.fn(),
 }));
+jest.mock('../../../shifts/model/Shift', () => ({
+  findById: jest.fn(),
+}));
 
 const AttendanceDaily = require('../../../attendance/model/AttendanceDaily');
 const PreScheduledShift = require('../../../shifts/model/PreScheduledShift');
+const Shift = require('../../../shifts/model/Shift');
 const {
   getPunchBasedOdSuggestionForRecord,
   FULL_DAY_HOURS_THRESHOLD,
@@ -20,6 +24,7 @@ const {
 beforeEach(() => {
   AttendanceDaily.findOne.mockReset();
   PreScheduledShift.findOne.mockReset();
+  Shift.findById.mockReset();
   PreScheduledShift.findOne.mockReturnValue({
     select: jest.fn().mockReturnThis(),
     lean: jest.fn().mockResolvedValue({ status: 'WO' }),
@@ -156,3 +161,66 @@ describe('extractPunchTimingsFromRecord', () => {
     expect(r.durationHours).toBe(5.5);
   });
 });
+
+describe('resolveHolWoPunchOdShapeWithShift', () => {
+  const { resolveHolWoPunchOdShapeWithShift } = require('../../utils/holwoOdPunchResolver');
+
+  it('suggests full_day when hours >= 75% of shift duration', () => {
+    const r = resolveHolWoPunchOdShapeWithShift(
+      {
+        totalWorkingHours: 6,
+        shifts: [{ status: 'PRESENT', inTime: new Date() }],
+      },
+      { duration: 8 }
+    );
+    expect(r.hasPunches).toBe(true);
+    expect(r.suggestedOdTypeExtended).toBe('full_day');
+  });
+
+  it('suggests half_day when hours < 75% but >= 40% of shift duration', () => {
+    const r = resolveHolWoPunchOdShapeWithShift(
+      {
+        totalWorkingHours: 4,
+        shifts: [{ status: 'PRESENT', inTime: new Date() }],
+      },
+      { duration: 8 }
+    );
+    expect(r.hasPunches).toBe(true);
+    expect(r.suggestedOdTypeExtended).toBe('half_day');
+  });
+
+  it('suggests insufficient_punches when hours < 40% of shift duration', () => {
+    const r = resolveHolWoPunchOdShapeWithShift(
+      {
+        totalWorkingHours: 3,
+        shifts: [{ status: 'PRESENT', inTime: new Date() }],
+      },
+      { duration: 8 }
+    );
+    expect(r.hasPunches).toBe(false);
+    expect(r.punchContextDetail).toBe('insufficient_punches');
+  });
+
+  it('falls back to hardcoded threshold when shift duration is missing or zero', () => {
+    const r1 = resolveHolWoPunchOdShapeWithShift(
+      {
+        totalWorkingHours: 3.5,
+        shifts: [{ status: 'PRESENT', inTime: new Date() }],
+      },
+      null
+    );
+    expect(r1.hasPunches).toBe(true);
+    expect(r1.suggestedOdTypeExtended).toBe('half_day');
+
+    const r2 = resolveHolWoPunchOdShapeWithShift(
+      {
+        totalWorkingHours: 4.5,
+        shifts: [{ status: 'PRESENT', inTime: new Date() }],
+      },
+      null
+    );
+    expect(r2.hasPunches).toBe(true);
+    expect(r2.suggestedOdTypeExtended).toBe('full_day');
+  });
+});
+

@@ -197,9 +197,19 @@ export default function DualLocationMapInner({ markers, routePolyline, height }:
     if (!markers?.length && finalRoute.length < 2) return;
 
     const map = L.map(el, { zoom: 15, scrollWheelZoom: false });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    
+    const normalLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(map);
+    });
+
+    const googleHybridLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+      maxZoom: 20,
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+    });
+
+    // Default to Google Hybrid so satellite view includes place names.
+    googleHybridLayer.addTo(map);
+    L.control.layers({ 'Satellite (Google Hybrid)': googleHybridLayer, Street: normalLayer }).addTo(map);
 
     const bounds: L.LatLngTuple[] = [];
     const outMarker = (markers || []).find((m) => String(m.label || '').toUpperCase().includes('OUT'));
@@ -346,9 +356,6 @@ export default function DualLocationMapInner({ markers, routePolyline, height }:
               <a href="${m.photoUrl}" target="_blank" rel="noopener noreferrer" title="Click to view full photo">
                 <img src="${m.photoUrl}" style="width: 100%; height: 100%; object-fit: cover; aspect-ratio: 1/1; display: block;" alt="${m.label} Photo Evidence" />
               </a>
-              <span style="position: absolute; bottom: 4px; right: 4px; background: rgba(15,23,42,0.85); color: #ffffff; font-size: 8px; font-weight: 700; padding: 1.5px 5px; border-radius: 4px; backdrop-filter: blur(4px); text-transform: uppercase;">
-                1:1 Photo
-              </span>
             </div>
           ` : ''}
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; gap: 4px;">

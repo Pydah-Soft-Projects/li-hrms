@@ -340,18 +340,27 @@ const mapListEmployeeRow = (emp) => ({
   salaryStatus: emp.salaryStatus || null,
 });
 
-const applyDepartmentIdFilter = (filters, department_id, department_ids) => {
-  const raw = department_ids || department_id;
-  if (!raw) return;
-  const ids = String(raw)
+const applyIdFilter = (filters, fieldName, value) => {
+  if (!value) return;
+  const ids = String(value)
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
   if (ids.length === 1) {
-    filters.department_id = ids[0];
+    if (mongoose.Types.ObjectId.isValid(ids[0])) {
+      filters[fieldName] = new mongoose.Types.ObjectId(ids[0]);
+    } else {
+      filters[fieldName] = ids[0];
+    }
   } else if (ids.length > 1) {
-    filters.department_id = { $in: ids };
+    filters[fieldName] = {
+      $in: ids.map((id) => (mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id)),
+    };
   }
+};
+
+const applyDepartmentIdFilter = (filters, department_id, department_ids) => {
+  applyIdFilter(filters, 'department_id', department_ids || department_id);
 };
 
 const buildActiveEmployeeFilters = (reqQuery, scopeFilter) => {
@@ -363,6 +372,7 @@ const buildActiveEmployeeFilters = (reqQuery, scopeFilter) => {
     department_ids,
     designation_id,
     employee_group_id,
+    qualificationStatus,
     includeLeft,
     startDate,
     endDate,
@@ -371,10 +381,11 @@ const buildActiveEmployeeFilters = (reqQuery, scopeFilter) => {
 
   const filters = { ...scopeFilter };
   if (is_active !== undefined) filters.is_active = is_active === 'true';
-  if (division_id || divisionId) filters.division_id = division_id || divisionId;
-  applyDepartmentIdFilter(filters, department_id, department_ids);
+  applyIdFilter(filters, 'division_id', division_id || divisionId);
+  applyIdFilter(filters, 'department_id', department_id || department_ids);
   if (designation_id) filters.designation_id = designation_id;
   if (employee_group_id) filters.employee_group_id = employee_group_id;
+  if (qualificationStatus) filters.qualificationStatus = qualificationStatus;
 
   if (search) {
     const searchRegex = new RegExp(search, 'i');
@@ -534,6 +545,8 @@ exports.getAllEmployees = async (req, res) => {
       page = 1,
       limit = 50,
       view = 'full',
+      sortBy,
+      sortOrder,
     } = req.query;
     const { scopeFilter } = req;
     const settings = await getEmployeeSettings();
@@ -548,13 +561,56 @@ exports.getAllEmployees = async (req, res) => {
 
     const query = { ...filters };
 
+    let sortObj = EMP_NO_SORT;
+    let collationObj = EMP_NO_COLLATION;
+
+
+
+    console.log('[backend] getAllEmployees sorting params:', { sortBy, sortOrder });
+
+    if (sortBy) {
+      let sortKey = sortBy;
+      if (sortBy === 'employee_name') {
+        sortKey = 'employee_name';
+      } else if (sortBy === 'emp_no') {
+        sortKey = 'emp_no';
+      } else if (sortBy === 'division.name' || sortBy === 'division_id' || sortBy === 'division') {
+        sortKey = 'division_id';
+      } else if (sortBy === 'department.name' || sortBy === 'department_id' || sortBy === 'department') {
+        sortKey = 'department_id';
+      } else if (sortBy === 'designation.name' || sortBy === 'designation_id' || sortBy === 'designation') {
+        sortKey = 'designation_id';
+      } else if (sortBy === 'phone_number') {
+        sortKey = 'phone_number';
+      } else if (sortBy === 'qualificationStatus') {
+        sortKey = 'qualificationStatus';
+      }
+
+      const dir = sortOrder === 'desc' ? -1 : 1;
+      if (sortBy === 'status') {
+        sortObj = { leftDate: dir, is_active: -dir };
+        collationObj = undefined;
+      } else if (sortKey === 'emp_no') {
+        sortObj = { emp_no: dir };
+        collationObj = EMP_NO_COLLATION;
+      } else {
+        sortObj = { [sortKey]: dir };
+        collationObj = { locale: 'en', strength: 2 };
+      }
+    }
+
     let employeeQuery = Employee.find(query)
       .populate('division_id', 'name code')
       .populate('department_id', 'name code')
       .populate('designation_id', 'name code')
       .populate('employee_group_id', 'name code isActive')
-      .sort(EMP_NO_SORT)
-      .collation(EMP_NO_COLLATION)
+      .sort(sortObj);
+
+    if (collationObj) {
+      employeeQuery = employeeQuery.collation(collationObj);
+    }
+
+    employeeQuery = employeeQuery
       .skip(skip)
       .limit(limitNum);
 
@@ -2427,8 +2483,8 @@ exports.bulkResendCredentials = async (req, res) => {
     // Reuse filter logic similar to getAllEmployees
     const filters = { ...req.scopeFilter };
 
-    if (divisionId) filters.division_id = divisionId;
-    if (departmentId) filters.department_id = departmentId;
+    applyIdFilter(filters, 'division_id', divisionId);
+    applyIdFilter(filters, 'department_id', departmentId);
     if (designationId) filters.designation_id = designationId;
 
     if (search) {
@@ -2566,8 +2622,8 @@ exports.exportEmployees = async (req, res) => {
       filters.emp_no = empNo;
     } else if (queryFilters) {
       if (queryFilters.is_active !== undefined) filters.is_active = queryFilters.is_active === 'true' || queryFilters.is_active === true;
-      if (queryFilters.division_id) filters.division_id = queryFilters.division_id;
-      if (queryFilters.department_id) filters.department_id = queryFilters.department_id;
+      applyIdFilter(filters, 'division_id', queryFilters.division_id);
+      applyIdFilter(filters, 'department_id', queryFilters.department_id);
       if (queryFilters.designation_id) filters.designation_id = queryFilters.designation_id;
       if (queryFilters.employee_group_id) filters.employee_group_id = queryFilters.employee_group_id;
 

@@ -388,13 +388,23 @@ function buildMetadataScopeFilter(user, modelName, selectedDivisionId = null) {
     const scope = user.dataScope || getDefaultScope(user.role);
     const isSuperAdmin = user.role === 'super_admin';
 
+    // Parse division IDs if present
+    const divisionIds = selectedDivisionId
+        ? String(selectedDivisionId).split(',').map(s => s.trim()).filter(Boolean)
+        : [];
+
     // Super Admin / Global scope sees transparency
     if (isSuperAdmin || scope === 'all') {
         const filter = {};
-        if (selectedDivisionId) {
-            if (modelName === 'Division') filter._id = toObjectId(selectedDivisionId);
-            else if (modelName === 'Department') filter.divisions = toObjectId(selectedDivisionId);
-            else if (modelName === 'User') filter['divisionMapping.division'] = selectedDivisionId;
+        if (divisionIds.length > 0) {
+            const objectIds = divisionIds.map(toObjectId);
+            if (modelName === 'Division') {
+                filter._id = objectIds.length === 1 ? objectIds[0] : { $in: objectIds };
+            } else if (modelName === 'Department') {
+                filter.divisions = objectIds.length === 1 ? objectIds[0] : { $in: objectIds };
+            } else if (modelName === 'User') {
+                filter['divisionMapping.division'] = divisionIds.length === 1 ? divisionIds[0] : { $in: divisionIds };
+            }
         }
         return filter;
     }
@@ -410,34 +420,35 @@ function buildMetadataScopeFilter(user, modelName, selectedDivisionId = null) {
 
     const allowedDivisions = user.divisionMapping.map(m => (m.division?._id || m.division).toString());
 
+    // Intersect allowedDivisions with selected divisions
+    const activeDivisions = divisionIds.length > 0
+        ? allowedDivisions.filter(id => divisionIds.includes(id))
+        : allowedDivisions;
+
     switch (modelName) {
         case 'Division':
-            if (selectedDivisionId) {
-                // If they ask for a specific division, check if they are allowed to see it
-                if (allowedDivisions.includes(selectedDivisionId.toString())) {
-                    filter._id = selectedDivisionId;
-                } else {
-                    filter._id = null;
-                }
-            } else {
-                filter._id = { $in: allowedDivisions };
-            }
+            filter._id = { $in: activeDivisions };
             return filter;
 
         case 'Department':
             // Per-Division Scoping Logic (use ObjectId so Department.divisions array matches reliably)
-            if (selectedDivisionId) {
-                const mapping = user.divisionMapping.find(m => (m.division?._id || m.division).toString() === selectedDivisionId.toString());
-                if (!mapping) return { _id: null };
-
-                const specificDepts = (mapping.departments || []).map(d => (d?._id || d).toString());
-                if (specificDepts.length > 0) {
+            if (divisionIds.length > 0) {
+                const activeConditions = [];
+                activeDivisions.forEach(divId => {
+                    const mapping = user.divisionMapping.find(m => (m.division?._id || m.division).toString() === divId);
+                    if (mapping) {
+                        const specificDepts = (mapping.departments || []).map(d => (d?._id || d).toString());
+                        if (specificDepts.length > 0) {
                     // Mapped department IDs are authoritative — do not also require Department.divisions
                     // (master links are often incomplete while employees / attendance still show those depts).
-                    filter._id = { $in: specificDepts.map(toObjectId) };
-                } else {
-                    filter.divisions = toObjectId(selectedDivisionId);
-                }
+                            activeConditions.push({ divisions: toObjectId(divId), _id: { $in: specificDepts.map(toObjectId) } });
+                        } else {
+                            activeConditions.push({ divisions: toObjectId(divId) });
+                        }
+                    }
+                });
+                if (activeConditions.length === 0) return { _id: null };
+                filter.$or = activeConditions;
             } else {
                 // Granular Intersection Logic: Or condition across all allowed mappings
                 const mappingConditions = user.divisionMapping.map(m => {
@@ -461,9 +472,10 @@ function buildMetadataScopeFilter(user, modelName, selectedDivisionId = null) {
             // Users are matched if they have ANY overlap in divisionMapping with the viewer
             const userOrConditions = [];
 
-            const relevantMappings = selectedDivisionId
-                ? user.divisionMapping.filter(m => (m.division?._id || m.division).toString() === selectedDivisionId.toString())
-                : user.divisionMapping;
+            const relevantMappings = user.divisionMapping.filter(m => {
+                const divId = (m.division?._id || m.division).toString();
+                return activeDivisions.includes(divId);
+            });
 
             relevantMappings.forEach(mapping => {
                 const divId = (mapping.division?._id || mapping.division).toString();

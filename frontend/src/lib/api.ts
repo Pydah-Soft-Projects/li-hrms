@@ -2539,6 +2539,7 @@ export const api = {
       division_id?: string;
       designation_id?: string;
       employee_group_id?: string;
+      qualificationStatus?: string;
       includeLeft?: boolean;
       search?: string;
       startDate?: string;
@@ -2546,6 +2547,8 @@ export const api = {
       page?: number;
       limit?: number;
       view?: 'full' | 'summary' | 'list';
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
     },
     fetchInit?: RequestInit
   ) => {
@@ -2556,6 +2559,7 @@ export const api = {
     if (filters?.division_id) params.append('division_id', filters.division_id);
     if (filters?.designation_id) params.append('designation_id', filters.designation_id);
     if (filters?.employee_group_id) params.append('employee_group_id', filters.employee_group_id);
+    if (filters?.qualificationStatus) params.append('qualificationStatus', filters.qualificationStatus);
     if (filters?.includeLeft !== undefined) params.append('includeLeft', String(filters.includeLeft));
     if (filters?.search) params.append('search', filters.search);
     if (filters?.startDate) params.append('startDate', filters.startDate);
@@ -2563,6 +2567,8 @@ export const api = {
     if (filters?.page) params.append('page', String(filters.page));
     if (filters?.limit !== undefined) params.append('limit', String(filters.limit));
     if (filters?.view) params.append('view', filters.view);
+    if (filters?.sortBy) params.append('sortBy', filters.sortBy);
+    if (filters?.sortOrder) params.append('sortOrder', filters.sortOrder);
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/employees${query}`, { method: 'GET', ...fetchInit });
   },
@@ -2576,12 +2582,15 @@ export const api = {
       division_id?: string;
       designation_id?: string;
       employee_group_id?: string;
+      qualificationStatus?: string;
       includeLeft?: boolean;
       search?: string;
       startDate?: string;
       endDate?: string;
       page?: number;
       limit?: number;
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
     },
     fetchInit?: RequestInit
   ) => {

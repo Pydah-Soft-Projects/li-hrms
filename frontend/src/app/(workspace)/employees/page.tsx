@@ -293,6 +293,52 @@ const renderCustomFieldsForSystemGroup = (groupId: string, hardcodedFieldIds: st
   });
 };
 
+const isProfileFieldFilled = (value: any): boolean => {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value).length > 0;
+  return true;
+};
+
+const getEmployeeProfileCompletion = (employee: any): number => {
+  const coreFields = [
+    employee.employee_name,
+    employee.emp_no,
+    employee.division?.name || employee.division_id,
+    employee.department?.name || employee.department_id,
+    employee.designation?.name || employee.designation_id,
+    employee.doj,
+    employee.dob,
+    employee.gender,
+    employee.marital_status,
+    employee.blood_group,
+    employee.phone_number,
+    employee.email,
+    employee.address,
+    employee.location,
+    employee.aadhar_number,
+    employee.bank_account_no,
+    employee.ifsc_code,
+    employee.salary_mode,
+    employee.profilePhoto,
+  ];
+
+  const dynamicValues = employee?.dynamicFields && typeof employee.dynamicFields === 'object'
+    ? Object.values(employee.dynamicFields).filter((v) => {
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        return false;
+      }
+      return true;
+    })
+    : [];
+
+  const allFields = [...coreFields, ...dynamicValues];
+  const total = allFields.length || 1;
+  const filled = allFields.filter(isProfileFieldFilled).length;
+  return Math.round((filled / total) * 100);
+};
+
 
 // Start of Component
 export default function EmployeesPage() {
@@ -3240,7 +3286,7 @@ export default function EmployeesPage() {
     const currentFilterValue = currentFilters[filterKey] || '';
 
     return (
-      <th className="relative px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">
+      <th className="relative px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">
         <div className="flex items-center gap-2">
           <span>{label}</span>
           <button
@@ -3311,10 +3357,10 @@ export default function EmployeesPage() {
 
   return (
     <div className="relative min-h-screen">
-      <div className="relative z-10 mx-auto max-w-[1920px] px-4 pb-8 sm:px-6 lg:px-8">
+      <div className="relative z-10 mx-auto w-full max-w-[1920px] overflow-hidden px-4 pb-8 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+          <div className="shrink-0">
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Employee Management</h1>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               Manage employee records • Data source:{' '}
@@ -3380,57 +3426,67 @@ export default function EmployeesPage() {
                 <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">Employees</span>
               </div>
             )}
-
-            {hasManagePermission && (
-              <Link
-                href="/employees/form-settings"
-                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                title="Form Settings"
-              >
-                <Settings className="h-5 w-5" />
-              </Link>
-            )}
+            <div className="flex items-center gap-2">
+              {hasCreateApplicationPermission && (
+                <button
+                  onClick={() => setShowApplicationDialog(true)}
+                  className="flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-green-600/20 transition-all hover:bg-green-700"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>New Application</span>
+                </button>
+              )}
+              {hasManagePermission && (
+                <Link
+                  href="/employees/form-settings"
+                  className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  title="Form Settings"
+                >
+                  <Settings className="h-5 w-5" />
+                </Link>
+              )}
+            </div>
           </div>
         </div>
-
         {/* Global Toolbar */}
-        <div className="mb-6 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="mb-6 rounded-2xl border border-slate-200 bg-white/50 backdrop-blur-sm p-4 dark:border-slate-700 dark:bg-slate-900/50 space-y-3">
+          {/* Filters Row */}
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-2 w-full">
             {activeTab === 'employees' ? (
-              <div className="flex flex-wrap items-center gap-3">
+              <>
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
                     handleSearch();
                   }}
-                  className="relative min-w-[300px]"
+                  className="flex-1 min-w-[200px]"
                 >
-                  <input
-                    type="text"
-                    placeholder="Search name, emp no, phone..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleSearch();
-                      }
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-12 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  />
-                  <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                  <button
-                    type="submit"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-green-500 p-2 text-white hover:bg-green-600 transition-all flex items-center justify-center"
-                    title="Search"
-                  >
-                    <Search className="h-4 w-4" />
-                  </button>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search name, emp no, phone..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSearch();
+                        }
+                      }}
+                      className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-10 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                    <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                    <button
+                      type="submit"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg bg-green-500 p-1.5 text-white hover:bg-green-600 transition-all flex items-center justify-center"
+                      title="Search"
+                    >
+                      <Search className="h-3 w-3" />
+                    </button>
+                  </div>
                 </form>
 
-                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
-
-                <div className="min-w-[150px]">
+                <div className="flex-1 min-w-[100px] max-w-[130px]">
                   <select
                     value={selectedDivisionFilter}
                     onChange={(e) => {
@@ -3439,9 +3495,9 @@ export default function EmployeesPage() {
                       setSelectedDesignationFilter('');
                       setSelectedEmployeeGroupFilter('');
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
-                    <option value="">All Divisions</option>
+                    <option value="">Divisions</option>
                     {scopedDivisions.map((d) => (
                       <option key={d._id} value={d._id}>
                         {d.name}
@@ -3450,7 +3506,7 @@ export default function EmployeesPage() {
                   </select>
                 </div>
 
-                <div className="min-w-[150px]">
+                <div className="flex-1 min-w-[100px] max-w-[130px]">
                   <select
                     value={selectedDepartmentFilter}
                     onChange={(e) => {
@@ -3458,9 +3514,9 @@ export default function EmployeesPage() {
                       setSelectedDesignationFilter('');
                       setSelectedEmployeeGroupFilter('');
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
-                    <option value="">All Departments</option>
+                    <option value="">Departments</option>
                     {departmentOptions.map((d) => (
                       <option key={d._id} value={d._id}>
                         {d.name}
@@ -3469,13 +3525,13 @@ export default function EmployeesPage() {
                   </select>
                 </div>
 
-                <div className="min-w-[150px]">
+                <div className="flex-1 min-w-[100px] max-w-[130px]">
                   <select
                     value={selectedDesignationFilter}
                     onChange={(e) => setSelectedDesignationFilter(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
-                    <option value="">All Designations</option>
+                    <option value="">Designations</option>
                     {designations.map((d) => (
                       <option key={d._id} value={d._id}>
                         {d.name}
@@ -3485,13 +3541,13 @@ export default function EmployeesPage() {
                 </div>
 
                 {customEmployeeGroupingEnabled && (
-                  <div className="min-w-[150px]">
+                  <div className="flex-1 min-w-[100px] max-w-[130px]">
                     <select
                       value={selectedEmployeeGroupFilter}
                       onChange={(e) => setSelectedEmployeeGroupFilter(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
-                      <option value="">All Groups</option>
+                      <option value="">Groups</option>
                       {employeeGroups
                         .filter((g) => g.isActive !== false)
                         .map((g) => (
@@ -3503,30 +3559,30 @@ export default function EmployeesPage() {
                   </div>
                 )}
 
-                <label className="flex items-center gap-2 cursor-pointer ml-2">
+                <label className="flex items-center gap-1.5 cursor-pointer shrink-0 ml-1">
                   <input
                     type="checkbox"
                     checked={includeLeftEmployees}
                     onChange={(e) => setIncludeLeftEmployees(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-green-600 focus:ring-green-500"
                   />
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Include Left</span>
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-350">Left Employees</span>
                 </label>
-              </div>
+              </>
             ) : activeTab === 'applications' ? (
-              <div className="flex flex-wrap items-center gap-3 flex-1">
-                <div className="relative min-w-[200px] max-w-md flex-1">
+              <>
+                <div className="relative flex-1 min-w-[200px]">
                   <input
                     type="text"
-                    placeholder="Search applications by name, emp no, dept..."
+                    placeholder="Search name, emp no, dept..."
                     value={applicationSearchTerm}
                     onChange={(e) => setApplicationSearchTerm(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-4 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   />
-                  <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                  <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 </div>
-                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
-                <div className="min-w-[140px]">
+
+                <div className="flex-1 min-w-[100px] max-w-[130px]">
                   <select
                     value={selectedDivisionFilter}
                     onChange={(e) => {
@@ -3535,9 +3591,9 @@ export default function EmployeesPage() {
                       setSelectedDesignationFilter('');
                       setSelectedEmployeeGroupFilter('');
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
-                    <option value="">All Divisions</option>
+                    <option value="">Divisions</option>
                     {scopedDivisions.map((d) => (
                       <option key={d._id} value={d._id}>
                         {d.name}
@@ -3545,7 +3601,8 @@ export default function EmployeesPage() {
                     ))}
                   </select>
                 </div>
-                <div className="min-w-[140px]">
+
+                <div className="flex-1 min-w-[100px] max-w-[130px]">
                   <select
                     value={selectedDepartmentFilter}
                     onChange={(e) => {
@@ -3553,9 +3610,9 @@ export default function EmployeesPage() {
                       setSelectedDesignationFilter('');
                       setSelectedEmployeeGroupFilter('');
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
-                    <option value="">All Departments</option>
+                    <option value="">Departments</option>
                     {departmentOptions.map((d) => (
                       <option key={d._id} value={d._id}>
                         {d.name}
@@ -3563,13 +3620,14 @@ export default function EmployeesPage() {
                     ))}
                   </select>
                 </div>
-                <div className="min-w-[140px]">
+
+                <div className="flex-1 min-w-[100px] max-w-[130px]">
                   <select
                     value={selectedDesignationFilter}
                     onChange={(e) => setSelectedDesignationFilter(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
-                    <option value="">All Designations</option>
+                    <option value="">Designations</option>
                     {designations.map((d) => (
                       <option key={d._id} value={d._id}>
                         {d.name}
@@ -3577,14 +3635,15 @@ export default function EmployeesPage() {
                     ))}
                   </select>
                 </div>
+
                 {customEmployeeGroupingEnabled && (
-                  <div className="min-w-[140px]">
+                  <div className="flex-1 min-w-[100px] max-w-[130px]">
                     <select
                       value={selectedEmployeeGroupFilter}
                       onChange={(e) => setSelectedEmployeeGroupFilter(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
-                      <option value="">All Groups</option>
+                      <option value="">Groups</option>
                       {employeeGroups
                         .filter((g) => g.isActive !== false)
                         .map((g) => (
@@ -3595,18 +3654,21 @@ export default function EmployeesPage() {
                     </select>
                   </div>
                 )}
-              </div>
+              </>
             ) : null}
+          </div>
 
-            <div className="flex items-center gap-3">
+          {/* Action Buttons Row */}
+          {(activeTab === 'employees' || activeTab === 'applications') && (
+            <div className="flex flex-wrap items-center gap-2 pt-2.5 border-t border-slate-150 dark:border-slate-800">
               <button
                 onClick={() =>
                   activeTab === 'employees' ? loadEmployees(currentPage, false) : loadApplications()
                 }
-                className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                className="group flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
               >
                 <svg
-                  className={`h-4 w-4 ${loading || loadingApplications ? 'animate-spin' : ''}`}
+                  className={`h-3.5 w-3.5 ${loading || loadingApplications ? 'animate-spin' : ''}`}
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -3621,20 +3683,18 @@ export default function EmployeesPage() {
                 <span>Refresh</span>
               </button>
 
-              {(activeTab === 'employees' || activeTab === 'applications') &&
-                hasManagePermission &&
-                allowEmployeeBulkProcess && (
-                  <>
-                    <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
-                    <button
-                      onClick={() => setShowBulkUpload(true)}
-                      className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
-                    >
-                      <Upload className="h-4 w-4" />
-                      <span>Import</span>
-                    </button>
-                  </>
-                )}
+              {hasManagePermission && allowEmployeeBulkProcess && (
+                <>
+                  <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1 shrink-0" />
+                  <button
+                    onClick={() => setShowBulkUpload(true)}
+                    className="flex items-center gap-1.5 rounded-xl border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    <span>Import</span>
+                  </button>
+                </>
+              )}
 
               {activeTab === 'employees' && hasViewPermission && (
                 <button
@@ -3642,49 +3702,38 @@ export default function EmployeesPage() {
                     setSelectedEmployeeForExport(null);
                     setShowExportDialog(true);
                   }}
-                  className="flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-700 transition-all hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400"
+                  className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition-all hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400"
                 >
-                  <Download className="h-4 w-4" />
+                  <Download className="h-3.5 w-3.5" />
                   <span>Bulk Export</span>
                 </button>
               )}
-
-              {hasCreateApplicationPermission && (
-                <button
-                  onClick={() => setShowApplicationDialog(true)}
-                  className="flex items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-600/20 transition-all hover:bg-green-700"
-                >
-                  <Plus className="h-4 w-4" />
-                  New Application
-                </button>
-              )}
             </div>
-          </div>
+          )}
+        </div>
 
-          {activeTab === 'employees' && totalPages > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/50 backdrop-blur-sm px-6 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-              <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
+        {activeTab === 'employees' && totalPages > 0 && (() => {
+          const startIdx = (currentPage - 1) * itemsPerPage + 1;
+          const endIdx = Math.min(currentPage * itemsPerPage, totalCount);
+          return (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
                 <p>
-                  Showing{' '}
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">
-                    {filteredEmployees.length}
-                  </span>{' '}
-                  of{' '}
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">{totalCount}</span>{' '}
-                  employees
+                  Showing <span className="font-semibold text-slate-800 dark:text-slate-200">{startIdx}-{endIdx}</span> of <span className="font-semibold text-slate-800 dark:text-slate-200">{totalCount}</span> employees
                 </p>
-                <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
-                <div className="flex items-center gap-2">
-                  <span>Rows per page:</span>
+                <div className="h-4 w-px bg-slate-200 dark:bg-slate-700"></div>
+                <div className="flex items-center gap-1.5">
+                  <span>Show:</span>
                   <select
                     value={itemsPerPage}
-                    onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                    className="rounded-lg border border-slate-200 bg-transparent px-2 py-1 text-sm focus:outline-none dark:border-slate-700"
+                    onChange={(e) => {
+                      setItemsPerPage(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-green-500 cursor-pointer"
                   >
-                    {[20, 50, 100, 200].map((size) => (
-                      <option key={size} value={size}>
-                        {size}
-                      </option>
+                    {[20, 50, 100, 200].map(size => (
+                      <option key={size} value={size}>{size}</option>
                     ))}
                   </select>
                 </div>
@@ -3694,10 +3743,10 @@ export default function EmployeesPage() {
                 <button
                   onClick={() => loadEmployees(currentPage - 1, false)}
                   disabled={currentPage === 1 || loading}
-                  className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                  className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                  Prev
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <span>Previous</span>
                 </button>
 
                 <div className="flex items-center gap-1">
@@ -3712,9 +3761,9 @@ export default function EmployeesPage() {
                       <button
                         key={pageNum}
                         onClick={() => loadEmployees(pageNum, false)}
-                        className={`min-w-[32px] h-8 rounded-lg text-sm font-medium transition-all ${
+                        className={`h-8 w-8 rounded-lg flex items-center justify-center text-xs font-semibold transition-all ${
                           currentPage === pageNum
-                            ? 'bg-green-600 text-white shadow-md shadow-green-600/20'
+                            ? 'bg-green-600 text-white shadow-sm shadow-green-600/20'
                             : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
                         }`}
                       >
@@ -3727,15 +3776,15 @@ export default function EmployeesPage() {
                 <button
                   onClick={() => loadEmployees(currentPage + 1, false)}
                   disabled={currentPage === totalPages || loading}
-                  className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                  className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                 >
-                  Next
-                  <ChevronRight className="h-4 w-4" />
+                  <span>Next</span>
+                  <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          );
+        })()}
       {/* Employee List with Skeleton Loading */}
       {loading || (activeTab === 'applications' && loadingApplications) || (activeTab === 'requests' && loadingUpdateRequests) ? (
         <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
@@ -3815,81 +3864,34 @@ export default function EmployeesPage() {
         ) : (
           <>
             {/* Desktop Table View */}
-            <div className="hidden md:block overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
-              <div className="overflow-x-auto scrollbar-hide">
-                <table className="w-full">
+            <div className="hidden md:block w-full overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
+              <div className="w-full overflow-x-auto scrollbar-hide">
+                <table className="w-full min-w-[800px]">
                   <thead>
                     <tr className="border-b border-border-base bg-bg-base/50">
-                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Emp No</th>
-                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Name</th>
-
-                      <RenderFilterHeader
-                        label="Division"
-                        filterKey="division.name"
-                        options={Array.from(new Set(employees.map(e => {
-                          const div = divisions.find(d => d._id === (e.division_id || e.division?._id));
-                          return div?.name || e.division?.name || (e.division_id as any)?.name;
-                        }).filter((x) => !!x))) as string[]}
-                        currentFilters={employeeFilters}
-                        setFilters={setEmployeeFilters}
-                      />
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-650 dark:text-slate-350 select-none">Employee</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-650 dark:text-slate-350 select-none">
+                        Division
+                      </th>
                       {!hideDepartmentColumn && (
-                        <RenderFilterHeader
-                          label="Department"
-                          filterKey="department.name"
-                          options={Array.from(new Set(employees.map(e => {
-                            const dept = departments.find(d => d._id === (e.department_id || e.department?._id));
-                            return dept?.name || e.department?.name || (e.department_id as any)?.name;
-                          }).filter((x) => !!x))) as string[]}
-                          currentFilters={employeeFilters}
-                          setFilters={setEmployeeFilters}
-                        />
-                      )}
-                      {!hideDesignationColumn && (
-                        <RenderFilterHeader
-                          label="Designation"
-                          filterKey="designation.name"
-                          options={Array.from(new Set(employees.map(e => {
-                            const desig = designations.find(d => d._id === (e.designation_id || e.designation?._id));
-                            return desig?.name || e.designation?.name || (e.designation_id as any)?.name;
-                          }).filter((x) => !!x))) as string[]}
-                          currentFilters={employeeFilters}
-                          setFilters={setEmployeeFilters}
-                        />
-                      )}
-                      {customEmployeeGroupingEnabled && (
-                        <RenderFilterHeader
-                          label="Group"
-                          filterKey="employee_group.name"
-                          options={Array.from(new Set(employees.map((e) => {
-                            const eg = employeeGroups.find((g) => g._id === ((e as any).employee_group_id || (e as any).employee_group?._id));
-                            return eg?.name || (e as any).employee_group?.name || ((e as any).employee_group_id as any)?.name;
-                          }).filter((x) => !!x))) as string[]}
-                          currentFilters={employeeFilters}
-                          setFilters={setEmployeeFilters}
-                        />
+                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-650 dark:text-slate-350 select-none">
+                          Department
+                        </th>
                       )}
                       {userRole !== 'hod' && userRole !== 'employee' && (
-                        <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Gross Salary</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-650 dark:text-slate-350 select-none">Gross Salary</th>
                       )}
                       {userRole !== 'hod' && userRole !== 'employee' && (
-                        <RenderFilterHeader
-                          label="Cert Status"
-                          filterKey="qualificationStatus"
-                          options={Array.from(new Set(employees.map(e => e.qualificationStatus).filter((x) => !!x))) as string[]}
-                          currentFilters={employeeFilters}
-                          setFilters={setEmployeeFilters}
-                        />
+                        <th className="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wider text-slate-650 dark:text-slate-350 select-none">
+                          Cert Status
+                        </th>
                       )}
-                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Phone</th>
-                      <RenderFilterHeader
-                        label="Status"
-                        filterKey="status"
-                        options={['Active', 'Inactive', 'Left']}
-                        currentFilters={employeeFilters}
-                        setFilters={setEmployeeFilters}
-                      />
-                      <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-widest text-text-secondary">Actions</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-650 dark:text-slate-350 select-none">Phone</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-650 dark:text-slate-350 select-none">
+                        Status
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-650 dark:text-slate-350 select-none">Profile</th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-650 dark:text-slate-350 select-none">Actions</th>
                     </tr>
                   </thead>
 
@@ -3900,69 +3902,59 @@ export default function EmployeesPage() {
                         className="transition-all hover:bg-bg-base/80 group cursor-pointer"
                         onClick={() => handleViewEmployee(employee)}
                       >
-                        <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-indigo-500">
-                          {employee.emp_no}
-                        </td>
-                        <td className="whitespace-nowrap px-6 py-4">
-                          <div className="flex items-center gap-3">
+                        <td className="px-3 py-2 min-w-[8rem] max-w-[14rem]">
+                          <div className="flex items-center gap-2">
                             {(employee as any).profilePhoto ? (
                               <img
                                 src={(employee as any).profilePhoto}
                                 alt=""
-                                className="h-9 w-9 shrink-0 rounded-lg border border-slate-200 object-cover dark:border-slate-700"
+                                className="h-8 w-8 shrink-0 rounded-lg border border-slate-200 object-cover dark:border-slate-700"
                               />
                             ) : (
-                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-sm font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-xs font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
                                 {(employee.employee_name || '?').charAt(0).toUpperCase()}
                               </div>
                             )}
-                            <div>
-                              <div className="text-sm font-black text-text-primary uppercase tracking-tight">{employee.employee_name}</div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-text-primary uppercase tracking-tight truncate">{employee.employee_name}</div>
+                              <div className="text-[10px] text-slate-500 dark:text-slate-405 mt-0.5 truncate">
+                                {employee.emp_no}{employee.designation?.name ? ` • ${employee.designation.name}` : ''}
+                              </div>
                               {employee.email && (
-                                <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">{employee.email}</div>
+                                <div className="text-[9px] font-normal text-text-secondary uppercase tracking-widest truncate">{employee.email}</div>
                               )}
                             </div>
                           </div>
                         </td>
-                        <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                        <td className="px-3 py-2 text-xs font-normal text-text-secondary">
                           {employee.division?.name || (employee.division_id as { name?: string })?.name || '-'}
                         </td>
 
                         {!hideDepartmentColumn && (
-                          <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                          <td className="px-3 py-2 text-xs font-normal text-text-secondary">
                             {employee.department?.name || '-'}
                           </td>
                         )}
-                        {!hideDesignationColumn && (
-                          <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
-                            {employee.designation?.name || '-'}
-                          </td>
-                        )}
-                        {customEmployeeGroupingEnabled && (
-                          <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
-                            {(employee as any).employee_group?.name || ((employee as any).employee_group_id as any)?.name || '-'}
-                          </td>
-                        )}
                         {userRole !== 'hod' && userRole !== 'employee' && (
-                          <td className="whitespace-nowrap px-6 py-4 text-xs font-black text-text-primary">
+                          <td className="whitespace-nowrap px-3 py-2 text-xs font-normal text-text-secondary">
                             {employee.gross_salary ? `₹${employee.gross_salary.toLocaleString()}` : '-'}
                           </td>
                         )}
                         {userRole !== 'hod' && userRole !== 'employee' && (
-                          <td className="whitespace-nowrap px-6 py-4">
-                            <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${qualificationStatusBadgeClass(employee.qualificationStatus)}`}>
-                              {isVerifiedOverallStatusForIcon(employee.qualificationStatus) ? <CheckCircle className="w-3 h-3" /> : <LucideClock className="w-3 h-3" />}
+                          <td className="whitespace-nowrap px-3 py-2 text-center">
+                            <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-widest ${qualificationStatusBadgeClass(employee.qualificationStatus)}`}>
+                              {isVerifiedOverallStatusForIcon(employee.qualificationStatus) ? <CheckCircle className="w-2.5 h-2.5" /> : <LucideClock className="w-2.5 h-2.5" />}
                               {overallQualificationStatusLabel(employee.qualificationStatus, overallCertificateStatusOptions)}
                             </span>
                           </td>
                         )}
-                        <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                        <td className="whitespace-nowrap px-3 py-2 text-xs font-normal text-text-secondary">
                           {employee.phone_number || '-'}
                         </td>
 
-                        <td className="whitespace-nowrap px-6 py-4">
-                          <div className="flex flex-wrap gap-2">
-                            <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${employee.is_active !== false
+                        <td className="whitespace-nowrap px-3 py-2">
+                          <div className="flex flex-col gap-1">
+                            <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-medium uppercase tracking-widest ${employee.is_active !== false
                               ? 'bg-status-positive/10 text-status-positive'
                               : 'bg-text-secondary/10 text-text-secondary'
                               }`}>
@@ -3970,65 +3962,53 @@ export default function EmployeesPage() {
                               {employee.is_active !== false ? 'Active' : 'Inactive'}
                             </span>
                             {employee.salaryStatus === 'pending_approval' && (
-                              <span className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
+                              <span className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-medium uppercase tracking-widest bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
                                 <LucideClock className="w-3 h-3" />
                                 SALARY PENDING
                               </span>
                             )}
                             {employee.leftDate && (
-                              <span className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest bg-status-warning/10 text-status-warning">
+                              <span className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-medium uppercase tracking-widest bg-status-warning/10 text-status-warning">
                                 <LucideClock className="w-3 h-3" />
                                 Left: {new Date(employee.leftDate).toLocaleDateString()}
                               </span>
                             )}
                           </div>
                         </td>
-                        <td className="whitespace-nowrap px-6 py-4 text-right">
+                        <td className="px-3 py-2 text-xs">
+                          {(() => {
+                            const completion = getEmployeeProfileCompletion(employee);
+                            const toneClass = completion >= 80
+                              ? 'bg-status-positive/10 text-status-positive'
+                              : completion >= 50
+                                ? 'bg-status-warning/10 text-status-warning'
+                                : 'bg-status-negative/10 text-status-negative';
+                            return (
+                              <div className="w-16">
+                                <div className="mb-0.5 flex items-center justify-end text-[10px] text-text-secondary">
+                                  <span className={`inline-flex rounded-full px-1.5 py-0.2 font-semibold ${toneClass}`}>{completion}%</span>
+                                </div>
+                                <div className="h-1 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                                  <div
+                                    className="h-full rounded-full bg-indigo-500 transition-all"
+                                    style={{ width: `${completion}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right">
                           <div className="flex items-center justify-end gap-1  group-hover:opacity-100 transition-opacity">
                             {hasManagePermission && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleEdit(employee); }}
-                                className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-indigo-500/10 hover:text-indigo-500 transition-all font-bold"
-                                title="Edit"
-                              >
-                                <Edit2 className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleViewEmployee(employee); }}
-                              className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-indigo-500/10 hover:text-indigo-500 transition-all font-bold"
-                              title="View"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedEmployeeForExport(employee);
-                                setShowExportDialog(true);
-                              }}
-                              className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-green-500/10 hover:text-green-500 transition-all font-bold"
-                              title="Download"
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                            </button>
-                            {hasManagePermission && (
                               <>
-                                {employee.leftDate ? (
+                                {employee.leftDate && (
                                   <button
                                     onClick={(e) => { e.stopPropagation(); openRejoinModal(employee); }}
                                     className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-status-positive/10 hover:text-status-positive transition-all font-bold"
                                     title="Rejoin Employee"
                                   >
                                     <UserCheck className="h-3.5 w-3.5" />
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); handleSetLeftDate(employee); }}
-                                    className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-status-negative/10 hover:text-status-negative transition-all font-bold"
-                                    title="Set Left Date"
-                                  >
-                                    <UserX className="h-3.5 w-3.5" />
                                   </button>
                                 )}
                                 <button
@@ -4233,41 +4213,15 @@ export default function EmployeesPage() {
 
                   {/* Card Actions */}
                   <div className="flex items-center gap-1.5 pt-2 border-t border-border-base/50">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleViewEmployee(employee); }}
-                      className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-indigo-500/10 px-1.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-indigo-500 transition-colors hover:bg-indigo-500/20"
-                      title="View"
-                    >
-                      <Eye className="h-2.5 w-2.5" />
-                      <span>View</span>
-                    </button>
-                    {hasManagePermission && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleEdit(employee); }}
-                        className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-blue-500/10 px-1.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-blue-500 transition-colors hover:bg-blue-500/20"
-                        title="Edit"
-                      >
-                        <Edit2 className="h-2.5 w-2.5" />
-                        <span>Edit</span>
-                      </button>
-                    )}
                     {hasManagePermission && (
                       <>
-                        {employee.leftDate ? (
+                        {employee.leftDate && (
                           <button
                             onClick={(e) => { e.stopPropagation(); openRejoinModal(employee); }}
                             className="p-1.5 rounded-lg bg-status-positive/10 text-status-positive hover:bg-status-positive/20 transition-colors"
                             title="Rejoin Employee"
                           >
                             <UserCheck className="h-3 w-3" />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleSetLeftDate(employee); }}
-                            className="p-1.5 rounded-lg bg-status-negative/10 text-status-negative hover:bg-status-negative/20 transition-colors"
-                            title="Set Left Date"
-                          >
-                            <UserX className="h-3 w-3" />
                           </button>
                         )}
                         <button

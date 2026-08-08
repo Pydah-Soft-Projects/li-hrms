@@ -46,6 +46,23 @@ async function isHolidayOrWeekOff(employeeNumber, dateInput) {
 }
 
 /**
+ * Helper to fetch the actual scheduled Shift document for an employee on a given date.
+ */
+async function getRosterShiftForEmployeeDate(empNo, dateStr) {
+  const empNos = employeeNumberVariants(empNo);
+  if (empNos.length === 0) return null;
+  const ps = await PreScheduledShift.findOne({
+    employeeNumber: { $in: empNos },
+    date: dateStr,
+  }).lean();
+  if (!ps || !ps.shiftId) return null;
+
+  const Shift = require('../../shifts/model/Shift');
+  const shiftDoc = await Shift.findById(ps.shiftId).lean();
+  return shiftDoc;
+}
+
+/**
  * Full context for GET /od/check-holiday: roster HOL/WO + optional punch-based suggestion.
  */
 async function getHolidayWeekOffOdApplyContext(empNo, dateInput) {
@@ -68,7 +85,8 @@ async function getHolidayWeekOffOdApplyContext(empNo, dateInput) {
     date: dateStr,
   }).lean();
 
-  const s = getPunchBasedOdSuggestionForRecord(record);
+  const shiftDoc = await getRosterShiftForEmployeeDate(preferredEmp, dateStr);
+  const s = getPunchBasedOdSuggestionForRecord(record, shiftDoc);
   const timings = s.hasPunches ? extractPunchTimingsFromRecord(record) : {
     odStartTime: null,
     odEndTime: null,
@@ -123,7 +141,8 @@ async function resolveOdApplyAgainstHolidayPunchContext(employeeNumber, dateInpu
     date: dateStr,
   }).lean();
 
-  const shape = getPunchBasedOdSuggestionForRecord(record);
+  const shiftDoc = await getRosterShiftForEmployeeDate(preferredEmp, dateStr);
+  const shape = getPunchBasedOdSuggestionForRecord(record, shiftDoc);
   if (!shape.hasPunches || shape.suggestedOdTypeExtended !== 'half_day') {
     return { ok: true };
   }

@@ -6366,10 +6366,10 @@ function LeavesPageContent() {
               <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowDetailDialog(false)} />
               <div className="relative z-[101] my-auto flex h-auto min-h-0 w-full max-w-4xl max-h-[min(84dvh,calc(100dvh-5rem))] sm:max-h-[min(90dvh,calc(100dvh-2rem))] flex-col overflow-hidden rounded-2xl sm:rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl animate-in zoom-in-95 duration-300">
                 {/* Header */}
-                <div className={`relative shrink-0 w-full min-w-0 overflow-hidden rounded-t-3xl border-b border-white/10 ${
+                <div className={`relative shrink-0 w-full min-w-0 overflow-hidden rounded-t-3xl ${
                   detailType === 'leave'
-                    ? 'bg-indigo-700'
-                    : 'bg-slate-700'
+                    ? 'bg-indigo-700 border-b border-white/10'
+                    : 'bg-gradient-to-r from-slate-50 to-indigo-50/50 dark:from-slate-850 dark:to-slate-900/40 border-b border-slate-200 dark:border-slate-800'
                   }`}>
                   <div className="absolute inset-0 bg-gradient-to-r from-white/5 via-transparent to-indigo-600/10 pointer-events-none" />
 
@@ -6395,10 +6395,10 @@ function LeavesPageContent() {
                       </div>
                     ) : (
                       /* OD Header: employee details */
-                      <div className="flex items-center justify-between gap-3 text-white">
+                      <div className="flex items-center justify-between gap-3 text-slate-900 dark:text-white">
                         {/* Left: Avatar + Employee Info */}
                         <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 border border-indigo-500 text-white font-bold text-base shadow-md">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-100 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-850/80 text-indigo-700 dark:text-indigo-300 font-bold text-base shadow-sm">
                             {String(
                               selectedItem!.employeeId?.employee_name ||
                               (selectedItem!.employeeId as any)?.first_name ||
@@ -6406,26 +6406,44 @@ function LeavesPageContent() {
                             ).charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <h2 className="text-base sm:text-lg font-bold text-white truncate">
+                            <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate">
                               {selectedItem!.employeeId?.employee_name ||
                                 `${(selectedItem!.employeeId as any)?.first_name || ''} ${(selectedItem!.employeeId as any)?.last_name || ''}`.trim() ||
                                 selectedItem!.emp_no || '—'}
                             </h2>
-                            <p className="text-xs text-slate-200 font-medium mt-1">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">
                               {[selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no, getItemDesignationName(selectedItem)].filter(Boolean).join(' · ')}
                               {selectedItem!.department?.name && ` · ${selectedItem!.department.name}`}
                               {(selectedItem!.appliedAt || (selectedItem as any).createdAt) && ` · Applied ${new Date(selectedItem!.appliedAt || (selectedItem as any).createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`}
                             </p>
                           </div>
                         </div>
-                        {/* Right: Status badge + OD badge */}
+                        {/* Right: Status badge + OD badge + Edit button */}
                         <div className="flex items-center gap-2.5 shrink-0 self-start">
-                          <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(selectedItem!.status)}`}>
+                          <span className={`inline-flex items-center gap-1.5 px-4.5 py-1.5 rounded-full text-sm font-extrabold border shadow-sm ${getStatusColor(selectedItem!.status)}`}>
                             {formatLeaveLbl(selectedItem!.status)}
                           </span>
-                          <span className="inline-flex items-center px-3 py-1 rounded-md text-xs font-black uppercase tracking-widest bg-indigo-600 text-white border border-indigo-400 shrink-0 shadow-sm">
+                          <span className="inline-flex items-center px-3.5 py-1.5 rounded-md text-xs font-black uppercase tracking-widest bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0 shadow-sm">
                             OD
                           </span>
+                          {['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && !['rejected', 'cancelled'].includes(selectedItem!.status) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditFormData({
+                                  ...selectedItem,
+                                  fromDate: formatDateForInput(selectedItem!.fromDate),
+                                  toDate: formatDateForInput(selectedItem!.toDate),
+                                });
+                                setShowEditDialog(true);
+                              }}
+                              className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all hover:scale-105 active:scale-95 shadow-sm flex items-center gap-1.5 shrink-0"
+                              title="Edit OD Request"
+                            >
+                              <Edit className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                              <span>Edit</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -7042,7 +7060,9 @@ function LeavesPageContent() {
                           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                           <div className="min-w-0">
                             <p className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                              Duration shortfall — your decision required
+                              {(selectedItem as any).isCOEligible || (selectedItem as any).durationClassification?.status === 'authority_required'
+                                ? 'Weekly off / Holiday OD — your decision required'
+                                : 'Duration shortfall — your decision required'}
                             </p>
                             <p className="mt-1 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
                               {(selectedItem as any).durationClassification.employeeMessage ||
@@ -7145,7 +7165,7 @@ function LeavesPageContent() {
                     </>
                   )}
 
-                  {['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && !['rejected', 'cancelled'].includes(selectedItem.status) && (
+                  {detailType === 'leave' && ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && !['rejected', 'cancelled'].includes(selectedItem.status) && (
                     <button
                       onClick={() => {
                         setEditFormData({

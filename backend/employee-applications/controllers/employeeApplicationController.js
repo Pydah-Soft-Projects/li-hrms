@@ -960,10 +960,20 @@ exports.getApplications = async (req, res) => {
       filter.status = status;
     }
     if (division_id) {
-      filter.division_id = division_id;
+      const ids = String(division_id).split(',').map(id => id.trim()).filter(Boolean);
+      if (ids.length === 1) {
+        filter.division_id = mongoose.Types.ObjectId.isValid(ids[0]) ? new mongoose.Types.ObjectId(ids[0]) : ids[0];
+      } else if (ids.length > 1) {
+        filter.division_id = { $in: ids.map(id => mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id) };
+      }
     }
     if (department_id) {
-      filter.department_id = department_id;
+      const ids = String(department_id).split(',').map(id => id.trim()).filter(Boolean);
+      if (ids.length === 1) {
+        filter.department_id = mongoose.Types.ObjectId.isValid(ids[0]) ? new mongoose.Types.ObjectId(ids[0]) : ids[0];
+      } else if (ids.length > 1) {
+        filter.department_id = { $in: ids.map(id => mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id) };
+      }
     }
     if (designation_id) {
       filter.designation_id = designation_id;

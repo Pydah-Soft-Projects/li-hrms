@@ -5,6 +5,9 @@
 jest.mock('../../../shifts/model/PreScheduledShift', () => ({
   findOne: jest.fn(),
 }));
+jest.mock('../../../attendance/model/AttendanceDaily', () => ({
+  findOne: jest.fn(),
+}));
 
 const {
   FULL_DAY_RATIO,
@@ -18,6 +21,7 @@ const {
   classifyRegularOdFromEvidence,
 } = require('../odDurationClassificationService');
 const PreScheduledShift = require('../../../shifts/model/PreScheduledShift');
+const AttendanceDaily = require('../../../attendance/model/AttendanceDaily');
 
 const shiftNoHalves = {
   startTime: '09:00',
@@ -159,6 +163,10 @@ describe('odDurationClassificationService — half segments', () => {
 describe('odDurationClassificationService — classifyRegularOdFromEvidence (roster mock)', () => {
   beforeEach(() => {
     PreScheduledShift.findOne.mockReset();
+    AttendanceDaily.findOne.mockReset();
+    AttendanceDaily.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null),
+    });
   });
 
   it('skips classification when no roster row', async () => {
@@ -215,6 +223,114 @@ describe('odDurationClassificationService — classifyRegularOdFromEvidence (ros
     expect(r.endTimeSource).toBe('exif');
     expect(r.evidenceDurationMinutes).toBe(420);
     expect(r.classification).toBe('full_day');
+  });
+
+  it('prioritizes attendance punches and requires authority decision when below half day threshold on week off', async () => {
+    PreScheduledShift.findOne.mockReturnValue({
+      populate: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({ status: 'WO', shiftId: null }),
+    });
+    // Worked 1 min (9:00 - 9:01)
+    AttendanceDaily.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        employeeNumber: 'E001',
+        date: '2026-07-25',
+        inTime: '2026-07-25T09:00:00.000Z',
+        outTime: '2026-07-25T09:01:00.000Z',
+        totalWorkingHours: 0.0167,
+        shifts: [
+          {
+            inTime: '2026-07-25T09:00:00.000Z',
+            outTime: '2026-07-25T09:01:00.000Z',
+            status: 'PARTIAL',
+          }
+        ]
+      }),
+    });
+
+    const r = await classifyRegularOdFromEvidence({
+      empNo: 'E001',
+      dateStr: '2026-07-25',
+      startEvidence: {},
+      endEvidence: {},
+    });
+
+    expect(r.classification).toBe('authority_required');
+    expect(r.requiresAuthorityDecision).toBe(true);
+    expect(r.tentative).toBe(true);
+    expect(r.reason).toBe('week_off');
+  });
+
+  it('prioritizes attendance punches and auto-classifies as half day without authority decision if meeting threshold on week off', async () => {
+    PreScheduledShift.findOne.mockReturnValue({
+      populate: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({ status: 'WO', shiftId: null }),
+    });
+    // Worked 2.5 hours (9:00 - 11:30)
+    AttendanceDaily.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        employeeNumber: 'E001',
+        date: '2026-07-25',
+        inTime: '2026-07-25T09:00:00.000Z',
+        outTime: '2026-07-25T11:30:00.000Z',
+        totalWorkingHours: 2.5,
+        shifts: [
+          {
+            inTime: '2026-07-25T09:00:00.000Z',
+            outTime: '2026-07-25T11:30:00.000Z',
+            status: 'PARTIAL',
+          }
+        ]
+      }),
+    });
+
+    const r = await classifyRegularOdFromEvidence({
+      empNo: 'E001',
+      dateStr: '2026-07-25',
+      startEvidence: {},
+      endEvidence: {},
+    });
+
+    expect(r.classification).toBe('half_day');
+    expect(r.requiresAuthorityDecision).toBe(false);
+    expect(r.tentative).toBe(false);
+    expect(r.reason).toBe('classified_from_attendance_punches');
+  });
+
+  it('prioritizes attendance punches and auto-classifies as full day if duration meets full day threshold on week off', async () => {
+    PreScheduledShift.findOne.mockReturnValue({
+      populate: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({ status: 'WO', shiftId: null }),
+    });
+    // Worked 5 hours (09:00 to 14:00)
+    AttendanceDaily.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        employeeNumber: 'E001',
+        date: '2026-07-25',
+        inTime: '2026-07-25T09:00:00.000Z',
+        outTime: '2026-07-25T14:00:00.000Z',
+        totalWorkingHours: 5.0,
+        shifts: [
+          {
+            inTime: '2026-07-25T09:00:00.000Z',
+            outTime: '2026-07-25T14:00:00.000Z',
+            status: 'PRESENT',
+          }
+        ]
+      }),
+    });
+
+    const r = await classifyRegularOdFromEvidence({
+      empNo: 'E001',
+      dateStr: '2026-07-25',
+      startEvidence: {},
+      endEvidence: {},
+    });
+
+    expect(r.classification).toBe('full_day');
+    expect(r.requiresAuthorityDecision).toBe(false);
+    expect(r.tentative).toBe(false);
+    expect(r.reason).toBe('classified_from_attendance_punches');
   });
 });
 

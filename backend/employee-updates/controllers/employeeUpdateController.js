@@ -254,7 +254,15 @@ exports.getRequests = async (req, res) => {
         if (status) query.status = status;
 
         const requests = await EmployeeUpdateApplication.find(query)
-            .populate('employeeId', 'employee_name profilePhoto department designation dynamicFields email phone_number address blood_group qualifications dob doj gender marital_status gross_salary bank_account_no bank_name bank_place ifsc_code pf_number esi_number salary_mode ctcSalary calculatedSalary paidLeaves allottedLeaves casualLeaves sickLeaves maternityLeaves onDutyLeaves compensatoryOffs second_salary is_active leftDate leftReason applyProfessionTax applyESI applyPF applyAttendanceDeduction deductLateIn deductEarlyOut deductPermission deductAbsent')
+            .populate({
+                path: 'employeeId',
+                select: 'employee_name profilePhoto emp_no division_id department_id designation_id dynamicFields salaries email phone_number address blood_group qualifications dob doj gender marital_status gross_salary bank_account_no bank_name bank_place ifsc_code pf_number esi_number salary_mode ctcSalary calculatedSalary paidLeaves allottedLeaves casualLeaves sickLeaves maternityLeaves onDutyLeaves compensatoryOffs second_salary is_active leftDate leftReason applyProfessionTax applyESI applyPF applyAttendanceDeduction deductLateIn deductEarlyOut deductPermission deductAbsent',
+                populate: [
+                    { path: 'division', select: 'name' },
+                    { path: 'department', select: 'name' },
+                    { path: 'designation', select: 'name' }
+                ]
+            })
             .populate('createdBy', 'name')
             .sort({ createdAt: -1 });
 

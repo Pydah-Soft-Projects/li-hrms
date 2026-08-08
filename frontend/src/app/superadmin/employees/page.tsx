@@ -83,7 +83,10 @@ import {
   ArrowRight,
   XCircle,
   AlertTriangle,
-  Download
+  Download,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown
 } from 'lucide-react';
 
 
@@ -96,6 +99,10 @@ interface UpdateRequest {
     employee_name: string;
     profilePhoto?: string;
     emp_no: string;
+    division_id?: any;
+    department_id?: any;
+    designation_id?: any;
+    employee_group_id?: any;
     department?: { name: string };
     designation?: { name: string };
     dynamicFields?: Record<string, any>;
@@ -451,11 +458,116 @@ const renderCustomFieldsForSystemGroup = (groupId: string, hardcodedFieldIds: st
     );
   });
 };
+const MultiSelectDropdown = ({
+  label,
+  options,
+  selectedValues,
+  onChange,
+  placeholder = 'Select'
+}: {
+  label: string;
+  options: { _id: string; name: string }[];
+  selectedValues: string[];
+  onChange: (values: string[]) => void;
+  placeholder?: string;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  const handleToggleOption = (val: string) => {
+    if (selectedValues.includes(val)) {
+      onChange(selectedValues.filter((v) => v !== val));
+    } else {
+      onChange([...selectedValues, val]);
+    }
+  };
+
+  const selectedNames = options
+    .filter((opt) => selectedValues.includes(opt._id))
+    .map((opt) => opt.name);
+
+  const displayLabel =
+    selectedValues.length === 0
+      ? placeholder
+      : selectedValues.length === 1
+      ? selectedNames[0]
+      : `${selectedValues.length} Selected`;
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center justify-between w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 cursor-pointer select-none text-left"
+      >
+        <span className="truncate pr-1">{displayLabel}</span>
+        <svg
+          className={`h-3.5 w-3.5 text-slate-400 transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 mt-1.5 z-[100] w-60 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 shadow-lg py-2 animate-in fade-in slide-in-from-top-1 duration-200">
+          <div className="px-3 pb-1.5 mb-1.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{label}</span>
+            {selectedValues.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="text-[10px] font-bold text-slate-500 hover:text-red-500 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="px-1.5 space-y-0.5">
+            {options.map((opt) => {
+              const isSelected = selectedValues.includes(opt._id);
+              return (
+                <label
+                  key={opt._id}
+                  className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs cursor-pointer select-none transition-colors ${
+                    isSelected
+                      ? 'bg-green-50/50 dark:bg-green-950/20 text-green-700 dark:text-green-400 font-medium'
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-900/50 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => handleToggleOption(opt._id)}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                  />
+                  <span className="truncate">{opt.name}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function EmployeesPage() {
   const { secondSalaryEnabled } = useSecondSalaryFeatureEnabled();
   const [activeTab, setActiveTab] = useState<'employees' | 'applications' | 'requests'>('employees');
+  const [applicationStageFilter, setApplicationStageFilter] = useState<'pending' | 'verified' | 'finalized'>('pending');
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [applications, setApplications] = useState<EmployeeApplication[]>([]);
   const [updateRequests, setUpdateRequests] = useState<UpdateRequest[]>([]);
@@ -468,7 +580,8 @@ export default function EmployeesPage() {
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
-  const [selectedDivisionFilter, setSelectedDivisionFilter] = useState('');
+  const [selectedDivisionFilter, setSelectedDivisionFilter] = useState<string[]>([]);
+  const [selectedCertificateStatusFilter, setSelectedCertificateStatusFilter] = useState('');
   const [filteredDesignations, setFilteredDesignations] = useState<Designation[]>([]);
   const [filteredApplicationDesignations, setFilteredApplicationDesignations] = useState<Designation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -663,7 +776,7 @@ export default function EmployeesPage() {
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
+  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState<string[]>([]);
   const [selectedDesignationFilter, setSelectedDesignationFilter] = useState('');
   const [selectedEmployeeGroupFilter, setSelectedEmployeeGroupFilter] = useState('');
   const [employeeFilters, setEmployeeFilters] = useState<Record<string, string>>({});
@@ -891,6 +1004,14 @@ export default function EmployeesPage() {
     direction: 'asc',
   });
 
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
   // Helper to filter data based on column filters
   // Helper to filter data based on column filters
   const filterData = (data: any[], filters: Record<string, string>) => {
@@ -921,38 +1042,6 @@ export default function EmployeesPage() {
         }
         return String(itemValue || '') === value;
       });
-    });
-  };
-
-  // Sorting Logic
-  const sortData = (data: any[]) => {
-    if (!sortConfig) return data;
-
-    return [...data].sort((a, b) => {
-      if (sortConfig.key === 'emp_no') {
-        const cmp = compareEmpNo((a as any).emp_no, (b as any).emp_no);
-        return sortConfig.direction === 'asc' ? cmp : -cmp;
-      }
-
-      let aValue = (a as any)[sortConfig.key];
-      let bValue = (b as any)[sortConfig.key];
-
-      // Handle numbers if strings look like numbers
-      if (!isNaN(Number(aValue)) && !isNaN(Number(bValue))) {
-        aValue = Number(aValue);
-        bValue = Number(bValue);
-      } else {
-        aValue = String(aValue || '').toLowerCase();
-        bValue = String(bValue || '').toLowerCase();
-      }
-
-      if (aValue < bValue) {
-        return sortConfig.direction === 'asc' ? -1 : 1;
-      }
-      if (aValue > bValue) {
-        return sortConfig.direction === 'asc' ? 1 : -1;
-      }
-      return 0;
     });
   };
 
@@ -1825,12 +1914,15 @@ export default function EmployeesPage() {
       const response = await api.getEmployeesList({
         includeLeft: includeLeftEmployees,
         search: searchQuery,
-        division_id: selectedDivisionFilter,
-        department_id: selectedDepartmentFilter,
+        division_id: selectedDivisionFilter.join(',') || undefined,
+        department_id: selectedDepartmentFilter.join(',') || undefined,
         designation_id: selectedDesignationFilter,
         employee_group_id: selectedEmployeeGroupFilter || undefined,
+        qualificationStatus: selectedCertificateStatusFilter || undefined,
         page: pageNum,
         limit: itemsPerPage,
+        sortBy: sortConfig?.key || undefined,
+        sortOrder: sortConfig?.direction || undefined,
       });
 
       if (response.success) {
@@ -1873,8 +1965,8 @@ export default function EmployeesPage() {
       try {
         const response = await api.bulkResendCredentials({
           search: searchQuery,
-          divisionId: selectedDivisionFilter,
-          departmentId: selectedDepartmentFilter,
+          divisionId: selectedDivisionFilter.join(',') || undefined,
+          departmentId: selectedDepartmentFilter.join(',') || undefined,
           designationId: selectedDesignationFilter,
           includeLeft: includeLeftEmployees ? 'true' : 'false'
         });
@@ -1917,11 +2009,23 @@ export default function EmployeesPage() {
 
   // Department options: when a division is selected, use that division's departments (from getDivisions — for workspace this is divisionMapping-only; for superadmin full link)
   const departmentOptions = useMemo(() => {
-    if (selectedDivisionFilter) {
-      const divId = String(selectedDivisionFilter);
-      const div = divisions.find((d) => String(d._id) === divId);
-      const depts = (div?.departments ?? []) as (string | Department)[];
-      return depts.map((d) => (typeof d === 'string' ? { _id: d, name: d } : { _id: (d as any)._id, name: (d as any).name, code: (d as any).code }));
+    if (selectedDivisionFilter && selectedDivisionFilter.length > 0) {
+      const depts: any[] = [];
+      selectedDivisionFilter.forEach((divId) => {
+        const div = divisions.find((d) => String(d._id) === divId);
+        if (div && Array.isArray(div.departments)) {
+          depts.push(...div.departments);
+        }
+      });
+      // Deduplicate departments by id
+      const seen = new Set<string>();
+      const uniqueDepts = depts.filter((d) => {
+        const id = typeof d === 'string' ? d : d?._id;
+        if (!id || seen.has(String(id))) return false;
+        seen.add(String(id));
+        return true;
+      });
+      return uniqueDepts.map((d) => (typeof d === 'string' ? { _id: d, name: d } : { _id: (d as any)._id, name: (d as any).name, code: (d as any).code }));
     }
     return departments;
   }, [selectedDivisionFilter, divisions, departments]);
@@ -1978,6 +2082,98 @@ export default function EmployeesPage() {
     ]
   );
 
+  // Sorting Logic
+  const sortData = useCallback((data: any[]) => {
+    if (!sortConfig) return data;
+
+    return [...data].sort((a, b) => {
+      let aValue: any = '';
+      let bValue: any = '';
+
+      if (sortConfig.key === 'employee_name') {
+        aValue = a.employee_name || '';
+        bValue = b.employee_name || '';
+      } else if (sortConfig.key === 'emp_no') {
+        const cmp = compareEmpNo(a.emp_no, b.emp_no);
+        return sortConfig.direction === 'asc' ? cmp : -cmp;
+      } else if (sortConfig.key === 'division.name') {
+        aValue = a.division?.name || '';
+        bValue = b.division?.name || '';
+      } else if (sortConfig.key === 'department.name') {
+        aValue = a.department?.name || '';
+        bValue = b.department?.name || '';
+      } else if (sortConfig.key === 'phone_number') {
+        aValue = a.phone_number || '';
+        bValue = b.phone_number || '';
+      } else if (sortConfig.key === 'qualificationStatus') {
+        aValue = overallQualificationStatusLabel(a.qualificationStatus, overallCertificateStatusOptions) || '';
+        bValue = overallQualificationStatusLabel(b.qualificationStatus, overallCertificateStatusOptions) || '';
+      } else if (sortConfig.key === 'status') {
+        aValue = a.status || '';
+        bValue = b.status || '';
+      } else if (sortConfig.key === 'profile') {
+        aValue = getEmployeeProfileCompletion(a);
+        bValue = getEmployeeProfileCompletion(b);
+      }
+
+      // Handle numbers if strings look like numbers, or if they are actual numbers
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
+      }
+
+      if (!isNaN(Number(aValue)) && !isNaN(Number(bValue)) && aValue !== '' && bValue !== '') {
+        aValue = Number(aValue);
+        bValue = Number(bValue);
+        return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
+      } else {
+        aValue = String(aValue || '').toLowerCase();
+        bValue = String(bValue || '').toLowerCase();
+      }
+
+      if (aValue < bValue) {
+        return sortConfig.direction === 'asc' ? -1 : 1;
+      }
+      if (aValue > bValue) {
+        return sortConfig.direction === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+  }, [sortConfig, overallCertificateStatusOptions]);
+
+  const sortedEmployees = useMemo(() => {
+    if (sortConfig?.key === 'profile') {
+      return sortData(employees);
+    }
+    return employees;
+  }, [employees, sortConfig, sortData]);
+
+  const renderSortableHeader = (label: string, key: string) => {
+    const isSorted = sortConfig?.key === key;
+    const isAsc = sortConfig?.direction === 'asc';
+
+    return (
+      <th
+        onClick={() => handleSort(key)}
+        className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+      >
+        <div className="flex items-center gap-1">
+          <span>{label}</span>
+          <span className="text-slate-400">
+            {isSorted ? (
+              isAsc ? (
+                <ArrowUp className="h-3 w-3 text-green-600 dark:text-green-400" />
+              ) : (
+                <ArrowDown className="h-3 w-3 text-green-600 dark:text-green-400" />
+              )
+            ) : (
+              <ArrowUpDown className="h-3 w-3 opacity-30 hover:opacity-100" />
+            )}
+          </span>
+        </div>
+      </th>
+    );
+  };
+
   useEffect(() => {
     if (!viewingEmployee) {
       setViewingQualConfig(null);
@@ -2005,7 +2201,7 @@ export default function EmployeesPage() {
     if (activeTab !== 'requests') {
       loadUpdateRequests();
     }
-  }, [searchQuery, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter, selectedEmployeeGroupFilter, includeLeftEmployees, itemsPerPage]);
+  }, [searchQuery, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter, selectedEmployeeGroupFilter, selectedCertificateStatusFilter, includeLeftEmployees, itemsPerPage, sortConfig]);
 
   useEffect(() => {
     if (activeTab === 'requests') {
@@ -2013,13 +2209,17 @@ export default function EmployeesPage() {
     }
   }, [activeTab, updateRequestStatusFilter]);
 
+  useEffect(() => {
+    setApplicationPage(1);
+  }, [applicationStageFilter]);
+
   const loadApplications = async () => {
     try {
       setLoadingApplications(true);
       const search = (applicationSearchTerm || searchTerm || '').trim() || undefined;
       const response = await api.getEmployeeApplications({
-        ...(selectedDivisionFilter ? { division_id: selectedDivisionFilter } : {}),
-        ...(selectedDepartmentFilter ? { department_id: selectedDepartmentFilter } : {}),
+        ...(selectedDivisionFilter.length > 0 ? { division_id: selectedDivisionFilter.join(',') } : {}),
+        ...(selectedDepartmentFilter.length > 0 ? { department_id: selectedDepartmentFilter.join(',') } : {}),
         ...(selectedDesignationFilter ? { designation_id: selectedDesignationFilter } : {}),
         ...(selectedEmployeeGroupFilter ? { employee_group_id: selectedEmployeeGroupFilter } : {}),
         ...(search ? { search } : {}),
@@ -2982,15 +3182,15 @@ export default function EmployeesPage() {
 
     const appDivId = (app.division as any)?._id ?? (typeof app.division_id === 'string' ? app.division_id : (app.division_id as any)?._id);
     const appDivName = (app.division as any)?.name || (app.division_id as any)?.name || '';
-    const divFilter = selectedDivisionFilter || applicationFilters['division.name'];
+    const divFilter = selectedDivisionFilter.length > 0 ? selectedDivisionFilter : (applicationFilters['division.name'] ? [applicationFilters['division.name']] : null);
     const matchesDivision = !divFilter ||
-      appDivId === selectedDivisionFilter ||
-      appDivName === applicationFilters['division.name'];
+      divFilter.includes(appDivId) ||
+      divFilter.includes(appDivName);
 
     const appDeptId = typeof app.department_id === 'string' ? app.department_id : (app.department_id as any)?._id;
     const appDeptName = app.department?.name || (app.department_id as any)?.name || '';
-    const deptFilter = selectedDepartmentFilter || applicationFilters['department.name'];
-    const matchesDepartment = !deptFilter || appDeptId === selectedDepartmentFilter || appDeptName === applicationFilters['department.name'];
+    const deptFilter = selectedDepartmentFilter.length > 0 ? selectedDepartmentFilter : (applicationFilters['department.name'] ? [applicationFilters['department.name']] : null);
+    const matchesDepartment = !deptFilter || deptFilter.includes(appDeptId) || deptFilter.includes(appDeptName);
 
     const appDesigId = typeof app.designation_id === 'string' ? app.designation_id : (app.designation_id as any)?._id;
     const appDesigName = app.designation?.name || (app.designation_id as any)?.name || '';
@@ -3003,14 +3203,67 @@ export default function EmployeesPage() {
   // Apply column filters
   const filteredApplications = filterData(filteredApplicationsBase, applicationFilters);
 
-  // Pagination Logic for Applications
-  const totalApplicationPages = Math.ceil(filteredApplications.length / applicationRowsPerPage);
-  const paginatedApplications = filteredApplications.slice(
-    (applicationPage - 1) * applicationRowsPerPage,
-    applicationPage * applicationRowsPerPage
-  );
+  const filteredUpdateRequests = useMemo(() => {
+    return updateRequests.filter((req) => {
+      const search = (applicationSearchTerm || searchTerm || '').trim().toLowerCase();
+      const matchesSearch = !search ||
+        req.employeeId?.employee_name?.toLowerCase().includes(search) ||
+        (req.emp_no ?? '')?.toString().toLowerCase().includes(search) ||
+        (req.employeeId?.emp_no ?? '')?.toString().toLowerCase().includes(search) ||
+        req.employeeId?.phone_number?.toLowerCase().includes(search) ||
+        req.employeeId?.email?.toLowerCase().includes(search);
 
-  const pendingApplications = filteredApplications.filter(app => app.status === 'pending');
+      // Division Filter
+      const divId = typeof req.employeeId?.division_id === 'object' 
+        ? (req.employeeId.division_id as any)?._id 
+        : req.employeeId?.division_id || (req.employeeId as any)?.division?._id || (req.employeeId as any)?.division_id?._id;
+      const matchesDivision = !selectedDivisionFilter || selectedDivisionFilter.length === 0 || 
+        (divId && selectedDivisionFilter.includes(String(divId)));
+
+      // Department Filter
+      const deptId = typeof req.employeeId?.department_id === 'object' 
+        ? (req.employeeId.department_id as any)?._id 
+        : req.employeeId?.department_id || (req.employeeId as any)?.department?._id || (req.employeeId as any)?.department_id?._id;
+      const matchesDepartment = !selectedDepartmentFilter || selectedDepartmentFilter.length === 0 || 
+        (deptId && selectedDepartmentFilter.includes(String(deptId)));
+
+      // Designation Filter
+      const desigId = typeof req.employeeId?.designation_id === 'object' 
+        ? (req.employeeId.designation_id as any)?._id 
+        : req.employeeId?.designation_id || (req.employeeId as any)?.designation?._id || (req.employeeId as any)?.designation_id?._id;
+      const matchesDesignation = !selectedDesignationFilter || 
+        (desigId && String(desigId) === selectedDesignationFilter);
+
+      // Employee Group Filter
+      const groupId = typeof req.employeeId?.employee_group_id === 'object' 
+        ? (req.employeeId.employee_group_id as any)?._id 
+        : req.employeeId?.employee_group_id || (req.employeeId as any)?.employee_group?._id || (req.employeeId as any)?.employee_group_id?._id;
+      const matchesGroup = !selectedEmployeeGroupFilter || 
+        (groupId && String(groupId) === selectedEmployeeGroupFilter);
+
+      return matchesSearch && matchesDivision && matchesDepartment && matchesDesignation && matchesGroup;
+    });
+  }, [updateRequests, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter, selectedEmployeeGroupFilter, applicationSearchTerm, searchTerm]);
+
+  // Pagination Logic for Applications
+  const pendingApplications = useMemo(() => filteredApplications.filter(app => app.status === 'pending'), [filteredApplications]);
+  const verifiedApplications = useMemo(() => filteredApplications.filter(app => app.status === 'verified'), [filteredApplications]);
+  const finalizedApplications = useMemo(() => filteredApplications.filter(app => app.status === 'approved' || app.status === 'rejected'), [filteredApplications]);
+
+  const activeStageApplications = useMemo(() => {
+    if (applicationStageFilter === 'pending') return pendingApplications;
+    if (applicationStageFilter === 'verified') return verifiedApplications;
+    return finalizedApplications;
+  }, [applicationStageFilter, pendingApplications, verifiedApplications, finalizedApplications]);
+
+  const totalApplicationPages = Math.ceil(activeStageApplications.length / applicationRowsPerPage);
+  const paginatedApplications = useMemo(() => {
+    return activeStageApplications.slice(
+      (applicationPage - 1) * applicationRowsPerPage,
+      applicationPage * applicationRowsPerPage
+    );
+  }, [activeStageApplications, applicationPage, applicationRowsPerPage]);
+
   const pendingUpdateRequests = updateRequests.filter(r => r.status === 'pending');
   const approvedApplications = filteredApplications.filter(app => app.status === 'approved');
   const rejectedApplications = filteredApplications.filter(app => app.status === 'rejected');
@@ -3381,10 +3634,10 @@ export default function EmployeesPage() {
 
   return (
     <div className="relative min-h-screen">
-      <div className="relative z-10 mx-auto max-w-[1920px]">
+      <div className="relative z-10 mx-auto w-full max-w-[1920px] overflow-hidden">
         {/* Header - Unified Layout */}
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+          <div className="shrink-0">
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Employee Management</h1>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               Manage employee records • Data source: <span className="font-medium text-green-600 dark:text-green-400">{dataSource.toUpperCase()}</span>
@@ -3439,36 +3692,36 @@ export default function EmployeesPage() {
               </button>
             </div>
 
-            {/* Settings Button - Moved beside slider */}
-            <Link
-              href="/superadmin/employees/form-settings"
-              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-              title="Form Settings"
+            {/* New Application button */}
+            <button
+              onClick={() => setShowApplicationDialog(true)}
+              className="flex items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-600/20 transition-all hover:bg-green-700"
             >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-            </Link>
+              New Application
+            </button>
           </div>
         </div>
 
         {/* Global Toolbar */}
-        <div className="mb-6 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="relative z-30 mb-6 rounded-2xl border border-slate-200 bg-white/50 backdrop-blur-sm p-4 dark:border-slate-700 dark:bg-slate-900/50 space-y-3">
+          {/* Filters Row */}
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-2 w-full">
             {activeTab === 'employees' ? (
               /* Advanced Filters for Employees */
-              <div className="flex flex-wrap items-center gap-3">
+              <>
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
                     handleSearch();
                   }}
-                  className="relative min-w-[300px]"
+                  className="relative flex-1 min-w-[140px] max-w-[200px] shrink-0"
                 >
                   <input
                     type="text"
-                    placeholder="Search name, emp no, phone..."
+                    placeholder="Search name, emp no..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     onKeyDown={(e) => {
@@ -3477,82 +3730,74 @@ export default function EmployeesPage() {
                         handleSearch();
                       }
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-12 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-10 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   />
-                  <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                   <button
                     type="submit"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-green-500 p-2 text-white hover:bg-green-600 transition-all flex items-center justify-center"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg bg-green-500 p-1 text-white hover:bg-green-600 transition-all flex items-center justify-center"
                     title="Search"
                   >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                   </button>
                 </form>
 
-                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
-
                 {/* Division Selection */}
-                <div className="min-w-[150px]">
-                  <select
-                    value={selectedDivisionFilter}
-                    onChange={(e) => {
-                      setSelectedDivisionFilter(e.target.value);
-                      setSelectedDepartmentFilter(''); // Reset dept on div change
+                <div className="flex-1 min-w-[120px] max-w-[180px]">
+                  <MultiSelectDropdown
+                    label="Divisions"
+                    options={divisions}
+                    selectedValues={selectedDivisionFilter}
+                    onChange={(values) => {
+                      setSelectedDivisionFilter(values);
+                      setSelectedDepartmentFilter([]); // Reset dept on div change
                       setSelectedDesignationFilter(''); // Reset desig on div change
                       setSelectedEmployeeGroupFilter('');
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  >
-                    <option value="">All Divisions</option>
-                    {divisions.map((d) => (
-                      <option key={d._id} value={d._id}>{d.name}</option>
-                    ))}
-                  </select>
+                    placeholder="All Divisions"
+                  />
                 </div>
 
                 {/* Department Selection */}
-                <div className="min-w-[150px]">
-                  <select
-                    value={selectedDepartmentFilter}
-                    onChange={(e) => {
-                      setSelectedDepartmentFilter(e.target.value);
+                <div className="flex-1 min-w-[130px] max-w-[190px]">
+                  <MultiSelectDropdown
+                    label="Departments"
+                    options={departmentOptions}
+                    selectedValues={selectedDepartmentFilter}
+                    onChange={(values) => {
+                      setSelectedDepartmentFilter(values);
                       setSelectedDesignationFilter(''); // Reset desig on dept change
                       setSelectedEmployeeGroupFilter('');
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  >
-                    <option value="">All Departments</option>
-                    {departmentOptions.map((d) => (
-                      <option key={d._id} value={d._id}>{d.name}</option>
-                    ))}
-                  </select>
+                    placeholder="All Departments"
+                  />
                 </div>
 
                 {/* Designation Selection */}
-                <div className="min-w-[150px]">
+                <div className="flex-1 min-w-[105px] max-w-[150px]">
                   <select
                     value={selectedDesignationFilter}
                     onChange={(e) => setSelectedDesignationFilter(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
-                    <option value="">All Designations</option>
+                    <option value="">Designations</option>
                     {designations.map((d) => (
                       <option key={d._id} value={d._id}>{d.name}</option>
                     ))}
                   </select>
                 </div>
                 {customEmployeeGroupingEnabled && (
-                  <div className="min-w-[150px]">
+                  <div className="flex-1 min-w-[100px] max-w-[130px]">
                     <select
                       value={selectedEmployeeGroupFilter}
                       onChange={(e) => setSelectedEmployeeGroupFilter(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
-                      <option value="">All Groups</option>
+                      <option value="">Groups</option>
                       {employeeGroups.filter((g) => g.isActive !== false).map((g) => (
                         <option key={g._id} value={g._id}>{g.name}</option>
                       ))}
@@ -3560,115 +3805,113 @@ export default function EmployeesPage() {
                   </div>
                 )}
 
+                {/* Certificate Status Selection */}
+                <div className="flex-1 min-w-[110px] max-w-[160px]">
+                  <select
+                    value={selectedCertificateStatusFilter}
+                    onChange={(e) => setSelectedCertificateStatusFilter(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">Certificates</option>
+                    {overallCertificateStatusOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
                 {/* Include Left Toggle */}
-                <label className="flex items-center gap-2 cursor-pointer ml-2">
+                <label className="flex items-center gap-1.5 cursor-pointer sm:ml-2 py-1 text-xs font-medium text-slate-700 dark:text-slate-300 shrink-0 select-none">
                   <input
                     type="checkbox"
                     checked={includeLeftEmployees}
                     onChange={(e) => setIncludeLeftEmployees(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-green-600 focus:ring-green-500"
                   />
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Include Left</span>
+                  <span>Include Left</span>
                 </label>
-              </div>
+              </>
             ) : (
               /* Search and filters for Applications (same scope as Employees) */
-              <div className="flex flex-wrap items-center gap-3 flex-1">
-                <div className="relative min-w-[200px] max-w-md flex-1">
+              <>
+                <div className="relative flex-1 min-w-[140px] max-w-[200px] shrink-0">
                   <input
                     type="text"
-                    placeholder="Search applications by name, emp no, dept..."
+                    placeholder="Search applications..."
                     value={applicationSearchTerm}
                     onChange={(e) => setApplicationSearchTerm(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-4 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   />
-                  <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                 </div>
-                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
-                <div className="min-w-[140px]">
-                  <select
-                    value={selectedDivisionFilter}
-                    onChange={(e) => {
-                      setSelectedDivisionFilter(e.target.value);
-                      setSelectedDepartmentFilter('');
+                <div className="flex-1 min-w-[120px] max-w-[180px]">
+                  <MultiSelectDropdown
+                    label="Divisions"
+                    options={divisions}
+                    selectedValues={selectedDivisionFilter}
+                    onChange={(values) => {
+                      setSelectedDivisionFilter(values);
+                      setSelectedDepartmentFilter([]);
                       setSelectedDesignationFilter('');
                       setSelectedEmployeeGroupFilter('');
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  >
-                    <option value="">All Divisions</option>
-                    {divisions.map((d) => (
-                      <option key={d._id} value={d._id}>{d.name}</option>
-                    ))}
-                  </select>
+                    placeholder="All Divisions"
+                  />
                 </div>
-                <div className="min-w-[140px]">
-                  <select
-                    value={selectedDepartmentFilter}
-                    onChange={(e) => {
-                      setSelectedDepartmentFilter(e.target.value);
+                <div className="flex-1 min-w-[130px] max-w-[190px]">
+                  <MultiSelectDropdown
+                    label="Departments"
+                    options={departmentOptions}
+                    selectedValues={selectedDepartmentFilter}
+                    onChange={(values) => {
+                      setSelectedDepartmentFilter(values);
                       setSelectedDesignationFilter('');
                       setSelectedEmployeeGroupFilter('');
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  >
-                    <option value="">All Departments</option>
-                    {departmentOptions.map((d) => (
-                      <option key={d._id} value={d._id}>{d.name}</option>
-                    ))}
-                  </select>
+                    placeholder="All Departments"
+                  />
                 </div>
-                <div className="min-w-[140px]">
+                <div className="flex-1 min-w-[105px] max-w-[150px]">
                   <select
                     value={selectedDesignationFilter}
                     onChange={(e) => setSelectedDesignationFilter(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
-                    <option value="">All Designations</option>
+                    <option value="">Designations</option>
                     {designations.map((d) => (
                       <option key={d._id} value={d._id}>{d.name}</option>
                     ))}
                   </select>
                 </div>
                 {customEmployeeGroupingEnabled && (
-                  <div className="min-w-[140px]">
+                  <div className="flex-1 min-w-[100px] max-w-[130px]">
                     <select
                       value={selectedEmployeeGroupFilter}
                       onChange={(e) => setSelectedEmployeeGroupFilter(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
-                      <option value="">All Groups</option>
+                      <option value="">Groups</option>
                       {employeeGroups.filter((g) => g.isActive !== false).map((g) => (
                         <option key={g._id} value={g._id}>{g.name}</option>
                       ))}
                     </select>
                   </div>
                 )}
-              </div>
+              </>
             )}
+          </div>
 
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => activeTab === 'employees' ? loadEmployees(currentPage) : loadApplications()}
-                className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-              >
-                <svg className={`h-4 w-4 ${(loading || loadingApplications) ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                <span>Refresh</span>
-              </button>
-
-              <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
-
+          {/* Action Buttons Row */}
+          {(activeTab === 'employees' || activeTab === 'applications') && (
+            <div className="flex flex-wrap items-center gap-2 pt-2.5 border-t border-slate-150 dark:border-slate-800">
               {/* Employee Update Button */}
               {activeTab === 'employees' && allowEmployeeBulkProcess && (
                 <button
                   onClick={() => setShowEmployeeUpdateModal(true)}
-                  className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 transition-all hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                  className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-700 transition-all hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
                 >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
                   <span>Bulk Update</span>
@@ -3678,9 +3921,9 @@ export default function EmployeesPage() {
               {(activeTab === 'employees' || activeTab === 'applications') && allowEmployeeBulkProcess && (
                 <button
                   onClick={() => setShowBulkUpload(true)}
-                  className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
+                  className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2 text-xs font-semibold text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
                 >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
                   <span>Import</span>
@@ -3693,9 +3936,9 @@ export default function EmployeesPage() {
                     setSelectedEmployeeForExport(null);
                     setShowExportDialog(true);
                   }}
-                  className="flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-700 transition-all hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400"
+                  className="flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700 transition-all hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400"
                 >
-                  <Download className="h-4 w-4" />
+                  <Download className="h-3.5 w-3.5" />
                   <span>Bulk Export</span>
                 </button>
               )}
@@ -3703,39 +3946,38 @@ export default function EmployeesPage() {
               {(activeTab === 'employees' || activeTab === 'applications') && (
                 <button
                   onClick={handleBulkResendCredentials}
-                  className="flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 shadow-sm shadow-slate-900/10"
+                  className="flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-semibold text-white transition-all hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 shadow-sm shadow-slate-900/10"
                 >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                   </svg>
-                  <span>Resend All</span>
+                  <span>SMS</span>
                 </button>
               )}
-
-              <button
-                onClick={() => setShowApplicationDialog(true)}
-                className="flex items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-600/20 transition-all hover:bg-green-700"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                New Application
-              </button>
             </div>
-          </div>
+          )}
+        </div>
 
-          {/* Pagination Controls Bar */}
-          {activeTab === 'employees' && totalPages > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/50 backdrop-blur-sm px-6 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-              <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
-                <p>Showing <span className="font-semibold text-slate-900 dark:text-slate-100">{employees.length}</span> of <span className="font-semibold text-slate-900 dark:text-slate-100">{totalCount}</span> employees</p>
+        {/* Pagination Controls Bar */}
+        {activeTab === 'employees' && totalPages > 0 && (() => {
+          const startIdx = (currentPage - 1) * itemsPerPage + 1;
+          const endIdx = Math.min(currentPage * itemsPerPage, totalCount);
+          return (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+                <p>
+                  Showing <span className="font-semibold text-slate-800 dark:text-slate-200">{startIdx}-{endIdx}</span> of <span className="font-semibold text-slate-800 dark:text-slate-200">{totalCount}</span> employees
+                </p>
                 <div className="h-4 w-px bg-slate-200 dark:bg-slate-700"></div>
-                <div className="flex items-center gap-2">
-                  <span>Rows per page:</span>
+                <div className="flex items-center gap-1.5">
+                  <span>Show:</span>
                   <select
                     value={itemsPerPage}
-                    onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                    className="rounded-lg border border-slate-200 bg-transparent px-2 py-1 text-sm focus:outline-none dark:border-slate-700"
+                    onChange={(e) => {
+                      setItemsPerPage(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-green-500 cursor-pointer"
                   >
                     {[20, 50, 100, 200].map(size => (
                       <option key={size} value={size}>{size}</option>
@@ -3748,12 +3990,10 @@ export default function EmployeesPage() {
                 <button
                   onClick={() => loadEmployees(currentPage - 1)}
                   disabled={currentPage === 1 || loading}
-                  className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                  className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                 >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                  Prev
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <span>Previous</span>
                 </button>
 
                 <div className="flex items-center gap-1">
@@ -3768,10 +4008,11 @@ export default function EmployeesPage() {
                       <button
                         key={pageNum}
                         onClick={() => loadEmployees(pageNum)}
-                        className={`min-w-[32px] h-8 rounded-lg text-sm font-medium transition-all ${currentPage === pageNum
-                          ? 'bg-green-600 text-white shadow-md shadow-green-600/20'
-                          : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-                          }`}
+                        className={`h-8 w-8 rounded-lg flex items-center justify-center text-xs font-semibold transition-all ${
+                          currentPage === pageNum
+                            ? 'bg-green-600 text-white shadow-sm shadow-green-600/20'
+                            : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                        }`}
                       >
                         {pageNum}
                       </button>
@@ -3782,17 +4023,15 @@ export default function EmployeesPage() {
                 <button
                   onClick={() => loadEmployees(currentPage + 1)}
                   disabled={currentPage === totalPages || loading}
-                  className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                  className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                 >
-                  Next
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
+                  <span>Next</span>
+                  <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          );
+        })()}
 
         {/* Messages */}
         {error && (
@@ -3809,243 +4048,458 @@ export default function EmployeesPage() {
         {/* Applications Tab */}
         {activeTab === 'applications' && (
           <>
-            {/* Applications Header */}
-            <div className="mb-6 flex items-center justify-between">
-              {selectedApplicationIds.length > 0 && (userRole === 'super_admin' || userRole === 'sub_admin') && (
+            {/* Stage Selector Pills */}
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-slate-50/50 p-1.5 dark:border-slate-800 dark:bg-slate-900/50">
+                <button
+                  onClick={() => setApplicationStageFilter('pending')}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold tracking-wide transition-all duration-200 ${
+                    applicationStageFilter === 'pending'
+                      ? 'bg-white text-amber-600 shadow-sm dark:bg-slate-800 dark:text-amber-400'
+                      : 'text-slate-650 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800/60'
+                  }`}
+                >
+                  <LucideClock className="h-3.5 w-3.5" />
+                  <span>Pending Verification</span>
+                  {pendingApplications.length > 0 && (
+                    <span className="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-805 dark:bg-amber-900/30 dark:text-amber-305">
+                      {pendingApplications.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setApplicationStageFilter('verified')}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold tracking-wide transition-all duration-200 ${
+                    applicationStageFilter === 'verified'
+                      ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
+                      : 'text-slate-650 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800/60'
+                  }`}
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  <span>Salary Finalization</span>
+                  {verifiedApplications.length > 0 && (
+                    <span className="ml-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-805 dark:bg-indigo-900/30 dark:text-indigo-305">
+                      {verifiedApplications.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setApplicationStageFilter('finalized')}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold tracking-wide transition-all duration-200 ${
+                    applicationStageFilter === 'finalized'
+                      ? 'bg-white text-emerald-600 shadow-sm dark:bg-slate-800 dark:text-emerald-400'
+                      : 'text-slate-650 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800/60'
+                  }`}
+                >
+                  <CheckCircle className="h-3.5 w-3.5" />
+                  <span>Finalized History</span>
+                  {finalizedApplications.length > 0 && (
+                    <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-800 dark:bg-slate-800 dark:text-slate-300">
+                      {finalizedApplications.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Bulk Action Banner */}
+            {selectedApplicationIds.length > 0 && applicationStageFilter === 'pending' && (userRole === 'super_admin' || userRole === 'sub_admin') && (
+              <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-blue-100 bg-blue-50/70 p-4 shadow-sm backdrop-blur-sm dark:border-blue-900/30 dark:bg-blue-950/20 animate-fadeIn">
                 <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                    <Users className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-blue-905 dark:text-blue-200">Bulk Actions</h4>
+                    <p className="text-[10px] text-blue-600 dark:text-blue-400 mt-0.5">
+                      {selectedApplicationIds.length} application(s) selected for verification processing.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
                   <button
                     onClick={handleBulkReject}
-                    className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-700 hover:to-rose-700 hover:shadow-xl hover:shadow-red-500/40"
+                    className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-650 shadow-sm transition-all hover:bg-red-50 hover:text-red-700 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-900/20"
                   >
+                    <UserX className="h-3.5 w-3.5" />
                     <span>Reject Selected</span>
                   </button>
                   <button
                     onClick={handleBulkApprove}
-                    className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-700 hover:to-indigo-700 hover:shadow-xl hover:shadow-blue-500/40"
+                    className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2 text-xs font-semibold text-white shadow-md shadow-blue-500/20 transition-all hover:from-blue-700 hover:to-indigo-700 hover:shadow-lg"
                   >
-                    <span>Approve Selected ({selectedApplicationIds.length})</span>
+                    <UserCheck className="h-3.5 w-3.5" />
+                    <span>Verify Selected</span>
                   </button>
                 </div>
-              )}
-
-            </div>
+              </div>
+            )}
 
             {/* Applications List */}
             {loadingApplications ? (
               <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm py-16 shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
-                <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading applications...</p>
+                <Spinner className="h-8 w-8 text-green-500 animate-spin" />
+                <p className="mt-4 text-xs font-semibold text-slate-500 dark:text-slate-400">Loading applications...</p>
               </div>
             ) : applications.length === 0 ? (
-              <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-12 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-100 to-green-100 dark:from-green-900/30 dark:to-green-900/30">
+              <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-16 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20">
                   <svg className="h-8 w-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
-                <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No applications found</p>
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Create a new employee application to get started</p>
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">No applications found</h3>
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Create a new employee application to get started.</p>
+                <button
+                  onClick={() => setShowApplicationDialog(true)}
+                  className="mt-6 inline-flex items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-green-600/20 transition-all hover:bg-green-700"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>New Application</span>
+                </button>
               </div>
             ) : filteredApplications.length === 0 ? (
-              <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-12 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No applications match the current filters</p>
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Try adjusting division, department, designation or search.</p>
+              <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-16 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-850 dark:to-slate-800">
+                  <Search className="h-6 w-6 text-slate-400 dark:text-slate-500" />
+                </div>
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">No matching applications</h3>
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Try adjusting your filter settings or search query.</p>
                 <button
                   onClick={() => {
                     setSearchTerm('');
                     setApplicationSearchTerm('');
-                    setSelectedDivisionFilter('');
-                    setSelectedDepartmentFilter('');
+                    setSelectedDivisionFilter([]);
+                    setSelectedDepartmentFilter([]);
                     setSelectedDesignationFilter('');
                     setSelectedEmployeeGroupFilter('');
                     setApplicationFilters({});
                     loadApplications();
                   }}
-                  className="mt-6 px-6 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  className="mt-6 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-xs font-semibold text-slate-650 shadow-sm transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                 >
-                  Reset filters & refresh
+                  Clear Filters
                 </button>
               </div>
+            ) : activeStageApplications.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-16 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80 animate-fadeIn">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-850 dark:to-slate-800">
+                  {applicationStageFilter === 'pending' && <LucideClock className="h-6 w-6 text-amber-500" />}
+                  {applicationStageFilter === 'verified' && <ShieldCheck className="h-6 w-6 text-indigo-500" />}
+                  {applicationStageFilter === 'finalized' && <CheckCircle className="h-6 w-6 text-emerald-500" />}
+                </div>
+                <h3 className="text-base font-bold text-slate-850 dark:text-slate-200">
+                  {applicationStageFilter === 'pending' && 'No Pending Verification'}
+                  {applicationStageFilter === 'verified' && 'No Awaiting Salary Approval'}
+                  {applicationStageFilter === 'finalized' && 'No Finalized Applications'}
+                </h3>
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                  {applicationStageFilter === 'pending' && 'All applications have been verified or processed.'}
+                  {applicationStageFilter === 'verified' && 'There are no verified applications awaiting salary approval.'}
+                  {applicationStageFilter === 'finalized' && 'No applications have been finalized yet.'}
+                </p>
+              </div>
             ) : (
-              <div className="space-y-8">
-                {/* Stage 1: Pending Applications */}
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                  <div className="border-b border-slate-200 bg-gradient-to-r from-yellow-50 to-amber-50/50 px-6 py-4 dark:border-slate-700 dark:from-yellow-900/20 dark:to-amber-900/10 flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">Stage 1: Pending Verification</h3>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Applications awaiting initial review and employee creation</p>
-                    </div>
-                    <span className="px-2.5 py-1 rounded-full bg-yellow-100 text-yellow-700 text-[10px] font-bold uppercase dark:bg-yellow-900/30 dark:text-yellow-400">
-                      {pendingApplications.length} Pending
-                    </span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
+              <div className="space-y-4 animate-fadeIn">
+                <div className="w-full overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-md dark:border-slate-800 dark:bg-slate-900">
+                  <div className="w-full overflow-x-auto animate-fadeIn">
+                    <table className="w-full min-w-[900px] border-collapse text-left">
                       <thead>
-                        <tr className="border-b border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/30">
-                          <th className="px-6 py-4 text-left">
-                            <input
-                              type="checkbox"
-                              checked={selectedApplicationIds.length === pendingApplications.length && pendingApplications.length > 0}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedApplicationIds(pendingApplications.map(app => app._id));
-                                } else {
-                                  setSelectedApplicationIds([]);
-                                }
-                              }}
-                              className="h-4 w-4 rounded border-slate-300 text-green-600"
-                            />
-                          </th>
-                          <th className="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Employee</th>
-                          <th className="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Department</th>
-                          <th className="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Proposed Salary</th>
-                          <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest text-slate-500">Actions</th>
+                        <tr className="border-b border-slate-200/80 bg-slate-50/60 text-xs font-bold uppercase tracking-wider text-slate-450 dark:border-slate-800 dark:bg-slate-900/50">
+                          {applicationStageFilter === 'pending' && (
+                            <th className="w-12 px-6 py-4">
+                              <input
+                                type="checkbox"
+                                checked={selectedApplicationIds.length === pendingApplications.length && pendingApplications.length > 0}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedApplicationIds(pendingApplications.map(app => app._id));
+                                  } else {
+                                    setSelectedApplicationIds([]);
+                                  }
+                                }}
+                                className="h-4 w-4 rounded border-slate-350 text-green-600 focus:ring-green-500/20"
+                              />
+                            </th>
+                          )}
+                          <th className="px-6 py-4">Employee Information</th>
+                          <th className="px-6 py-4">Department & Designation</th>
+                          <th className="px-6 py-4">Proposed Salary</th>
+                          {applicationStageFilter === 'verified' && (
+                            <th className="px-6 py-4">Verification Info</th>
+                          )}
+                          {applicationStageFilter === 'finalized' && (
+                            <>
+                              <th className="px-6 py-4">Status</th>
+                              <th className="px-6 py-4">Final Salary</th>
+                              <th className="px-6 py-4">Processed Info</th>
+                            </>
+                          )}
+                          <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest text-slate-450">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {pendingApplications.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">No applications pending verification</td>
-                          </tr>
-                        ) : (
-                          pendingApplications.map((app) => (
-                            <tr key={app._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
-                              <td className="px-6 py-4">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedApplicationIds.includes(app._id)}
-                                  onChange={() => toggleSelectApplication(app._id)}
-                                  className="h-4 w-4 rounded border-slate-300 text-green-600"
-                                />
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="font-bold text-slate-900 dark:text-slate-100">{app.employee_name}</div>
-                                {app.applicationType === 'rejoin' && (
-                                  <span className="mt-0.5 inline-block rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">Rejoin</span>
-                                )}
-                                <div className="text-[10px] text-slate-500">{app.emp_no} • {app.email || 'No email'}</div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                                  {(app.department_id as any)?.name || app.department?.name || '-'}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className="text-xs font-bold text-slate-900 dark:text-slate-100">₹{app.proposedSalary.toLocaleString()}</span>
-                              </td>
-                              <td className="px-6 py-4 text-right">
-                                <button
-                                  onClick={() => openEmployeeViewFromApplication(app)}
-                                  className="px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20"
-                                >
-                                  Verify
-                                </button>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                      <tbody className="divide-y divide-slate-100 text-slate-700 dark:divide-slate-800/80 dark:text-slate-300">
+                        {paginatedApplications.map((app) => {
+                          const hasPhoto = !!app.profilePhoto;
+                          const nameInitials = (app.employee_name || 'E')
+                            .split(' ')
+                            .filter(Boolean)
+                            .map((n: string) => n[0])
+                            .slice(0, 2)
+                            .join('')
+                            .toUpperCase();
 
-                {/* Stage 2: Verified Applications */}
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                  <div className="border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-blue-50/50 px-6 py-4 dark:border-slate-700 dark:from-indigo-900/20 dark:to-blue-900/10 flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">Stage 2: Awaiting Salary Approval</h3>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Employee record created, finalizing salary structure</p>
-                    </div>
-                    <span className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold uppercase dark:bg-indigo-900/30 dark:text-indigo-400">
-                      {applications.filter(app => app.status === 'verified').length} Verified
-                    </span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {applications.filter(app => app.status === 'verified').length === 0 ? (
-                          <tr>
-                            <td className="px-6 py-12 text-center text-sm text-slate-500">No applications awaiting salary approval</td>
-                          </tr>
-                        ) : (
-                          applications.filter(app => app.status === 'verified').map((app) => (
-                            <tr key={app._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                          // Select clean gradient for avatar placeholder
+                          const nameHash = (app.employee_name || '').split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
+                          const gradients = [
+                            'from-emerald-400 to-teal-500 text-white',
+                            'from-blue-400 to-indigo-500 text-white',
+                            'from-purple-400 to-fuchsia-500 text-white',
+                            'from-amber-400 to-orange-500 text-white',
+                            'from-rose-400 to-pink-500 text-white',
+                          ];
+                          const avatarGradient = gradients[nameHash % gradients.length];
+
+                          return (
+                            <tr key={app._id} className="group hover:bg-slate-50/30 dark:hover:bg-slate-800/20 transition-colors">
+                              {applicationStageFilter === 'pending' && (
+                                <td className="px-6 py-4">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedApplicationIds.includes(app._id)}
+                                    onChange={() => toggleSelectApplication(app._id)}
+                                    className="h-4 w-4 rounded border-slate-350 text-green-600 focus:ring-green-500/20"
+                                  />
+                                </td>
+                              )}
+                              
+                              {/* Employee Information */}
                               <td className="px-6 py-4">
-                                <div className="font-bold text-slate-900 dark:text-slate-100">{app.employee_name}</div>
-                                <div className="text-[10px] text-slate-500">
-                                  {app.emp_no} • Verified by {app.verifiedBy?.name || 'System'}
-                                  {app.verifiedAt && ` on ${new Date(app.verifiedAt).toLocaleDateString()}`}
+                                <div className="flex items-center gap-3">
+                                  <div className="relative shrink-0">
+                                    {hasPhoto ? (
+                                      <img
+                                        src={app.profilePhoto}
+                                        alt={app.employee_name}
+                                        className="h-10 w-10 rounded-full object-cover border border-slate-200 dark:border-slate-800"
+                                      />
+                                    ) : (
+                                      <div className={`flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br font-bold text-xs uppercase ${avatarGradient}`}>
+                                        {nameInitials}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-semibold text-slate-850 dark:text-slate-100 group-hover:text-green-600 dark:group-hover:text-green-400 transition-colors">
+                                        {app.employee_name}
+                                      </span>
+                                      {app.applicationType === 'rejoin' && (
+                                        <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-250 dark:border-emerald-900/50">
+                                          Rejoin
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                      <span className="font-medium text-slate-600 dark:text-slate-350">{app.emp_no || 'No Emp No'}</span>
+                                      <span className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-700"></span>
+                                      <span>{app.email || 'No Email'}</span>
+                                    </div>
+                                  </div>
                                 </div>
                               </td>
+
+                              {/* Department & Designation */}
                               <td className="px-6 py-4">
-                                <span className="text-xs font-bold text-slate-900 dark:text-slate-100">₹{app.proposedSalary.toLocaleString()}</span>
+                                <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                                  {app.designation?.name || (app.designation_id as any)?.name || '-'}
+                                </div>
+                                <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                                  {app.department?.name || (app.department_id as any)?.name || '-'}
+                                </div>
                               </td>
+
+                              {/* Proposed Salary */}
+                              <td className="px-6 py-4">
+                                <span className="text-xs font-bold text-slate-900 dark:text-slate-150">
+                                  ₹{Number(app.proposedSalary || 0).toLocaleString('en-IN')}
+                                </span>
+                              </td>
+
+                              {/* Stage-specific fields */}
+                              {applicationStageFilter === 'verified' && (
+                                <td className="px-6 py-4">
+                                  <div className="text-xs font-medium text-slate-800 dark:text-slate-200">
+                                    {app.verifiedBy?.name || 'System'}
+                                  </div>
+                                  <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                    <LucideClock className="h-3 w-3 text-slate-400" />
+                                    <span>{app.verifiedAt ? formatDateDayMonthYear(app.verifiedAt) : '-'}</span>
+                                  </div>
+                                </td>
+                              )}
+
+                              {applicationStageFilter === 'finalized' && (
+                                <>
+                                  <td className="px-6 py-4">
+                                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                                      app.status === 'approved'
+                                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-250 dark:border-emerald-900/50'
+                                        : 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400 border border-rose-250 dark:border-rose-900/50'
+                                    }`}>
+                                      <span className={`h-1.5 w-1.5 rounded-full ${app.status === 'approved' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                                      {app.status === 'approved' ? 'Approved' : 'Rejected'}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <span className="text-xs font-bold text-slate-900 dark:text-slate-150">
+                                      {app.approvedSalary ? `₹${Number(app.approvedSalary).toLocaleString('en-IN')}` : '—'}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <div className="text-xs font-medium text-slate-800 dark:text-slate-205">
+                                      {app.approvedBy?.name || app.rejectedBy?.name || '-'}
+                                    </div>
+                                    <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                      <LucideClock className="h-3 w-3 text-slate-400" />
+                                      <span>{app.updatedAt ? formatDateDayMonthYear(app.updatedAt) : '-'}</span>
+                                    </div>
+                                  </td>
+                                </>
+                              )}
+
+                              {/* Action Buttons */}
                               <td className="px-6 py-4 text-right">
-                                {canFinalizeSalary({ role: userRole } as any) && (
-                                  <button
-                                    onClick={() => openEmployeeViewFromApplication(app)}
-                                    className="px-4 py-1.5 rounded-lg bg-green-600 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-green-700 transition-all shadow-lg shadow-green-600/20"
-                                  >
-                                    Finalize Salary
-                                  </button>
-                                )}
+                                <div className="flex items-center justify-end gap-2">
+                                  {applicationStageFilter === 'pending' && (
+                                    <button
+                                      onClick={() => openEmployeeViewFromApplication(app)}
+                                      className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white hover:bg-indigo-700 transition-all shadow-md shadow-indigo-600/10 hover:shadow-lg"
+                                    >
+                                      <span>Verify</span>
+                                      <ArrowRight className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+
+                                  {applicationStageFilter === 'verified' && (
+                                    <>
+                                      {canFinalizeSalary({ role: userRole } as any) ? (
+                                        <button
+                                          onClick={() => openEmployeeViewFromApplication(app)}
+                                          className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white hover:bg-emerald-700 transition-all shadow-md shadow-emerald-600/10 hover:shadow-lg"
+                                        >
+                                          <span>Finalize Salary</span>
+                                          <ArrowRight className="h-3.5 w-3.5" />
+                                        </button>
+                                      ) : (
+                                        <span className="text-[10px] text-slate-400 font-medium italic">Awaiting Superadmin</span>
+                                      )}
+                                    </>
+                                  )}
+
+                                  {applicationStageFilter === 'finalized' && (
+                                    <button
+                                      onClick={() => openEmployeeViewFromApplication(app)}
+                                      className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-650 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-350 dark:hover:bg-slate-800 shadow-sm transition-all"
+                                    >
+                                      <Eye className="h-3.5 w-3.5 text-slate-500 dark:text-slate-455" />
+                                      <span>Details</span>
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
-                          ))
-                        )}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 </div>
 
-                {/* Stage 3: Processed Applications */}
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                  <div className="border-b border-slate-200 bg-slate-50/80 px-6 py-4 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">Finalized Applications</h3>
+                {/* Applications Pagination Controls */}
+                {totalApplicationPages > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/60 backdrop-blur-sm mt-4">
+                    <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+                      <p>
+                        Showing{' '}
+                        <span className="font-semibold text-slate-850 dark:text-slate-200">
+                          {Math.min(activeStageApplications.length, (applicationPage - 1) * applicationRowsPerPage + 1)}-
+                          {Math.min(activeStageApplications.length, applicationPage * applicationRowsPerPage)}
+                        </span>{' '}
+                        of{' '}
+                        <span className="font-semibold text-slate-850 dark:text-slate-200">
+                          {activeStageApplications.length}
+                        </span>{' '}
+                        applications
+                      </p>
+                      <div className="h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
+                      <div className="flex items-center gap-1.5">
+                        <span>Show:</span>
+                        <select
+                          value={applicationRowsPerPage}
+                          onChange={(e) => {
+                            setApplicationRowsPerPage(Number(e.target.value));
+                            setApplicationPage(1);
+                          }}
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:border-slate-800 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-green-500 cursor-pointer"
+                        >
+                          {[10, 20, 50, 100].map((size) => (
+                            <option key={size} value={size}>
+                              {size}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setApplicationPage(applicationPage - 1)}
+                        disabled={applicationPage === 1 || loadingApplications}
+                        className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-750"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                        <span>Previous</span>
+                      </button>
+
+                      <div className="flex items-center gap-1">
+                        {[...Array(Math.min(5, totalApplicationPages))].map((_, i) => {
+                          let pageNum = 1;
+                          if (totalApplicationPages <= 5) pageNum = i + 1;
+                          else if (applicationPage <= 3) pageNum = i + 1;
+                          else if (applicationPage >= totalApplicationPages - 2)
+                            pageNum = totalApplicationPages - 4 + i;
+                          else pageNum = applicationPage - 2 + i;
+
+                          return (
+                            <button
+                              key={pageNum}
+                              onClick={() => setApplicationPage(pageNum)}
+                              className={`h-8 w-8 rounded-lg flex items-center justify-center text-xs font-semibold transition-all ${
+                                applicationPage === pageNum
+                                  ? 'bg-green-600 text-white shadow-sm shadow-green-600/20'
+                                  : 'text-slate-650 hover:bg-slate-100 dark:text-slate-450 dark:hover:bg-slate-800'
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <button
+                        onClick={() => setApplicationPage(applicationPage + 1)}
+                        disabled={applicationPage === totalApplicationPages || loadingApplications}
+                        className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-750"
+                      >
+                        <span>Next</span>
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="bg-slate-50/30 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                          <th className="px-6 py-3 text-left">Employee</th>
-                          <th className="px-6 py-3 text-left">Status</th>
-                          <th className="px-6 py-3 text-left">Final Salary</th>
-                          <th className="px-6 py-3 text-left">Processed By</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {paginatedApplications.filter(app => app.status === 'approved' || app.status === 'rejected').length === 0 ? (
-                          <tr>
-                            <td colSpan={4} className="px-6 py-8 text-center text-sm text-slate-500">No processed applications</td>
-                          </tr>
-                        ) : (
-                          paginatedApplications.filter(app => app.status === 'approved' || app.status === 'rejected').map((app) => (
-                            <tr key={app._id}>
-                              <td className="px-6 py-4">
-                                <div className="font-bold text-slate-900 dark:text-slate-100">{app.employee_name}</div>
-                                <div className="text-[10px] text-slate-500">{app.emp_no}</div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${app.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                  {app.status}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                                  {app.approvedSalary ? `₹${app.approvedSalary.toLocaleString()}` : '-'}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="text-[10px] text-slate-500">{app.approvedBy?.name || app.rejectedBy?.name || '-'}</div>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                )}
               </div>
             )}
           </>
@@ -4123,15 +4577,15 @@ export default function EmployeesPage() {
                 <Spinner className="h-10 w-10 text-indigo-600" />
                 <p className="mt-4 text-slate-500">Loading profile requests...</p>
               </div>
-            ) : updateRequests.length === 0 ? (
+            ) : filteredUpdateRequests.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50/50 p-12 text-center dark:border-slate-700 dark:bg-slate-900/50">
                 <p className="text-lg font-medium text-slate-600 dark:text-slate-400">No profile requests found</p>
                 <p className="mt-1 text-sm text-slate-500">New profile requests from employees will appear here.</p>
               </div>
             ) : updateRequestViewMode === 'list' ? (
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
+              <div className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+                <div className="w-full overflow-x-auto">
+                  <table className="w-full min-w-[800px]">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50">
                         <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Employee</th>
@@ -4142,7 +4596,7 @@ export default function EmployeesPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {updateRequests.map((req) => (
+                      {filteredUpdateRequests.map((req) => (
                         <tr 
                           key={req._id} 
                           className="group transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-900/50 cursor-pointer"
@@ -4298,7 +4752,7 @@ export default function EmployeesPage() {
               </div>
             ) : (
               <div className="grid gap-6 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
-                {updateRequests.map((req) => (
+                {filteredUpdateRequests.map((req) => (
                   <div
                     key={req._id}
                     className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white transition-all hover:border-indigo-300 hover:shadow-xl dark:border-slate-800 dark:bg-slate-950 cursor-pointer"
@@ -4433,79 +4887,70 @@ export default function EmployeesPage() {
                   <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Add your first employee to get started</p>
                 </div>
               ) : (
-                <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
+                <div className="w-full overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+                  <div className="w-full overflow-x-auto">
+                    <table className="w-full min-w-[800px]">
                       <thead>
                         <tr className="bg-slate-50 dark:bg-slate-900/50">
-                          <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                            Employee
-                          </th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                          {renderSortableHeader('Employee', 'emp_no')}
+                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 select-none">
                             Division
                           </th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 select-none">
                             Department
                           </th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                            Cert Status
-                          </th>
+                          {renderSortableHeader('Cert Status', 'qualificationStatus')}
                           <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             Phone
                           </th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                            Status
-                          </th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                            Profile
-                          </th>
-                          <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                          {renderSortableHeader('Profile', 'profile')}
+                          <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             Actions
                           </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                        {employees.length === 0 ? (
+                        {sortedEmployees.length === 0 ? (
                           <tr>
-                            <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                            <td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                               No employees found matching your criteria
                             </td>
                           </tr>
                         ) : (
-                          employees.map((employee) => (
+                          sortedEmployees.map((employee) => (
                             <tr
                               key={employee.emp_no}
                               className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10 cursor-pointer"
                               onClick={() => handleViewEmployee(employee)}
                             >
-                              <td className="px-6 py-4 min-w-[10rem] max-w-[18rem]">
-                                <div className="flex items-center gap-3">
+                              <td className="px-3 py-2 min-w-[8rem] max-w-[14rem]">
+                                <div className="flex items-center gap-2">
                                   {(employee as any).profilePhoto ? (
                                     <img
                                       src={(employee as any).profilePhoto}
                                       alt=""
-                                      className="h-9 w-9 shrink-0 rounded-lg border border-slate-200 object-cover dark:border-slate-700"
+                                      className="h-8 w-8 shrink-0 rounded-lg border border-slate-200 object-cover dark:border-slate-700"
                                     />
                                   ) : (
-                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-sm font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-xs font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
                                       {(employee.employee_name || '?').charAt(0).toUpperCase()}
                                     </div>
                                   )}
                                   <div className="min-w-0">
-                                    <div className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{employee.employee_name}</div>
-                                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate" title={formatEmployeeEmpNoDesignationLine(employee)}>
+                                    <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">{employee.employee_name}</div>
+                                    <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 truncate" title={formatEmployeeEmpNoDesignationLine(employee)}>
                                       {formatEmployeeEmpNoDesignationLine(employee) || '—'}
                                     </div>
                                     {employee.email && (
-                                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{employee.email}</div>
+                                      <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{employee.email}</div>
                                     )}
                                   </div>
                                 </div>
                               </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                              <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">
                                 {employee.division?.name || '-'}
                               </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                              <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">
                                 {employee.department?.name || '-'}
                               </td>
                               <td className="whitespace-nowrap px-6 py-4">
@@ -4517,29 +4962,7 @@ export default function EmployeesPage() {
                               <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                 {employee.phone_number || '-'}
                               </td>
-                              <td className="whitespace-nowrap px-6 py-4">
-                                <div className="flex flex-col gap-1">
-                                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${isEmployeeActive(employee)
-                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                                    }`}>
-                                    {isEmployeeActive(employee) ? 'Active' : 'Inactive'}
-                                  </span>
-                                  {employee.salaryStatus === 'pending_approval' && (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-1 text-[10px] font-bold text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 uppercase tracking-wider">
-                                      <LucideClock className="w-3 h-3" />
-                                      SALARY PENDING
-                                    </span>
-                                  )}
-                                  {pendingUpdateRequests.some((r: any) => r.emp_no === employee.emp_no && r.status === 'pending') && (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 uppercase tracking-wider">
-                                      <Edit2 className="w-3 h-3" />
-                                      UPDATE PENDING
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-4 py-4">
+                              <td className="px-3 py-2">
                                 {(() => {
                                   const completion = getEmployeeProfileCompletion(employee);
                                   const toneClass = completion >= 80
@@ -4548,11 +4971,11 @@ export default function EmployeesPage() {
                                       ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
                                       : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
                                   return (
-                                    <div className="w-[88px]">
-                                      <div className="mb-1 flex items-center justify-end text-xs text-slate-500 dark:text-slate-400">
-                                        <span className={`inline-flex rounded-full px-2 py-0.5 font-semibold ${toneClass}`}>{completion}%</span>
+                                    <div className="w-16">
+                                      <div className="mb-0.5 flex items-center justify-end text-[10px] text-slate-500 dark:text-slate-400">
+                                        <span className={`inline-flex rounded-full px-1.5 py-0.2 font-semibold ${toneClass}`}>{completion}%</span>
                                       </div>
-                                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                                      <div className="h-1 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
                                         <div
                                           className="h-full rounded-full bg-indigo-500 transition-all"
                                           style={{ width: `${completion}%` }}
@@ -4562,30 +4985,7 @@ export default function EmployeesPage() {
                                   );
                                 })()}
                               </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-right">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedEmployeeForExport({ empNo: employee.emp_no, name: employee.employee_name });
-                                    setShowExportDialog(true);
-                                  }}
-                                  className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-400"
-                                  title="Download Data"
-                                >
-                                  <Download className="h-4 w-4" />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleEdit(employee);
-                                  }}
-                                  className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
-                                  title="Edit"
-                                >
-                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                  </svg>
-                                </button>
+                              <td className="whitespace-nowrap px-3 py-2 text-right">
                                 {employee.leftDate ? (
                                   <button
                                     onClick={(e) => {
@@ -4601,18 +5001,6 @@ export default function EmployeesPage() {
                                   </button>
                                 ) : (
                                   <>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleSetLeftDate(employee);
-                                      }}
-                                      className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                                      title="Set Left Date"
-                                    >
-                                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                                      </svg>
-                                    </button>
                                     <button
                                       onClick={async (e) => {
                                         e.stopPropagation();
@@ -6418,6 +6806,33 @@ export default function EmployeesPage() {
                     )}
                     <button
                       onClick={() => {
+                        setSelectedEmployeeForExport({ empNo: viewingEmployee.emp_no, name: viewingEmployee.employee_name });
+                        setShowExportDialog(true);
+                      }}
+                      className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-400 flex items-center gap-1.5"
+                      title="Download Data"
+                    >
+                      <Download className="h-4 w-4" />
+                      Download Data
+                    </button>
+                    {!viewingEmployee.leftDate && !selectedApplication && (
+                      <button
+                        onClick={() => {
+                          setShowViewDialog(false);
+                          setCertificatePreviewUrl(null);
+                          handleSetLeftDate(viewingEmployee);
+                        }}
+                        className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-100 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400 flex items-center gap-1.5"
+                        title="Set Left Date"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                        Set Left Date
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
                         setShowViewDialog(false);
                         setCertificatePreviewUrl(null);
                         handleEdit(viewingEmployee);
@@ -6426,69 +6841,7 @@ export default function EmployeesPage() {
                     >
                       Edit
                     </button>
-                    {viewingEmployee.salaryOnHold ? (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const ok = await alertConfirm('Release salary hold?', 'Employee will be included in paysheet again after release.');
-                          if (!ok) return;
-                          try {
-                            const res = await api.releaseEmployeeSalaryHold(viewingEmployee.emp_no);
-                            if (res.success) {
-                              alertSuccess('Released', 'Salary hold released.');
-                              setViewingEmployee((prev) =>
-                                prev ? { ...prev, salaryOnHold: false, salaryHoldReason: null } : prev
-                              );
-                            } else {
-                              alertError('Failed', res.message || 'Could not release hold');
-                            }
-                          } catch (e: any) {
-                            alertError('Error', e?.message || 'Could not release hold');
-                          }
-                        }}
-                        className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
-                      >
-                        Release Salary Hold
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const { value: reason } = await Swal.fire({
-                            title: 'Hold salary',
-                            input: 'text',
-                            inputLabel: 'Reason (required)',
-                            inputPlaceholder: 'e.g. Continuous absent — verify before pay',
-                            showCancelButton: true,
-                            confirmButtonText: 'Hold',
-                            inputValidator: (v) => (!String(v || '').trim() ? 'Reason is required' : undefined),
-                          });
-                          if (!reason) return;
-                          try {
-                            const res = await api.holdEmployeeSalary(viewingEmployee.emp_no, String(reason).trim());
-                            if (res.success) {
-                              alertSuccess('On hold', 'Salary put on hold — excluded from paysheet.');
-                              setViewingEmployee((prev) =>
-                                prev
-                                  ? {
-                                      ...prev,
-                                      salaryOnHold: true,
-                                      salaryHoldReason: String(reason).trim(),
-                                    }
-                                  : prev
-                              );
-                            } else {
-                              alertError('Failed', res.message || 'Could not hold salary');
-                            }
-                          } catch (e: any) {
-                            alertError('Error', e?.message || 'Could not hold salary');
-                          }
-                        }}
-                        className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
-                      >
-                        Hold Salary
-                      </button>
-                    )}
+
                     <button
                       onClick={() => { setShowViewDialog(false); setCertificatePreviewUrl(null); }}
                       className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
@@ -7935,8 +8288,8 @@ export default function EmployeesPage() {
               loadEmployees(currentPage);
             }}
             filters={{
-              division_id: selectedDivisionFilter || undefined,
-              department_id: selectedDepartmentFilter || undefined,
+              division_id: selectedDivisionFilter.length > 0 ? selectedDivisionFilter.join(',') : undefined,
+              department_id: selectedDepartmentFilter.length > 0 ? selectedDepartmentFilter.join(',') : undefined,
               designation_id: selectedDesignationFilter || undefined,
               employee_group_id: selectedEmployeeGroupFilter || undefined,
             }}
@@ -8002,8 +8355,8 @@ export default function EmployeesPage() {
           empNo={selectedEmployeeForExport?.empNo}
           employeeName={selectedEmployeeForExport?.name}
           filters={{
-            division_id: selectedDivisionFilter,
-            department_id: selectedDepartmentFilter,
+            division_id: selectedDivisionFilter.length > 0 ? selectedDivisionFilter.join(',') : undefined,
+            department_id: selectedDepartmentFilter.length > 0 ? selectedDepartmentFilter.join(',') : undefined,
             designation_id: selectedDesignationFilter,
             employee_group_id: selectedEmployeeGroupFilter,
             includeLeft: includeLeftEmployees,

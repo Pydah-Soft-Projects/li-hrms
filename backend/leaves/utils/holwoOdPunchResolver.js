@@ -6,6 +6,18 @@
 const MIN_HOURS_FOR_PUNCH_CONTEXT = 2;
 const FULL_DAY_HOURS_THRESHOLD = 4;
 
+/**
+ * Fraction of the shift duration that qualifies as a "full day" CO OD.
+ * Aligned with the shift-detection service thresholds used for regular attendance.
+ */
+const SHIFT_FULL_DAY_FRACTION = 0.75;
+
+/**
+ * Minimum fraction of the shift duration that qualifies as a "half day" CO OD.
+ * Below this fraction the punches are treated as insufficient (no suggestion).
+ */
+const SHIFT_HALF_DAY_FRACTION = 0.40;
+
 const WORKED_STATUSES = ['PRESENT', 'HALF_DAY', 'PARTIAL', 'COMPLETE'];
 
 const segmentStatus = (s) => String(s?.status || '').toUpperCase();
@@ -162,7 +174,147 @@ function resolveHolWoPunchOdShape(record) {
   };
 }
 
-function getPunchBasedOdSuggestionForRecord(record) {
+/**
+ * Shift-aware version of resolveHolWoPunchOdShape.
+ *
+ * When `shiftDoc` is provided (the Shift document associated with the employee's
+ * PreScheduledShift for that date), the full-day / half-day thresholds are
+ * computed relative to the shift duration:
+ *   full_day  : totalWorkingHours >= shiftDuration * SHIFT_FULL_DAY_FRACTION  (default 75%)
+ *   half_day  : totalWorkingHours >= shiftDuration * SHIFT_HALF_DAY_FRACTION  (default 40%)
+ *   otherwise : insufficient punches (hasPunches = false)
+ *
+ * Falls back to the hardcoded FULL_DAY_HOURS_THRESHOLD when no shiftDoc is given.
+ *
+ * The segment-based early-exits (HALF_DAY segment status, ABSENT-only, mixed
+ * worked+absent) remain the same as in resolveHolWoPunchOdShape so that
+ * multi-segment days are handled correctly in both paths.
+ *
+ * @param {object|null} record  - AttendanceDaily lean document
+ * @param {object|null} shiftDoc - Shift lean document (with at least {duration: Number})
+ */
+function resolveHolWoPunchOdShapeWithShift(record, shiftDoc) {
+  if (!record) {
+    return {
+      hasPunches: false,
+      suggestedOdTypeExtended: null,
+      totalWorkingHours: null,
+      punchContextDetail: 'no_attendance_daily',
+    };
+  }
+
+  const th = Number(record.totalWorkingHours) || 0;
+  const shifts = record.shifts || [];
+  const st = segmentStatus;
+  const hasAnyAbsent = shifts.some((s) => st(s) === 'ABSENT');
+  const hasWorkedSegment = shifts.some((s) => WORKED_STATUSES.includes(st(s)));
+
+  // --------------------------------------------------------------------------
+  // Compute effective thresholds: shift-relative when shiftDoc is available,
+  // otherwise use the legacy hardcoded constant.
+  // --------------------------------------------------------------------------
+  const shiftDuration = shiftDoc && Number(shiftDoc.duration) > 0 ? Number(shiftDoc.duration) : null;
+  const effectiveFullDayThreshold = shiftDuration !== null
+    ? shiftDuration * SHIFT_FULL_DAY_FRACTION
+    : FULL_DAY_HOURS_THRESHOLD;
+  const effectiveHalfDayMinThreshold = shiftDuration !== null
+    ? shiftDuration * SHIFT_HALF_DAY_FRACTION
+    : MIN_HOURS_FOR_PUNCH_CONTEXT;
+  // Minimum to even count as "has punches" (shift-relative or global MIN)
+  const effectiveMinContext = Math.max(MIN_HOURS_FOR_PUNCH_CONTEXT, effectiveHalfDayMinThreshold);
+
+  // --------------------------------------------------------------------------
+  // Segment-based checks (same as resolveHolWoPunchOdShape)
+  // --------------------------------------------------------------------------
+  if (shifts.length > 0) {
+    if (hasAnyAbsent) {
+      if (!hasWorkedSegment) {
+        return {
+          hasPunches: false,
+          suggestedOdTypeExtended: null,
+          totalWorkingHours: th,
+          punchContextDetail: 'absent_segments_only',
+        };
+      }
+      if (th < effectiveMinContext) {
+        return {
+          hasPunches: false,
+          suggestedOdTypeExtended: null,
+          totalWorkingHours: th,
+          punchContextDetail: 'insufficient_punches',
+        };
+      }
+      if (shifts.some((s) => st(s) === 'HALF_DAY')) {
+        return {
+          hasPunches: true,
+          suggestedOdTypeExtended: 'half_day',
+          totalWorkingHours: th,
+          punchContextDetail: 'shift_segment_half_day',
+        };
+      }
+      return {
+        hasPunches: true,
+        suggestedOdTypeExtended: 'half_day',
+        totalWorkingHours: th,
+        punchContextDetail: 'mixed_work_with_absent_segment',
+      };
+    }
+  }
+
+  if (th < effectiveMinContext || !hasWorkedSegment) {
+    return {
+      hasPunches: false,
+      suggestedOdTypeExtended: null,
+      totalWorkingHours: th,
+      punchContextDetail: 'insufficient_punches',
+    };
+  }
+
+  if (shifts.some((s) => st(s) === 'HALF_DAY')) {
+    return {
+      hasPunches: true,
+      suggestedOdTypeExtended: 'half_day',
+      totalWorkingHours: th,
+      punchContextDetail: 'shift_segment_half_day',
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // Shift-relative (or legacy) full-day vs half-day decision
+  // --------------------------------------------------------------------------
+  if (th >= effectiveFullDayThreshold) {
+    return {
+      hasPunches: true,
+      suggestedOdTypeExtended: 'full_day',
+      totalWorkingHours: th,
+      punchContextDetail: shiftDuration !== null
+        ? `hours_gte_shift_full_threshold_${SHIFT_FULL_DAY_FRACTION * 100}pct`
+        : 'hours_gte_full_threshold',
+    };
+  }
+
+  return {
+    hasPunches: true,
+    suggestedOdTypeExtended: 'half_day',
+    totalWorkingHours: th,
+    punchContextDetail: shiftDuration !== null
+      ? `hours_between_shift_half_and_full_threshold`
+      : 'hours_between_min_and_full_threshold',
+  };
+}
+
+/**
+ * Returns a punch-based OD shape suggestion for a CO-eligible (HOL/WO) day.
+ *
+ * @param {object|null} record   - AttendanceDaily lean document
+ * @param {object|null} shiftDoc - Optional Shift lean document for shift-relative thresholds.
+ *   When provided, full/half thresholds are computed as a fraction of the shift
+ *   duration instead of using the hardcoded FULL_DAY_HOURS_THRESHOLD.
+ */
+function getPunchBasedOdSuggestionForRecord(record, shiftDoc) {
+  if (shiftDoc && Number(shiftDoc.duration) > 0) {
+    return resolveHolWoPunchOdShapeWithShift(record, shiftDoc);
+  }
   return resolveHolWoPunchOdShape(record);
 }
 
@@ -229,6 +381,7 @@ function getAutoOdEligibilityFromRecord(record) {
 
 module.exports = {
   resolveHolWoPunchOdShape,
+  resolveHolWoPunchOdShapeWithShift,
   getPunchBasedOdSuggestionForRecord,
   getAutoOdEligibilityFromRecord,
   extractPunchTimingsFromRecord,
@@ -236,5 +389,7 @@ module.exports = {
   inferHalfDayTypeFromShiftSegments,
   MIN_HOURS_FOR_PUNCH_CONTEXT,
   FULL_DAY_HOURS_THRESHOLD,
+  SHIFT_FULL_DAY_FRACTION,
+  SHIFT_HALF_DAY_FRACTION,
   WORKED_STATUSES,
 };
