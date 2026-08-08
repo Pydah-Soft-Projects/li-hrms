@@ -400,26 +400,14 @@ async function classifyRegularOdFromEvidence({
   startEvidence,
   endEvidence,
 }) {
+  const { shiftDoc, roster, skipReason } = await loadRosterShiftForOdDay(empNo, dateStr);
+  const isCoEligible = roster?.status === 'WO' || roster?.status === 'HOL' || skipReason === 'week_off' || skipReason === 'holiday';
+
   let startRes = resolveEvidenceInstant(startEvidence);
   let endRes = resolveEvidenceInstant(endEvidence);
 
   // Check for AttendanceDaily biometric/system punches
   const attPunches = await getAttendancePunchesForDate(empNo, dateStr);
-
-  if (!startRes.instant && attPunches?.firstIn) {
-    startRes = { instant: attPunches.firstIn, source: 'attendance_punch' };
-  }
-  if (!endRes.instant && attPunches?.lastOut) {
-    endRes = { instant: attPunches.lastOut, source: 'attendance_punch' };
-  }
-
-  let durationMins = durationMinutesBetween(startRes.instant, endRes.instant);
-  if ((durationMins == null || durationMins <= 0) && attPunches?.durationMins > 0) {
-    durationMins = attPunches.durationMins;
-  }
-
-  const { shiftDoc, roster, skipReason } = await loadRosterShiftForOdDay(empNo, dateStr);
-  const isCoEligible = roster?.status === 'WO' || roster?.status === 'HOL' || skipReason === 'week_off' || skipReason === 'holiday';
 
   if (!startRes.instant && attPunches?.firstIn) {
     startRes = { instant: attPunches.firstIn, source: 'attendance_punch' };

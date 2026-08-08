@@ -164,6 +164,9 @@ describe('odDurationClassificationService — classifyRegularOdFromEvidence (ros
   beforeEach(() => {
     PreScheduledShift.findOne.mockReset();
     AttendanceDaily.findOne.mockReset();
+    AttendanceDaily.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null),
+    });
   });
 
   it('skips classification when no roster row', async () => {
