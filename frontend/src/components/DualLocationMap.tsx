@@ -75,7 +75,7 @@ export default function DualLocationMap({ markers, routePolyline, className = ''
         <button
           type="button"
           onClick={() => setIsFullscreenOpen(true)}
-          className="absolute top-2 right-2 z-[401] inline-flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-600 bg-white/90 dark:bg-slate-900/90 p-1.5 text-slate-600 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-800 shadow"
+          className="absolute bottom-6 right-3 z-[401] inline-flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-600 bg-white/90 dark:bg-slate-900/90 p-1.5 text-slate-600 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-800 shadow"
           title="Open full screen map"
           aria-label="Open full screen map"
         >

@@ -401,8 +401,20 @@ const generateEmployeeUpdateTemplateData = async (selectedFieldIds, selectedComp
         }
 
         const employeeQuery = { is_active: true };
-        if (employeeFilters?.division_id) employeeQuery.division_id = employeeFilters.division_id;
-        if (employeeFilters?.department_id) employeeQuery.department_id = employeeFilters.department_id;
+        const applyQueryFilter = (queryObj, fieldName, value) => {
+            if (!value) return;
+            const ids = String(value).split(',').map(s => s.trim()).filter(Boolean);
+            if (ids.length === 1) {
+                queryObj[fieldName] = mongoose.Types.ObjectId.isValid(ids[0]) ? new mongoose.Types.ObjectId(ids[0]) : ids[0];
+            } else if (ids.length > 1) {
+                queryObj[fieldName] = {
+                    $in: ids.map(id => mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id)
+                };
+            }
+        };
+
+        applyQueryFilter(employeeQuery, 'division_id', employeeFilters?.division_id);
+        applyQueryFilter(employeeQuery, 'department_id', employeeFilters?.department_id);
         if (employeeFilters?.designation_id) employeeQuery.designation_id = employeeFilters.designation_id;
         if (employeeFilters?.employee_group_id) employeeQuery.employee_group_id = employeeFilters.employee_group_id;
 

@@ -38,6 +38,8 @@ import {
   List,
   Pencil,
   UserPlus,
+  UserCheck,
+  XCircle,
 } from 'lucide-react';
 import RejoinEmployeeModal from '@/components/employee/RejoinEmployeeModal';
 
@@ -1025,16 +1027,36 @@ export default function ResignationsPage() {
     });
   }, [pendingRequests, filters, currentUser, resignationSettings]);
 
-  const stats = useMemo(
-    () => ({
+  const stats = useMemo(() => {
+    const approved = filteredAll.filter((r) => r.status === 'approved');
+    const relieved = filteredAll.filter((r) => r.status === 'approved' && r.workflow?.isCompleted === true);
+
+    // Avg processing time: days between createdAt and the last approvalChain action for fully resolved requests
+    const resolved = filteredAll.filter((r) => ['approved', 'rejected'].includes(r.status));
+    let avgProcessingDays: number | null = null;
+    if (resolved.length > 0) {
+      const totalMs = resolved.reduce((acc, r) => {
+        const chain = r.workflow?.approvalChain ?? [];
+        const lastAction = chain
+          .filter((s) => s.updatedAt)
+          .sort((a, b) => new Date(b.updatedAt!).getTime() - new Date(a.updatedAt!).getTime())[0];
+        if (!lastAction?.updatedAt) return acc;
+        return acc + (new Date(lastAction.updatedAt).getTime() - new Date(r.createdAt).getTime());
+      }, 0);
+      avgProcessingDays = Math.round(totalMs / resolved.length / 86_400_000);
+    }
+
+    return {
+      applied: filteredAll.length,
       total: filteredAll.length,
-      approved: filteredAll.filter((r) => r.status === 'approved').length,
+      approved: approved.length,
       pending: filteredAll.filter((r) => r.status === 'pending').length,
       rejected: filteredAll.filter((r) => ['rejected', 'cancelled'].includes(r.status)).length,
+      relieved: relieved.length,
       pendingApprovals: filteredPendingList.length,
-    }),
-    [filteredAll, filteredPendingList]
-  );
+      avgProcessingDays,
+    };
+  }, [filteredAll, filteredPendingList]);
 
   const filteredRequests = useMemo(() => {
     const list = activeTab === 'pending' ? filteredPendingList : filteredAll;
@@ -1266,68 +1288,52 @@ export default function ResignationsPage() {
 
       <div className="max-w-[1920px] mx-auto px-2 sm:px-6">
         {!isEmployeeRole(currentUser) && (
-          <>
-        <div className="hidden md:grid mb-8 grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard title="Total" value={stats.total} icon={ListTodo} bgClass="bg-slate-500/10" iconClass="text-slate-600 dark:text-slate-400" dekorClass="bg-slate-500/5" loading={loading} />
-          <StatCard title="Approved" value={stats.approved} icon={CheckCircle2} bgClass="bg-emerald-500/10" iconClass="text-emerald-600 dark:text-emerald-400" dekorClass="bg-emerald-500/5" loading={loading} />
-          <StatCard title="Pending" value={stats.pending} icon={Clock3} bgClass="bg-amber-500/10" iconClass="text-amber-600 dark:text-amber-400" dekorClass="bg-amber-500/5" loading={loading} />
-          <StatCard title="Pending approvals (you)" value={stats.pendingApprovals} icon={Clock} bgClass="bg-blue-500/10" iconClass="text-blue-600 dark:text-blue-400" dekorClass="bg-blue-500/5" loading={loading} />
-        </div>
-
-        <div className="md:hidden grid grid-cols-2 gap-3 mb-6">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-3 opacity-10">
-              <LogOut className="w-12 h-12 text-green-500" />
-            </div>
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Resignation Stats</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-slate-500" />
-                  <span className="text-xs text-slate-600 dark:text-slate-400">Total</span>
+          <div className="mb-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {([
+              { title: 'Applied', value: stats.applied, icon: ListTodo, bg: 'bg-slate-100 dark:bg-slate-800', iconCls: 'text-slate-600 dark:text-slate-300', dot: 'bg-slate-400' },
+              { title: 'Approved', value: stats.approved, icon: CheckCircle2, bg: 'bg-emerald-50 dark:bg-emerald-900/20', iconCls: 'text-emerald-600 dark:text-emerald-400', dot: 'bg-emerald-400' },
+              { title: 'Pending', value: stats.pending, icon: Clock3, bg: 'bg-amber-50 dark:bg-amber-900/20', iconCls: 'text-amber-600 dark:text-amber-400', dot: 'bg-amber-400' },
+              { title: 'Rejected', value: stats.rejected, icon: XCircle, bg: 'bg-rose-50 dark:bg-rose-900/20', iconCls: 'text-rose-600 dark:text-rose-400', dot: 'bg-rose-400' },
+              { title: 'Relieved', value: stats.relieved, icon: UserCheck, bg: 'bg-violet-50 dark:bg-violet-900/20', iconCls: 'text-violet-600 dark:text-violet-400', dot: 'bg-violet-400' },
+            ] as const).map((card) => (
+              <div
+                key={card.title}
+                className="flex items-center gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 shadow-sm hover:shadow-md transition-all"
+              >
+                <div className={`flex h-9 w-9 items-center justify-center rounded-xl shrink-0 ${card.bg}`}>
+                  <card.icon className={`h-4 w-4 ${card.iconCls}`} />
                 </div>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">{loading ? '—' : stats.total}</span>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 truncate leading-tight">{card.title}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${card.dot}`} />
+                    {loading
+                      ? <div className="h-5 w-8 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+                      : <span className="text-lg font-black text-slate-900 dark:text-white leading-none">{card.value}</span>
+                    }
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span className="text-xs text-slate-600 dark:text-slate-400">Approved</span>
-                </div>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">{loading ? '—' : stats.approved}</span>
+            ))}
+            {/* Avg Processing Time */}
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 shadow-sm hover:shadow-md transition-all">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl shrink-0 bg-indigo-50 dark:bg-indigo-900/20">
+                <Clock className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
               </div>
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-amber-500" />
-                  <span className="text-xs text-slate-600 dark:text-slate-400">Pending</span>
+              <div className="min-w-0">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 truncate leading-tight">Avg Processing</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-indigo-400" />
+                  {loading
+                    ? <div className="h-5 w-10 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+                    : <span className="text-lg font-black text-slate-900 dark:text-white leading-none">
+                        {stats.avgProcessingDays === null ? '—' : `${stats.avgProcessingDays}d`}
+                      </span>
+                  }
                 </div>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">{loading ? '—' : stats.pending}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-rose-500" />
-                  <span className="text-xs text-slate-600 dark:text-slate-400">Rejected</span>
-                </div>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">{loading ? '—' : stats.rejected}</span>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-3 opacity-10">
-              <Clock className="w-12 h-12 text-blue-500" />
-            </div>
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Your approvals</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-blue-500" />
-                  <span className="text-xs text-slate-600 dark:text-slate-400">Pending (you)</span>
-                </div>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">{loading ? '—' : stats.pendingApprovals}</span>
               </div>
             </div>
           </div>
-        </div>
-          </>
         )}
 
         <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">

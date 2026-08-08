@@ -1,0 +1,9 @@
+{
+  "query": {
+    "view": "summary",
+    "is_active": "true",
+    "page": "1",
+    "limit": "500"
+  },
+  "date": "2026-08-08T04:09:13.907Z"
+}

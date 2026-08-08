@@ -38,9 +38,18 @@ export default function LocationMapInner({ lat, lng, address, height }: Location
       scrollWheelZoom: false,
     });
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const normalLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(map);
+    });
+
+    const googleHybridLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+      maxZoom: 20,
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+    });
+
+    // Default to Google Hybrid so satellite view includes place names.
+    googleHybridLayer.addTo(map);
+    L.control.layers({ 'Satellite (Google Hybrid)': googleHybridLayer, Street: normalLayer }).addTo(map);
 
     const marker = L.marker([lat, lng], { icon: defaultIcon }).addTo(map);
     if (address) {

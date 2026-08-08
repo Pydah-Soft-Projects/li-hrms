@@ -123,6 +123,15 @@ export function ODDetailCard({ data, onSubmitOutClick, className = '', compact =
   // Format 12-hour time
   const formatTime = (timeStr?: string | null) => {
     if (!timeStr) return null;
+    
+    // Check if it's a full Date string
+    if (timeStr.includes('-') || timeStr.includes('T')) {
+      const parsedDate = new Date(timeStr);
+      if (!isNaN(parsedDate.getTime())) {
+        return parsedDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+      }
+    }
+
     const parts = timeStr.split(':');
     if (parts.length < 2) return timeStr;
     const h = parseInt(parts[0], 10);
@@ -141,6 +150,62 @@ export function ODDetailCard({ data, onSubmitOutClick, className = '', compact =
     if (h === 0) return `${m} mins`;
     if (m === 0) return `${h} hrs`;
     return `${h} hrs ${m} mins`;
+  };
+
+  // Calculate duration between odStartTime and odEndTime in hours
+  const calculateTimeDuration = (startTime?: string | null, endTime?: string | null) => {
+    if (!startTime || !endTime) return null;
+
+    // Check if they are full Date strings
+    if ((startTime.includes('-') || startTime.includes('T')) && (endTime.includes('-') || endTime.includes('T'))) {
+      const startD = new Date(startTime);
+      const endD = new Date(endTime);
+      if (!isNaN(startD.getTime()) && !isNaN(endD.getTime())) {
+        const diffMs = endD.getTime() - startD.getTime();
+        return Math.max(0, diffMs / (1000 * 60 * 60));
+      }
+    }
+
+    const parseTimeToMinutes = (timeStr?: string | null) => {
+      if (!timeStr) return null;
+      const cleanStr = timeStr.trim().toLowerCase();
+      
+      const isPM = cleanStr.includes('pm');
+      const isAM = cleanStr.includes('am');
+      
+      const numbersOnly = cleanStr.replace(/[ap]m/g, '').trim();
+      
+      let h = 0;
+      let m = 0;
+      
+      if (numbersOnly.includes(':')) {
+        const parts = numbersOnly.split(':');
+        h = parseInt(parts[0], 10);
+        m = parseInt(parts[1], 10);
+      } else {
+        h = parseInt(numbersOnly, 10);
+        m = 0;
+      }
+      
+      if (isNaN(h) || isNaN(m)) return null;
+
+      if (isPM || isAM) {
+        if (isPM && h !== 12) h += 12;
+        if (isAM && h === 12) h = 0;
+      }
+      
+      return h * 60 + m;
+    };
+
+    const startMins = parseTimeToMinutes(startTime);
+    const endMins = parseTimeToMinutes(endTime);
+    if (startMins == null || endMins == null) return null;
+
+    let diffMinutes = endMins - startMins;
+    if (diffMinutes < 0) {
+      diffMinutes += 24 * 60; // Cross midnight
+    }
+    return diffMinutes / 60;
   };
 
   // Status helper
@@ -353,6 +418,14 @@ export function ODDetailCard({ data, onSubmitOutClick, className = '', compact =
                 ? `0.5 Day (${data.halfDayType === 'second_half' ? 'Second Half' : 'First Half'})`
                 : `${data.numberOfDays || 1} Day${(data.numberOfDays || 1) > 1 ? 's' : ''} (Full Day)`}
             </span>
+            {data.odStartTime && data.odEndTime && (
+              <div className="mt-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                <span>
+                  {formatTime(data.odStartTime)} – {formatTime(data.odEndTime)} ({formatHoursMins(calculateTimeDuration(data.odStartTime, data.odEndTime))})
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Item 2: Place of Visit */}
@@ -384,47 +457,213 @@ export function ODDetailCard({ data, onSubmitOutClick, className = '', compact =
           </div>
         </div>
 
-        {/* Work Timing Banner (Solid background) */}
-        {(data.odStartTime || data.odEndTime || data.durationHours != null) && (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-6 flex-wrap">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white font-semibold">
-                    <Clock className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Work In</p>
-                    <p className="text-sm font-bold text-slate-900 dark:text-white">
-                      {formatTime(data.odStartTime) || 'Not set'}
-                    </p>
-                  </div>
+        {/* Timings Section Container */}
+        {(data.odStartTime || 
+          data.odEndTime || 
+          data.coEligibilityInfo?.punchDetails?.start || 
+          data.coEligibilityInfo?.punchDetails?.end || 
+          data.startEvidence?.submittedAt || 
+          data.endEvidence?.submittedAt) && (
+          <div className="space-y-4">
+            
+            {/* 1. OD Request Timings */}
+            {(data.odStartTime || data.odEndTime) && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700/60 dark:bg-slate-800/40">
+                <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 mb-3">
+                  <Clock3 className="w-4 h-4 text-slate-500" />
+                  <span className="text-xs font-black uppercase tracking-wider">OD Request Timings</span>
                 </div>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-6 flex-wrap">
+                    {data.odStartTime && (
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold">
+                          <Clock className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Request In</p>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">
+                            {formatTime(data.odStartTime)}
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
-                <div className="hidden sm:block text-slate-300 dark:text-slate-600">
-                  <ArrowRight className="w-4 h-4" />
-                </div>
+                    {data.odStartTime && data.odEndTime && (
+                      <div className="hidden sm:block text-slate-350 dark:text-slate-650">
+                        <ArrowRight className="w-4 h-4" />
+                      </div>
+                    )}
 
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-600 text-white font-semibold">
-                    <Clock className="w-4 h-4" />
+                    {data.odEndTime && (
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold">
+                          <Clock className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Request Out</p>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">
+                            {formatTime(data.odEndTime)}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {data.odStartTime && data.odEndTime && (
+                      <>
+                        <div className="hidden sm:block text-slate-350 dark:text-slate-650 font-light">|</div>
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white font-semibold">
+                            <Clock3 className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Duration</p>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white">
+                              {formatHoursMins(calculateTimeDuration(data.odStartTime, data.odEndTime)) || '—'}
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
-                  <div>
-                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Work Out</p>
-                    <p className="text-sm font-bold text-slate-900 dark:text-white">
-                      {formatTime(data.odEndTime) || 'Not set'}
-                    </p>
+
+                  {data.durationHours != null && data.durationHours > 0 && (
+                    <div className="flex items-center gap-2 rounded-xl bg-indigo-600 text-white px-3.5 py-2 font-semibold text-xs shadow-sm">
+                      <Sparkles className="w-4 h-4" />
+                      <span>Duration Credit: {formatHoursMins(data.durationHours)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 2. Biometric Punches (Taken from Attendance) */}
+            {(data.coEligibilityInfo?.punchDetails?.start || data.coEligibilityInfo?.punchDetails?.end) && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/10 p-4 dark:border-emerald-800/40 dark:bg-emerald-950/20">
+                <div className="flex items-center gap-1.5 text-emerald-750 dark:text-emerald-400 mb-3">
+                  <Clock3 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span className="text-xs font-black uppercase tracking-wider">Biometric Punches (Taken from Attendance)</span>
+                </div>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-6 flex-wrap">
+                    {data.coEligibilityInfo.punchDetails.start && (
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white font-semibold">
+                          <Clock className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Work In</p>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">
+                            {formatTime(data.coEligibilityInfo.punchDetails.start)}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {data.coEligibilityInfo.punchDetails.start && data.coEligibilityInfo.punchDetails.end && (
+                      <div className="hidden sm:block text-slate-350 dark:text-slate-650">
+                        <ArrowRight className="w-4 h-4" />
+                      </div>
+                    )}
+
+                    {data.coEligibilityInfo.punchDetails.end && (
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white font-semibold">
+                          <Clock className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Work Out</p>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">
+                            {formatTime(data.coEligibilityInfo.punchDetails.end)}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {data.coEligibilityInfo.punchDetails.start && data.coEligibilityInfo.punchDetails.end && (
+                      <>
+                        <div className="hidden sm:block text-slate-350 dark:text-slate-650 font-light">|</div>
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white font-semibold">
+                            <Clock3 className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Duration</p>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white">
+                              {formatHoursMins(calculateTimeDuration(data.coEligibilityInfo.punchDetails.start, data.coEligibilityInfo.punchDetails.end)) || '—'}
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
+            )}
 
-              {data.durationHours != null && data.durationHours > 0 && (
-                <div className="flex items-center gap-2 rounded-xl bg-indigo-600 text-white px-3.5 py-2 font-semibold text-xs shadow-sm">
-                  <Sparkles className="w-4 h-4" />
-                  <span>Duration Credit: {formatHoursMins(data.durationHours)}</span>
+            {/* 3. Photo Evidence Timestamps (Taken from OD Images) */}
+            {(data.startEvidence?.submittedAt || data.endEvidence?.submittedAt) && (
+              <div className="rounded-xl border border-purple-200 bg-purple-50/10 p-4 dark:border-purple-800/40 dark:bg-purple-950/20">
+                <div className="flex items-center gap-1.5 text-purple-750 dark:text-purple-400 mb-3">
+                  <Clock3 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span className="text-xs font-black uppercase tracking-wider">Photo Evidence Timestamps (Taken from OD Images)</span>
                 </div>
-              )}
-            </div>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-6 flex-wrap">
+                    {data.startEvidence?.submittedAt && (
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-600 text-white font-semibold">
+                          <Clock className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Check In Photo</p>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">
+                            {formatTime(data.startEvidence.submittedAt)}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {data.startEvidence?.submittedAt && data.endEvidence?.submittedAt && (
+                      <div className="hidden sm:block text-slate-350 dark:text-slate-650">
+                        <ArrowRight className="w-4 h-4" />
+                      </div>
+                    )}
+
+                    {data.endEvidence?.submittedAt && (
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-600 text-white font-semibold">
+                          <Clock className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Check Out Photo</p>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">
+                            {formatTime(data.endEvidence.submittedAt)}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {data.startEvidence?.submittedAt && data.endEvidence?.submittedAt && (
+                      <>
+                        <div className="hidden sm:block text-slate-350 dark:text-slate-650 font-light">|</div>
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white font-semibold">
+                            <Clock3 className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Duration</p>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white">
+                              {formatHoursMins(calculateTimeDuration(data.startEvidence.submittedAt, data.endEvidence.submittedAt)) || '—'}
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

@@ -4,6 +4,7 @@
  */
 
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
+const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const { shiftHasHalfSegments } = require('../../attendance/services/shiftPresenceResolutionService');
 
 /** Same as attendance shift-level present threshold */
@@ -340,6 +341,56 @@ async function loadRosterShiftForOdDay(empNo, dateStr) {
 }
 
 /**
+ * Query AttendanceDaily for employee date to extract IN/OUT punch instants and total worked minutes.
+ * @param {string} empNo
+ * @param {string} dateStr YYYY-MM-DD
+ */
+async function getAttendancePunchesForDate(empNo, dateStr) {
+  const emp = String(empNo || '').trim();
+  if (!emp || !dateStr) return null;
+  const empNos = [...new Set([emp, emp.toUpperCase(), emp.toLowerCase()].filter(Boolean))];
+  const record = await AttendanceDaily.findOne({
+    employeeNumber: { $in: empNos },
+    date: dateStr,
+  }).lean();
+  if (!record) return null;
+
+  let firstIn = record.inTime ? parseEvidenceInstant(record.inTime) : null;
+  let lastOut = record.outTime ? parseEvidenceInstant(record.outTime) : null;
+
+  if (Array.isArray(record.shifts) && record.shifts.length > 0) {
+    const workedShifts = record.shifts.filter((s) => s.inTime || s.outTime);
+    if (workedShifts.length > 0) {
+      const sorted = [...workedShifts].sort(
+        (a, b) => new Date(a.inTime || a.outTime || 0) - new Date(b.inTime || b.outTime || 0)
+      );
+      const inShift = sorted.find((s) => s.inTime);
+      const outShift = [...sorted].reverse().find((s) => s.outTime);
+      if (inShift?.inTime) firstIn = parseEvidenceInstant(inShift.inTime);
+      if (outShift?.outTime) lastOut = parseEvidenceInstant(outShift.outTime);
+    }
+  }
+
+  const th = Number(record.totalWorkingHours) || 0;
+  if (!firstIn && !lastOut && th <= 0) return null;
+
+  let durationMins = null;
+  if (firstIn && lastOut) {
+    durationMins = Math.max(0, Math.round((lastOut.getTime() - firstIn.getTime()) / 60000));
+  } else if (th > 0) {
+    durationMins = Math.round(th * 60);
+  }
+
+  return {
+    record,
+    firstIn,
+    lastOut,
+    totalWorkingHours: th,
+    durationMins,
+  };
+}
+
+/**
  * Classify regular OD from start/end evidence + emp/date.
  * Hours OD should not call this.
  */
@@ -349,11 +400,99 @@ async function classifyRegularOdFromEvidence({
   startEvidence,
   endEvidence,
 }) {
-  const startRes = resolveEvidenceInstant(startEvidence);
-  const endRes = resolveEvidenceInstant(endEvidence);
-  const durationMins = durationMinutesBetween(startRes.instant, endRes.instant);
+  let startRes = resolveEvidenceInstant(startEvidence);
+  let endRes = resolveEvidenceInstant(endEvidence);
+
+  // Check for AttendanceDaily biometric/system punches
+  const attPunches = await getAttendancePunchesForDate(empNo, dateStr);
+
+  if (!startRes.instant && attPunches?.firstIn) {
+    startRes = { instant: attPunches.firstIn, source: 'attendance_punch' };
+  }
+  if (!endRes.instant && attPunches?.lastOut) {
+    endRes = { instant: attPunches.lastOut, source: 'attendance_punch' };
+  }
+
+  let durationMins = durationMinutesBetween(startRes.instant, endRes.instant);
+  if ((durationMins == null || durationMins <= 0) && attPunches?.durationMins > 0) {
+    durationMins = attPunches.durationMins;
+  }
 
   const { shiftDoc, roster, skipReason } = await loadRosterShiftForOdDay(empNo, dateStr);
+  const isCoEligible = roster?.status === 'WO' || roster?.status === 'HOL' || skipReason === 'week_off' || skipReason === 'holiday';
+
+  if (!startRes.instant && attPunches?.firstIn) {
+    startRes = { instant: attPunches.firstIn, source: 'attendance_punch' };
+  }
+  if (!endRes.instant && attPunches?.lastOut) {
+    endRes = { instant: attPunches.lastOut, source: 'attendance_punch' };
+  }
+
+  let durationMins = durationMinutesBetween(startRes.instant, endRes.instant);
+  if (isCoEligible && attPunches?.durationMins > 0) {
+    durationMins = attPunches.durationMins;
+  } else if ((durationMins == null || durationMins <= 0) && attPunches?.durationMins > 0) {
+    durationMins = attPunches.durationMins;
+  }
+
+  // If attendance punches exist and duration is known, classify using attendance punches
+  if (attPunches && durationMins != null && durationMins > 0) {
+    const shiftMins = shiftDoc?.startTime && shiftDoc?.endTime ? shiftWindowMinutes(shiftDoc.startTime, shiftDoc.endTime) : null;
+    const fullMin = shiftMins ? Math.round(shiftMins * FULL_DAY_RATIO) : 4 * 60; // 4 hours fallback
+    const halfMin = shiftMins ? Math.round(shiftMins * HALF_DAY_RATIO) : 2 * 60; // 2 hours fallback
+
+    if (durationMins >= fullMin) {
+      return {
+        classification: 'full_day',
+        odType_extended: 'full_day',
+        isHalfDay: false,
+        halfDayType: null,
+        requiresAuthorityDecision: false,
+        tentative: false,
+        evidenceDurationMinutes: durationMins,
+        shiftDurationMinutes: shiftMins,
+        halfDayMinimumMinutes: halfMin,
+        fullDayMinimumMinutes: fullMin,
+        reason: 'classified_from_attendance_punches',
+        employeeMessage: `OD auto-classified as Full Day based on attendance punches (${formatMinutes(durationMins)} worked).`,
+        usedHalfSegments: false,
+        startInstant: startRes.instant,
+        endInstant: endRes.instant,
+        startTimeSource: startRes.source,
+        endTimeSource: endRes.source,
+        rosterStatus: roster?.status || null,
+      };
+    } else if (durationMins >= halfMin) {
+      let halfDayType = 'first_half';
+      if (startRes.instant && shiftDoc) {
+        halfDayType = inferHalfFromEvidenceWindow(shiftDoc, startRes.instant, endRes.instant) || 'first_half';
+      } else if (attPunches?.record?.shifts) {
+        const { inferHalfDayTypeFromShiftSegments } = require('../utils/holwoOdPunchResolver');
+        halfDayType = inferHalfDayTypeFromShiftSegments(attPunches.record.shifts, dateStr) || 'first_half';
+      }
+      return {
+        classification: 'half_day',
+        odType_extended: 'half_day',
+        isHalfDay: true,
+        halfDayType,
+        requiresAuthorityDecision: false,
+        tentative: false,
+        evidenceDurationMinutes: durationMins,
+        shiftDurationMinutes: shiftMins,
+        halfDayMinimumMinutes: halfMin,
+        fullDayMinimumMinutes: fullMin,
+        reason: 'classified_from_attendance_punches',
+        employeeMessage: `OD auto-classified as Half Day based on attendance punches (${formatMinutes(durationMins)} worked).`,
+        usedHalfSegments: false,
+        startInstant: startRes.instant,
+        endInstant: endRes.instant,
+        startTimeSource: startRes.source,
+        endTimeSource: endRes.source,
+        rosterStatus: roster?.status || null,
+      };
+    }
+  }
+
   const classification = classifyOdDuration({
     evidenceDurationMinutes: durationMins,
     shiftDoc,
@@ -527,6 +666,7 @@ module.exports = {
   inferHalfFromEvidenceWindow,
   classifyOdDuration,
   loadRosterShiftForOdDay,
+  getAttendancePunchesForDate,
   classifyRegularOdFromEvidence,
   resolveAuthorityOdDecision,
   applyClassificationToOd,

@@ -20,7 +20,7 @@ import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import EmployeeSelect from '@/components/EmployeeSelect';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Loader2, Calendar, Briefcase, X, Clock as Clock3, Star, FileText, FileSpreadsheet, CheckCircle2, AlertCircle, Plus, Download } from 'lucide-react';
+import { Loader2, Calendar, Briefcase, X, Clock as Clock3, Star, FileText, FileSpreadsheet, CheckCircle2, AlertCircle, Plus, Download, ChevronLeft, ChevronRight, Edit } from 'lucide-react';
 import { MultiSelect } from '@/components/MultiSelect';
 import {
   buildDivisionToDepartmentIdsMap,
@@ -614,6 +614,72 @@ const formatDate = (dateStr: string) => {
   });
 };
 
+const formatTime = (timeStr?: string | null) => {
+  if (!timeStr) return null;
+  const parts = timeStr.split(':');
+  if (parts.length < 2) return timeStr;
+  const h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  if (isNaN(h) || isNaN(m)) return timeStr;
+  const d = new Date();
+  d.setHours(h, m, 0);
+  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
+const formatHoursMins = (hoursNum?: number | null) => {
+  if (hoursNum == null || hoursNum <= 0) return null;
+  const h = Math.floor(hoursNum);
+  const m = Math.round((hoursNum % 1) * 60);
+  if (h === 0) return `${m} mins`;
+  if (m === 0) return `${h} hrs`;
+  return `${h} hrs ${m} mins`;
+};
+
+const calculateTimeDuration = (startTime?: string | null, endTime?: string | null) => {
+  if (!startTime || !endTime) return null;
+
+  const parseTimeToMinutes = (timeStr?: string | null) => {
+    if (!timeStr) return null;
+    const cleanStr = timeStr.trim().toLowerCase();
+    
+    const isPM = cleanStr.includes('pm');
+    const isAM = cleanStr.includes('am');
+    
+    const numbersOnly = cleanStr.replace(/[ap]m/g, '').trim();
+    
+    let h = 0;
+    let m = 0;
+    
+    if (numbersOnly.includes(':')) {
+      const parts = numbersOnly.split(':');
+      h = parseInt(parts[0], 10);
+      m = parseInt(parts[1], 10);
+    } else {
+      h = parseInt(numbersOnly, 10);
+      m = 0;
+    }
+    
+    if (isNaN(h) || isNaN(m)) return null;
+
+    if (isPM || isAM) {
+      if (isPM && h !== 12) h += 12;
+      if (isAM && h === 12) h = 0;
+    }
+    
+    return h * 60 + m;
+  };
+
+  const startMins = parseTimeToMinutes(startTime);
+  const endMins = parseTimeToMinutes(endTime);
+  if (startMins == null || endMins == null) return null;
+
+  let diffMinutes = endMins - startMins;
+  if (diffMinutes < 0) {
+    diffMinutes += 24 * 60; // Cross midnight
+  }
+  return diffMinutes / 60;
+};
+
 const getISTDateParts = (value: Date | string) => {
   const d = value instanceof Date ? value : new Date(String(value));
   if (Number.isNaN(d.getTime())) return null;
@@ -907,6 +973,26 @@ function LeavesPageContent() {
 
     const format = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     return { from: format(startDate), to };
+  };
+
+  const shiftMonth = (direction: 'prev' | 'next') => {
+    const shiftDateStr = (dateStr: string, dir: 'prev' | 'next') => {
+      if (!dateStr) return '';
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      
+      d.setMonth(d.getMonth() + (dir === 'next' ? 1 : -1));
+      
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+
+    setDateRange((prev) => ({
+      from: shiftDateStr(prev.from, direction),
+      to: shiftDateStr(prev.to, direction),
+    }));
   };
 
   const [dateRange, setDateRange] = useState(() =>
@@ -3244,6 +3330,15 @@ function LeavesPageContent() {
           <div className="flex items-center gap-3 overflow-x-auto hide-scrollbar">
             {/* Pay Period / Date Range — Desktop Only */}
             <div className="hidden lg:flex items-center gap-2 border-r border-slate-200 dark:border-slate-700 pr-4 mr-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => shiftMonth('prev')}
+                className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-colors shrink-0"
+                title="Previous Month"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
               <select
                 aria-label="Pay period"
                 value={payPeriodSelectValue}
@@ -3257,7 +3352,7 @@ function LeavesPageContent() {
                   const opt = payPeriodOptions.find((o) => o.value === v);
                   if (opt) setDateRange({ from: opt.range.from, to: opt.range.to });
                 }}
-                className="h-8 min-w-[10.5rem] max-w-[15rem] rounded-lg border border-slate-200 bg-white py-0 pl-2 pr-6 text-[9px] font-black uppercase tracking-wider text-slate-800 shadow-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 cursor-pointer"
+                className="h-8 w-32 rounded-lg border border-slate-200 bg-white py-0 px-2 text-[9px] font-black uppercase tracking-wider text-slate-800 shadow-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 cursor-pointer appearance-none text-center"
               >
                 <option value="__custom__">Custom range…</option>
                 {payPeriodOptions.map((o) => (
@@ -3267,20 +3362,29 @@ function LeavesPageContent() {
                 ))}
               </select>
 
+              <button
+                type="button"
+                onClick={() => shiftMonth('next')}
+                className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-colors shrink-0"
+                title="Next Month"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+
               <div className="flex items-center gap-1.5 px-2 h-9 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
-                <CalendarIcon />
+                <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <input
                   type="date"
                   value={dateRange.from}
                   onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))}
-                  className="bg-transparent border-0 text-[10px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer w-24"
+                  className="bg-transparent border-0 text-[10px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer w-20"
                 />
                 <span className="text-slate-400 text-[10px] px-0.5">→</span>
                 <input
                   type="date"
                   value={dateRange.to}
                   onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))}
-                  className="bg-transparent border-0 text-[10px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer w-24"
+                  className="bg-transparent border-0 text-[10px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer w-20 text-right"
                 />
                 {loading && (
                     <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin shrink-0" />
@@ -3290,11 +3394,11 @@ function LeavesPageContent() {
 
             <button
               onClick={openExportPDFDialog}
-              className="group flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-[0.98] shrink-0"
-              title="Download PDF for current filters"
+              className="group flex items-center gap-1.5 h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-[0.98] shrink-0"
+              title="Download PDF report"
             >
-              <FileText className="w-4 h-4" />
-              <span className="hidden sm:inline">Download PDF</span>
+              <Download className="w-4 h-4 text-slate-500 dark:text-slate-400 group-hover:scale-110 transition-transform" />
+              <span className="hidden sm:inline">PDF</span>
             </button>
             <button
               onClick={() =>
@@ -3304,11 +3408,11 @@ function LeavesPageContent() {
                   includeSummary: true,
                 })
               }
-              className="group flex items-center gap-2 h-9 px-3 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-xs font-semibold shadow-sm hover:bg-emerald-100/80 dark:hover:bg-emerald-900/40 transition-all active:scale-[0.98] shrink-0"
-              title="Download Excel with the same data as the PDF report"
+              className="group flex items-center gap-1.5 h-9 px-3 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-xs font-semibold shadow-sm hover:bg-emerald-100/80 dark:hover:bg-emerald-900/40 transition-all active:scale-[0.98] shrink-0"
+              title="Download Excel report"
             >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span className="hidden sm:inline">Download Excel</span>
+              <Download className="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
+              <span className="hidden sm:inline">Excel</span>
             </button>
             <button
               onClick={() => openApplyDialog('leave')}
@@ -3324,33 +3428,53 @@ function LeavesPageContent() {
       {/* Date Filter — Mobile Only */}
       <div className="lg:hidden mb-6">
         <div className="flex flex-col gap-3 p-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Pay Period</span>
-            <select
-              aria-label="Pay period"
-              value={payPeriodSelectValue}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === '__custom__') return;
-                if (v === '__default__') {
-                  setDateRange(getDefaultDateRange(payCycleStartDay));
-                  return;
-                }
-                const opt = payPeriodOptions.find((o) => o.value === v);
-                if (opt) setDateRange({ from: opt.range.from, to: opt.range.to });
-              }}
-              className="h-8 min-w-0 flex-1 max-w-[16rem] rounded-lg border border-slate-200 bg-slate-50 dark:bg-slate-900 px-2 text-[9px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-100"
-            >
-              <option value="__custom__">Custom range…</option>
-              {payPeriodOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider shrink-0">Pay Period</span>
+            <div className="flex items-center gap-1.5 flex-1 justify-end">
+              <button
+                type="button"
+                onClick={() => shiftMonth('prev')}
+                className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-colors shrink-0"
+                title="Previous Month"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <select
+                aria-label="Pay period"
+                value={payPeriodSelectValue}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === '__custom__') return;
+                  if (v === '__default__') {
+                    setDateRange(getDefaultDateRange(payCycleStartDay));
+                    return;
+                  }
+                  const opt = payPeriodOptions.find((o) => o.value === v);
+                  if (opt) setDateRange({ from: opt.range.from, to: opt.range.to });
+                }}
+                className="h-8 min-w-0 flex-1 max-w-[12rem] rounded-lg border border-slate-200 bg-slate-50 dark:bg-slate-900 px-2 text-[9px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-100 appearance-none text-center"
+              >
+                <option value="__custom__">Custom range…</option>
+                {payPeriodOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                onClick={() => shiftMonth('next')}
+                className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-colors shrink-0"
+                title="Next Month"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
-            <CalendarIcon />
+            <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
             <div className="flex flex-1 items-center justify-between">
               <input
                 type="date"
@@ -3764,7 +3888,16 @@ function LeavesPageContent() {
                       {od.placeVisited || '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                      {formatDate(od.fromDate)} - {formatDate(od.toDate)}
+                      {od.odType_extended === 'hours' ? (
+                        <div>
+                          <div className="font-semibold">{formatDate(od.fromDate)}</div>
+                          <div className="text-[11px] text-indigo-600 dark:text-indigo-400 font-bold mt-0.5">
+                            {formatTime(od.odStartTime)} – {formatTime(od.odEndTime)} ({formatHoursMins(calculateTimeDuration(od.odStartTime, od.odEndTime))})
+                          </div>
+                        </div>
+                      ) : (
+                        `${formatDate(od.fromDate)}${formatDate(od.fromDate) !== formatDate(od.toDate) ? ` – ${formatDate(od.toDate)}` : ''}`
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`px-2.5 py-1 text-xs font-medium rounded-lg capitalize ${getStatusColor(od.status)}`}>
@@ -4078,8 +4211,27 @@ function LeavesPageContent() {
                         <td className="px-4 py-3">{getItemDepartmentName(od)}</td>
                         <td className="px-4 py-3">{od.odType}</td>
                         <td className="px-4 py-3 max-w-[120px] truncate" title={od.placeVisited}>{od.placeVisited || '–'}</td>
-                        <td className="px-4 py-3">{formatDate(od.fromDate)} – {formatDate(od.toDate)}</td>
-                        <td className="px-4 py-3">{od.numberOfDays}</td>
+                        <td className="px-4 py-3">
+                          {od.odType_extended === 'hours' ? (
+                            <div>
+                              <div className="font-semibold">{formatDate(od.fromDate)}</div>
+                              <div className="text-[11px] text-indigo-600 dark:text-indigo-400 font-bold mt-0.5">
+                                {formatTime(od.odStartTime)} – {formatTime(od.odEndTime)}
+                              </div>
+                            </div>
+                          ) : (
+                            `${formatDate(od.fromDate)}${formatDate(od.fromDate) !== formatDate(od.toDate) ? ` – ${formatDate(od.toDate)}` : ''}`
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {od.odType_extended === 'hours' ? (
+                            <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                              {formatHoursMins(calculateTimeDuration(od.odStartTime, od.odEndTime)) || '—'}
+                            </span>
+                          ) : (
+                            od.numberOfDays
+                          )}
+                        </td>
                         <td className="px-4 py-3"><span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(od.status)}`}>{formatOdLbl(od.status)}</span></td>
                         <td className="px-4 py-3 text-right">
                           <button
@@ -4142,8 +4294,16 @@ function LeavesPageContent() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: od.employeeId?.employee_name ?? '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no ?? od.emp_no ?? '' } as Employee)}</div>
-                        <div className="text-xs text-slate-500">({formatEmpNoWithDesignation(od)}) · {od.odType} · {od.numberOfDays}d</div>
-                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">{formatDate(od.fromDate)} – {formatDate(od.toDate)}</div>
+                        <div className="text-xs text-slate-500">
+                          ({formatEmpNoWithDesignation(od)}) · {od.odType_extended === 'hours' ? 'Hours' : od.odType} · {od.odType_extended === 'hours' ? (formatHoursMins(calculateTimeDuration(od.odStartTime, od.odEndTime)) || '—') : `${od.numberOfDays}d`}
+                        </div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                          {od.odType_extended === 'hours' ? (
+                            `${formatDate(od.fromDate)} (${formatTime(od.odStartTime)} – ${formatTime(od.odEndTime)})`
+                          ) : (
+                            `${formatDate(od.fromDate)}${formatDate(od.fromDate) !== formatDate(od.toDate) ? ` – ${formatDate(od.toDate)}` : ''}`
+                          )}
+                        </div>
                         {od.placeVisited && <div className="text-xs text-slate-500 mt-0.5 truncate">{od.placeVisited}</div>}
                         <span className={`inline-block mt-2 px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(od.status)}`}>{formatOdLbl(od.status)}</span>
                       </div>
@@ -5045,10 +5205,10 @@ function LeavesPageContent() {
           }} />
           <div className="relative z-50 my-auto flex h-auto min-h-0 w-full max-w-4xl max-h-[min(90dvh,calc(100dvh-2rem))] flex-col overflow-hidden rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl animate-in zoom-in-95 duration-300">
             {/* Header */}
-            <div className={`relative shrink-0 w-full min-w-0 overflow-hidden rounded-t-3xl border-b border-white/10 ${
+            <div className={`relative shrink-0 w-full min-w-0 overflow-hidden rounded-t-3xl ${
               detailType === 'leave'
-                ? 'bg-indigo-700'
-                : 'bg-slate-700'
+                ? 'bg-indigo-700 border-b border-white/10'
+                : 'bg-gradient-to-r from-slate-50 to-indigo-50/50 dark:from-slate-850 dark:to-slate-900/40 border-b border-slate-200 dark:border-slate-800'
               }`}>
               <div className="absolute inset-0 bg-gradient-to-r from-white/5 via-transparent to-indigo-600/10 pointer-events-none" />
 
@@ -5074,10 +5234,10 @@ function LeavesPageContent() {
                   </div>
                 ) : (
                   /* OD Header: employee details */
-                  <div className="flex items-center justify-between gap-3 text-white">
+                  <div className="flex items-center justify-between gap-3 text-slate-900 dark:text-white">
                     {/* Left: Avatar + Employee Info */}
                     <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 border border-indigo-500 text-white font-bold text-base shadow-md">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-100 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-850/80 text-indigo-700 dark:text-indigo-300 font-bold text-base shadow-sm">
                         {String(
                           selectedItem.employeeId?.employee_name ||
                           (selectedItem.employeeId as any)?.first_name ||
@@ -5085,26 +5245,56 @@ function LeavesPageContent() {
                         ).charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h2 className="text-base sm:text-lg font-bold text-white truncate">
+                        <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate">
                           {selectedItem.employeeId?.employee_name ||
                             `${(selectedItem.employeeId as any)?.first_name || ''} ${(selectedItem.employeeId as any)?.last_name || ''}`.trim() ||
                             selectedItem.emp_no || '—'}
                         </h2>
-                        <p className="text-xs text-slate-200 font-medium mt-1">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">
                           {formatEmpNoWithDesignation(selectedItem)}
                           {selectedItem.department?.name && ` · ${selectedItem.department.name}`}
                           {(selectedItem.appliedAt || (selectedItem as any).createdAt) && ` · Applied ${new Date(selectedItem.appliedAt || (selectedItem as any).createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`}
                         </p>
                       </div>
                     </div>
-                    {/* Right: Status badge + OD badge */}
+                    {/* Right: Status badge + OD badge + Edit button */}
                     <div className="flex items-center gap-2.5 shrink-0 self-start">
-                      <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(selectedItem.status)}`}>
+                      <span className={`inline-flex items-center gap-1.5 px-4.5 py-1.5 rounded-full text-sm font-extrabold border shadow-sm ${getStatusColor(selectedItem.status)}`}>
                         {formatLeaveLbl(selectedItem.status)}
                       </span>
-                      <span className="inline-flex items-center px-3 py-1 rounded-md text-xs font-black uppercase tracking-widest bg-indigo-600 text-white border border-indigo-400 shrink-0 shadow-sm">
+                      <span className="inline-flex items-center px-3.5 py-1.5 rounded-md text-xs font-black uppercase tracking-widest bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0 shadow-sm">
                         OD
                       </span>
+                      {(selectedItem.status !== 'approved' || isSuperAdmin || isSubAdmin || isHR || isManager || isHOD) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const odItem = selectedItem as any;
+                            setEditFormData({
+                              leaveType: (selectedItem as LeaveApplication).leaveType || '',
+                              odType: (selectedItem as ODApplication).odType || '',
+                              fromDate: formatDateForInput(selectedItem.fromDate),
+                              toDate: formatDateForInput(selectedItem.toDate),
+                              purpose: selectedItem.purpose,
+                              contactNumber: selectedItem.contactNumber || '',
+                              placeVisited: (selectedItem as ODApplication).placeVisited || '',
+                              isHalfDay: selectedItem.isHalfDay || false,
+                              halfDayType: selectedItem.halfDayType || null,
+                              remarks: (selectedItem as any).remarks || '',
+                              status: selectedItem.status,
+                              odType_extended: odItem.odType_extended || 'full_day',
+                              odStartTime: odItem.odStartTime || odItem.od_start_time || '',
+                              odEndTime: odItem.odEndTime || odItem.od_end_time || '',
+                            });
+                            setShowEditDialog(true);
+                          }}
+                          className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all hover:scale-105 active:scale-95 shadow-sm flex items-center gap-1.5 shrink-0"
+                          title="Edit OD Request"
+                        >
+                          <Edit className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                          <span>Edit</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -5647,7 +5837,7 @@ function LeavesPageContent() {
                     )}
 
                     {/* Edit Button */}
-                    {(selectedItem.status !== 'approved' || isSuperAdmin || isSubAdmin || isHR || isManager || isHOD) && (
+                    {detailType === 'leave' && (selectedItem.status !== 'approved' || isSuperAdmin || isSubAdmin || isHR || isManager || isHOD) && (
                       <button
                         onClick={() => {
                           const odItem = selectedItem as any;
@@ -5671,7 +5861,7 @@ function LeavesPageContent() {
                         }}
                         className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors"
                       >
-                        Edit {detailType === 'leave' ? 'Leave' : 'OD'}
+                        Edit Leave
                       </button>
                     )}
 
@@ -5751,7 +5941,9 @@ function LeavesPageContent() {
                               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                               <div className="min-w-0">
                                 <p className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                                  Duration shortfall — your decision required
+                                  {(selectedItem as any).isCOEligible || (selectedItem as any).durationClassification?.status === 'authority_required'
+                                    ? 'Weekly off / Holiday OD — your decision required'
+                                    : 'Duration shortfall — your decision required'}
                                 </p>
                                 <p className="mt-1 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
                                   {(selectedItem as any).durationClassification.employeeMessage ||
