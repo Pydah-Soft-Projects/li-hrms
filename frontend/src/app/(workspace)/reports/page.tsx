@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import PayrollTransactionsTab from './payroll-transactions-tab';
 import AttendanceReportsTab from './attendance-reports-tab';
 import ThumbReportsTab from './thumb-reports-tab';
@@ -10,11 +11,12 @@ import LoanReportsTab from './loan-reports-tab';
 import CertificationReportsTab from './certification-reports-tab';
 import DeductionsReportsTab from './deductions-reports-tab';
 import ResignationReportsTab from './resignation-reports-tab';
+import ComplaintsReportsTab from './complaints-reports-tab';
 import { auth } from '@/lib/auth';
 import { canViewReports, canViewFinancialReports, canViewResignation } from '@/lib/permissions';
-import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase, Wallet, Banknote, TrendingDown, GraduationCap, LogOut } from 'lucide-react';
+import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase, Wallet, Banknote, TrendingDown, GraduationCap, LogOut, AlertTriangle } from 'lucide-react';
 
-type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'deductions' | 'certifications' | 'resignations';
+type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'deductions' | 'certifications' | 'resignations' | 'complaints';
 
 const TAB_CONFIG = {
   payroll: { label: 'Payroll', icon: CreditCard, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30', border: 'border-violet-500', activeBg: 'bg-violet-600' },
@@ -27,10 +29,26 @@ const TAB_CONFIG = {
   salary_advance: { label: 'Salary Advance', icon: Banknote, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/30', border: 'border-amber-500', activeBg: 'bg-amber-600' },
   certifications: { label: 'Certifications', icon: GraduationCap, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30', border: 'border-violet-500', activeBg: 'bg-violet-600' },
   resignations: { label: 'Resignations', icon: LogOut, color: 'text-slate-800 dark:text-slate-200', bg: 'bg-slate-50 dark:bg-slate-800/30', border: 'border-slate-400', activeBg: 'bg-slate-800' },
+  complaints: { label: 'Complaints', icon: AlertTriangle, color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-950/30', border: 'border-orange-500', activeBg: 'bg-orange-600' },
 };
 
 export default function ReportsPage() {
-  const [activeTab, setActiveTab] = useState<TabType>('attendance');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const initialTab = (searchParams.get('tab') as TabType) || 'attendance';
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+
+  // Sync URL when tab changes
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    router.replace(`?tab=${tab}`, { scroll: false });
+  };
+
+  // If URL param changes externally, sync state
+  useEffect(() => {
+    const t = searchParams.get('tab') as TabType;
+    if (t && t !== activeTab) setActiveTab(t);
+  }, [searchParams]);
 
   const user = auth.getUser();
   const hasReportsAccess = user ? canViewReports(user as any) : false;
@@ -53,13 +71,14 @@ export default function ReportsPage() {
   if (hasFinancialAccess) tabs.push('payroll', 'deductions', 'loans', 'salary_advance');
   tabs.push('attendance', 'biometric', 'leaves', 'od', 'certifications');
   if (hasResignationAccess) tabs.push('resignations');
+  if (['hr', 'sub_admin', 'super_admin', 'hod'].includes(user?.role || '')) tabs.push('complaints');
 
   const currentTab: TabType = tabs.includes(activeTab) ? activeTab : tabs[0];
 
   return (
     <div className="w-full min-h-screen bg-slate-50/50 dark:bg-transparent">
       {/* Page Header */}
-      <div className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/80 backdrop-blur px-4 sm:px-6 md:px-8 py-4">
+      <div className="px-0 py-4 bg-transparent">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">Reports & Analytics</h1>
@@ -68,21 +87,19 @@ export default function ReportsPage() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-1 mt-4 overflow-x-auto pb-1 no-scrollbar">
+        <div className="flex items-center gap-1 mt-4 w-full select-none bg-slate-100/80 dark:bg-slate-900/60 p-1 rounded-xl border border-slate-200/50 dark:border-slate-800/40">
           {tabs.map((tabId) => {
             const cfg = TAB_CONFIG[tabId];
-            const Icon = cfg.icon;
             const isActive = currentTab === tabId;
             return (
               <button
                 key={tabId}
-                onClick={() => setActiveTab(tabId)}
-                className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 whitespace-nowrap ${isActive
-                  ? `${cfg.activeBg} text-white shadow-md scale-[1.02]`
+                onClick={() => handleTabChange(tabId)}
+                className={`relative flex-1 flex items-center justify-center px-0.5 py-1.5 rounded-lg text-[8.5px] sm:text-[10px] font-bold transition-all duration-200 whitespace-nowrap ${isActive
+                  ? `${cfg.activeBg} text-white shadow-sm scale-[1.01]`
                   : `text-slate-500 hover:${cfg.bg} hover:${cfg.color} dark:text-slate-400`
                   }`}
               >
-                <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-white' : ''}`} />
                 {cfg.label}
               </button>
             );
@@ -91,7 +108,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Tab Content */}
-      <div className="px-4 sm:px-6 md:px-8 py-5">
+      <div className="px-0 py-5">
         {currentTab === 'payroll' && <PayrollTransactionsTab />}
         {currentTab === 'deductions' && <DeductionsReportsTab />}
         {currentTab === 'attendance' && <AttendanceReportsTab />}
@@ -102,6 +119,7 @@ export default function ReportsPage() {
         {currentTab === 'salary_advance' && <LoanReportsTab defaultRequestType="salary_advance" />}
         {currentTab === 'certifications' && <CertificationReportsTab />}
         {currentTab === 'resignations' && <ResignationReportsTab />}
+        {currentTab === 'complaints' && <ComplaintsReportsTab />}
       </div>
     </div>
   );

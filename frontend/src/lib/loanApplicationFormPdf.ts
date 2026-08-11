@@ -1,4 +1,5 @@
 import type jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import type { CompanyProfile } from '@/lib/companyProfile';
 import { formatAddressBlock } from '@/lib/companyProfile';
 import type { LoanAdvancePdfLoan } from '@/lib/loanAdvanceRequestPdf';
@@ -17,7 +18,20 @@ export type LoanApplicationPdfContext = {
   sectionName?: string | null;
   divisionName?: string | null;
   employeeExposure?: {
-    ownLoans?: Array<{ amount: number; emi: number; outstanding: number; status: string; applicationFormNumber?: number }>;
+    ownLoans?: Array<{
+      amount: number;
+      emi: number;
+      outstanding: number;
+      status: string;
+      applicationFormNumber?: number;
+      totalAmount?: number;
+      interest?: number;
+      paidMonths?: number;
+      paidAmount?: number;
+      unpaidAmount?: number;
+      totalMonths?: number;
+      reason?: string;
+    }>;
     guaranteedLoans?: Array<{ borrowerName?: string; borrowerEmpNo?: string; amount: number; emi: number; outstanding: number; status: string }>;
     totals?: {
       ownOutstanding: number;
@@ -45,10 +59,10 @@ type FormTheme = {
 };
 
 const SECTION_PAD_X = 5;
-const SECTION_PAD_Y = 6;
-const ROW_GAP = 8;
-const OFFICIAL_PAD_Y = 4;
-const OFFICIAL_ROW_GAP = 3;
+const SECTION_PAD_Y = 4;
+const ROW_GAP = 6.5;
+const OFFICIAL_PAD_Y = 3;
+const OFFICIAL_ROW_GAP = 2;
 /** Blank area above the signature label for wet ink */
 const SIGNATURE_SPACE = 5;
 const SIGN_COL_W = 48;
@@ -454,73 +468,73 @@ export function drawApplicantAndHodSections(
   const amount = formatRsWhole(loan.amount);
   const reason = (loan.reason || '').trim();
   const appliedDate = formatDateForm(loan.appliedAt);
+  const empNo = loan.emp_no || loan.employeeId?.emp_no || '';
+  const mobileNumber = loan.employeeId?.phone_number || '';
 
-  const employeeSignH = measureSignatureBlockHeight(
-    doc,
-    'Signature of Employee',
-    cols.signLeft,
-    cols.signRight,
-    10,
-  );
+  const midX = innerX + (innerRight - innerX) * 0.5;
+  const empSigH = measureSignatureBlockHeight(doc, 'Signature of Employee', innerX, midX - 2, 9.5);
+  const hodSigH = measureSignatureBlockHeight(doc, HOD_SIGNATURE_LABEL, midX, innerRight, 9.5);
+  const employeeSignH = Math.max(empSigH, hodSigH);
 
   let y = startY;
   const applicantTop = y;
-  const applicantH = SECTION_PAD_Y * 2 + ROW_GAP * 6 + employeeSignH;
+  const applicantH = SECTION_PAD_Y * 2 + ROW_GAP * 5 + employeeSignH;
   drawTintedPanel(doc, margin, applicantTop, contentW, applicantH, theme.primaryPale, theme.primaryLight);
 
   y = applicantTop + SECTION_PAD_Y;
-  drawFieldLine(doc, 'Employee Name :', employeeName, innerX, y, innerRight, theme);
+  // Row 1
+  drawFieldLine(doc, 'Employee Name :', employeeName, innerX, y, midX - 2, theme);
+  drawFieldLine(doc, 'Emp No :', empNo, midX, y, innerRight, theme);
   y += ROW_GAP;
-  drawFieldLine(doc, 'Designation :', designation, innerX, y, innerRight, theme);
+  // Row 2
+  drawFieldLine(doc, 'Designation :', designation, innerX, y, midX - 2, theme);
+  drawFieldLine(doc, 'Division :', division, midX, y, innerRight, theme);
   y += ROW_GAP;
-  drawFieldLine(doc, 'Department :', department, innerX, y, innerRight, theme);
+  // Row 3
+  drawFieldLine(doc, 'Department :', department, innerX, y, midX - 2, theme);
+  drawFieldLine(doc, 'Mobile Number :', mobileNumber, midX, y, innerRight, theme);
   y += ROW_GAP;
-  drawFieldLine(doc, 'Division :', division, innerX, y, innerRight, theme);
+  // Row 4
+  drawFieldLine(doc, 'Amount required : Rs.', amount ? `${amount} /-` : '', innerX, y, midX - 2, theme);
+  drawFieldLine(doc, 'Date :', appliedDate, midX, y, innerRight, theme);
   y += ROW_GAP;
-  drawFieldLine(doc, 'Amount required : Rs.', amount ? `${amount} /-` : '', innerX, y, innerRight, theme);
-  y += ROW_GAP;
+  // Row 5
   drawFieldLine(doc, 'Reason for Advance :', reason, innerX, y, innerRight, theme);
   y += ROW_GAP;
-  drawFieldLine(doc, 'Date :', appliedDate, innerX, y, innerRight, theme);
-  y += ROW_GAP;
-  y += drawSignatureBlock(doc, {
-    label: 'Signature of Employee',
-    x: cols.signLeft,
-    y,
-    rightX: cols.signRight,
-    theme,
-    fontSize: 10,
-    align: 'right',
-  });
-  y = applicantTop + applicantH + SECTION_GAP;
 
-  if (!includeHod) {
-    return y;
+  if (includeHod) {
+    drawSignatureBlock(doc, {
+      label: 'Signature of Employee',
+      x: innerX,
+      y,
+      rightX: midX - 2,
+      theme,
+      fontSize: 9.5,
+      align: 'center',
+    });
+    drawSignatureBlock(doc, {
+      label: HOD_SIGNATURE_LABEL,
+      x: midX,
+      y,
+      rightX: innerRight,
+      theme,
+      fontSize: 9.5,
+      align: 'center',
+    });
+  } else {
+    drawSignatureBlock(doc, {
+      label: 'Signature of Employee',
+      x: cols.signLeft,
+      y,
+      rightX: cols.signRight,
+      theme,
+      fontSize: 10,
+      align: 'right',
+    });
   }
 
-  const hodSignH = measureSignatureBlockHeight(doc, HOD_SIGNATURE_LABEL, innerX, innerRight, 9.5);
-  const hodTop = y;
-  const hodH = SECTION_PAD_Y * 2 + hodSignH;
-  drawTintedPanel(
-    doc,
-    margin,
-    hodTop,
-    contentW,
-    hodH,
-    mixRgb(theme.primaryPale, [255, 255, 255], 0.35),
-    theme.accent,
-  );
-  drawSignatureBlock(doc, {
-    label: HOD_SIGNATURE_LABEL,
-    x: innerX,
-    y: hodTop + SECTION_PAD_Y,
-    rightX: innerRight,
-    theme,
-    fontSize: 9.5,
-    align: 'center',
-  });
-
-  return hodTop + hodH + SECTION_GAP;
+  y = applicantTop + applicantH + SECTION_GAP;
+  return y;
 }
 
 export function drawFormPageHeader(
@@ -646,33 +660,128 @@ function drawAttendanceSummaryBlock(
   const summary = context?.attendanceSummary;
   if (!summary?.last6Months?.length) return layout.startY;
 
-  let y = layout.startY + 6;
+  let y = layout.startY + 4;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(...theme.label);
   doc.text(`Attendance Summary (Last 6 Months) — Overall: ${summary.overallPercentage ?? '—'}%`, layout.innerX, y);
-  y += 5;
+  y += 2.5;
 
-  const cols = ['Month', 'Working', 'Present', 'Leave', 'LOP', '%'];
-  const colW = (layout.innerRight - layout.innerX) / cols.length;
-  doc.setFontSize(7);
-  cols.forEach((c, i) => doc.text(c, layout.innerX + i * colW, y));
-  y += 4;
+  const headers = ['Month', 'Working Days', 'Present', 'Leave', 'LOP', 'Attendance %'];
+  const body = summary.last6Months.map((row) => [
+    row.monthName || '',
+    String(row.workingDays ?? '0'),
+    String(row.present ?? '0'),
+    String(row.leave ?? '0'),
+    String(row.lop ?? '0'),
+    row.attendancePercent != null ? `${row.attendancePercent}%` : '—',
+  ]);
 
-  doc.setFont('helvetica', 'normal');
-  summary.last6Months.forEach((row) => {
-    const vals = [
-      row.monthName || '',
-      String(row.workingDays ?? ''),
-      String(row.present ?? ''),
-      String(row.leave ?? ''),
-      String(row.lop ?? ''),
-      row.attendancePercent != null ? `${row.attendancePercent}%` : '—',
-    ];
-    vals.forEach((v, i) => doc.text(v, layout.innerX + i * colW, y));
-    y += 3.5;
+  autoTable(doc, {
+    head: [headers],
+    body: body,
+    startY: y,
+    margin: { left: layout.innerX, right: layout.margin },
+    theme: 'grid',
+    styles: {
+      fontSize: 6.5,
+      cellPadding: 1.5,
+      font: 'helvetica',
+      textColor: [30, 41, 59],
+      lineColor: theme.primaryLight,
+      lineWidth: 0.1,
+    },
+    headStyles: {
+      fillColor: theme.primaryPale,
+      textColor: theme.primary,
+      fontStyle: 'bold',
+    },
+    columnStyles: {
+      0: { halign: 'left', fontStyle: 'bold' },
+      1: { halign: 'center' },
+      2: { halign: 'center' },
+      3: { halign: 'center' },
+      4: { halign: 'center' },
+      5: { halign: 'center', fontStyle: 'bold' },
+    },
   });
-  return y + 4;
+
+  return (doc as any).lastAutoTable.finalY + 4;
+}
+
+function drawExistingLoansTable(
+  doc: jsPDF,
+  theme: FormTheme,
+  context: LoanApplicationPdfContext | undefined,
+  layout: { margin: number; contentW: number; innerX: number; innerRight: number; startY: number },
+): number {
+  const ownLoans = context?.employeeExposure?.ownLoans;
+  if (!ownLoans || ownLoans.length === 0) return layout.startY;
+
+  let y = layout.startY + 4;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...theme.label);
+  doc.text('Existing Loans (As Borrower)', layout.innerX, y);
+  y += 2.5;
+
+  const headers = [
+    'Total Repayment',
+    'EMI',
+    'Interest',
+    'Paid Months',
+    'Paid Amount',
+    'Unpaid Amount',
+    'Months',
+    'Status',
+    'Reason',
+  ];
+
+  const body = ownLoans.map((row) => [
+    formatRsWhole(row.totalAmount || row.amount),
+    formatRsWhole(row.emi),
+    formatRsWhole(row.interest),
+    `${row.paidMonths || 0} / ${row.totalMonths || 0}`,
+    formatRsWhole(row.paidAmount),
+    formatRsWhole(row.unpaidAmount || row.outstanding),
+    String(row.totalMonths || 0),
+    row.status?.replace(/_/g, ' ') || '',
+    row.reason || '—',
+  ]);
+
+  autoTable(doc, {
+    head: [headers],
+    body: body,
+    startY: y,
+    margin: { left: layout.innerX, right: layout.margin },
+    theme: 'grid',
+    styles: {
+      fontSize: 6.5,
+      cellPadding: 1.5,
+      font: 'helvetica',
+      textColor: [30, 41, 59],
+      lineColor: theme.primaryLight,
+      lineWidth: 0.1,
+    },
+    headStyles: {
+      fillColor: theme.primaryPale,
+      textColor: theme.primary,
+      fontStyle: 'bold',
+    },
+    columnStyles: {
+      0: { halign: 'left', fontStyle: 'bold' },
+      1: { halign: 'right' },
+      2: { halign: 'right' },
+      3: { halign: 'center' },
+      4: { halign: 'right' },
+      5: { halign: 'right', fontStyle: 'bold', textColor: [180, 83, 9] },
+      6: { halign: 'center' },
+      7: { halign: 'center' },
+      8: { halign: 'left' },
+    },
+  });
+
+  return (doc as any).lastAutoTable.finalY + 4;
 }
 
 function drawLiabilitySummaryBlock(
@@ -689,20 +798,15 @@ function drawLiabilitySummaryBlock(
   doc.setFontSize(9);
   doc.setTextColor(...theme.label);
   doc.text('Total Liability Summary', layout.innerX, y);
-  y += 5;
+  y += 4;
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  const lines = [
-    `Own outstanding: ${formatRsWhole(exp.totals.ownOutstanding)}`,
-    `Guaranteed outstanding: ${formatRsWhole(exp.totals.guaranteedOutstanding)}`,
-    `Total liability: ${formatRsWhole(exp.totals.totalLiability)}`,
-    `Monthly exposure (EMI): ${formatRsWhole(exp.totals.totalMonthlyExposure)}`,
-  ];
-  lines.forEach((line) => {
-    doc.text(line, layout.innerX, y);
-    y += 4;
-  });
-  return y + 2;
+  doc.setTextColor(...theme.body);
+  const line = `Own Outstanding: Rs. ${formatRsWhole(exp.totals.ownOutstanding)}   |   Guaranteed Outstanding: Rs. ${formatRsWhole(exp.totals.guaranteedOutstanding)}   |   Total Liability: Rs. ${formatRsWhole(exp.totals.totalLiability)}   |   Monthly Exposure (EMI): Rs. ${formatRsWhole(exp.totals.totalMonthlyExposure)}`;
+  doc.text(line, layout.innerX, y);
+
+  return y + 4;
 }
 
 function drawOfficialUseSection(
@@ -830,6 +934,20 @@ export function drawLoanApplicationSuretyPage(
     y = suretyTop + suretyH + 3;
   }
 
+  const officialH = measureOfficialUsePanelHeight(doc, loan, context, innerX, innerRight);
+  const totalRequired = 8 + officialH + 5;
+  if (y + totalRequired > 281) {
+    doc.addPage();
+    const newHeaderH = drawFormPageHeader(doc, profile, loan, theme, {
+      margin,
+      rightX,
+      contentW,
+      title,
+      formNo,
+    });
+    y = newHeaderH + 5;
+  }
+
   drawOfficialUseSection(doc, loan, theme, context, {
     pageW,
     margin,
@@ -878,7 +996,22 @@ export function drawLoanApplicationFormPage(
 
   const layoutBase = { pageW, margin, contentW, innerX, innerRight };
   let nextY = drawAttendanceSummaryBlock(doc, theme, context, { ...layoutBase, startY: y });
+  nextY = drawExistingLoansTable(doc, theme, context, { ...layoutBase, startY: nextY });
   nextY = drawLiabilitySummaryBlock(doc, theme, context, { innerX, innerRight, startY: nextY });
+
+  const officialH = measureOfficialUsePanelHeight(doc, loan, context, innerX, innerRight);
+  const totalRequired = 8 + officialH + 5;
+  if (nextY + totalRequired > 281) {
+    doc.addPage();
+    const newHeaderH = drawFormPageHeader(doc, profile, loan, theme, {
+      margin,
+      rightX,
+      contentW,
+      title,
+      formNo,
+    });
+    nextY = newHeaderH + 5;
+  }
 
   drawOfficialUseSection(doc, loan, theme, context, {
     ...layoutBase,

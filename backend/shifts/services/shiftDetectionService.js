@@ -145,15 +145,36 @@ const filterShiftsByEmployeeAttributes = (shiftConfigs, employeeGender, employee
   // Align with assign APIs: expand employee_group_ids[] to one row per group before filtering
   const configs = flattenShiftConfigsWithGroups(shiftConfigs);
 
-  // New Structure: Filter by gender + optional employee group
+  // If grouping is enabled and employee has a group, try to find shifts matching this group first
+  if (groupingEnabled && employeeGroupId) {
+    const groupMatches = configs.filter(config => {
+      if (!config || !config.shiftId) return false;
+
+      if (config.employee_group_id) {
+        const cfgGroup = config.employee_group_id.toString();
+        if (cfgGroup === employeeGroupId.toString()) {
+          // If no gender specified or 'All', allow it
+          if (!config.gender || config.gender === 'All') return true;
+          // Use case-insensitive match just in case
+          return config.gender.toLowerCase() === (employeeGender || '').toLowerCase();
+        }
+      }
+      return false;
+    });
+
+    if (groupMatches.length > 0) {
+      return groupMatches.map(config => config.shiftId);
+    }
+  }
+
+  // Fallback: Filter configurations that do not specify any employee group (default or ALL)
   return configs
     .filter(config => {
       if (!config || !config.shiftId) return false;
 
-      // Group check is feature-flagged. When enabled, a config-level group means strict match.
+      // When grouping is enabled, config-level group exists means strict match (already checked above)
       if (groupingEnabled && config.employee_group_id) {
-        const cfgGroup = config.employee_group_id.toString();
-        if (!employeeGroupId || cfgGroup !== employeeGroupId.toString()) return false;
+        return false;
       }
 
       // If no gender specified or 'All', allow it

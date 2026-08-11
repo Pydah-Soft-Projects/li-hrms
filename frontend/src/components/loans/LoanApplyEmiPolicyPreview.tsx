@@ -14,6 +14,7 @@ type EmiApplicationPreview = {
   reason?: string;
   existingActiveLoans?: number;
   existingMonthlyEmi?: number;
+  activeLoans?: any[];
   preEmiMonths?: number;
   tenureInterest?: number;
   preEmiInterest?: number;

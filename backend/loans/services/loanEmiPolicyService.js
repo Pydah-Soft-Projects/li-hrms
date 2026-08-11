@@ -315,9 +315,6 @@ async function buildEmiApplicationPreview({
         'repayment.remainingBalance': { $gt: 0 },
         ...(excludeLoanId ? { _id: { $ne: excludeLoanId } } : {}),
       })
-        .select(
-          '_id amount duration loanConfig.emiAmount repayment.installmentsPaid repayment.totalInstallments repayment.remainingBalance appliedAt disbursement.disbursedAt'
-        )
         .lean()
     : [];
 
@@ -442,6 +439,19 @@ async function buildEmiApplicationPreview({
     reason,
     existingActiveLoans: activeLoans.length,
     existingMonthlyEmi: Math.round(existingMonthlyEmi),
+    activeLoans: activeLoans.map(al => ({
+      _id: al._id,
+      reason: al.reason || '',
+      amount: al.amount,
+      duration: al.duration,
+      emi: al.loanConfig?.emiAmount || 0,
+      totalAmount: al.loanConfig?.totalAmount || (al.amount + (al.loanConfig?.totalInterest || al.interestAmount || 0)),
+      interest: al.loanConfig?.totalInterest || al.interestAmount || 0,
+      paidMonths: al.repayment?.installmentsPaid || 0,
+      paidAmount: al.repayment?.totalPaid || 0,
+      unpaidAmount: al.repayment?.remainingBalance != null ? al.repayment.remainingBalance : (al.loanConfig?.totalAmount || al.amount),
+      totalMonths: al.repayment?.totalInstallments || al.duration || 0,
+    })),
     tentativeEmiWithoutPre: Math.round(newEmi),
     preEmiMonths: preMonths,
     tenureInterest: plan.tenureInterest,

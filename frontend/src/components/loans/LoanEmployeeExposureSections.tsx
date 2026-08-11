@@ -18,6 +18,13 @@ export type LoanExposureRow = {
   status: string;
   isRunning: boolean;
   guarantorStatus?: string | null;
+  totalAmount?: number;
+  interest?: number;
+  paidMonths?: number;
+  paidAmount?: number;
+  unpaidAmount?: number;
+  totalMonths?: number;
+  reason?: string;
 };
 
 export type LoanEmployeeExposure = {
@@ -35,36 +42,46 @@ export type LoanEmployeeExposure = {
 
 function formatRs(n?: number | null) {
   if (n == null || Number.isNaN(Number(n))) return '—';
-  return `₹${Number(n).toLocaleString('en-IN')}`;
+  return `₹${Math.round(Number(n)).toLocaleString('en-IN')}`;
 }
 
 function ExposureTable({ rows, showBorrower }: { rows: LoanExposureRow[]; showBorrower?: boolean }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-xs">
+    <div className="overflow-x-auto rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
+      <table className="w-full text-[11px] text-slate-600 dark:text-slate-400 border-collapse">
         <thead>
-          <tr className="border-b border-slate-200 text-left text-slate-500 dark:border-slate-700">
-            <th className="px-2 py-2">Ref</th>
-            {showBorrower && <th className="px-2 py-2">Borrower</th>}
-            <th className="px-2 py-2">Amount</th>
-            <th className="px-2 py-2">EMI</th>
-            <th className="px-2 py-2">Outstanding</th>
-            <th className="px-2 py-2">Status</th>
+          <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-800/40 text-[9px] font-bold uppercase tracking-wider text-slate-500">
+            {showBorrower && <th className="px-2.5 py-2 text-left font-semibold whitespace-nowrap">Borrower</th>}
+            <th className={`px-2.5 py-2 font-semibold whitespace-nowrap ${showBorrower ? 'text-right' : 'text-left'}`}>Total Repayment</th>
+            <th className="px-2.5 py-2 text-right font-semibold whitespace-nowrap">EMI</th>
+            <th className="px-2.5 py-2 text-right font-semibold whitespace-nowrap">Interest</th>
+            <th className="px-2.5 py-2 text-center font-semibold whitespace-nowrap">Paid Months</th>
+            <th className="px-2.5 py-2 text-right font-semibold whitespace-nowrap">Paid Amount</th>
+            <th className="px-2.5 py-2 text-right font-semibold whitespace-nowrap">Unpaid Amount</th>
+            <th className="px-2.5 py-2 text-center font-semibold whitespace-nowrap">Months</th>
+            <th className="px-2.5 py-2 text-center font-semibold whitespace-nowrap">Status</th>
+            <th className="px-2.5 py-2 text-left font-semibold whitespace-nowrap">Reason</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.loanId} className="border-b border-slate-100 dark:border-slate-800">
-              <td className="px-2 py-2">{row.applicationFormNumber || row.loanId.slice(-6)}</td>
+            <tr key={row.loanId} className="border-b border-slate-100 dark:border-slate-800/40 last:border-0 hover:bg-slate-100/10 dark:hover:bg-slate-800/10">
               {showBorrower && (
-                <td className="px-2 py-2">
+                <td className="px-2.5 py-2 text-left text-slate-700 dark:text-slate-300 whitespace-nowrap">
                   {row.borrowerName} ({row.borrowerEmpNo})
                 </td>
               )}
-              <td className="px-2 py-2">{formatRs(row.amount)}</td>
-              <td className="px-2 py-2">{formatRs(row.emi)}</td>
-              <td className="px-2 py-2">{formatRs(row.outstanding)}</td>
-              <td className="px-2 py-2 capitalize">{row.status?.replace(/_/g, ' ')}</td>
+              <td className={`px-2.5 py-2 text-slate-800 dark:text-slate-200 font-medium whitespace-nowrap ${showBorrower ? 'text-right' : 'text-left'}`}>{formatRs(row.totalAmount || row.amount)}</td>
+              <td className="px-2.5 py-2 text-slate-700 dark:text-slate-300 text-right whitespace-nowrap">{formatRs(row.emi)}</td>
+              <td className="px-2.5 py-2 text-slate-700 dark:text-slate-300 text-right whitespace-nowrap">{formatRs(row.interest)}</td>
+              <td className="px-2.5 py-2 text-center whitespace-nowrap">{row.paidMonths || 0} / {row.totalMonths || 0}</td>
+              <td className="px-2.5 py-2 text-slate-700 dark:text-slate-300 text-right whitespace-nowrap">{formatRs(row.paidAmount)}</td>
+              <td className="px-2.5 py-2 font-semibold text-amber-600 dark:text-amber-400 text-right whitespace-nowrap">{formatRs(row.unpaidAmount || row.outstanding)}</td>
+              <td className="px-2.5 py-2 text-center font-medium whitespace-nowrap">{row.totalMonths || 0}</td>
+              <td className="px-2.5 py-2 text-center capitalize whitespace-nowrap">{row.status?.replace(/_/g, ' ')}</td>
+              <td className="px-2.5 py-2 text-left text-slate-800 dark:text-slate-200 font-medium max-w-[150px] truncate" title={row.reason}>
+                {row.reason || '—'}
+              </td>
             </tr>
           ))}
         </tbody>

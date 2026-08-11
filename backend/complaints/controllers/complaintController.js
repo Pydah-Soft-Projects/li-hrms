@@ -312,7 +312,15 @@ exports.getComplaints = async (req, res) => {
       isActive: true
     };
 
-    const complaints = await Complaint.find(query).sort({ createdAt: -1 }).lean();
+    const complaints = await Complaint.find(query)
+      .populate({
+        path: 'employeeId',
+        populate: {
+          path: 'division_id department_id'
+        }
+      })
+      .sort({ createdAt: -1 })
+      .lean();
     res.status(200).json({ success: true, data: complaints });
   } catch (error) {
     console.error('Error getting all complaints:', error);

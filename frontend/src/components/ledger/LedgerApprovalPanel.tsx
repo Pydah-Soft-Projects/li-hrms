@@ -30,6 +30,8 @@ type LedgerApprovalPanelProps = {
   showUpdateWarning?: boolean;
   onUpdateLoan?: () => void;
   updating?: boolean;
+  changeReason?: string;
+  onChangeReasonChange?: (v: string) => void;
   finalApprovalBlock?: ReactNode;
   /** Stage requires attendance verification consent before approve/reject */
   requireAttendanceConsent?: boolean;
@@ -61,6 +63,8 @@ export function LedgerApprovalPanel({
   showUpdateWarning,
   onUpdateLoan,
   updating,
+  changeReason = '',
+  onChangeReasonChange,
   finalApprovalBlock,
   requireAttendanceConsent,
   attendanceConsentChecked,
@@ -143,10 +147,24 @@ export function LedgerApprovalPanel({
             <p className="mb-2 text-xs font-medium text-amber-800 dark:text-amber-200">
               You have modified the loan details. Update the record before approving.
             </p>
+            {onChangeReasonChange && (
+              <div className="mb-3">
+                <LoanFormLabel>Reason for change *</LoanFormLabel>
+                <input
+                  type="text"
+                  required
+                  value={changeReason}
+                  onChange={(e) => onChangeReasonChange(e.target.value)}
+                  placeholder="e.g. Corrected tenure per HR instructions"
+                  className={loansFormInputClass()}
+                  style={loansFormInputStyle()}
+                />
+              </div>
+            )}
             <button
               type="button"
               onClick={onUpdateLoan}
-              disabled={updating}
+              disabled={updating || (onChangeReasonChange && !changeReason.trim())}
               className="w-full rounded-md border px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-amber-900 transition hover:opacity-90 disabled:opacity-40 dark:text-amber-100"
               style={{ borderColor: 'var(--ps-accent-border)', backgroundColor: 'rgba(251, 191, 36, 0.12)' }}
             >

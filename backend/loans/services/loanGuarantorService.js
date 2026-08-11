@@ -57,6 +57,16 @@ function mapLoanExposureRow(loan, role) {
   const outstanding = getLoanOutstanding(loan);
   const emi = getLoanEmiAmount(loan);
   const isRunning = RUNNING_LOAN_STATUSES.includes(loan.status) || loan.status === 'active';
+
+  // Detailed exposure fields to match active loans table
+  const totalAmount = loan.requestType === 'loan' ? (loan.loanConfig?.totalAmount || loan.amount || 0) : (loan.amount || 0);
+  const interest = loan.requestType === 'loan' ? (loan.loanConfig?.totalInterest || 0) : 0;
+  const paidMonths = loan.repayment?.installmentsPaid || 0;
+  const paidAmount = loan.repayment?.totalPaid || 0;
+  const unpaidAmount = loan.repayment?.remainingBalance !== undefined ? loan.repayment.remainingBalance : outstanding;
+  const totalMonths = loan.requestType === 'loan' ? (loan.loanConfig?.totalInstallments || loan.duration || 0) : (loan.duration || 1);
+  const reason = loan.reason || '';
+
   return {
     loanId: String(loan._id),
     applicationFormNumber: loan.applicationFormNumber || null,
@@ -73,6 +83,15 @@ function mapLoanExposureRow(loan, role) {
     guarantorStatus: role === 'guarantor' ? loan._guarantorStatus || null : null,
     appliedAt: loan.appliedAt || loan.createdAt,
     disbursedAt: loan.disbursement?.disbursedAt || null,
+
+    // Detailed metrics
+    totalAmount,
+    interest,
+    paidMonths,
+    paidAmount,
+    unpaidAmount,
+    totalMonths,
+    reason,
   };
 }
 

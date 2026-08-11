@@ -123,6 +123,7 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
   const [interestStartPayPeriod, setInterestStartPayPeriod] = useState('__default__');
   const [payCycleStartDay, setPayCycleStartDay] = useState(1);
   const [payCycleEndDay, setPayCycleEndDay] = useState<number | null>(null);
+  const [changeReason, setChangeReason] = useState('');
 
   const currentUser = auth.getUser();
   const hasManagePermission = currentUser ? canManageLoans(currentUser as Parameters<typeof canManageLoans>[0]) : false;
@@ -153,6 +154,7 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
         String(g.employeeId?._id || g.employeeId)
       );
       setSelectedGuarantorIds(existingGuarantors);
+      setChangeReason('');
       setApprovalAmount(String(res.data.amount ?? ''));
       setApprovalInterestRate(String(res.data.loanConfig?.interestRate ?? ''));
       setApprovalDuration(String(res.data.duration ?? ''));
@@ -319,9 +321,10 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
   const handleUpdateLoan = async () => {
     try {
       setSavingAction(true);
-      const payload: Record<string, number> = {
+      const payload: Record<string, any> = {
         amount: parseFloat(approvalAmount),
         duration: parseInt(approvalDuration, 10),
+        changeReason,
       };
       if (loan?.requestType === 'loan') {
         payload.interestRate = parseFloat(approvalInterestRate);
@@ -664,6 +667,8 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
                   }
                   onUpdateLoan={handleUpdateLoan}
                   updating={savingAction}
+                  changeReason={changeReason}
+                  onChangeReasonChange={setChangeReason}
                   finalApprovalBlock={
                     isFinalStep ? (
                       <LedgerFinalApprovalPayPeriod

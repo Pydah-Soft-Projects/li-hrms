@@ -27,9 +27,24 @@ import { api, Employee } from '@/lib/api';
 import { auth, User as AuthUser } from '@/lib/auth';
 import EmployeeSelect from '@/components/EmployeeSelect';
 
+const COMPLAINTS_PAGE_STORAGE_KEY = 'complaints_page_state_v1';
+
 export default function ComplaintsPage() {
   const pathname = usePathname();
   const isSuperAdminRoute = pathname?.includes('/superadmin');
+
+  const [activeTab, setActiveTab] = useState<'my' | 'pending' | 'all' | 'history'>(() => {
+    if (typeof window === 'undefined') return 'my';
+    try {
+      const saved = window.localStorage.getItem(COMPLAINTS_PAGE_STORAGE_KEY);
+      if (!saved) return 'my';
+      const parsed = JSON.parse(saved);
+      const validTab = ['my', 'pending', 'all', 'history'].includes(parsed?.activeTab);
+      return validTab ? parsed.activeTab : 'my';
+    } catch {
+      return 'my';
+    }
+  });
 
   const themeStyles = isSuperAdminRoute ? {
     '--ps-accent': '#10b981',
@@ -52,9 +67,6 @@ export default function ComplaintsPage() {
   // Config/Types
   const [complaintTypes, setComplaintTypes] = useState<any[]>([]);
 
-  // Navigation / Tabs
-  const [activeTab, setActiveTab] = useState<'my' | 'pending' | 'all'>('my');
-
   // Form State
   const [showForm, setShowForm] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
@@ -74,11 +86,130 @@ export default function ComplaintsPage() {
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+  // Reset category filter when changing tabs
+  useEffect(() => {
+    setSelectedCategory(null);
+  }, [activeTab]);
+
+  // Complaint History States
+  const [divisions, setDivisions] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [selectedHistoryEmployee, setSelectedHistoryEmployee] = useState<any | null>(null);
+  const [historyEmployees, setHistoryEmployees] = useState<any[]>([]);
+  const [historyEmpSearch, setHistoryEmpSearch] = useState('');
+  const [historyDivFilter, setHistoryDivFilter] = useState('');
+  const [historyDeptFilter, setHistoryDeptFilter] = useState('');
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   // Detail View State
   const [selectedComplaint, setSelectedComplaint] = useState<any | null>(null);
   const [showActionModal, setShowActionModal] = useState<{ id: string; action: 'approve' | 'reject' } | null>(null);
   const [actionComment, setActionComment] = useState('');
+
+
+
+  // Load divisions on mount
+  useEffect(() => {
+    const loadDivisions = async () => {
+      try {
+        const res = await api.getDivisions(true);
+        if (res.success) setDivisions(res.data || []);
+      } catch (err) {
+        console.error('Failed to load divisions:', err);
+      }
+    };
+    loadDivisions();
+  }, []);
+
+  // Load departments filtered by selected division (interconnected)
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await api.getDepartments(true, historyDivFilter || undefined);
+        if (res.success) {
+          const d = res.data || [];
+          setDepartments(d);
+          if (historyDeptFilter && !d.some((x: any) => x._id === historyDeptFilter)) {
+            setHistoryDeptFilter('');
+          }
+        }
+      } catch {}
+    };
+    load();
+  }, [historyDivFilter]);
+
+  // Fetch employees whenever history tab is active or filters/search change
+  useEffect(() => {
+    if (activeTab !== 'history') return;
+    const fetch = async () => {
+      setHistoryLoading(true);
+      try {
+        const res = await api.getEmployeesList({
+          search: historyEmpSearch || undefined,
+          division_id: historyDivFilter || undefined,
+          department_id: historyDeptFilter || undefined,
+          is_active: true,
+        });
+        if (res.success) setHistoryEmployees(res.data || []);
+      } catch {}
+      finally { setHistoryLoading(false); }
+    };
+    const t = setTimeout(fetch, 300);
+    return () => clearTimeout(t);
+  }, [activeTab, historyEmpSearch, historyDivFilter, historyDeptFilter]);
+
+  // Restore saved view state after reload
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const saved = window.localStorage.getItem(COMPLAINTS_PAGE_STORAGE_KEY);
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+
+      if (parsed?.selectedHistoryEmployee) {
+        setSelectedHistoryEmployee(parsed.selectedHistoryEmployee);
+      }
+      if (parsed?.historyEmpSearch) {
+        setHistoryEmpSearch(parsed.historyEmpSearch);
+      }
+      if (parsed?.historyDivFilter) {
+        setHistoryDivFilter(parsed.historyDivFilter);
+      }
+      if (parsed?.historyDeptFilter) {
+        setHistoryDeptFilter(parsed.historyDeptFilter);
+      }
+      if (parsed?.startDate) {
+        setStartDate(parsed.startDate);
+      }
+      if (parsed?.endDate) {
+        setEndDate(parsed.endDate);
+      }
+    } catch {
+      // Ignore invalid localStorage state
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const pageState = {
+        activeTab,
+        selectedHistoryEmployee,
+        historyEmpSearch,
+        historyDivFilter,
+        historyDeptFilter,
+        startDate,
+        endDate,
+      };
+      window.localStorage.setItem(COMPLAINTS_PAGE_STORAGE_KEY, JSON.stringify(pageState));
+    } catch {
+      // Ignore localStorage write issues
+    }
+  }, [activeTab, selectedHistoryEmployee, historyEmpSearch, historyDivFilter, historyDeptFilter, startDate, endDate]);
 
   // Load user
   useEffect(() => {
@@ -163,7 +294,7 @@ export default function ComplaintsPage() {
     let activeStream: MediaStream | null = null;
     if (showCamera) {
       navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
+        video: { facingMode: 'environment', aspectRatio: 16 / 9 },
         audio: false
       })
       .then((stream) => {
@@ -197,16 +328,48 @@ export default function ComplaintsPage() {
     if (!videoRef.current) return;
     const video = videoRef.current;
     
+    const W = video.videoWidth || 640;
+    const H = video.videoHeight || 480;
+    
+    // Target aspect ratio is 16:9
+    const targetAspect = 16 / 9;
+    const currentAspect = W / H;
+    
+    let sourceX = 0;
+    let sourceY = 0;
+    let sourceWidth = W;
+    let sourceHeight = H;
+    
+    if (currentAspect > targetAspect) {
+      // Current frame is wider than 16:9 -> crop width
+      sourceWidth = H * targetAspect;
+      sourceX = (W - sourceWidth) / 2;
+    } else {
+      // Current frame is taller than 16:9 -> crop height
+      sourceHeight = W / targetAspect;
+      sourceY = (H - sourceHeight) / 2;
+    }
+    
     // Create temporary canvas
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
+    canvas.width = sourceWidth;
+    canvas.height = sourceHeight;
     
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // Draw current video frame to canvas
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    // Draw the cropped center portion of the video frame to the canvas
+    ctx.drawImage(
+      video,
+      sourceX,
+      sourceY,
+      sourceWidth,
+      sourceHeight, // Source bounds
+      0,
+      0,
+      sourceWidth,
+      sourceHeight // Destination bounds
+    );
     
     // Stop camera stream
     if (streamRef.current) {
@@ -386,10 +549,11 @@ export default function ComplaintsPage() {
       const targetStr = `${comp.employeeName} ${comp.emp_no}`.toLowerCase();
       const matchSearch = targetStr.includes(searchQuery.toLowerCase()) || 
         comp.complaintType.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        comp.remarks.toLowerCase().includes(searchQuery.toLowerCase());
+        (comp.remarks && comp.remarks.toLowerCase().includes(searchQuery.toLowerCase()));
       
       const matchStatus = !statusFilter || comp.status === statusFilter;
-      return matchSearch && matchStatus;
+      const matchCategory = !selectedCategory || comp.complaintType === selectedCategory;
+      return matchSearch && matchStatus && matchCategory;
     });
   };
 
@@ -397,9 +561,24 @@ export default function ComplaintsPage() {
     if (activeTab === 'my') return filterList(myComplaints);
     if (activeTab === 'pending') return filterList(pendingComplaints);
     return filterList(allComplaints);
-  }, [activeTab, myComplaints, pendingComplaints, allComplaints, searchQuery, statusFilter]);
+  }, [activeTab, myComplaints, pendingComplaints, allComplaints, searchQuery, statusFilter, selectedCategory]);
 
   const showElevatedTabs = currentUser && ['hr', 'sub_admin', 'super_admin', 'hod', 'manager'].includes(currentUser.role);
+
+  const employeeComplaints = useMemo(() => {
+    if (!selectedHistoryEmployee) return [];
+    return allComplaints.filter(comp => {
+      const empIdStr = comp.employeeId?._id?.toString() || comp.employeeId?.toString() || '';
+      const targetEmpId = selectedHistoryEmployee._id?.toString() || '';
+      if (empIdStr !== targetEmpId) return false;
+      if (startDate || endDate) {
+        const compDateStr = new Date(comp.appliedAt || comp.createdAt).toISOString().split('T')[0];
+        if (startDate && compDateStr < startDate) return false;
+        if (endDate && compDateStr > endDate) return false;
+      }
+      return true;
+    });
+  }, [allComplaints, selectedHistoryEmployee, startDate, endDate]);
 
   // Status styling mapper
   const getStatusBadge = (status: string) => {
@@ -431,13 +610,565 @@ export default function ComplaintsPage() {
     );
   };
 
+  // Category aggregates computation
+  const categoryAggregates = useMemo(() => {
+    let list = [];
+    if (activeTab === 'history') {
+      if (selectedHistoryEmployee) {
+        list = employeeComplaints;
+      } else {
+        return { counts: {}, total: 0 };
+      }
+    } else {
+      if (activeTab === 'my') list = myComplaints;
+      else if (activeTab === 'pending') list = pendingComplaints;
+      else list = allComplaints;
+    }
+
+    // Filter by search & status so the counts are accurate for the current filtered set.
+    const filteredList = list.filter(comp => {
+      const targetStr = `${comp.employeeName || ''} ${comp.emp_no || ''}`.toLowerCase();
+      const matchSearch = activeTab === 'history' ? true : targetStr.includes(searchQuery.toLowerCase()) || 
+        comp.complaintType.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (comp.remarks && comp.remarks.toLowerCase().includes(searchQuery.toLowerCase()));
+      
+      const matchStatus = activeTab === 'history' ? true : !statusFilter || comp.status === statusFilter;
+      return matchSearch && matchStatus;
+    });
+
+    const counts: { [key: string]: number } = {};
+    let total = 0;
+    filteredList.forEach(comp => {
+      const cat = comp.complaintType || 'Unassigned';
+      counts[cat] = (counts[cat] || 0) + 1;
+      total++;
+    });
+
+    return { counts, total };
+  }, [activeTab, myComplaints, pendingComplaints, allComplaints, searchQuery, statusFilter, employeeComplaints, selectedHistoryEmployee]);
+
+  const renderCategoryAggregates = () => {
+    if (activeTab === 'history' && !selectedHistoryEmployee) return null;
+    if (categoryAggregates.total === 0) return null;
+
+    return (
+      <div className="w-full px-2 md:px-3 mb-2.5">
+        <div className="flex flex-col rounded-2xl md:rounded-3xl border border-slate-200/60 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 shadow-xs">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex-1 flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-none -mx-1 px-1">
+              {/* All Categories Card */}
+              <button
+                onClick={() => setSelectedCategory(null)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold shrink-0 transition-all cursor-pointer hover:scale-[1.01] active:scale-[0.99] ${
+                  !selectedCategory
+                    ? 'border-[var(--ps-accent)] bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 font-bold shadow-xs'
+                    : 'border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-950 text-slate-600 dark:text-slate-450 hover:border-slate-200 dark:hover:border-slate-700'
+                }`}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--ps-accent)]" />
+                <span>All Categories</span>
+                <span className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[8.5px] font-black ${
+                  !selectedCategory
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200'
+                    : 'bg-slate-200/70 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                }`}>
+                  {categoryAggregates.total}
+                </span>
+              </button>
+
+              {/* Individual Category Cards */}
+              {Object.entries(categoryAggregates.counts).map(([cat, count]) => {
+                const isSelected = selectedCategory === cat;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(isSelected ? null : cat)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold shrink-0 transition-all cursor-pointer hover:scale-[1.01] active:scale-[0.99] ${
+                      isSelected
+                        ? 'border-[var(--ps-accent)] bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 font-bold shadow-xs'
+                        : 'border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-950 text-slate-600 dark:text-slate-450 hover:border-slate-200 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-[var(--ps-accent)]' : 'bg-slate-400 dark:bg-slate-500'}`} />
+                    <span>{cat}</span>
+                    <span className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[8.5px] font-black ${
+                      isSelected
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200'
+                        : 'bg-slate-200/70 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {selectedCategory && (
+              <button
+                onClick={() => setSelectedCategory(null)}
+                // className="shrink-0 text-[10px] font-bold text-[var(--ps-accent-ink)] hover:underline dark:text-emerald-450 cursor-pointer whitespace-nowrap bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-850 hover:border-slate-350 transition-all active:scale-[0.98] select-none"
+              >
+                {/* Clear Category Filter */}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Render History View ────────────────────────────────────────────────────
+  const renderHistoryView = () => {
+    // Employee detail page
+    if (selectedHistoryEmployee) {
+      const initials = (selectedHistoryEmployee.employee_name || 'U')
+        .split(' ')
+        .map((w: string) => w[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase();
+
+      const sortedComplaints = [...employeeComplaints]
+        .filter(comp => !selectedCategory || comp.complaintType === selectedCategory)
+        .sort((a, b) => {
+          const dateA = new Date(a.appliedAt || a.createdAt || 0).getTime();
+          const dateB = new Date(b.appliedAt || b.createdAt || 0).getTime();
+          return dateB - dateA;
+        });
+
+
+      return (
+        <div className="w-full space-y-3 animate-fadeIn">
+          <div className="w-full rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:p-4">
+            <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 lg:flex-row lg:items-end lg:justify-between">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <button
+                  onClick={() => { setSelectedHistoryEmployee(null); setStartDate(''); setEndDate(''); }}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 text-slate-700 transition-all hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  aria-label="Back to employee list"
+                >
+                  <ChevronRight className="h-4 w-4 rotate-180" />
+                </button>
+
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--ps-accent-soft)] text-sm font-black uppercase text-[var(--ps-accent-ink)] shadow-sm">
+                    {initials}
+                  </div>
+
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-black uppercase tracking-[0.18em] text-slate-900 dark:text-white">
+                      {selectedHistoryEmployee.employee_name}
+                    </h2>
+                    <p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                      {selectedHistoryEmployee.designation_id?.name || selectedHistoryEmployee.designation || 'Staff'}
+                      {' · '}No. {selectedHistoryEmployee.emp_no}
+                      {selectedHistoryEmployee.department_id?.name && ` · ${selectedHistoryEmployee.department_id.name}`}
+                      {selectedHistoryEmployee.division_id?.name && ` · ${selectedHistoryEmployee.division_id.name}`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-end gap-3 lg:justify-end">
+                <div className="flex min-w-[180px] flex-col gap-1.5 sm:min-w-[300px] sm:flex-row sm:items-end">
+                  <div className="flex min-w-[140px] flex-col gap-1.5">
+                    <label className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">From Date</label>
+                    <input
+                      type="date"
+                      lang="en-GB"
+                      value={startDate}
+                      onChange={e => setStartDate(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--ps-accent)]/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    />
+                  </div>
+
+                  <div className="flex min-w-[140px] flex-col gap-1.5">
+                    <label className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">To Date</label>
+                    <input
+                      type="date"
+                      lang="en-GB"
+                      value={endDate}
+                      onChange={e => setEndDate(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--ps-accent)]/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                {(startDate || endDate) && (
+                  <button
+                    onClick={() => { setStartDate(''); setEndDate(''); }}
+                    className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 transition-all hover:text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
+                  >
+                    <X className="h-3 w-3" /> Clear
+                  </button>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    {employeeComplaints.length} Total
+                  </span>
+                  {employeeComplaints.filter(c => c.status === 'pending').length > 0 && (
+                    <span className="rounded-full bg-amber-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                      {employeeComplaints.filter(c => c.status === 'pending').length} Pending
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {renderCategoryAggregates()}
+
+          {sortedComplaints.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-slate-200 bg-white py-16 text-center dark:border-slate-800 dark:bg-slate-900">
+              <MessageSquare className="mx-auto mb-3 h-10 w-10 text-slate-300 dark:text-slate-700" />
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">No complaints found</p>
+              <p className="mt-1 text-[10px] text-slate-400">Try adjusting the date range filters</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {sortedComplaints.map((comp, idx) => {
+                const dateStr = comp.appliedAt || comp.createdAt
+                  ? new Date(comp.appliedAt || comp.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                  : '—';
+
+                return (
+                  <div key={comp._id} className="relative animate-fadeIn">
+                    <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xs hover:shadow-sm hover:border-slate-200 dark:border-slate-800/65 dark:bg-slate-900 transition-all duration-300 flex flex-col h-full">
+                      {/* 16:9 Aspect Ratio Widescreen Image on Top */}
+                      {comp.imageUrl ? (
+                        <div className="relative w-full aspect-video shrink-0 overflow-hidden bg-slate-50 dark:bg-slate-955">
+                          <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 rounded-lg bg-emerald-700 px-2 py-0.5 text-[7px] font-black uppercase tracking-wider text-white backdrop-blur-xs shadow-sm">
+                            <ImageIcon className="h-2.5 w-2.5" />
+                            Evidence
+                          </div>
+                          <a
+                            href={comp.imageUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="relative block w-full h-full overflow-hidden"
+                          >
+                            <img src={comp.imageUrl} alt="Evidence attachment" className="h-full w-full object-cover rounded-t-3xl transition-transform duration-300 hover:scale-[1.01]" />
+                            <span className="absolute bottom-2.5 right-2.5 flex items-center gap-1 rounded bg-black/60 px-2 py-0.5 text-[7px] font-bold uppercase tracking-wider text-white backdrop-blur-xs transition-colors hover:bg-black/80">
+                              <ExternalLink className="h-2 w-2" /> View
+                            </span>
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="flex w-full aspect-video shrink-0 flex-col items-center justify-center border-b border-dashed border-slate-200 bg-slate-50/50 p-4 text-center dark:border-slate-800 dark:bg-slate-950/30 rounded-t-3xl">
+                          <ImageIcon className="mb-2 h-7 w-7 text-slate-355 dark:text-slate-655" />
+                          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">No Image Evidence</p>
+                        </div>
+                      )}
+
+                      {/* Bottom section split into two parts */}
+                      <div className="p-3.5 flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
+                        {/* Part 1 (Left details): Header info, Status Badge, Remarks */}
+                        <div className="space-y-3 min-w-0 flex flex-col justify-between">
+                          <div className="space-y-3">
+                            <div className="flex items-start justify-between gap-2.5 border-b border-slate-100 pb-2 dark:border-slate-800/80">
+                              <div className="flex items-center gap-2">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-355 shrink-0">
+                                  <User className="h-4.5 w-4.5" />
+                                </div>
+                                <div className="min-w-0">
+                                  <h3 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-900 dark:text-white leading-tight truncate">
+                                    {comp.complaintType || '—'}
+                                  </h3>
+                                  <p className="mt-0.5 text-[8px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                    Filed on {dateStr}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="shrink-0">
+                                {(() => {
+                                  const s = comp.status.toLowerCase();
+                                  let pillBg = 'bg-slate-50 border-slate-200 text-slate-700';
+                                  let pillIcon = <Clock className="h-3 w-3" />;
+                                  let pillLabel = comp.status;
+
+                                  if (s === 'approved') {
+                                    pillBg = 'bg-[#eefdf6] border-[#def7ec] text-[#03543f] dark:bg-[#03543f]/20 dark:border-[#03543f]/30 dark:text-[#31c48d]';
+                                    pillIcon = <CheckCircle className="h-3 w-3 text-[#0a9f6e]" />;
+                                    pillLabel = 'Approved';
+                                  } else if (s === 'rejected') {
+                                    pillBg = 'bg-rose-50 border-rose-100 text-rose-700 dark:bg-rose-955/20 dark:border-rose-900/30 dark:text-rose-400';
+                                    pillIcon = <XCircle className="h-3 w-3 text-rose-650" />;
+                                    pillLabel = 'Rejected';
+                                  } else if (s === 'cancelled') {
+                                    pillBg = 'bg-slate-50 border-slate-200 text-slate-500 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-400';
+                                    pillIcon = <XCircle className="h-3 w-3 text-slate-400" />;
+                                    pillLabel = 'Cancelled';
+                                  } else if (s === 'pending') {
+                                    pillBg = 'bg-amber-50 border-amber-100 text-amber-700 dark:bg-amber-955/20 dark:border-amber-900/30 dark:text-amber-400';
+                                    pillIcon = <Clock className="h-3 w-3 text-amber-600" />;
+                                    pillLabel = 'Pending';
+                                  }
+
+                                  return (
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold border ${pillBg}`}>
+                                      {pillIcon}
+                                      {pillLabel}
+                                    </span>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+
+                            {comp.remarks && (
+                              <div className="space-y-0.5">
+                                <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">Remarks</p>
+                                <p className="rounded-xl border border-slate-100 bg-slate-50/50 p-2.5 text-[9.5px] font-semibold leading-relaxed text-slate-800 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300">
+                                  {comp.remarks}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* History/Submission Logs */}
+                            {comp.workflow?.history?.filter((log: any) => !['approved', 'rejected'].includes(log.action))?.length > 0 && (
+                              <div className="space-y-1.5 pt-1.5 border-t border-dashed border-slate-200/50 dark:border-slate-800/60">
+                                {comp.workflow.history
+                                  .filter((log: any) => !['approved', 'rejected'].includes(log.action))
+                                  .map((log: any, idx: number) => {
+                                    const logDate = log.updatedAt || log.createdAt || comp.appliedAt || comp.createdAt;
+                                    const formattedLogDate = logDate
+                                      ? new Date(logDate).toLocaleDateString('en-GB') + ' • ' + new Date(logDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                                      : '';
+
+                                    return (
+                                      <div key={`hist-${idx}`} className="flex flex-col gap-0.5 rounded-xl bg-slate-50/50 dark:bg-slate-955/20 p-2 border border-slate-100/85 dark:border-slate-800/40">
+                                        <div className="text-slate-500 dark:text-slate-400 font-medium leading-normal text-[8.5px] truncate" title={`${log.actionByName} completed action ${log.action} • ${formattedLogDate}`}>
+                                          <strong className="font-bold text-slate-800 dark:text-slate-100">{log.actionByName}</strong>
+                                          {' '}completed action <span className="font-extrabold uppercase text-slate-905 dark:text-white">{log.action}</span>
+                                          {' '}• <span className="text-[7.5px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{formattedLogDate}</span>
+                                        </div>
+                                        {log.comments && (
+                                          <p className="italic text-[7.5px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
+                                            &quot;{log.comments}&quot;
+                                          </p>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Part 2 (Right details): Workflow Status, Cancel Consent */}
+                        <div className="space-y-3 min-w-0 flex flex-col justify-between h-full">
+                          <div className="space-y-2">
+                            {comp.workflow?.approvalChain && comp.workflow.approvalChain.length > 0 && (
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">Workflow Status</p>
+                                  <span className="text-[8px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                    {comp.workflow.approvalChain.filter((step: any) => step.status === 'approved').length}/{comp.workflow.approvalChain.length} DONE
+                                  </span>
+                                </div>
+
+                                <div className="rounded-xl border border-slate-100 bg-slate-50/30 p-2 dark:border-slate-800 dark:bg-slate-955/10">
+                                  <div className="relative space-y-2 before:absolute before:left-[7px] before:top-1 before:bottom-1 before:w-px before:bg-emerald-600/20 dark:before:bg-emerald-950/30">
+                                    {comp.workflow.approvalChain.map((step: any, idx: number) => {
+                                      const isStepApproved = step.status === 'approved';
+                                      const isStepRejected = step.status === 'rejected';
+                                      let stepIcon = <Clock className="h-1.5 w-1.5 text-amber-500" />;
+                                      let dotClass = 'border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-955/40';
+                                      let badgeClass = 'border-amber-100 text-amber-705 dark:border-amber-900/40 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20';
+                                      let stepText = 'AWAITING';
+
+                                      if (isStepApproved) {
+                                        stepIcon = <Check className="h-1.5 w-1.5 text-white" />;
+                                        dotClass = 'bg-emerald-600 border-emerald-600 text-white';
+                                        badgeClass = 'border-emerald-200 text-emerald-700 bg-emerald-50/50 dark:border-emerald-900/50 dark:text-emerald-400 dark:bg-emerald-950/20';
+                                        stepText = 'APPROVED';
+                                      } else if (isStepRejected) {
+                                        stepIcon = <X className="h-1.5 w-1.5 text-white" />;
+                                        dotClass = 'bg-rose-600 border-rose-600 text-white';
+                                        badgeClass = 'border-rose-200 text-rose-700 bg-rose-50/50 dark:border-rose-900/50 dark:text-rose-400 dark:bg-rose-955/20';
+                                        stepText = 'REJECTED';
+                                      }
+
+                                      return (
+                                        <div key={idx} className="relative pl-5 py-1">
+                                          <span className={`absolute left-0 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border shadow-sm ${dotClass}`}>
+                                            {stepIcon}
+                                          </span>
+
+                                          <div className="space-y-1">
+                                            <div>
+                                              <p className="text-[10px] font-bold text-slate-800 dark:text-slate-200 leading-tight">
+                                                {step.label || `${step.role.toUpperCase()} Review`}
+                                              </p>
+                                              {step.actionByName && (
+                                                <p className="mt-0.5 text-[8px] text-slate-400 dark:text-slate-500">
+                                                  by {step.actionByName} • {new Date(step.updatedAt || step.createdAt).toLocaleDateString('en-GB')}
+                                                </p>
+                                              )}
+                                            </div>
+
+                                            <div className="flex flex-wrap items-center gap-1.5">
+                                              <span className={`inline-flex items-center rounded border px-1.5 py-0.2 text-[6.5px] font-black uppercase tracking-wider ${badgeClass}`}>
+                                                {stepText}
+                                              </span>
+                                              {step.comments && (
+                                                <span className="text-[8.5px] italic font-semibold text-slate-500 dark:text-slate-400">
+                                                  &quot;{step.comments}&quot;
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {comp.status === 'pending' && comp.appliedBy === currentUser?.id && (
+                            <button
+                              onClick={() => handleCancelComplaint(comp._id)}
+                              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-rose-600 transition-all hover:bg-rose-100 dark:bg-rose-955/20 dark:text-rose-400 dark:hover:bg-rose-900/30"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Cancel Consent
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Employee search + filter list
+    return (
+      <div className="space-y-5 animate-fadeIn">
+        <div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:flex-row">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={historyEmpSearch}
+              onChange={e => setHistoryEmpSearch(e.target.value)}
+              placeholder="Search employee name or number..."
+              className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-xs font-medium text-slate-900 transition-all placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--ps-accent)]/20 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+            />
+          </div>
+
+          <select
+            value={historyDivFilter}
+            onChange={e => { setHistoryDivFilter(e.target.value); setHistoryDeptFilter(''); }}
+            className="min-w-[140px] rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--ps-accent)]/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+          >
+            <option value="">All Divisions</option>
+            {divisions.map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
+          </select>
+
+          <select
+            value={historyDeptFilter}
+            onChange={e => setHistoryDeptFilter(e.target.value)}
+            className="min-w-[150px] rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--ps-accent)]/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+          >
+            <option value="">All Departments</option>
+            {departments.map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
+          </select>
+
+          {(historyDivFilter || historyDeptFilter || historyEmpSearch) && (
+            <button
+              onClick={() => { setHistoryDivFilter(''); setHistoryDeptFilter(''); setHistoryEmpSearch(''); }}
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 transition-all hover:text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-slate-100"
+            >
+              <X className="h-3 w-3" /> Clear
+            </button>
+          )}
+        </div>
+
+        {historyLoading ? (
+          <div className="rounded-3xl border border-slate-200 bg-white py-20 text-center text-xs font-black uppercase tracking-[0.18em] text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">
+            Loading employees...
+          </div>
+        ) : historyEmployees.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-slate-200 bg-white py-20 text-center dark:border-slate-800 dark:bg-slate-900">
+            <User className="mx-auto mb-3 h-10 w-10 text-slate-300 dark:text-slate-700" />
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">No employees found</p>
+            <p className="mt-1 text-[10px] text-slate-400">Try adjusting your search or filters</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {historyEmployees.map(emp => {
+              const empComplaints = allComplaints.filter(c =>
+                (c.employeeId?._id?.toString() || c.employeeId?.toString()) === emp._id?.toString()
+              );
+              const pending = empComplaints.filter(c => c.status === 'pending').length;
+              const initials = (emp.employee_name || 'U').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+
+              return (
+                <button
+                  key={emp._id}
+                  onClick={() => { setSelectedHistoryEmployee(emp); setStartDate(''); setEndDate(''); }}
+                  className="group overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-sm transition-all duration-200 hover:border-[var(--ps-accent-border)] hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
+                >
+                  <div className="flex items-start gap-3 p-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--ps-accent-soft)] text-xs font-black uppercase text-[var(--ps-accent-ink)] transition-transform group-hover:scale-105">
+                      {initials}
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-black text-slate-900 transition-colors group-hover:text-[var(--ps-accent-ink)] dark:text-white dark:group-hover:text-[var(--ps-accent)]">
+                        {emp.employee_name}
+                      </p>
+                      <p className="mt-0.5 truncate text-[10px] text-slate-500">{emp.designation_id?.name || emp.designation || 'Staff'}</p>
+                      <p className="mt-0.5 text-[10px] text-slate-400">No. {emp.emp_no}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between px-4 pb-4">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                      {empComplaints.length} complaint{empComplaints.length !== 1 ? 's' : ''}
+                    </span>
+                    {pending > 0 && (
+                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-black text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                        {pending} pending
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (activeTab === 'history' && selectedHistoryEmployee) {
+    return (
+      <div className="min-h-screen w-full bg-slate-50 pb-8 pt-3 px-2 md:px-3 dark:bg-slate-950" style={themeStyles}>
+        <ToastContainer position="top-right" autoClose={3000} theme="colored" />
+        <div className="w-full font-sans">
+          {renderHistoryView()}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pb-12 pt-2" style={themeStyles}>
+    <div className="min-h-screen w-full bg-slate-50 pb-8 pt-1 dark:bg-slate-950" style={themeStyles}>
       <ToastContainer position="top-right" autoClose={3000} theme="colored" />
 
       {/* Sticky Premium Header */}
-      <div className="sticky px-0 md:px-4 top-4 z-40 mb-6 max-w-[1920px] mx-auto">
-        <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-none md:rounded-3xl border-x-0 md:border border-slate-200/50 dark:border-slate-800/80 shadow-md px-3 py-2.5 md:px-6 md:py-4 flex flex-row items-center justify-between gap-2">
+      <div className="sticky top-3 z-40 mb-3 w-full px-2 md:px-3">
+        <div className="w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-2xl md:rounded-3xl border border-slate-200/50 dark:border-slate-800/80 shadow-md px-3 py-2 md:px-4 md:py-3 flex flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2 md:gap-4 w-full md:w-auto">
             <div className="h-8 w-8 md:h-12 md:w-12 rounded-lg md:rounded-2xl flex items-center justify-center shadow-xs bg-[var(--ps-accent-soft)] text-[var(--ps-accent-ink)] shrink-0">
               <AlertTriangle className="w-4 h-4 md:w-6 md:h-6 animate-pulse" />
@@ -466,15 +1197,17 @@ export default function ComplaintsPage() {
         </div>
       </div>
 
-      <div className="max-w-[1920px] mx-auto px-0 md:px-4 grid grid-cols-1 gap-4 md:gap-6">
+      {renderCategoryAggregates()}
+
+      <div className="w-full px-2 md:px-3 grid grid-cols-1 gap-3 md:gap-4 font-sans">
         
         {/* Navigation Tabs and Search filters */}
-        <div className="bg-white dark:bg-slate-900 rounded-none md:rounded-3xl border-x-0 md:border border-slate-200/60 dark:border-slate-800 p-3 md:p-5 shadow-sm space-y-4">
-          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+        <div className="w-full bg-white dark:bg-slate-900 rounded-2xl md:rounded-3xl border border-slate-200/60 dark:border-slate-800 p-2.5 md:p-3 shadow-sm space-y-3">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
             
             {/* Tabs */}
             <div className="w-full lg:w-auto">
-              <div className={`bg-slate-100 dark:bg-slate-950 p-1 rounded-xl md:rounded-2xl w-full ${showElevatedTabs ? 'grid grid-cols-3 gap-1' : 'inline-flex'}`}>
+              <div className={`bg-slate-100 dark:bg-slate-950 p-1 rounded-xl md:rounded-2xl w-full ${showElevatedTabs ? 'grid grid-cols-4 gap-1' : 'inline-flex'}`}>
                 <button
                   onClick={() => setActiveTab('my')}
                   className={`py-2 px-1 md:px-5 md:py-2.5 rounded-lg md:rounded-xl text-[10px] md:text-xs font-medium uppercase tracking-wider transition-all text-center ${
@@ -515,40 +1248,58 @@ export default function ComplaintsPage() {
                       <span className="hidden sm:inline">All Consents</span>
                       <span className="inline sm:hidden">All</span>
                     </button>
+                    <button
+                      onClick={() => {
+                        setActiveTab('history');
+                        setSelectedHistoryEmployee(null);
+                      }}
+                      className={`py-2 px-1 md:px-5 md:py-2.5 rounded-lg md:rounded-xl text-[10px] md:text-xs font-medium uppercase tracking-wider transition-all text-center ${
+                        activeTab === 'history'
+                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-semibold'
+                          : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                      }`}
+                    >
+                      <span className="hidden sm:inline">Complaint History</span>
+                      <span className="inline sm:hidden">History</span>
+                    </button>
                   </>
                 )}
               </div>
             </div>
-
+ 
             {/* Filter Fields */}
-            <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-              <div className="relative flex-1 min-w-[200px] lg:flex-none">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search consents..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ps-accent)]/20 text-slate-900 dark:text-white transition-all"
-                />
+            {activeTab !== 'history' && (
+              <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                <div className="relative flex-1 min-w-[200px] lg:flex-none">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search consents..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ps-accent)]/20 text-slate-900 dark:text-white transition-all"
+                  />
+                </div>
+ 
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm focus:outline-none text-slate-900 dark:text-white cursor-pointer"
+                >
+                  <option value="">All Statuses</option>
+                  <option value="pending">Pending Review</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
               </div>
-
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm focus:outline-none text-slate-900 dark:text-white cursor-pointer"
-              >
-                <option value="">All Statuses</option>
-                <option value="pending">Pending Review</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
+            )}
           </div>
 
           {/* List display */}
-          {loading ? (
+          {activeTab === 'history' ? (
+            renderHistoryView()
+          ) : loading ? (
             <div className="py-20 flex flex-col items-center justify-center gap-3 text-slate-400 dark:text-slate-500">
               <Loader2 className="w-8 h-8 animate-spin text-[var(--ps-accent)]" />
               <span className="text-sm font-medium">Fetching consents records...</span>
@@ -1018,7 +1769,7 @@ export default function ComplaintsPage() {
                       ref={videoRef}
                       autoPlay
                       playsInline
-                      className="w-full max-h-48 rounded-lg object-contain bg-black"
+                      className="w-full aspect-video rounded-lg object-cover bg-black"
                     />
                     <div className="flex justify-center gap-2.5 mt-2.5 w-full pb-1.5">
                       <button

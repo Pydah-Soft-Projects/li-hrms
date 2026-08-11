@@ -67,6 +67,12 @@ const ComplaintSchema = new mongoose.Schema(
         'reporting_manager_rejected',
         'hod_approved',
         'hod_rejected',
+        'manager_approved',
+        'manager_rejected',
+        'hr_approved',
+        'hr_rejected',
+        'principal_approved',
+        'principal_rejected',
         'approved',
         'rejected',
         'cancelled'

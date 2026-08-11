@@ -743,12 +743,13 @@ exports.getLoan = async (req, res) => {
 // @access  Private
 exports.getEmiApplicationPreview = async (req, res) => {
   try {
-    const amount = parseFloat(req.query.amount);
-    const duration = parseInt(req.query.duration, 10);
+    const amount = parseFloat(req.query.amount) || 0;
+    const duration = parseInt(req.query.duration, 10) || 0;
     const empNo = req.query.empNo ? String(req.query.empNo).trim() : '';
     const employeeIdQ = req.query.employeeId ? String(req.query.employeeId).trim() : '';
 
-    if (!(amount > 0) || !(duration > 0)) {
+    const hasEmployee = !!(employeeIdQ || empNo || req.user?.employeeRef || req.user?.employeeId);
+    if (!hasEmployee && (!(amount > 0) || !(duration > 0))) {
       return res.status(400).json({
         success: false,
         error: 'amount and duration are required',
