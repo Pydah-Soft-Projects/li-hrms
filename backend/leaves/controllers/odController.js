@@ -1325,6 +1325,16 @@ exports.updateOD = async (req, res) => {
       });
     }
 
+    // Idempotency for offline-submitted OD OUT: if an outSubmissionId is provided
+    // and was already applied, treat the request as a no-op success.
+    const outSubmissionId = req.body.outSubmissionId;
+    if (outSubmissionId) {
+      if (!od.offlineOutSubmissionIds) od.offlineOutSubmissionIds = [];
+      if (od.offlineOutSubmissionIds.includes(outSubmissionId)) {
+        return res.status(200).json({ success: true, message: 'Duplicate out submission ignored', data: od });
+      }
+    }
+
     const allowedUpdates = [
       'odType', 'fromDate', 'toDate', 'purpose', 'placeVisited', 'placesVisited',
       'contactNumber', 'isHalfDay', 'halfDayType', 'expectedOutcome', 'travelDetails', 'remarks',
@@ -1534,6 +1544,15 @@ exports.updateOD = async (req, res) => {
 
     if (incomingEndEvidence) {
       od.endEvidence = normalizeEvidencePayload(incomingEndEvidence);
+    }
+
+    // If this request originated from an offline replay, record the id so
+    // future replays are ignored (idempotency).
+    if (outSubmissionId) {
+      if (!od.offlineOutSubmissionIds) od.offlineOutSubmissionIds = [];
+      if (!od.offlineOutSubmissionIds.includes(outSubmissionId)) {
+        od.offlineOutSubmissionIds.push(outSubmissionId);
+      }
     }
 
     const hasStartEvidence = hasValidPhotoEvidence(od.startEvidence?.photoEvidence) && hasValidGeoLocation(od.startEvidence?.geoLocation);

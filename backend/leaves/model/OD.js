@@ -350,6 +350,9 @@ const ODSchema = new mongoose.Schema(
       },
     ],
 
+    // Offline submission ids recorded when device later uploads OD OUT evidence
+    offlineOutSubmissionIds: [String],
+
     // Applied by (portal user who submitted). Null for system auto-generated ODs (holiday/week-off punches).
     appliedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -509,6 +512,7 @@ const ODSchema = new mongoose.Schema(
     // Continuous GPS trail while OD is draft (web/mobile); capped server-side
     locationTrail: [
       {
+        pointId: { type: String },
         latitude: { type: Number, required: true },
         longitude: { type: Number, required: true },
         capturedAt: { type: Date, default: Date.now },

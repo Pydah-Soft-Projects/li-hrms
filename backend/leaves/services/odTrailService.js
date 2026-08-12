@@ -39,6 +39,7 @@ function normalizePoints(points, source) {
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
     if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
     normalized.push({
+      pointId: p.pointId ? String(p.pointId).slice(0, 120) : undefined,
       latitude: lat,
       longitude: lng,
       capturedAt: p.capturedAt ? new Date(p.capturedAt) : new Date(),
@@ -65,14 +66,18 @@ async function appendOdTrailPoints({ odId, user, points, client }) {
   if (normalized.length === 0) return { ok: false, status: 400, error: 'No valid GPS points in request' };
 
   if (!Array.isArray(od.locationTrail)) od.locationTrail = [];
-  od.locationTrail.push(...normalized);
+  const existingPointIds = new Set(
+    od.locationTrail.map((point) => point.pointId).filter(Boolean).map((pointId) => String(pointId))
+  );
+  const newPoints = normalized.filter((point) => !point.pointId || !existingPointIds.has(point.pointId));
+  od.locationTrail.push(...newPoints);
   if (od.locationTrail.length > MAX_OD_TRAIL_POINTS) {
     od.locationTrail = od.locationTrail.slice(-MAX_OD_TRAIL_POINTS);
   }
   od.markModified('locationTrail');
-  await od.save();
+  if (newPoints.length > 0) await od.save();
 
-  return { ok: true, od, normalized };
+  return { ok: true, od, normalized: newPoints };
 }
 
 module.exports = {
