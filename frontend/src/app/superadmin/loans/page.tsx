@@ -349,6 +349,7 @@ export default function LoansPage() {
   const [approvalDuration, setApprovalDuration] = useState<string>('');
   const [approvalInterestRate, setApprovalInterestRate] = useState<string>('');
   const [approvalValidation, setApprovalValidation] = useState<{ level: 'warning' | 'error'; message: string } | null>(null);
+  const [changeReason, setChangeReason] = useState<string>('');
 
 
   // User detection on mount
@@ -440,6 +441,7 @@ export default function LoansPage() {
       }
 
       // Pre-fill approval amount/rate (final authority)
+      setChangeReason('');
       if (selectedLoan.amount) {
         setApprovalAmount(selectedLoan.amount.toString());
       }
@@ -589,16 +591,12 @@ export default function LoansPage() {
   }, [formData.amount, formData.duration, applyType, loanSettings, resolvedLoanSettings]);
 
   useEffect(() => {
-    if (applyType !== 'loan' || !formData.amount || !formData.duration) {
+    if (applyType !== 'loan' || !selectedEmployee?._id) {
       setEmiAppPreview(null);
       return;
     }
-    const amount = parseFloat(formData.amount);
-    const duration = parseInt(formData.duration, 10);
-    if (!(amount > 0) || !(duration > 0)) {
-      setEmiAppPreview(null);
-      return;
-    }
+    const amount = parseFloat(formData.amount) || 0;
+    const duration = parseInt(formData.duration, 10) || 0;
     const timer = setTimeout(async () => {
       try {
         setLoadingEmiPreview(true);
@@ -1079,6 +1077,7 @@ export default function LoansPage() {
       const payload: any = {
         amount: parseFloat(approvalAmount),
         duration: parseInt(approvalDuration),
+        changeReason,
       };
 
       if (selectedLoan?.requestType === 'loan') {
@@ -2087,6 +2086,7 @@ export default function LoansPage() {
       {/* Detail Dialog */}
       <LoanDetailDialog
         open={showDetailDialog && !!selectedLoan}
+        maxWidth="max-w-4xl"
         onClose={() => {
           setShowDetailDialog(false);
           setSelectedLoan(null);
@@ -2765,6 +2765,8 @@ export default function LoansPage() {
                     }
                     onUpdateLoan={() => handleUpdateLoan(selectedLoan._id)}
                     updating={saving}
+                    changeReason={changeReason}
+                    onChangeReasonChange={setChangeReason}
                     finalApprovalBlock={
                       isFinalApprovalStep ? (
                         <LedgerFinalApprovalPayPeriod
@@ -3018,7 +3020,7 @@ export default function LoansPage() {
       {/* Apply Dialog */}
       {
         showApplyDialog && (
-          <LoanDetailDialog open onClose={() => setShowApplyDialog(false)} maxWidth="max-w-lg">
+          <LoanDetailDialog open onClose={() => setShowApplyDialog(false)} maxWidth="max-w-3xl">
             <LoanDetailDialogHeader
               badge="New request"
               title={`Apply for ${applyType === 'loan' ? 'Loan' : 'Salary Advance'}`}
@@ -3114,6 +3116,50 @@ export default function LoansPage() {
                     {!loadingApplyAttendanceSummary && !applyAttendanceSummary && (
                       <div className="text-xs text-slate-500 dark:text-slate-400">No attendance summary found.</div>
                     )}
+                  </div>
+                )}
+
+                {/* Previous Active Loans Table */}
+                {applyType === 'loan' && selectedEmployee && emiAppPreview?.activeLoans && emiAppPreview.activeLoans.length > 0 && (
+                  <div className="mb-4 rounded-xl border border-slate-200 bg-white/60 p-4 dark:border-slate-800 dark:bg-slate-900/30">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-blue-100 mb-3 flex items-center gap-2">
+                      <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Existing Active Loans
+                    </h4>
+                    <div className="overflow-x-auto rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
+                      <table className="w-full text-[11px] text-slate-600 dark:text-slate-400 border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-800/40 text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                            <th className="px-2.5 py-2 text-left font-semibold whitespace-nowrap">Total Repayment</th>
+                            <th className="px-2.5 py-2 text-right font-semibold whitespace-nowrap">EMI</th>
+                            <th className="px-2.5 py-2 text-right font-semibold whitespace-nowrap">Interest</th>
+                            <th className="px-2.5 py-2 text-center font-semibold whitespace-nowrap">Paid Months</th>
+                            <th className="px-2.5 py-2 text-right font-semibold whitespace-nowrap">Paid Amount</th>
+                            <th className="px-2.5 py-2 text-right font-semibold whitespace-nowrap">Unpaid Amount</th>
+                            <th className="px-2.5 py-2 text-center font-semibold whitespace-nowrap">Months</th>
+                            <th className="px-2.5 py-2 text-left font-semibold whitespace-nowrap">Reason</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {emiAppPreview.activeLoans.map((loan: any, idx: number) => (
+                            <tr key={loan._id || idx} className="border-b border-slate-100 dark:border-slate-800/40 last:border-0 hover:bg-slate-100/10 dark:hover:bg-slate-800/10">
+                              <td className="px-2.5 py-2 font-medium text-slate-800 dark:text-slate-200 text-left whitespace-nowrap">₹{Math.round(loan.totalAmount || 0).toLocaleString('en-IN')}</td>
+                              <td className="px-2.5 py-2 text-slate-700 dark:text-slate-300 text-right whitespace-nowrap">₹{Math.round(loan.emi || 0).toLocaleString('en-IN')}</td>
+                              <td className="px-2.5 py-2 text-slate-700 dark:text-slate-300 text-right whitespace-nowrap">₹{Math.round(loan.interest || 0).toLocaleString('en-IN')}</td>
+                              <td className="px-2.5 py-2 text-center whitespace-nowrap">{loan.paidMonths || 0} / {loan.totalMonths || 0}</td>
+                              <td className="px-2.5 py-2 text-slate-700 dark:text-slate-300 text-right whitespace-nowrap">₹{Math.round(loan.paidAmount || 0).toLocaleString('en-IN')}</td>
+                              <td className="px-2.5 py-2 font-semibold text-amber-600 dark:text-amber-400 text-right whitespace-nowrap">₹{Math.round(loan.unpaidAmount || 0).toLocaleString('en-IN')}</td>
+                              <td className="px-2.5 py-2 text-center font-medium whitespace-nowrap">{loan.totalMonths || 0}</td>
+                              <td className="px-2.5 py-2 text-left text-slate-800 dark:text-slate-200 font-medium max-w-[150px] truncate" title={loan.reason}>
+                                {loan.reason || '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
 
@@ -3353,7 +3399,7 @@ export default function LoansPage() {
                 )}
 
                 {/* Interest / policy / pre-EMI / auto commence — loans only */}
-                {applyType === 'loan' && (loadingEmiPreview || emiAppPreview || interestCalculation) && (
+                {applyType === 'loan' && formData.amount && formData.duration && (loadingEmiPreview || emiAppPreview || interestCalculation) && (
                   loadingEmiPreview || emiAppPreview ? (
                     <LoanApplyEmiPolicyPreview preview={emiAppPreview} loading={loadingEmiPreview && !emiAppPreview} />
                   ) : interestCalculation ? (

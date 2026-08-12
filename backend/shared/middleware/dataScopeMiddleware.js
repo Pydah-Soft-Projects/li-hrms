@@ -260,6 +260,25 @@ const applyScopeFilter = async (req, res, next) => {
 
         // Build and attach scope filter
         req.scopeFilter = buildScopeFilter(user);
+        
+        // If ignoreScope is set and user has complaints access, bypass the scope filter
+        if (req.query.ignoreScope === 'true') {
+            let featureControl = user.featureControl || [];
+            if (featureControl.length === 0 && user.role) {
+                const Settings = require('../../settings/model/Settings');
+                const setting = await Settings.findOne({ key: `feature_control_${user.role}` });
+                if (setting && setting.value && Array.isArray(setting.value.activeModules)) {
+                    featureControl = setting.value.activeModules;
+                }
+            }
+            const hasComplaints = user.role === 'super_admin' || featureControl.some(f => 
+                f === 'COMPLAINTS' || f === 'COMPLAINTS:read' || f === 'COMPLAINTS:write'
+            );
+            if (hasComplaints) {
+                req.scopeFilter = {};
+            }
+        }
+
         req.scopedUser = user;
 
         next();

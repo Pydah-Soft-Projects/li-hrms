@@ -1,3 +1,15 @@
+jest.mock('../../employees/model/Employee');
+jest.mock('../../shifts/model/Shift');
+jest.mock('../../shifts/model/PreScheduledShift');
+jest.mock('../../attendance/model/AttendanceDaily');
+jest.mock('../../shifts/model/ConfusedShift');
+jest.mock('../../settings/model/Settings');
+jest.mock('../../shared/utils/customEmployeeGrouping', () => ({
+    isCustomEmployeeGroupingEnabled: jest.fn().mockResolvedValue(false),
+    stripEmployeeGroupIfDisabled: jest.fn(),
+    validateEmployeeGroupIfEnabled: jest.fn().mockResolvedValue(null)
+}));
+
 const mongoose = require('mongoose');
 const {
     getShiftsForEmployee,
@@ -10,15 +22,6 @@ const Shift = require('../../shifts/model/Shift');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const Settings = require('../../settings/model/Settings');
 const customGrouping = require('../../shared/utils/customEmployeeGrouping');
-
-// Mock all Mongoose models and helpers
-jest.mock('../../employees/model/Employee');
-jest.mock('../../shifts/model/Shift');
-jest.mock('../../shifts/model/PreScheduledShift');
-jest.mock('../../attendance/model/AttendanceDaily');
-jest.mock('../../shifts/model/ConfusedShift');
-jest.mock('../../settings/model/Settings');
-jest.mock('../../shared/utils/customEmployeeGrouping');
 
 // Some environments mock mongoose models as callable functions without static methods.
 // Ensure we always have jest.fn() stubs for the statics used by the service.
@@ -103,7 +106,7 @@ describe('Shift Detection Unit Tests - Discipline Tracking', () => {
             early_out_grace_time: 15,
             processingMode: {},
         });
-        customGrouping.isCustomEmployeeGroupingEnabled = jest.fn().mockResolvedValue(false);
+        customGrouping.isCustomEmployeeGroupingEnabled.mockResolvedValue(false);
     });
 
     describe('getShiftsForEmployee', () => {

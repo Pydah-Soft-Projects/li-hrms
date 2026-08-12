@@ -85,6 +85,7 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
     '/holidays': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/resignations': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/promotions-transfers': ['sub_admin', 'hr', 'hod', 'manager', 'employee', 'super_admin'],
+    '/complaints': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/divisions': ['sub_admin', 'hr'],
     '/employee-updates': ['sub_admin', 'hr'],
     '/superadmin/holidays': ['sub_admin', 'hr', 'manager'],
@@ -864,3 +865,16 @@ export function canEditHolidayRecord(
     const allowed = user.managedHolidayGroupIds || [];
     return allowed.includes(gid);
 }
+
+export function canViewComplaints(user: User): boolean {
+    return true && canViewFeature(user, 'COMPLAINTS');
+}
+
+export function canApplyComplaints(user: User): boolean {
+    return true && canManageFeature(user, 'COMPLAINTS');
+}
+
+export function canActionComplaints(user: User): boolean {
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'hod', 'manager']) && canManageFeature(user, 'COMPLAINTS');
+}
+
