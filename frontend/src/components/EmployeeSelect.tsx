@@ -11,6 +11,7 @@ interface EmployeeSelectProps {
     className?: string;
     required?: boolean;
     disabled?: boolean;
+    ignoreScope?: boolean;
 }
 
 export default function EmployeeSelect({
@@ -20,7 +21,8 @@ export default function EmployeeSelect({
     placeholder = "Search by name, emp no, or department...",
     className = "",
     required = false,
-    disabled = false
+    disabled = false,
+    ignoreScope = false
 }: EmployeeSelectProps) {
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [employeeSearch, setEmployeeSearch] = useState('');
@@ -46,7 +48,9 @@ export default function EmployeeSelect({
         let isMounted = true;
         const loadInitial = async () => {
             try {
-                const res = await api.getEmployeesSummary({ is_active: true, limit: 50 });
+                const query: any = { is_active: true, limit: 50 };
+                if (ignoreScope) query.ignoreScope = 'true';
+                const res = await api.getEmployeesSummary(query);
                 if (isMounted && res.success) {
                     setEmployees(sortByEmpNo(res.data || []));
                 }
@@ -56,7 +60,7 @@ export default function EmployeeSelect({
         };
         loadInitial();
         return () => { isMounted = false; };
-    }, []);
+    }, [ignoreScope]);
 
     // Debounced Search Effect
     useEffect(() => {
@@ -72,6 +76,7 @@ export default function EmployeeSelect({
             setIsSearching(true);
             try {
                 const query: any = { is_active: true, search: employeeSearch, limit: 50 };
+                if (ignoreScope) query.ignoreScope = 'true';
                 const res = await api.getEmployeesSummary(query);
                 if (res.success && res.data) {
                     setEmployees(sortByEmpNo(res.data));
@@ -84,7 +89,7 @@ export default function EmployeeSelect({
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [employeeSearch]);
+    }, [employeeSearch, ignoreScope]);
 
     // Sync selected API value with local selectedEmployee object
     useEffect(() => {

@@ -25,6 +25,7 @@ app.use(logger); // Log all requests
 const allowedOrigins = [
   "*",
   process.env.FRONTEND_URL,
+  
   'http://192.168.0.36:3000',
   'http://18.143.242.233:3000',
   'http://192.168.3.147:3000',

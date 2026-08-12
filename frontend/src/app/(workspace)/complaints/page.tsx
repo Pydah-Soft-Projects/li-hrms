@@ -1668,6 +1668,7 @@ export default function ComplaintsPage() {
                   value={selectedEmployee?._id || ''}
                   onChange={(emp) => setSelectedEmployee(emp)}
                   required
+                  ignoreScope
                 />
               </div>
 
