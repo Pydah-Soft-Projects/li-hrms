@@ -115,13 +115,22 @@ export default function UpdateRequestReviewModal({
             try {
                 const parsed = JSON.parse(val);
                 if (Array.isArray(parsed)) {
+                    const systemKeys = new Set(['isprefilled', 'status', 'certificateurl', 'certificatefile', '_id', 'id', '__v']);
+                    const cleanParsed = parsed.filter((qual: any) => {
+                        if (!qual || typeof qual !== 'object') return false;
+                        return Object.entries(qual).some(([k, v]) => {
+                            return !systemKeys.has(k.toLowerCase()) && v !== null && v !== undefined && String(v).trim() !== '';
+                        });
+                    });
+                    if (cleanParsed.length === 0) return '—';
+                    
                     const isTabularGroup = fieldName.toLowerCase().includes('qualification') || 
                                           (Array.isArray(formGroups?.groups) && formGroups.groups.some((g: any) => g.id === fieldName && g.isArray));
                     
                     if (isTabularGroup) {
-                        return renderTableValue(parsed);
+                        return renderTableValue(cleanParsed);
                     }
-                    return `List (${parsed.length} items)`;
+                    return `List (${cleanParsed.length} items)`;
                 }
                 return 'Complex Object';
             } catch (e) {
