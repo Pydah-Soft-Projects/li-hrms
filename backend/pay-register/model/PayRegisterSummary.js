@@ -901,6 +901,16 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
   // Present and OD are separate buckets (match Attendance page).
   // Payable shifts (for salary) = sum(day payable units) + extra days + partial-day payable units.
   // IMPORTANT: In multi-shift mode a present day can contribute > 1 payable unit.
+  function hasExplicitHalfDayPayable(record) {
+    if (!record || !record.isSplit) return false;
+    const arr = Array.isArray(record.shiftSelections) ? record.shiftSelections : [];
+    if (!arr.some((sel) => sel && sel.isHalf && sel.shiftId)) return false;
+
+    const firstPresent = record.firstHalf && (record.firstHalf.status === 'present' || record.firstHalf.status === 'od');
+    const secondPresent = record.secondHalf && (record.secondHalf.status === 'present' || record.secondHalf.status === 'od');
+    return (firstPresent && !secondPresent) || (!firstPresent && secondPresent);
+  }
+
   let totalPayableShiftsValue = 0;
   for (const record of this.dailyRecords) {
     const isBlankDay =
@@ -908,17 +918,26 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
       (record.firstHalf?.status === 'blank' && record.secondHalf?.status === 'blank');
     if (isBlankDay) continue;
 
+    const isPresentOrOD = (half) => half && (half.status === 'present' || half.status === 'od');
+
     // First half
     if (record.firstHalf) {
       const h1 = record.firstHalf;
-      if (h1.status === 'present' || h1.status === 'od') {
-        totalPayableShiftsValue += (Number(record.payableShifts || 1) / 2);
+      if (isPresentOrOD(h1)) {
+        if (hasExplicitHalfDayPayable(record)) {
+          totalPayableShiftsValue += Number(record.payableShifts || 1);
+        } else {
+          totalPayableShiftsValue += (Number(record.payableShifts || 1) / 2);
+        }
       }
     }
     // Second half
     if (record.secondHalf) {
       const h2 = record.secondHalf;
-      if (h2.status === 'present' || h2.status === 'od') {
+      if (isPresentOrOD(h2)) {
+        if (hasExplicitHalfDayPayable(record)) {
+          continue;
+        }
         totalPayableShiftsValue += (Number(record.payableShifts || 1) / 2);
       }
     }

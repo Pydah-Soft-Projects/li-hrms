@@ -237,6 +237,16 @@ function isEarlyOutCountableSecondHalf(record) {
  * @param {Object|null|undefined} contributingDates - Optional; improves leaveTypeBreakdown vs highlights
  * @returns {Object} Calculated totals
  */
+function hasExplicitHalfDayPayable(record) {
+  if (!record || !record.isSplit) return false;
+  const arr = Array.isArray(record.shiftSelections) ? record.shiftSelections : [];
+  if (!arr.some((sel) => sel && sel.isHalf && sel.shiftId)) return false;
+
+  const firstPresent = record.firstHalf && (record.firstHalf.status === 'present' || record.firstHalf.status === 'od');
+  const secondPresent = record.secondHalf && (record.secondHalf.status === 'present' || record.secondHalf.status === 'od');
+  return (firstPresent && !secondPresent) || (!firstPresent && secondPresent);
+}
+
 function calculateTotals(dailyRecords, contributingDates) {
   const totals = {
     presentDays: 0,
@@ -423,18 +433,27 @@ function calculateTotals(dailyRecords, contributingDates) {
     // For simplicity in totalPayableShifts, we don't count holiday/weekoff here 
     // as payroll calculation service adds those separately or handles them via totalPaidDays
 
+    const isPresentOrOD = (half) => half && (half.status === 'present' || half.status === 'od');
+
     // Check first half
     if (record.firstHalf) {
       const h1 = record.firstHalf;
-      if (h1.status === 'present' || h1.status === 'od') {
-        totalPayableShiftsValue += (Number(record.payableShifts || 1) / 2);
+      if (isPresentOrOD(h1)) {
+        if (hasExplicitHalfDayPayable(record)) {
+          totalPayableShiftsValue += Number(record.payableShifts || 1);
+        } else {
+          totalPayableShiftsValue += (Number(record.payableShifts || 1) / 2);
+        }
       }
     }
 
     // Check second half
     if (record.secondHalf) {
       const h2 = record.secondHalf;
-      if (h2.status === 'present' || h2.status === 'od') {
+      if (isPresentOrOD(h2)) {
+        if (hasExplicitHalfDayPayable(record)) {
+          continue;
+        }
         totalPayableShiftsValue += (Number(record.payableShifts || 1) / 2);
       }
     }

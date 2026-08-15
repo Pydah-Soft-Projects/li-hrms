@@ -153,6 +153,27 @@ describe('Multi-shift — payable accumulation (calculateTotals vs recalculateTo
     expect(modelPayable(pr.dailyRecords)).toBe(1.5);
   });
 
+  test('MS-PAY-02B: explicit half-shift on a split day should not halve the already-half payable again', () => {
+    const pr = new PayRegisterSummary({
+      employeeId: new mongoose.Types.ObjectId(),
+      emp_no: 'MS-PAY-02B',
+      month: '2026-05',
+      dailyRecords: [{
+        date: '2026-05-20',
+        firstHalf: { status: 'present', leaveType: null, leaveNature: null, isOD: false, otHours: 0 },
+        secondHalf: { status: 'absent', leaveType: null, leaveNature: null, isOD: false, otHours: 0 },
+        status: null,
+        isSplit: true,
+        payableShifts: 0.5,
+        shiftIds: [shiftA],
+        shiftSelections: [{ shiftId: shiftA, isHalf: true, payableUnits: 0.5 }],
+      }],
+    });
+
+    expect(calculateTotals(pr.dailyRecords, {}).totalPayableShifts).toBe(0.5);
+    expect(modelPayable(pr.dailyRecords)).toBe(0.5);
+  });
+
   test('MS-PAY-03: half-day present uses half of day payableShifts (2 shifts → 1.0 for working half)', () => {
     const pr = new PayRegisterSummary({
       employeeId: new mongoose.Types.ObjectId(),
