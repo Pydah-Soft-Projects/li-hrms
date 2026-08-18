@@ -3394,15 +3394,15 @@ export default function EmployeesPage() {
                 <div
                   className={`absolute h-8 rounded-lg bg-white shadow-sm transition-all duration-300 ease-in-out dark:bg-slate-700 ${
                     activeTab === 'employees'
-                      ? 'left-1 w-36'
+                      ? 'left-1 w-32'
                       : activeTab === 'applications'
-                        ? 'left-[calc(9rem+4px)] w-36'
-                        : 'left-[calc(18rem+8px)] w-[9.5rem]'
+                        ? 'left-[calc(8rem+4px)] w-40'
+                        : 'left-[calc(18rem+8px)] w-48'
                   }`}
                 />
                 <button
                   onClick={() => setActiveTab('employees')}
-                  className={`relative z-10 w-36 px-4 py-1.5 text-sm font-semibold transition-colors ${
+                  className={`relative z-10 w-32 px-4 py-1.5 text-sm font-semibold transition-colors ${
                     activeTab === 'employees'
                       ? 'text-slate-900 dark:text-slate-100'
                       : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
@@ -3412,7 +3412,7 @@ export default function EmployeesPage() {
                 </button>
                 <button
                   onClick={() => setActiveTab('applications')}
-                  className={`relative z-10 w-36 px-4 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${
+                  className={`relative z-10 w-40 px-4 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${
                     activeTab === 'applications'
                       ? 'text-slate-900 dark:text-slate-100'
                       : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
@@ -3420,14 +3420,14 @@ export default function EmployeesPage() {
                 >
                   Applications
                   {pendingApplications.length > 0 && (
-                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] bg-red-500 text-white">
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] bg-red-500 text-white font-bold">
                       {pendingApplications.length}
                     </span>
                   )}
                 </button>
                 <button
                   onClick={() => setActiveTab('requests')}
-                  className={`relative z-10 w-[9.5rem] px-2 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 ${
+                  className={`relative z-10 w-48 px-2 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 ${
                     activeTab === 'requests'
                       ? 'text-slate-900 dark:text-slate-100'
                       : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
@@ -3435,7 +3435,7 @@ export default function EmployeesPage() {
                 >
                   Profile Requests
                   {pendingProfileRequests.length > 0 && (
-                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] bg-indigo-500 text-white">
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] bg-indigo-500 text-white font-bold">
                       {pendingProfileRequests.length}
                     </span>
                   )}
