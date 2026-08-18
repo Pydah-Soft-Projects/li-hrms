@@ -177,6 +177,14 @@ exports.login = async (req, res) => {
     // Issue session-backed tokens (single active device)
     const tokens = await issueAuthTokens(user, userType, req);
 
+    let resolvedEmpNo = userType === 'employee' ? user.emp_no : user.employeeId;
+    if (userType === 'user' && !resolvedEmpNo && user.employeeRef) {
+      const emp = await Employee.findById(user.employeeRef).select('emp_no').lean();
+      if (emp) {
+        resolvedEmpNo = emp.emp_no;
+      }
+    }
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -192,7 +200,8 @@ exports.login = async (req, res) => {
           role: userType === 'user' ? user.role : 'employee',
           roles: userType === 'user' ? user.roles : ['employee'],
           department: userType === 'employee' ? user.department_id : undefined,
-          emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
+          emp_no: resolvedEmpNo,
+          employeeRef: userType === 'user' ? user.employeeRef : undefined,
           type: userType,
           featureControl: userType === 'user' ? resolveFeatureControl(user) : undefined,
           dataScope: userType === 'user' ? user.dataScope : 'own',
@@ -255,6 +264,14 @@ exports.getMe = async (req, res) => {
       lastLogin = user.lastLogin || null;
     }
 
+    let resolvedEmpNo = userType === 'employee' ? user.emp_no : user.employeeId;
+    if (userType === 'user' && !resolvedEmpNo && user.employeeRef) {
+      const emp = await Employee.findById(user.employeeRef).select('emp_no').lean();
+      if (emp) {
+        resolvedEmpNo = emp.emp_no;
+      }
+    }
+
     res.status(200).json({
       success: true,
       data: {
@@ -265,7 +282,8 @@ exports.getMe = async (req, res) => {
           role: userType === 'user' ? user.role : 'employee',
           roles: userType === 'user' ? user.roles : ['employee'],
           department: userType === 'employee' ? user.department_id : undefined,
-          emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
+          emp_no: resolvedEmpNo,
+          employeeRef: userType === 'user' ? user.employeeRef : undefined,
           type: userType,
           featureControl: userType === 'user' ? resolveFeatureControl(user) : undefined,
           isActive: user.isActive,

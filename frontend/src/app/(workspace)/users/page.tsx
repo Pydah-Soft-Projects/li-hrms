@@ -9,7 +9,14 @@ import {
   Employee,
   User,
   Role,
+  HolidayGroup,
+  EmployeeGroup,
 } from '@/lib/api';
+import {
+  HolidayDivisionMappingEditor,
+  normalizeHolidayMappingFromApi,
+  type HolidayMappingRow,
+} from '@/components/holidays/HolidayDivisionMappingEditor';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   canViewUsers,
@@ -72,7 +79,8 @@ import {
   CheckCircle2,
   ChevronRight,
   Key,
-  Clock
+  Clock,
+  Phone
 } from 'lucide-react';
 import {
   useCallback,
@@ -120,6 +128,8 @@ interface UserFormData {
   divisionMapping?: { division: string | Division; departments: (string | Department)[] }[];
   division?: string;
   employeeId?: string;
+  managedHolidayGroupIds?: string[];
+  holidayDivisionMapping?: HolidayMappingRow[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
@@ -140,6 +150,148 @@ const ROLES = [
   { value: 'employee', label: 'Employee', color: 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400' },
 ];
 
+const MONTH_SLOT_EDIT_PERMISSION = 'LEAVE_REGISTER_MONTH_EDIT:write';
+const hasMonthSlotEditPermission = (featureControl?: string[]) =>
+  !!featureControl?.includes(MONTH_SLOT_EDIT_PERMISSION) || !!featureControl?.includes('LEAVE_REGISTER_MONTH_EDIT');
+
+const getDivisionScopedPermissionKey = (moduleCode: string, access: 'read' | 'write', divisionId: string) =>
+  `${moduleCode}:${access}:${divisionId}`;
+
+const getModulePermissionState = (featureControl: string[] | undefined, moduleCode: string) => {
+  if (featureControl?.includes(`${moduleCode}:write`)) return 'write';
+  if (featureControl?.includes(`${moduleCode}:read`)) return 'read';
+  return 'none';
+};
+
+const getDivisionScopedPermissionState = (
+  featureControl: string[] | undefined,
+  moduleCode: string,
+  divisionId: string
+): 'none' | 'read' | 'write' => {
+  if (featureControl?.includes(getDivisionScopedPermissionKey(moduleCode, 'write', divisionId))) return 'write';
+  if (featureControl?.includes(getDivisionScopedPermissionKey(moduleCode, 'read', divisionId))) return 'read';
+  return 'none';
+};
+
+const hasDivisionScopedAccess = (
+  featureControl: string[] | undefined,
+  moduleCode: string,
+  divisionId: string,
+  access: 'read' | 'write'
+) => !!featureControl?.includes(getDivisionScopedPermissionKey(moduleCode, access, divisionId));
+
+const setDivisionScopedPermissionState = (
+  featureControl: string[] | undefined,
+  moduleCode: string,
+  divisionId: string,
+  nextState: 'none' | 'read' | 'write'
+) => {
+  const next = new Set(featureControl || []);
+  const readKey = getDivisionScopedPermissionKey(moduleCode, 'read', divisionId);
+  const writeKey = getDivisionScopedPermissionKey(moduleCode, 'write', divisionId);
+
+  next.delete(readKey);
+  next.delete(writeKey);
+
+  if (nextState === 'read') next.add(readKey);
+  if (nextState === 'write') {
+    next.add(readKey);
+    next.add(writeKey);
+  }
+
+  return Array.from(next);
+};
+
+const getDivisionScopeSummary = (
+  featureControl: string[] | undefined,
+  moduleCode: string,
+  divisionIds: string[]
+) => {
+  const readCount = divisionIds.filter((divisionId) =>
+    hasDivisionScopedAccess(featureControl, moduleCode, divisionId, 'read')
+  ).length;
+  const writeCount = divisionIds.filter((divisionId) =>
+    hasDivisionScopedAccess(featureControl, moduleCode, divisionId, 'write')
+  ).length;
+
+  return {
+    readCount,
+    writeCount,
+    total: divisionIds.length,
+  };
+};
+
+const getEffectiveDivisionPermissionState = (
+  featureControl: string[] | undefined,
+  moduleCode: string,
+  divisionId: string
+): 'none' | 'read' | 'write' => {
+  const scopedState = getDivisionScopedPermissionState(featureControl, moduleCode, divisionId);
+  if (scopedState !== 'none') return scopedState;
+
+  const globalState = getModulePermissionState(featureControl, moduleCode);
+  if (globalState === 'write') return 'write';
+  if (globalState === 'read') return 'read';
+  return 'none';
+};
+
+const cyclePermissionState = (current: 'none' | 'read' | 'write'): 'none' | 'read' | 'write' => {
+  if (current === 'none') return 'read';
+  if (current === 'read') return 'write';
+  return 'none';
+};
+
+const setModulePermissionState = (
+  featureControl: string[] | undefined,
+  moduleCode: string,
+  nextState: 'none' | 'read' | 'write'
+) => {
+  const next = new Set(featureControl || []);
+  next.delete(`${moduleCode}:read`);
+  next.delete(`${moduleCode}:write`);
+
+  if (nextState === 'read') next.add(`${moduleCode}:read`);
+  if (nextState === 'write') {
+    next.add(`${moduleCode}:read`);
+    next.add(`${moduleCode}:write`);
+  }
+
+  return Array.from(next);
+};
+
+const syncDivisionPermissionFromRoleScope = (
+  featureControl: string[] | undefined,
+  divisionMapping: { division: string | Division; departments: (string | Department)[] }[] | undefined
+) => {
+  const selectedDivisionIds = (divisionMapping || [])
+    .map((mapping) => (typeof mapping.division === 'string' ? mapping.division : mapping.division?._id || ''))
+    .filter(Boolean);
+
+  if (selectedDivisionIds.length === 0) return featureControl || [];
+
+  const next = new Set(featureControl || []);
+
+  for (const module of MODULE_CATEGORIES.flatMap((category) => category.modules.map((item) => item.code))) {
+    const globalRead = `${module}:read`;
+    const globalWrite = `${module}:write`;
+    const hasRead = next.has(globalRead);
+    const hasWrite = next.has(globalWrite);
+
+    if (!hasRead && !hasWrite) continue;
+
+    for (const divisionId of selectedDivisionIds) {
+      const readKey = `${module}:read:${divisionId}`;
+      const writeKey = `${module}:write:${divisionId}`;
+      next.delete(readKey);
+      next.delete(writeKey);
+      if (hasRead) next.add(readKey);
+      if (hasWrite) next.add(writeKey);
+    }
+  }
+
+  return Array.from(next);
+};
+
 // Redefining inside component to access dynamic roles
 
 
@@ -149,6 +301,9 @@ export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
+  const [holidayGroups, setHolidayGroups] = useState<HolidayGroup[]>([]);
+  const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
+  const [customEmployeeGroupingEnabled, setCustomEmployeeGroupingEnabled] = useState(false);
   const [employeesWithoutAccount, setEmployeesWithoutAccount] = useState<Employee[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -216,6 +371,7 @@ export default function UsersPage() {
 
   // Dialogs
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [createStep, setCreateStep] = useState(1);
   const [showFromEmployeeDialog, setShowFromEmployeeDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
 
@@ -246,6 +402,9 @@ export default function UsersPage() {
     allowedDivisions: [],
     divisionMapping: [],
     division: '',
+    phone_number: '',
+    managedHolidayGroupIds: [],
+    holidayDivisionMapping: [],
   });
 
   // Form state for create from employee
@@ -261,6 +420,8 @@ export default function UsersPage() {
     allowedDivisions: [],
     divisionMapping: [],
     division: '',
+    managedHolidayGroupIds: [],
+    holidayDivisionMapping: [],
   });
 
   const [employeeSearch, setEmployeeSearch] = useState('');
@@ -274,12 +435,28 @@ export default function UsersPage() {
     message: ''
   });
   const [managerDeptSearch, setManagerDeptSearch] = useState('');
+  const [activeDivisionScope, setActiveDivisionScope] = useState<'all' | string>('all');
+
+  useEffect(() => {
+    const selectedDivisionIds = Array.from(new Set((formData.divisionMapping || [])
+      .map((mapping) => typeof mapping.division === 'string' ? mapping.division : mapping.division?._id)
+      .filter(Boolean)));
+
+    if (selectedDivisionIds.length === 0) {
+      setActiveDivisionScope('all');
+      return;
+    }
+
+    if (!selectedDivisionIds.includes(activeDivisionScope) && activeDivisionScope !== 'all') {
+      setActiveDivisionScope(selectedDivisionIds[0]);
+    }
+  }, [formData.divisionMapping, activeDivisionScope]);
 
   // Load data
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [usersRes, deptRes, divRes, statsRes] = await Promise.all([
+      const [usersRes, deptRes, divRes, statsRes, holGroupsRes, empGroupsRes, groupingSettingRes] = await Promise.all([
         api.getUsers({
           role: roleFilter || undefined,
           isActive: statusFilter ? statusFilter === 'active' : undefined,
@@ -288,12 +465,20 @@ export default function UsersPage() {
         api.getDepartments(true),
         api.getDivisions(),
         api.getUserStats(),
+        api.getHolidayGroupsAdmin(),
+        api.getEmployeeGroups(true),
+        api.getSetting('custom_employee_grouping_enabled'),
       ]);
 
       if (usersRes.success) setUsers(usersRes.data || []);
       if (deptRes.success) setDepartments(deptRes.data || []);
       if (divRes.success) setDivisions(divRes.data || []);
       if (statsRes.success) setStats(statsRes.data);
+      if (holGroupsRes.success) setHolidayGroups(holGroupsRes.data || []);
+      if (empGroupsRes.success) setEmployeeGroups(empGroupsRes.data || []);
+      if (groupingSettingRes.success && groupingSettingRes.data) {
+        setCustomEmployeeGroupingEnabled(!!groupingSettingRes.data.value);
+      }
 
       const [rolesRes, resSettEmp, resSettHOD, resSettHR, resSettMgr] = await Promise.all([
         api.getRoles(),
@@ -346,15 +531,23 @@ export default function UsersPage() {
     }
   }, [error, success]);
 
-  // Load default feature controls when role changes (not on every formData change)
+  // Load default feature controls when role or dataScope changes (during creation only)
   const previousRoleRef = useRef<string>('');
+  const previousScopeRef = useRef<string>('');
 
   useEffect(() => {
-    const loadRoleDefaults = async () => {
-      // Only load if role actually changed (not just formData update)
-      if (!formData.role || formData.role === previousRoleRef.current) return;
+    const loadDefaults = async () => {
+      // Only load defaults during creation, not during edit
+      if (!showCreateDialog) return;
+      if (!formData.role) return;
+
+      const roleChanged = formData.role !== previousRoleRef.current;
+      const scopeChanged = formData.dataScope !== previousScopeRef.current;
+
+      if (!roleChanged && !scopeChanged) return;
 
       previousRoleRef.current = formData.role;
+      previousScopeRef.current = formData.dataScope || '';
 
       // Check if it's a dynamic role
       const customRole = customRoles.find(r => r._id === formData.role);
@@ -368,24 +561,69 @@ export default function UsersPage() {
       }
 
       try {
-        const settingKey = `feature_control_${formData.role === 'hod' ? 'hod' : formData.role === 'hr' ? 'hr' : 'employee'}`;
+        let roleKey = 'employee';
+        const scope = formData.dataScope;
+        if (scope === 'own') {
+          roleKey = 'employee';
+        } else if (scope === 'department' || scope === 'departments') {
+          roleKey = 'hod';
+        } else if (scope === 'division' || scope === 'divisions') {
+          roleKey = 'manager';
+        } else if (scope === 'all') {
+          if (formData.role === 'hr' || formData.role === 'sub_admin' || formData.role === 'super_admin') {
+            roleKey = 'hr';
+          } else if (formData.role === 'hod') {
+            roleKey = 'hod';
+          } else if (formData.role === 'manager') {
+            roleKey = 'manager';
+          } else {
+            roleKey = 'employee';
+          }
+        } else {
+          roleKey = formData.role === 'hod' ? 'hod' : formData.role === 'hr' ? 'hr' : formData.role === 'manager' ? 'manager' : 'employee';
+        }
+
+        const settingKey = `feature_control_${roleKey}`;
         const res = await api.getSetting(settingKey);
 
         if (res.success && res.data?.value?.activeModules) {
-          const defaultScope = formData.role === 'manager' ? 'division' : (formData.role === 'hod' ? 'department' : 'all');
           setFormData(prev => ({
             ...prev,
             featureControl: expandLegacyPromotionTransferPermissions(res.data?.value?.activeModules || []),
-            dataScope: defaultScope as DataScope
           }));
         }
       } catch (err) {
-        console.error('Failed to load role defaults:', err);
+        console.error('Failed to load defaults:', err);
       }
     };
 
-    loadRoleDefaults();
-  }, [formData.role]);
+    loadDefaults();
+  }, [formData.role, formData.dataScope, showCreateDialog, customRoles]);
+
+  const validateStep1 = () => {
+    if (!formData.name?.trim()) {
+      setError('Full Name is required');
+      return false;
+    }
+    if (!formData.email?.trim()) {
+      setError('Email Address is required');
+      return false;
+    }
+    if (!/^\S+@\S+\.\S+$/.test(formData.email)) {
+      setError('Please provide a valid email address');
+      return false;
+    }
+    if (!formData.role) {
+      setError('System Role is required');
+      return false;
+    }
+    if (!formData.autoGeneratePassword && (!formData.password || formData.password.length < 4)) {
+      setError('Password must be at least 4 characters long');
+      return false;
+    }
+    setError('');
+    return true;
+  };
 
   // Handle create user
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -403,6 +641,7 @@ export default function UsersPage() {
         divisionMapping?: any[];
         featureControl?: string[];
         division?: string;
+        phone_number?: string;
       } = {
         email: formData.email,
         name: formData.name,
@@ -410,6 +649,7 @@ export default function UsersPage() {
         autoGeneratePassword: formData.autoGeneratePassword,
         assignWorkspace: true,
         division: formData.division,
+        phone_number: formData.phone_number,
       };
 
       if (!formData.autoGeneratePassword && formData.password) {
@@ -761,6 +1001,10 @@ export default function UsersPage() {
     setSelectedUser(user);
 
     const normalizedMapping = normalizeDivisionMapping(user.divisionMapping);
+    const syncedFeatureControl = syncDivisionPermissionFromRoleScope(
+      expandLegacyPromotionTransferPermissions(user.featureControl || []),
+      normalizedMapping
+    );
 
     let mapping = normalizedMapping.length > 0 ? normalizedMapping[0] : null;
     let finalMapping = normalizedMapping;
@@ -820,7 +1064,7 @@ export default function UsersPage() {
           : (finalMapping || []).flatMap((m) => m.departments || []),
       password: '',
       autoGeneratePassword: false,
-      featureControl: expandLegacyPromotionTransferPermissions(user.featureControl || []),
+      featureControl: syncedFeatureControl,
       dataScope: resolvedDataScope,
       allowedDivisions:
         user.allowedDivisions?.map((d) => (typeof d === 'string' ? d : d?._id)) ||
@@ -878,9 +1122,11 @@ export default function UsersPage() {
       allowedDivisions: [],
       divisionMapping: [],
       division: '',
+      phone_number: '',
     });
     setManagerDeptSearch('');
     previousRoleRef.current = '';
+    setCreateStep(1);
   };
 
   const resetEmployeeForm = () => {
@@ -901,6 +1147,28 @@ export default function UsersPage() {
   };
 
 
+
+  const renderHolidayEmployeeScopeSection = (data: UserFormData, setData: (v: UserFormData) => void) => (
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+      <div className="mb-4 flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-500/10">
+          <Users className="h-5 w-5" />
+        </div>
+        <div>
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white">Holiday Employee Scope</h3>
+          <p className="text-xs text-slate-500">Optional — direct division/department scope for holiday management</p>
+        </div>
+      </div>
+      <HolidayDivisionMappingEditor
+        mapping={(data.holidayDivisionMapping as HolidayMappingRow[]) || []}
+        onChange={(rows) => setData({ ...data, holidayDivisionMapping: rows } as UserFormData)}
+        divisions={divisions}
+        departments={departments}
+        employeeGroups={employeeGroups}
+        customEmployeeGroupingEnabled={customEmployeeGroupingEnabled}
+      />
+    </div>
+  );
 
   const toggleDivisionMapping = (divisionId: string, deptId: string | null, setData: React.Dispatch<React.SetStateAction<UserFormData>>, role: string) => {
     setData((prev) => {
@@ -978,8 +1246,55 @@ export default function UsersPage() {
     const accentText = variant === 'amber' ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400';
     const checkboxAccent = variant === 'amber' ? 'text-amber-600' : 'text-blue-600';
 
+    const allSelected = divisions.length > 0 && divisions.every((div) =>
+      data.divisionMapping?.some((m) => String(typeof m.division === 'string' ? m.division : m.division?._id) === String(div._id))
+    );
+
+    const toggleSelectAllDivisions = () => {
+      setData((prev) => {
+        const selectedIds = new Set((prev.divisionMapping || []).map((m) => String(typeof m.division === 'string' ? m.division : m.division?._id)));
+
+        if (allSelected) {
+          const nextMapping = (prev.divisionMapping || []).filter((m) => !divisions.some((div) => String(typeof m.division === 'string' ? m.division : m.division?._id) === String(div._id)));
+          return {
+            ...prev,
+            divisionMapping: nextMapping,
+            allowedDivisions: nextMapping.map((m) => (typeof m.division === 'string' ? m.division : m.division?._id)).filter(Boolean),
+            featureControl: syncDivisionPermissionFromRoleScope(prev.featureControl, nextMapping),
+          };
+        }
+
+        const nextMapping = [...(prev.divisionMapping || [])];
+
+        for (const div of divisions) {
+          const divId = String(div._id);
+          if (!selectedIds.has(divId)) {
+            nextMapping.push({ division: divId, departments: [] });
+          }
+        }
+
+        return {
+          ...prev,
+          divisionMapping: nextMapping,
+          allowedDivisions: nextMapping.map((m) => (typeof m.division === 'string' ? m.division : m.division?._id)).filter(Boolean),
+          featureControl: syncDivisionPermissionFromRoleScope(prev.featureControl, nextMapping),
+        };
+      });
+    };
+
     return (
       <div className="space-y-4">
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-900/40">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Division Access</span>
+          <button
+            type="button"
+            onClick={toggleSelectAllDivisions}
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600 transition hover:border-slate-300 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+          >
+            {allSelected ? 'Clear All' : 'Select All'}
+          </button>
+        </div>
+
         {divisions.map((div) => {
           const isSelected = data.divisionMapping?.some((m) => {
             const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
@@ -1182,7 +1497,10 @@ export default function UsersPage() {
                   Upgrade Employee
                 </button>
                 <button
-                  onClick={() => setShowCreateDialog(true)}
+                  onClick={() => {
+                    setCreateStep(1);
+                    setShowCreateDialog(true);
+                  }}
                   className="flex items-center gap-2 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-bold text-white shadow-xl shadow-slate-900/20 transition-all hover:scale-[1.02] hover:bg-slate-800 active:scale-95 dark:bg-white dark:text-slate-900 dark:shadow-none"
                 >
                   <Plus className="h-4 w-4" />
@@ -1488,7 +1806,7 @@ export default function UsersPage() {
           showCreateDialog && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md" onClick={() => setShowCreateDialog(false)} />
-              <div className="relative z-50 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-slate-900">
+              <div className={`relative z-50 w-full flex flex-col overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-slate-900 transition-all duration-300 ${createStep === 1 ? 'max-w-2xl' : 'max-w-6xl'} max-h-[90vh]`}>
 
                 {/* Modern Gradient Header */}
                 <div className="relative bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-700 px-8 py-6 text-white overflow-hidden">
@@ -1507,398 +1825,712 @@ export default function UsersPage() {
                       <UserPlus className="h-7 w-7" />
                     </div>
                     <div>
-                      <h2 className="text-2xl font-bold">Create New User</h2>
-                      <p className="text-sm text-indigo-100 font-medium">Add a new team member to the system</p>
+                      <h2 className="text-2xl font-bold">{createStep === 1 ? 'Create New User' : 'Configure Privileges'}</h2>
+                      <p className="text-sm text-indigo-100 font-medium">
+                        {createStep === 1 ? 'Step 1 of 2: Basic & Scoping Info' : 'Step 2 of 2: Division Scoping & Module Permissions'}
+                      </p>
                     </div>
                   </div>
                 </div>
 
                 {/* Scrollable Content */}
                 <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
-                  <form onSubmit={handleCreateUser} className="flex flex-col lg:flex-row h-full">
+                  <form onSubmit={handleCreateUser} className="flex flex-col h-full">
 
-                    {/* LEFT COLUMN - Main Form Fields */}
-                    <div className="flex-1 p-8 space-y-6 lg:border-r lg:border-slate-200 dark:lg:border-slate-800">
-                      {/* Basic Information Card */}
-                      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
-                        <div className="mb-5 flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10">
-                            <UserCircle className="h-5 w-5" />
-                          </div>
-                          <div>
-                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Basic Information</h3>
-                            <p className="text-xs text-slate-500">User identity and contact details</p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-4">
-                          <div className="space-y-2">
-                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                              Full Name <span className="text-rose-500">*</span>
-                            </label>
-                            <input
-                              type="text"
-                              value={formData.name}
-                              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                              required
-                              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                              placeholder="e.g. John Doe"
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                              Email Address <span className="text-rose-500">*</span>
-                            </label>
-                            <div className="relative">
-                              <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                              <input
-                                type="email"
-                                value={formData.email}
-                                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                required
-                                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                                placeholder="john@example.com"
-                              />
+                    {createStep === 1 ? (
+                      /* STEP 1: Basic Info & Scoping */
+                      <div className="p-8 space-y-6 max-w-2xl mx-auto w-full">
+                        {/* Basic Information Card */}
+                        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                          <div className="mb-5 flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10">
+                              <UserCircle className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Basic Information</h3>
+                              <p className="text-xs text-slate-500">User identity and contact details</p>
                             </div>
                           </div>
 
-                          <div className="space-y-2">
-                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                              System Role <span className="text-rose-500">*</span>
-                            </label>
-                            <div className="relative">
-                              <Shield className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                              <select
-                                value={formData.role}
-                                onChange={(e) => {
-                                  const role = e.target.value;
-                                  const keepMapping = scopingRolesKeepMapping(role) && scopingRolesKeepMapping(formData.role);
-                                  setFormData({
-                                    ...formData,
-                                    role,
-                                    dataScope: defaultDataScopeForRole(role),
-                                    department: keepMapping ? formData.department : '',
-                                    departments: keepMapping ? formData.departments : [],
-                                    divisionMapping: keepMapping ? formData.divisionMapping : [],
-                                    division: keepMapping ? formData.division : '',
-                                  });
-                                }}
-                                className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                              >
-                                {ROLES.filter(r => r.value !== 'employee' && (r.value !== 'super_admin' || currentUser?.role === 'super_admin')).map((role) => (
-                                  <option key={role.value} value={role.value}>
-                                    {role.label}
-                                  </option>
-                                ))}
-                                {customRoles.map(role => (
-                                  <option key={role._id} value={role._id}>{role.name}</option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Password Configuration Card */}
-                      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
-                        <div className="mb-5 flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-500/10">
-                            <Lock className="h-5 w-5" />
-                          </div>
-                          <div>
-                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Password Configuration</h3>
-                            <p className="text-xs text-slate-500">Set initial access credentials</p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-4">
-                          <label className="flex items-center gap-3 cursor-pointer group rounded-xl border border-slate-200 bg-slate-50 p-4 transition-all hover:border-indigo-300 hover:bg-indigo-50/50 dark:border-slate-700 dark:bg-slate-800/50">
-                            <div className={`relative flex h-5 w-5 items-center justify-center rounded-md border-2 transition-all ${formData.autoGeneratePassword ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 bg-white'}`}>
-                              {formData.autoGeneratePassword && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
-                              <input
-                                type="checkbox"
-                                className="sr-only"
-                                checked={formData.autoGeneratePassword}
-                                onChange={(e) => setFormData({ ...formData, autoGeneratePassword: e.target.checked })}
-                              />
-                            </div>
-                            <div className="flex-1">
-                              <span className="block text-sm font-semibold text-slate-900 dark:text-white">Auto-generate secure password</span>
-                              <span className="text-xs text-slate-500">System will create and email a temporary password</span>
-                            </div>
-                          </label>
-
-                          {!formData.autoGeneratePassword && (
-                            <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                          <div className="space-y-4">
+                            <div className="space-y-2">
                               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                Password <span className="text-rose-500">*</span>
+                                Full Name <span className="text-rose-500">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={formData.name || ''}
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                required
+                                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                placeholder="e.g. John Doe"
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                Phone Number
                               </label>
                               <div className="relative">
-                                <Key className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                <Phone className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                                 <input
-                                  type="password"
-                                  value={formData.password}
-                                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                                  placeholder="Enter a secure password"
+                                  type="tel"
+                                  value={formData.phone_number || ''}
+                                  onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
                                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                  placeholder="e.g. +91 9876543210"
                                 />
                               </div>
                             </div>
-                          )}
-                        </div>
-                      </div>
 
-                      {/* Access Scoping Card */}
-                      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
-                        <div className="mb-5 flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10">
-                            <Building className="h-5 w-5" />
+                            <div className="space-y-2">
+                              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                Email Address <span className="text-rose-500">*</span>
+                              </label>
+                              <div className="relative">
+                                <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                <input
+                                  type="email"
+                                  value={formData.email || ''}
+                                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                  required
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                  placeholder="john@example.com"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                System Role <span className="text-rose-500">*</span>
+                              </label>
+                              <div className="relative">
+                                <Shield className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                <select
+                                  value={formData.role || ''}
+                                  onChange={(e) => {
+                                    const role = e.target.value;
+                                    const keepMapping = scopingRolesKeepMapping(role) && scopingRolesKeepMapping(formData.role);
+                                    const defaultScope = defaultDataScopeForRole(role);
+                                    setFormData({
+                                      ...formData,
+                                      role,
+                                      dataScope: defaultScope,
+                                      department: keepMapping ? formData.department : '',
+                                      departments: keepMapping ? formData.departments : [],
+                                      divisionMapping: keepMapping ? formData.divisionMapping : [],
+                                      division: keepMapping ? formData.division : '',
+                                    });
+                                  }}
+                                  className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                >
+                                  {ROLES.filter(r => r.value !== 'employee' && (r.value !== 'super_admin' || currentUser?.role === 'super_admin')).map((role) => (
+                                    <option key={role.value} value={role.value}>
+                                      {role.label}
+                                    </option>
+                                  ))}
+                                  {customRoles.map(role => (
+                                    <option key={role._id} value={role._id}>{role.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* Leave register month edit privilege */}
+                            <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 dark:border-indigo-900/40 dark:bg-indigo-950/20">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">
+                                    Leave register month edit privilege
+                                  </p>
+                                  <p className="text-[11px] text-indigo-700/90 dark:text-indigo-300/90">
+                                    Allows admin month-slot edits in leave register.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const current = formData.featureControl || [];
+                                    const has = hasMonthSlotEditPermission(current);
+                                    const next = has
+                                      ? current.filter((f) => f !== MONTH_SLOT_EDIT_PERMISSION && f !== 'LEAVE_REGISTER_MONTH_EDIT')
+                                      : [...current, MONTH_SLOT_EDIT_PERMISSION];
+                                    setFormData({ ...formData, featureControl: next });
+                                  }}
+                                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${hasMonthSlotEditPermission(formData.featureControl)
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                                    }`}
+                                >
+                                  {hasMonthSlotEditPermission(formData.featureControl) ? 'Enabled' : 'Disabled'}
+                                </button>
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Access Scoping</h3>
-                            <p className="text-xs text-slate-500">Define organizational access boundaries</p>
-                          </div>
                         </div>
 
-                        <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/30">
-                          <ScopingSelector data={formData} setData={setFormData} />
-                        </div>
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div className="flex gap-3 pt-2">
-                        <button
-                          type="button"
-                          onClick={() => setShowCreateDialog(false)}
-                          className="flex-1 rounded-xl border-2 border-slate-200 bg-white px-6 py-3.5 text-sm font-bold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="submit"
-                          className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/30 transition-all hover:shadow-xl hover:shadow-indigo-500/40 active:scale-[0.98]"
-                        >
-                          Create User Account
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* RIGHT COLUMN - Feature Privileges */}
-                    <div className="flex-1 p-8 space-y-6 bg-slate-50/50 dark:bg-slate-900/30">
-                      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
-                        <div className="mb-5 flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-500/10">
-                              <Layers className="h-5 w-5" />
+                        {/* Password Configuration Card */}
+                        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                          <div className="mb-5 flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-500/10">
+                              <Lock className="h-5 w-5" />
                             </div>
                             <div>
-                              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Feature Privileges</h3>
-                              <p className="text-xs text-slate-500">Grant read/write access to modules</p>
+                              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Password Configuration</h3>
+                              <p className="text-xs text-slate-500">Set initial access credentials</p>
                             </div>
                           </div>
 
-                          {/* Bulk Selection Buttons */}
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const allModules = MODULE_CATEGORIES.flatMap(cat => cat.modules.map(m => m.code));
-                                const readPermissions = allModules.map(code => `${code}:read`);
-                                const existingWrite = (formData.featureControl || []).filter(fc => fc.endsWith(':write'));
-                                setFormData({ ...formData, featureControl: [...readPermissions, ...existingWrite] });
-                              }}
-                              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20 transition-colors"
-                            >
-                              Read All
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const allModules = MODULE_CATEGORIES.flatMap(cat => cat.modules.map(m => m.code));
-                                const readPermissions = allModules.map(code => `${code}:read`);
-                                const writePermissions = allModules.map(code => `${code}:write`);
-                                setFormData({ ...formData, featureControl: [...readPermissions, ...writePermissions] });
-                              }}
-                              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20 transition-colors"
-                            >
-                              Write All
-                            </button>
+                          <div className="space-y-4">
+                            <label className="flex items-center gap-3 cursor-pointer group rounded-xl border border-slate-200 bg-slate-50 p-4 transition-all hover:border-indigo-300 hover:bg-indigo-50/50 dark:border-slate-700 dark:bg-slate-800/50">
+                              <div className={`relative flex h-5 w-5 items-center justify-center rounded-md border-2 transition-all ${formData.autoGeneratePassword ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 bg-white'}`}>
+                                {formData.autoGeneratePassword && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
+                                <input
+                                  type="checkbox"
+                                  className="sr-only"
+                                  checked={formData.autoGeneratePassword}
+                                  onChange={(e) => setFormData({ ...formData, autoGeneratePassword: e.target.checked })}
+                                />
+                              </div>
+                              <div className="flex-1">
+                                <span className="block text-sm font-semibold text-slate-900 dark:text-white">Auto-generate secure password</span>
+                                <span className="text-xs text-slate-500">System will create and email a temporary password</span>
+                              </div>
+                            </label>
+
+                            {!formData.autoGeneratePassword && (
+                              <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                  Password <span className="text-rose-500">*</span>
+                                </label>
+                                <div className="relative">
+                                  <Key className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                  <input
+                                    type="password"
+                                    value={formData.password || ''}
+                                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                    placeholder="Enter a secure password"
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
 
-                        <div className="space-y-4">
-                          {MODULE_CATEGORIES.map((category) => (
-                            <div key={category.code} className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/30">
-                              <div className="mb-3 flex items-center gap-2">
-                                <span className="text-lg">{category.icon}</span>
-                                <h4 className="text-sm font-bold text-slate-900 dark:text-white">{category.name}</h4>
-                              </div>
-                              <div className="grid grid-cols-1 gap-2">
-                                {category.modules.map((module) => {
-                                  const hasRead = formData.featureControl?.includes(`${module.code}:read`) || false;
-                                  const hasWrite = formData.featureControl?.includes(`${module.code}:write`) || false;
-                                  const hasVerify = (module as any).verifiable ? (formData.featureControl?.includes(`${module.code}:verify`) || false) : false;
-                                  const hasTerminate = (module as any).terminable ? (formData.featureControl?.includes(`${module.code}:terminate`) || false) : false;
-                                  const hasRelease = (module as any).releasable ? (formData.featureControl?.includes(`${module.code}:release`) || false) : false;
-
-                                  const hasBank = (module as any).bankable ? (formData.featureControl?.includes(`${module.code}:bank`) || false) : false;
-                                  const hasFile = (module as any).fileUploadable ? (formData.featureControl?.includes(`${module.code}:file`) || false) : false;
-
-                                  const toggleRead = () => {
-                                    const currentFeatures = formData.featureControl || [];
-                                    const readPerm = `${module.code}:read`;
-                                    const writePerm = `${module.code}:write`;
-                                    let newFeatures;
-
-                                    if (hasRead) {
-                                      // Remove read AND write
-                                      newFeatures = currentFeatures.filter(f => f !== readPerm && f !== writePerm);
-                                    } else {
-                                      // Add read
-                                      newFeatures = [...currentFeatures, readPerm];
-                                    }
-                                    setFormData({ ...formData, featureControl: newFeatures });
-                                  };
-
-                                  const toggleWrite = () => {
-                                    const currentFeatures = formData.featureControl || [];
-                                    const writePerm = `${module.code}:write`;
-                                    const readPerm = `${module.code}:read`;
-                                    let newFeatures;
-
-                                    if (hasWrite) {
-                                      // Remove write
-                                      newFeatures = currentFeatures.filter(f => f !== writePerm);
-                                    } else {
-                                      // Add write AND ensure read is present
-                                      newFeatures = Array.from(new Set([...currentFeatures, writePerm, readPerm]));
-                                    }
-                                    setFormData({ ...formData, featureControl: newFeatures });
-                                  };
-
-                                  const toggleVerify = () => {
-                                    const currentFeatures = formData.featureControl || [];
-                                    const verifyPerm = `${module.code}:verify`;
-                                    const newFeatures = hasVerify
-                                      ? currentFeatures.filter(f => f !== verifyPerm)
-                                      : [...currentFeatures, verifyPerm];
-                                    setFormData({ ...formData, featureControl: newFeatures });
-                                  };
-
-                                  const toggleTerminate = () => {
-                                    const currentFeatures = formData.featureControl || [];
-                                    const terminatePerm = `${module.code}:terminate`;
-                                    const newFeatures = hasTerminate
-                                      ? currentFeatures.filter(f => f !== terminatePerm)
-                                      : [...currentFeatures, terminatePerm];
-                                    setFormData({ ...formData, featureControl: newFeatures });
-                                  };
-
-                                  const toggleRelease = () => {
-                                    const currentFeatures = formData.featureControl || [];
-                                    const releasePerm = `${module.code}:release`;
-                                    const newFeatures = hasRelease
-                                      ? currentFeatures.filter(f => f !== releasePerm)
-                                      : [...currentFeatures, releasePerm];
-                                    setFormData({ ...formData, featureControl: newFeatures });
-                                  };
-
-                                  const toggleBank = () => {
-                                    const currentFeatures = formData.featureControl || [];
-                                    const bankPerm = `${module.code}:bank`;
-                                    const newFeatures = hasBank
-                                      ? currentFeatures.filter(f => f !== bankPerm)
-                                      : [...currentFeatures, bankPerm];
-                                    setFormData({ ...formData, featureControl: newFeatures });
-                                  };
-
-                                  const toggleFile = () => {
-                                    const currentFeatures = formData.featureControl || [];
-                                    const filePerm = `${module.code}:file`;
-                                    const newFeatures = hasFile
-                                      ? currentFeatures.filter(f => f !== filePerm)
-                                      : [...currentFeatures, filePerm];
-                                    setFormData({ ...formData, featureControl: newFeatures });
-                                  };
-
-                                  return (
-                                    <div
-                                      key={module.code}
-                                      className="flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-white dark:hover:bg-slate-700/50"
-                                    >
-                                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{module.label}</span>
-                                      <div className="flex flex-wrap gap-2 justify-end max-w-[70%]">
-                                        <button
-                                          type="button"
-                                          onClick={toggleRead}
-                                          title={getReadButtonTitle(module.code)}
-                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRead
-                                            ? 'bg-blue-500 text-white shadow-sm'
-                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                            }`}
-                                        >
-                                          {getReadButtonLabel(module.code)}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={toggleWrite}
-                                          title={getWriteButtonTitle(module.code)}
-                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasWrite
-                                            ? 'bg-emerald-500 text-white shadow-sm'
-                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                            }`}
-                                        >
-                                          {getWriteButtonLabel(module.code)}
-                                        </button>
-                                        {(module as any).terminable && (
-                                          <button
-                                            type="button"
-                                            onClick={toggleTerminate}
-                                            title="Terminate: grants access to initiate and manage employee terminations within scope. Independent of Read/Write."
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasTerminate
-                                              ? 'bg-orange-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            Terminate
-                                          </button>
-                                        )}
-                                        {(module as any).releasable && (
-                                          <button
-                                            type="button"
-                                            onClick={toggleRelease}
-                                            title={getReleaseButtonTitle(module.code)}
-                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRelease
-                                              ? 'bg-teal-500 text-white shadow-sm'
-                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                              }`}
-                                          >
-                                            Release
-                                          </button>
-                                        )}
-                                        <ModuleGranularPermissionToggles
-                                          module={module as any}
-                                          featureControl={formData.featureControl}
-                                          onChange={(featureControl) => setFormData({ ...formData, featureControl })}
-                                          secondSalaryOrgEnabled={secondSalaryEnabled}
-                                        />
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
+                        {/* Access Scoping Card (Step 1 version: only dropdown or description) */}
+                        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                          <div className="mb-5 flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10">
+                              <Building className="h-5 w-5" />
                             </div>
-                          ))}
+                            <div>
+                              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Access Scoping</h3>
+                              <p className="text-xs text-slate-500">Define organizational access boundaries</p>
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/30">
+                            {formData.role === 'manager' || formData.role === 'hod' ? (
+                              <div className="space-y-4">
+                                <div>
+                                  <span className="block text-xs font-semibold text-slate-500">Data Scope</span>
+                                  <span className="inline-flex mt-1 items-center px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                                    {formData.role === 'manager' ? 'Division Scope (Custom Mapping)' : 'Department Scope (Custom Mapping)'}
+                                  </span>
+                                </div>
+                                <ScopingSelector data={formData} setData={setFormData} />
+                              </div>
+                            ) : (
+                              <div className="space-y-4">
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">Data Scope *</label>
+                                  <select
+                                    value={formData.dataScope || 'all'}
+                                    onChange={(e) => setFormData({ ...formData, dataScope: e.target.value })}
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white font-semibold"
+                                  >
+                                    <option value="all">All Data (Across All Divisions)</option>
+                                    <option value="division">Specific Divisions / Departments</option>
+                                    <option value="own">Self Only</option>
+                                  </select>
+                                </div>
+                                {formData.dataScope === 'division' && <ScopingSelector data={formData} setData={setFormData} />}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Action Buttons Step 1 */}
+                        <div className="flex gap-3 pt-4">
+                          <button
+                            type="button"
+                            onClick={() => setShowCreateDialog(false)}
+                            className="flex-1 rounded-xl border-2 border-slate-200 bg-white px-6 py-3.5 text-sm font-bold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (validateStep1()) {
+                                setCreateStep(2);
+                              }
+                            }}
+                            className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/30 transition-all hover:shadow-xl hover:shadow-indigo-500/40 active:scale-[0.98]"
+                          >
+                            Continue
+                          </button>
                         </div>
                       </div>
-                    </div>
+                    ) : (
+                      /* STEP 2: division scope selection + dynamic feature privileges */
+                      <div className="w-full space-y-6 p-8">
+                        <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+                          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                            <div className="mb-4 flex items-center gap-3">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10">
+                                <Building className="h-5 w-5" />
+                              </div>
+                              <div>
+                                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Division Scope</h3>
+                                <p className="text-xs text-slate-500">Selected divisions for this user</p>
+                              </div>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-700 dark:bg-slate-800/30">
+                              {(() => {
+                                const selectedDivisionIds = Array.from(new Set((formData.divisionMapping || [])
+                                  .map((mapping) => typeof mapping.division === 'string' ? mapping.division : mapping.division?._id)
+                                  .filter(Boolean)));
+
+                                if (selectedDivisionIds.length === 0) {
+                                  return (
+                                    <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">
+                                      No divisions selected.
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div className="space-y-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveDivisionScope('all')}
+                                      className={`group relative w-full overflow-hidden rounded-2xl border p-3.5 text-left shadow-sm transition-all duration-200 ease-out ${activeDivisionScope === 'all'
+                                        ? 'border-indigo-300 bg-gradient-to-r from-indigo-50 to-violet-50 text-indigo-900 shadow-indigo-100 ring-2 ring-indigo-200 dark:border-indigo-700 dark:from-indigo-950/80 dark:to-violet-950/80 dark:text-indigo-100 dark:ring-indigo-700/60 dark:shadow-indigo-900/30'
+                                        : 'border-slate-200 bg-white text-slate-700 hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-indigo-50/60 hover:shadow-md dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200 dark:hover:border-indigo-700 dark:hover:bg-slate-800/80'
+                                        }`}
+                                    >
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                          <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${activeDivisionScope === 'all'
+                                            ? 'bg-indigo-600 text-white dark:bg-indigo-500'
+                                            : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                                            }`}>
+                                            A
+                                          </span>
+                                          <span className="text-sm font-semibold">All divisions</span>
+                                        </div>
+                                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] ${activeDivisionScope === 'all'
+                                          ? 'bg-indigo-600 text-white dark:bg-indigo-500'
+                                          : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300'
+                                          }`}>
+                                          Global
+                                        </span>
+                                      </div>
+                                    </button>
+
+                                    {selectedDivisionIds.map((divisionId) => {
+                                      const division = divisions.find((d) => String(d._id) === String(divisionId));
+                                      if (!division) return null;
+
+                                      const mapping = (formData.divisionMapping || []).find((m) => {
+                                        const mappedId = typeof m.division === 'string' ? m.division : m.division?._id;
+                                        return String(mappedId) === String(divisionId);
+                                      });
+
+                                      const deptCount = (mapping?.departments || []).length;
+                                      const isActive = activeDivisionScope === divisionId;
+
+                                      return (
+                                        <button
+                                          key={divisionId}
+                                          type="button"
+                                          onClick={() => setActiveDivisionScope(divisionId)}
+                                          className={`group relative w-full overflow-hidden rounded-2xl border p-3.5 text-left shadow-sm transition-all duration-200 ease-out ${isActive
+                                            ? 'border-emerald-300 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-900 shadow-emerald-100 ring-2 ring-emerald-200 dark:border-emerald-700 dark:from-emerald-950/80 dark:to-teal-950/80 dark:text-emerald-100 dark:ring-emerald-700/60 dark:shadow-emerald-900/30'
+                                            : 'border-slate-200 bg-white text-slate-700 hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-50/60 hover:shadow-md dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200 dark:hover:border-emerald-700 dark:hover:bg-slate-800/80'
+                                            }`}
+                                        >
+                                          <div className="flex items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2">
+                                              <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${isActive
+                                                ? 'bg-emerald-600 text-white dark:bg-emerald-500'
+                                                : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                                                }`}>
+                                                {division.name.charAt(0).toUpperCase()}
+                                              </span>
+                                              <span className="text-sm font-semibold">{division.name}</span>
+                                            </div>
+                                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] ${isActive
+                                              ? 'bg-emerald-600 text-white dark:bg-emerald-500'
+                                              : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
+                                              }`}>
+                                              {deptCount === 0 ? 'All depts' : `${deptCount} dept(s)`}
+                                            </span>
+                                          </div>
+                                          {deptCount > 0 && (
+                                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                              {(mapping?.departments || []).map((dept) => {
+                                                const deptName = typeof dept === 'string'
+                                                  ? departments.find((item) => String(item._id) === String(dept))?.name || dept
+                                                  : dept.name;
+
+                                                return (
+                                                  <span
+                                                    key={typeof dept === 'string' ? dept : dept._id}
+                                                    className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                                  >
+                                                    {deptName}
+                                                  </span>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
+
+                          <div className="space-y-6">
+                            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                              <div className="mb-4 flex items-center gap-3">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-500/10">
+                                  <Users className="h-5 w-5" />
+                                </div>
+                                <div>
+                                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Holiday Group Scope</h3>
+                                  <p className="text-xs text-slate-500">Assign which holiday groups this user can manage</p>
+                                </div>
+                              </div>
+
+                              {holidayGroups.length === 0 ? (
+                                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">
+                                  No holiday groups found.
+                                </div>
+                              ) : (
+                                <div className="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto pr-2 sm:grid-cols-2 xl:grid-cols-4">
+                                  {holidayGroups.map((g) => {
+                                    const selected = (formData.managedHolidayGroupIds || []).includes(g._id);
+                                    return (
+                                      <label key={g._id} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-white p-3 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:bg-slate-800/40 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={selected}
+                                          onChange={(e) => {
+                                            const next = e.target.checked
+                                              ? Array.from(new Set([...(formData.managedHolidayGroupIds || []), g._id]))
+                                              : (formData.managedHolidayGroupIds || []).filter((id: string) => id !== g._id);
+                                            setFormData({ ...formData, managedHolidayGroupIds: next });
+                                          }}
+                                          className="mt-1 h-4 w-4"
+                                        />
+                                        <div className="min-w-0">
+                                          <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{g.name}</div>
+                                          {g.description && (
+                                            <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{g.description}</div>
+                                          )}
+                                        </div>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+
+                            {renderHolidayEmployeeScopeSection(formData, setFormData)}
+
+                            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                              <div className="mb-5 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-500/10">
+                                    <Layers className="h-5 w-5" />
+                                  </div>
+                                  <div>
+                                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">Feature Privileges</h3>
+                                    <p className="text-xs text-slate-500">Grant read/write access to modules</p>
+                                  </div>
+                                </div>
+
+                                <div className="inline-flex items-center rounded-xl bg-slate-200 p-1 shadow-inner dark:bg-slate-700">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const allModules = MODULE_CATEGORIES.flatMap(cat => cat.modules.map(m => m.code));
+                                      const readPermissions = allModules.map(code => `${code}:read`);
+                                      const existingWrite = (formData.featureControl || []).filter(fc => fc.endsWith(':write'));
+                                      setFormData({ ...formData, featureControl: [...readPermissions, ...existingWrite] });
+                                    }}
+                                    className="min-w-[120px] rounded-lg bg-blue-500 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-600 dark:bg-blue-500 dark:hover:bg-blue-400"
+                                  >
+                                    Read All
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const allModules = MODULE_CATEGORIES.flatMap(cat => cat.modules.map(m => m.code));
+                                      const readPermissions = allModules.map(code => `${code}:read`);
+                                      const writePermissions = allModules.map(code => `${code}:write`);
+                                      setFormData({ ...formData, featureControl: [...readPermissions, ...writePermissions] });
+                                    }}
+                                    className="min-w-[120px] rounded-lg bg-emerald-500 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-emerald-600 dark:bg-emerald-500 dark:hover:bg-emerald-400"
+                                  >
+                                    Write All
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="overflow-x-auto">
+                                <table className="min-w-full border-separate border-spacing-y-2 text-left">
+                                  <thead>
+                                    <tr className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                      <th className="px-3 py-2 font-semibold">Features</th>
+                                      <th className="px-3 py-2 font-semibold">Actions</th>
+                                      {activeDivisionScope === 'all' ? (
+                                        <th className="px-3 py-2 text-center font-semibold">All divisions</th>
+                                      ) : (
+                                        <th className="px-3 py-2 text-center font-semibold">
+                                          {divisions.find((item) => String(item._id) === String(activeDivisionScope))?.name || 'Selected division'}
+                                        </th>
+                                      )}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {MODULE_CATEGORIES.flatMap((category) => category.modules.map((module) => {
+                                      const modulePermissionState = getModulePermissionState(formData.featureControl, module.code);
+                                      const hasRead = modulePermissionState !== 'none';
+                                      const hasWrite = modulePermissionState === 'write';
+                                      const hasTerminate = (module as any).terminable ? (formData.featureControl?.includes(`${module.code}:terminate`) || false) : false;
+                                      const hasRelease = (module as any).releasable ? (formData.featureControl?.includes(`${module.code}:release`) || false) : false;
+                                      const scopedDivisionIds = activeDivisionScope === 'all' ? [] : [activeDivisionScope];
+
+                                      const toggleRead = () => {
+                                        const nextState = cyclePermissionState(modulePermissionState);
+                                        setFormData({
+                                          ...formData,
+                                          featureControl: setModulePermissionState(formData.featureControl, module.code, nextState),
+                                        });
+                                      };
+
+                                      const toggleWrite = () => {
+                                        const nextState = modulePermissionState === 'write' ? 'none' : 'write';
+                                        setFormData({
+                                          ...formData,
+                                          featureControl: setModulePermissionState(formData.featureControl, module.code, nextState),
+                                        });
+                                      };
+
+                                      const toggleTerminate = () => {
+                                        const currentFeatures = formData.featureControl || [];
+                                        const terminatePerm = `${module.code}:terminate`;
+                                        const newFeatures = hasTerminate
+                                          ? currentFeatures.filter(f => f !== terminatePerm)
+                                          : [...currentFeatures, terminatePerm];
+                                        setFormData({ ...formData, featureControl: newFeatures });
+                                      };
+
+                                      const toggleRelease = () => {
+                                        const currentFeatures = formData.featureControl || [];
+                                        const releasePerm = `${module.code}:release`;
+                                        const newFeatures = hasRelease
+                                          ? currentFeatures.filter(f => f !== releasePerm)
+                                          : [...currentFeatures, releasePerm];
+                                        setFormData({ ...formData, featureControl: newFeatures });
+                                      };
+
+                                      return (
+                                        <tr key={module.code} className="align-top bg-slate-50/70 dark:bg-slate-800/30">
+                                          <td className="rounded-l-xl px-3 py-3 text-sm font-medium text-slate-700 dark:text-slate-200">{module.label}</td>
+                                          <td className="px-3 py-3">
+                                            <div className="flex flex-wrap gap-2">
+                                              <button
+                                                type="button"
+                                                onClick={toggleRead}
+                                                title={getReadButtonTitle(module.code)}
+                                                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${hasRead
+                                                  ? 'bg-blue-500 text-white shadow-sm'
+                                                  : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                                  }`}
+                                              >
+                                                {getReadButtonLabel(module.code)}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={toggleWrite}
+                                                title={getWriteButtonTitle(module.code)}
+                                                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${hasWrite
+                                                  ? 'bg-emerald-500 text-white shadow-sm'
+                                                  : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                                  }`}
+                                              >
+                                                {getWriteButtonLabel(module.code)}
+                                              </button>
+                                              {(module as any).terminable && (
+                                                <button
+                                                  type="button"
+                                                  onClick={toggleTerminate}
+                                                  title="Terminate: grants access to initiate and manage employee terminations within scope. Independent of Read/Write."
+                                                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasTerminate
+                                                    ? 'bg-orange-500 text-white shadow-sm'
+                                                    : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                                    }`}
+                                                >
+                                                  Terminate
+                                                </button>
+                                              )}
+                                              {(module as any).releasable && (
+                                                <button
+                                                  type="button"
+                                                  onClick={toggleRelease}
+                                                  title={getReleaseButtonTitle(module.code)}
+                                                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRelease
+                                                    ? 'bg-teal-500 text-white shadow-sm'
+                                                    : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                                    }`}
+                                                >
+                                                  Release
+                                                </button>
+                                              )}
+                                              <ModuleGranularPermissionToggles
+                                                module={module as any}
+                                                featureControl={formData.featureControl}
+                                                onChange={(featureControl) => setFormData({ ...formData, featureControl })}
+                                                secondSalaryOrgEnabled={secondSalaryEnabled}
+                                              />
+                                            </div>
+                                          </td>
+                                          {scopedDivisionIds.length === 0 ? (
+                                            <td className="px-2 py-3 text-center">
+                                              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-2 py-2 text-[10px] font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">
+                                                Global access
+                                              </div>
+                                            </td>
+                                          ) : (
+                                            <td key={`${module.code}-${activeDivisionScope}`} className="px-2 py-3">
+                                              <div className="flex flex-wrap gap-2">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const nextState = getDivisionScopedPermissionState(formData.featureControl, module.code, activeDivisionScope) === 'write' ? 'none' : 'read';
+                                                    const nextFeatures = setDivisionScopedPermissionState(
+                                                      formData.featureControl,
+                                                      module.code,
+                                                      activeDivisionScope,
+                                                      nextState
+                                                    );
+                                                    setFormData({ ...formData, featureControl: nextFeatures });
+                                                  }}
+                                                  className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${getDivisionScopedPermissionState(formData.featureControl, module.code, activeDivisionScope) === 'read' || getDivisionScopedPermissionState(formData.featureControl, module.code, activeDivisionScope) === 'write'
+                                                    ? 'bg-blue-500 text-white shadow-sm'
+                                                    : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                                    }`}
+                                                >
+                                                  {getReadButtonLabel(module.code)}
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const currentState = getDivisionScopedPermissionState(formData.featureControl, module.code, activeDivisionScope);
+                                                    const nextState = currentState === 'write' ? 'none' : 'write';
+                                                    const nextFeatures = setDivisionScopedPermissionState(
+                                                      formData.featureControl,
+                                                      module.code,
+                                                      activeDivisionScope,
+                                                      nextState
+                                                    );
+                                                    setFormData({ ...formData, featureControl: nextFeatures });
+                                                  }}
+                                                  className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${getDivisionScopedPermissionState(formData.featureControl, module.code, activeDivisionScope) === 'write'
+                                                    ? 'bg-emerald-500 text-white shadow-sm'
+                                                    : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                                    }`}
+                                                >
+                                                  {getWriteButtonLabel(module.code)}
+                                                </button>
+                                                {(module as any).terminable && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={toggleTerminate}
+                                                    title="Terminate: grants access to initiate and manage employee terminations within scope. Independent of Read/Write."
+                                                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasTerminate
+                                                      ? 'bg-orange-500 text-white shadow-sm'
+                                                      : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                                      }`}
+                                                  >
+                                                    Terminate
+                                                  </button>
+                                                )}
+                                                {(module as any).releasable && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={toggleRelease}
+                                                    title={getReleaseButtonTitle(module.code)}
+                                                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRelease
+                                                      ? 'bg-teal-500 text-white shadow-sm'
+                                                      : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                                      }`}
+                                                  >
+                                                    Release
+                                                  </button>
+                                                )}
+                                                <ModuleGranularPermissionToggles
+                                                  module={module as any}
+                                                  featureControl={formData.featureControl}
+                                                  onChange={(featureControl) => setFormData({ ...formData, featureControl })}
+                                                  secondSalaryOrgEnabled={secondSalaryEnabled}
+                                                />
+                                              </div>
+                                            </td>
+                                          )}
+                                        </tr>
+                                      );
+                                    }))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+
+                            <div className="flex gap-3 pt-2">
+                              <button
+                                type="button"
+                                onClick={() => setCreateStep(1)}
+                                className="flex-1 rounded-xl border-2 border-slate-200 bg-white px-6 py-3.5 text-sm font-bold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                              >
+                                Back
+                              </button>
+                              <button
+                                type="submit"
+                                className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/30 transition-all hover:shadow-xl hover:shadow-indigo-500/40 active:scale-[0.98]"
+                              >
+                                Create User Account
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                   </form>
                 </div>
               </div>
             </div>
-          )}
+          )
+        }
 
         {/* Update User Dialog */}
         {showFromEmployeeDialog && (
@@ -2322,7 +2954,7 @@ export default function UsersPage() {
                                         type="button"
                                         onClick={toggleRead}
                                         title={getReadButtonTitle(module.code)}
-                                        className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRead
+                                        className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${hasRead
                                           ? 'bg-blue-500 text-white shadow-sm'
                                           : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                           }`}
@@ -2333,7 +2965,7 @@ export default function UsersPage() {
                                         type="button"
                                         onClick={toggleWrite}
                                         title={getWriteButtonTitle(module.code)}
-                                        className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasWrite
+                                        className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${hasWrite
                                           ? 'bg-emerald-500 text-white shadow-sm'
                                           : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                           }`}
@@ -2707,7 +3339,7 @@ export default function UsersPage() {
                                       className="flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-white dark:hover:bg-slate-700/50"
                                     >
                                       <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{module.label}</span>
-                                      <div className="flex flex-wrap gap-2 justify-end max-w-[70%]">
+                                      <div className="grid w-full max-w-[22rem] grid-cols-3 gap-2">
                                         <button
                                           type="button"
                                           onClick={toggleRead}

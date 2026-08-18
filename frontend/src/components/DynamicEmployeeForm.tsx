@@ -123,7 +123,9 @@ export default function DynamicEmployeeForm({
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [groupingEnabled, setGroupingEnabled] = useState(false);
   const [fallbackEmployeeGroups, setFallbackEmployeeGroups] = useState<Array<{ _id: string; name: string; isActive?: boolean }>>([]);
-  const [effectiveQualConfig, setEffectiveQualConfig] = useState<QualificationsConfig | null>(null);
+  const [effectiveQualConfig, setEffectiveQualConfig] = useState<
+    (QualificationsConfig & { resolvedScope?: { div: string; dept: string; des: string } }) | null
+  >(null);
   const [qualConfigSource, setQualConfigSource] = useState<'global' | string>('global');
   const prevOrgScopeRef = useRef<{ div: string; dept: string; des: string } | null>(null);
 
@@ -236,7 +238,18 @@ export default function DynamicEmployeeForm({
         if (cancelled) return;
         if (res.success && res.data) {
           const cfg = resolvedToQualificationsConfig(res.data);
-          setEffectiveQualConfig(cfg);
+          setEffectiveQualConfig(
+            cfg
+              ? {
+                  ...cfg,
+                  resolvedScope: {
+                    div: divisionIdStr,
+                    dept: departmentId,
+                    des: designationId,
+                  },
+                }
+              : null
+          );
           setQualConfigSource(res.data.source === 'global' ? 'global' : String(res.data.source));
         } else {
           setEffectiveQualConfig(
@@ -246,6 +259,11 @@ export default function DynamicEmployeeForm({
                   enableCertificateUpload: !!settings.qualifications.enableCertificateUpload,
                   fields: settings.qualifications.fields || [],
                   defaultRows: settings.qualifications.defaultRows || [],
+                  resolvedScope: {
+                    div: divisionIdStr,
+                    dept: departmentId,
+                    des: designationId,
+                  },
                 }
               : null
           );
@@ -258,6 +276,11 @@ export default function DynamicEmployeeForm({
             enableCertificateUpload: !!settings.qualifications.enableCertificateUpload,
             fields: settings.qualifications.fields || [],
             defaultRows: settings.qualifications.defaultRows || [],
+            resolvedScope: {
+              div: divisionIdStr,
+              dept: departmentId,
+              des: designationId,
+            },
           });
           setQualConfigSource('global');
         }
@@ -272,6 +295,13 @@ export default function DynamicEmployeeForm({
 
   useEffect(() => {
     if (!effectiveQualConfig) return;
+
+    // Check if the resolved configuration scope matches the current form scope.
+    // If not, it is a stale config while loading a new one, so skip.
+    const scope = (effectiveQualConfig as any).resolvedScope;
+    if (scope && (scope.div !== divisionIdStr || scope.dept !== departmentId || scope.des !== designationId)) {
+      return;
+    }
 
     const prev = prevOrgScopeRef.current;
     const changed =
@@ -1657,7 +1687,11 @@ export default function DynamicEmployeeForm({
 
   // Render qualifications section
   const renderQualifications = () => {
-    const qualConfig = effectiveQualConfig ?? settings?.qualifications;
+    const qualConfig = effectiveQualConfig
+      ? effectiveQualConfig
+      : settings?.qualifications
+        ? { ...settings.qualifications, defaultRows: [] }
+        : null;
     if (!qualConfig || qualConfig.isEnabled === false) {
       return null;
     }
@@ -1731,7 +1765,7 @@ export default function DynamicEmployeeForm({
     };
 
     const inputCls = (hasError: boolean) =>
-      `w-full min-w-0 rounded-lg border px-2.5 py-1.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-1 focus:ring-green-400/20 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 ${hasError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'}`;
+      `w-full min-w-0 rounded-md border px-1.5 py-1 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-1 focus:ring-green-400/20 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 ${hasError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'}`;
 
     const renderQualificationValueSpan = (value: any, field: QualificationsField) => {
       const display =
@@ -2158,27 +2192,27 @@ export default function DynamicEmployeeForm({
           </div>
         )}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[800px] border-collapse text-left text-sm">
+          <table className="w-full min-w-0 border-collapse text-left text-xs">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-100/80 dark:border-slate-700 dark:bg-slate-800/80">
-                <th className="w-12 whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-300">S.No</th>
+                <th className="w-10 whitespace-nowrap px-2 py-1.5 font-semibold text-slate-700 dark:text-slate-300">S.No</th>
                 {qualFields.map((field) => (
-                  <th key={field.id} className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-300">
+                  <th key={field.id} className="whitespace-nowrap px-2 py-1.5 font-semibold text-slate-700 dark:text-slate-300">
                     {field.label}
                     {field.isRequired && <span className="text-red-500"> *</span>}
                   </th>
                 ))}
-                {!isViewMode && !isEditingExistingEmployee && <th className="w-24 px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-300">Action</th>}
-                {certUploadEnabled && <th className="px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-300">Certificate</th>}
+                {!isViewMode && !isEditingExistingEmployee && <th className="w-16 px-2 py-1.5 font-semibold text-slate-700 dark:text-slate-300">Action</th>}
+                {certUploadEnabled && <th className="px-2 py-1.5 font-semibold text-slate-700 dark:text-slate-300">Certificate</th>}
               </tr>
             </thead>
             <tbody>
               {/* Pre-filled rows: only cells with a value are read-only; empty cells are editable */}
               {defaultRows.map((row: Record<string, unknown>, rowIndex: number) => (
                 <tr key={`default-${rowIndex}`} className="border-b border-slate-100 bg-slate-50/50 dark:border-slate-700/50 dark:bg-slate-800/20">
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{rowIndex + 1}</td>
+                  <td className="px-2 py-1.5 text-slate-600 dark:text-slate-400">{rowIndex + 1}</td>
                   {qualFields.map((field) => (
-                    <td key={field.id} className="align-top px-3 py-2">
+                    <td key={field.id} className="align-top px-2 py-1.5">
                       {hasPreFilledCellValueForDefaultRow(rowIndex, field) ? (
                         field.id === 's_no' ? (
                           <span className="text-slate-600 dark:text-slate-400">{rowIndex + 1}</span>
@@ -2196,9 +2230,9 @@ export default function DynamicEmployeeForm({
                       )}
                     </td>
                   ))}
-                  {!isViewMode && !isEditingExistingEmployee && <td className="align-top px-3 py-2 text-slate-400 dark:text-slate-500">—</td>}
+                  {!isViewMode && !isEditingExistingEmployee && <td className="align-top px-2 py-1.5 text-slate-400 dark:text-slate-500">—</td>}
                   {certUploadEnabled && (
-                    <td className="align-top px-3 py-2">
+                    <td className="align-top px-2 py-1.5">
                       {!isViewMode ? (
                         simpleUpload ? (
                           <input
@@ -2231,14 +2265,14 @@ export default function DynamicEmployeeForm({
                 const qualIndex = qualIndexForApplicant(index);
                 return (
                   <tr key={`app-${index}`} className="border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{defaultRowsToShow.length + index + 1}</td>
+                    <td className="px-2 py-1.5 text-slate-600 dark:text-slate-400">{defaultRowsToShow.length + index + 1}</td>
                     {qualFields.map((field) => (
-                      <td key={field.id} className="align-top px-3 py-2">
+                      <td key={field.id} className="align-top px-2 py-1.5">
                         {renderQualificationCell(field, qualIndex, index)}
                       </td>
                     ))}
                     {!isViewMode && !isEditingExistingEmployee && (
-                      <td className="align-top px-3 py-2">
+                      <td className="align-top px-2 py-1.5">
                         <button
                           type="button"
                           onClick={() => handleRemoveQualification(index)}

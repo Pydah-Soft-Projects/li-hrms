@@ -1788,27 +1788,37 @@ export default function EmployeesPage() {
       const appData = { ...record };
 
       // Reverse Map Qualification Labels -> Field IDs
-      if (appData.qualifications && Array.isArray(appData.qualifications) && formSettings?.qualifications?.fields) {
-        appData.qualifications = appData.qualifications.map((q: any) => {
-          const newQ: any = {};
-          // Preserve certificate meta
-          if (q.certificateUrl) newQ.certificateUrl = q.certificateUrl;
-
-          // Map fields
-          Object.entries(q).forEach(([key, val]) => {
-            if (key === 'certificateUrl') return;
-
-            // Find field definition where label matches key
-            const fieldDef = formSettings.qualifications.fields.find((f: any) => f.label === key);
-            if (fieldDef) {
-              newQ[fieldDef.id] = val;
-            } else {
-              // Keep original if no match (fallback)
-              newQ[key] = val;
-            }
+      if (appData.qualifications && Array.isArray(appData.qualifications)) {
+        const systemKeys = new Set(['isprefilled', 'status', 'certificateurl', 'certificatefile', '_id', 'id', '__v']);
+        appData.qualifications = appData.qualifications.filter((q: any) => {
+          if (!q || typeof q !== 'object') return false;
+          return Object.entries(q).some(([k, v]) => {
+            return !systemKeys.has(k.toLowerCase()) && v !== null && v !== undefined && String(v).trim() !== '';
           });
-          return newQ;
         });
+
+        if (formSettings?.qualifications?.fields) {
+          appData.qualifications = appData.qualifications.map((q: any) => {
+            const newQ: any = {};
+            // Preserve certificate meta
+            if (q.certificateUrl) newQ.certificateUrl = q.certificateUrl;
+
+            // Map fields
+            Object.entries(q).forEach(([key, val]) => {
+              if (key === 'certificateUrl') return;
+
+              // Find field definition where label matches key
+              const fieldDef = formSettings.qualifications.fields.find((f: any) => f.label === key);
+              if (fieldDef) {
+                newQ[fieldDef.id] = val;
+              } else {
+                // Keep original if no match (fallback)
+                newQ[key] = val;
+              }
+            });
+            return newQ;
+          });
+        }
       }
 
       if (hideSecondSalaryField) {
@@ -1860,22 +1870,32 @@ export default function EmployeesPage() {
       globalQualificationsFromFormSettings(formSettings)
     );
     const qualFieldsForEdit = qualConfig?.fields || formSettings?.qualifications?.fields;
-    if (empData.qualifications && Array.isArray(empData.qualifications) && qualFieldsForEdit) {
-      empData.qualifications = empData.qualifications.map((q: any) => {
-        const newQ: any = {};
-        if (q.certificateUrl) newQ.certificateUrl = q.certificateUrl;
-
-        Object.entries(q).forEach(([key, val]) => {
-          if (key === 'certificateUrl') return;
-          const fieldDef = qualFieldsForEdit.find((f: any) => f.label === key);
-          if (fieldDef) {
-            newQ[fieldDef.id] = val;
-          } else {
-            newQ[key] = val;
-          }
+    if (empData.qualifications && Array.isArray(empData.qualifications)) {
+      const systemKeys = new Set(['isprefilled', 'status', 'certificateurl', 'certificatefile', '_id', 'id', '__v']);
+      empData.qualifications = empData.qualifications.filter((q: any) => {
+        if (!q || typeof q !== 'object') return false;
+        return Object.entries(q).some(([k, v]) => {
+          return !systemKeys.has(k.toLowerCase()) && v !== null && v !== undefined && String(v).trim() !== '';
         });
-        return newQ;
       });
+
+      if (qualFieldsForEdit) {
+        empData.qualifications = empData.qualifications.map((q: any) => {
+          const newQ: any = {};
+          if (q.certificateUrl) newQ.certificateUrl = q.certificateUrl;
+
+          Object.entries(q).forEach(([key, val]) => {
+            if (key === 'certificateUrl') return;
+            const fieldDef = qualFieldsForEdit.find((f: any) => f.label === key);
+            if (fieldDef) {
+              newQ[fieldDef.id] = val;
+            } else {
+              newQ[key] = val;
+            }
+          });
+          return newQ;
+        });
+      }
     }
 
     setEditingEmployee(empData as Employee);
@@ -5235,14 +5255,21 @@ export default function EmployeesPage() {
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                   <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Qualifications & Certificates</h3>
                   {(() => {
-                    const quals = selectedApplication.qualifications;
-                    if (!quals || (Array.isArray(quals) && quals.length === 0)) {
+                    const rawQuals = selectedApplication.qualifications || [];
+                    const systemKeys = new Set(['isprefilled', 'status', 'certificateurl', 'certificatefile', '_id', 'id', '__v']);
+                    const quals = Array.isArray(rawQuals) ? rawQuals.filter((qual: any) => {
+                      if (!qual || typeof qual !== 'object') return false;
+                      return Object.entries(qual).some(([k, v]) => {
+                        return !systemKeys.has(k.toLowerCase()) && v !== null && v !== undefined && String(v).trim() !== '';
+                      });
+                    }) : [];
+
+                    if (quals.length === 0) {
                       return <p className="text-sm italic text-slate-500 dark:text-slate-400">No qualifications provided.</p>;
                     }
 
-                    if (Array.isArray(quals)) {
-                      return (
-                        <div className="grid gap-6 sm:grid-cols-2">
+                    return (
+                      <div className="grid gap-6 sm:grid-cols-2">
                           {quals.map((qual: any, idx: number) => {
                             const certificateUrl = qual.certificateUrl;
                             const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
@@ -5313,13 +5340,10 @@ export default function EmployeesPage() {
                                 </div>
                               </div>
                             );
-                          })}
-                        </div>
-                      );
-                    }
-
-                    return <p className="text-sm text-slate-900 dark:text-slate-100">{String(quals)}</p>;
-                  })()}
+                            })}
+                          </div>
+                        );
+                      })()}
                 </div>
 
                 {/* Salary Section - Key Feature */}
@@ -6571,11 +6595,11 @@ export default function EmployeesPage() {
 
                             return (
                               <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
-                                <table className="w-full min-w-[700px] text-left text-sm">
+                                <table className="w-full min-w-0 text-left text-xs">
                                   <thead>
                                     <tr className="border-b border-slate-200 bg-slate-100/80 dark:border-slate-700 dark:bg-slate-800/80">
                                       {qualFields.map((f: any) => (
-                                        <th key={f.id} className="whitespace-nowrap px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">
+                                        <th key={f.id} className="whitespace-nowrap px-2 py-1.5 font-semibold text-slate-700 dark:text-slate-300">
                                           {f.label}
                                         </th>
                                       ))}
@@ -6589,7 +6613,7 @@ export default function EmployeesPage() {
                                             const val = qual[f.id] ?? qual[f.label];
                                             const display = val != null && val !== '' ? (f.type === 'boolean' ? (val ? 'Yes' : 'No') : String(val)) : '—';
                                             return (
-                                              <td key={f.id} className="px-3 py-2 text-slate-700 dark:text-slate-300">
+                                              <td key={f.id} className="px-2 py-1.5 text-slate-700 dark:text-slate-300">
                                                 {display}
                                               </td>
                                             );
