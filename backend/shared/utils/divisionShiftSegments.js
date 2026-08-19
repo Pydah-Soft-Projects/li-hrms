@@ -1,19 +1,51 @@
 const { isCustomEmployeeGroupingEnabled } = require('./customEmployeeGrouping');
+const {
+  toIdString,
+  hasUsableShiftSegments,
+  mergeShiftSegments,
+  applyShiftSegmentOverride,
+} = require('./shiftSegmentOverrides');
 
 function normalizeGender(value) {
   const v = String(value || '').trim();
   return v || 'All';
 }
 
-function toIdString(v) {
-  if (v === null || v === undefined || v === '') return null;
-  if (typeof v === 'string') return v;
-  if (typeof v === 'object' && v._id) return String(v._id);
-  try {
-    return String(v);
-  } catch {
-    return null;
+const divisionShiftsCache = new Map();
+const DIVISION_SHIFTS_CACHE_MS = 30 * 1000;
+
+function pickDivisionShiftConfigSync({
+  division,
+  shiftId,
+  employeeGender = null,
+  employeeGroupId = null,
+  groupingEnabled = false,
+}) {
+  if (!division || !Array.isArray(division.shifts) || !shiftId) return null;
+
+  const targetShiftId = toIdString(shiftId);
+  const gender = normalizeGender(employeeGender);
+  const empGroup = toIdString(employeeGroupId);
+
+  const rows = division.shifts.filter((r) => toIdString(r?.shiftId) === targetShiftId);
+  if (!rows.length) return null;
+
+  let pool = rows;
+  if (groupingEnabled && empGroup) {
+    const groupMatched = rows.filter((r) => toIdString(r?.employee_group_id) === empGroup);
+    if (groupMatched.length) pool = groupMatched;
+  } else if (groupingEnabled) {
+    const noGroup = rows.filter((r) => !toIdString(r?.employee_group_id));
+    if (noGroup.length) pool = noGroup;
   }
+
+  const exactGender = pool.filter((r) => normalizeGender(r?.gender) !== 'All' && normalizeGender(r?.gender).toLowerCase() === gender.toLowerCase());
+  if (exactGender.length) return exactGender[0];
+
+  const allGender = pool.filter((r) => normalizeGender(r?.gender) === 'All');
+  if (allGender.length) return allGender[0];
+
+  return pool[0] || rows[0] || null;
 }
 
 /**
@@ -27,79 +59,95 @@ async function pickDivisionShiftConfig({
   shiftId,
   employeeGender = null,
   employeeGroupId = null,
+  groupingEnabled,
 }) {
   if (!division || !Array.isArray(division.shifts) || !shiftId) return null;
 
-  const groupingEnabled = await isCustomEmployeeGroupingEnabled();
-  const targetShiftId = toIdString(shiftId);
-  const gender = normalizeGender(employeeGender);
-  const empGroup = toIdString(employeeGroupId);
+  const grouping = groupingEnabled !== undefined
+    ? Boolean(groupingEnabled)
+    : await isCustomEmployeeGroupingEnabled();
 
-  const rows = division.shifts.filter((r) => toIdString(r?.shiftId) === targetShiftId);
-  if (!rows.length) return null;
-
-  // If grouping enabled and employee has group, prefer exact group match.
-  let pool = rows;
-  if (groupingEnabled && empGroup) {
-    const groupMatched = rows.filter((r) => toIdString(r?.employee_group_id) === empGroup);
-    if (groupMatched.length) pool = groupMatched;
-  } else if (groupingEnabled) {
-    // No employee group: only rows without group should match (strict)
-    const noGroup = rows.filter((r) => !toIdString(r?.employee_group_id));
-    if (noGroup.length) pool = noGroup;
-  }
-
-  // Gender preference: exact match then All.
-  const exactGender = pool.filter((r) => normalizeGender(r?.gender) !== 'All' && normalizeGender(r?.gender).toLowerCase() === gender.toLowerCase());
-  if (exactGender.length) return exactGender[0];
-
-  const allGender = pool.filter((r) => normalizeGender(r?.gender) === 'All');
-  if (allGender.length) return allGender[0];
-
-  // If configs are malformed (no gender), return first.
-  return pool[0] || rows[0] || null;
+  return pickDivisionShiftConfigSync({
+    division,
+    shiftId,
+    employeeGender,
+    employeeGroupId,
+    groupingEnabled: grouping,
+  });
 }
 
 function hasAnyDivisionSegments(row) {
-  if (!row) return false;
-  const fh = row.firstHalf;
-  const br = row.break;
-  const sh = row.secondHalf;
-  const hasHalf = (seg) => seg && (seg.startTime || seg.endTime);
-  const hasBreak = (seg) => seg && (seg.startTime || seg.endTime);
-  return hasHalf(fh) || hasBreak(br) || hasHalf(sh);
+  return hasUsableShiftSegments(row);
 }
 
 /**
  * Return a "segment-effective" shift object:
  * - keep base shift fields (startTime/endTime/gracePeriod/payableShifts/etc.)
- * - source segment windows from Division.shifts[] config when present
+ * - source segment windows from Division.shifts[] when they have actual times
+ * - if the assignment row is missing / all-null, keep shift master halves
  * - never mutate original shift doc
  */
 function applyDivisionSegmentsToShift(shiftDoc, divisionShiftRow) {
   const base = shiftDoc?.toObject ? shiftDoc.toObject() : { ...(shiftDoc || {}) };
   if (!base) return base;
-  if (!divisionShiftRow || !hasAnyDivisionSegments(divisionShiftRow)) {
-    // Explicitly clear halves if shift master still has them; division is source of truth.
-    return {
-      ...base,
-      firstHalf: null,
-      break: null,
-      secondHalf: null,
-    };
+  return mergeShiftSegments(base, divisionShiftRow);
+}
+
+async function loadDivisionShiftsDoc(divisionId) {
+  const id = toIdString(divisionId);
+  if (!id) return null;
+
+  const hit = divisionShiftsCache.get(id);
+  if (hit && Date.now() - hit.at < DIVISION_SHIFTS_CACHE_MS) {
+    return hit.doc;
   }
 
-  return {
-    ...base,
-    firstHalf: divisionShiftRow.firstHalf || null,
-    break: divisionShiftRow.break || null,
-    secondHalf: divisionShiftRow.secondHalf || null,
-  };
+  const Division = require('../../departments/model/Division');
+  const doc = await Division.findById(id).select('shifts').lean();
+  divisionShiftsCache.set(id, { at: Date.now(), doc: doc || null });
+  return doc || null;
+}
+
+/**
+ * Resolve firstHalf / break / secondHalf for attendance and payroll:
+ * 1. Division.shifts[] row for this shift (when it has times)
+ * 2. Shift.segmentOverrides for this division (when it has times)
+ * 3. Shift master halves
+ *
+ * Null assignment windows no longer wipe the master.
+ */
+async function resolveEffectiveShiftDoc(shiftDoc, opts = {}) {
+  const base = shiftDoc?.toObject ? shiftDoc.toObject() : { ...(shiftDoc || {}) };
+  if (!base) return base;
+
+  let division = opts.division && Array.isArray(opts.division.shifts) ? opts.division : null;
+  const divisionId = toIdString(opts.divisionId) || toIdString(division?._id) || toIdString(division);
+  const shiftId = opts.shiftId || base._id || base.id;
+
+  if (!division && divisionId) {
+    division = await loadDivisionShiftsDoc(divisionId);
+  }
+
+  // Master, then shift.segmentOverrides (if they have times), then Division.shifts[] (if they have times).
+  let effective = applyShiftSegmentOverride(base, divisionId);
+  if (division && Array.isArray(division.shifts) && shiftId) {
+    const row = await pickDivisionShiftConfig({
+      division,
+      shiftId,
+      employeeGender: opts.employeeGender || null,
+      employeeGroupId: opts.employeeGroupId || null,
+      groupingEnabled: opts.groupingEnabled,
+    });
+    effective = applyDivisionSegmentsToShift(effective, row);
+  }
+  return effective;
 }
 
 module.exports = {
   pickDivisionShiftConfig,
+  pickDivisionShiftConfigSync,
   applyDivisionSegmentsToShift,
+  resolveEffectiveShiftDoc,
+  hasAnyDivisionSegments,
   toIdString,
 };
-
