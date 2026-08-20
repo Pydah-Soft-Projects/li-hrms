@@ -17,7 +17,7 @@ const { isCustomEmployeeGroupingEnabled } = require('../../shared/utils/customEm
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 const { getShiftSegmentAssignment } = require('./shiftHalfSegmentService');
 const { flattenShiftConfigsWithGroups } = require('../../shared/utils/shiftAssignmentConfig');
-const { applyShiftSegmentOverride } = require('../../shared/utils/shiftSegmentOverrides');
+const { resolveEffectiveShiftDoc } = require('../../shared/utils/divisionShiftSegments');
 
 /**
  * Convert time string (HH:mm) to minutes from midnight
@@ -938,8 +938,13 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
   const shiftOptions = { rosterStrictWhenPresent: processingMode.rosterStrictWhenPresent === true };
 
   const enrichResultWithSegmentData = async (baseResult, shift, employeeCtx) => {
-    const divisionId = employeeCtx?.divisionId || null;
-    const effectiveShift = applyShiftSegmentOverride(shift, divisionId);
+    const effectiveShift = await resolveEffectiveShiftDoc(shift, {
+      divisionId: employeeCtx?.divisionId || null,
+      division: employeeCtx?.division || null,
+      employeeGender: employeeCtx?.employeeGender || null,
+      employeeGroupId: employeeCtx?.employeeGroupId || null,
+      shiftId: shift?._id || shift?.id,
+    });
     const segmentData = getShiftSegmentAssignment(effectiveShift, date, inTime, outTime, {
       globalLateInGrace,
       globalEarlyOutGrace,
@@ -972,6 +977,9 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
     const employeeCtx = plainEmp
       ? {
         divisionId: plainEmp.division_id?._id || plainEmp.division_id || null,
+        division: plainEmp.division_id && typeof plainEmp.division_id === 'object' ? plainEmp.division_id : null,
+        employeeGender: plainEmp.gender || null,
+        employeeGroupId: plainEmp.employee_group_id || null,
       }
       : { divisionId: null };
 

@@ -25,7 +25,7 @@ const Settings = require('../settings/model/Settings');
 const { getPayrollDateRange } = require('../shared/utils/dateUtils');
 const { getShiftSegmentAssignment } = require('../shifts/services/shiftHalfSegmentService');
 const { refreshAttendanceShiftSegments } = require('../attendance/services/shiftSegmentAttendanceService');
-const { pickDivisionShiftConfig, applyDivisionSegmentsToShift } = require('../shared/utils/divisionShiftSegments');
+const { resolveEffectiveShiftDoc } = require('../shared/utils/divisionShiftSegments');
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -159,17 +159,15 @@ async function run() {
 
       // Division is source of truth for segment definitions. Compute "effective shift" using division config.
       let effectiveShiftDef = shiftDef;
-      if (shiftDef && division) {
+      if (shiftDef) {
         const employee = await Employee.findOne({ emp_no: daily.employeeNumber }).select('gender employee_group_id').lean();
-        const row = await pickDivisionShiftConfig({
+        effectiveShiftDef = await resolveEffectiveShiftDoc(shiftDef, {
           division,
-          shiftId: shiftDef._id,
+          divisionId: division._id,
           employeeGender: employee?.gender || null,
           employeeGroupId: employee?.employee_group_id || null,
+          shiftId: shiftDef._id,
         });
-        effectiveShiftDef = applyDivisionSegmentsToShift(shiftDef, row);
-      } else if (shiftDef) {
-        effectiveShiftDef = applyDivisionSegmentsToShift(shiftDef, null);
       }
 
       const hasSegmentDef = !!(effectiveShiftDef && (effectiveShiftDef.firstHalf || effectiveShiftDef.secondHalf));
@@ -180,7 +178,7 @@ async function run() {
           `${shift.shiftName || effectiveShiftDef?.name || 'NO-SHIFT-DEF'} | ` +
           `IN=${fmtTime(inTime)} OUT=${fmtTime(outTime)} | ` +
           `rowPayable=${rowPayable} dailyPayable=${dailyPayable} | ` +
-          `segment detection: SKIPPED (${!effectiveShiftDef ? 'no shift def' : !hasSegmentDef ? 'no division first/second half config' : 'no in-time'})`
+          `segment detection: SKIPPED (${!effectiveShiftDef ? 'no shift def' : !hasSegmentDef ? 'no first/second half on division or shift master' : 'no in-time'})`
         );
         withoutSegments += 1;
         continue;

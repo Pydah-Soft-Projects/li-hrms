@@ -18,7 +18,7 @@ const {
 const { resolveShiftPresence, shiftHasHalfSegments } = require('./shiftPresenceResolutionService');
 const { resolveGraceFromSettings } = require('./shiftSegmentAttendanceService');
 const { getShiftSegmentAssignment } = require('../../shifts/services/shiftHalfSegmentService');
-const { applyShiftSegmentOverride } = require('../../shared/utils/shiftSegmentOverrides');
+const { resolveEffectiveShiftDoc } = require('../../shared/utils/divisionShiftSegments');
 const {
     normalizeManualOverrides,
     findOverrideOutTime,
@@ -343,6 +343,9 @@ async function recalculateShiftMetrics(pShift, employeeNumber, date, approvedODs
         employeeNumber,
         graceOpts,
         divisionId: configWithMode?.divisionId ?? null,
+        division: configWithMode?.division ?? null,
+        employeeGender: configWithMode?.employeeGender ?? null,
+        employeeGroupId: configWithMode?.employeeGroupId ?? null,
         applyEdgePermissions: true,
     });
 
@@ -478,11 +481,19 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         }
 
         // Step 2: Get employee ID & ODs (before pairing loop — divisionId used in presence resolution)
-        const employee = await Employee.findOne({ emp_no: employeeNumber.toUpperCase() }).select('_id department_id division_id');
+        const employee = await Employee.findOne({ emp_no: employeeNumber.toUpperCase() })
+            .select('_id department_id division_id gender employee_group_id')
+            .populate('division_id', 'shifts');
         const employeeId = employee ? employee._id : null;
         const divisionId = employee?.division_id?._id || employee?.division_id || null;
+        const segmentCtx = {
+            divisionId,
+            division: employee?.division_id && typeof employee.division_id === 'object' ? employee.division_id : null,
+            employeeGender: employee?.gender || null,
+            employeeGroupId: employee?.employee_group_id || null,
+        };
 
-        const configWithMode = { ...generalConfig, processingMode, divisionId };
+        const configWithMode = { ...generalConfig, processingMode, ...segmentCtx };
         const globalLateInGrace = generalConfig?.late_in_grace_time ?? null;
         const globalEarlyOutGrace = generalConfig?.early_out_grace_time ?? null;
 
@@ -738,9 +749,12 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                 if (splitIdx > 0) {
                                     let shouldFold = false;
 
-                                    const effectiveShiftDocForFold = applyShiftSegmentOverride(
+                                    const effectiveShiftDocForFold = await resolveEffectiveShiftDoc(
                                         split.assignedShift,
-                                        divisionId || null
+                                        {
+                                            ...segmentCtx,
+                                            shiftId: split.assignedShift?._id || split.assignedShift,
+                                        }
                                     );
 
                                     if (shiftHasHalfSegments(effectiveShiftDocForFold)) {
@@ -1091,6 +1105,9 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                     employeeNumber,
                     graceOpts,
                     divisionId,
+                    division: segmentCtx.division,
+                    employeeGender: segmentCtx.employeeGender,
+                    employeeGroupId: segmentCtx.employeeGroupId,
                     applyEdgePermissions: true,
                 });
 
@@ -1138,6 +1155,9 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                     employeeNumber,
                     graceOpts: graceSeg,
                     divisionId,
+                    division: segmentCtx.division,
+                    employeeGender: segmentCtx.employeeGender,
+                    employeeGroupId: segmentCtx.employeeGroupId,
                     applyEdgePermissions: true,
                 });
             }

@@ -7,7 +7,7 @@ const Shift = require('../../shifts/model/Shift');
 const Settings = require('../../settings/model/Settings');
 const { getShiftSegmentAssignment } = require('../../shifts/services/shiftHalfSegmentService');
 const Employee = require('../../employees/model/Employee');
-const { applyShiftSegmentOverride } = require('../../shared/utils/shiftSegmentOverrides');
+const { resolveEffectiveShiftDoc } = require('../../shared/utils/divisionShiftSegments');
 
 async function resolveGraceFromSettings() {
   try {
@@ -52,11 +52,20 @@ async function enrichShiftRecordWithSegments(pShift, dateStr, graceOpts, employe
     ctx = employee
       ? {
         divisionId: employee.division_id?._id || employee.division_id || null,
+        division: employee.division_id && typeof employee.division_id === 'object' ? employee.division_id : null,
+        employeeGender: employee.gender || null,
+        employeeGroupId: employee.employee_group_id || null,
       }
       : { divisionId: null };
   }
 
-  const effectiveShiftDoc = applyShiftSegmentOverride(shiftDoc, ctx?.divisionId || null);
+  const effectiveShiftDoc = await resolveEffectiveShiftDoc(shiftDoc, {
+    divisionId: ctx?.divisionId || null,
+    division: ctx?.division || null,
+    employeeGender: ctx?.employeeGender || null,
+    employeeGroupId: ctx?.employeeGroupId || null,
+    shiftId: pShift.shiftId,
+  });
 
   const inTime = new Date(pShift.inTime);
   const outTime = pShift.outTime ? new Date(pShift.outTime) : null;

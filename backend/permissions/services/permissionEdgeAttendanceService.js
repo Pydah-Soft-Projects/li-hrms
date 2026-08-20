@@ -237,9 +237,14 @@ async function refreshAttendanceEdgePermissions(employeeNumber, dateStr) {
 
   const employee = await Employee.findOne({ emp_no: empUpper })
     .populate('division_id')
-    .select('_id division_id')
+    .select('_id division_id gender employee_group_id')
     .lean();
   const divisionId = employee?.division_id?._id || employee?.division_id || null;
+  const segmentCtx = {
+    division: employee?.division_id && typeof employee.division_id === 'object' ? employee.division_id : null,
+    employeeGender: employee?.gender || null,
+    employeeGroupId: employee?.employee_group_id || null,
+  };
   const graceOpts = await resolveGraceFromSettings();
 
   const refreshedShifts = [];
@@ -258,13 +263,13 @@ async function refreshAttendanceEdgePermissions(employeeNumber, dateStr) {
     });
 
     const shiftDoc = pShift.shiftId
-      ? await loadEffectiveShiftDoc(pShift, divisionId)
+      ? await loadEffectiveShiftDoc(pShift, divisionId, segmentCtx)
       : null;
     const expected = pShift.expectedHours || 8;
     applyStatusFromDuration(pShift, expected, shiftDoc);
 
     if (pShift.status === 'PRESENT') {
-      await syncBothHalvesIfShiftLevelPresent(pShift, dateStr, graceOpts, divisionId);
+      await syncBothHalvesIfShiftLevelPresent(pShift, dateStr, graceOpts, divisionId, segmentCtx);
     }
 
     refreshedShifts.push(pShift);
