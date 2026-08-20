@@ -5,6 +5,7 @@
 const Loan = require('../model/Loan');
 const Employee = require('../../employees/model/Employee');
 const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
+const { getProcessingModeForEmployee } = require('../../attendance/services/processingModeResolutionService');
 
 const RUNNING_LOAN_STATUSES = ['approved', 'disbursed', 'active'];
 const CLOSED_LOAN_STATUSES = ['completed'];
@@ -125,7 +126,7 @@ async function computeEmployeeLoanExposure(employeeId, { excludeLoanId } = {}) {
     status: { $nin: ['cancelled', 'rejected', 'draft'] },
     ...excludeFilter,
   })
-    .populate('employeeId', 'employee_name emp_no')
+    .populate('employeeId', 'employee_name emp_no phone_number alt_phone_number')
     .sort({ appliedAt: -1 })
     .lean();
 
@@ -136,7 +137,7 @@ async function computeEmployeeLoanExposure(employeeId, { excludeLoanId } = {}) {
     'guarantors.employeeId': employeeId,
     ...excludeFilter,
   })
-    .populate('employeeId', 'employee_name emp_no')
+    .populate('employeeId', 'employee_name emp_no phone_number alt_phone_number')
     .sort({ appliedAt: -1 })
     .lean();
 
@@ -184,18 +185,25 @@ function monthsBackKeys(count, fromDate = new Date()) {
 
 async function getAttendanceSummaryLast6Months(employeeId, empNo) {
   const monthKeys = monthsBackKeys(6);
-  const summaries = await MonthlyAttendanceSummary.find({
-    employeeId,
-    month: { $in: monthKeys },
-  })
-    .select('month monthName totalDaysInMonth totalPresentDays totalLeaves totalLopLeaves totalPayableShifts')
-    .lean();
+  const [summaries, processingModeDoc] = await Promise.all([
+    MonthlyAttendanceSummary.find({
+      employeeId,
+      month: { $in: monthKeys },
+    })
+      .select('month monthName totalDaysInMonth totalPresentDays totalLeaves totalLopLeaves totalPayableShifts')
+      .lean(),
+    getProcessingModeForEmployee(employeeId).catch(() => null),
+  ]);
+
+  const processingMode = processingModeDoc?.mode || 'multi_shift';
+  const isMultiShift = processingMode === 'multi_shift';
 
   const byMonth = new Map(summaries.map((s) => [s.month, s]));
   const rows = monthKeys.map((month) => {
     const s = byMonth.get(month);
     const workingDays = s?.totalDaysInMonth ?? 0;
-    const present = s?.totalPresentDays ?? 0;
+    const present = round2(s?.totalPresentDays ?? 0);
+    const payableShifts = round2(s?.totalPayableShifts ?? 0);
     const leave = s?.totalLeaves ?? 0;
     const lop = s?.totalLopLeaves ?? 0;
     const attendancePercent = workingDays > 0 ? round2((present / workingDays) * 100) : null;
@@ -204,6 +212,7 @@ async function getAttendanceSummaryLast6Months(employeeId, empNo) {
       monthName: s?.monthName || month,
       workingDays,
       present,
+      payableShifts,
       leave,
       lop,
       attendancePercent,
@@ -213,6 +222,7 @@ async function getAttendanceSummaryLast6Months(employeeId, empNo) {
   const withData = rows.filter((r) => r.workingDays > 0);
   const totalWorking = withData.reduce((s, r) => s + r.workingDays, 0);
   const totalPresent = withData.reduce((s, r) => s + r.present, 0);
+  const totalPayableShifts = round2(withData.reduce((s, r) => s + (r.payableShifts || 0), 0));
   const overallPercentage = totalWorking > 0 ? round2((totalPresent / totalWorking) * 100) : null;
 
   return {
@@ -220,6 +230,9 @@ async function getAttendanceSummaryLast6Months(employeeId, empNo) {
     overallPercentage,
     totalWorkingDays: totalWorking,
     totalPresentDays: totalPresent,
+    totalPayableShifts,
+    processingMode,
+    isMultiShift,
     empNo: empNo || null,
   };
 }

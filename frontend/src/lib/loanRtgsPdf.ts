@@ -7,6 +7,7 @@ import {
   buildFormTheme,
   drawApplicantAndHodSections,
   drawFormPageHeader,
+  resolveLoanPrintEmployee,
   type LoanApplicationPdfContext,
 } from '@/lib/loanApplicationFormPdf';
 
@@ -75,8 +76,11 @@ export function drawLoanRtgsPage(
   y += 14;
 
   const employee = loan.employeeId;
+  const printedEmployee = resolveLoanPrintEmployee(loan);
   const bankRows: [string, string][] = [
-    ['Account holder name', employee?.employee_name || '—'],
+    ['Account holder name', employee?.employee_name || printedEmployee.name || '—'],
+    ['Emp No', printedEmployee.empNo || '—'],
+    ['Phone', printedEmployee.phone || '—'],
     ['Bank name', employee?.bank_name || '—'],
     ['Branch / place', employee?.bank_place || '—'],
     ['Account number', employee?.bank_account_no || '—'],

@@ -140,6 +140,10 @@ export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProp
                                         <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{loan.employeeId?.emp_no || loan.emp_no}</p>
                                     </div>
                                     <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50">
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Phone</p>
+                                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{loan.employeeId?.phone_number || loan.employeeId?.alt_phone_number || 'N/A'}</p>
+                                    </div>
+                                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50">
                                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Division</p>
                                         <div className="flex items-center gap-1.5 mt-0.5">
                                             <Building2 className="h-3 w-3 text-slate-400" />

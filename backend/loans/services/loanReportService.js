@@ -582,7 +582,7 @@ async function fetchLoanRecords(query, { page = 1, limit = 50, startDate, endDat
   const skip = (page - 1) * limit;
   const [loans, total] = await Promise.all([
     Loan.find(listQuery)
-      .populate('employeeId', 'employee_name emp_no profilePhoto department_id designation_id division_id leftDate')
+      .populate('employeeId', 'employee_name emp_no phone_number alt_phone_number profilePhoto department_id designation_id division_id leftDate')
       .populate('department', 'name')
       .populate('division_id', 'name')
       .populate('designation', 'name')
@@ -651,6 +651,7 @@ function loanToExportRow(loan, index) {
     'S.No': index + 1,
     'Emp No': loan.employeeId?.emp_no || loan.emp_no,
     'Employee Name': loan.employeeId?.employee_name || 'N/A',
+    Phone: loan.employeeId?.phone_number || loan.employeeId?.alt_phone_number || 'N/A',
     Division: loan.division_id?.name || 'N/A',
     Department: loan.department?.name || 'N/A',
     Designation: loan.designation?.name || 'N/A',
