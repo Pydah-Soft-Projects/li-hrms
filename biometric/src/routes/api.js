@@ -270,7 +270,8 @@ router.get('/stats', async (req, res) => {
             if (endDate) timeQuery.timestamp.$lte = new Date(endDate);
         }
 
-        const [totalLogs, uniqueEmployeeIds, logTypeStats, goldenUserCount, usersWithFingerprints, deviceCount, categoryCount] = await Promise.all([
+        const hrmsAttendanceSync = require('../services/hrmsAttendanceSyncService');
+        const [totalLogs, uniqueEmployeeIds, logTypeStats, goldenUserCount, usersWithFingerprints, deviceCount, categoryCount, hrmsOutbox] = await Promise.all([
             AttendanceLog.countDocuments(timeQuery),
             AttendanceLog.distinct('employeeId', timeQuery),
             AttendanceLog.aggregate([
@@ -280,7 +281,8 @@ router.get('/stats', async (req, res) => {
             DeviceUser.countDocuments(),
             DeviceUser.countDocuments({ 'fingerprints.0': { $exists: true } }),
             Device.countDocuments(),
-            DeviceCategory.countDocuments()
+            DeviceCategory.countDocuments(),
+            hrmsAttendanceSync.getOutboxCounts()
         ]);
 
         const logsByDevice = await AttendanceLog.aggregate([
@@ -304,6 +306,7 @@ router.get('/stats', async (req, res) => {
                 categoryCount,
                 logTypeBreakdown: logTypeStats,
                 logsByDevice,
+                hrmsOutbox,
                 dateFilter: startDate || endDate ? { startDate: startDate || null, endDate: endDate || null } : null
             },
             devices,
@@ -414,6 +417,57 @@ router.get('/devices/:deviceId/raw', async (req, res) => {
 
     } catch (error) {
         logger.error(`Direct raw fetch failed for ${req.params.deviceId}:`, error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * GET /api/hrms-sync/status
+ * Outbox / catch-up worker snapshot (pending punches waiting for HRMS).
+ */
+router.get('/hrms-sync/status', async (req, res) => {
+    try {
+        const hrmsAttendanceSync = require('../services/hrmsAttendanceSyncService');
+        const scheduler = req.app.get('hrmsCatchUpScheduler');
+        const counts = await hrmsAttendanceSync.getOutboxCounts();
+        const reachable = await hrmsAttendanceSync.isHrmsReachable();
+
+        res.json({
+            success: true,
+            hrmsReachable: reachable,
+            backendUrl: hrmsAttendanceSync.resolveBackendBaseUrl(),
+            counts,
+            worker: scheduler && typeof scheduler.getSnapshot === 'function'
+                ? scheduler.getSnapshot()
+                : { running: false }
+        });
+    } catch (error) {
+        logger.error('Error fetching HRMS sync status:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/hrms-sync/catch-up-now
+ * Run one catch-up drain immediately (HRMS must be reachable).
+ */
+router.post('/hrms-sync/catch-up-now', async (req, res) => {
+    try {
+        const scheduler = req.app.get('hrmsCatchUpScheduler');
+        if (!scheduler || typeof scheduler.tick !== 'function') {
+            return res.status(500).json({ success: false, error: 'Catch-up worker not initialized' });
+        }
+        await scheduler.tick();
+        const hrmsAttendanceSync = require('../services/hrmsAttendanceSyncService');
+        const counts = await hrmsAttendanceSync.getOutboxCounts();
+        res.json({
+            success: true,
+            message: 'Catch-up tick completed',
+            worker: scheduler.getSnapshot(),
+            counts
+        });
+    } catch (error) {
+        logger.error('Error running HRMS catch-up now:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
