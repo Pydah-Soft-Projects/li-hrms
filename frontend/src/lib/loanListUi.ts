@@ -1,7 +1,12 @@
 /** Shared helpers for workspace + superadmin loan / advance list UI */
 
 export type LoanListRow = {
-  employeeId?: { employee_name?: string; emp_no?: string };
+  employeeId?: {
+    employee_name?: string;
+    emp_no?: string;
+    phone_number?: string;
+    alt_phone_number?: string;
+  };
   emp_no?: string;
   status?: string;
   reason?: string;
@@ -140,12 +145,19 @@ export function loanMatchesListOrgAndStatus(
   return true;
 }
 
+export function loanEmployeePhone(loan: {
+  employeeId?: { phone_number?: string; alt_phone_number?: string } | null;
+}): string {
+  return loan.employeeId?.phone_number || loan.employeeId?.alt_phone_number || '';
+}
+
 export function loanMatchesSearch(loan: LoanListRow, searchTerm: string): boolean {
   if (!searchTerm.trim()) return true;
   const q = searchTerm.toLowerCase();
   return (
     (loan.employeeId?.employee_name || '').toLowerCase().includes(q)
     || (loan.emp_no || loan.employeeId?.emp_no || '').toLowerCase().includes(q)
+    || loanEmployeePhone(loan).toLowerCase().includes(q)
     || (loan.reason || '').toLowerCase().includes(q)
   );
 }

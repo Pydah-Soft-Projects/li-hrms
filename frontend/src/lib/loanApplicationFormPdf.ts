@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import type { CompanyProfile } from '@/lib/companyProfile';
 import { formatAddressBlock } from '@/lib/companyProfile';
 import type { LoanAdvancePdfLoan } from '@/lib/loanAdvanceRequestPdf';
+import { loanAttendanceShowsPayableShifts } from '@/lib/loanAttendanceUi';
 
 export type LoanApplicationPdfContext = {
   previousAdvance?: {
@@ -43,8 +44,19 @@ export type LoanApplicationPdfContext = {
     };
   } | null;
   attendanceSummary?: {
-    last6Months?: Array<{ monthName: string; workingDays: number; present: number; leave: number; lop: number; attendancePercent: number | null }>;
+    last6Months?: Array<{
+      monthName: string;
+      workingDays: number;
+      present: number;
+      payableShifts?: number;
+      leave: number;
+      lop: number;
+      attendancePercent: number | null;
+    }>;
     overallPercentage?: number | null;
+    isMultiShift?: boolean;
+    processingMode?: string;
+    totalPayableShifts?: number;
   } | null;
 };
 
@@ -375,6 +387,30 @@ function guarantorDept(
   return '';
 }
 
+function guarantorPhone(
+  g: NonNullable<LoanAdvancePdfLoan['guarantors']>[number] | undefined,
+): string {
+  if (!g) return '';
+  const emp = g.employeeId;
+  if (emp && typeof emp === 'object') {
+    return emp.phone_number || emp.alt_phone_number || '';
+  }
+  return '';
+}
+
+export function resolveLoanPrintEmployee(loan: LoanAdvancePdfLoan): {
+  name: string;
+  empNo: string;
+  phone: string;
+} {
+  const emp = loan.employeeId;
+  return {
+    name: emp?.employee_name || '',
+    empNo: loan.emp_no || emp?.emp_no || '',
+    phone: emp?.phone_number || emp?.alt_phone_number || '',
+  };
+}
+
 function drawGuarantorRow(
   doc: jsPDF,
   index: number,
@@ -387,6 +423,7 @@ function drawGuarantorRow(
   const gName = g?.name || (typeof g?.employeeId === 'object' ? g.employeeId?.employee_name : '') || '';
   const gEmp = g?.emp_no || (typeof g?.employeeId === 'object' ? g.employeeId?.emp_no : '') || '';
   const gDept = guarantorDept(g);
+  const gPhone = g?.phone_number || guarantorPhone(g);
   const consent = guarantorConsentLabel(g);
   const cols = contentColumns(innerX, innerRight);
 
@@ -401,7 +438,8 @@ function drawGuarantorRow(
   drawFieldLine(doc, 'E.No. :', gEmp, midX, y, cols.fieldRight, theme, 9.5);
 
   const deptY = y + ROW_GAP;
-  drawFieldLine(doc, 'Dept. :', gDept, rowX, deptY, cols.fieldRight, theme, 9.5);
+  drawFieldLine(doc, 'Dept. :', gDept, rowX, deptY, midX - 2, theme, 9.5);
+  drawFieldLine(doc, 'Phone :', gPhone, midX, deptY, cols.fieldRight, theme, 9.5);
 
   const consentY = deptY + ROW_GAP;
   drawFieldLine(doc, 'Consent :', consent, rowX, consentY, cols.fieldRight, theme, 9.5);
@@ -461,15 +499,13 @@ export function drawApplicantAndHodSections(
   const { margin, contentW, innerX, innerRight, startY, includeHod = true } = layout;
   const cols = contentColumns(innerX, innerRight);
 
-  const employeeName = loan.employeeId?.employee_name || '';
+  const { name: employeeName, empNo, phone: mobileNumber } = resolveLoanPrintEmployee(loan);
   const designation = loan.designation?.name || '';
   const department = loan.department?.name || '';
   const division = context?.divisionName || context?.sectionName || divisionName(loan) || '';
   const amount = formatRsWhole(loan.amount);
   const reason = (loan.reason || '').trim();
   const appliedDate = formatDateForm(loan.appliedAt);
-  const empNo = loan.emp_no || loan.employeeId?.emp_no || '';
-  const mobileNumber = loan.employeeId?.phone_number || '';
 
   const midX = innerX + (innerRight - innerX) * 0.5;
   const empSigH = measureSignatureBlockHeight(doc, 'Signature of Employee', innerX, midX - 2, 9.5);
@@ -660,22 +696,34 @@ function drawAttendanceSummaryBlock(
   const summary = context?.attendanceSummary;
   if (!summary?.last6Months?.length) return layout.startY;
 
+  const showPayable = loanAttendanceShowsPayableShifts(summary);
+
   let y = layout.startY + 4;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(...theme.label);
-  doc.text(`Attendance Summary (Last 6 Months) — Overall: ${summary.overallPercentage ?? '—'}%`, layout.innerX, y);
+  const overallLabel =
+    summary.overallPercentage != null ? `Overall: ${summary.overallPercentage}%` : 'Overall: —';
+  doc.text(`Attendance Summary (Last 6 Months) — ${overallLabel}`, layout.innerX, y);
   y += 2.5;
 
-  const headers = ['Month', 'Working Days', 'Present', 'Leave', 'LOP', 'Attendance %'];
-  const body = summary.last6Months.map((row) => [
-    row.monthName || '',
-    String(row.workingDays ?? '0'),
-    String(row.present ?? '0'),
-    String(row.leave ?? '0'),
-    String(row.lop ?? '0'),
-    row.attendancePercent != null ? `${row.attendancePercent}%` : '—',
-  ]);
+  const headers = showPayable
+    ? ['Month', 'Working Days', 'Present', 'Payable Shifts', 'Leave', 'LOP', 'Attendance %']
+    : ['Month', 'Working Days', 'Present', 'Leave', 'LOP', 'Attendance %'];
+  const body = summary.last6Months.map((row) => {
+    const base = [
+      row.monthName || '',
+      String(row.workingDays ?? '0'),
+      String(row.present ?? '0'),
+    ];
+    if (showPayable) base.push(String(row.payableShifts ?? '0'));
+    base.push(
+      String(row.leave ?? '0'),
+      String(row.lop ?? '0'),
+      row.attendancePercent != null ? `${row.attendancePercent}%` : '—',
+    );
+    return base;
+  });
 
   autoTable(doc, {
     head: [headers],
@@ -696,14 +744,24 @@ function drawAttendanceSummaryBlock(
       textColor: theme.primary,
       fontStyle: 'bold',
     },
-    columnStyles: {
-      0: { halign: 'left', fontStyle: 'bold' },
-      1: { halign: 'center' },
-      2: { halign: 'center' },
-      3: { halign: 'center' },
-      4: { halign: 'center' },
-      5: { halign: 'center', fontStyle: 'bold' },
-    },
+    columnStyles: showPayable
+      ? {
+          0: { halign: 'left', fontStyle: 'bold' },
+          1: { halign: 'center' },
+          2: { halign: 'center' },
+          3: { halign: 'center', fontStyle: 'bold' },
+          4: { halign: 'center' },
+          5: { halign: 'center' },
+          6: { halign: 'center', fontStyle: 'bold' },
+        }
+      : {
+          0: { halign: 'left', fontStyle: 'bold' },
+          1: { halign: 'center' },
+          2: { halign: 'center' },
+          3: { halign: 'center' },
+          4: { halign: 'center' },
+          5: { halign: 'center', fontStyle: 'bold' },
+        },
   });
 
   return (doc as any).lastAutoTable.finalY + 4;

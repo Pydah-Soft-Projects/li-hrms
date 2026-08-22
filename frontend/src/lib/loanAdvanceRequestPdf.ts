@@ -6,6 +6,7 @@ import {
   drawLoanApplicationFormPage,
   drawLoanApplicationSuretyPage,
   isLoanPostDisbursement,
+  resolveLoanPrintEmployee,
   type LoanApplicationPdfContext,
 } from '@/lib/loanApplicationFormPdf';
 import { drawLoanRtgsPage, shouldIncludeRtgsPage } from '@/lib/loanRtgsPdf';
@@ -27,6 +28,7 @@ export type LoanAdvancePdfLoan = {
     emp_no?: string;
     email?: string;
     phone_number?: string;
+    alt_phone_number?: string;
     gross_salary?: number;
     bank_account_no?: string;
     bank_name?: string;
@@ -76,6 +78,7 @@ export type LoanAdvancePdfLoan = {
   guarantors?: Array<{
     emp_no?: string;
     name?: string;
+    phone_number?: string;
     status?: string;
     actionAt?: string;
     remarks?: string;
@@ -83,6 +86,8 @@ export type LoanAdvancePdfLoan = {
       | {
           employee_name?: string;
           emp_no?: string;
+          phone_number?: string;
+          alt_phone_number?: string;
           department_id?: { name?: string; code?: string } | string;
         }
       | string;
@@ -445,7 +450,9 @@ export function appendLoanSimpleDetailsPage(
     designation: loan.designation,
     division_id: loan.division_id,
   });
-  const empNo = employeeDisplay.empNo || '—';
+  const printedEmployee = resolveLoanPrintEmployee(loan);
+  const empNo = printedEmployee.empNo || employeeDisplay.empNo || '—';
+  const phone = printedEmployee.phone || '—';
   const identityPlain =
     [employeeDisplay.name, employeeDisplay.empDesigLine, employeeDisplay.deptDivLine]
       .filter(Boolean)
@@ -487,7 +494,11 @@ export function appendLoanSimpleDetailsPage(
   doc.setTextColor(15, 23, 42);
   doc.text(identityPlain, margin, y);
   y += 5;
-  const contactBits = [loan.employeeId?.email, loan.employeeId?.phone_number].filter(Boolean);
+  doc.setFontSize(9);
+  doc.setTextColor(30, 41, 59);
+  doc.text(`Emp No: ${empNo}    Phone: ${phone}`, margin, y);
+  y += 5;
+  const contactBits = [loan.employeeId?.email].filter(Boolean);
   if (contactBits.length) {
     doc.setFontSize(8.5);
     doc.setTextColor(100, 116, 139);
@@ -666,10 +677,13 @@ export function appendLoanSimpleDetailsPage(
     autoTable(doc, {
       startY: y + 2,
       margin: { left: margin, right: margin },
-      head: [['Guarantor name', 'Emp. no.', 'Linked employee', 'Status', 'Action on', 'Comments']],
+      head: [['Guarantor name', 'Emp. no.', 'Phone', 'Linked employee', 'Status', 'Action on', 'Comments']],
       body: loan.guarantors.map((g) => [
         (g.name || '—').slice(0, 48),
-        g.emp_no || '—',
+        g.emp_no || (typeof g.employeeId === 'object' ? g.employeeId?.emp_no : '') || '—',
+        g.phone_number ||
+          (typeof g.employeeId === 'object' ? g.employeeId?.phone_number || g.employeeId?.alt_phone_number : '') ||
+          '—',
         guarantorLinkedEmployee(g),
         (g.status || '—').replace(/_/g, ' '),
         formatDateTime(g.actionAt),
@@ -833,14 +847,10 @@ function appendLoanLedgerAndSlips(
   const margin = 16;
   const [pr, pg, pb] = primaryRgb(loan.requestType);
   const title = loan.requestType === 'loan' ? 'Loan statement & slips' : 'Salary advance statement & slips';
-  const empNo =
-    resolveEmployeeListDisplayParts({
-      employeeId: loan.employeeId,
-      emp_no: loan.emp_no,
-      department: loan.department,
-      designation: loan.designation,
-      division_id: loan.division_id,
-    }).empNo || '—';
+  const printedEmployee = resolveLoanPrintEmployee(loan);
+  const empNo = printedEmployee.empNo || '—';
+  const empName = printedEmployee.name || '—';
+  const empPhone = printedEmployee.phone || '—';
   const sorted = sortTxnsChrono(transactions);
   const generated = new Date().toLocaleString('en-IN', {
     day: '2-digit',
@@ -866,6 +876,19 @@ function appendLoanLedgerAndSlips(
 
   drawHeaderBand(`Reference: ${loan._id}`);
   let y = 38;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(71, 85, 105);
+  doc.text('Employee details', margin, y);
+  y += 6;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(30, 41, 59);
+  doc.text(`Name: ${empName}    Emp No: ${empNo}    Phone: ${empPhone}`, margin, y, {
+    maxWidth: pageW - margin * 2,
+  });
+  y += 8;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
@@ -941,7 +964,7 @@ function appendLoanLedgerAndSlips(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text(`Request: ${loan._id}  ·  Employee: ${empNo}`, pageW / 2, slipTop + 13, { align: 'center' });
+    doc.text(`Request: ${loan._id}  ·  ${empName}  ·  Emp No: ${empNo}  ·  Phone: ${empPhone}`, pageW / 2, slipTop + 13, { align: 'center' });
     doc.line(margin, slipTop + 17, pageW - margin, slipTop + 17);
 
     const slipPad = margin + 3;
@@ -1043,14 +1066,7 @@ export async function downloadLoanAdvanceRequestPdf(
     appendLoanLedgerAndSlips(doc, loan, transactions, options);
   }
 
-  const empNo =
-    resolveEmployeeListDisplayParts({
-      employeeId: loan.employeeId,
-      emp_no: loan.emp_no,
-      department: loan.department,
-      designation: loan.designation,
-      division_id: loan.division_id,
-    }).empNo || 'unknown';
+  const empNo = resolveLoanPrintEmployee(loan).empNo || 'unknown';
   const prefix = loan.requestType === 'loan' ? 'Loan' : 'SalaryAdvance';
   const formNo =
     loan.applicationFormNumber != null ? `_No${loan.applicationFormNumber}` : '';

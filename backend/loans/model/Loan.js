@@ -597,7 +597,7 @@ LoanSchema.statics.getPendingForRole = async function (role, departmentIds = [])
   }
 
   return this.find(query)
-    .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary department_id designation_id division_id')
+    .populate('employeeId', 'employee_name emp_no profilePhoto gross_salary email phone_number alt_phone_number department_id designation_id division_id')
     .populate('department', 'name')
     .populate('designation', 'name')
     .sort({ appliedAt: -1 });
