@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const Employee = require('../../employees/model/Employee');
-const { applyDueTimelineToMaster } = require('../../employees/services/employeeTimelineService');
+const { applyDueTimelineToMaster, syncEmployeeOrgDynamicFields } = require('../../employees/services/employeeTimelineService');
 
 /**
  * Apply deferred org/salary timeline segments to Employee master (effectDate reached).
@@ -22,6 +22,7 @@ const startEmployeeTimelineCron = () => {
         for (const emp of employees) {
           const changed = applyDueTimelineToMaster(emp);
           if (changed) {
+            await syncEmployeeOrgDynamicFields(emp);
             await emp.save();
             updated += 1;
           }

@@ -60,6 +60,107 @@ function sameId(a, b) {
   return as === bs;
 }
 
+const ORG_DYNAMIC_KEYS = [
+  'division',
+  'division_name',
+  'department',
+  'department_name',
+  'designation',
+  'designation_name',
+];
+
+function toOrgLabelRef(doc) {
+  if (!doc) return null;
+  const id = doc._id || doc.id;
+  if (!id) return null;
+  return {
+    _id: id,
+    name: doc.name || '',
+    code: doc.code || '',
+    id: String(id),
+  };
+}
+
+function overlayOrgDynamicFields(target, source) {
+  if (!target || typeof target !== 'object' || !source || typeof source !== 'object') {
+    return target;
+  }
+  for (const key of ORG_DYNAMIC_KEYS) {
+    if (source[key] !== undefined) target[key] = source[key];
+  }
+  return target;
+}
+
+/**
+ * Keep denormalized dynamicFields.division / department / designation in sync with master ids.
+ * Transfer/timeline updates master fields but historically left these labels stale.
+ */
+function applyOrgLabelsToDynamicFields(employee, { division, department, designation } = {}) {
+  if (!employee) return false;
+  if (!employee.dynamicFields || typeof employee.dynamicFields !== 'object') {
+    employee.dynamicFields = {};
+  }
+  const df = employee.dynamicFields;
+  let changed = false;
+
+  const applyOne = (doc, objectKey, nameKey) => {
+    const next = toOrgLabelRef(doc);
+    if (!next) return;
+    if (df[nameKey] !== next.name || !sameId(df[objectKey], next._id)) {
+      df[objectKey] = next;
+      df[nameKey] = next.name;
+      changed = true;
+    }
+  };
+
+  applyOne(division, 'division', 'division_name');
+  applyOne(department, 'department', 'department_name');
+  applyOne(designation, 'designation', 'designation_name');
+
+  if (changed && typeof employee.markModified === 'function') {
+    employee.markModified('dynamicFields');
+  }
+  return changed;
+}
+
+function orgDocFromRef(value) {
+  if (!value || typeof value !== 'object') return null;
+  if (value.name && (value._id || value.id)) return value;
+  return null;
+}
+
+async function loadOrgLabelDocs(employee) {
+  const Division = require('../../departments/model/Division');
+  const Department = require('../../departments/model/Department');
+  const Designation = require('../../departments/model/Designation');
+
+  const [division, department, designation] = await Promise.all([
+    orgDocFromRef(employee.division_id)
+      ? Promise.resolve(orgDocFromRef(employee.division_id))
+      : employee.division_id
+        ? Division.findById(employee.division_id).select('name code').lean()
+        : null,
+    orgDocFromRef(employee.department_id)
+      ? Promise.resolve(orgDocFromRef(employee.department_id))
+      : employee.department_id
+        ? Department.findById(employee.department_id).select('name code').lean()
+        : null,
+    orgDocFromRef(employee.designation_id)
+      ? Promise.resolve(orgDocFromRef(employee.designation_id))
+      : employee.designation_id
+        ? Designation.findById(employee.designation_id).select('name code').lean()
+        : null,
+  ]);
+
+  return { division, department, designation };
+}
+
+async function syncEmployeeOrgDynamicFields(employee) {
+  if (!employee) return false;
+  const docs = await loadOrgLabelDocs(employee);
+  return applyOrgLabelsToDynamicFields(employee, docs);
+}
+
 function segmentCoversDate(seg, date) {
   const d = startOfUtcDay(date);
   if (!d || !seg?.effectiveFrom) return false;
@@ -412,4 +513,9 @@ module.exports = {
   findEmployeesMatchingOrgInRange,
   getOrgAsOf,
   getSalaryAsOf,
+  ORG_DYNAMIC_KEYS,
+  toOrgLabelRef,
+  overlayOrgDynamicFields,
+  applyOrgLabelsToDynamicFields,
+  syncEmployeeOrgDynamicFields,
 };

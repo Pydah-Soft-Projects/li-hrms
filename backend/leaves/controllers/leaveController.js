@@ -14,6 +14,7 @@ const {
   getEmployeeIdsInScope,
   checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
+const { applyLeaveOdOrgFilters } = require('../utils/leaveOdOrgFilter');
 const Department = require('../../departments/model/Department');
 const OD = require('../model/OD');
 const leaveRegisterService = require('../services/leaveRegisterService');
@@ -138,18 +139,7 @@ exports.getLeaves = async (req, res) => {
       const ids = String(employeeId).split(',').filter(id => id && id !== 'all');
       if (ids.length > 0) filter.employeeId = ids.length > 1 ? { $in: ids } : ids[0];
     }
-    if (department && department !== 'all') {
-      const ids = String(department).split(',').filter(id => id && id !== 'all');
-      if (ids.length > 0) filter.department = ids.length > 1 ? { $in: ids } : ids[0];
-    }
-    if (division && division !== 'all') {
-      const ids = String(division).split(',').filter(id => id && id !== 'all');
-      if (ids.length > 0) filter.division_id = ids.length > 1 ? { $in: ids } : ids[0];
-    }
-    if (designation && designation !== 'all') {
-      const ids = String(designation).split(',').filter(id => id && id !== 'all');
-      if (ids.length > 0) filter.designation = ids.length > 1 ? { $in: ids } : ids[0];
-    }
+    await applyLeaveOdOrgFilters(filter, { division, department, designation }, Employee);
     applyLeaveOdDateRangeOverlap(filter, fromDate, toDate);
 
     // Search: by emp_no or employee name (resolve employee ids)
@@ -1530,9 +1520,7 @@ exports.getPendingApprovals = async (req, res) => {
     // Apply query filters
     if (leaveType) filter.leaveType = leaveType;
     applyLeaveOdDateRangeOverlap(filter, fromDate, toDate);
-    if (department) filter.department = department;
-    if (division) filter.division_id = division;
-    if (designation) filter.designation = designation;
+    await applyLeaveOdOrgFilters(filter, { division, department, designation }, Employee);
 
     // Search: by emp_no or employee name (resolve employee ids first)
     if (search && String(search).trim()) {
@@ -2403,38 +2391,11 @@ exports.getDashboardStats = async (req, res) => {
       ]
     };
 
-    const leaveFilter = { ...baseFilter };
-    const odFilter = { ...baseFilter };
+    const leaveFilter = { ...baseFilter, $and: [...(baseFilter.$and || [])] };
+    const odFilter = { ...baseFilter, $and: [...(baseFilter.$and || [])] };
 
-    const convertToObjectId = (idArray) => {
-      const validIds = idArray.filter(id => mongoose.Types.ObjectId.isValid(id)).map(id => new mongoose.Types.ObjectId(id));
-      return validIds.length > 0 ? (validIds.length > 1 ? { $in: validIds } : validIds[0]) : null;
-    };
-
-    if (department && department !== 'all') {
-      const ids = String(department).split(',').filter(id => id && id !== 'all');
-      const val = convertToObjectId(ids);
-      if (val) {
-        leaveFilter.department = val;
-        odFilter.department = val;
-      }
-    }
-    if (division && division !== 'all') {
-      const ids = String(division).split(',').filter(id => id && id !== 'all');
-      const val = convertToObjectId(ids);
-      if (val) {
-        leaveFilter.division_id = val;
-        odFilter.division_id = val;
-      }
-    }
-    if (designation && designation !== 'all') {
-      const ids = String(designation).split(',').filter(id => id && id !== 'all');
-      const val = convertToObjectId(ids);
-      if (val) {
-        leaveFilter.designation = val;
-        odFilter.designation = val;
-      }
-    }
+    await applyLeaveOdOrgFilters(leaveFilter, { division, department, designation }, Employee);
+    await applyLeaveOdOrgFilters(odFilter, { division, department, designation }, Employee);
 
     applyLeaveOdDateRangeOverlap(leaveFilter, fromDate, toDate);
     applyLeaveOdDateRangeOverlap(odFilter, fromDate, toDate);
@@ -3719,18 +3680,7 @@ exports.exportReportPDF = async (req, res) => {
       const ids = String(employeeId).split(',').filter(id => id && id !== 'all');
       if (ids.length > 0) baseFilter.employeeId = ids.length > 1 ? { $in: ids } : ids[0];
     }
-    if (department && department !== 'all') {
-      const ids = String(department).split(',').filter(id => id && id !== 'all');
-      if (ids.length > 0) baseFilter.department = ids.length > 1 ? { $in: ids } : ids[0];
-    }
-    if (division && division !== 'all') {
-      const ids = String(division).split(',').filter(id => id && id !== 'all');
-      if (ids.length > 0) baseFilter.division_id = ids.length > 1 ? { $in: ids } : ids[0];
-    }
-    if (designation && designation !== 'all') {
-      const ids = String(designation).split(',').filter(id => id && id !== 'all');
-      if (ids.length > 0) baseFilter.designation = ids.length > 1 ? { $in: ids } : ids[0];
-    }
+    await applyLeaveOdOrgFilters(baseFilter, { division, department, designation }, Employee);
     applyLeaveOdDateRangeOverlap(baseFilter, fromDate, toDate);
 
     // Search logic (resolve employee IDs)
@@ -4008,18 +3958,7 @@ exports.exportReportXLSX = async (req, res) => {
       const ids = String(employeeId).split(',').filter((id) => id && id !== 'all');
       if (ids.length > 0) baseFilter.employeeId = ids.length > 1 ? { $in: ids } : ids[0];
     }
-    if (department && department !== 'all') {
-      const ids = String(department).split(',').filter((id) => id && id !== 'all');
-      if (ids.length > 0) baseFilter.department = ids.length > 1 ? { $in: ids } : ids[0];
-    }
-    if (division && division !== 'all') {
-      const ids = String(division).split(',').filter((id) => id && id !== 'all');
-      if (ids.length > 0) baseFilter.division_id = ids.length > 1 ? { $in: ids } : ids[0];
-    }
-    if (designation && designation !== 'all') {
-      const ids = String(designation).split(',').filter((id) => id && id !== 'all');
-      if (ids.length > 0) baseFilter.designation = ids.length > 1 ? { $in: ids } : ids[0];
-    }
+    await applyLeaveOdOrgFilters(baseFilter, { division, department, designation }, Employee);
     applyLeaveOdDateRangeOverlap(baseFilter, fromDate, toDate);
 
     if (search && String(search).trim()) {

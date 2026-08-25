@@ -792,6 +792,7 @@ async function applyApprovedChanges(doc) {
     applyOrgChange,
     applySalaryChange,
     startOfUtcDay,
+    syncEmployeeOrgDynamicFields,
   } = require('../../employees/services/employeeTimelineService');
 
   const emp = await Employee.findById(doc.employeeId);
@@ -858,6 +859,7 @@ async function applyApprovedChanges(doc) {
     }
 
     doc.timelineApplied = true;
+    await syncEmployeeOrgDynamicFields(emp);
     await emp.save();
     return;
   }
@@ -874,6 +876,7 @@ async function applyApprovedChanges(doc) {
       applyMaster: true,
     });
     doc.timelineApplied = true;
+    await syncEmployeeOrgDynamicFields(emp);
     await emp.save();
   }
 }

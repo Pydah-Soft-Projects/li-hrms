@@ -1182,7 +1182,7 @@ exports.updateEmployee = async (req, res) => {
     // Division/department: workspace cannot change; use Promotions & Transfers with effectDate.
     // Superadmin may change with acknowledgeOrgTimelineRisk + effectDate (writes timeline).
     {
-      const { sameId, applyOrgChange, startOfUtcDay } = require('../services/employeeTimelineService');
+      const { sameId, applyOrgChange, startOfUtcDay, syncEmployeeOrgDynamicFields } = require('../services/employeeTimelineService');
       const nextDiv = employeeData.division_id;
       const nextDept = employeeData.department_id;
       const divChanging =
@@ -1231,6 +1231,8 @@ exports.updateEmployee = async (req, res) => {
           source: 'manual_superadmin',
           applyMaster: true,
         });
+        await syncEmployeeOrgDynamicFields(existingEmployee);
+        existingEmployee._orgDynamicFieldsSynced = true;
         // Prevent double-apply via generic assign; timeline already set master
         delete employeeData.division_id;
         delete employeeData.department_id;
@@ -1711,6 +1713,14 @@ exports.updateEmployee = async (req, res) => {
             updateData.dynamicFields = stripped;
           }
         }
+      }
+
+      if (existingEmployee._orgDynamicFieldsSynced) {
+        const { overlayOrgDynamicFields } = require('../services/employeeTimelineService');
+        updateData.dynamicFields = overlayOrgDynamicFields(
+          { ...(updateData.dynamicFields || existingEmployee.dynamicFields || {}) },
+          existingEmployee.dynamicFields || {}
+        );
       }
 
       // Explicitly handle paidLeaves to ensure it's saved even if 0
