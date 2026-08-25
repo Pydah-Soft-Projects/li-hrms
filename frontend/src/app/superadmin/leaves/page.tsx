@@ -6152,9 +6152,9 @@ function LeavesPageContent() {
 
       {/* OD OUT Evidence Dialog */}
       {showOutEvidenceDialog && selectedItem && detailType === 'od' && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:p-4">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:p-4">
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => !submittingOutEvidence && setShowOutEvidenceDialog(false)} />
-          <div className="relative z-[60] my-auto flex h-auto min-h-0 w-full max-w-lg max-h-[min(92dvh,calc(100dvh-3rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+          <div className="relative z-[111] my-auto flex h-auto min-h-0 w-full max-w-lg max-h-[min(92dvh,calc(100dvh-3rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
             <div className="shrink-0 border-b border-slate-100 px-6 pb-4 pt-6 dark:border-slate-800">
               <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Submit OD OUT Evidence</h2>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
