@@ -3591,39 +3591,16 @@ function LeavesPageContent() {
       const rowType = item.leaveType || item.odType;
       const matchesType = !typeFilter || (rowType && rowType === typeFilter);
 
-      // 4. Division Filter — current employee org OR leave snapshot (transfers keep old snapshot)
-      const itemDivCandidates = [
-        item.employeeId?.division?._id || item.employeeId?.division || item.employeeId?.division_id,
-        item.division_id,
-      ]
-        .filter(Boolean)
-        .map((id) => (typeof id === 'object' ? String(id._id || id) : String(id)));
-      const matchesDivision =
-        leaveFilters.division.length === 0 ||
-        itemDivCandidates.some((id) => leaveFilters.division.includes(id));
+      // 4. Division Filter
+      const itemDivId = item.employeeId?.division?._id || item.employeeId?.division || item.division_id;
+      const matchesDivision = leaveFilters.division.length === 0 || (itemDivId && leaveFilters.division.includes(typeof itemDivId === 'object' ? itemDivId.toString() : itemDivId));
 
       // 5. Department Filter
-      const itemDepCandidates = [
-        item.employeeId?.department?._id || item.employeeId?.department || item.employeeId?.department_id,
-        item.department_id,
-        item.department,
-      ]
-        .filter(Boolean)
-        .map((id) => (typeof id === 'object' ? String(id._id || id) : String(id)));
-      const matchesDepartment =
-        leaveFilters.department.length === 0 ||
-        itemDepCandidates.some((id) => leaveFilters.department.includes(id));
+      const itemDepId = item.employeeId?.department?._id || item.employeeId?.department || item.department_id;
+      const matchesDepartment = leaveFilters.department.length === 0 || (itemDepId && leaveFilters.department.includes(typeof itemDepId === 'object' ? itemDepId.toString() : itemDepId));
       
-      const itemDesCandidates = [
-        item.employeeId?.designation?._id || item.employeeId?.designation || item.employeeId?.designation_id,
-        item.designation_id,
-        item.designation,
-      ]
-        .filter(Boolean)
-        .map((id) => (typeof id === 'object' ? String(id._id || id) : String(id)));
-      const matchesDesignation =
-        leaveFilters.designation.length === 0 ||
-        itemDesCandidates.some((id) => leaveFilters.designation.includes(id));
+      const itemDesId = item.employeeId?.designation?._id || item.employeeId?.designation || item.designation_id;
+      const matchesDesignation = leaveFilters.designation.length === 0 || (itemDesId && leaveFilters.designation.includes(typeof itemDesId === 'object' ? itemDesId.toString() : itemDesId));
 
       // 6. Date Range Filter
       let matchesDate = true;

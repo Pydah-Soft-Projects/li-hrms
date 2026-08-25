@@ -8,7 +8,6 @@ const {
   getEmployeeIdsInScope,
   checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
-const { applyLeaveOdOrgFilters } = require('../utils/leaveOdOrgFilter');
 const Department = require('../../departments/model/Department');
 const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
@@ -317,7 +316,18 @@ exports.getODs = async (req, res) => {
       const ids = String(employeeId).split(',').filter(id => id && id !== 'all');
       if (ids.length > 0) filter.employeeId = ids.length > 1 ? { $in: ids } : ids[0];
     }
-    await applyLeaveOdOrgFilters(filter, { division, department, designation }, Employee);
+    if (department && department !== 'all') {
+      const ids = String(department).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) filter.department = ids.length > 1 ? { $in: ids } : ids[0];
+    }
+    if (division && division !== 'all') {
+      const ids = String(division).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) filter.division_id = ids.length > 1 ? { $in: ids } : ids[0];
+    }
+    if (designation && designation !== 'all') {
+      const ids = String(designation).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) filter.designation = ids.length > 1 ? { $in: ids } : ids[0];
+    }
     if (placeVisited && String(placeVisited).trim()) {
       const placeRegex = new RegExp(`^${String(placeVisited).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
       filter.placeVisited = placeRegex;
@@ -1860,7 +1870,18 @@ exports.getPendingApprovals = async (req, res) => {
 
     if (odType) filter.odType = odType;
     applyLeaveOdDateRangeOverlap(filter, fromDate, toDate);
-    await applyLeaveOdOrgFilters(filter, { division, department, designation }, Employee);
+    if (department && department !== 'all') {
+      const ids = String(department).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) filter.department = ids.length > 1 ? { $in: ids } : ids[0];
+    }
+    if (division && division !== 'all') {
+      const ids = String(division).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) filter.division_id = ids.length > 1 ? { $in: ids } : ids[0];
+    }
+    if (designation && designation !== 'all') {
+      const ids = String(designation).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) filter.designation = ids.length > 1 ? { $in: ids } : ids[0];
+    }
 
     if (search && String(search).trim()) {
       const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
