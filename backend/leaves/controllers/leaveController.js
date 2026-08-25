@@ -14,7 +14,7 @@ const {
   getEmployeeIdsInScope,
   checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
-const { applyLeaveOdOrgFilters } = require('../utils/leaveOdOrgFilter');
+const { applyLeaveOdOrgFilters, resolveLeaveOdOrgFilterClauses } = require('../utils/leaveOdOrgFilter');
 const Department = require('../../departments/model/Department');
 const OD = require('../model/OD');
 const leaveRegisterService = require('../services/leaveRegisterService');
@@ -2394,8 +2394,14 @@ exports.getDashboardStats = async (req, res) => {
     const leaveFilter = { ...baseFilter, $and: [...(baseFilter.$and || [])] };
     const odFilter = { ...baseFilter, $and: [...(baseFilter.$and || [])] };
 
-    await applyLeaveOdOrgFilters(leaveFilter, { division, department, designation }, Employee);
-    await applyLeaveOdOrgFilters(odFilter, { division, department, designation }, Employee);
+    const orgClauses = await resolveLeaveOdOrgFilterClauses(
+      { division, department, designation },
+      Employee
+    );
+    if (orgClauses.length) {
+      leaveFilter.$and.push(...orgClauses);
+      odFilter.$and.push(...orgClauses);
+    }
 
     applyLeaveOdDateRangeOverlap(leaveFilter, fromDate, toDate);
     applyLeaveOdDateRangeOverlap(odFilter, fromDate, toDate);

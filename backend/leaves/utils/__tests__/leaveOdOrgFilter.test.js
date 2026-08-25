@@ -1,7 +1,16 @@
 const mongoose = require('mongoose');
-const { parseQueryObjectIds, applyLeaveOdOrgFilters } = require('../leaveOdOrgFilter');
+const {
+  parseQueryObjectIds,
+  applyLeaveOdOrgFilters,
+  resolveLeaveOdOrgFilterClauses,
+  clearLeaveOdOrgFilterCache,
+} = require('../leaveOdOrgFilter');
 
 describe('leaveOdOrgFilter', () => {
+  beforeEach(() => {
+    clearLeaveOdOrgFilterCache();
+  });
+
   test('parseQueryObjectIds ignores all/empty and invalid', () => {
     expect(parseQueryObjectIds('all')).toEqual([]);
     expect(parseQueryObjectIds('')).toEqual([]);
@@ -14,17 +23,13 @@ describe('leaveOdOrgFilter', () => {
     const divId = new mongoose.Types.ObjectId();
     const empId = new mongoose.Types.ObjectId();
     const Employee = {
-      find: jest.fn(() => ({
-        select: () => ({
-          lean: async () => [{ _id: empId }],
-        }),
-      })),
+      distinct: jest.fn(async () => [empId]),
     };
 
     const filter = { $and: [{ isActive: true }] };
     await applyLeaveOdOrgFilters(filter, { division: String(divId) }, Employee);
 
-    expect(Employee.find).toHaveBeenCalledWith({ division_id: { $in: [divId] } });
+    expect(Employee.distinct).toHaveBeenCalledWith('_id', { division_id: { $in: [divId] } });
     expect(filter.$and).toHaveLength(2);
     expect(filter.$and[1]).toEqual({
       $or: [
@@ -32,5 +37,18 @@ describe('leaveOdOrgFilter', () => {
         { employeeId: { $in: [empId] } },
       ],
     });
+  });
+
+  test('caches employee id lookups within TTL', async () => {
+    const divId = new mongoose.Types.ObjectId();
+    const empId = new mongoose.Types.ObjectId();
+    const Employee = {
+      distinct: jest.fn(async () => [empId]),
+    };
+
+    await resolveLeaveOdOrgFilterClauses({ division: String(divId) }, Employee);
+    await resolveLeaveOdOrgFilterClauses({ division: String(divId) }, Employee);
+
+    expect(Employee.distinct).toHaveBeenCalledTimes(1);
   });
 });
