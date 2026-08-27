@@ -3530,7 +3530,7 @@ function LeavesPageContent() {
 
   // Helper: department/division from the leave/OD request stamp (apply-time), not employee current org
   const getItemDepartmentName = (item: any) => {
-    const { departmentName } = getLeaveOdRecordOrgIds(item as Record<string, unknown>, {
+    const { departmentName } = getLeaveOdRecordOrgIds(item as unknown as Record<string, unknown>, {
       divisions,
       departments,
     });
@@ -3538,7 +3538,7 @@ function LeavesPageContent() {
   };
 
   const getItemDivisionName = (item: any) => {
-    const { divisionName } = getLeaveOdRecordOrgIds(item as Record<string, unknown>, {
+    const { divisionName } = getLeaveOdRecordOrgIds(item as unknown as Record<string, unknown>, {
       divisions,
       departments,
     });
@@ -3601,7 +3601,7 @@ function LeavesPageContent() {
 
       // 4–5. Division / Department filters use request stamp (apply-time), not employee current org
       const { divisionId: itemDivId, departmentId: itemDepId } = getLeaveOdRecordOrgIds(
-        item as Record<string, unknown>
+        item as unknown as Record<string, unknown>
       );
       const matchesDivision =
         leaveFilters.division.length === 0 ||
@@ -3974,7 +3974,7 @@ function LeavesPageContent() {
 
   const isPreviousOrgItem = useCallback(
     (item: LeaveApplication | ODApplication) =>
-      isPreviousOrgLeaveOdForViewer(currentUser as any, item as Record<string, unknown>),
+      isPreviousOrgLeaveOdForViewer(currentUser as any, item as unknown as Record<string, unknown>),
     [currentUser]
   );
 
@@ -3990,7 +3990,7 @@ function LeavesPageContent() {
     // Block approve/reject when the record's stamped org is outside the viewer's scope (e.g. pre-transfer leave seen by new HOD).
     if (
       ['hod', 'manager', 'hr'].includes(currentUser.role) &&
-      !isLeaveOdInUserOrgScope(currentUser as any, item as Record<string, unknown>)
+      !isLeaveOdInUserOrgScope(currentUser as any, item as unknown as Record<string, unknown>)
     ) {
       return false;
     }
@@ -4076,7 +4076,7 @@ function LeavesPageContent() {
         <span className={statusClassName}>{statusLabel}</span>
         {showPreviousOrg && (
           <PreviousOrgScopeBadge
-            item={item as Record<string, unknown>}
+            item={item as unknown as Record<string, unknown>}
             size={options?.badgeSize || 'sm'}
           />
         )}
@@ -4095,7 +4095,7 @@ function LeavesPageContent() {
 
     const uniqueDivisions = new Set(
       dataToCheck
-        .map((item) => getLeaveOdRecordOrgIds(item as Record<string, unknown>, { divisions, departments }).divisionName)
+        .map((item) => getLeaveOdRecordOrgIds(item as unknown as Record<string, unknown>, { divisions, departments }).divisionName)
         .filter(Boolean)
     );
 
@@ -4687,7 +4687,7 @@ function LeavesPageContent() {
                           {currentUser?.role !== 'employee' && (
                             <td className="px-6 py-3.5">
                               <EmployeeIdentityFromRecord
-                                record={leave as Record<string, unknown>}
+                                record={leave as unknown as Record<string, unknown>}
                                 lookups={{ divisions, departments, designations }}
                                 size="sm"
                                 avatarTone="blue"
@@ -4794,7 +4794,7 @@ function LeavesPageContent() {
                     >
                       <div className="flex justify-between items-start mb-3">
                                                 <EmployeeIdentityFromRecord
-                          record={leave as Record<string, unknown>}
+                          record={leave as unknown as Record<string, unknown>}
                           lookups={{ divisions, departments, designations }}
                           size="md"
                           avatarTone="blue"
@@ -4914,7 +4914,7 @@ function LeavesPageContent() {
                           {currentUser?.role !== 'employee' && (
                             <td className="px-6 py-3.5">
                               <EmployeeIdentityFromRecord
-                                record={od as Record<string, unknown>}
+                                record={od as unknown as Record<string, unknown>}
                                 lookups={{ divisions, departments, designations }}
                                 size="sm"
                                 avatarTone="violet"
@@ -5024,7 +5024,7 @@ function LeavesPageContent() {
                     >
                       <div className="flex justify-between items-start mb-3">
                                                 <EmployeeIdentityFromRecord
-                          record={od as Record<string, unknown>}
+                          record={od as unknown as Record<string, unknown>}
                           lookups={{ divisions, departments, designations }}
                           size="md"
                           avatarTone="violet"
@@ -5145,7 +5145,7 @@ function LeavesPageContent() {
                             <tr key={leave._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer" onClick={() => openDetailDialog(leave, 'leave')}>
                               <td className="px-6 py-3.5">
                                                                 <EmployeeIdentityFromRecord
-                                  record={leave as Record<string, unknown>}
+                                  record={leave as unknown as Record<string, unknown>}
                                   lookups={{ divisions, departments, designations }}
                                   size="md"
                                   avatarTone="blue"
@@ -5199,7 +5199,7 @@ function LeavesPageContent() {
                           {/* Header: name, division & department beside name (no labels), emp no, designation under name */}
                           <div className="flex items-start justify-between gap-3 mb-4">
                             <EmployeeIdentityFromRecord
-                              record={leave as Record<string, unknown>}
+                              record={leave as unknown as Record<string, unknown>}
                               lookups={{ divisions, departments, designations }}
                               size="md"
                               avatarTone="blue"
@@ -5318,7 +5318,7 @@ function LeavesPageContent() {
                             <tr key={od._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer" onClick={() => openDetailDialog(od, 'od')}>
                               <td className="px-6 py-3.5">
                                                                 <EmployeeIdentityFromRecord
-                                  record={od as Record<string, unknown>}
+                                  record={od as unknown as Record<string, unknown>}
                                   lookups={{ divisions, departments, designations }}
                                   size="md"
                                   avatarTone="violet"
@@ -5370,7 +5370,7 @@ function LeavesPageContent() {
                           {/* Header: name, division & department beside name (no labels), emp no, designation under name */}
                           <div className="flex items-start justify-between gap-3 mb-4">
                             <EmployeeIdentityFromRecord
-                              record={od as Record<string, unknown>}
+                              record={od as unknown as Record<string, unknown>}
                               lookups={{ divisions, departments, designations }}
                               size="md"
                               avatarTone="violet"
@@ -5515,7 +5515,7 @@ function LeavesPageContent() {
                           {/* Header */}
                           <div className="flex items-start justify-between gap-3 mb-4">
                             <EmployeeIdentityFromRecord
-                              record={leave as Record<string, unknown>}
+                              record={leave as unknown as Record<string, unknown>}
                               lookups={{ divisions, departments, designations }}
                               size="md"
                               avatarTone="blue"
@@ -5563,7 +5563,7 @@ function LeavesPageContent() {
                           {/* Header */}
                           <div className="flex items-start justify-between gap-3 mb-4">
                             <EmployeeIdentityFromRecord
-                              record={od as Record<string, unknown>}
+                              record={od as unknown as Record<string, unknown>}
                               lookups={{ divisions, departments, designations }}
                               size="md"
                               avatarTone="violet"
@@ -7177,7 +7177,7 @@ function LeavesPageContent() {
                         Previous org record
                       </p>
                       <p className="mt-1 leading-relaxed">
-                        {getPreviousOrgActionHint(selectedItem as Record<string, unknown>)}
+                        {getPreviousOrgActionHint(selectedItem as unknown as Record<string, unknown>)}
                       </p>
                     </div>
                   )}
