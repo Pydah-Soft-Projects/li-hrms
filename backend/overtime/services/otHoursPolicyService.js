@@ -1,7 +1,10 @@
 /**
  * Applies configured OT hour rules (threshold, minimum, minute grid, whole-hour rounding).
  * All values are in decimal hours (e.g. 1.5 = 90 minutes).
+ * Slabs may be gender-scoped: All | Male | Female | Other (exact gender preferred over All).
  */
+
+const { pickByGender, sanitizeSlabGender } = require('../../shared/utils/slabGender');
 
 /**
  * Snap duration to nearest N-minute increment (e.g. 15 → nearest quarter-hour).
@@ -23,6 +26,8 @@ function normalizeRanges(ranges) {
       minMinutes: Number(r?.minMinutes),
       maxMinutes: Number(r?.maxMinutes),
       creditedMinutes: Number(r?.creditedMinutes),
+      gender: sanitizeSlabGender(r?.gender),
+      label: r?.label != null ? String(r.label) : '',
     }))
     .filter(
       (r) =>
@@ -43,10 +48,12 @@ function normalizeRanges(ranges) {
 /**
  * @param {number} rawHours - Raw OT in decimal hours
  * @param {object} policy - Merged policy from otConfigResolver
+ * @param {{ employeeGender?: string|null }} [options]
  * @returns {{ eligible: boolean, finalHours: number, rawHours: number, steps: string[] }}
  */
-function applyOtHoursPolicy(rawHours, policy) {
+function applyOtHoursPolicy(rawHours, policy, options = {}) {
   const steps = [];
+  const employeeGender = options.employeeGender ?? policy?.employeeGender ?? null;
   const recognitionMode = policy.recognitionMode || 'none';
   const thresholdHours =
     policy.thresholdHours !== undefined && policy.thresholdHours !== null
@@ -65,6 +72,7 @@ function applyOtHoursPolicy(rawHours, policy) {
   if (h < 0) h = 0;
   const rawMinutes = Math.round(h * 60);
   steps.push(`raw=${h.toFixed(4)}h`);
+  if (employeeGender) steps.push(`gender=${sanitizeSlabGender(employeeGender)}`);
 
   if (recognitionMode === 'threshold_full' && thresholdHours != null && thresholdHours > 0) {
     if (h + 1e-9 < thresholdHours) {
@@ -96,7 +104,10 @@ function applyOtHoursPolicy(rawHours, policy) {
   }
 
   if (ranges.length > 0) {
-    const matched = ranges.find((r) => rawMinutes >= r.minMinutes && rawMinutes <= r.maxMinutes);
+    const minuteMatches = ranges.filter(
+      (r) => rawMinutes >= r.minMinutes && rawMinutes <= r.maxMinutes
+    );
+    const matched = pickByGender(minuteMatches, employeeGender);
     if (!matched) {
       steps.push('range_no_match->0');
       return {
@@ -111,8 +122,19 @@ function applyOtHoursPolicy(rawHours, policy) {
     }
     h = matched.creditedMinutes / 60;
     steps.push(
-      `range_match(${Math.round(rawMinutes)}m in ${matched.minMinutes}-${matched.maxMinutes}m -> ${matched.creditedMinutes}m)`
+      `range_match(${Math.round(rawMinutes)}m in ${matched.minMinutes}-${matched.maxMinutes}m gender=${matched.gender} -> ${matched.creditedMinutes}m)`
     );
+    const creditedMinutes = Math.round(h * 60);
+    h = Math.round(h * 100) / 100;
+    return {
+      eligible: h > 1e-6,
+      finalHours: h,
+      rawHours: Number(rawHours) || 0,
+      rawMinutes,
+      creditedMinutes,
+      matchedRange: matched,
+      steps: h > 1e-6 ? steps : [...steps, 'final_zero'],
+    };
   } else if (Number.isFinite(roundingMinutes) && roundingMinutes > 0) {
     const before = h;
     h = snapToNearestMinuteGrid(h, roundingMinutes);
@@ -135,16 +157,13 @@ function applyOtHoursPolicy(rawHours, policy) {
   const eligible = h > 1e-6;
   if (!eligible) steps.push('final_zero');
   const creditedMinutes = Math.round(h * 60);
-  const matchedRange = ranges.length
-    ? ranges.find((r) => rawMinutes >= r.minMinutes && rawMinutes <= r.maxMinutes) || null
-    : null;
   return {
     eligible,
     finalHours: h,
     rawHours: Number(rawHours) || 0,
     rawMinutes,
     creditedMinutes,
-    matchedRange,
+    matchedRange: null,
     steps,
   };
 }

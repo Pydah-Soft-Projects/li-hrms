@@ -82,6 +82,52 @@ describe('applyOtHoursPolicy', () => {
     expect(r.finalHours).toBe(1);
   });
 
+  it('range mapping prefers Female slab over All', () => {
+    const r = applyOtHoursPolicy(
+      0.7,
+      {
+        ...base,
+        otHourRanges: [
+          { minMinutes: 30, maxMinutes: 60, creditedMinutes: 30, gender: 'All' },
+          { minMinutes: 30, maxMinutes: 60, creditedMinutes: 60, gender: 'Female' },
+        ],
+      },
+      { employeeGender: 'Female' }
+    );
+    expect(r.eligible).toBe(true);
+    expect(r.finalHours).toBe(1);
+    expect(r.matchedRange.gender).toBe('Female');
+  });
+
+  it('range mapping uses All when gender-specific slab missing', () => {
+    const r = applyOtHoursPolicy(
+      0.7,
+      {
+        ...base,
+        otHourRanges: [
+          { minMinutes: 30, maxMinutes: 60, creditedMinutes: 45, gender: 'All' },
+          { minMinutes: 30, maxMinutes: 60, creditedMinutes: 60, gender: 'Female' },
+        ],
+      },
+      { employeeGender: 'Male' }
+    );
+    expect(r.eligible).toBe(true);
+    expect(r.finalHours).toBe(0.75);
+  });
+
+  it('range mapping: no match for other gender without All -> zero', () => {
+    const r = applyOtHoursPolicy(
+      0.7,
+      {
+        ...base,
+        otHourRanges: [{ minMinutes: 30, maxMinutes: 60, creditedMinutes: 60, gender: 'Female' }],
+      },
+      { employeeGender: 'Male' }
+    );
+    expect(r.eligible).toBe(false);
+    expect(r.finalHours).toBe(0);
+  });
+
   it('range mapping: no match -> zero', () => {
     const r = applyOtHoursPolicy(0.2, {
       ...base,

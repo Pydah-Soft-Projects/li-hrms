@@ -294,7 +294,9 @@ const createOTRequest = async (data, userId, options = {}) => {
     let otHoursRaw = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
 
     const mergedPolicy = mergedPolicyEarly;
-    const policyResult = applyOtHoursPolicy(otHoursRaw, mergedPolicy);
+    const policyResult = applyOtHoursPolicy(otHoursRaw, mergedPolicy, {
+      employeeGender: employee.gender || null,
+    });
     if (!policyResult.eligible) {
       return {
         success: false,
@@ -802,7 +804,9 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
     const deptId = employee.department_id?._id || employee.department_id;
     const divId = employee.division_id?._id || employee.division_id;
     const mergedPolicy = await getMergedOtConfig(deptId, divId);
-    const policyResult = applyOtHoursPolicy(rawExtra, mergedPolicy);
+    const policyResult = applyOtHoursPolicy(rawExtra, mergedPolicy, {
+      employeeGender: employee.gender || null,
+    });
 
     if (!policyResult.eligible) {
       return {
@@ -919,11 +923,11 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
 /**
  * Run OT hour policy for a raw value (optional draft overrides on top of merged DB settings).
  */
-const simulateOtHoursPolicy = async (rawHours, departmentId, divisionId, policyDraft) => {
+const simulateOtHoursPolicy = async (rawHours, departmentId, divisionId, policyDraft, employeeGender = null) => {
   const merged = await getMergedOtConfig(departmentId || null, divisionId || null);
   const policy =
     policyDraft && typeof policyDraft === 'object' ? { ...merged, ...policyDraft } : merged;
-  const result = applyOtHoursPolicy(Number(rawHours), policy);
+  const result = applyOtHoursPolicy(Number(rawHours), policy, { employeeGender });
   return {
     ...result,
     policyUsed: {
@@ -964,7 +968,9 @@ const previewConvertExtraHoursToOT = async (employeeId, employeeNumber, date) =>
     const deptId = employee.department_id?._id || employee.department_id;
     const divId = employee.division_id?._id || employee.division_id;
     const mergedPolicy = await getMergedOtConfig(deptId, divId);
-    const policyResult = applyOtHoursPolicy(rawExtra, mergedPolicy);
+    const policyResult = applyOtHoursPolicy(rawExtra, mergedPolicy, {
+      employeeGender: employee.gender || null,
+    });
     const existingOT = await OT.findOne({
       employeeId,
       date,

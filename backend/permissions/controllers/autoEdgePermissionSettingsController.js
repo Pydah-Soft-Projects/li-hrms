@@ -1,4 +1,5 @@
 const AutoEdgePermissionSettings = require('../model/AutoEdgePermissionSettings');
+const { sanitizeSlabGender } = require('../../shared/utils/slabGender');
 
 const DEFAULT_SETTINGS = {
   isEnabled: false,
@@ -23,6 +24,7 @@ function sanitizeRange(range) {
       ? 1
       : toNumber(range.minimumMinutes),
     description: String(range.description || '').trim(),
+    gender: sanitizeSlabGender(range.gender),
   };
 }
 

@@ -50,7 +50,7 @@ const OvertimeSettingsSchema = new mongoose.Schema(
             min: 0,
             max: 59,
         },
-        /** Slab mapping: raw OT range (minutes) -> credited OT (minutes) */
+        /** Slab mapping: raw OT range (minutes) -> credited OT (minutes); optional gender */
         otHourRanges: {
             type: [
                 {
@@ -58,6 +58,12 @@ const OvertimeSettingsSchema = new mongoose.Schema(
                     maxMinutes: { type: Number, required: true, min: 0 },
                     creditedMinutes: { type: Number, required: true, min: 0 },
                     label: { type: String, default: '', trim: true },
+                    gender: {
+                        type: String,
+                        enum: ['All', 'Male', 'Female', 'Other'],
+                        default: 'All',
+                        trim: true,
+                    },
                 },
             ],
             default: [],

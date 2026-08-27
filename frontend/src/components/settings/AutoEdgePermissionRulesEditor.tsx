@@ -13,6 +13,8 @@ import { SettingsOutlineButton } from './SettingsPageShell';
 import { DurationTimeInput } from './DurationTimeInput';
 import { minutesToHHMM, hhmmToMinutes, hoursToHHMM, hhmmToHours } from './otTimeHelpers';
 
+export type SlabGender = 'All' | 'Male' | 'Female' | 'Other';
+
 export type ShiftRange = {
   _id?: string;
   minShiftHours: number | '';
@@ -20,6 +22,7 @@ export type ShiftRange = {
   minimumMinutes: number | '';
   allowedMinutes: number | '';
   description?: string;
+  gender?: SlabGender;
 };
 
 export type AutoRuleSet = {
@@ -34,6 +37,7 @@ export const defaultRange = (): ShiftRange => ({
   minimumMinutes: 1,
   allowedMinutes: '',
   description: '',
+  gender: 'All',
 });
 
 type ApiShiftRange = {
@@ -43,9 +47,16 @@ type ApiShiftRange = {
   minimumMinutes?: number;
   allowedMinutes: number;
   description?: string;
+  gender?: string;
 };
 
 type ApiRuleSet = { shiftDurationRanges?: ApiShiftRange[] };
+
+function normalizeGender(value?: string | null): SlabGender {
+  const v = String(value || '').trim();
+  if (v === 'Male' || v === 'Female' || v === 'Other' || v === 'All') return v;
+  return 'All';
+}
 
 export const toLocalRuleSet = (rs?: ApiRuleSet): AutoRuleSet => ({
   shiftDurationRanges: (rs?.shiftDurationRanges || []).map((r) => ({
@@ -55,6 +66,7 @@ export const toLocalRuleSet = (rs?: ApiRuleSet): AutoRuleSet => ({
     minimumMinutes: r.minimumMinutes ?? 1,
     allowedMinutes: r.allowedMinutes,
     description: r.description,
+    gender: normalizeGender(r.gender),
   })),
 });
 
@@ -67,6 +79,7 @@ export function normalizeAutoRulesForApi(rules: AutoRuleSet) {
         range.minimumMinutes === '' || range.minimumMinutes === undefined ? 1 : Number(range.minimumMinutes),
       allowedMinutes: Number(range.allowedMinutes),
       description: String(range.description || '').trim(),
+      gender: normalizeGender(range.gender),
     })),
   };
 }
@@ -96,6 +109,23 @@ export function validateAutoRuleSets(
         return `${set.label}: minimum trigger cannot exceed allowed duration.`;
       }
     }
+
+    const byGender = new Map<string, ShiftRange[]>();
+    for (const range of set.rules.shiftDurationRanges || []) {
+      const g = normalizeGender(range.gender);
+      if (!byGender.has(g)) byGender.set(g, []);
+      byGender.get(g)!.push(range);
+    }
+    for (const [gender, group] of byGender.entries()) {
+      const sorted = [...group].sort(
+        (a, b) => Number(a.minShiftHours) - Number(b.minShiftHours)
+      );
+      for (let i = 0; i < sorted.length - 1; i += 1) {
+        if (Number(sorted[i].maxShiftHours) > Number(sorted[i + 1].minShiftHours)) {
+          return `${set.label}: ranges cannot overlap for gender ${gender}.`;
+        }
+      }
+    }
   }
   return null;
 }
@@ -115,7 +145,7 @@ export function AutoEdgePermissionRulesEditor({ title, help, ruleSet, onChange }
   const updateRange = (index: number, field: keyof ShiftRange, value: string) => {
     const nextRanges = ranges.map((range, idx) => {
       if (idx !== index) return range;
-      if (field === 'description') return { ...range, [field]: value };
+      if (field === 'description' || field === 'gender') return { ...range, [field]: value };
       return { ...range, [field]: value === '' ? '' : Number(value) };
     });
     onChange({ shiftDurationRanges: nextRanges });
@@ -131,6 +161,9 @@ export function AutoEdgePermissionRulesEditor({ title, help, ruleSet, onChange }
         <div>
           <p className={settingsSectionTitleClass}>{title}</p>
           {help ? <p className={settingsFieldHelpClass}>{help}</p> : null}
+          <p className={settingsFieldHelpClass}>
+            Gender: All applies to everyone; Male/Female/Other override All when they match.
+          </p>
         </div>
         <SettingsOutlineButton onClick={addRange}>
           <Plus className="h-3.5 w-3.5" />
@@ -147,7 +180,8 @@ export function AutoEdgePermissionRulesEditor({ title, help, ruleSet, onChange }
         </div>
       ) : (
         <div className="space-y-2">
-          <div className="hidden gap-2 px-1 text-[9px] font-semibold uppercase tracking-widest text-stone-400 md:grid md:grid-cols-[1fr_1fr_1fr_1fr_1.4fr_auto]">
+          <div className="hidden gap-2 px-1 text-[9px] font-semibold uppercase tracking-widest text-stone-400 md:grid md:grid-cols-[0.85fr_1fr_1fr_1fr_1fr_1.2fr_auto]">
+            <span>Gender</span>
             <span>Min shift (HH:MM)</span>
             <span>Max shift (HH:MM)</span>
             <span>Min trigger (HH:MM)</span>
@@ -158,9 +192,20 @@ export function AutoEdgePermissionRulesEditor({ title, help, ruleSet, onChange }
           {ranges.map((range, index) => (
             <div
               key={range._id || index}
-              className="grid grid-cols-1 gap-2 border p-3 md:grid-cols-[1fr_1fr_1fr_1fr_1.4fr_auto]"
+              className="grid grid-cols-1 gap-2 border p-3 md:grid-cols-[0.85fr_1fr_1fr_1fr_1fr_1.2fr_auto]"
               style={settingsLedgerBorder}
             >
+              <select
+                value={normalizeGender(range.gender)}
+                onChange={(e) => updateRange(index, 'gender', e.target.value)}
+                className={`${inputCls} min-w-0 text-xs`}
+                style={inputStyle}
+              >
+                <option value="All">All</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
               <DurationTimeInput
                 allowEmpty
                 value={
