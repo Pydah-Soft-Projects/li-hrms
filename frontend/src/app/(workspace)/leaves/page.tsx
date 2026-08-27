@@ -52,7 +52,14 @@ import {
   type LeaveBoundaryInput,
 } from '@/lib/leaveDayRange';
 import LeaveDayPortionControls from '@/components/leave/LeaveDayPortionControls';
+import { PreviousOrgScopeBadge } from '@/components/leave/PreviousOrgScopeBadge';
 import ODDetailCard from '@/components/od/ODDetailCard';
+import {
+  getLeaveOdRecordOrgIds,
+  getPreviousOrgActionHint,
+  isLeaveOdInUserOrgScope,
+  isPreviousOrgLeaveOdForViewer,
+} from '@/lib/leaveOdOrgScope';
 import {
   buildStatusLabelMap,
   formatLeaveStatusLabel as fmtLeaveStatus,
@@ -3521,20 +3528,21 @@ function LeavesPageContent() {
   };
 
 
-  // Helper: get department name from item (top-level or nested on employeeId)
+  // Helper: department/division from the leave/OD request stamp (apply-time), not employee current org
   const getItemDepartmentName = (item: any) => {
-    const populated = item?.department?.name || (item?.employeeId as any)?.department?.name;
-    const fallback = item?.department_name;
-    const val = populated || fallback || '';
-    return val === 'N/A' || val === 'undefined' ? '' : val;
+    const { departmentName } = getLeaveOdRecordOrgIds(item as Record<string, unknown>, {
+      divisions,
+      departments,
+    });
+    return departmentName === 'N/A' || departmentName === 'undefined' ? '' : departmentName;
   };
 
-  // Helper: get division name from item (top-level or nested)
   const getItemDivisionName = (item: any) => {
-    const populated = (item?.employeeId as any)?.division?.name || (item?.employeeId as any)?.department?.division?.name || (item?.division_id as any)?.name;
-    const fallback = item?.division_name;
-    const val = populated || fallback || '';
-    return val === 'N/A' || val === 'undefined' ? '' : val;
+    const { divisionName } = getLeaveOdRecordOrgIds(item as Record<string, unknown>, {
+      divisions,
+      departments,
+    });
+    return divisionName === 'N/A' || divisionName === 'undefined' ? '' : divisionName;
   };
 
   // Helper: get designation name from item (top-level or nested on employeeId)
@@ -3591,15 +3599,18 @@ function LeavesPageContent() {
       const rowType = item.leaveType || item.odType;
       const matchesType = !typeFilter || (rowType && rowType === typeFilter);
 
-      // 4. Division Filter
-      const itemDivId = item.employeeId?.division?._id || item.employeeId?.division || item.division_id;
-      const matchesDivision = leaveFilters.division.length === 0 || (itemDivId && leaveFilters.division.includes(typeof itemDivId === 'object' ? itemDivId.toString() : itemDivId));
+      // 4–5. Division / Department filters use request stamp (apply-time), not employee current org
+      const { divisionId: itemDivId, departmentId: itemDepId } = getLeaveOdRecordOrgIds(
+        item as Record<string, unknown>
+      );
+      const matchesDivision =
+        leaveFilters.division.length === 0 ||
+        (itemDivId && leaveFilters.division.includes(itemDivId));
+      const matchesDepartment =
+        leaveFilters.department.length === 0 ||
+        (itemDepId && leaveFilters.department.includes(itemDepId));
 
-      // 5. Department Filter
-      const itemDepId = item.employeeId?.department?._id || item.employeeId?.department || item.department_id;
-      const matchesDepartment = leaveFilters.department.length === 0 || (itemDepId && leaveFilters.department.includes(typeof itemDepId === 'object' ? itemDepId.toString() : itemDepId));
-      
-      const itemDesId = item.employeeId?.designation?._id || item.employeeId?.designation || item.designation_id;
+      const itemDesId = item.designation?._id || item.designation || item.designation_id || item.employeeId?.designation?._id || item.employeeId?.designation;
       const matchesDesignation = leaveFilters.designation.length === 0 || (itemDesId && leaveFilters.designation.includes(typeof itemDesId === 'object' ? itemDesId.toString() : itemDesId));
 
       // 6. Date Range Filter
@@ -3618,10 +3629,10 @@ function LeavesPageContent() {
     });
   };
 
-  const filteredLeaves = useMemo(() => filterData(leaves, 'leave'), [leaves, leaveFilters, activeTab]);
-  const filteredODs = useMemo(() => filterData(ods, 'od'), [ods, leaveFilters, activeTab]);
-  const filteredPendingLeaves = useMemo(() => filterData(pendingLeaves, 'leave'), [pendingLeaves, leaveFilters, activeTab]);
-  const filteredPendingODs = useMemo(() => filterData(pendingODs, 'od'), [pendingODs, leaveFilters, activeTab]);
+  const filteredLeaves = useMemo(() => filterData(leaves, 'leave'), [leaves, leaveFilters, activeTab, divisions, departments]);
+  const filteredODs = useMemo(() => filterData(ods, 'od'), [ods, leaveFilters, activeTab, divisions, departments]);
+  const filteredPendingLeaves = useMemo(() => filterData(pendingLeaves, 'leave'), [pendingLeaves, leaveFilters, activeTab, divisions, departments]);
+  const filteredPendingODs = useMemo(() => filterData(pendingODs, 'od'), [pendingODs, leaveFilters, activeTab, divisions, departments]);
 
   const inProgressLeaves = useMemo(() => {
     const pendingIds = new Set(pendingLeaves.map(p => p._id));
@@ -3651,8 +3662,8 @@ function LeavesPageContent() {
     });
   }, [ods, pendingODs, currentUser]);
 
-  const filteredInProgressLeaves = useMemo(() => filterData(inProgressLeaves, 'leave'), [inProgressLeaves, leaveFilters, activeTab]);
-  const filteredInProgressODs = useMemo(() => filterData(inProgressODs, 'od'), [inProgressODs, leaveFilters, activeTab]);
+  const filteredInProgressLeaves = useMemo(() => filterData(inProgressLeaves, 'leave'), [inProgressLeaves, leaveFilters, activeTab, divisions, departments]);
+  const filteredInProgressODs = useMemo(() => filterData(inProgressODs, 'od'), [inProgressODs, leaveFilters, activeTab, divisions, departments]);
 
   /** Shared filters for list load and PDF export (pay period + workspace filters). */
   const getLeavesODFilters = () => ({
@@ -3961,6 +3972,12 @@ function LeavesPageContent() {
     }
   };
 
+  const isPreviousOrgItem = useCallback(
+    (item: LeaveApplication | ODApplication) =>
+      isPreviousOrgLeaveOdForViewer(currentUser as any, item as Record<string, unknown>),
+    [currentUser]
+  );
+
   const canPerformAction = (item: LeaveApplication | ODApplication, source?: 'leave' | 'od') => {
     if (!currentUser) return false;
     if (currentUser.role === 'employee') return false;
@@ -3968,6 +3985,14 @@ function LeavesPageContent() {
     // Super Admin & Sub Admin: Always allow intervention unless record is already in a final state
     if (['super_admin', 'sub_admin'].includes(currentUser.role)) {
       return !['approved', 'rejected', 'cancelled'].includes(item.status);
+    }
+
+    // Block approve/reject when the record's stamped org is outside the viewer's scope (e.g. pre-transfer leave seen by new HOD).
+    if (
+      ['hod', 'manager', 'hr'].includes(currentUser.role) &&
+      !isLeaveOdInUserOrgScope(currentUser as any, item as Record<string, unknown>)
+    ) {
+      return false;
     }
 
     const isOD = source === 'od' || ((item as any).odType !== undefined);
@@ -4036,6 +4061,29 @@ function LeavesPageContent() {
     return false;
   };
 
+  const renderStatusWithOrgContext = (
+    item: LeaveApplication | ODApplication,
+    statusLabel: string,
+    options?: { badgeSize?: 'sm' | 'md'; statusClassName?: string }
+  ) => {
+    const showPreviousOrg = isPreviousOrgItem(item);
+    const statusClassName =
+      options?.statusClassName ||
+      `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(item.status)}`;
+
+    return (
+      <div className="flex flex-col items-center gap-1">
+        <span className={statusClassName}>{statusLabel}</span>
+        {showPreviousOrg && (
+          <PreviousOrgScopeBadge
+            item={item as Record<string, unknown>}
+            size={options?.badgeSize || 'sm'}
+          />
+        )}
+      </div>
+    );
+  };
+
   // Dynamic Column Logic
   const { showDivision, showDepartment } = useMemo(() => {
     const isHOD = currentUser?.role === 'hod';
@@ -4045,13 +4093,17 @@ function LeavesPageContent() {
     if (activeTab === 'leaves') dataToCheck = leaves;
     else if (activeTab === 'od') dataToCheck = ods;
 
-    const uniqueDivisions = new Set(dataToCheck.map(item => item.employeeId?.department?.division?.name).filter(Boolean));
+    const uniqueDivisions = new Set(
+      dataToCheck
+        .map((item) => getLeaveOdRecordOrgIds(item as Record<string, unknown>, { divisions, departments }).divisionName)
+        .filter(Boolean)
+    );
 
     return {
       showDivision: uniqueDivisions.size > 1,
       showDepartment: true // Always show department for non-HODs as per requirement
     };
-  }, [leaves, ods, activeTab, currentUser]);
+  }, [leaves, ods, activeTab, currentUser, divisions, departments]);
 
   
 
@@ -4677,10 +4729,7 @@ function LeavesPageContent() {
                             </div>
                           </td>
                           <td className="px-6 py-3.5 text-center">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(leave.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent' // subtle border for approved
-                              } ${getStatusColor(leave.status)}`}>
-                              {leave.status?.replace('_', ' ')}
-                            </span>
+                            {renderStatusWithOrgContext(leave, leave.status?.replace('_', ' ') || '')}
                           </td>
                           <td className="px-6 py-3.5 text-right">
                             <div className="flex items-center justify-end gap-2">
@@ -4910,10 +4959,7 @@ function LeavesPageContent() {
                             </div>
                           </td>
                           <td className="px-6 py-3.5 text-center">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(od.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent'
-                              } ${getStatusColor(od.status)}`}>
-                              {formatOdLbl(od.status)}
-                            </span>
+                            {renderStatusWithOrgContext(od, formatOdLbl(od.status))}
                           </td>
                           <td className="px-6 py-3.5 text-right">
                             <div className="flex items-center justify-end gap-2">
@@ -5109,9 +5155,9 @@ function LeavesPageContent() {
                                 <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">{leave.numberOfDays}d</span>
                               </td>
                               <td className="px-6 py-3.5 text-center">
-                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${getStatusColor(leave.status)}`}>
-                                  {formatLeaveLbl(leave.status)}
-                                </span>
+                                {renderStatusWithOrgContext(leave, formatLeaveLbl(leave.status), {
+                                  statusClassName: `inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${getStatusColor(leave.status)}`,
+                                })}
                               </td>
                               <td className="px-6 py-3.5 text-right">
                                 {canPerformAction(leave, 'leave') && hasManagePermission && (
@@ -5159,9 +5205,10 @@ function LeavesPageContent() {
                               avatarTone="blue"
                             />
                             <div className="flex flex-col gap-1 items-end">
-                              <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
-                                {formatLeaveLbl(leave.status)}
-                              </span>
+                              {renderStatusWithOrgContext(leave, formatLeaveLbl(leave.status), {
+                                statusClassName: `shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`,
+                                badgeSize: 'md',
+                              })}
                               {(isSuperAdmin || currentUser?.role === 'sub_admin' || (leave.employeeId?._id === currentUser?.employeeRef || leave.appliedBy?._id === currentUser?._id || leave.appliedBy === currentUser?._id)) && leave.status === 'pending' && (
                                 <button
                                   onClick={(e) => {
@@ -5281,9 +5328,9 @@ function LeavesPageContent() {
                                 <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">{od.numberOfDays}d</span>
                               </td>
                               <td className="px-6 py-3.5 text-center">
-                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${getStatusColor(od.status)}`}>
-                                  {formatOdLbl(od.status)}
-                                </span>
+                                {renderStatusWithOrgContext(od, formatOdLbl(od.status), {
+                                  statusClassName: `inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${getStatusColor(od.status)}`,
+                                })}
                               </td>
                               <td className="px-6 py-3.5 text-right">
                                 {canPerformAction(od, 'od') && hasManagePermission && (
@@ -5329,9 +5376,10 @@ function LeavesPageContent() {
                               avatarTone="violet"
                             />
                             <div className="flex flex-col gap-1 items-end">
-                              <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
-                                {formatOdLbl(od.status)}
-                              </span>
+                              {renderStatusWithOrgContext(od, formatOdLbl(od.status), {
+                                statusClassName: `shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`,
+                                badgeSize: 'md',
+                              })}
                               {(isSuperAdmin || currentUser?.role === 'sub_admin' || (od.employeeId?._id === currentUser?.employeeRef || od.appliedBy?._id === currentUser?._id || od.appliedBy === currentUser?._id)) && ['pending', 'draft'].includes(od.status) && (
                                 <button
                                   onClick={(e) => {
@@ -5472,9 +5520,10 @@ function LeavesPageContent() {
                               size="md"
                               avatarTone="blue"
                             />
-                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
-                              {formatLeaveLbl(leave.status)}
-                            </span>
+                            {renderStatusWithOrgContext(leave, formatLeaveLbl(leave.status), {
+                              statusClassName: `shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`,
+                              badgeSize: 'md',
+                            })}
                           </div>
 
                           {/* Content */}
@@ -5519,9 +5568,10 @@ function LeavesPageContent() {
                               size="md"
                               avatarTone="violet"
                             />
-                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
-                              {formatOdLbl(od.status)}
-                            </span>
+                            {renderStatusWithOrgContext(od, formatOdLbl(od.status), {
+                              statusClassName: `shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`,
+                              badgeSize: 'md',
+                            })}
                           </div>
 
                           {/* Content */}
@@ -7121,6 +7171,16 @@ function LeavesPageContent() {
                     )}
 
                   <div className="flex flex-col sm:flex-row gap-3 justify-end items-stretch sm:items-center">
+                  {selectedItem && isPreviousOrgItem(selectedItem) && (
+                    <div className="w-full rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-xs text-violet-800 dark:border-violet-800/60 dark:bg-violet-950/30 dark:text-violet-200 sm:mr-auto sm:max-w-md">
+                      <p className="font-bold uppercase tracking-wide text-[10px] text-violet-600 dark:text-violet-300">
+                        Previous org record
+                      </p>
+                      <p className="mt-1 leading-relaxed">
+                        {getPreviousOrgActionHint(selectedItem as Record<string, unknown>)}
+                      </p>
+                    </div>
+                  )}
                   {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem, detailType) && (
                     <>
                       <textarea

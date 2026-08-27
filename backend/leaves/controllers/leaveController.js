@@ -1755,6 +1755,19 @@ exports.processLeaveAction = async (req, res) => {
       });
     }
 
+    const fullUserForScope = req.scopedUser || await User.findById(req.user.userId || req.user._id);
+    if (
+      !['super_admin', 'sub_admin'].includes(userRole) &&
+      ['hod', 'manager', 'hr'].includes(userRole) &&
+      fullUserForScope &&
+      !checkJurisdiction(fullUserForScope, leave)
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: 'This request belongs to a previous department/division. The previous org approver must act on it.',
+      });
+    }
+
     // --- Action Processing ---
 
     // Prepare history entry
