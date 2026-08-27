@@ -577,12 +577,80 @@ const applyMetadataScopeFilter = (modelName) => async (req, res, next) => {
     }
 };
 
+/**
+ * Leave/OD list filters for scoped roles (HOD / Manager / HR).
+ *
+ * jurisdiction: document stamped in user org mapping OR employee currently in scope
+ * visibility: workflow desk OR employee currently in scope OR document stamped in user org
+ *
+ * The stamped-org visibility leg is required after transfers: open requests keep the
+ * apply-time division/department and must stay visible to the previous org approver
+ * so they can act (new org sees “Previous org” and cannot approve).
+ *
+ * @param {Object} user
+ * @param {Object} [scopeFilter] - usually req.scopeFilter from applyScopeFilter
+ * @returns {Promise<{ jurisdictionFilter: Object, visibilityFilter: Object, scopedEmployeeIds: Array, workflowFilter: Object }>}
+ */
+async function buildLeaveOdListScopeFilters(user, scopeFilter) {
+    const workflowFilter = buildWorkflowVisibilityFilter(user);
+    const baseScope =
+        scopeFilter && typeof scopeFilter === 'object' && Object.keys(scopeFilter).length > 0
+            ? scopeFilter
+            : buildScopeFilter(user);
+
+    const scopedEmployeeIds = await getEmployeeIdsInScope(user);
+    const hasEmployees = Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0;
+
+    const jurisdictionParts = [baseScope];
+    if (hasEmployees) {
+        jurisdictionParts.push({ employeeId: { $in: scopedEmployeeIds } });
+    }
+
+    // Always include stamped-org scope so previous-org open requests remain listable.
+    const visibilityParts = [workflowFilter, baseScope];
+    if (hasEmployees) {
+        visibilityParts.push({ employeeId: { $in: scopedEmployeeIds } });
+    }
+
+    return {
+        jurisdictionFilter:
+            jurisdictionParts.length === 1 ? jurisdictionParts[0] : { $or: jurisdictionParts },
+        visibilityFilter: { $or: visibilityParts },
+        scopedEmployeeIds: hasEmployees ? scopedEmployeeIds : [],
+        workflowFilter,
+    };
+}
+
+/**
+ * Pending-approvals org filter: current employees in scope OR request stamped to user org.
+ * Prevents transferred employees' open Leave/ODs from vanishing for the previous manager.
+ *
+ * @param {Object} user
+ * @param {Object} [scopeFilter]
+ * @returns {Promise<Object>}
+ */
+async function buildLeaveOdPendingOrgFilter(user, scopeFilter) {
+    const baseScope =
+        scopeFilter && typeof scopeFilter === 'object' && Object.keys(scopeFilter).length > 0
+            ? scopeFilter
+            : buildScopeFilter(user);
+    const employeeIds = await getEmployeeIdsInScope(user);
+    return {
+        $or: [
+            { employeeId: { $in: Array.isArray(employeeIds) ? employeeIds : [] } },
+            baseScope,
+        ],
+    };
+}
+
 module.exports = {
     applyScopeFilter,
     applyMetadataScopeFilter,
     buildScopeFilter,
     buildMetadataScopeFilter,
     buildWorkflowVisibilityFilter,
+    buildLeaveOdListScopeFilters,
+    buildLeaveOdPendingOrgFilter,
     checkJurisdiction,
     getDefaultScope,
     getEmployeeIdsInScope

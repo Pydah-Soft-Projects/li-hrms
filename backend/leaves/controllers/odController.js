@@ -4,9 +4,10 @@ const LeaveSettings = require('../model/LeaveSettings');
 const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
 const {
-  buildWorkflowVisibilityFilter,
   getEmployeeIdsInScope,
-  checkJurisdiction
+  checkJurisdiction,
+  buildLeaveOdListScopeFilters,
+  buildLeaveOdPendingOrgFilter,
 } = require('../../shared/middleware/dataScopeMiddleware');
 const Department = require('../../departments/model/Department');
 const EmployeeHistory = require('../../employees/model/EmployeeHistory');
@@ -252,31 +253,13 @@ exports.getODs = async (req, res) => {
   try {
     const { status, employeeId, department, division, designation, placeVisited, fromDate, toDate, search, page = 1, limit = 20, odType, segment } = req.query;
 
-    // Multi-layered filter: Jurisdiction (Scope) AND Timing (Workflow)
+    // Jurisdiction (stamped org OR current employee scope) + visibility (workflow OR same).
+    // Stamped-org visibility keeps previous-org open ODs listable after transfer.
     const scopeFilter = req.scopeFilter || { isActive: true };
-    const workflowFilter = buildWorkflowVisibilityFilter(req.user);
-
-    // Include ODs whose document has division/department in scope OR whose employeeId is in scope.
-    // Also: for scoped roles (HOD/Manager/HR), show ALL requests from in-scope employees regardless of workflow stage,
-    // so they can track and manage team requests even when pending at reporting_manager or other stages.
-    let jurisdictionFilter = scopeFilter;
-    let visibilityFilter = workflowFilter;
-    const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
-    if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
-      jurisdictionFilter = {
-        $or: [
-          scopeFilter,
-          { employeeId: { $in: scopedEmployeeIds } }
-        ]
-      };
-      // Scoped roles see all requests from in-scope employees (bypass workflow stage restriction)
-      visibilityFilter = {
-        $or: [
-          workflowFilter,
-          { employeeId: { $in: scopedEmployeeIds } }
-        ]
-      };
-    }
+    const { jurisdictionFilter, visibilityFilter } = await buildLeaveOdListScopeFilters(
+      req.user,
+      scopeFilter
+    );
 
     const filter = {
       $and: [
@@ -1851,13 +1834,9 @@ exports.getPendingApprovals = async (req, res) => {
     // 2, 3, 4, 5: Scoped Roles (Sub Admin, HOD, HR, Manager)
     else if (['sub_admin', 'hod', 'hr', 'manager'].includes(userRole)) {
       filter.status = { $nin: ['draft', 'approved', 'rejected', 'cancelled'] };
-      
-      const employeeIds = await getEmployeeIdsInScope(req.user);
-      if (employeeIds.length > 0) {
-        filter.employeeId = { $in: employeeIds };
-      } else {
-        filter.employeeId = { $in: [] };
-      }
+      // Current employees in scope OR request stamped to this user's org (previous-org open ODs)
+      const orgFilter = await buildLeaveOdPendingOrgFilter(req.user, req.scopeFilter);
+      filter.$and = [...(Array.isArray(filter.$and) ? filter.$and : []), orgFilter];
     }
     // Fallback for any other roles
     else {
@@ -1895,14 +1874,11 @@ exports.getPendingApprovals = async (req, res) => {
         ]
       }).select('_id').lean();
       const ids = matchedEmployees.map(e => e._id);
-      if (ids.length > 0) {
-        const scopeIds = filter.employeeId && filter.employeeId.$in ? filter.employeeId.$in : null;
-        filter.employeeId = scopeIds
-          ? { $in: scopeIds.filter(id => ids.some(i => i.toString() === id.toString())) }
-          : { $in: ids };
-      } else {
-        filter.employeeId = { $in: [] };
-      }
+      // AND with search — do not intersect away previous-org stamped rows
+      filter.$and = [
+        ...(Array.isArray(filter.$and) ? filter.$and : []),
+        { employeeId: { $in: ids.length > 0 ? ids : [] } },
+      ];
     }
 
     const [ods, total] = await Promise.all([

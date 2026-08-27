@@ -10,9 +10,10 @@ const {
   getLeaveConflicts
 } = require('../services/leaveConflictService');
 const {
-  buildWorkflowVisibilityFilter,
   getEmployeeIdsInScope,
-  checkJurisdiction
+  checkJurisdiction,
+  buildLeaveOdListScopeFilters,
+  buildLeaveOdPendingOrgFilter,
 } = require('../../shared/middleware/dataScopeMiddleware');
 const Department = require('../../departments/model/Department');
 const OD = require('../model/OD');
@@ -98,31 +99,13 @@ exports.getLeaves = async (req, res) => {
   try {
     const { status, employeeId, department, division, designation, fromDate, toDate, search, page = 1, limit = 20, leaveType } = req.query;
 
-    // Multi-layered filter: Jurisdiction (Scope) AND Timing (Workflow)
+    // Jurisdiction (stamped org OR current employee scope) + visibility (workflow OR same).
+    // Stamped-org visibility keeps previous-org open leaves listable after transfer.
     const scopeFilter = req.scopeFilter || { isActive: true };
-    const workflowFilter = buildWorkflowVisibilityFilter(req.user);
-
-    // Include leaves whose document has division/department in scope OR whose employeeId is in scope.
-    // Also: for scoped roles (HOD/Manager/HR), show ALL requests from in-scope employees regardless of workflow stage,
-    // so they can track and manage team requests even when pending at reporting_manager or other stages.
-    let jurisdictionFilter = scopeFilter;
-    let visibilityFilter = workflowFilter;
-    const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
-    if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
-      jurisdictionFilter = {
-        $or: [
-          scopeFilter,
-          { employeeId: { $in: scopedEmployeeIds } }
-        ]
-      };
-      // Scoped roles see all requests from in-scope employees (bypass workflow stage restriction)
-      visibilityFilter = {
-        $or: [
-          workflowFilter,
-          { employeeId: { $in: scopedEmployeeIds } }
-        ]
-      };
-    }
+    const { jurisdictionFilter, visibilityFilter } = await buildLeaveOdListScopeFilters(
+      req.user,
+      scopeFilter
+    );
 
     const filter = {
       $and: [
@@ -1510,13 +1493,8 @@ exports.getPendingApprovals = async (req, res) => {
     // 2, 3, 4, 5: Scoped Roles (Sub Admin, HOD, HR, Manager)
     else if (['sub_admin', 'hod', 'hr', 'manager'].includes(userRole)) {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
-      
-      const employeeIds = await getEmployeeIdsInScope(req.user);
-      if (employeeIds.length > 0) {
-        filter.employeeId = { $in: employeeIds };
-      } else {
-        filter.employeeId = { $in: [] };
-      }
+      const orgFilter = await buildLeaveOdPendingOrgFilter(req.user, req.scopeFilter);
+      filter.$and = [...(Array.isArray(filter.$and) ? filter.$and : []), orgFilter];
     }
     // Fallback for any other roles
     else {
@@ -1547,14 +1525,11 @@ exports.getPendingApprovals = async (req, res) => {
         ]
       }).select('_id').lean();
       const ids = matchedEmployees.map(e => e._id);
-      if (ids.length > 0) {
-        const scopeIds = filter.employeeId && filter.employeeId.$in ? filter.employeeId.$in : null;
-        filter.employeeId = scopeIds
-          ? { $in: scopeIds.filter(id => ids.some(i => i.toString() === id.toString())) }
-          : { $in: ids };
-      } else {
-        filter.employeeId = { $in: [] };
-      }
+      // AND with search — do not intersect away previous-org stamped rows
+      filter.$and = [
+        ...(Array.isArray(filter.$and) ? filter.$and : []),
+        { employeeId: { $in: ids.length > 0 ? ids : [] } },
+      ];
     }
 
     const [leaves, total] = await Promise.all([
@@ -2387,26 +2362,10 @@ exports.getDashboardStats = async (req, res) => {
     const { search, division, department, designation, fromDate, toDate, leaveStatus, odStatus, status } = req.query;
 
     const scopeFilter = req.scopeFilter || { isActive: true };
-    const workflowFilter = buildWorkflowVisibilityFilter(req.user);
-
-    // Same jurisdiction and visibility as getLeaves/getODs
-    let jurisdictionFilter = scopeFilter;
-    let visibilityFilter = workflowFilter;
-    const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
-    if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
-      jurisdictionFilter = {
-        $or: [
-          scopeFilter,
-          { employeeId: { $in: scopedEmployeeIds } }
-        ]
-      };
-      visibilityFilter = {
-        $or: [
-          workflowFilter,
-          { employeeId: { $in: scopedEmployeeIds } }
-        ]
-      };
-    }
+    const { jurisdictionFilter, visibilityFilter } = await buildLeaveOdListScopeFilters(
+      req.user,
+      scopeFilter
+    );
 
     const baseFilter = {
       $and: [
@@ -3693,26 +3652,10 @@ exports.exportReportPDF = async (req, res) => {
 
     // Multi-layered filter logic (same as getLeaves for consistency/security)
     const scopeFilter = req.scopeFilter || { isActive: true };
-    const workflowFilter = buildWorkflowVisibilityFilter(req.user);
-    const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
-    
-    let jurisdictionFilter = scopeFilter;
-    let visibilityFilter = workflowFilter;
-    
-    if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
-      jurisdictionFilter = {
-        $or: [
-          scopeFilter,
-          { employeeId: { $in: scopedEmployeeIds } }
-        ]
-      };
-      visibilityFilter = {
-        $or: [
-          workflowFilter,
-          { employeeId: { $in: scopedEmployeeIds } }
-        ]
-      };
-    }
+    const { jurisdictionFilter, visibilityFilter } = await buildLeaveOdListScopeFilters(
+      req.user,
+      scopeFilter
+    );
 
     const baseFilter = {
       $and: [
@@ -3982,26 +3925,10 @@ exports.exportReportXLSX = async (req, res) => {
     } = req.query;
 
     const scopeFilter = req.scopeFilter || { isActive: true };
-    const workflowFilter = buildWorkflowVisibilityFilter(req.user);
-    const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
-
-    let jurisdictionFilter = scopeFilter;
-    let visibilityFilter = workflowFilter;
-
-    if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
-      jurisdictionFilter = {
-        $or: [
-          scopeFilter,
-          { employeeId: { $in: scopedEmployeeIds } },
-        ],
-      };
-      visibilityFilter = {
-        $or: [
-          workflowFilter,
-          { employeeId: { $in: scopedEmployeeIds } },
-        ],
-      };
-    }
+    const { jurisdictionFilter, visibilityFilter } = await buildLeaveOdListScopeFilters(
+      req.user,
+      scopeFilter
+    );
 
     const baseFilter = {
       $and: [
