@@ -27,11 +27,13 @@ import { MultiSelect } from '@/components/MultiSelect';
 import {
   loanMatchesListOrgAndStatus,
   loanMatchesSearch,
+  loanEmployeePhone,
   LOAN_LIST_STATUS_OPTIONS,
 } from '@/lib/loanListUi';
 import { LoanListEmployeeCell } from '@/components/LoanListEmployeeCell';
 import LoanEditDialog, { canShowLoanEditButton } from '@/components/loans/LoanEditDialog';
 import LoanApplyEmiPolicyPreview from '@/components/loans/LoanApplyEmiPolicyPreview';
+import LoanAttendanceSummaryTable from '@/components/loans/LoanAttendanceSummaryTable';
 import {
   LoansPageShell,
   LoansPageHeader,
@@ -100,6 +102,8 @@ interface LoanApplication {
     _id: string;
     employee_name?: string;
     emp_no: string;
+    phone_number?: string;
+    alt_phone_number?: string;
     gross_salary?: number;
   };
   emp_no?: string;
@@ -304,6 +308,9 @@ export default function LoansPage() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [loanAttendanceSummary, setLoanAttendanceSummary] = useState<any>(null);
+  const [applyAttendanceSummary, setApplyAttendanceSummary] = useState<any>(null);
+  const [loadingApplyAttendanceSummary, setLoadingApplyAttendanceSummary] = useState(false);
 
   // Settlement preview state
   const [settlementPreview, setSettlementPreview] = useState<any>(null);
@@ -410,10 +417,27 @@ export default function LoansPage() {
   useEffect(() => {
     if (showDetailDialog && selectedLoan) {
       loadTransactions(selectedLoan._id);
+      setLoanAttendanceSummary(null);
       // Load settlement preview for loans
       if (selectedLoan.requestType === 'loan' && ['disbursed', 'active'].includes(selectedLoan.status)) {
         loadSettlementPreview(selectedLoan._id);
       }
+
+      (async () => {
+        try {
+          const loanRes = await api.getLoan(selectedLoan._id);
+          if (loanRes.success && loanRes.data) {
+            setSelectedLoan(loanRes.data);
+            setLoanAttendanceSummary(
+              loanRes.attendanceSummary ||
+                loanRes.applicationPdfContext?.attendanceSummary ||
+                null
+            );
+          }
+        } catch {
+          // Keep list payload if the full record cannot be refreshed.
+        }
+      })();
 
       // Pre-fill approval amount/rate (final authority)
       setChangeReason('');
@@ -602,6 +626,37 @@ export default function LoansPage() {
     }, 350);
     return () => clearTimeout(timer);
   }, [applyType, formData.amount, formData.duration, selectedEmployee?._id, selectedEmployee?.emp_no]);
+
+  useEffect(() => {
+    if (!showApplyDialog || !selectedEmployee) {
+      setApplyAttendanceSummary(null);
+      return;
+    }
+    const employeeId = selectedEmployee._id;
+    const empNo = selectedEmployee.emp_no;
+    if (!employeeId || !empNo) {
+      setApplyAttendanceSummary(null);
+      return;
+    }
+
+    const run = async () => {
+      try {
+        setLoadingApplyAttendanceSummary(true);
+        const res = await api.getLoanApplicationAttendanceSummary({
+          employeeId,
+          empNo,
+        });
+        if (res.success) setApplyAttendanceSummary(res.data || null);
+        else setApplyAttendanceSummary(null);
+      } catch {
+        setApplyAttendanceSummary(null);
+      } finally {
+        setLoadingApplyAttendanceSummary(false);
+      }
+    };
+
+    void run();
+  }, [showApplyDialog, applyType, selectedEmployee?._id, selectedEmployee?.emp_no]);
 
   // Fetch eligibility when employee selected for salary advance
   useEffect(() => {
@@ -2303,6 +2358,7 @@ export default function LoansPage() {
                         {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no || 'Unknown'}
                       </p>
                       <p className="text-sm text-slate-500">{selectedLoan.emp_no || selectedLoan.employeeId?.emp_no || 'N/A'}</p>
+                      <p className="text-sm text-slate-500">{loanEmployeePhone(selectedLoan) || '—'}</p>
                       {selectedLoan.department && (
                         <div className="flex flex-wrap gap-2 mt-2">
                           {selectedLoan.department.name && (
@@ -2326,6 +2382,20 @@ export default function LoansPage() {
                     </div>
                   </div>
                 </LoanDetailSection>
+
+                {selectedLoan.requestType === 'loan' && loanAttendanceSummary && (
+                  <LoanDetailSection soft>
+                    <LoanDetailSectionTitle>
+                      Attendance Summary (Last 6 Months)
+                      {loanAttendanceSummary.overallPercentage != null && (
+                        <span className="ml-2 text-sm font-normal normal-case tracking-normal text-emerald-600">
+                          Overall: {loanAttendanceSummary.overallPercentage}%
+                        </span>
+                      )}
+                    </LoanDetailSectionTitle>
+                    <LoanAttendanceSummaryTable summary={loanAttendanceSummary} />
+                  </LoanDetailSection>
+                )}
 
                 {/* Eligibility Information - For Salary Advance (View Only) */}
                 {selectedLoan.requestType === 'salary_advance' && eligibilityData && (
@@ -2403,6 +2473,11 @@ export default function LoansPage() {
                             <div>
                               <p className="text-sm font-semibold text-slate-900 dark:text-white">{guarantor.name}</p>
                               <p className="text-[10px] text-slate-500 font-medium">{guarantor.emp_no}</p>
+                              {(guarantor.employeeId?.phone_number || guarantor.employeeId?.alt_phone_number) && (
+                                <p className="text-[10px] text-slate-500 font-medium">
+                                  {guarantor.employeeId.phone_number || guarantor.employeeId.alt_phone_number}
+                                </p>
+                              )}
                             </div>
                           </div>
                           <div className="flex flex-col items-end gap-1">
@@ -3209,6 +3284,31 @@ export default function LoansPage() {
                         </tbody>
                       </table>
                     </div>
+                  </div>
+                )}
+
+                {selectedEmployee && (
+                  <div className="mb-4 rounded-xl border border-slate-200 bg-white/60 p-4 dark:border-slate-800 dark:bg-slate-900/30">
+                    <h4 className="mb-3 text-sm font-semibold text-slate-900 dark:text-blue-100">
+                      Attendance Summary (Last 6 Months)
+                    </h4>
+                    {loadingApplyAttendanceSummary && (
+                      <div className="text-xs text-blue-700 dark:text-blue-300">Loading attendance summary...</div>
+                    )}
+                    {!loadingApplyAttendanceSummary && applyAttendanceSummary && (
+                      <>
+                        <div className="mb-3 text-xs text-slate-600 dark:text-slate-400">
+                          Overall Attendance:{' '}
+                          <span className="font-semibold text-blue-700 dark:text-blue-300">
+                            {applyAttendanceSummary.overallPercentage ?? '—'}%
+                          </span>
+                        </div>
+                        <LoanAttendanceSummaryTable summary={applyAttendanceSummary} />
+                      </>
+                    )}
+                    {!loadingApplyAttendanceSummary && !applyAttendanceSummary && (
+                      <div className="text-xs text-slate-500 dark:text-slate-400">No attendance summary found.</div>
+                    )}
                   </div>
                 )}
 

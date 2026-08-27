@@ -380,7 +380,7 @@ async function tryShiftSegmentHalfCreditsFromMaster(shiftRow, dateStr, employeeN
     const { getShiftSegmentAssignment } = require('../../shifts/services/shiftHalfSegmentService');
     const { resolveGraceFromSettings } = require('../services/shiftSegmentAttendanceService');
     const Employee = require('../../employees/model/Employee');
-    const { applyShiftSegmentOverride } = require('../../shared/utils/shiftSegmentOverrides');
+    const { resolveEffectiveShiftDoc } = require('../../shared/utils/divisionShiftSegments');
     const shiftId = shiftRow.shiftId?._id || shiftRow.shiftId;
     const shiftDoc = await Shift.findById(shiftId)
       .select('startTime endTime gracePeriod payableShifts firstHalf secondHalf break segmentOverrides')
@@ -390,16 +390,28 @@ async function tryShiftSegmentHalfCreditsFromMaster(shiftRow, dateStr, employeeN
     const inTime = new Date(shiftRow.inTime);
     const outTime = shiftRowHasDistinctOut(shiftRow) ? new Date(shiftRow.outTime) : null;
     let divisionId = null;
+    let division = null;
+    let employeeGender = null;
+    let employeeGroupId = null;
     if (employeeNumber) {
       const empUpper = String(employeeNumber).toUpperCase();
       const emp = await Employee.findOne({ emp_no: empUpper })
         .populate('division_id')
-        .select('division_id')
+        .select('division_id gender employee_group_id')
         .lean();
       divisionId = emp?.division_id?._id || emp?.division_id || null;
+      division = emp?.division_id && typeof emp.division_id === 'object' ? emp.division_id : null;
+      employeeGender = emp?.gender || null;
+      employeeGroupId = emp?.employee_group_id || null;
     }
 
-    const effectiveShift = applyShiftSegmentOverride(shiftDoc, divisionId);
+    const effectiveShift = await resolveEffectiveShiftDoc(shiftDoc, {
+      divisionId,
+      division,
+      employeeGender,
+      employeeGroupId,
+      shiftId,
+    });
 
     const seg = getShiftSegmentAssignment(effectiveShift, dateStr, inTime, outTime, graceOpts);
     return getWorkedHalfFromShiftSegments({ shiftSegments: seg.shiftSegments || [] });

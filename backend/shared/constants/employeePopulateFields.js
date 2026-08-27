@@ -6,7 +6,7 @@ const EMPLOYEE_LIST_SELECT =
 
 const EMPLOYEE_LIST_SELECT_WITH_SALARY = `${EMPLOYEE_LIST_SELECT} gross_salary`;
 
-const EMPLOYEE_LIST_SELECT_WITH_CONTACT = `${EMPLOYEE_LIST_SELECT} email phone_number`;
+const EMPLOYEE_LIST_SELECT_WITH_CONTACT = `${EMPLOYEE_LIST_SELECT} email phone_number alt_phone_number`;
 
 const EMPLOYEE_ID_POPULATE = {
   path: 'employeeId',

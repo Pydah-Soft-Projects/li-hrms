@@ -87,6 +87,8 @@ interface LoanRecord {
     employeeId: {
         emp_no: string;
         employee_name: string;
+        phone_number?: string;
+        alt_phone_number?: string;
         designation_id?: { name: string };
         designation?: { name: string };
         leftDate?: string;
@@ -589,6 +591,11 @@ export default function LoanReportsTab({
   ) : null}
   {loan.employeeId?.emp_no ? (
     <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{loan.employeeId?.emp_no}</div>
+  ) : null}
+  {(loan.employeeId?.phone_number || loan.employeeId?.alt_phone_number) ? (
+    <div className="mt-0.5 truncate text-[9px] text-slate-500 dark:text-slate-400">
+      {loan.employeeId?.phone_number || loan.employeeId?.alt_phone_number}
+    </div>
   ) : null}
   {loan.employeeId?.leftDate ? (
     <div className="mt-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">

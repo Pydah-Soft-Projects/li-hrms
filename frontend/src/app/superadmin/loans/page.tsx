@@ -11,6 +11,7 @@ import { MultiSelect } from '@/components/MultiSelect';
 import {
   loanMatchesListOrgAndStatus,
   loanMatchesSearch,
+  loanEmployeePhone,
   LOAN_LIST_STATUS_OPTIONS,
 } from '@/lib/loanListUi';
 import { LoanListEmployeeCell } from '@/components/LoanListEmployeeCell';
@@ -18,6 +19,7 @@ import LoanEditDialog, { canShowLoanEditButton } from '@/components/loans/LoanEd
 import LoanApplyEmiPolicyPreview from '@/components/loans/LoanApplyEmiPolicyPreview';
 import LoanGuarantorPicker from '@/components/loans/LoanGuarantorPicker';
 import LoanEmployeeExposureSections from '@/components/loans/LoanEmployeeExposureSections';
+import LoanAttendanceSummaryTable from '@/components/loans/LoanAttendanceSummaryTable';
 import {
   LoansPageShell,
   LoansPageHeader,
@@ -117,6 +119,8 @@ interface LoanApplication {
     _id: string;
     employee_name?: string;
     emp_no: string;
+    phone_number?: string;
+    alt_phone_number?: string;
     gross_salary?: number;
   };
   emp_no?: string;
@@ -200,7 +204,7 @@ interface LoanApplication {
   };
   interestAmount?: number;
   guarantors?: Array<{
-    employeeId: string;
+    employeeId: any;
     emp_no: string;
     name: string;
     status: 'pending' | 'accepted' | 'rejected';
@@ -2186,6 +2190,7 @@ export default function LoansPage() {
                       {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no || 'Unknown'}
                     </p>
                     <p className="text-sm text-slate-500">{selectedLoan.emp_no || selectedLoan.employeeId?.emp_no || 'N/A'}</p>
+                    <p className="text-sm text-slate-500">{loanEmployeePhone(selectedLoan) || '—'}</p>
                     {selectedLoan.department && (
                       <div className="flex flex-wrap gap-2 mt-2">
                         {selectedLoan.department.name && (
@@ -2228,35 +2233,7 @@ export default function LoansPage() {
                         </span>
                       </div>
 
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full text-xs">
-                          <thead>
-                            <tr className="text-left text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
-                              <th className="py-2 pr-3 font-semibold">Month</th>
-                              <th className="py-2 pr-3 font-semibold">Working</th>
-                              <th className="py-2 pr-3 font-semibold">Present</th>
-                              <th className="py-2 pr-3 font-semibold">Leave</th>
-                              <th className="py-2 pr-3 font-semibold">LOP</th>
-                              <th className="py-2 font-semibold">% </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(loanAttendanceSummary.last6Months || []).map((row: any) => (
-                              <tr
-                                key={`${row.month ?? row.monthName}`}
-                                className="border-b border-slate-100 dark:border-slate-800"
-                              >
-                                <td className="py-1 pr-3 text-slate-800 dark:text-slate-100">{row.monthName || row.month}</td>
-                                <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.workingDays ?? 0}</td>
-                                <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.present ?? 0}</td>
-                                <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.leave ?? 0}</td>
-                                <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.lop ?? 0}</td>
-                                <td className="py-1 text-slate-700 dark:text-slate-200">{row.attendancePercent ?? '—'}%</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      <LoanAttendanceSummaryTable summary={loanAttendanceSummary} />
                     </>
                   )}
 
@@ -2353,6 +2330,11 @@ export default function LoansPage() {
                             </span>
                           </div>
                           <p className="text-xs text-slate-500">{guarantor.emp_no}</p>
+                          {(guarantor.employeeId?.phone_number || guarantor.employeeId?.alt_phone_number) && (
+                            <p className="text-xs text-slate-500">
+                              {guarantor.employeeId.phone_number || guarantor.employeeId.alt_phone_number}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -3081,35 +3063,7 @@ export default function LoansPage() {
                           </span>
                         </div>
 
-                        <div className="overflow-x-auto">
-                          <table className="min-w-full text-xs">
-                            <thead>
-                              <tr className="text-left text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
-                                <th className="py-2 pr-3 font-semibold">Month</th>
-                                <th className="py-2 pr-3 font-semibold">Working</th>
-                                <th className="py-2 pr-3 font-semibold">Present</th>
-                                <th className="py-2 pr-3 font-semibold">Leave</th>
-                                <th className="py-2 pr-3 font-semibold">LOP</th>
-                                <th className="py-2 font-semibold">% </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(applyAttendanceSummary.last6Months || []).map((row: any) => (
-                                <tr
-                                  key={`${row.month ?? row.monthName}`}
-                                  className="border-b border-slate-100 dark:border-slate-800"
-                                >
-                                  <td className="py-1 pr-3 text-slate-800 dark:text-slate-100">{row.monthName || row.month}</td>
-                                  <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.workingDays ?? 0}</td>
-                                  <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.present ?? 0}</td>
-                                  <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.leave ?? 0}</td>
-                                  <td className="py-1 pr-3 text-slate-700 dark:text-slate-200">{row.lop ?? 0}</td>
-                                  <td className="py-1 text-slate-700 dark:text-slate-200">{row.attendancePercent ?? '—'}%</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                        <LoanAttendanceSummaryTable summary={applyAttendanceSummary} />
                       </>
                     )}
 

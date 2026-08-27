@@ -29,6 +29,7 @@ import {
 import LoanEditDialog, { canShowLoanEditButton } from '@/components/loans/LoanEditDialog';
 import LoanEmployeeExposureSections from '@/components/loans/LoanEmployeeExposureSections';
 import LoanGuarantorPicker from '@/components/loans/LoanGuarantorPicker';
+import LoanAttendanceSummaryTable from '@/components/loans/LoanAttendanceSummaryTable';
 import {
   LedgerApprovalPanel,
   LedgerApprovalTimeline,
@@ -43,6 +44,7 @@ import {
   canUserActOnLoan,
   isLoanFinalApprovalStep,
 } from '@/lib/loanWorkflowUi';
+import { loanEmployeePhone } from '@/lib/loanListUi';
 import {
   buildLeaveODPayPeriodOptions,
   getPayPeriodRangeForCalendarMonth,
@@ -63,16 +65,6 @@ const STATUS_COLORS: Record<string, string> = {
 function getStatusColor(status: string) {
   return STATUS_COLORS[status] || 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400';
 }
-
-type AttendanceMonth = {
-  month: string;
-  monthName: string;
-  workingDays: number;
-  present: number;
-  leave: number;
-  lop: number;
-  attendancePercent: number | null;
-};
 
 function formatRs(n?: number | null) {
   if (n == null || Number.isNaN(n)) return '—';
@@ -455,7 +447,8 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
             <LoanDetailSectionTitle>Employee details</LoanDetailSectionTitle>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <LoanDetailField label="Name">{loan.employeeId?.employee_name || loan.emp_no}</LoanDetailField>
-              <LoanDetailField label="Thumb No">{loan.emp_no}</LoanDetailField>
+              <LoanDetailField label="Emp No">{loan.emp_no || loan.employeeId?.emp_no || '—'}</LoanDetailField>
+              <LoanDetailField label="Phone">{loanEmployeePhone(loan) || '—'}</LoanDetailField>
               <LoanDetailField label="Department">{loan.department?.name || '—'}</LoanDetailField>
               <LoanDetailField label="Designation">{loan.designation?.name || '—'}</LoanDetailField>
               <LoanDetailField label="Amount">{formatRs(loan.amount)}</LoanDetailField>
@@ -511,32 +504,7 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
                   </span>
                 )}
               </LoanDetailSectionTitle>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-500 dark:border-slate-700">
-                      <th className="px-2 py-2">Month</th>
-                      <th className="px-2 py-2">Working days</th>
-                      <th className="px-2 py-2">Present</th>
-                      <th className="px-2 py-2">Leave</th>
-                      <th className="px-2 py-2">LOP</th>
-                      <th className="px-2 py-2">%</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(attendanceSummary.last6Months as AttendanceMonth[]).map((row) => (
-                      <tr key={row.month} className="border-b border-slate-100 dark:border-slate-800">
-                        <td className="px-2 py-2 font-medium">{row.monthName || row.month}</td>
-                        <td className="px-2 py-2">{row.workingDays || '—'}</td>
-                        <td className="px-2 py-2">{row.present ?? '—'}</td>
-                        <td className="px-2 py-2">{row.leave ?? '—'}</td>
-                        <td className="px-2 py-2">{row.lop ?? '—'}</td>
-                        <td className="px-2 py-2">{row.attendancePercent != null ? `${row.attendancePercent}%` : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <LoanAttendanceSummaryTable summary={attendanceSummary} />
             </LoanDetailSection>
           )}
 
@@ -558,7 +526,13 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
                 <ul className="mb-4 space-y-2">
                   {loan.guarantors.map((g: any, i: number) => (
                     <li key={i} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
-                      <span>{g.name} ({g.emp_no})</span>
+                      <span>
+                        {g.name} ({g.emp_no}
+                        {g.employeeId?.phone_number || g.employeeId?.alt_phone_number
+                          ? ` · ${g.employeeId.phone_number || g.employeeId.alt_phone_number}`
+                          : ''}
+                        )
+                      </span>
                       <span className={`rounded px-2 py-0.5 text-xs capitalize ${g.status === 'accepted' ? 'bg-emerald-100 text-emerald-700' : g.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
                         {g.status}
                       </span>

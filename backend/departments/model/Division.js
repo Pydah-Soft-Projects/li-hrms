@@ -153,7 +153,7 @@ const DivisionSchema = new mongoose.Schema({
             default: null
         },
         // Division-specific half/break config for this shift assignment.
-        // Shift master should not be treated as the source of truth for halves.
+        // When times are set they override the shift master; when null the master is used.
         firstHalf: {
             type: divisionShiftHalfSchema,
             default: null,

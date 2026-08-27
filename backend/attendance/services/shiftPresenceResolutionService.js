@@ -14,7 +14,7 @@ const {
   calculateSegmentEarlyOut,
   getEffectiveGrace,
 } = require('../../shifts/services/shiftHalfSegmentService');
-const { applyShiftSegmentOverride } = require('../../shared/utils/shiftSegmentOverrides');
+const { resolveEffectiveShiftDoc } = require('../../shared/utils/divisionShiftSegments');
 const { createISTDate, extractISTComponents } = require('../../shared/utils/dateUtils');
 const { getWorkedHalfFromLegacyPenalties } = require('../utils/attendanceHalfPresence');
 
@@ -261,11 +261,18 @@ function applyDurationOnlyPresent(pShift, basePayable, resolutionPath) {
   });
 }
 
-async function loadEffectiveShiftDoc(pShift, divisionId) {
+async function loadEffectiveShiftDoc(pShift, divisionId, ctx = {}) {
   if (!pShift?.shiftId) return null;
   const shiftDoc = await Shift.findById(pShift.shiftId).lean();
   if (!shiftDoc) return null;
-  return applyShiftSegmentOverride(shiftDoc, divisionId || null);
+  return resolveEffectiveShiftDoc(shiftDoc, {
+    divisionId: divisionId || ctx.divisionId || null,
+    division: ctx.division || null,
+    employeeGender: ctx.employeeGender || null,
+    employeeGroupId: ctx.employeeGroupId || null,
+    shiftId: pShift.shiftId,
+    groupingEnabled: ctx.groupingEnabled,
+  });
 }
 
 /**
@@ -278,6 +285,9 @@ async function resolveShiftPresence({
   graceOpts = {},
   shiftDoc = null,
   divisionId = null,
+  division = null,
+  employeeGender = null,
+  employeeGroupId = null,
   applyEdgePermissions = true,
 }) {
   if (!pShift?.inTime || !pShift?.outTime) {
@@ -289,7 +299,16 @@ async function resolveShiftPresence({
   const inTime = pShift.inTime instanceof Date ? pShift.inTime : new Date(pShift.inTime);
   const outTime = pShift.outTime instanceof Date ? pShift.outTime : new Date(pShift.outTime);
 
-  const effectiveShiftDoc = shiftDoc || (await loadEffectiveShiftDoc(pShift, divisionId));
+  const sourceShiftDoc = shiftDoc || (await Shift.findById(pShift.shiftId).lean());
+  const effectiveShiftDoc = sourceShiftDoc
+    ? await resolveEffectiveShiftDoc(sourceShiftDoc, {
+        divisionId: divisionId || null,
+        division,
+        employeeGender,
+        employeeGroupId,
+        shiftId: pShift.shiftId || sourceShiftDoc._id,
+      })
+    : null;
   const expectedHours = resolveExpectedHours(pShift, effectiveShiftDoc);
   const shiftMinDuration = resolveShiftMinDurationHours(effectiveShiftDoc);
   pShift.expectedHours = expectedHours;
@@ -419,10 +438,10 @@ async function resolveShiftPresence({
 /**
  * After async auto-permission refresh: if shift is now present at shift level, sync both halves.
  */
-async function syncBothHalvesIfShiftLevelPresent(pShift, dateStr, graceOpts = {}, divisionId = null) {
+async function syncBothHalvesIfShiftLevelPresent(pShift, dateStr, graceOpts = {}, divisionId = null, ctx = {}) {
   if (!pShift?.shiftId || pShift.status !== 'PRESENT') return pShift;
 
-  const effectiveShiftDoc = await loadEffectiveShiftDoc(pShift, divisionId);
+  const effectiveShiftDoc = await loadEffectiveShiftDoc(pShift, divisionId, ctx);
   if (!shiftHasHalfSegments(effectiveShiftDoc)) return pShift;
 
   const date = dateStr || extractISTComponents(pShift.inTime).dateStr;
