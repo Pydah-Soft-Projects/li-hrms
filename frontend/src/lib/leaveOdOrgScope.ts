@@ -9,27 +9,58 @@ function refId(ref: unknown): string {
   return String(ref);
 }
 
-/** Division/department stamped on the leave or OD record at apply time. */
-export function getLeaveOdRecordOrgIds(item: Record<string, unknown>): {
+export type LeaveOdOrgLookups = {
+  divisions?: Array<{ _id?: string; name?: string }>;
+  departments?: Array<{ _id?: string; name?: string }>;
+};
+
+/**
+ * Division/department stamped on the leave or OD record at apply time.
+ * Prefer request fields only — never fall back to the employee's current org.
+ */
+export function getLeaveOdRecordOrgIds(
+  item: Record<string, unknown>,
+  lookups?: LeaveOdOrgLookups
+): {
   divisionId: string;
   departmentId: string;
   divisionName: string;
   departmentName: string;
 } {
-  const divisionId =
-    refId(item.division_id) ||
-    refId((item.division_id as { _id?: unknown } | undefined)?._id);
-  const departmentId =
-    refId(item.department_id) ||
-    refId(item.department) ||
-    refId((item.department as { _id?: unknown } | undefined)?._id);
+  const divisionId = refId(item.division_id);
 
-  const divisionName =
+  // Leave/OD store department as ObjectId on both `department` and `department_id`.
+  // Prefer department_id; if `department` is a populated object use its _id, else treat as id string.
+  let departmentId = refId(item.department_id);
+  if (!departmentId) {
+    const dept = item.department;
+    if (dept && typeof dept === 'object' && dept !== null && 'name' in (dept as object)) {
+      departmentId = refId((dept as { _id?: unknown })._id);
+    } else {
+      departmentId = refId(dept);
+    }
+  }
+
+  let divisionName =
     String(item.division_name || '').trim() ||
-    String((item.division_id as { name?: string } | undefined)?.name || '').trim();
-  const departmentName =
+    (typeof item.division_id === 'object' && item.division_id
+      ? String((item.division_id as { name?: string }).name || '').trim()
+      : '');
+
+  let departmentName =
     String(item.department_name || '').trim() ||
-    String((item.department as { name?: string } | undefined)?.name || '').trim();
+    (typeof item.department === 'object' && item.department
+      ? String((item.department as { name?: string }).name || '').trim()
+      : '');
+
+  if (!divisionName && divisionId && lookups?.divisions?.length) {
+    divisionName =
+      lookups.divisions.find((d) => String(d._id) === divisionId)?.name?.trim() || '';
+  }
+  if (!departmentName && departmentId && lookups?.departments?.length) {
+    departmentName =
+      lookups.departments.find((d) => String(d._id) === departmentId)?.name?.trim() || '';
+  }
 
   return { divisionId, departmentId, divisionName, departmentName };
 }

@@ -55,6 +55,7 @@ import LeaveDayPortionControls from '@/components/leave/LeaveDayPortionControls'
 import { PreviousOrgScopeBadge } from '@/components/leave/PreviousOrgScopeBadge';
 import ODDetailCard from '@/components/od/ODDetailCard';
 import {
+  getLeaveOdRecordOrgIds,
   getPreviousOrgActionHint,
   isLeaveOdInUserOrgScope,
   isPreviousOrgLeaveOdForViewer,
@@ -3527,20 +3528,21 @@ function LeavesPageContent() {
   };
 
 
-  // Helper: get department name from item (top-level or nested on employeeId)
+  // Helper: department/division from the leave/OD request stamp (apply-time), not employee current org
   const getItemDepartmentName = (item: any) => {
-    const populated = item?.department?.name || (item?.employeeId as any)?.department?.name;
-    const fallback = item?.department_name;
-    const val = populated || fallback || '';
-    return val === 'N/A' || val === 'undefined' ? '' : val;
+    const { departmentName } = getLeaveOdRecordOrgIds(item as Record<string, unknown>, {
+      divisions,
+      departments,
+    });
+    return departmentName === 'N/A' || departmentName === 'undefined' ? '' : departmentName;
   };
 
-  // Helper: get division name from item (top-level or nested)
   const getItemDivisionName = (item: any) => {
-    const populated = (item?.employeeId as any)?.division?.name || (item?.employeeId as any)?.department?.division?.name || (item?.division_id as any)?.name;
-    const fallback = item?.division_name;
-    const val = populated || fallback || '';
-    return val === 'N/A' || val === 'undefined' ? '' : val;
+    const { divisionName } = getLeaveOdRecordOrgIds(item as Record<string, unknown>, {
+      divisions,
+      departments,
+    });
+    return divisionName === 'N/A' || divisionName === 'undefined' ? '' : divisionName;
   };
 
   // Helper: get designation name from item (top-level or nested on employeeId)
@@ -3597,15 +3599,18 @@ function LeavesPageContent() {
       const rowType = item.leaveType || item.odType;
       const matchesType = !typeFilter || (rowType && rowType === typeFilter);
 
-      // 4. Division Filter
-      const itemDivId = item.employeeId?.division?._id || item.employeeId?.division || item.division_id;
-      const matchesDivision = leaveFilters.division.length === 0 || (itemDivId && leaveFilters.division.includes(typeof itemDivId === 'object' ? itemDivId.toString() : itemDivId));
+      // 4–5. Division / Department filters use request stamp (apply-time), not employee current org
+      const { divisionId: itemDivId, departmentId: itemDepId } = getLeaveOdRecordOrgIds(
+        item as Record<string, unknown>
+      );
+      const matchesDivision =
+        leaveFilters.division.length === 0 ||
+        (itemDivId && leaveFilters.division.includes(itemDivId));
+      const matchesDepartment =
+        leaveFilters.department.length === 0 ||
+        (itemDepId && leaveFilters.department.includes(itemDepId));
 
-      // 5. Department Filter
-      const itemDepId = item.employeeId?.department?._id || item.employeeId?.department || item.department_id;
-      const matchesDepartment = leaveFilters.department.length === 0 || (itemDepId && leaveFilters.department.includes(typeof itemDepId === 'object' ? itemDepId.toString() : itemDepId));
-      
-      const itemDesId = item.employeeId?.designation?._id || item.employeeId?.designation || item.designation_id;
+      const itemDesId = item.designation?._id || item.designation || item.designation_id || item.employeeId?.designation?._id || item.employeeId?.designation;
       const matchesDesignation = leaveFilters.designation.length === 0 || (itemDesId && leaveFilters.designation.includes(typeof itemDesId === 'object' ? itemDesId.toString() : itemDesId));
 
       // 6. Date Range Filter
@@ -3624,10 +3629,10 @@ function LeavesPageContent() {
     });
   };
 
-  const filteredLeaves = useMemo(() => filterData(leaves, 'leave'), [leaves, leaveFilters, activeTab]);
-  const filteredODs = useMemo(() => filterData(ods, 'od'), [ods, leaveFilters, activeTab]);
-  const filteredPendingLeaves = useMemo(() => filterData(pendingLeaves, 'leave'), [pendingLeaves, leaveFilters, activeTab]);
-  const filteredPendingODs = useMemo(() => filterData(pendingODs, 'od'), [pendingODs, leaveFilters, activeTab]);
+  const filteredLeaves = useMemo(() => filterData(leaves, 'leave'), [leaves, leaveFilters, activeTab, divisions, departments]);
+  const filteredODs = useMemo(() => filterData(ods, 'od'), [ods, leaveFilters, activeTab, divisions, departments]);
+  const filteredPendingLeaves = useMemo(() => filterData(pendingLeaves, 'leave'), [pendingLeaves, leaveFilters, activeTab, divisions, departments]);
+  const filteredPendingODs = useMemo(() => filterData(pendingODs, 'od'), [pendingODs, leaveFilters, activeTab, divisions, departments]);
 
   const inProgressLeaves = useMemo(() => {
     const pendingIds = new Set(pendingLeaves.map(p => p._id));
@@ -3657,8 +3662,8 @@ function LeavesPageContent() {
     });
   }, [ods, pendingODs, currentUser]);
 
-  const filteredInProgressLeaves = useMemo(() => filterData(inProgressLeaves, 'leave'), [inProgressLeaves, leaveFilters, activeTab]);
-  const filteredInProgressODs = useMemo(() => filterData(inProgressODs, 'od'), [inProgressODs, leaveFilters, activeTab]);
+  const filteredInProgressLeaves = useMemo(() => filterData(inProgressLeaves, 'leave'), [inProgressLeaves, leaveFilters, activeTab, divisions, departments]);
+  const filteredInProgressODs = useMemo(() => filterData(inProgressODs, 'od'), [inProgressODs, leaveFilters, activeTab, divisions, departments]);
 
   /** Shared filters for list load and PDF export (pay period + workspace filters). */
   const getLeavesODFilters = () => ({
@@ -4088,13 +4093,17 @@ function LeavesPageContent() {
     if (activeTab === 'leaves') dataToCheck = leaves;
     else if (activeTab === 'od') dataToCheck = ods;
 
-    const uniqueDivisions = new Set(dataToCheck.map(item => item.employeeId?.department?.division?.name).filter(Boolean));
+    const uniqueDivisions = new Set(
+      dataToCheck
+        .map((item) => getLeaveOdRecordOrgIds(item as Record<string, unknown>, { divisions, departments }).divisionName)
+        .filter(Boolean)
+    );
 
     return {
       showDivision: uniqueDivisions.size > 1,
       showDepartment: true // Always show department for non-HODs as per requirement
     };
-  }, [leaves, ods, activeTab, currentUser]);
+  }, [leaves, ods, activeTab, currentUser, divisions, departments]);
 
   
 
