@@ -7,6 +7,7 @@ const DepartmentSettings = require('../../departments/model/DepartmentSettings')
 const DivisionWorkflowSettings = require('../../departments/model/DivisionWorkflowSettings');
 const { mergeWorkflowObjects } = require('../../departments/services/divisionWorkflowResolver');
 const Settings = require('../../settings/model/Settings');
+const { toRefId } = require('../../shared/utils/refId');
 
 function num(v, fallback = 0) {
   const n = Number(v);
@@ -20,11 +21,13 @@ function num(v, fallback = 0) {
  */
 async function getMergedOtConfig(departmentId, divisionId = null) {
   const global = await OvertimeSettings.getActiveSettings();
-  const hasDept = departmentId && mongooseId(departmentId);
-  const hasDiv = divisionId && mongooseId(divisionId);
+  const deptId = toRefId(departmentId);
+  const divId = toRefId(divisionId);
+  const hasDept = Boolean(deptId);
+  const hasDiv = Boolean(divId);
   const deptDoc =
     hasDept || hasDiv
-      ? await DepartmentSettings.getByDeptAndDiv(hasDept ? departmentId : null, hasDiv ? divisionId : null)
+      ? await DepartmentSettings.getByDeptAndDiv(hasDept ? deptId : null, hasDiv ? divId : null)
       : null;
   const d = deptDoc?.ot || {};
   const g = global || {};
@@ -58,8 +61,8 @@ async function getMergedOtConfig(departmentId, divisionId = null) {
       ? g.workflow
       : { isEnabled: false, steps: [], finalAuthority: { role: 'hr', anyHRCanApprove: false } };
 
-  if (divisionId && mongooseId(divisionId)) {
-    const divDoc = await DivisionWorkflowSettings.findOne({ division: divisionId }).lean();
+  if (divId) {
+    const divDoc = await DivisionWorkflowSettings.findOne({ division: divId }).lean();
     const divOt = divDoc?.workflows?.ot;
     workflowMerged = mergeWorkflowObjects(workflowMerged, divOt);
   }
@@ -122,11 +125,6 @@ async function getMergedOtConfig(departmentId, divisionId = null) {
     maxAdvanceDays: intPick('maxAdvanceDays', 365),
     workflow: workflowMerged,
   };
-}
-
-function mongooseId(id) {
-  if (!id) return false;
-  return String(id).length >= 12;
 }
 
 /**

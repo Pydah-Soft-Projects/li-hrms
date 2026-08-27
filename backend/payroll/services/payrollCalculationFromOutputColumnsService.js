@@ -27,6 +27,7 @@ const {
   buildBaseComponents,
 } = require('./allowanceDeductionResolverService');
 const { createISTDate, getPayrollDateRange } = require('../../shared/utils/dateUtils');
+const { toRefId, toRefIdString } = require('../../shared/utils/refId');
 const {
   resolveElUsedRawForPayroll,
   loadPriorPayrollRecordLean,
@@ -279,8 +280,8 @@ async function runRequiredServices(required, record, employee, employeeId, month
   }
 
   if (required.needsOT) {
-    const departmentIdStr = (employee?.department_id?._id || employee?.department_id)?.toString() || departmentId?.toString();
-    const divStr = (employee?.division_id?._id || employee?.division_id)?.toString() || divisionId?.toString() || null;
+    const departmentIdStr = toRefIdString(employee?.department_id) || toRefIdString(departmentId);
+    const divStr = toRefIdString(employee?.division_id) || toRefIdString(divisionId);
     const otPayResult = await otPayService.calculateOTPay(
       attendanceSummary.totalOTHours || 0,
       departmentIdStr,
@@ -308,7 +309,7 @@ async function runRequiredServices(required, record, employee, employeeId, month
       monthDays: record.attendance?.totalDaysInMonth ?? 30,
     };
     const includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
-    const { allowances: baseAllowances } = await buildBaseComponents(departmentId, basicPay, attendanceData, employee?.division_id);
+    const { allowances: baseAllowances } = await buildBaseComponents(departmentId, basicPay, attendanceData, toRefIdString(employee?.division_id) || toRefIdString(divisionId));
     const normalized = normalizeOverrides(employee?.employeeAllowances || [], 'allowance');
     const resolvedAllowances = mergeWithOverrides(baseAllowances, normalized, includeMissing);
     let totalAllowances = 0;
@@ -337,7 +338,7 @@ async function runRequiredServices(required, record, employee, employeeId, month
       month,
       departmentId,
       perDaySalary,
-      employee?.division_id ?? divisionId,
+      toRefIdString(employee?.division_id) || toRefIdString(divisionId),
       {
         employee: employee ?? undefined,
         absentDays,
@@ -359,7 +360,7 @@ async function runRequiredServices(required, record, employee, employeeId, month
       month,
       departmentId,
       perDaySalary,
-      employee?.division_id ?? divisionId,
+      toRefIdString(employee?.division_id) || toRefIdString(divisionId),
       { employee: employee ?? undefined }
     );
     if (!record.deductions) record.deductions = {};
@@ -428,7 +429,7 @@ async function runRequiredServices(required, record, employee, employeeId, month
           departmentId,
           basicPay,
           attendanceData,
-          employee?.division_id,
+          toRefIdString(employee?.division_id) || toRefIdString(divisionId),
         );
         const normalized = normalizeOverrides(employee?.employeeDeductions || [], 'deduction');
         const resolvedDeductions = mergeWithOverrides(baseDeductions, normalized, includeMissing);
@@ -659,8 +660,8 @@ async function buildAttendanceFromSummary(payRegisterSummary, employee, month, c
   let paidLeaveDays = payRegisterSummary.totals?.totalPaidLeaveDays || 0;
   let elUsedInPayroll = 0;
   try {
-    const departmentId = employee.department_id?._id || employee.department_id;
-    const divisionId = employee.division_id?._id || employee.division_id;
+    const departmentId = toRefId(employee.department_id);
+    const divisionId = toRefId(employee.division_id);
     if (departmentId) {
       const prior =
         ctx.priorPayrollRecord !== undefined
@@ -760,7 +761,7 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
         month,
         departmentId,
         perDaySalary,
-        employee?.division_id ?? divisionId,
+        toRefIdString(employee?.division_id) || toRefIdString(divisionId),
         {
           employee: employee ?? undefined,
           absentDays,
@@ -785,7 +786,7 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
         month,
         departmentId,
         perDaySalary,
-        employee?.division_id ?? divisionId,
+        toRefIdString(employee?.division_id) || toRefIdString(divisionId),
         { employee: employee ?? undefined }
       );
       if (!record.deductions) record.deductions = {};
@@ -805,7 +806,7 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
         month,
         departmentId,
         perDaySalary,
-        employee?.division_id ?? divisionId,
+        toRefIdString(employee?.division_id) || toRefIdString(divisionId),
         { employee: employee ?? undefined }
       );
       if (!record.deductions) record.deductions = {};
@@ -825,7 +826,7 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
         month,
         departmentId,
         perDaySalary,
-        employee?.division_id ?? divisionId,
+        toRefIdString(employee?.division_id) || toRefIdString(divisionId),
         { employee: employee ?? undefined }
       );
       if (!record.deductions) record.deductions = {};
@@ -966,8 +967,8 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
 
   // earnings.otPay, otHours, otRatePerHour
   if (path.startsWith('earnings.ot')) {
-    const departmentIdStr = (employee?.department_id?._id || employee?.department_id)?.toString() || departmentId?.toString();
-    const divStr = (employee?.division_id?._id || employee?.division_id)?.toString() || divisionId?.toString() || null;
+    const departmentIdStr = toRefIdString(employee?.department_id) || toRefIdString(departmentId);
+    const divStr = toRefIdString(employee?.division_id) || toRefIdString(divisionId);
     const otPayResult = await otPayService.calculateOTPay(
       attendanceSummary.totalOTHours || 0,
       departmentIdStr,
@@ -1006,7 +1007,7 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
       attendanceData.monthDays = totalDaysFromCol;
     }
     const includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
-    const { allowances: baseAllowances } = await buildBaseComponents(departmentId, basicPay, attendanceData, employee?.division_id);
+    const { allowances: baseAllowances } = await buildBaseComponents(departmentId, basicPay, attendanceData, toRefIdString(employee?.division_id) || toRefIdString(divisionId));
     const normalized = normalizeOverrides(employee?.employeeAllowances || [], 'allowance');
     const resolvedAllowances = mergeWithOverrides(baseAllowances, normalized, includeMissing);
     let totalAllowances = 0;
@@ -1039,7 +1040,7 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
       month,
       departmentId,
       perDaySalary,
-      employee?.division_id ?? divisionId,
+      toRefIdString(employee?.division_id) || toRefIdString(divisionId),
       {
         employee: employee ?? undefined,
         absentDays,
@@ -1081,7 +1082,7 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
       attendanceData.monthDays = totalDaysFromCol;
     }
     const includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
-    const { deductions: baseDeductions } = await buildBaseComponents(departmentId, record.earnings?.basicPay || 0, attendanceData, employee?.division_id);
+    const { deductions: baseDeductions } = await buildBaseComponents(departmentId, record.earnings?.basicPay || 0, attendanceData, toRefIdString(employee?.division_id) || toRefIdString(divisionId));
     const normalized = normalizeOverrides(employee?.employeeDeductions || [], 'deduction');
     const resolvedDeductions = mergeWithOverrides(baseDeductions, normalized, includeMissing);
     let totalOther = 0;
@@ -1349,8 +1350,8 @@ async function persistSecondSalaryFromOutputColumns(record, employee, userId, mo
   ssRecord.set('roundOff', Number(record.roundOff) || 0);
   ssRecord.set('payableAmountBeforeAdvance', Number(record.earnings?.grossSalary) || 0);
   ssRecord.set('status', 'calculated');
-  const divId = employee.division_id?._id ?? employee.division_id;
-  const deptId = employee.department_id?._id ?? employee.department_id;
+  const divId = toRefId(employee.division_id);
+  const deptId = toRefId(employee.department_id);
   ssRecord.set('division_id', divId);
   ssRecord.set('totalPayableShifts', record.attendance?.payableShifts ?? payRegisterSummary?.totals?.totalPayableShifts ?? 0);
   ssRecord.set('attendance', buildAttendancePatchForSecondSalary(record.attendance, payRegisterSummary, earnedFallback));
@@ -1409,8 +1410,8 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
   const sorted = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const outputColumnsNormalized = normalizeOutputColumns(sorted);
 
-  const departmentId = (employee.department_id?._id || employee.department_id)?.toString();
-  const divisionId = (employee.division_id?._id || employee.division_id)?.toString();
+  const departmentId = toRefIdString(employee.department_id);
+  const divisionId = toRefIdString(employee.division_id);
   await enforceBatchLock({
     kind: secondSalaryBasis ? 'second_salary' : 'regular',
     month,
@@ -1626,7 +1627,7 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
 
   payrollRecord.set('totalPayableShifts', payableShifts);
   payrollRecord.set('elUsedInPayroll', elUsedInPayroll);
-  payrollRecord.set('division_id', employee.division_id);
+  payrollRecord.set('division_id', toRefId(employee.division_id));
   payrollRecord.set('status', 'calculated');
   payrollRecord.set('netSalary', Number(record.netSalary) || 0);
   payrollRecord.set('roundOff', Number(record.roundOff) || 0);
@@ -1681,8 +1682,8 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
 
   // Create or find batch and add this payroll record (same as legacy flow — batches created right after record save)
   let batchId = null;
-  const deptId = employee.department_id?._id ?? employee.department_id;
-  const divId = employee.division_id?._id ?? employee.division_id;
+  const deptId = toRefId(employee.department_id);
+  const divId = toRefId(employee.division_id);
   if (deptId && divId) {
     try {
       let batch = await PayrollBatch.findOne({

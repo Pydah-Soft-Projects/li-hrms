@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { toRefId } = require('../../shared/utils/refId');
 
 /** Optional overrides for global LeavePolicySettings.earnedLeave (per department / division). */
 const departmentEarnedLeaveOverrideSchema = new mongoose.Schema(
@@ -726,7 +727,8 @@ function mergeSettingsThreeLayers(deptBasePlain, divWidePlain, deptDivPlain) {
 
 // Static method to get effective settings for a department and division (three-layer merge when division is set)
 departmentSettingsSchema.statics.getByDeptAndDiv = async function (departmentId, divisionId = null) {
-  const divId = divisionId || null;
+  const deptId = toRefId(departmentId);
+  const divId = toRefId(divisionId);
 
   let divisionWidePlain = null;
   if (divId) {
@@ -734,18 +736,18 @@ departmentSettingsSchema.statics.getByDeptAndDiv = async function (departmentId,
     if (dw) divisionWidePlain = toPlainDoc(dw);
   }
 
-  if (!departmentId) {
+  if (!deptId) {
     return divisionWidePlain || null;
   }
 
-  const deptBaseRow = await this.findOne({ department: departmentId, division: null });
+  const deptBaseRow = await this.findOne({ department: deptId, division: null });
   const deptBasePlain = deptBaseRow ? toPlainDoc(deptBaseRow) : null;
 
   if (!divId) {
     return deptBasePlain;
   }
 
-  const deptDivRow = await this.findOne({ department: departmentId, division: divId });
+  const deptDivRow = await this.findOne({ department: deptId, division: divId });
   const deptDivPlain = deptDivRow ? toPlainDoc(deptDivRow) : null;
 
   if (!deptBasePlain && !divisionWidePlain && !deptDivPlain) return null;
@@ -755,9 +757,11 @@ departmentSettingsSchema.statics.getByDeptAndDiv = async function (departmentId,
 
 // Static method to get or create settings for a department/division combination
 departmentSettingsSchema.statics.getOrCreateCombination = async function (departmentId, divisionId = null) {
-  let settings = await this.findOne({ department: departmentId, division: divisionId || null });
+  const deptId = toRefId(departmentId);
+  const divId = toRefId(divisionId);
+  let settings = await this.findOne({ department: deptId, division: divId || null });
   if (!settings) {
-    settings = new this({ department: departmentId, division: divisionId || null });
+    settings = new this({ department: deptId, division: divId || null });
     await settings.save();
   }
   return settings;
@@ -765,10 +769,11 @@ departmentSettingsSchema.statics.getOrCreateCombination = async function (depart
 
 /** Division-wide row: applies to every department in that division until a department row overrides. */
 departmentSettingsSchema.statics.getOrCreateDivisionWide = async function (divisionId) {
-  if (!divisionId) return null;
-  let settings = await this.findOne({ department: null, division: divisionId });
+  const divId = toRefId(divisionId);
+  if (!divId) return null;
+  let settings = await this.findOne({ department: null, division: divId });
   if (!settings) {
-    settings = new this({ department: null, division: divisionId });
+    settings = new this({ department: null, division: divId });
     await settings.save();
   }
   return settings;

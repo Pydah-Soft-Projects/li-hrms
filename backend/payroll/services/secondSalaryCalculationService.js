@@ -12,6 +12,7 @@ const secondSalaryLoanAdvanceService = require('./secondSalaryLoanAdvanceService
 const SecondSalaryBatchService = require('./secondSalaryBatchService');
 const allowanceDeductionResolverService = require('./allowanceDeductionResolverService');
 const statutoryDeductionService = require('./statutoryDeductionService');
+const { toRefId } = require('../../shared/utils/refId');
 const {
     resolveElUsedRawForPayroll,
     loadPriorPayrollRecordLean,
@@ -105,8 +106,8 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
             };
         }
 
-        const departmentId = employee.department_id?._id || employee.department_id;
-        const divisionId = employee.division_id?._id || employee.division_id;
+        const departmentId = toRefId(employee.department_id);
+        const divisionId = toRefId(employee.division_id);
 
         if (!departmentId) {
             throw new Error(`Employee ${employee.emp_no} has no department assigned. Calculation aborted.`);

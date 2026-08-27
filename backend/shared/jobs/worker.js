@@ -2,6 +2,17 @@ const { Worker } = require('bullmq');
 const { redisConfig } = require('../../config/redis');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
+function formatWorkerError(err) {
+    if (!err) return 'Unknown error';
+    const path = err.path ? ` (path=${err.path})` : '';
+    if (err.name === 'CastError' || /Cast to ObjectId/i.test(String(err.message || ''))) {
+        return `Cast to ObjectId failed${path}. A full document was passed where an id is required.`;
+    }
+    const msg = String(err.message || err);
+    if (msg.length > 400) return `${msg.slice(0, 240)}… (truncated${path})`;
+    return msg;
+}
+
 /**
  * Build the pre-fetched department context (optimization reused by per-employee calculation).
  *
@@ -111,7 +122,7 @@ const startWorkers = () => {
                         const result = await calculateSecondSalary(employee._id, month, userId, sharedContext);
                         if (result.batchId) batchIds.add(result.batchId.toString());
                     } catch (err) {
-                        console.error(`[Worker] Failed 2nd salary for ${employee.emp_no}:`, err.message);
+                        console.error(`[Worker] Failed 2nd salary for ${employee.emp_no}:`, formatWorkerError(err));
                     }
 
                     // Update progress
@@ -261,7 +272,7 @@ const startWorkers = () => {
                         }
                         if (result.batchId) batchIds.add(result.batchId.toString());
                     } catch (err) {
-                        console.error(`[Worker] Failed bulk payroll for ${employee.emp_no || employee._id}:`, err.message);
+                        console.error(`[Worker] Failed bulk payroll for ${employee.emp_no || employee._id}:`, formatWorkerError(err));
                     }
 
                     const overallProcessed = i + 1;
@@ -315,7 +326,7 @@ const startWorkers = () => {
                         const bid = result?.batchId;
                         if (bid) secondBatchIds.add(bid.toString());
                     } catch (err) {
-                        console.error(`[Worker] Failed 2nd salary after bulk for ${employee.emp_no || employee._id}:`, err.message);
+                        console.error(`[Worker] Failed 2nd salary after bulk for ${employee.emp_no || employee._id}:`, formatWorkerError(err));
                     }
 
                     const overallProcessed = employees.length + j + 1;

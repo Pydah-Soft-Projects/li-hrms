@@ -24,6 +24,7 @@ const {
 const statutoryDeductionService = require('./statutoryDeductionService');
 const Settings = require('../../settings/model/Settings');
 const { createISTDate, extractISTComponents } = require('../../shared/utils/dateUtils');
+const { toRefId, toRefIdString } = require('../../shared/utils/refId');
 const {
   resolveElUsedRawForPayroll,
   loadPriorPayrollRecordLean,
@@ -191,7 +192,9 @@ async function calculatePayroll(employeeId, month, userId) {
       };
     }
 
-    const departmentId = employee.department_id?._id || employee.department_id;
+    const departmentId = toRefId(employee.department_id);
+    const divisionId = toRefId(employee.division_id);
+    const divisionIdStr = toRefIdString(employee.division_id);
     if (!departmentId) {
       throw new Error('Employee department not found');
     }
@@ -202,7 +205,7 @@ async function calculatePayroll(employeeId, month, userId) {
     // Strict Scoping: Check for batch specific to Division + Department
     const existingBatch = await PayrollBatch.findOne({
       department: departmentId,
-      division: employee.division_id, // Division Scope
+      division: divisionId,
       month
     });
     if (existingBatch) {
@@ -267,7 +270,7 @@ async function calculatePayroll(employeeId, month, userId) {
     const otPayResult = await otPayService.calculateOTPay(
       attendanceSummary.totalOTHours || 0,
       departmentId.toString(),
-      employee.division_id?.toString() || null,
+      divisionIdStr,
       {
         employee,
         totalDaysInMonth: attendanceSummary.totalDaysInMonth,
@@ -288,7 +291,7 @@ async function calculatePayroll(employeeId, month, userId) {
       null,
       false,
       attendanceDataForProration,
-      employee.division_id?.toString() || null
+      divisionIdStr
     );
     console.log(`Allowances (Basic Base): ${allowances.length} items`);
     allowances.forEach((allow, idx) => {
@@ -311,7 +314,7 @@ async function calculatePayroll(employeeId, month, userId) {
       grossSalary,
       true,
       attendanceDataForProration,
-      employee.division_id?.toString() || null
+      divisionIdStr
     );
     console.log(`Allowances (Gross Base): ${allowancesWithGrossBase.length} items`);
     allowancesWithGrossBase.forEach((allow, idx) => {
@@ -331,7 +334,7 @@ async function calculatePayroll(employeeId, month, userId) {
     });
     const allAllowances = Array.from(uniqueBaseAllowancesMap.values());
 
-    const includeMissing = await getIncludeMissingFlag(departmentId, employee.division_id);
+    const includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
 
     // Accept employee overrides even if category was missing/old; normalize to 'allowance'
     const allowanceOverrides = normalizeOverrides(employee.employeeAllowances || [], 'allowance').filter(
@@ -378,14 +381,14 @@ async function calculatePayroll(employeeId, month, userId) {
 
     // 7a. Attendance Deduction (late/early + permission handled in 7b; absent extra = absent_days * (lop_days_per_absent - 1) when enable_absent_deduction)
     const totalAbsentDays = modifiedAttendanceSummary.totalAbsentDays ?? attendanceSummary.totalAbsentDays ?? 0;
-    const absentSettings = await getAbsentDeductionSettings(departmentId.toString(), employee.division_id?.toString() || null);
+    const absentSettings = await getAbsentDeductionSettings(departmentId.toString(), divisionIdStr);
     console.log('\n--- 7a. Attendance Deduction ---');
     const attendanceDeductionResult = await deductionService.calculateAttendanceDeduction(
       employeeId,
       month,
       departmentId.toString(),
       basicPayResult.perDayBasicPay,
-      employee.division_id?.toString() || null,
+      divisionIdStr,
       {
         absentDays: totalAbsentDays,
         enableAbsentDeduction: absentSettings.enableAbsentDeduction,
@@ -413,7 +416,7 @@ async function calculatePayroll(employeeId, month, userId) {
       month,
       departmentId.toString(),
       basicPayResult.perDayBasicPay,
-      employee.division_id?.toString() || null,
+      divisionIdStr,
       { employee }
     );
     console.log('Permission Deduction Result:', JSON.stringify(permissionDeductionResult, null, 2));
@@ -457,7 +460,7 @@ async function calculatePayroll(employeeId, month, userId) {
       basicPayResult.basicPay,
       grossSalary, // Pass gross salary for percentage-gross deductions
       attendanceDataForProration,
-      employee.division_id?.toString() || null
+      divisionIdStr
     );
 
     console.log(`\nTotal Other Deductions Found: ${allOtherDeductions.length} items`);
@@ -603,11 +606,11 @@ async function calculatePayroll(employeeId, month, userId) {
     // Step 12: Get settings snapshot for audit
     const otSettings = await otPayService.getResolvedOTSettings(
       departmentId.toString(),
-      employee.division_id?.toString?.() || null,
+      divisionIdStr,
       employee
     );
-    const permissionRules = await deductionService.getResolvedPermissionDeductionRules(departmentId.toString(), employee.division_id);
-    const attendanceRules = await deductionService.getResolvedAttendanceDeductionRules(departmentId.toString(), employee.division_id);
+    const permissionRules = await deductionService.getResolvedPermissionDeductionRules(departmentId.toString(), divisionId);
+    const attendanceRules = await deductionService.getResolvedAttendanceDeductionRules(departmentId.toString(), divisionId);
 
     // Step 13: Create or Update Payroll Record
     const [year, monthNum] = month.split('-').map(Number);
@@ -621,13 +624,13 @@ async function calculatePayroll(employeeId, month, userId) {
             segmentIndex: segment.segmentIndex || 0,
             segmentStartDate: segment.segmentStartDate,
             segmentEndDate: segment.segmentEndDate,
-            division_id: segment.division_id || employee.division_id,
-            department_id: segment.department_id || employee.department_id,
+            division_id: toRefId(segment.division_id) || divisionId,
+            department_id: toRefId(segment.department_id) || departmentId,
             grossSalaryUsed: segment.gross_salary != null ? segment.gross_salary : employee.gross_salary,
           }
         : {
-            division_id: employee.division_id,
-            department_id: employee.department_id?._id || employee.department_id,
+            division_id: divisionId,
+            department_id: departmentId,
             grossSalaryUsed: employee.gross_salary,
           }
     );
@@ -665,7 +668,7 @@ async function calculatePayroll(employeeId, month, userId) {
     payrollRecord.set('arrearsAmount', Number(payrollRecord.arrearsAmount) || 0);
     payrollRecord.set('extraDaysPay', Number(basicPayResult.incentive) || 0);
     payrollRecord.set('status', 'calculated');
-    payrollRecord.set('division_id', employee.division_id);
+    payrollRecord.set('division_id', divisionId);
     payrollRecord.set('attendanceSummaryId', attendanceSummary._id);
 
     // Set payroll cycle range from attendance summary (PayRegisterSummary)
@@ -989,14 +992,15 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       }
     }
 
-    const departmentId = employee.department_id?._id || employee.department_id;
-    const divisionId = employee.division_id?._id || employee.division_id;
+    const departmentId = toRefId(employee.department_id);
+    const divisionId = toRefId(employee.division_id);
+    const divisionIdStr = toRefIdString(employee.division_id);
     if (!departmentId) throw new Error('Employee department not found');
 
     // BATCH VALIDATION: Check if payroll batch is locked
     const existingBatch = await PayrollBatch.findOne({
       department: departmentId,
-      division: employee.division_id, // Division Scope
+      division: divisionId,
       month
     });
     let permissionBatchToConsume = null;
@@ -1121,7 +1125,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     const otPayResult = await otPayService.calculateOTPay(
       attendanceSummary.totalOTHours || 0,
       departmentId.toString(),
-      employee.division_id?.toString() || null,
+      divisionIdStr,
       {
         employee,
         totalDaysInMonth: attendanceSummary.totalDaysInMonth,
@@ -1168,7 +1172,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       departmentId,
       basicPay,
       attendanceData,
-      employee.division_id
+      divisionId
     );
 
     // Log base components for debugging
@@ -1237,7 +1241,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       month,
       departmentId,
       perDaySalary,
-      employee.division_id, // Pass division ID for granular rules
+      divisionId,
       { employee }
     );
 
@@ -1382,7 +1386,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     payrollRecord.set('elUsedInPayroll', Number(elUsedInPayroll) || 0);
     payrollRecord.set('netSalary', Number(netSalary) || 0);
     payrollRecord.set('payableAmountBeforeAdvance', Number(payablePool) || 0);
-    payrollRecord.set('division_id', employee.division_id);
+    payrollRecord.set('division_id', divisionId);
     payrollRecord.set('status', 'calculated');
 
     // ===== ATTENDANCE BREAKDOWN (NEW) =====
@@ -1685,18 +1689,16 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
 
     let batchId = null;
     // Create or find batch and add this payroll record (same as dynamic engine — batches right after record save)
-    const deptId = employee?.department_id?._id ?? employee?.department_id;
-    const divId = employee?.division_id?._id ?? employee?.division_id;
     try {
-      if (employee && deptId && divId) {
+      if (employee && departmentId && divisionId) {
         let batch = await PayrollBatch.findOne({
-          department: deptId,
-          division: divId,
+          department: departmentId,
+          division: divisionId,
           month: month
         });
 
         if (!batch) {
-          batch = await PayrollBatchService.createBatch(deptId, divId, month, userId);
+          batch = await PayrollBatchService.createBatch(departmentId, divisionId, month, userId);
         }
 
         if (batch) {
