@@ -2062,6 +2062,18 @@ exports.processODAction = async (req, res) => {
       });
     }
 
+    if (
+      !['super_admin', 'sub_admin'].includes(userRole) &&
+      ['hod', 'manager', 'hr'].includes(userRole) &&
+      fullUser &&
+      !checkJurisdiction(fullUser, od)
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: 'This request belongs to a previous department/division. The previous org approver must act on it.',
+      });
+    }
+
     const historyEntry = {
       step: currentApprover,
       actionBy: req.user._id,
