@@ -421,6 +421,11 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
                                 deviceName,
                                 deviceId: normalizedSN,
                                 syncedAt: new Date()
+                            },
+                            $setOnInsert: {
+                                hrmsSyncStatus: 'pending',
+                                hrmsSyncAttempts: 0,
+                                createdAt: new Date()
                             }
                         },
                         upsert: true
@@ -443,15 +448,7 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
                             && deviceService.shouldSuppressHrmsSyncForAdmsAttlog(normalizedSN)) {
                             logger.info(`ADMS ATTLOG: skipping HRMS sync for ${normalizedSN} (fresh backup capture in progress; local AttendanceLog still updated)`);
                         } else {
-                            const axios = require('axios'); // Lazy load
-                            const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
-                            const syncEndpoint = `${BACKEND_URL}/api/internal/attendance/sync`;
-                            const SYSTEM_KEY = process.env.HRMS_MICROSERVICE_SECRET_KEY || "hrms-secret-key-2026-abc123xyz789";
-                            if (!SYSTEM_KEY) {
-                                logger.error('HRMS_MICROSERVICE_SECRET_KEY not configured in biometric service');
-                                return;
-                            }
-
+                            const hrmsAttendanceSync = require('../services/hrmsAttendanceSyncService');
                             const syncPayload = records.map(rec => {
                                 const { resolvedLogType } = resolveLogType({
                                     rawStatusCode: rec.inOutMode,
@@ -481,17 +478,9 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
                                 logger.info(`ADMS Internal Sync Row: ... ${syncPayload.length - 25} more rows omitted from preview`);
                             }
 
-                            axios.post(syncEndpoint, syncPayload, {
-                                headers: { 'x-system-key': SYSTEM_KEY },
-                                timeout: 5000
-                            })
-                                .then(response => {
-                                    logger.info(`ADMS Real-Time Sync Success: Backend accepted ${response.data.processed} logs.`);
-                                })
-                                .catch(err => {
-                                    const errorReason = err.code === 'ECONNREFUSED' ? `Connection refused at ${syncEndpoint}` : err.message;
-                                    logger.error(`ADMS Real-Time Sync Failed: ${errorReason}`);
-                                });
+                            hrmsAttendanceSync.dispatchLiveSync(syncPayload).catch((err) => {
+                                logger.error(`ADMS Real-Time Trigger Error: ${err.message}`);
+                            });
                         }
 
                     } catch (syncError) {

@@ -226,7 +226,9 @@ class DeviceService {
                                     rawData: record,
                                     deviceId: device.deviceId,
                                     deviceName: device.name,
-                                    syncedAt: new Date()
+                                    syncedAt: new Date(),
+                                    hrmsSyncStatus: 'pending',
+                                    hrmsSyncAttempts: 0
                                 }
                             }
                         });

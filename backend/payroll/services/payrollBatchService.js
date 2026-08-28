@@ -26,6 +26,7 @@ const {
 const {
     setPayrollRecordsSalaryHold,
 } = require('../../shared/utils/salaryHoldUtils');
+const { toRefId } = require('../../shared/utils/refId');
 
 /**
  * PayrollBatch Service
@@ -87,11 +88,13 @@ class PayrollBatchService {
     static async createBatch(departmentId, divisionId, month, userId) {
         try {
             const [year, monthNum] = month.split('-').map(Number);
+            const deptId = toRefId(departmentId);
+            const divId = toRefId(divisionId);
 
             // Check if batch already exists for this Division + Department
             const existingBatch = await PayrollBatch.findOne({
-                department: departmentId,
-                division: divisionId,
+                department: deptId,
+                division: divId,
                 month
             });
 
@@ -100,13 +103,13 @@ class PayrollBatchService {
             }
 
             // Generate batch number with Division context
-            const batchNumber = await PayrollBatch.generateBatchNumber(departmentId, divisionId, month);
+            const batchNumber = await PayrollBatch.generateBatchNumber(deptId, divId, month);
 
             // Create batch
             const batch = new PayrollBatch({
                 batchNumber,
-                department: departmentId,
-                division: divisionId,
+                department: deptId,
+                division: divId,
                 month,
                 year,
                 monthNumber: monthNum,

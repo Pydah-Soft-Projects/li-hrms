@@ -8,6 +8,7 @@ const path = require('path');
 const logger = require('./utils/logger');
 const DeviceService = require('./services/deviceService');
 const SyncScheduler = require('./jobs/syncScheduler');
+const HrmsCatchUpScheduler = require('./jobs/hrmsCatchUpScheduler');
 const apiRoutes = require('./routes/api');
 const internalReplayRoutes = require('./routes/internalReplay');
 const deviceRoutes = require('./routes/devices');
@@ -49,9 +50,11 @@ app.use(express.urlencoded({ extended: true }));
 // Initialize services (will load devices from database)
 const deviceService = new DeviceService();
 const syncScheduler = new SyncScheduler(deviceService, 15);
+const hrmsCatchUpScheduler = new HrmsCatchUpScheduler();
 
 app.set('deviceService', deviceService);
 app.set('syncScheduler', syncScheduler);
+app.set('hrmsCatchUpScheduler', hrmsCatchUpScheduler);
 
 // Routes (Mongo → HRMS replay; no device — must use same x-system-key as HRMS)
 app.use('/api/internal', internalReplayRoutes);
@@ -68,7 +71,8 @@ app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
-        mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+        mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+        hrmsCatchUp: hrmsCatchUpScheduler.getSnapshot()
     });
 });
 
@@ -89,6 +93,8 @@ app.get('/', (req, res) => {
             operationModeGet: 'GET /api/settings/operation-mode',
             operationModeSet: 'PUT /api/settings/operation-mode',
             health: 'GET /health',
+            hrmsSyncStatus: 'GET /api/hrms-sync/status',
+            hrmsCatchUpNow: 'POST /api/hrms-sync/catch-up-now',
             devices: {
                 list: 'GET /api/devices',
                 get: 'GET /api/devices/:deviceId',
@@ -188,6 +194,8 @@ mongoose.connect(MONGODB_URI)
             } else {
                 logger.info('Automated TCP Sync is DISABLED (syncIntervalMinutes=0, ADMS-only).');
             }
+
+            hrmsCatchUpScheduler.start();
         });
     })
     .catch((error) => {
@@ -199,6 +207,15 @@ mongoose.connect(MONGODB_URI)
 process.on('SIGINT', async () => {
     logger.info('Shutting down gracefully...');
     syncScheduler.stop();
+    hrmsCatchUpScheduler.stop();
+    await mongoose.connection.close();
+    process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+    logger.info('Shutting down gracefully...');
+    syncScheduler.stop();
+    hrmsCatchUpScheduler.stop();
     await mongoose.connection.close();
     process.exit(0);
 });
