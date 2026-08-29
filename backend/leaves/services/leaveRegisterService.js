@@ -509,6 +509,10 @@ class LeaveRegisterService {
      */
     async addLeaveDebit(leaveRecord, approvedByUserId = null) {
         try {
+            if (String(leaveRecord?.splitStatus || '') === 'split_approved') {
+                return this.syncLeaveDebitFromSplits(leaveRecord, approvedByUserId);
+            }
+
             const employee = await Employee.findById(leaveRecord.employeeId)
                 .populate('department_id', 'name')
                 .populate('designation_id', 'name');
@@ -558,6 +562,17 @@ class LeaveRegisterService {
             console.error('Error adding leave debit:', error);
             throw error;
         }
+    }
+
+    /**
+     * Replace register debits for a split-approved leave with approved split rows only.
+     */
+    async syncLeaveDebitFromSplits(leaveRecord, approvedByUserId = null) {
+        const { syncLeaveRegisterFromSplits } = require('./leaveRegisterSplitSyncService');
+        return syncLeaveRegisterFromSplits(leaveRecord, {
+            dryRun: false,
+            approvedByUserId,
+        });
     }
 
     /**

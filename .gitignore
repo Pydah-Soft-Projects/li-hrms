@@ -65,3 +65,6 @@ Thumbs.db
 .parcel-cache/
 .turbo/
 
+# One-off script output (scan/reconcile dry-run artifacts)
+backend/scripts/_*
+

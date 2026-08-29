@@ -382,6 +382,15 @@ async function createSplits(leaveId, splits, approver) {
       console.warn('[monthlyApply sync after createSplits]', e?.message || e);
     }
 
+    if (String(leave.status || '').toLowerCase() === 'approved') {
+      try {
+        const leaveRegisterService = require('./leaveRegisterService');
+        await leaveRegisterService.syncLeaveDebitFromSplits(leave, approver?._id || null);
+      } catch (e) {
+        console.warn('[leave register sync after createSplits]', e?.message || e);
+      }
+    }
+
     return {
       success: true,
       data: createdSplits,
@@ -475,6 +484,19 @@ async function updateSplit(splitId, updateData, approver) {
         notes: `Split modified: ${JSON.stringify(updateData)}`,
       });
       await leave.save();
+    }
+
+    if (
+      leave &&
+      String(leave.status || '').toLowerCase() === 'approved' &&
+      String(leave.splitStatus || '') === 'split_approved'
+    ) {
+      try {
+        const leaveRegisterService = require('./leaveRegisterService');
+        await leaveRegisterService.syncLeaveDebitFromSplits(leave, approver?._id || null);
+      } catch (e) {
+        console.warn('[leave register sync after updateSplit]', e?.message || e);
+      }
     }
 
     return {
