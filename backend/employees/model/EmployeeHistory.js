@@ -29,6 +29,7 @@ const employeeHistorySchema = new mongoose.Schema(
                 'resignation_step_rejected',
                 'resignation_final_approved',
                 'resignation_rejected',
+                'resignation_cancelled',
                 'resignation_workflow_reopened',
                 'termination_final_approved',
                 // Left date / separation changes

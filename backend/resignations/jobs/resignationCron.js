@@ -35,6 +35,16 @@ const startResignationCron = () => {
 
         if (!employee) continue;
 
+        // Rejoined employees should have resignations cancelled; skip stale approved requests.
+        if (!employee.leftDate) {
+          if (employee.is_active) {
+            console.log(
+              `[ResignationCron] Skipping ${employee.emp_no}: active with no leftDate (likely rejoined)`
+            );
+          }
+          continue;
+        }
+
         if (employee.is_active) {
           console.log(`[ResignationCron] Deactivating employee: ${employee.emp_no} (${employee.employee_name})`);
 

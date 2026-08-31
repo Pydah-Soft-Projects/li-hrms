@@ -48,6 +48,7 @@ const {
 } = require('../../shared/utils/scopedNotificationRecipients');
 const { schedulePostVerifyBiometricBackfill } = require('../../attendance/services/postVerifyBiometricBackfillService');
 const { scheduleBiometricDeviceOnboard } = require('../../attendance/services/biometricDeviceLifecycleService');
+const { cancelResignationsOnRejoin } = require('../../resignations/services/resignationRejoinService');
 const { generateFirstMonthRoster } = require('../../shifts/services/firstMonthRosterService');
 const {
   closeCurrentTenure,
@@ -1125,6 +1126,14 @@ const verifyRejoinApplicationInternal = async (applicationId, approver) => {
   employee.leftDate = null;
   employee.leftReason = null;
   employee.is_active = true;
+  employee.biometricOffboardedAt = null;
+
+  await cancelResignationsOnRejoin({
+    empNo: employee.emp_no,
+    employeeId: employee._id,
+    rejoinApplicationId: application._id,
+    approver,
+  });
 
   await employee.save();
   await application.save();
