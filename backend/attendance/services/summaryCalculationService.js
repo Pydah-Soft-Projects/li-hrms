@@ -994,6 +994,23 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
             const hasOut = dailyHasShiftLevelOut(day.attendance);
             if (halfOd.halfDayType === 'second_half' && hasIn) attFirst = 0.5;
             else if (halfOd.halfDayType === 'first_half' && hasOut) attSecond = 0.5;
+          } else {
+            // Hour-based OD-only days: credit coverage from payableShifts (or duration/8) so they are not counted absent.
+            const hourOd = day.ods.find((o) => String(o.odType_extended || '') === 'hours');
+            if (hourOd) {
+              const pay = Number(day.attendance.payableShifts);
+              const hourPay =
+                Number.isFinite(pay) && pay > 0
+                  ? pay
+                  : Math.min(1, (Number(hourOd.durationHours) || 0) / 8);
+              if (hourPay >= 0.95) {
+                attFirst = 0.5;
+                attSecond = 0.5;
+              } else if (hourPay >= 0.45) {
+                attFirst = 0.5;
+                attSecond = 0;
+              }
+            }
           }
         }
         // ABSENT / PARTIAL (multi_shift): base is 0.0
