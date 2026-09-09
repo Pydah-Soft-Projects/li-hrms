@@ -15,6 +15,40 @@ function toObjectId(id) {
 }
 
 /**
+ * Extract a stable id string from ObjectId, string, or populated ref ({ _id } / mongoose doc).
+ * Plain `.toString()` on populated docs yields "[object Object]" / pretty-print — never use that for comparisons.
+ */
+function toIdString(value) {
+    if (value == null || value === '') return null;
+    if (typeof value === 'string' || typeof value === 'number') return String(value);
+
+    // BSON / mongoose ObjectId (also has a circular `_id` getter — check before diving into `_id`)
+    if (value instanceof mongoose.Types.ObjectId || (value.constructor && value.constructor.name === 'ObjectId')) {
+        return value.toString();
+    }
+    if (typeof value.toHexString === 'function' && value.id !== undefined && value._bsontype === 'ObjectId') {
+        return value.toHexString();
+    }
+
+    if (typeof value === 'object') {
+        // Populated ref / lean doc: use nested _id once (do not recurse into ObjectId's own _id)
+        if (value._id != null && value._id !== value) {
+            const nested = value._id;
+            if (nested instanceof mongoose.Types.ObjectId || (nested?.constructor && nested.constructor.name === 'ObjectId')) {
+                return nested.toString();
+            }
+            if (typeof nested === 'string' || typeof nested === 'number') return String(nested);
+            if (typeof nested.toHexString === 'function') return nested.toHexString();
+        }
+        if (typeof value.toString === 'function') {
+            const s = value.toString();
+            if (/^[a-fA-F0-9]{24}$/.test(s)) return s;
+        }
+    }
+    return null;
+}
+
+/**
  * Get default scope based on user role
  */
 function getDefaultScope(role) {
@@ -307,19 +341,21 @@ function checkJurisdiction(user, record) {
     }
 
     // 2. Ownership (Applicants can always access their own records)
+    const recordEmpId = toIdString(record.employeeId);
+    const userEmpRef = toIdString(user.employeeRef);
     const isOwner =
-        (record.employeeId && user.employeeRef && record.employeeId.toString() === user.employeeRef.toString()) ||
+        (recordEmpId && userEmpRef && recordEmpId === userEmpRef) ||
         (record.emp_no && user.employeeId && record.emp_no === user.employeeId) ||
         (record.employeeNumber && user.employeeId && record.employeeNumber === user.employeeId) ||
-        (record.appliedBy && user._id && record.appliedBy.toString() === user._id.toString()) ||
-        (record.requestedBy && user._id && record.requestedBy.toString() === user._id.toString());
+        (record.appliedBy && user._id && toIdString(record.appliedBy) === toIdString(user._id)) ||
+        (record.requestedBy && user._id && toIdString(record.requestedBy) === toIdString(user._id));
 
     if (isOwner) return true;
 
     // 3. Organizational Scope Enforcement
-    // Capture IDs from record (dual-field support)
-    const resDivId = record.division_id?.toString() || record.division?.toString();
-    const resDeptId = (record.department_id || record.department)?.toString();
+    // Capture IDs from record (dual-field support; works with populated refs)
+    const resDivId = toIdString(record.division_id) || toIdString(record.division);
+    const resDeptId = toIdString(record.department_id) || toIdString(record.department);
 
     const scope = user.dataScope || getDefaultScope(user.role);
 
@@ -331,18 +367,19 @@ function checkJurisdiction(user, record) {
         case 'department':
             if (user.divisionMapping && Array.isArray(user.divisionMapping) && user.divisionMapping.length > 0) {
                 const hasMappingMatch = user.divisionMapping.some(mapping => {
-                    const matchDivision = resDivId === (mapping.division?._id || mapping.division)?.toString();
+                    const matchDivision = resDivId && resDivId === toIdString(mapping.division);
                     if (!matchDivision) return false;
 
                     if (!mapping.departments || mapping.departments.length === 0) return true;
-                    return mapping.departments.some(d => d.toString() === resDeptId);
+                    return mapping.departments.some(d => toIdString(d) === resDeptId);
                 });
                 if (hasMappingMatch) return true;
             }
 
             // 4. Reporting Manager Check (Priority Access)
             const reportingManagers = record.workflow?.reportingManagerIds || [];
-            if (reportingManagers.includes(user._id.toString())) {
+            const userIdStr = toIdString(user._id);
+            if (userIdStr && reportingManagers.some(id => toIdString(id) === userIdStr)) {
                 return true;
             }
 
