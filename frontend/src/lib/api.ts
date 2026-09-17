@@ -1609,7 +1609,7 @@ export const api = {
   },
 
   // Update user profile
-  updateProfile: async (data: { name?: string; phone?: string; profilePhoto?: string }) => {
+  updateProfile: async (data: { name?: string; phone?: string; profilePhoto?: string; email?: string }) => {
     return apiRequest<any>('/users/profile', {
       method: 'PUT',
       body: JSON.stringify(data),

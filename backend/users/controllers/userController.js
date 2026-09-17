@@ -1189,7 +1189,7 @@ exports.getUserStats = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { name, phone, profilePhoto } = req.body;
+    const { name, phone, profilePhoto, email } = req.body;
 
     const updateData = {};
     if (name) updateData.name = name;
@@ -1197,6 +1197,34 @@ exports.updateProfile = async (req, res) => {
 
     const userDoc = await User.findById(userId).select('-password');
     if (userDoc) {
+      // Email update is restricted to super_admin role only
+      if (email !== undefined && email !== null && String(email).trim()) {
+        if (userDoc.role !== 'super_admin') {
+          return res.status(403).json({
+            success: false,
+            message: 'Only Super Admins can update their email address',
+          });
+        }
+        const newEmail = String(email).trim().toLowerCase();
+        // Validate email format
+        const emailRegex = /^\S+@\S+\.\S+$/;
+        if (!emailRegex.test(newEmail)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Please provide a valid email address',
+          });
+        }
+        // Check uniqueness (exclude current user)
+        const existingUser = await User.findOne({ email: newEmail, _id: { $ne: userId } });
+        if (existingUser) {
+          return res.status(400).json({
+            success: false,
+            message: 'This email address is already in use by another account',
+          });
+        }
+        updateData.email = newEmail;
+      }
+
       if (profilePhoto !== undefined) {
         const photoUrl = profilePhoto && String(profilePhoto).trim() ? String(profilePhoto).trim() : null;
         if (userDoc.employeeRef) {

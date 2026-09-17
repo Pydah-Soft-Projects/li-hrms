@@ -24,7 +24,7 @@ export default function ProfilePage() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
-  const [editData, setEditData] = useState({ name: '', phone: '' });
+  const [editData, setEditData] = useState({ name: '', phone: '', email: '' });
   const [saving, setSaving] = useState(false);
 
   // Password change state
@@ -60,6 +60,7 @@ export default function ProfilePage() {
         setEditData({
           name: response.data.user.name || '',
           phone: response.data.user.phone || '',
+          email: response.data.user.email || '',
         });
       }
     } catch (error) {
@@ -75,16 +76,35 @@ export default function ProfilePage() {
       setToast({ type: 'error', message: 'Name is required' });
       return;
     }
+    if (!editData.email.trim()) {
+      setToast({ type: 'error', message: 'Email address is required' });
+      return;
+    }
+    const emailRegex = /^\S+@\S+\.\S+$/;
+    if (!emailRegex.test(editData.email.trim())) {
+      setToast({ type: 'error', message: 'Please enter a valid email address' });
+      return;
+    }
 
     setSaving(true);
     try {
-      const response = await api.updateProfile(editData);
+      const payload: { name: string; phone: string; email?: string } = {
+        name: editData.name,
+        phone: editData.phone,
+      };
+      // Only send email if it has actually changed
+      if (editData.email.trim().toLowerCase() !== (user?.email || '').toLowerCase()) {
+        payload.email = editData.email.trim().toLowerCase();
+      }
+      const response = await api.updateProfile(payload);
       if (response.success) {
-        setUser((prev) => (prev ? { ...prev, ...editData } : null));
+        const updatedEmail = payload.email || user?.email || '';
+        setUser((prev) => (prev ? { ...prev, name: editData.name, phone: editData.phone, email: updatedEmail } : null));
+        setEditData((prev) => ({ ...prev, email: updatedEmail }));
         // Update local storage user data
         const currentUser = auth.getUser();
         if (currentUser) {
-          auth.setUser({ ...currentUser, name: editData.name });
+          auth.setUser({ ...currentUser, name: editData.name, ...(payload.email ? { email: payload.email } : {}) });
         }
         setIsEditing(false);
         setToast({ type: 'success', message: 'Profile updated successfully' });
@@ -324,7 +344,7 @@ export default function ProfilePage() {
                     <button
                       onClick={() => {
                         setIsEditing(false);
-                        setEditData({ name: user.name, phone: user.phone || '' });
+                        setEditData({ name: user.name, phone: user.phone || '', email: user.email || '' });
                       }}
                       className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
                     >
@@ -364,8 +384,17 @@ export default function ProfilePage() {
                 {/* Email */}
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1.5">Email Address</label>
-                  <p className="text-gray-900 font-medium">{user.email}</p>
-                  <p className="text-xs text-gray-400 mt-1">Email cannot be changed</p>
+                  {isEditing ? (
+                    <input
+                      type="email"
+                      value={editData.email}
+                      onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Enter email address"
+                    />
+                  ) : (
+                    <p className="text-gray-900 font-medium">{user.email}</p>
+                  )}
                 </div>
 
                 {/* Phone */}
