@@ -30,6 +30,7 @@ import LoanEditDialog, { canShowLoanEditButton } from '@/components/loans/LoanEd
 import LoanEmployeeExposureSections from '@/components/loans/LoanEmployeeExposureSections';
 import LoanGuarantorPicker from '@/components/loans/LoanGuarantorPicker';
 import LoanAttendanceSummaryTable from '@/components/loans/LoanAttendanceSummaryTable';
+import LoanPrintDialog from '@/components/loans/LoanPrintDialog';
 import {
   LedgerApprovalPanel,
   LedgerApprovalTimeline,
@@ -103,6 +104,8 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
   const [workflowMeta, setWorkflowMeta] = useState<any>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showPrintDialog, setShowPrintDialog] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
   const [selectedGuarantorIds, setSelectedGuarantorIds] = useState<string[]>([]);
   const [savingGuarantors, setSavingGuarantors] = useState(false);
   const [savingAction, setSavingAction] = useState(false);
@@ -273,18 +276,28 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
     (workflowMeta?.isGuarantorGateActive || hasManagePermission) &&
     !['completed', 'cancelled', 'rejected', 'disbursed', 'active'].includes(loan?.status);
 
-  const handlePrintApplication = async () => {
+  const handlePrintClick = () => {
+    if (!loan) return;
+    setShowPrintDialog(true);
+  };
+
+  const handleExecutePrint = async (format: 'simple' | 'detailed') => {
     if (!loan) return;
     try {
+      setIsPrinting(true);
       const txnRes = await api.getLoanTransactions(loanId);
       const txns = txnRes.success ? txnRes.data?.transactions || [] : [];
       await downloadLoanAdvanceRequestPdf(loan as LoanAdvancePdfLoan, txns, {
         summary: txnRes.data?.summary,
         applicationPdfContext,
+        printFormat: format,
       });
+      setShowPrintDialog(false);
     } catch (e) {
       console.error(e);
       toast.error('Failed to generate application PDF');
+    } finally {
+      setIsPrinting(false);
     }
   };
 
@@ -428,7 +441,7 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={handlePrintApplication} className={loansDialogOutlineButtonClass()} style={loansDialogOutlineButtonStyle()}>
+          <button type="button" onClick={handlePrintClick} className={loansDialogOutlineButtonClass()} style={loansDialogOutlineButtonStyle()}>
             <Printer className="h-4 w-4" />
             Print application
           </button>
@@ -697,6 +710,15 @@ export default function LoanDetailView({ loanId }: { loanId: string }) {
             setShowEditDialog(false);
             loadLoan();
           }}
+        />
+      )}
+
+      {showPrintDialog && (
+        <LoanPrintDialog
+          isOpen={showPrintDialog}
+          onClose={() => setShowPrintDialog(false)}
+          onConfirm={handleExecutePrint}
+          isPrinting={isPrinting}
         />
       )}
     </LoansPageShell>

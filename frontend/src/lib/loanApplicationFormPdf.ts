@@ -146,10 +146,15 @@ function formatDateForm(iso?: string | null): string {
 }
 
 function companyHeaderLine(profile: CompanyProfile): string {
-  const name = (profile.legalName || profile.displayName || 'Company').trim().toUpperCase();
-  const addr = formatAddressBlock(profile.addresses.corporate);
-  if (!addr) return name;
-  return `${name}, ${addr.toUpperCase()}.`;
+  const rawName = (profile.legalName || profile.displayName || '').trim();
+  const name = (rawName.toUpperCase() === 'HRMS' || !rawName) ? '' : rawName.toUpperCase();
+  const rawAddr = formatAddressBlock(profile.addresses.corporate).trim();
+  const addr = (rawAddr.toUpperCase() === 'INDIA' || rawAddr.toUpperCase() === 'INDIA.' || !rawAddr) ? '' : rawAddr.toUpperCase();
+
+  if (name && addr) return `${name}, ${addr}.`;
+  if (name) return `${name}.`;
+  if (addr) return `${addr}.`;
+  return '';
 }
 
 function approvalSigner(slot?: {
@@ -274,45 +279,48 @@ function drawFieldLine(
   y: number,
   rightX: number,
   theme: FormTheme,
-  fontSize = 10,
+  fontSize = 9,
 ): number {
   const maxW = rightX - x;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(fontSize);
   doc.setTextColor(...theme.label);
   const labelW = doc.getTextWidth(label);
+  const lineH = Math.max(3.0, fontSize * 0.42);
+  const minGap = lineH + 1.2;
 
-  if (labelW <= maxW * 0.5) {
+  if (labelW <= maxW * 0.48) {
     doc.text(label, x, y);
     if (value) {
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(...theme.body);
-      const valLines = doc.splitTextToSize(value, rightX - x - labelW - 2);
+      const valW = rightX - x - labelW - 1.5;
+      const valLines = doc.splitTextToSize(value, valW);
       valLines.forEach((line: string, i: number) => {
-        doc.text(line, x + labelW + 2, y + i * 4);
+        doc.text(line, x + labelW + 1.5, y + i * lineH);
       });
-      return Math.max(ROW_GAP, valLines.length * 4 + 2);
+      return Math.max(minGap, valLines.length * lineH + 1.2);
     }
-    return ROW_GAP;
+    return minGap;
   }
 
   const labelLines = doc.splitTextToSize(label, maxW);
   labelLines.forEach((line: string, i: number) => {
-    doc.text(line, x, y + i * 4);
+    doc.text(line, x, y + i * lineH);
   });
-  let cursorY = y + labelLines.length * 4 + 1;
+  let cursorY = y + labelLines.length * lineH;
 
   if (value) {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(...theme.body);
     const valLines = doc.splitTextToSize(value, maxW);
     valLines.forEach((line: string, i: number) => {
-      doc.text(line, x, cursorY + i * 4);
+      doc.text(line, x, cursorY + i * lineH);
     });
-    cursorY += valLines.length * 4;
+    cursorY += valLines.length * lineH;
   }
 
-  return Math.max(ROW_GAP, cursorY - y + 2);
+  return Math.max(minGap, cursorY - y + 1.2);
 }
 
 function drawOfficialUseDivider(
@@ -508,69 +516,76 @@ export function drawApplicantAndHodSections(
   const appliedDate = formatDateForm(loan.appliedAt);
 
   const midX = innerX + (innerRight - innerX) * 0.5;
-  const empSigH = measureSignatureBlockHeight(doc, 'Signature of Employee', innerX, midX - 2, 9.5);
-  const hodSigH = measureSignatureBlockHeight(doc, HOD_SIGNATURE_LABEL, midX, innerRight, 9.5);
+  const empSigH = measureSignatureBlockHeight(doc, 'Signature of Employee', innerX, midX - 2, 8.5);
+  const hodSigH = measureSignatureBlockHeight(doc, HOD_SIGNATURE_LABEL, midX, innerRight, 8.5);
   const employeeSignH = Math.max(empSigH, hodSigH);
 
-  let y = startY;
-  const applicantTop = y;
-  const applicantH = SECTION_PAD_Y * 2 + ROW_GAP * 5 + employeeSignH;
-  drawTintedPanel(doc, margin, applicantTop, contentW, applicantH, theme.primaryPale, theme.primaryLight);
+  const fs = 8.5;
+  const padY = 2.5;
+  const applicantTop = startY;
+  let curY = applicantTop + padY + 1;
 
-  y = applicantTop + SECTION_PAD_Y;
   // Row 1
-  drawFieldLine(doc, 'Employee Name :', employeeName, innerX, y, midX - 2, theme);
-  drawFieldLine(doc, 'Emp No :', empNo, midX, y, innerRight, theme);
-  y += ROW_GAP;
+  let h1 = drawFieldLine(doc, 'Employee Name :', employeeName, innerX, curY, midX - 2, theme, fs);
+  let h2 = drawFieldLine(doc, 'Emp No :', empNo, midX, curY, innerRight, theme, fs);
+  curY += Math.max(h1, h2);
+
   // Row 2
-  drawFieldLine(doc, 'Designation :', designation, innerX, y, midX - 2, theme);
-  drawFieldLine(doc, 'Division :', division, midX, y, innerRight, theme);
-  y += ROW_GAP;
+  h1 = drawFieldLine(doc, 'Designation :', designation, innerX, curY, midX - 2, theme, fs);
+  h2 = drawFieldLine(doc, 'Division :', division, midX, curY, innerRight, theme, fs);
+  curY += Math.max(h1, h2);
+
   // Row 3
-  drawFieldLine(doc, 'Department :', department, innerX, y, midX - 2, theme);
-  drawFieldLine(doc, 'Mobile Number :', mobileNumber, midX, y, innerRight, theme);
-  y += ROW_GAP;
+  h1 = drawFieldLine(doc, 'Department :', department, innerX, curY, midX - 2, theme, fs);
+  h2 = drawFieldLine(doc, 'Mobile Number :', mobileNumber, midX, curY, innerRight, theme, fs);
+  curY += Math.max(h1, h2);
+
   // Row 4
-  drawFieldLine(doc, 'Amount required : Rs.', amount ? `${amount} /-` : '', innerX, y, midX - 2, theme);
-  drawFieldLine(doc, 'Date :', appliedDate, midX, y, innerRight, theme);
-  y += ROW_GAP;
+  h1 = drawFieldLine(doc, 'Amount required : Rs.', amount ? `${amount} /-` : '', innerX, curY, midX - 2, theme, fs);
+  h2 = drawFieldLine(doc, 'Date :', appliedDate, midX, curY, innerRight, theme, fs);
+  curY += Math.max(h1, h2);
+
   // Row 5
-  drawFieldLine(doc, 'Reason for Advance :', reason, innerX, y, innerRight, theme);
-  y += ROW_GAP;
+  h1 = drawFieldLine(doc, 'Reason for Advance :', reason || '—', innerX, curY, innerRight, theme, fs);
+  curY += h1;
+
+  const sigY = curY + 1;
 
   if (includeHod) {
     drawSignatureBlock(doc, {
       label: 'Signature of Employee',
       x: innerX,
-      y,
+      y: sigY,
       rightX: midX - 2,
       theme,
-      fontSize: 9.5,
+      fontSize: 8.5,
       align: 'center',
     });
     drawSignatureBlock(doc, {
       label: HOD_SIGNATURE_LABEL,
       x: midX,
-      y,
+      y: sigY,
       rightX: innerRight,
       theme,
-      fontSize: 9.5,
+      fontSize: 8.5,
       align: 'center',
     });
   } else {
     drawSignatureBlock(doc, {
       label: 'Signature of Employee',
       x: cols.signLeft,
-      y,
+      y: sigY,
       rightX: cols.signRight,
       theme,
-      fontSize: 10,
+      fontSize: 8.5,
       align: 'right',
     });
   }
 
-  y = applicantTop + applicantH + SECTION_GAP;
-  return y;
+  const applicantH = sigY + employeeSignH - applicantTop + 1;
+  drawTintedPanel(doc, margin, applicantTop, contentW, applicantH, theme.primaryPale, theme.primaryLight);
+
+  return applicantTop + applicantH + 3;
 }
 
 export function drawFormPageHeader(
@@ -588,36 +603,57 @@ export function drawFormPageHeader(
 ): number {
   const { margin, rightX, contentW, title, formNo } = opts;
   const pageW = doc.internal.pageSize.getWidth();
-  const headerH = 28;
+  const header = companyHeaderLine(profile);
+  const headerH = header ? 19 : 14;
 
   doc.setFillColor(...theme.primary);
   doc.rect(0, 0, pageW, headerH, 'F');
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10.5);
-  doc.setTextColor(255, 255, 255);
-  const header = companyHeaderLine(profile);
-  const headerLines = doc.splitTextToSize(header, contentW);
-  headerLines.forEach((line: string, i: number) => {
-    doc.text(line, pageW / 2, 9 + i * 4.8, { align: 'center' });
-  });
+  if (header) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(255, 255, 255);
+    const headerLines = doc.splitTextToSize(header, contentW - 35);
+    headerLines.forEach((line: string, i: number) => {
+      doc.text(line, pageW / 2, 5.5 + i * 3.8, { align: 'center' });
+    });
 
-  doc.setFontSize(12);
-  doc.text(title, pageW / 2, headerH - 7, { align: 'center' });
-  const titleW = doc.getTextWidth(title);
-  const titleX = pageW / 2 - titleW / 2;
-  doc.setDrawColor(255, 255, 255);
-  doc.setLineWidth(0.35);
-  doc.line(titleX, headerH - 5.5, titleX + titleW, headerH - 5.5);
+    doc.setFontSize(10.5);
+    doc.text(title, pageW / 2, headerH - 3.5, { align: 'center' });
+    const titleW = doc.getTextWidth(title);
+    const titleX = pageW / 2 - titleW / 2;
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(0.35);
+    doc.line(titleX, headerH - 2.5, titleX + titleW, headerH - 2.5);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(255, 255, 255);
-  doc.text('No.', rightX - 24, 9);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.setTextColor(255, 220, 220);
-  doc.text(formNo, rightX - 14, 9);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text('Form No.', rightX - 24, 5.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(255, 220, 220);
+    doc.text(formNo, rightX - 11, 5.5);
+  } else {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    doc.text(title, pageW / 2, headerH / 2 + 1.5, { align: 'center' });
+    const titleW = doc.getTextWidth(title);
+    const titleX = pageW / 2 - titleW / 2;
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(0.35);
+    doc.line(titleX, headerH / 2 + 2.5, titleX + titleW, headerH / 2 + 2.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text('Form No.', rightX - 24, headerH / 2 + 1.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(255, 220, 220);
+    doc.text(formNo, rightX - 11, headerH / 2 + 1.5);
+  }
 
   return headerH;
 }
@@ -784,28 +820,33 @@ function drawExistingLoansTable(
   y += 2.5;
 
   const headers = [
-    'Total Repayment',
+    'No / Type',
+    'Total Amt',
     'EMI',
     'Interest',
-    'Paid Months',
-    'Paid Amount',
-    'Unpaid Amount',
-    'Months',
+    'Paid / Total',
+    'Paid Amt',
+    'Outstanding',
     'Status',
     'Reason',
   ];
 
-  const body = ownLoans.map((row) => [
-    formatRsWhole(row.totalAmount || row.amount),
-    formatRsWhole(row.emi),
-    formatRsWhole(row.interest),
-    `${row.paidMonths || 0} / ${row.totalMonths || 0}`,
-    formatRsWhole(row.paidAmount),
-    formatRsWhole(row.unpaidAmount || row.outstanding),
-    String(row.totalMonths || 0),
-    row.status?.replace(/_/g, ' ') || '',
-    row.reason || '—',
-  ]);
+  const body = ownLoans.map((row) => {
+    const formStr = row.applicationFormNumber != null ? `#${row.applicationFormNumber}` : '';
+    const typeStr = row.requestType === 'salary_advance' ? 'Adv' : 'Loan';
+    const label = `${typeStr} ${formStr}`.trim();
+    return [
+      label || 'Loan',
+      formatRsWhole(row.totalAmount || row.amount),
+      formatRsWhole(row.emi),
+      formatRsWhole(row.interest),
+      `${row.paidMonths || 0} / ${row.totalMonths || 0}`,
+      formatRsWhole(row.paidAmount),
+      formatRsWhole(row.unpaidAmount || row.outstanding),
+      row.status?.replace(/_/g, ' ') || '',
+      row.reason || '—',
+    ];
+  });
 
   autoTable(doc, {
     head: [headers],
@@ -830,10 +871,10 @@ function drawExistingLoansTable(
       0: { halign: 'left', fontStyle: 'bold' },
       1: { halign: 'right' },
       2: { halign: 'right' },
-      3: { halign: 'center' },
-      4: { halign: 'right' },
-      5: { halign: 'right', fontStyle: 'bold', textColor: [180, 83, 9] },
-      6: { halign: 'center' },
+      3: { halign: 'right' },
+      4: { halign: 'center' },
+      5: { halign: 'right' },
+      6: { halign: 'right', fontStyle: 'bold', textColor: [180, 83, 9] },
       7: { halign: 'center' },
       8: { halign: 'left' },
     },
@@ -1086,4 +1127,230 @@ function divisionName(loan: LoanAdvancePdfLoan): string {
 
 export function isLoanPostDisbursement(status: string): boolean {
   return ['disbursed', 'active', 'completed'].includes(status);
+}
+
+export function drawLoanApplicationSimplePageA5(
+  doc: jsPDF,
+  loan: LoanAdvancePdfLoan,
+  profile: CompanyProfile,
+  context?: LoanApplicationPdfContext,
+): void {
+  const pageW = 148;
+  const pageH = 210;
+  const margin = 8;
+  const rightX = pageW - margin;
+  const contentW = rightX - margin;
+  const theme = buildFormTheme(profile, loan.requestType);
+  const innerX = margin + 2.5;
+  const innerRight = rightX - 2.5;
+  const midX = innerX + (innerRight - innerX) * 0.5;
+
+  const formNo = loan.applicationFormNumber != null ? String(loan.applicationFormNumber) : '—';
+  const isLoan = loan.requestType === 'loan';
+  const title = isLoan ? 'APPLICATION FOR LOAN' : 'APPLICATION FOR SALARY ADVANCE';
+
+  // 1. Clean Header Banner
+  const header = companyHeaderLine(profile);
+  const headerH = header ? 15 : 12;
+  doc.setFillColor(...theme.primary);
+  doc.rect(0, 0, pageW, headerH, 'F');
+
+  if (header) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    const headerLines = doc.splitTextToSize(header, contentW - 25);
+    headerLines.forEach((line: string, i: number) => {
+      doc.text(line, pageW / 2, 4.8 + i * 3.2, { align: 'center' });
+    });
+
+    doc.setFontSize(9);
+    doc.text(title, pageW / 2, headerH - 3, { align: 'center' });
+    const titleW = doc.getTextWidth(title);
+    const titleX = pageW / 2 - titleW / 2;
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(0.3);
+    doc.line(titleX, headerH - 2.2, titleX + titleW, headerH - 2.2);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text('Form No.', rightX - 20, 4.8);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(255, 220, 220);
+    doc.text(formNo, rightX - 8, 4.8);
+  } else {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text(title, pageW / 2, headerH / 2 + 1.2, { align: 'center' });
+    const titleW = doc.getTextWidth(title);
+    const titleX = pageW / 2 - titleW / 2;
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(0.3);
+    doc.line(titleX, headerH / 2 + 2.2, titleX + titleW, headerH / 2 + 2.2);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text('Form No.', rightX - 20, headerH / 2 + 1.2);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(255, 220, 220);
+    doc.text(formNo, rightX - 8, headerH / 2 + 1.2);
+  }
+
+  let y = headerH + 3;
+
+  // 2. Decreased Size Basic Details Panel (Dynamic Height, 5 distinct rows)
+  const { name: employeeName, empNo, phone: mobileNumber } = resolveLoanPrintEmployee(loan);
+  const designation = loan.designation?.name || '';
+  const department = loan.department?.name || '';
+  const division = context?.divisionName || context?.sectionName || divisionName(loan) || '';
+  const amount = formatRsWhole(loan.amount);
+  const reason = (loan.reason || '').trim();
+  const appliedDate = formatDateForm(loan.appliedAt);
+  const emiOrDeduction = installmentPerMonth(loan);
+
+  const panelTop = y;
+  const fs = 7.5;
+  const padY = 2;
+  let curY = panelTop + padY + 0.5;
+
+  // Row 1: Employee Name & Emp No
+  let h1 = drawFieldLine(doc, 'Name :', employeeName, innerX, curY, midX - 2, theme, fs);
+  let h2 = drawFieldLine(doc, 'Emp No :', empNo, midX, curY, innerRight, theme, fs);
+  curY += Math.max(h1, h2);
+
+  // Row 2: Department & Designation
+  h1 = drawFieldLine(doc, 'Department :', department, innerX, curY, midX - 2, theme, fs);
+  h2 = drawFieldLine(doc, 'Designation :', designation, midX, curY, innerRight, theme, fs);
+  curY += Math.max(h1, h2);
+
+  // Row 3: Division & Mobile
+  h1 = drawFieldLine(doc, 'Division :', division, innerX, curY, midX - 2, theme, fs);
+  h2 = drawFieldLine(doc, 'Mobile :', mobileNumber, midX, curY, innerRight, theme, fs);
+  curY += Math.max(h1, h2);
+
+  // Row 4: Amount & Date
+  const amtLabel = isLoan ? 'Loan Amount :' : 'Advance Amount :';
+  h1 = drawFieldLine(doc, `${amtLabel} Rs.`, amount ? `${amount} /-` : '', innerX, curY, midX - 2, theme, fs);
+  h2 = drawFieldLine(doc, 'Date :', appliedDate, midX, curY, innerRight, theme, fs);
+  curY += Math.max(h1, h2);
+
+  // Row 5: Tenure/EMI & Reason
+  if (isLoan && loan.duration) {
+    h1 = drawFieldLine(doc, 'Tenure/EMI :', `${loan.duration}M @ Rs.${emiOrDeduction}/mo`, innerX, curY, midX - 2, theme, fs);
+  } else if (emiOrDeduction) {
+    h1 = drawFieldLine(doc, 'Deduction :', `Rs.${emiOrDeduction}/mo`, innerX, curY, midX - 2, theme, fs);
+  } else {
+    h1 = drawFieldLine(doc, 'Status :', (loan.status || '').toUpperCase(), innerX, curY, midX - 2, theme, fs);
+  }
+  h2 = drawFieldLine(doc, 'Reason :', reason || '—', midX, curY, innerRight, theme, fs);
+  curY += Math.max(h1, h2);
+
+  const basicH = curY - panelTop + padY;
+  drawTintedPanel(doc, margin, panelTop, contentW, basicH, theme.primaryPale, theme.primaryLight);
+
+  y = panelTop + basicH + 3;
+
+  // 3. Existing Loans (As Borrower) - MAXIMIZED TABLE SPACE BELOW BASIC DETAILS
+  const ownLoans = context?.employeeExposure?.ownLoans || [];
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(...theme.label);
+  doc.text('Existing Loans (As Borrower)', innerX, y);
+  y += 2.2;
+
+  if (ownLoans.length > 0) {
+    const headers = ['#', 'Type / Form', 'Loan Amt', 'EMI', 'Paid/Total', 'Balance', 'Status'];
+    const body = ownLoans.map((row, idx) => {
+      const formStr = row.applicationFormNumber != null ? `#${row.applicationFormNumber}` : '';
+      const typeStr = row.requestType === 'salary_advance' ? 'Adv' : 'Loan';
+      const label = `${typeStr} ${formStr}`.trim();
+      return [
+        String(idx + 1),
+        label,
+        formatRsWhole(row.totalAmount || row.amount),
+        formatRsWhole(row.emi),
+        `${row.paidMonths || 0}/${row.totalMonths || 0}`,
+        formatRsWhole(row.unpaidAmount || row.outstanding),
+        row.status?.replace(/_/g, ' ') || '',
+      ];
+    });
+
+    autoTable(doc, {
+      head: [headers],
+      body: body,
+      startY: y,
+      margin: { left: margin, right: margin },
+      theme: 'grid',
+      styles: {
+        fontSize: 6.5,
+        cellPadding: 1.5,
+        font: 'helvetica',
+        textColor: [30, 41, 59],
+        lineColor: theme.primaryLight,
+        lineWidth: 0.1,
+      },
+      headStyles: {
+        fillColor: theme.primaryPale,
+        textColor: theme.primary,
+        fontStyle: 'bold',
+      },
+      columnStyles: {
+        0: { halign: 'center', width: 6 },
+        1: { halign: 'left', fontStyle: 'bold' },
+        2: { halign: 'right' },
+        3: { halign: 'right' },
+        4: { halign: 'center' },
+        5: { halign: 'right', fontStyle: 'bold', textColor: [180, 83, 9] },
+        6: { halign: 'center' },
+      },
+    });
+
+    y = (doc as any).lastAutoTable.finalY + 3;
+  } else {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text('No existing active loans as borrower.', innerX, y + 2);
+    y += 6;
+  }
+
+  // 4. Official Sanction & Signatures Block
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(...theme.primary);
+  doc.text('Official Sanction & Approvals', innerX, y);
+  y += 2.5;
+
+  const showSanctioned = isLoanFullyApproved(loan.status);
+  const sancAmt = showSanctioned ? sanctionedAmountDisplay(loan) : '';
+  const recMode = recoveryModeText(loan);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...theme.body);
+  if (sancAmt) {
+    doc.text(`Sanctioned Amount: Rs. ${sancAmt}`, innerX, y);
+    y += 3;
+  }
+  doc.text(`Recovery: ${recMode}`, innerX, y, { maxWidth: contentW });
+  y += 5;
+
+  // Wet ink signature lines
+  const sigBoxW = (contentW - 6) / 2;
+  const sigY = y + 6;
+  doc.setDrawColor(...theme.line);
+  doc.setLineWidth(0.3);
+  doc.line(innerX, sigY, innerX + sigBoxW, sigY);
+  doc.line(midX + 3, sigY, innerRight, sigY);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.setTextColor(...theme.label);
+  doc.text('Signature of Employee', innerX + sigBoxW / 2, sigY + 3, { align: 'center' });
+  doc.text('Signature of HOD / Sanctioning Auth.', midX + 3 + sigBoxW / 2, sigY + 3, { align: 'center' });
 }

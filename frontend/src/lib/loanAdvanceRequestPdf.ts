@@ -5,6 +5,7 @@ import { fetchCompanyProfile } from '@/lib/companyProfile';
 import {
   drawLoanApplicationFormPage,
   drawLoanApplicationSuretyPage,
+  drawLoanApplicationSimplePageA5,
   isLoanPostDisbursement,
   resolveLoanPrintEmployee,
   type LoanApplicationPdfContext,
@@ -1039,37 +1040,54 @@ function appendLoanLedgerAndSlips(
 
 }
 
+export type LoanPdfOptions = {
+  summary?: LoanAdvancePdfSummary;
+  applicationPdfContext?: LoanApplicationPdfContext;
+  printFormat?: 'simple' | 'detailed';
+};
+
 export async function downloadLoanAdvanceRequestPdf(
   loan: LoanAdvancePdfLoan,
   transactions: LoanAdvancePdfTxn[],
-  options?: {
-    summary?: LoanAdvancePdfSummary;
-    applicationPdfContext?: LoanApplicationPdfContext;
-  },
+  options?: LoanPdfOptions,
 ): Promise<void> {
   const profile = await fetchCompanyProfile();
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const pdfContext = options?.applicationPdfContext;
+  const isSimple = options?.printFormat === 'simple';
 
-  drawLoanApplicationFormPage(doc, loan, profile, pdfContext);
+  const doc = new jsPDF({
+    unit: 'mm',
+    format: isSimple ? 'a5' : 'a4',
+    orientation: 'portrait',
+  });
 
-  doc.addPage();
-  drawLoanApplicationSuretyPage(doc, loan, profile, pdfContext);
+  if (isSimple) {
+    drawLoanApplicationSimplePageA5(doc, loan, profile, pdfContext);
+  } else {
+    drawLoanApplicationFormPage(doc, loan, profile, pdfContext);
 
-  if (shouldIncludeRtgsPage(loan)) {
-    doc.addPage();
-    drawLoanRtgsPage(doc, loan, profile, pdfContext);
-  }
+    // Only draw surety page for loans (salary advances don't have sureties)
+    if (loan.requestType === 'loan') {
+      doc.addPage();
+      drawLoanApplicationSuretyPage(doc, loan, profile, pdfContext);
+    }
 
-  if (isLoanPostDisbursement(loan.status)) {
-    doc.addPage();
-    appendLoanLedgerAndSlips(doc, loan, transactions, options);
+    if (shouldIncludeRtgsPage(loan)) {
+      doc.addPage();
+      drawLoanRtgsPage(doc, loan, profile, pdfContext);
+    }
+
+    if (isLoanPostDisbursement(loan.status)) {
+      doc.addPage();
+      appendLoanLedgerAndSlips(doc, loan, transactions, options);
+    }
   }
 
   const empNo = resolveLoanPrintEmployee(loan).empNo || 'unknown';
   const prefix = loan.requestType === 'loan' ? 'Loan' : 'SalaryAdvance';
+  const formatTag = isSimple ? '_Simple' : '_Detailed';
   const formNo =
     loan.applicationFormNumber != null ? `_No${loan.applicationFormNumber}` : '';
-  const fname = `${prefix}${formNo}_${safeFilePart(empNo)}_${loan._id.slice(-8)}.pdf`;
+  const fname = `${prefix}${formatTag}${formNo}_${safeFilePart(empNo)}_${loan._id.slice(-8)}.pdf`;
   doc.save(fname);
 }

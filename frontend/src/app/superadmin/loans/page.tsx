@@ -20,6 +20,7 @@ import LoanApplyEmiPolicyPreview from '@/components/loans/LoanApplyEmiPolicyPrev
 import LoanGuarantorPicker from '@/components/loans/LoanGuarantorPicker';
 import LoanEmployeeExposureSections from '@/components/loans/LoanEmployeeExposureSections';
 import LoanAttendanceSummaryTable from '@/components/loans/LoanAttendanceSummaryTable';
+import LoanPrintDialog from '@/components/loans/LoanPrintDialog';
 import {
   LoansPageShell,
   LoansPageHeader,
@@ -289,6 +290,7 @@ export default function LoansPage() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [showPrintDialog, setShowPrintDialog] = useState(false);
 
   // Settlement preview state
   const [settlementPreview, setSettlementPreview] = useState<any>(null);
@@ -1187,7 +1189,7 @@ export default function LoansPage() {
     }
   };
 
-  const handleDownloadRequestPdf = async () => {
+  const handleDownloadRequestPdf = async (format: 'simple' | 'detailed') => {
     if (!selectedLoan) return;
     setExportingPdf(true);
     try {
@@ -1215,8 +1217,10 @@ export default function LoansPage() {
             loanRes.applicationPdfContext?.attendanceSummary ||
             null,
         },
+        printFormat: format,
       });
       toast.success('PDF downloaded');
+      setShowPrintDialog(false);
     } catch (err: any) {
       toast.error(err?.message || 'Failed to generate PDF');
     } finally {
@@ -2121,7 +2125,7 @@ export default function LoansPage() {
               actions={
                 <button
                   type="button"
-                  onClick={() => void handleDownloadRequestPdf()}
+                  onClick={() => setShowPrintDialog(true)}
                   disabled={exportingPdf}
                   className={loansDialogOutlineButtonClass()}
                   style={loansDialogOutlineButtonStyle()}
@@ -3513,6 +3517,15 @@ export default function LoansPage() {
           </LoanDetailDialog>
         )
       }
+
+      {showPrintDialog && (
+        <LoanPrintDialog
+          isOpen={showPrintDialog}
+          onClose={() => setShowPrintDialog(false)}
+          onConfirm={handleDownloadRequestPdf}
+          isPrinting={exportingPdf}
+        />
+      )}
 
       {/* Toast Container */}
       <ToastContainer

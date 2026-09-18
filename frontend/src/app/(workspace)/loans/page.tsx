@@ -34,6 +34,7 @@ import { LoanListEmployeeCell } from '@/components/LoanListEmployeeCell';
 import LoanEditDialog, { canShowLoanEditButton } from '@/components/loans/LoanEditDialog';
 import LoanApplyEmiPolicyPreview from '@/components/loans/LoanApplyEmiPolicyPreview';
 import LoanAttendanceSummaryTable from '@/components/loans/LoanAttendanceSummaryTable';
+import LoanPrintDialog from '@/components/loans/LoanPrintDialog';
 import {
   LoansPageShell,
   LoansPageHeader,
@@ -308,6 +309,7 @@ export default function LoansPage() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [showPrintDialog, setShowPrintDialog] = useState(false);
   const [loanAttendanceSummary, setLoanAttendanceSummary] = useState<any>(null);
   const [applyAttendanceSummary, setApplyAttendanceSummary] = useState<any>(null);
   const [loadingApplyAttendanceSummary, setLoadingApplyAttendanceSummary] = useState(false);
@@ -1043,7 +1045,7 @@ export default function LoansPage() {
     }
   };
 
-  const handleDownloadRequestPdf = async () => {
+  const handleDownloadRequestPdf = async (format: 'simple' | 'detailed') => {
     if (!selectedLoan) return;
     setExportingPdf(true);
     try {
@@ -1064,7 +1066,9 @@ export default function LoansPage() {
       await downloadLoanAdvanceRequestPdf(loanRes.data as LoanAdvancePdfLoan, txns, {
         summary,
         applicationPdfContext: loanRes.applicationPdfContext,
+        printFormat: format,
       });
+      setShowPrintDialog(false);
     } catch (err: any) {
       setMessage({ type: 'error', text: err?.message || 'Failed to generate PDF' });
     } finally {
@@ -2289,7 +2293,7 @@ export default function LoansPage() {
               actions={
                 <button
                   type="button"
-                  onClick={() => void handleDownloadRequestPdf()}
+                  onClick={() => setShowPrintDialog(true)}
                   disabled={exportingPdf}
                   className={loansDialogOutlineButtonClass()}
                   style={loansDialogOutlineButtonStyle()}
@@ -3767,6 +3771,15 @@ export default function LoansPage() {
             </LoanDetailDialogBody>
           </LoanDetailDialog>
         )}
+
+      {showPrintDialog && (
+        <LoanPrintDialog
+          isOpen={showPrintDialog}
+          onClose={() => setShowPrintDialog(false)}
+          onConfirm={handleDownloadRequestPdf}
+          isPrinting={exportingPdf}
+        />
+      )}
 
       {/* Toast Container */}
       <ToastContainer
