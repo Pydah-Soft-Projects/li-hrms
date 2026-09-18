@@ -7,6 +7,11 @@ const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware')
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Public endpoints via API Key
+const { apiKeyAuth } = require('../middleware/apiKeyAuth');
+const employeePublicController = require('./controllers/employeePublicController');
+router.get('/public', apiKeyAuth, employeePublicController.getPublicEmployees);
+
 // All routes are protected
 router.use(protect);
 
