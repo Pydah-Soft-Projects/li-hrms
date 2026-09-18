@@ -24,6 +24,7 @@ export type LoanApplicationPdfContext = {
       emi: number;
       outstanding: number;
       status: string;
+      requestType?: string;
       applicationFormNumber?: number;
       totalAmount?: number;
       interest?: number;
@@ -1300,7 +1301,7 @@ export function drawLoanApplicationSimplePageA5(
         fontStyle: 'bold',
       },
       columnStyles: {
-        0: { halign: 'center', width: 6 },
+        0: { halign: 'center', cellWidth: 6 },
         1: { halign: 'left', fontStyle: 'bold' },
         2: { halign: 'right' },
         3: { halign: 'right' },
