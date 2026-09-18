@@ -24,6 +24,7 @@ interface ThumbLog {
     deviceName: string;
     deviceId: string;
     receivedAt?: string;
+    attendanceStatus?: string;
 }
 
 export default function ThumbReportsTab() {
@@ -96,12 +97,13 @@ export default function ThumbReportsTab() {
             }
 
             const exportLogs: ThumbLog[] = response.data || [];
-            const headers = ['Timestamp', 'Employee ID', 'Name', 'Log Type', 'Device Name', 'Received At'];
+            const headers = ['Timestamp', 'Employee ID', 'Name', 'Log Type', 'Day Status', 'Device Name', 'Received At'];
             const rows = exportLogs.map((l: ThumbLog) => [
                 dayjs(l.timestamp).format('YYYY-MM-DD HH:mm:ss'),
                 l.employeeId,
                 l.employeeName || 'Unknown',
                 l.logType,
+                l.attendanceStatus || '-',
                 l.deviceName,
                 l.receivedAt ? dayjs(l.receivedAt).format('YYYY-MM-DD HH:mm:ss') : '-'
             ]);
@@ -252,6 +254,7 @@ export default function ThumbReportsTab() {
                                 <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-tight">Timestamp</th>
                                 <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-tight">Employee</th>
                                 <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-tight">Type</th>
+                                <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-tight">Day Status</th>
                                 <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-tight">Device</th>
                                 <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-tight">Received At</th>
                             </tr>
@@ -293,6 +296,16 @@ export default function ThumbReportsTab() {
                                                 : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
                                                 }`}>
                                                 {log.logType}
+                                            </span>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                                                log.attendanceStatus === 'PRESENT' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                                log.attendanceStatus === 'ABSENT' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                                                log.attendanceStatus?.includes('HALF_DAY') ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                                'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                            }`}>
+                                                {log.attendanceStatus || '-'}
                                             </span>
                                         </td>
                                         <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">

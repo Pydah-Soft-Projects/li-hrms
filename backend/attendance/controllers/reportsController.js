@@ -507,19 +507,34 @@ exports.getThumbReports = async (req, res) => {
 
         // Map employee names for the logs
         const empIds = [...new Set(logs.map(l => l.employeeId))];
-        const employees = await Employee.find({ emp_no: { $in: empIds } })
-            .select('emp_no employee_name')
-            .lean();
+        const uniqueDates = [...new Set(logs.map(l => dayjs(l.timestamp).format('YYYY-MM-DD')))];
+        
+        const [employees, dailyStatuses] = await Promise.all([
+            Employee.find({ emp_no: { $in: empIds } }).select('emp_no employee_name').lean(),
+            AttendanceDaily.find({
+                employeeNumber: { $in: empIds },
+                date: { $in: uniqueDates }
+            }).select('employeeNumber date status').lean()
+        ]);
 
         const empMap = employees.reduce((acc, e) => {
             acc[e.emp_no] = e.employee_name;
             return acc;
         }, {});
 
-        const data = logs.map(log => ({
-            ...log,
-            employeeName: empMap[log.employeeId] || 'Unknown'
-        }));
+        const statusMap = dailyStatuses.reduce((acc, d) => {
+            acc[`${d.employeeNumber}_${d.date}`] = d.status;
+            return acc;
+        }, {});
+
+        const data = logs.map(log => {
+            const dateStr = dayjs(log.timestamp).format('YYYY-MM-DD');
+            return {
+                ...log,
+                employeeName: empMap[log.employeeId] || 'Unknown',
+                attendanceStatus: statusMap[`${log.employeeId}_${dateStr}`] || '-'
+            };
+        });
 
         res.status(200).json({
             success: true,
