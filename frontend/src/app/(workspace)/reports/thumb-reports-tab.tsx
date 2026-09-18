@@ -35,7 +35,7 @@ export default function ThumbReportsTab() {
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
-    const [limit] = useState(50);
+    const [limit] = useState(500);
 
     // Filter states
     const [startDate, setStartDate] = useState(dayjs().format('YYYY-MM-DD'));

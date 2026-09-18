@@ -468,8 +468,8 @@ exports.getThumbReports = async (req, res) => {
             page: parseInt(page) || 1
         };
 
-        const filterStartDate = dayjs.tz(startDate, 'Asia/Kolkata').startOf('day').toISOString();
-        const filterEndDate = dayjs.tz(endDate, 'Asia/Kolkata').endOf('day').toISOString();
+        const filterStartDate = dayjs(startDate).tz('Asia/Kolkata').startOf('day').toISOString();
+        const filterEndDate = dayjs(endDate).tz('Asia/Kolkata').endOf('day').toISOString();
 
         const PRE = await PreScheduledShift.find({
             date: { $gte: startDate, $lte: endDate },
@@ -507,7 +507,7 @@ exports.getThumbReports = async (req, res) => {
 
         // Map employee names for the logs
         const empIds = [...new Set(logs.map(l => l.employeeId))];
-        const uniqueDates = [...new Set(logs.map(l => dayjs(l.timestamp).format('YYYY-MM-DD')))];
+        const uniqueDates = [...new Set(logs.map(l => dayjs(l.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD')))];
         
         const [employees, dailyStatuses] = await Promise.all([
             Employee.find({ emp_no: { $in: empIds } }).select('emp_no employee_name').lean(),
@@ -528,7 +528,7 @@ exports.getThumbReports = async (req, res) => {
         }, {});
 
         const data = logs.map(log => {
-            const dateStr = dayjs(log.timestamp).format('YYYY-MM-DD');
+            const dateStr = dayjs(log.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD');
             return {
                 ...log,
                 employeeName: empMap[log.employeeId] || 'Unknown',
@@ -915,6 +915,18 @@ exports.exportAttendanceReport = async (req, res) => {
         // ── 6. Build Abstract Sheet & Write XLSX ─────────────────────────────
         const workbook = XLSX.utils.book_new();
 
+        const PRE = await PreScheduledShift.find({
+            date: { $gte: startDate, $lte: endDate },
+            status: { $in: ['WO', 'HOL'] }
+        }).select('employeeNumber status');
+
+        const nonWorkingMap = {};
+        PRE.forEach(p => {
+            if (!nonWorkingMap[p.employeeNumber]) nonWorkingMap[p.employeeNumber] = { wo: 0, hol: 0 };
+            if (p.status === 'WO') nonWorkingMap[p.employeeNumber].wo++;
+            if (p.status === 'HOL') nonWorkingMap[p.employeeNumber].hol++;
+        });
+
         if (groupBy === 'division' || groupBy === 'department' || groupBy === 'employee') {
             // Fetch similar summaries as in getAttendanceReport
             let children = [];
@@ -945,18 +957,6 @@ exports.exportAttendanceReport = async (req, res) => {
                 const emps = await Employee.find(empQuery).select('emp_no employee_name').lean();
                 children = emps.map(e => ({ _id: e._id, name: e.employee_name, emp_no: e.emp_no }));
             }
-
-            const PRE = await PreScheduledShift.find({
-                date: { $gte: startDate, $lte: endDate },
-                status: { $in: ['WO', 'HOL'] }
-            }).select('employeeNumber status');
-
-            const nonWorkingMap = {};
-            PRE.forEach(p => {
-                if (!nonWorkingMap[p.employeeNumber]) nonWorkingMap[p.employeeNumber] = { wo: 0, hol: 0 };
-                if (p.status === 'WO') nonWorkingMap[p.employeeNumber].wo++;
-                if (p.status === 'HOL') nonWorkingMap[p.employeeNumber].hol++;
-            });
 
             const abstractRows = [
                 ['ATTENDANCE SUMMARY REPORT'],
