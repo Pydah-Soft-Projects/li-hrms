@@ -33,6 +33,7 @@ const THEMES: Record<SettingsThemeKey, SettingsThemeTokens> = {
   permissions: { border: 'rgb(120 113 108 / 0.35)', soft: 'rgb(120 113 108 / 0.08)', ink: 'rgb(68 64 60)', accent: 'rgb(87 83 78)' },
   workflow: { border: 'rgb(139 92 246 / 0.38)', soft: 'rgb(139 92 246 / 0.09)', ink: 'rgb(91 33 182)', accent: 'rgb(139 92 246)' },
   complaints: { border: 'rgb(16 185 129 / 0.38)', soft: 'rgb(16 185 129 / 0.09)', ink: 'rgb(4 120 87)', accent: 'rgb(16 185 129)' },
+  geofence: { border: 'rgb(16 185 129 / 0.38)', soft: 'rgb(16 185 129 / 0.09)', ink: 'rgb(4 120 87)', accent: 'rgb(16 185 129)' },
 };
 
 export function getSettingsTheme(key: SettingsThemeKey): SettingsThemeTokens {

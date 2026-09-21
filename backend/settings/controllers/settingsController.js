@@ -70,6 +70,13 @@ exports.getSetting = async (req, res) => {
         'default_apply_statutory_deductions': true,
         'default_apply_attendance_deductions': true,
         'enable_second_salary': true,
+        'mobile_login_geofence': {
+          enabled: false,
+          latitude: 16.9048,
+          longitude: 82.2369,
+          radiusMeters: 500,
+          locationName: 'Head Office',
+        },
         company_profile: DEFAULT_COMPANY_PROFILE,
         [FILE_STORAGE_SETTING_KEY]: sanitizeForClient(mergeConfig(null)),
       };
@@ -78,6 +85,8 @@ exports.getSetting = async (req, res) => {
         const defaultCategory =
           req.params.key === 'company_profile'
             ? 'company'
+            : req.params.key === 'mobile_login_geofence'
+              ? 'geofence'
             : req.params.key === FILE_STORAGE_SETTING_KEY
               ? 'general'
             : ['allow_employee_bulk_process', 'custom_employee_grouping_enabled'].includes(req.params.key)
@@ -269,6 +278,33 @@ exports.upsertSetting = async (req, res) => {
       }
     }
 
+    if (key === 'mobile_login_geofence') {
+      if (typeof value !== 'object' || value === null) {
+        return res.status(400).json({
+          success: false,
+          message: 'mobile_login_geofence value must be an object',
+        });
+      }
+      if (typeof value.enabled !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: 'mobile_login_geofence.enabled must be a boolean',
+        });
+      }
+      if (typeof value.latitude !== 'number' || typeof value.longitude !== 'number') {
+        return res.status(400).json({
+          success: false,
+          message: 'latitude and longitude must be valid numbers',
+        });
+      }
+      if (typeof value.radiusMeters !== 'number' || value.radiusMeters <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'radiusMeters must be a positive number',
+        });
+      }
+    }
+
     let valueToSave = value;
     if (key === 'company_profile') {
       const validation = validateCompanyProfile(value);
@@ -303,6 +339,8 @@ exports.upsertSetting = async (req, res) => {
           category ||
           (key === 'company_profile'
             ? 'company'
+            : key === 'mobile_login_geofence'
+              ? 'geofence'
             : key === FILE_STORAGE_SETTING_KEY
               ? 'general'
             : ['include_missing_employee_components', 'enable_absent_deduction', 'lop_days_per_absent', 'auto_reject_pending_requests_on_batch_complete', 'enable_second_salary'].includes(key)
@@ -379,4 +417,73 @@ exports.deleteSetting = async (req, res) => {
     });
   }
 };
+
+// @desc    Geocode location search for geofence map
+// @route   GET /api/settings/geofence/search-location?q=...
+// @access  Private
+exports.searchGeofenceLocation = async (req, res) => {
+  try {
+    const q = req.query.q || req.query.query;
+    if (!q || typeof q !== 'string' || q.trim().length < 2) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    const axios = require('axios');
+    const searchTerm = q.trim();
+
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchTerm)}&limit=8&addressdetails=1`;
+      const response = await axios.get(url, {
+        headers: {
+          'User-Agent': 'LiHRMS-Geofence-Admin/1.0 (admin@lihrms.com)',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        timeout: 6000,
+      });
+
+      if (Array.isArray(response.data) && response.data.length > 0) {
+        const results = response.data.map((item) => ({
+          placeId: item.place_id,
+          name: (item.display_name || '').split(',')[0] || item.display_name,
+          displayName: item.display_name,
+          latitude: parseFloat(item.lat),
+          longitude: parseFloat(item.lon),
+        }));
+        return res.status(200).json({ success: true, data: results });
+      }
+    } catch (nomErr) {
+      console.warn('[GeofenceSearch] Nominatim search error:', nomErr.message);
+    }
+
+    // Fallback: Photon API
+    const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(searchTerm)}&limit=8`;
+    const pRes = await axios.get(photonUrl, { timeout: 6000 });
+    const features = pRes.data?.features || [];
+    const results = features.map((f, idx) => {
+      const coords = f.geometry?.coordinates || [0, 0];
+      const props = f.properties || {};
+      const title = props.name || props.street || props.city || props.country || 'Location';
+      const label = [props.name, props.street, props.city, props.state, props.country]
+        .filter(Boolean)
+        .join(', ');
+      return {
+        placeId: props.osm_id || idx,
+        name: title,
+        displayName: label || title,
+        latitude: coords[1],
+        longitude: coords[0],
+      };
+    });
+
+    return res.status(200).json({ success: true, data: results });
+  } catch (error) {
+    console.error('[GeofenceSearch] Error searching location:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to search location',
+      error: error.message,
+    });
+  }
+};
+
 

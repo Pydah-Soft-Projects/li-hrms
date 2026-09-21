@@ -2,6 +2,8 @@ const User = require('../../users/model/User');
 const Employee = require('../../employees/model/Employee');
 const RoleAssignment = require('../../workspaces/model/RoleAssignment');
 const Role = require('../../users/model/Role');
+const Settings = require('../../settings/model/Settings');
+const LoginAudit = require('../model/LoginAudit');
 const passwordNotificationService = require('../../shared/services/passwordNotificationService');
 const {
   buildTicketSsoUrlForUser,
@@ -15,6 +17,28 @@ const {
 } = require('../services/authSessionHelper');
 const sessionService = require('../services/sessionService');
 const tokenService = require('../services/tokenService');
+
+function haversineDistanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function detectPlatform(req) {
+  const platformHeader = req.headers['x-app-platform'] || '';
+  const userAgent = req.headers['user-agent'] || '';
+  if (platformHeader.toLowerCase() === 'mobile') return 'mobile';
+  if (platformHeader.toLowerCase() === 'web') return 'web';
+  if (/Expo|React-Native|okhttp|Dart/i.test(userAgent)) return 'mobile';
+  if (userAgent && /Mozilla|Chrome|Safari|Firefox|Edge/i.test(userAgent)) return 'web';
+  return 'unknown';
+}
 
 // @desc    Login user
 // @route   POST /api/auth/login
@@ -150,6 +174,58 @@ exports.login = async (req, res) => {
         success: false,
         message: 'Invalid credentials',
       });
+    }
+
+    // Geofence check for Mobile Login
+    const detectedPlatform = detectPlatform(req);
+    if (detectedPlatform === 'mobile') {
+      const geofenceDoc = await Settings.findOne({ key: 'mobile_login_geofence' }).lean();
+      const geofence = geofenceDoc?.value || { enabled: false };
+      if (geofence.enabled) {
+        const lat = req.body?.latitude ?? req.headers['x-user-latitude'];
+        const lng = req.body?.longitude ?? req.headers['x-user-longitude'];
+        const parsedLat = Number(lat);
+        const parsedLng = Number(lng);
+
+        if (lat == null || lng == null || !Number.isFinite(parsedLat) || !Number.isFinite(parsedLng)) {
+          await logLoginAttempt({
+            identifier,
+            userId: user._id,
+            userType,
+            success: false,
+            reason: 'missing_geofence_coordinates',
+            req,
+          });
+          return res.status(403).json({
+            success: false,
+            code: 'OUTSIDE_GEOFENCE',
+            message: 'GPS location is required to sign in from the mobile app within company geofence.',
+          });
+        }
+
+        const distance = haversineDistanceMeters(
+          parsedLat,
+          parsedLng,
+          geofence.latitude,
+          geofence.longitude
+        );
+
+        if (distance > geofence.radiusMeters) {
+          await logLoginAttempt({
+            identifier,
+            userId: user._id,
+            userType,
+            success: false,
+            reason: `outside_geofence_${Math.round(distance)}m`,
+            req,
+          });
+          return res.status(403).json({
+            success: false,
+            code: 'OUTSIDE_GEOFENCE',
+            message: `Login denied: You are ${Math.round(distance)} meters away from the allowed geofence area (${geofence.locationName || 'Company Area'}, radius: ${geofence.radiusMeters}m).`,
+          });
+        }
+      }
     }
 
     console.log(`[AuthLogin] Login successful for ${userType} ${identifier}`);
@@ -983,4 +1059,98 @@ exports.getSession = async (req, res) => {
     });
   }
 };
+
+// @desc    Get mobile login geofence config
+// @route   GET /api/auth/geofence-config
+// @access  Public
+exports.getGeofenceConfig = async (req, res) => {
+  try {
+    const doc = await Settings.findOne({ key: 'mobile_login_geofence' }).lean();
+    const defaults = {
+      enabled: false,
+      latitude: 16.9048,
+      longitude: 82.2369,
+      radiusMeters: 500,
+      locationName: 'Head Office',
+    };
+    return res.status(200).json({
+      success: true,
+      data: doc?.value || defaults,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch geofence config',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get Web vs Mobile login metrics breakdown
+// @route   GET /api/auth/login-metrics
+// @access  Private (Admin/Superadmin)
+exports.getLoginMetrics = async (req, res) => {
+  try {
+    const totalLogins = await LoginAudit.countDocuments();
+    const webLogins = await LoginAudit.countDocuments({ platform: 'web', success: true });
+    const mobileLogins = await LoginAudit.countDocuments({ platform: 'mobile', success: true });
+    const failedLogins = await LoginAudit.countDocuments({ success: false });
+
+    // Daily trend for last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const dailyAgg = await LoginAudit.aggregate([
+      { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+      {
+        $addFields: {
+          dateStr: {
+            $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: '+05:30' },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: { date: '$dateStr', platform: '$platform', success: '$success' },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { '_id.date': 1 } },
+    ]);
+
+    const dailyMap = {};
+    dailyAgg.forEach((item) => {
+      const d = item._id.date;
+      if (!dailyMap[d]) {
+        dailyMap[d] = { date: d, webSuccess: 0, mobileSuccess: 0, failed: 0 };
+      }
+      if (item._id.success) {
+        if (item._id.platform === 'web') dailyMap[d].webSuccess += item.count;
+        else if (item._id.platform === 'mobile') dailyMap[d].mobileSuccess += item.count;
+      } else {
+        dailyMap[d].failed += item.count;
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        summary: {
+          totalLogins,
+          webLogins,
+          mobileLogins,
+          failedLogins,
+        },
+        dailyTrend: Object.values(dailyMap),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch login metrics',
+      error: error.message,
+    });
+  }
+};
+
 

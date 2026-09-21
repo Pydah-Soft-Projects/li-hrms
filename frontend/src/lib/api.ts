@@ -2389,6 +2389,17 @@ export const api = {
     });
   },
 
+  getLoginMetrics: async () => {
+    return apiRequest('/auth/login-metrics', { method: 'GET' });
+  },
+
+  searchGeofenceLocation: async (query: string) => {
+    return apiRequest<{ placeId: string | number; name: string; displayName: string; latitude: number; longitude: number }[]>(
+      `/settings/geofence/search-location?q=${encodeURIComponent(query)}`,
+      { method: 'GET' }
+    );
+  },
+
   testFileStorage: async (config?: Record<string, unknown>) => {
     return apiRequest<{ ok?: boolean; basePath?: string; bucket?: string }>('/settings/file-storage/test', {
       method: 'POST',

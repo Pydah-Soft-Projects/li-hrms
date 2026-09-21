@@ -18,7 +18,7 @@ const settingsSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      enum: ['shift', 'attendance', 'payroll', 'general', 'employee', 'overtime', 'permissions', 'attendance_deductions', 'communications', 'feature_control', 'ot', 'loan', 'permission', 'company'],
+      enum: ['shift', 'attendance', 'payroll', 'general', 'employee', 'overtime', 'permissions', 'attendance_deductions', 'communications', 'feature_control', 'ot', 'loan', 'permission', 'company', 'geofence', 'security'],
       default: 'general',
     },
   },

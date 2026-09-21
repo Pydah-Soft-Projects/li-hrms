@@ -34,6 +34,9 @@ router.post('/file-storage/test', authorize('super_admin', 'sub_admin'), setting
 // Get all settings
 router.get('/', settingsController.getAllSettings);
 
+// Geofence location search
+router.get('/geofence/search-location', settingsController.searchGeofenceLocation);
+
 // Get single setting
 router.get('/:key', settingsController.getSetting);
 

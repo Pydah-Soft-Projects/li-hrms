@@ -37,12 +37,15 @@ import CompanySettings from '@/components/settings/CompanySettings';
 import AttendanceDeductionsSettings from '@/components/settings/AttendanceDeductionsSettings';
 import ResignationSettings from '@/components/settings/ResignationSettings';
 import PromotionTransferSettings from '@/components/settings/PromotionTransferSettings';
+import GeofenceSettings from '@/components/settings/GeofenceSettings';
+import { MapPin } from 'lucide-react';
 import { SettingsHubFooter, SettingsHubLayout } from '@/components/settings/SettingsPageShell';
 import { SettingsThemeProvider } from '@/components/settings/SettingsThemeContext';
 
 export type SettingsTabType =
   | 'general'
   | 'company'
+  | 'geofence'
   | 'employee'
   | 'leave'
   | 'leave_policy'
@@ -65,6 +68,7 @@ export type SettingsTabType =
 const VALID_TABS: SettingsTabType[] = [
   'general',
   'company',
+  'geofence',
   'employee',
   'leave',
   'leave_policy',
@@ -88,6 +92,7 @@ const VALID_TABS: SettingsTabType[] = [
 const MENU_ITEMS = [
   { id: 'general', label: 'General Settings', icon: Globe, color: 'text-sky-500', group: 'Application' },
   { id: 'company', label: 'Company & Brand', icon: Building2, color: 'text-teal-500', group: 'Application' },
+  { id: 'geofence', label: 'Geofence Settings', icon: MapPin, color: 'text-emerald-500', group: 'Application' },
   { id: 'communications', label: 'Communication', icon: MessageSquare, color: 'text-violet-500', group: 'Application' },
   { id: 'feature_control', label: 'Feature Control', icon: LayoutGrid, color: 'text-amber-500', group: 'Application' },
   { id: 'employee', label: 'Employee Setup', icon: Users, color: 'text-indigo-500', group: 'Human Resources' },
@@ -155,6 +160,8 @@ export default function SettingsHubClient() {
         return <GeneralSettings />;
       case 'company':
         return <CompanySettings />;
+      case 'geofence':
+        return <GeofenceSettings />;
       case 'employee':
         return <EmployeeSettings />;
       case 'leave':
