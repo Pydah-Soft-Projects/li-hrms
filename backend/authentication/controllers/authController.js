@@ -176,9 +176,10 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Geofence check for Mobile Login
+    // Geofence check for Mobile Login (Exempt Super Admin)
     const detectedPlatform = detectPlatform(req);
-    if (detectedPlatform === 'mobile') {
+    const isSuperAdminRole = user.role === 'super_admin' || user.role === 'superadmin';
+    if (detectedPlatform === 'mobile' && !isSuperAdminRole) {
       const geofenceDoc = await Settings.findOne({ key: 'mobile_login_geofence' }).lean();
       const geofence = geofenceDoc?.value || { enabled: false };
       if (geofence.enabled) {

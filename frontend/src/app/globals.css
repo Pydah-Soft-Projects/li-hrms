@@ -706,132 +706,142 @@ input[type="number"],
 }
 
 .ledger-swal-popup {
-  border: 1px solid var(--ps-accent-border, rgba(5, 150, 105, 0.22)) !important;
-  border-radius: 0 !important;
-  box-shadow: 0 16px 32px -12px rgba(0, 0, 0, 0.15) !important;
+  border: 1px solid var(--ps-accent-border, rgba(16, 185, 129, 0.28)) !important;
+  border-radius: 1rem !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
   padding: 0 !important;
-  background: #fff !important;
+  background: #ffffff !important;
   width: 100% !important;
   max-width: calc(100vw - 1.5rem) !important;
   margin: 0 auto !important;
+  overflow: hidden !important;
 }
 
 .ledger-swal-popup-sm {
-  max-width: min(20rem, calc(100vw - 1.5rem)) !important;
-}
-
-.ledger-swal-popup-md {
   max-width: min(24rem, calc(100vw - 1.5rem)) !important;
 }
 
+.ledger-swal-popup-md {
+  max-width: min(28rem, calc(100vw - 1.5rem)) !important;
+}
+
 .ledger-swal-popup-lg {
-  max-width: min(36rem, calc(100vw - 1.5rem)) !important;
+  max-width: min(38rem, calc(100vw - 1.5rem)) !important;
 }
 
 .dark .ledger-swal-popup {
-  background: #0c0a09 !important;
+  background: #0f172a !important;
+  border-color: rgba(16, 185, 129, 0.35) !important;
 }
 
 .ledger-swal-header {
-  padding: 0.75rem 1rem 0.5rem !important;
+  padding: 1.25rem 1.25rem 0.5rem !important;
 }
 
 .ledger-swal-popup-lg .ledger-swal-header {
-  padding: 0.625rem 0.875rem 0.375rem !important;
+  padding: 1rem 1.25rem 0.5rem !important;
 }
 
 .ledger-swal-title {
-  font-family: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif !important;
-  font-size: 1rem !important;
-  font-weight: 300 !important;
-  line-height: 1.3 !important;
-  letter-spacing: -0.01em !important;
-  color: #1c1917 !important;
+  font-family: var(--font-sans, system-ui), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 1.125rem !important;
+  font-weight: 700 !important;
+  line-height: 1.35 !important;
+  letter-spacing: -0.015em !important;
+  color: #0f172a !important;
   padding: 0 !important;
 }
 
 .ledger-swal-popup-lg .ledger-swal-title {
-  font-size: 0.9375rem !important;
+  font-size: 1.0625rem !important;
 }
 
 .dark .ledger-swal-title {
-  color: #fafaf9 !important;
+  color: #f8fafc !important;
 }
 
 .ledger-swal-html {
-  font-size: 0.75rem !important;
-  line-height: 1.45 !important;
-  color: #57534e !important;
+  font-size: 0.84375rem !important;
+  line-height: 1.5 !important;
+  color: #475569 !important;
   text-align: left !important;
-  padding: 0 1rem 0.375rem !important;
+  padding: 0.25rem 1.25rem 0.75rem !important;
   margin: 0 !important;
   max-height: min(58vh, 24rem);
   overflow-y: auto;
 }
 
 .ledger-swal-popup-lg .ledger-swal-html {
-  padding: 0 0.875rem 0.375rem !important;
+  padding: 0.25rem 1.25rem 0.75rem !important;
   max-height: min(52vh, 20rem);
 }
 
 .dark .ledger-swal-html {
-  color: #a8a29e !important;
+  color: #94a3b8 !important;
 }
 
 .ledger-swal-popup .swal2-html-container > p {
-  font-size: 0.75rem !important;
-  line-height: 1.45 !important;
+  font-size: 0.84375rem !important;
+  line-height: 1.5 !important;
   margin: 0.25rem 0 0 !important;
 }
 
 .ledger-swal-actions {
   width: 100% !important;
-  padding: 0.5rem 0.875rem 0.625rem !important;
-  margin: 0.375rem 0 0 !important;
+  padding: 0.75rem 1.25rem 1rem !important;
+  margin: 0 !important;
   justify-content: flex-end !important;
   flex-wrap: wrap !important;
-  gap: 0.375rem !important;
+  gap: 0.5rem !important;
+  background-color: #f8fafc;
+  border-top: 1px solid #f1f5f9 !important;
+}
+
+.dark .ledger-swal-actions {
+  background-color: #090d16 !important;
+  border-top-color: #1e293b !important;
 }
 
 .ledger-swal-icon {
-  transform: scale(0.65) !important;
-  width: 2.5rem !important;
-  height: 2.5rem !important;
-  margin: 0.25rem auto 0 !important;
-  border-width: 2px !important;
+  transform: scale(0.85) !important;
+  width: 3.25rem !important;
+  height: 3.25rem !important;
+  margin: 0.75rem auto 0.25rem !important;
+  border-width: 2.5px !important;
 }
 
 .ledger-swal-btn {
-  border-radius: 0.25rem !important;
-  padding: 0.375rem 0.625rem !important;
-  font-size: 0.5625rem !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.1em !important;
-  transition: opacity 0.15s ease !important;
-  box-shadow: none !important;
-  min-height: 1.75rem !important;
+  border-radius: 0.625rem !important;
+  padding: 0.5rem 1.25rem !important;
+  font-size: 0.75rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
+  transition: all 0.15s ease !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+  min-height: 2.25rem !important;
 }
 
 .ledger-swal-btn:hover {
-  opacity: 0.88;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
 }
 
 .ledger-swal-btn-primary {
-  color: #fff !important;
+  color: #ffffff !important;
   background-color: var(--ps-accent, #059669) !important;
   border: 1px solid var(--ps-accent, #059669) !important;
 }
 
 .ledger-swal-btn-danger {
-  color: #fff !important;
+  color: #ffffff !important;
   background-color: #e11d48 !important;
   border: 1px solid #be123c !important;
 }
 
 .ledger-swal-btn-success {
-  color: #fff !important;
-  background-color: #059669 !important;
-  border: 1px solid #047857 !important;
+  color: #ffffff !important;
+  background-color: #10b981 !important;
+  border: 1px solid #059669 !important;
 }
 
 .ledger-swal-btn-outline {

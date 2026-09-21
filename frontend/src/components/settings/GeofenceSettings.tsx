@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { MapPin, Shield, Smartphone, Globe, CheckCircle2, AlertTriangle, RefreshCw, Save, Navigation, Check } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'react-hot-toast';
-import { alertSuccess, alertError } from '@/lib/customSwal';
+import { alertSuccess, alertError, ledgerSwalFire } from '@/lib/customSwal';
 import GeofenceMapPicker from '@/components/settings/GeofenceMapPicker';
 
 interface GeofenceConfig {
@@ -146,10 +146,40 @@ export default function GeofenceSettings() {
         const msg = `Geofence settings saved successfully! Status: ${config.enabled ? 'ACTIVE (' + config.radiusMeters + 'm radius around ' + (config.locationName || 'center') + ')' : 'DISABLED'}.`;
         setSaveMessage(msg);
         toast.success('Geofence settings saved!');
-        alertSuccess(
-          'Geofence Settings Saved',
-          `Mobile App Geofence configuration updated successfully.\nLocation: ${config.locationName || 'Company Area'}\nRadius: ${config.radiusMeters} meters\nStatus: ${config.enabled ? 'ACTIVE' : 'DISABLED'}`
-        );
+        ledgerSwalFire({
+          icon: 'success',
+          title: 'Geofence Settings Saved',
+          html: `
+            <div class="space-y-3 pt-1 pb-1">
+              <p class="text-xs text-slate-600 dark:text-slate-300">
+                Mobile App Geofence configuration updated successfully.
+              </p>
+              <div class="bg-slate-50 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3.5 space-y-2.5 text-xs text-left">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-medium text-slate-500 dark:text-slate-400">Location:</span>
+                  <span class="font-semibold text-slate-900 dark:text-slate-100">${config.locationName || 'Company Area'}</span>
+                </div>
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-medium text-slate-500 dark:text-slate-400">Allowed Radius:</span>
+                  <span class="font-semibold text-slate-900 dark:text-slate-100">${config.radiusMeters} meters</span>
+                </div>
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-medium text-slate-500 dark:text-slate-400">Geofence Status:</span>
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                    config.enabled
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
+                      : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                  }">
+                    ${config.enabled ? 'ACTIVE' : 'DISABLED'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          `,
+          confirmButtonText: 'DONE',
+          confirmVariant: 'success',
+          size: 'md',
+        });
       } else {
         const errMsg = (res as any)?.message || 'Failed to save geofence settings';
         toast.error(errMsg);
