@@ -1460,8 +1460,10 @@ exports.updateOD = async (req, res) => {
       }
     }
 
-    // Handle hour-based OD updates
-    if (req.body.odType_extended === 'hours' || od.odType_extended === 'hours') {
+    // Handle OD duration type & dates updates
+    const targetType = req.body.odType_extended || (req.body.isHalfDay ? 'half_day' : (req.body.isHalfDay === false ? 'full_day' : od.odType_extended));
+
+    if (targetType === 'hours' || (req.body.odType_extended === 'hours' && req.body.odStartTime && req.body.odEndTime)) {
       if (req.body.odStartTime && req.body.odEndTime) {
         // Validate time format (HH:MM)
         const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
@@ -1499,16 +1501,92 @@ exports.updateOD = async (req, res) => {
         od.durationHours = durationHours;
         od.numberOfDays = durationHours / 8; // Convert to fraction of day for display
         od.odType_extended = 'hours';
+        od.isHalfDay = false;
+        od.halfDayType = null;
         if (req.body.odStartTime) od.odStartTime = req.body.odStartTime;
         if (req.body.odEndTime) od.odEndTime = req.body.odEndTime;
+        if (!od.durationClassification) {
+          od.durationClassification = {};
+        }
+        od.durationClassification.status = 'hours';
+        od.durationClassification.requiresAuthorityDecision = false;
+        od.durationClassification.tentative = false;
+        od.durationClassification.systemOdType = 'hours';
+        od.markModified('durationClassification');
       }
-    } else if (req.body.fromDate || req.body.toDate || req.body.isHalfDay !== undefined) {
-      // Recalculate days if dates changed (for non-hour-based OD)
+    } else if (targetType === 'full_day' || req.body.isHalfDay === false) {
+      od.odType_extended = 'full_day';
+      od.isHalfDay = false;
+      od.halfDayType = null;
+      od.odStartTime = null;
+      od.odEndTime = null;
+      od.durationHours = null;
+      const diffTime = Math.abs(od.toDate - od.fromDate);
+      od.numberOfDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + (diffTime === 0 ? 1 : 0));
+      if (!od.durationClassification) {
+        od.durationClassification = {};
+      }
+      od.durationClassification.status = 'full_day';
+      od.durationClassification.requiresAuthorityDecision = false;
+      od.durationClassification.tentative = false;
+      od.durationClassification.systemOdType = 'full_day';
+      od.markModified('durationClassification');
+    } else if (targetType === 'half_day' || req.body.isHalfDay === true) {
+      od.odType_extended = 'half_day';
+      od.isHalfDay = true;
+      od.halfDayType = req.body.halfDayType || od.halfDayType || 'first_half';
+      od.odStartTime = null;
+      od.odEndTime = null;
+      od.durationHours = null;
+      od.numberOfDays = 0.5;
+      if (!od.durationClassification) {
+        od.durationClassification = {};
+      }
+      od.durationClassification.status = 'half_day';
+      od.durationClassification.requiresAuthorityDecision = false;
+      od.durationClassification.tentative = false;
+      od.durationClassification.systemOdType = 'half_day';
+      od.markModified('durationClassification');
+    } else if (req.body.fromDate || req.body.toDate) {
       if (od.isHalfDay) {
         od.numberOfDays = 0.5;
       } else {
         const diffTime = Math.abs(od.toDate - od.fromDate);
-        od.numberOfDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        od.numberOfDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + (diffTime === 0 ? 1 : 0));
+      }
+    }
+
+    // Update or append authority consent entry if an approver/authority edits a shortfall/authority OD
+    if (Array.isArray(od.authorityConsent) && od.authorityConsent.length > 0) {
+      const userRole = req.user?.role;
+      const targetDecision = (targetType === 'full_day' || targetType === 'half_day') ? targetType : null;
+      if (targetDecision && ['manager', 'hod', 'hr', 'sub_admin', 'super_admin'].includes(userRole)) {
+        const matchingIdx = od.authorityConsent.findIndex(
+          (c) => c.stepRole === userRole || c.actionByRole === userRole || (c.actionBy && c.actionBy.toString() === req.user._id?.toString())
+        );
+        if (matchingIdx !== -1) {
+          od.authorityConsent[matchingIdx].decision = targetDecision;
+          od.authorityConsent[matchingIdx].halfDayType = targetDecision === 'half_day' ? (req.body.halfDayType || od.halfDayType || 'first_half') : null;
+          if (req.user.name) od.authorityConsent[matchingIdx].actionByName = req.user.name;
+          od.authorityConsent[matchingIdx].at = new Date();
+          if (req.body.changeReason) od.authorityConsent[matchingIdx].comments = req.body.changeReason;
+        } else {
+          od.authorityConsent.push({
+            stepRole: userRole,
+            stepOrder: od.authorityConsent.length + 1,
+            actionBy: req.user._id,
+            actionByName: req.user.name,
+            actionByRole: userRole,
+            decision: targetDecision,
+            halfDayType: targetDecision === 'half_day' ? (req.body.halfDayType || od.halfDayType || 'first_half') : null,
+            consented: true,
+            acknowledgeAttendanceOverlap: true,
+            comments: req.body.changeReason || `Edited by ${req.user.name}`,
+            warnings: [],
+            at: new Date(),
+          });
+        }
+        od.markModified('authorityConsent');
       }
     }
 
@@ -1565,7 +1643,11 @@ exports.updateOD = async (req, res) => {
     }
 
     // Duration + shift classification for regular OD (not hours)
-    if (hasStartEvidence && hasEndEvidence && isDurationClassifiableOd(od)) {
+    // Only run auto-classification on fresh OUT evidence submission when type/duration is not explicitly edited
+    const isExplicitTypeEdit = req.body.odType_extended !== undefined || req.body.isHalfDay !== undefined;
+    const isEvidenceSubmission = !!incomingEndEvidence || !!incomingOutPhoto || !!incomingOutGeo;
+
+    if (hasStartEvidence && hasEndEvidence && isDurationClassifiableOd(od) && isEvidenceSubmission && !isExplicitTypeEdit) {
       try {
         const dateStr = extractISTComponents(od.fromDate).dateStr;
         const classification = await classifyRegularOdFromEvidence({

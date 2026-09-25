@@ -418,7 +418,7 @@ export function ODDetailCard({ data, onSubmitOutClick, className = '', compact =
             <span className="mt-1 inline-block text-xs font-medium text-indigo-600 dark:text-indigo-400">
               {odExtendedType === 'hours'
                 ? `Hours OD (${formatHoursMins(data.durationHours) || 'Hour-based'})`
-                : data.isHalfDay
+                : (odExtendedType === 'half_day' || data.isHalfDay)
                 ? `0.5 Day (${data.halfDayType === 'second_half' ? 'Second Half' : 'First Half'})`
                 : `${data.numberOfDays || 1} Day${(data.numberOfDays || 1) > 1 ? 's' : ''} (Full Day)`}
             </span>

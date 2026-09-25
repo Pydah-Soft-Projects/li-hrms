@@ -6480,10 +6480,14 @@ function LeavesPageContent() {
                             <button
                               type="button"
                               onClick={() => {
+                                const item = selectedItem as any;
+                                const initialType = item?.odType_extended || (item?.isHalfDay ? 'half_day' : 'full_day');
                                 setEditFormData({
-                                  ...selectedItem,
-                                  fromDate: formatDateForInput(selectedItem!.fromDate),
-                                  toDate: formatDateForInput(selectedItem!.toDate),
+                                  ...item,
+                                  odType_extended: initialType,
+                                  isHalfDay: initialType === 'half_day',
+                                  fromDate: formatDateForInput(item?.fromDate),
+                                  toDate: formatDateForInput(item?.toDate),
                                 });
                                 setShowEditDialog(true);
                               }}
@@ -6908,6 +6912,18 @@ function LeavesPageContent() {
                             {selectedItem.changeHistory.map((change: any, idx: number) => {
                               const formatValue = (value: any) => {
                                 if (value === null || value === undefined) return 'N/A';
+                                if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+                                if (typeof value === 'object') {
+                                  if (value.address) return String(value.address);
+                                  if (value.geoLocation?.address) return String(value.geoLocation.address);
+                                  if (value.photoEvidence?.url || value.url) return 'Photo evidence';
+                                  if (value.latitude != null && value.longitude != null) return `${value.latitude}, ${value.longitude}`;
+                                  try {
+                                    return JSON.stringify(value);
+                                  } catch {
+                                    return 'Updated';
+                                  }
+                                }
                                 const str = String(value);
                                 if (str.includes('T') || (str.includes('-') && str.length > 10)) {
                                   try {
@@ -7329,9 +7345,9 @@ function LeavesPageContent() {
 
       {
         showEditDialog && selectedItem && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowEditDialog(false)} />
-            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-6 sm:p-8 animate-in zoom-in-95 duration-300">
+            <div className="relative z-[121] w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-6 sm:p-8 animate-in zoom-in-95 duration-300">
               <div className="mb-8">
                 <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
                   Edit {detailType === 'leave' ? 'Leave' : 'OD'} Application
@@ -7362,17 +7378,24 @@ function LeavesPageContent() {
                   // Clean up data before sending - convert empty strings to null for enum fields
                   const cleanedData: any = {
                     ...editFormData,
-                    // Fix halfDayType - must be null if not half day, or valid enum value
-                    halfDayType: editFormData.isHalfDay
+                    // Ensure isHalfDay, halfDayType, numberOfDays, and odType_extended are properly synced
+                    isHalfDay: detailType === 'od'
+                      ? (editFormData.odType_extended === 'half_day')
+                      : Boolean(editFormData.isHalfDay),
+                    halfDayType: (detailType === 'od' && editFormData.odType_extended === 'half_day') || (detailType === 'leave' && editFormData.isHalfDay)
                       ? (editFormData.halfDayType || 'first_half')
-                      : (editFormData.halfDayType === '' || editFormData.halfDayType === null ? null : editFormData.halfDayType),
+                      : null,
+                    odType_extended: detailType === 'od' ? (editFormData.odType_extended || 'full_day') : undefined,
+                    numberOfDays: detailType === 'od'
+                      ? (editFormData.odType_extended === 'half_day' ? 0.5 : 1)
+                      : editFormData.numberOfDays,
                     // For hour-based OD, ensure times are properly set
                     odStartTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
                       ? (editFormData.odStartTime || null)
-                      : (editFormData.odStartTime === '' ? null : editFormData.odStartTime),
+                      : null,
                     odEndTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
                       ? (editFormData.odEndTime || null)
-                      : (editFormData.odEndTime === '' ? null : editFormData.odEndTime),
+                      : null,
                     changeReason: `Edited by ${user?.name || 'Admin'}`,
                   };
 
@@ -7728,8 +7751,8 @@ function LeavesPageContent() {
                   </div>
                 )}
 
-                {/* Half Day (for non-hour-based OD) */}
-                {!(detailType === 'od' && editFormData.odType_extended === 'hours') && (
+                {/* Half Day (for Leaves) */}
+                {detailType === 'leave' && (
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
