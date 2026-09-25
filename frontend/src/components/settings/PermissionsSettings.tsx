@@ -238,109 +238,109 @@ const PermissionsSettings = () => {
                 subtitle="Configure automated deduction logic and approval gates for short leave (Permissions)."
             />
 
-            <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-                <div className="space-y-6">
-                    <SettingsSectionCard
-                        title="Auto Late-In / Early-Out Permissions"
-                        description="Shift-duration based auto approval configuration"
-                        accent
-                    >
-                        <SettingsToggleRow
-                            id="auto-edge-permissions"
-                            label="Enable auto permissions"
-                            description="Automatically apply permission rules for late-in and early-out based on shift duration."
-                            checked={autoEdgeSettings.isEnabled}
-                            onChange={(next) => setAutoEdgeSettings((prev) => ({ ...prev, isEnabled: next }))}
-                        />
+            <div className="space-y-6">
+                <SettingsSectionCard
+                    title="Auto Late-In / Early-Out Permissions"
+                    description="Shift-duration based auto approval configuration"
+                    accent
+                >
+                    <SettingsToggleRow
+                        id="auto-edge-permissions"
+                        label="Enable auto permissions"
+                        description="Automatically apply permission rules for late-in and early-out based on shift duration."
+                        checked={autoEdgeSettings.isEnabled}
+                        onChange={(next) => setAutoEdgeSettings((prev) => ({ ...prev, isEnabled: next }))}
+                    />
 
-                        <div className="mt-5 space-y-5">
-                            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
-                                <div className="space-y-2">
-                                    <label className={`${settingsSectionTitleClass} pl-1`}>Apply Automatically For</label>
-                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                                        {[
-                                            { id: 'late_in', label: 'Late In' },
-                                            { id: 'early_out', label: 'Early Out' },
-                                            { id: 'both', label: 'Both' },
-                                        ].map((option) => (
-                                            <button
-                                                key={option.id}
-                                                type="button"
-                                                onClick={() => setAutoEdgeSettings((prev) => ({ ...prev, applyFor: option.id as AutoApplyFor }))}
-                                                className={`border px-4 py-3 text-xs font-semibold uppercase transition-all ${autoEdgeSettings.applyFor === option.id
-                                                    ? 'border-[color:var(--ps-accent-border)] bg-[var(--ps-accent-soft)] text-[color:var(--ps-accent-ink)]'
-                                                    : 'border-transparent text-stone-400 hover:border-stone-200 hover:bg-stone-50 dark:hover:border-stone-800 dark:hover:bg-stone-900'
-                                                    }`}
-                                                style={settingsLedgerBorder}
-                                            >
-                                                {option.label}
-                                            </button>
-                                        ))}
-                                    </div>
+                    <div className="mt-5 space-y-5">
+                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+                            <div className="space-y-2">
+                                <label className={`${settingsSectionTitleClass} pl-1`}>Apply Automatically For</label>
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                    {[
+                                        { id: 'late_in', label: 'Late In' },
+                                        { id: 'early_out', label: 'Early Out' },
+                                        { id: 'both', label: 'Both' },
+                                    ].map((option) => (
+                                        <button
+                                            key={option.id}
+                                            type="button"
+                                            onClick={() => setAutoEdgeSettings((prev) => ({ ...prev, applyFor: option.id as AutoApplyFor }))}
+                                            className={`border px-4 py-3 text-xs font-semibold uppercase transition-all ${autoEdgeSettings.applyFor === option.id
+                                                ? 'border-[color:var(--ps-accent-border)] bg-[var(--ps-accent-soft)] text-[color:var(--ps-accent-ink)]'
+                                                : 'border-transparent text-stone-400 hover:border-stone-200 hover:bg-stone-50 dark:hover:border-stone-800 dark:hover:bg-stone-900'
+                                                }`}
+                                            style={settingsLedgerBorder}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    ))}
                                 </div>
-
-                                {autoEdgeSettings.applyFor === 'both' && (
-                                    <label className="flex h-11 items-center justify-between gap-3 border px-4 text-xs font-semibold text-stone-600 dark:text-stone-300" style={settingsLedgerBorder}>
-                                        <span>Same ranges for both</span>
-                                        <input
-                                            type="checkbox"
-                                            checked={autoEdgeSettings.useSameRulesForBoth}
-                                            onChange={(e) => handleSameRulesChange(e.target.checked)}
-                                        />
-                                    </label>
-                                )}
                             </div>
 
-                            {autoEdgeSettings.applyFor === 'late_in' && (
+                            {autoEdgeSettings.applyFor === 'both' && (
+                                <label className="flex h-11 items-center justify-between gap-3 border px-4 text-xs font-semibold text-stone-600 dark:text-stone-300" style={settingsLedgerBorder}>
+                                    <span>Same ranges for both</span>
+                                    <input
+                                        type="checkbox"
+                                        checked={autoEdgeSettings.useSameRulesForBoth}
+                                        onChange={(e) => handleSameRulesChange(e.target.checked)}
+                                    />
+                                </label>
+                            )}
+                        </div>
+
+                        {autoEdgeSettings.applyFor === 'late_in' && (
+                            <AutoEdgePermissionRulesEditor
+                                title="Late-in ranges"
+                                help="Match by shift duration (HH:MM hours). Times are 24-hour format."
+                                ruleSet={autoEdgeSettings.lateInRules}
+                                onChange={(next) => updateAutoRuleSet('lateInRules', next)}
+                            />
+                        )}
+                        {autoEdgeSettings.applyFor === 'early_out' && (
+                            <AutoEdgePermissionRulesEditor
+                                title="Early-out ranges"
+                                help="Match by shift duration (HH:MM hours). Times are 24-hour format."
+                                ruleSet={autoEdgeSettings.earlyOutRules}
+                                onChange={(next) => updateAutoRuleSet('earlyOutRules', next)}
+                            />
+                        )}
+                        {autoEdgeSettings.applyFor === 'both' && autoEdgeSettings.useSameRulesForBoth && (
+                            <AutoEdgePermissionRulesEditor
+                                title="Shared late-in and early-out ranges"
+                                ruleSet={autoEdgeSettings.lateInRules}
+                                onChange={(next) => updateAutoRuleSet('lateInRules', next)}
+                            />
+                        )}
+                        {autoEdgeSettings.applyFor === 'both' && !autoEdgeSettings.useSameRulesForBoth && (
+                            <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
                                 <AutoEdgePermissionRulesEditor
                                     title="Late-in ranges"
-                                    help="Match by shift duration (HH:MM hours). Times are 24-hour format."
                                     ruleSet={autoEdgeSettings.lateInRules}
                                     onChange={(next) => updateAutoRuleSet('lateInRules', next)}
                                 />
-                            )}
-                            {autoEdgeSettings.applyFor === 'early_out' && (
                                 <AutoEdgePermissionRulesEditor
                                     title="Early-out ranges"
-                                    help="Match by shift duration (HH:MM hours). Times are 24-hour format."
                                     ruleSet={autoEdgeSettings.earlyOutRules}
                                     onChange={(next) => updateAutoRuleSet('earlyOutRules', next)}
                                 />
-                            )}
-                            {autoEdgeSettings.applyFor === 'both' && autoEdgeSettings.useSameRulesForBoth && (
-                                <AutoEdgePermissionRulesEditor
-                                    title="Shared late-in and early-out ranges"
-                                    ruleSet={autoEdgeSettings.lateInRules}
-                                    onChange={(next) => updateAutoRuleSet('lateInRules', next)}
-                                />
-                            )}
-                            {autoEdgeSettings.applyFor === 'both' && !autoEdgeSettings.useSameRulesForBoth && (
-                                <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
-                                    <AutoEdgePermissionRulesEditor
-                                        title="Late-in ranges"
-                                        ruleSet={autoEdgeSettings.lateInRules}
-                                        onChange={(next) => updateAutoRuleSet('lateInRules', next)}
-                                    />
-                                    <AutoEdgePermissionRulesEditor
-                                        title="Early-out ranges"
-                                        ruleSet={autoEdgeSettings.earlyOutRules}
-                                        onChange={(next) => updateAutoRuleSet('earlyOutRules', next)}
-                                    />
-                                </div>
-                            )}
+                            </div>
+                        )}
 
-                            <SettingsSaveBar
-                                onSave={handleSaveAutoEdgeSettings}
-                                saving={saving}
-                                label="Save Auto Permission Settings"
-                            />
-                        </div>
-                    </SettingsSectionCard>
+                        <SettingsSaveBar
+                            onSave={handleSaveAutoEdgeSettings}
+                            saving={saving}
+                            label="Save Auto Permission Settings"
+                        />
+                    </div>
+                </SettingsSectionCard>
 
+                <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
                     <SettingsSectionCard
                         title="Deduction Logic"
                         description="Automated payroll adjustments"
-                        className="flex min-h-[500px] flex-col"
+                        className="flex flex-col"
                     >
                         <div className="flex flex-1 flex-col space-y-4 sm:space-y-5">
                             <div className="space-y-2">
@@ -357,170 +357,170 @@ const PermissionsSettings = () => {
                                 <p className={settingsFieldHelpClass}>First N permissions per month are free; only count above this is used for deduction.</p>
                             </div>
 
-                        <div className="grid grid-cols-2 gap-6">
-                            <div className="space-y-2">
-                                <label className={`${settingsSectionTitleClass} pl-1`}>Every N (Above Free) = 1 Unit</label>
-                                <input
-                                    type="number"
-                                    min={1}
-                                    value={rules.countThreshold ?? ''}
-                                    onChange={(e) => setRules({ ...rules, countThreshold: e.target.value !== '' ? parseInt(e.target.value, 10) : null })}
-                                    className={inputCls}
-                                    style={inputStyle}
-                                    placeholder="e.g. 3"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className={`${settingsSectionTitleClass} pl-1`}>Min. Duration (Minutes)</label>
-                                <input
-                                    type="number"
-                                    value={rules.minimumDuration ?? ''}
-                                    onChange={(e) => setRules({ ...rules, minimumDuration: e.target.value !== '' ? parseFloat(e.target.value) : null })}
-                                    className={inputCls}
-                                    style={inputStyle}
-                                    placeholder="e.g. 30"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className={`${settingsSectionTitleClass} pl-1`}>Calculation Mode</label>
-                            <div className="grid grid-cols-2 gap-2">
-                                {[
-                                    { id: 'floor', label: 'Floor (full units only)' },
-                                    { id: 'proportional', label: 'Proportional (partial allowed)' },
-                                ].map((mode) => (
-                                    <button
-                                        key={mode.id}
-                                        type="button"
-                                        onClick={() => setRules({ ...rules, calculationMode: mode.id as 'floor' | 'proportional' })}
-                                        className={`border px-4 py-3 text-[10px] font-semibold uppercase transition-all ${rules.calculationMode === mode.id ? 'border-[color:var(--ps-accent-border)] bg-[var(--ps-accent-soft)] text-[color:var(--ps-accent-ink)]' : 'border-transparent text-stone-400 hover:border-stone-200 hover:bg-stone-50 dark:hover:border-stone-800 dark:hover:bg-stone-900'}`}
-                                        style={settingsLedgerBorder}
-                                    >
-                                        {mode.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="space-y-3 border-t pt-2" style={settingsLedgerBorder}>
-                            <p className={`${settingsSectionTitleClass} pl-1`}>Apply Date Window</p>
-                            <label className="flex items-center justify-between text-[12px] text-gray-600 dark:text-gray-300">
-                                <span>Allow backdated</span>
-                                <input
-                                    type="checkbox"
-                                    checked={datePolicy.allowBackdated}
-                                    onChange={(e) => setDatePolicy((prev) => ({ ...prev, allowBackdated: e.target.checked }))}
-                                />
-                            </label>
-                            <div className="flex items-center justify-between gap-2">
-                                <label className={`${settingsSectionTitleClass} pl-1`}>Max backdated days</label>
-                                <input
-                                    type="number"
-                                    min={0}
-                                    value={datePolicy.maxBackdatedDays}
-                                    onChange={(e) => setDatePolicy((prev) => ({ ...prev, maxBackdatedDays: Number(e.target.value || 0) }))}
-                                    className={`${inputCls} w-28 text-right text-sm`}
-                                    style={inputStyle}
-                                />
-                            </div>
-                            <label className="flex items-center justify-between text-[12px] text-gray-600 dark:text-gray-300">
-                                <span>Allow future-dated</span>
-                                <input
-                                    type="checkbox"
-                                    checked={datePolicy.allowFutureDated}
-                                    onChange={(e) => setDatePolicy((prev) => ({ ...prev, allowFutureDated: e.target.checked }))}
-                                />
-                            </label>
-                            <div className="flex items-center justify-between gap-2">
-                                <label className={`${settingsSectionTitleClass} pl-1`}>Max advance days</label>
-                                <input
-                                    type="number"
-                                    min={0}
-                                    value={datePolicy.maxAdvanceDays}
-                                    onChange={(e) => setDatePolicy((prev) => ({ ...prev, maxAdvanceDays: Number(e.target.value || 0) }))}
-                                    className={`${inputCls} w-28 text-right text-sm`}
-                                    style={inputStyle}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className={`${settingsSectionTitleClass} pl-1`}>Deduction Mode</label>
-                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                                {[
-                                    { id: 'half_day', label: '0.5 Day' },
-                                    { id: 'full_day', label: '1 Day' },
-                                    { id: 'custom_days', label: 'Custom days' },
-                                    { id: 'custom_amount', label: 'Fixed ₹' },
-                                ].map((type) => (
-                                    <button
-                                        key={type.id}
-                                        type="button"
-                                        onClick={() => setRules({ ...rules, deductionType: type.id as 'half_day' | 'full_day' | 'custom_days' | 'custom_amount' })}
-                                        className={`border px-4 py-3 text-xs font-semibold uppercase transition-all ${rules.deductionType === type.id
-                                            ? 'border-[color:var(--ps-accent-border)] bg-[var(--ps-accent-soft)] text-[color:var(--ps-accent-ink)]'
-                                            : 'border-transparent text-stone-400 hover:border-stone-200 hover:bg-stone-50 dark:hover:border-stone-800 dark:hover:bg-stone-900'
-                                            }`}
-                                        style={settingsLedgerBorder}
-                                    >
-                                        {type.label}
-                                    </button>
-                                ))}
-                            </div>
-                            {rules.deductionType === 'custom_days' && (
-                                <div className="mt-2">
-                                    <label className={`mb-1 block ${settingsSectionTitleClass} pl-1`}>Deduction days per unit (e.g. 1.5, 2, 3.25)</label>
+                            <div className="grid grid-cols-2 gap-6">
+                                <div className="space-y-2">
+                                    <label className={`${settingsSectionTitleClass} pl-1`}>Every N (Above Free) = 1 Unit</label>
                                     <input
                                         type="number"
-                                        step={0.25}
-                                        min={0}
-                                        value={rules.deductionDays ?? ''}
-                                        onChange={(e) => setRules({ ...rules, deductionDays: e.target.value !== '' ? Number(e.target.value) : null })}
-                                        className={`${inputCls} max-w-[120px] text-sm`}
+                                        min={1}
+                                        value={rules.countThreshold ?? ''}
+                                        onChange={(e) => setRules({ ...rules, countThreshold: e.target.value !== '' ? parseInt(e.target.value, 10) : null })}
+                                        className={inputCls}
                                         style={inputStyle}
-                                        placeholder="e.g. 1.5"
+                                        placeholder="e.g. 3"
                                     />
                                 </div>
-                            )}
-                            {rules.deductionType === 'custom_amount' && (
-                                <div className="mt-2">
-                                    <label className={`mb-1 block ${settingsSectionTitleClass} pl-1`}>Amount (₹) per unit</label>
+                                <div className="space-y-2">
+                                    <label className={`${settingsSectionTitleClass} pl-1`}>Min. Duration (Minutes)</label>
+                                    <input
+                                        type="number"
+                                        value={rules.minimumDuration ?? ''}
+                                        onChange={(e) => setRules({ ...rules, minimumDuration: e.target.value !== '' ? parseFloat(e.target.value) : null })}
+                                        className={inputCls}
+                                        style={inputStyle}
+                                        placeholder="e.g. 30"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className={`${settingsSectionTitleClass} pl-1`}>Calculation Mode</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {[
+                                        { id: 'floor', label: 'Floor (full units only)' },
+                                        { id: 'proportional', label: 'Proportional (partial allowed)' },
+                                    ].map((mode) => (
+                                        <button
+                                            key={mode.id}
+                                            type="button"
+                                            onClick={() => setRules({ ...rules, calculationMode: mode.id as 'floor' | 'proportional' })}
+                                            className={`border px-4 py-3 text-[10px] font-semibold uppercase transition-all ${rules.calculationMode === mode.id ? 'border-[color:var(--ps-accent-border)] bg-[var(--ps-accent-soft)] text-[color:var(--ps-accent-ink)]' : 'border-transparent text-stone-400 hover:border-stone-200 hover:bg-stone-50 dark:hover:border-stone-800 dark:hover:bg-stone-900'}`}
+                                            style={settingsLedgerBorder}
+                                        >
+                                            {mode.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="space-y-3 border-t pt-2" style={settingsLedgerBorder}>
+                                <p className={`${settingsSectionTitleClass} pl-1`}>Apply Date Window</p>
+                                <label className="flex items-center justify-between text-[12px] text-gray-600 dark:text-gray-300">
+                                    <span>Allow backdated</span>
+                                    <input
+                                        type="checkbox"
+                                        checked={datePolicy.allowBackdated}
+                                        onChange={(e) => setDatePolicy((prev) => ({ ...prev, allowBackdated: e.target.checked }))}
+                                    />
+                                </label>
+                                <div className="flex items-center justify-between gap-2">
+                                    <label className={`${settingsSectionTitleClass} pl-1`}>Max backdated days</label>
                                     <input
                                         type="number"
                                         min={0}
-                                        value={rules.deductionAmount ?? ''}
-                                        onChange={(e) => setRules({ ...rules, deductionAmount: e.target.value !== '' ? Number(e.target.value) : null })}
-                                        className={`${inputCls} max-w-[120px] text-sm`}
+                                        value={datePolicy.maxBackdatedDays}
+                                        onChange={(e) => setDatePolicy((prev) => ({ ...prev, maxBackdatedDays: Number(e.target.value || 0) }))}
+                                        className={`${inputCls} w-28 text-right text-sm`}
                                         style={inputStyle}
-                                        placeholder="e.g. 500"
                                     />
                                 </div>
-                            )}
-                        </div>
+                                <label className="flex items-center justify-between text-[12px] text-gray-600 dark:text-gray-300">
+                                    <span>Allow future-dated</span>
+                                    <input
+                                        type="checkbox"
+                                        checked={datePolicy.allowFutureDated}
+                                        onChange={(e) => setDatePolicy((prev) => ({ ...prev, allowFutureDated: e.target.checked }))}
+                                    />
+                                </label>
+                                <div className="flex items-center justify-between gap-2">
+                                    <label className={`${settingsSectionTitleClass} pl-1`}>Max advance days</label>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        value={datePolicy.maxAdvanceDays}
+                                        onChange={(e) => setDatePolicy((prev) => ({ ...prev, maxAdvanceDays: Number(e.target.value || 0) }))}
+                                        className={`${inputCls} w-28 text-right text-sm`}
+                                        style={inputStyle}
+                                    />
+                                </div>
+                            </div>
 
-                        <div className="mt-auto">
-                            <SettingsSaveBar onSave={handleSaveRules} saving={saving} label="Commit Logic Parameters" />
+                            <div className="space-y-2">
+                                <label className={`${settingsSectionTitleClass} pl-1`}>Deduction Mode</label>
+                                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                    {[
+                                        { id: 'half_day', label: '0.5 Day' },
+                                        { id: 'full_day', label: '1 Day' },
+                                        { id: 'custom_days', label: 'Custom days' },
+                                        { id: 'custom_amount', label: 'Fixed ₹' },
+                                    ].map((type) => (
+                                        <button
+                                            key={type.id}
+                                            type="button"
+                                            onClick={() => setRules({ ...rules, deductionType: type.id as 'half_day' | 'full_day' | 'custom_days' | 'custom_amount' })}
+                                            className={`border px-4 py-3 text-xs font-semibold uppercase transition-all ${rules.deductionType === type.id
+                                                ? 'border-[color:var(--ps-accent-border)] bg-[var(--ps-accent-soft)] text-[color:var(--ps-accent-ink)]'
+                                                : 'border-transparent text-stone-400 hover:border-stone-200 hover:bg-stone-50 dark:hover:border-stone-800 dark:hover:bg-stone-900'
+                                                }`}
+                                            style={settingsLedgerBorder}
+                                        >
+                                            {type.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                {rules.deductionType === 'custom_days' && (
+                                    <div className="mt-2">
+                                        <label className={`mb-1 block ${settingsSectionTitleClass} pl-1`}>Deduction days per unit (e.g. 1.5, 2, 3.25)</label>
+                                        <input
+                                            type="number"
+                                            step={0.25}
+                                            min={0}
+                                            value={rules.deductionDays ?? ''}
+                                            onChange={(e) => setRules({ ...rules, deductionDays: e.target.value !== '' ? Number(e.target.value) : null })}
+                                            className={`${inputCls} max-w-[120px] text-sm`}
+                                            style={inputStyle}
+                                            placeholder="e.g. 1.5"
+                                        />
+                                    </div>
+                                )}
+                                {rules.deductionType === 'custom_amount' && (
+                                    <div className="mt-2">
+                                        <label className={`mb-1 block ${settingsSectionTitleClass} pl-1`}>Amount (₹) per unit</label>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            value={rules.deductionAmount ?? ''}
+                                            onChange={(e) => setRules({ ...rules, deductionAmount: e.target.value !== '' ? Number(e.target.value) : null })}
+                                            className={`${inputCls} max-w-[120px] text-sm`}
+                                            style={inputStyle}
+                                            placeholder="e.g. 500"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="mt-auto pt-4">
+                                <SettingsSaveBar onSave={handleSaveRules} saving={saving} label="Commit Logic Parameters" />
+                            </div>
                         </div>
-                    </div>
+                    </SettingsSectionCard>
+
+                    <SettingsSectionCard
+                        title="Approval Chain"
+                        description="Keep this lean and role-based for faster approvals."
+                        className="flex flex-col"
+                    >
+                        <WorkflowManager
+                            workflow={workflow}
+                            onChange={(newWorkflow: WorkflowData) => setWorkflow(newWorkflow)}
+                            title="Multi-Level Approval"
+                            description="Workflow Engine for short-term absence."
+                            addStepLabel="Add Approval Step"
+                        />
+                        <div className="mt-4">
+                            <SettingsSaveBar onSave={handleSaveWorkflow} saving={saving} label="Save Approval Chain" />
+                        </div>
                     </SettingsSectionCard>
                 </div>
-
-                <SettingsSectionCard
-                    title="Approval Chain"
-                    description="Keep this lean and role-based for faster approvals."
-                    className="flex flex-col xl:sticky xl:top-24"
-                >
-                    <WorkflowManager
-                        workflow={workflow}
-                        onChange={(newWorkflow: WorkflowData) => setWorkflow(newWorkflow)}
-                        title="Multi-Level Approval"
-                        description="Workflow Engine for short-term absence."
-                        addStepLabel="Add Approval Step"
-                    />
-                    <div className="mt-4">
-                        <SettingsSaveBar onSave={handleSaveWorkflow} saving={saving} label="Save Approval Chain" />
-                    </div>
-                </SettingsSectionCard>
             </div>
         </SettingsPanel>
     );

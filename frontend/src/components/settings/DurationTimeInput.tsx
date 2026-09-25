@@ -70,8 +70,8 @@ export function DurationTimeInput({
   const minutes = parsed?.minutes ?? '';
 
   const selectCls = compact
-    ? 'w-12 shrink-0 rounded border border-stone-200 bg-white px-1 py-1.5 text-xs tabular-nums text-stone-900 focus:outline-none focus:ring-1 focus:ring-[color:var(--settings-theme-accent,var(--ps-accent))] dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100'
-    : `${settingsInputClass()} min-w-[3rem] flex-1 px-1 py-1.5 text-xs tabular-nums`;
+    ? 'h-8 w-12 shrink-0 rounded border border-stone-200 bg-white px-1 py-1 text-center text-xs tabular-nums text-stone-900 focus:outline-none focus:ring-1 focus:ring-[color:var(--settings-theme-accent,var(--ps-accent))] dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100'
+    : 'h-9 w-full min-w-[2.75rem] flex-1 rounded border border-stone-200 bg-white px-1 py-1 text-center text-xs tabular-nums text-stone-900 transition focus:border-stone-400 focus:outline-none dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100';
   const selectStyle = settingsInputStyle();
 
   const emit = (hh: string, mm: string) => {
@@ -106,7 +106,7 @@ export function DurationTimeInput({
         style={selectStyle}
       >
         {allowEmpty ? (
-          <option value="">{placeholder === '00:00' ? '--' : placeholder}</option>
+          <option value="">--</option>
         ) : null}
         {hourOptions.map((h) => (
           <option key={h} value={h}>
@@ -118,7 +118,7 @@ export function DurationTimeInput({
       <select
         aria-label="Minutes"
         data-duration-time="minutes"
-        disabled={disabled || (allowEmpty && isEmpty)}
+        disabled={disabled}
         value={isEmpty && allowEmpty ? '' : minutes || '00'}
         onChange={(e) => {
           const mm = e.target.value;
@@ -131,7 +131,7 @@ export function DurationTimeInput({
         className={selectCls}
         style={selectStyle}
       >
-        {allowEmpty && isEmpty ? <option value="">--</option> : null}
+        {allowEmpty ? <option value="">--</option> : null}
         {minuteOptions.map((m) => (
           <option key={m} value={m}>
             {m}

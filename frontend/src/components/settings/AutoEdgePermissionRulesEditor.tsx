@@ -179,100 +179,125 @@ export function AutoEdgePermissionRulesEditor({ title, help, ruleSet, onChange }
           No ranges configured.
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <div className="min-w-[760px] space-y-2">
-            <div className="grid grid-cols-[105px_115px_115px_115px_115px_1fr_36px] items-center gap-2 px-1 text-[9px] font-semibold uppercase tracking-wider text-stone-400">
-              <span>Gender</span>
-              <span>Min Shift (HH:MM)</span>
-              <span>Max Shift (HH:MM)</span>
-              <span>Min Trigger (HH:MM)</span>
-              <span>Allowed (HH:MM)</span>
-              <span>Description</span>
-              <span />
-            </div>
-            {ranges.map((range, index) => (
-              <div
-                key={range._id || index}
-                className="grid grid-cols-[105px_115px_115px_115px_115px_1fr_36px] items-center gap-2 border p-2.5"
-                style={settingsLedgerBorder}
-              >
-                <select
-                  value={normalizeGender(range.gender)}
-                  onChange={(e) => updateRange(index, 'gender', e.target.value)}
-                  className={`${inputCls} h-9 min-w-0 text-xs`}
-                  style={inputStyle}
-                >
-                  <option value="All">All</option>
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                  <option value="Other">Other</option>
-                </select>
-                <DurationTimeInput
-                  allowEmpty
-                  value={
-                    range.minShiftHours === '' ? '' : hoursToHHMM(Number(range.minShiftHours))
-                  }
-                  onChange={(v) => {
-                    const hours = v ? hhmmToHours(v) : null;
-                    updateRange(index, 'minShiftHours', hours == null ? '' : String(hours));
-                  }}
-                  placeholder="08:00"
-                />
-                <DurationTimeInput
-                  allowEmpty
-                  value={
-                    range.maxShiftHours === '' ? '' : hoursToHHMM(Number(range.maxShiftHours))
-                  }
-                  onChange={(v) => {
-                    const hours = v ? hhmmToHours(v) : null;
-                    updateRange(index, 'maxShiftHours', hours == null ? '' : String(hours));
-                  }}
-                  placeholder="12:00"
-                />
-                <DurationTimeInput
-                  allowEmpty
-                  value={
-                    range.minimumMinutes === ''
-                      ? ''
-                      : minutesToHHMM(Number(range.minimumMinutes))
-                  }
-                  onChange={(v) => {
-                    updateRange(index, 'minimumMinutes', v ? String(hhmmToMinutes(v)) : '');
-                  }}
-                  placeholder="00:01"
-                />
-                <DurationTimeInput
-                  allowEmpty
-                  value={
-                    range.allowedMinutes === ''
-                      ? ''
-                      : minutesToHHMM(Number(range.allowedMinutes))
-                  }
-                  onChange={(v) => {
-                    updateRange(index, 'allowedMinutes', v ? String(hhmmToMinutes(v)) : '');
-                  }}
-                  placeholder="03:00"
-                />
+        <div className="space-y-3">
+          <div className="hidden grid-cols-[140px_1fr_1fr_1fr_1fr_36px] items-center gap-4 px-1 text-[9px] font-semibold uppercase tracking-wider text-stone-400 md:grid">
+            <span>Gender</span>
+            <span>Min Shift (HH:MM)</span>
+            <span>Max Shift (HH:MM)</span>
+            <span>Min Trigger (HH:MM)</span>
+            <span>Allowed (HH:MM)</span>
+            <span />
+          </div>
+          {ranges.map((range, index) => (
+            <div
+              key={range._id || index}
+              className="space-y-2.5 border p-3.5"
+              style={settingsLedgerBorder}
+            >
+              {/* Line 1: Gender & Timings evenly spaced */}
+              <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-2 md:grid-cols-[140px_1fr_1fr_1fr_1fr_36px] md:gap-4">
+                <div className="flex flex-col gap-1 md:block">
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-stone-400 md:hidden">Gender</span>
+                  <select
+                    value={normalizeGender(range.gender)}
+                    onChange={(e) => updateRange(index, 'gender', e.target.value)}
+                    className={`${inputCls} h-9 min-w-0 text-xs`}
+                    style={inputStyle}
+                  >
+                    <option value="All">All</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1 md:block">
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-stone-400 md:hidden">Min Shift</span>
+                  <DurationTimeInput
+                    allowEmpty
+                    value={
+                      range.minShiftHours === '' ? '' : hoursToHHMM(Number(range.minShiftHours))
+                    }
+                    onChange={(v) => {
+                      const hours = v ? hhmmToHours(v) : null;
+                      updateRange(index, 'minShiftHours', hours == null ? '' : String(hours));
+                    }}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1 md:block">
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-stone-400 md:hidden">Max Shift</span>
+                  <DurationTimeInput
+                    allowEmpty
+                    value={
+                      range.maxShiftHours === '' ? '' : hoursToHHMM(Number(range.maxShiftHours))
+                    }
+                    onChange={(v) => {
+                      const hours = v ? hhmmToHours(v) : null;
+                      updateRange(index, 'maxShiftHours', hours == null ? '' : String(hours));
+                    }}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1 md:block">
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-stone-400 md:hidden">Min Trigger</span>
+                  <DurationTimeInput
+                    allowEmpty
+                    value={
+                      range.minimumMinutes === ''
+                        ? ''
+                        : minutesToHHMM(Number(range.minimumMinutes))
+                    }
+                    onChange={(v) => {
+                      updateRange(index, 'minimumMinutes', v ? String(hhmmToMinutes(v)) : '');
+                    }}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1 md:block">
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-stone-400 md:hidden">Allowed</span>
+                  <DurationTimeInput
+                    allowEmpty
+                    value={
+                      range.allowedMinutes === ''
+                        ? ''
+                        : minutesToHHMM(Number(range.allowedMinutes))
+                    }
+                    onChange={(v) => {
+                      updateRange(index, 'allowedMinutes', v ? String(hhmmToMinutes(v)) : '');
+                    }}
+                  />
+                </div>
+
+                <div className="flex justify-end md:block">
+                  <button
+                    type="button"
+                    onClick={() => removeRange(index)}
+                    className="flex h-9 w-9 items-center justify-center border text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20"
+                    style={settingsLedgerBorder}
+                    title="Remove range"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Line 2: Description */}
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-stone-400">
+                  Description:
+                </span>
                 <input
                   type="text"
                   value={range.description || ''}
                   onChange={(e) => updateRange(index, 'description', e.target.value)}
-                  className={`${inputCls} h-9 min-w-0 text-xs`}
+                  className={`${inputCls} h-8.5 flex-1 text-xs`}
                   style={inputStyle}
-                  placeholder="Description"
+                  placeholder="Add description or notes for this range (optional)"
                 />
-                <button
-                  type="button"
-                  onClick={() => removeRange(index)}
-                  className="flex h-9 w-9 items-center justify-center border text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20"
-                  style={settingsLedgerBorder}
-                  title="Remove range"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
