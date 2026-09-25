@@ -43,5 +43,16 @@ describe('employee list performance helpers', () => {
     const filters = buildActiveEmployeeFilters({}, {});
     expect(filters.$and).toBeDefined();
     expect(filters.$and.some((c) => c.$or)).toBe(true);
+    expect(filters.is_active).toEqual({ $ne: false });
+  });
+
+  test('buildActiveEmployeeFilters includes left employees when includeLeft is boolean true or string true', () => {
+    const filtersBool = buildActiveEmployeeFilters({ includeLeft: true }, {});
+    expect(filtersBool.$and).toBeUndefined();
+    expect(filtersBool.is_active).toBeUndefined();
+
+    const filtersStr = buildActiveEmployeeFilters({ includeLeft: 'true' }, {});
+    expect(filtersStr.$and).toBeUndefined();
+    expect(filtersStr.is_active).toBeUndefined();
   });
 });

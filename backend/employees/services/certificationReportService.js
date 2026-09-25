@@ -100,7 +100,8 @@ function buildCertificationFilters(scopeFilter, query) {
     ];
   }
 
-  if (includeLeft !== 'true') {
+  const isIncludeLeft = includeLeft === true || includeLeft === 'true';
+  if (!isIncludeLeft) {
     const startOfToday = new Date();
     startOfToday.setUTCHours(0, 0, 0, 0);
     queryFilters.$and = queryFilters.$and || [];

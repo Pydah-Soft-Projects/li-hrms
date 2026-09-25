@@ -8395,6 +8395,7 @@ export default function EmployeesPage() {
           empNo={selectedEmployeeForExport?.empNo}
           employeeName={selectedEmployeeForExport?.name}
           filters={{
+            search: searchQuery || undefined,
             division_id: selectedDivisionFilter.length > 0 ? selectedDivisionFilter.join(',') : undefined,
             department_id: selectedDepartmentFilter.length > 0 ? selectedDepartmentFilter.join(',') : undefined,
             designation_id: selectedDesignationFilter,

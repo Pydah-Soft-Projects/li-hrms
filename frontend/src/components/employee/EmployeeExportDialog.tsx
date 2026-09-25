@@ -74,7 +74,7 @@ export default function EmployeeExportDialog({
       })
     );
     // Add common fields
-    allFieldIds.push('emp_no', 'employee_name', 'division_id', 'department_id', 'designation_id', 'employee_group_id', 'doj', 'is_active');
+    allFieldIds.push('emp_no', 'employee_name', 'division_id', 'department_id', 'designation_id', 'employee_group_id', 'doj', 'is_active', 'leftDate', 'leftReason');
     setSelectedFields([...new Set(allFieldIds)]);
   };
 

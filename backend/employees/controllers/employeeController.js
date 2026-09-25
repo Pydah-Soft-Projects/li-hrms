@@ -397,6 +397,8 @@ const buildActiveEmployeeFilters = (reqQuery, scopeFilter) => {
     ];
   }
 
+  const isIncludeLeft = includeLeft === true || includeLeft === 'true';
+
   if (startDate && endDate) {
     const rangeStart = new Date(startDate);
     const rangeEnd = new Date(endDate);
@@ -407,11 +409,14 @@ const buildActiveEmployeeFilters = (reqQuery, scopeFilter) => {
       filters.$and.push({ $or: [{ doj: null }, { doj: { $lte: rangeEnd } }] });
       filters.$and.push({ $or: [{ leftDate: null }, { leftDate: { $gte: rangeStart } }] });
     }
-  } else if (includeLeft !== 'true') {
+  } else if (!isIncludeLeft) {
     const startOfToday = new Date();
     startOfToday.setUTCHours(0, 0, 0, 0);
     filters.$and = filters.$and || [];
     filters.$and.push({ $or: [{ leftDate: null }, { leftDate: { $gte: startOfToday } }] });
+    if (is_active === undefined) {
+      filters.is_active = { $ne: false };
+    }
   }
 
   return filters;
@@ -676,12 +681,14 @@ exports.getBirthdaysSummary = async (req, res) => {
     const scopeFilter = req.scopeFilter || {};
     const settings = await getEmployeeSettings();
 
+    const isIncludeLeft = includeLeft === true || includeLeft === 'true';
     const filters = { ...scopeFilter };
-    if (includeLeft !== 'true') {
+    if (!isIncludeLeft) {
       const startOfToday = new Date();
       startOfToday.setUTCHours(0, 0, 0, 0);
       filters.$and = filters.$and || [];
       filters.$and.push({ $or: [{ leftDate: null }, { leftDate: { $gte: startOfToday } }] });
+      filters.is_active = { $ne: false };
     }
     filters.dob = { $exists: true, $ne: null };
 
@@ -2507,8 +2514,13 @@ exports.bulkResendCredentials = async (req, res) => {
       ];
     }
 
-    if (includeLeft !== 'true') {
-      filters.leftDate = null;
+    const isIncludeLeft = includeLeft === true || includeLeft === 'true';
+    if (!isIncludeLeft) {
+      const startOfToday = new Date();
+      startOfToday.setUTCHours(0, 0, 0, 0);
+      filters.$and = filters.$and || [];
+      filters.$and.push({ $or: [{ leftDate: null }, { leftDate: { $gte: startOfToday } }] });
+      filters.is_active = { $ne: false };
     }
 
     // Force both channels
@@ -2647,11 +2659,16 @@ exports.exportEmployees = async (req, res) => {
         ];
       }
 
-      if (queryFilters.includeLeft !== 'true') {
+      const isIncludeLeft = queryFilters.includeLeft === true || queryFilters.includeLeft === 'true';
+
+      if (!isIncludeLeft) {
         const startOfToday = new Date();
         startOfToday.setUTCHours(0, 0, 0, 0);
         filters.$and = filters.$and || [];
         filters.$and.push({ $or: [{ leftDate: null }, { leftDate: { $gte: startOfToday } }] });
+        if (queryFilters.is_active === undefined) {
+          filters.is_active = { $ne: false };
+        }
       }
     }
 
@@ -2690,6 +2707,20 @@ exports.exportEmployees = async (req, res) => {
       bank_place: ['bankPlace'],
       ifsc_code: ['ifsc'],
       salary_mode: ['salaryMode'],
+      division: ['division_id'],
+      division_id: ['division'],
+      department: ['department_id'],
+      department_id: ['department'],
+      designation: ['designation_id'],
+      designation_id: ['designation'],
+      employee_group: ['employee_group_id'],
+      employee_group_id: ['employee_group'],
+      status: ['is_active'],
+      is_active: ['status'],
+      left_date: ['leftDate'],
+      leftDate: ['left_date'],
+      left_reason: ['leftReason'],
+      leftReason: ['left_reason'],
     };
 
     const isEmptyExportValue = (val) => val === undefined || val === null || val === '';
@@ -2755,16 +2786,26 @@ exports.exportEmployees = async (req, res) => {
         if (val === undefined || val === null) return '';
 
         // Formatting logic
-        if (fId === 'is_active') return val ? 'Active' : 'Inactive';
-        if (fId === 'division_id' || fId === 'department_id' || fId === 'designation_id' || fId === 'employee_group_id') {
+        if (fId === 'is_active' || fId === 'status') {
+          if (row.leftDate && new Date(row.leftDate) <= new Date()) {
+            return 'Left';
+          }
+          return val === false || val === 'false' || val === 0 ? 'Inactive' : 'Active';
+        }
+        if (
+          fId === 'division_id' || fId === 'division' ||
+          fId === 'department_id' || fId === 'department' ||
+          fId === 'designation_id' || fId === 'designation' ||
+          fId === 'employee_group_id' || fId === 'employee_group'
+        ) {
           return val?.name || val || '';
         }
         if (Array.isArray(val)) {
           return val.map(v => (typeof v === 'object' ? (v.name || v._id || JSON.stringify(v)) : String(v))).join(', ');
         }
-        if (val instanceof Date || (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(val))) {
+        if (val instanceof Date || (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val))) {
           const d = new Date(val);
-          return isNaN(d.getTime()) ? val : d.toLocaleDateString();
+          return isNaN(d.getTime()) ? val : d.toISOString().split('T')[0];
         }
         if (typeof val === 'object') return JSON.stringify(val);
         return String(val);
