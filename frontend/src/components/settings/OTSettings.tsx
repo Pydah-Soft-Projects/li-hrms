@@ -24,7 +24,7 @@ type OtSettingsState = {
     recognitionMode: string;
     thresholdHours: number | null;
     roundUpIfFractionMinutesGte: number | null;
-    otHourRanges: { minMinutes: number; maxMinutes: number; creditedMinutes: number; label?: string }[];
+    otHourRanges: { minMinutes: number; maxMinutes: number; creditedMinutes: number; label?: string; gender?: 'All' | 'Male' | 'Female' | 'Other' }[];
     autoCreateOtRequest: boolean;
     defaultWorkingHoursPerDay: number;
     allowBackdated: boolean;
@@ -96,7 +96,18 @@ const OTSettings = () => {
                                 ? null
                                 : Number(d.roundUpIfFractionMinutesGte),
                         otHourRanges: Array.isArray(d.otHourRanges)
-                            ? (d.otHourRanges as { minMinutes: number; maxMinutes: number; creditedMinutes: number; label?: string }[])
+                            ? (d.otHourRanges as {
+                                  minMinutes: number;
+                                  maxMinutes: number;
+                                  creditedMinutes: number;
+                                  label?: string;
+                                  gender?: 'All' | 'Male' | 'Female' | 'Other';
+                              }[]).map((r) => ({
+                                  ...r,
+                                  gender: (['All', 'Male', 'Female', 'Other'].includes(String(r.gender))
+                                      ? r.gender
+                                      : 'All') as 'All' | 'Male' | 'Female' | 'Other',
+                              }))
                             : [],
                         autoCreateOtRequest: Boolean(d.autoCreateOtRequest),
                         defaultWorkingHoursPerDay: Number(d.defaultWorkingHoursPerDay ?? 8),

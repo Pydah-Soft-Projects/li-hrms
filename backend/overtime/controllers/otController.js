@@ -483,7 +483,7 @@ exports.rejectOT = async (req, res) => {
  */
 exports.simulateHoursPolicy = async (req, res) => {
   try {
-    const { rawHours, departmentId, divisionId, policy } = req.body || {};
+    const { rawHours, departmentId, divisionId, policy, employeeGender } = req.body || {};
     const rh = Number(rawHours);
     if (!Number.isFinite(rh) || rh < 0) {
       return res.status(400).json({
@@ -491,7 +491,13 @@ exports.simulateHoursPolicy = async (req, res) => {
         message: 'rawHours is required and must be a number >= 0',
       });
     }
-    const data = await simulateOtHoursPolicy(rh, departmentId || null, divisionId || null, policy);
+    const data = await simulateOtHoursPolicy(
+      rh,
+      departmentId || null,
+      divisionId || null,
+      policy,
+      employeeGender || null
+    );
     res.status(200).json({ success: true, data });
   } catch (error) {
     console.error('Error simulating OT policy:', error);

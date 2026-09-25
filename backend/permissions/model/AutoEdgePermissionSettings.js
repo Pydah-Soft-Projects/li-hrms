@@ -27,6 +27,13 @@ const shiftDurationRangeSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    /** All = any gender; Male/Female/Other = only that gender (exact match preferred over All) */
+    gender: {
+      type: String,
+      enum: ['All', 'Male', 'Female', 'Other'],
+      default: 'All',
+      trim: true,
+    },
   },
   { _id: true }
 );
@@ -87,13 +94,27 @@ const autoEdgePermissionSettingsSchema = new mongoose.Schema(
 
 autoEdgePermissionSettingsSchema.index({ isActive: 1 });
 
-function validateRangeSet(ranges, label) {
-  const safeRanges = Array.isArray(ranges) ? ranges : [];
-  const sorted = [...safeRanges].sort(
-    (a, b) => Number(a.minShiftHours) - Number(b.minShiftHours)
+autoEdgePermissionSettingsSchema.methods.validateRuleRanges = function () {
+  const lateValidation = validateRangeSet(
+    this.lateInRules?.shiftDurationRanges,
+    'Late-in rules'
   );
+  if (!lateValidation.valid) return lateValidation;
 
-  for (const range of sorted) {
+  const earlyValidation = validateRangeSet(
+    this.earlyOutRules?.shiftDurationRanges,
+    'Early-out rules'
+  );
+  if (!earlyValidation.valid) return earlyValidation;
+
+  return { valid: true };
+};
+
+function validateRangeSet(ranges, label) {
+  const { sanitizeSlabGender } = require('../../shared/utils/slabGender');
+  const safeRanges = Array.isArray(ranges) ? ranges : [];
+
+  for (const range of safeRanges) {
     const min = Number(range.minShiftHours);
     const max = Number(range.maxShiftHours);
     const minutes = Number(range.allowedMinutes);
@@ -113,35 +134,32 @@ function validateRangeSet(ranges, label) {
     }
   }
 
-  for (let i = 0; i < sorted.length - 1; i += 1) {
-    const currentMax = Number(sorted[i].maxShiftHours);
-    const nextMin = Number(sorted[i + 1].minShiftHours);
-    if (currentMax > nextMin) {
-      return {
-        valid: false,
-        error: `${label}: shift duration ranges cannot overlap`,
-      };
+  // Overlap check only within the same gender (Male vs Female may share the same hour band)
+  const byGender = new Map();
+  for (const range of safeRanges) {
+    const g = sanitizeSlabGender(range.gender);
+    if (!byGender.has(g)) byGender.set(g, []);
+    byGender.get(g).push(range);
+  }
+
+  for (const [gender, group] of byGender.entries()) {
+    const sorted = [...group].sort(
+      (a, b) => Number(a.minShiftHours) - Number(b.minShiftHours)
+    );
+    for (let i = 0; i < sorted.length - 1; i += 1) {
+      const currentMax = Number(sorted[i].maxShiftHours);
+      const nextMin = Number(sorted[i + 1].minShiftHours);
+      if (currentMax > nextMin) {
+        return {
+          valid: false,
+          error: `${label}: shift duration ranges cannot overlap for gender ${gender}`,
+        };
+      }
     }
   }
 
   return { valid: true };
 }
-
-autoEdgePermissionSettingsSchema.methods.validateRuleRanges = function () {
-  const lateValidation = validateRangeSet(
-    this.lateInRules?.shiftDurationRanges,
-    'Late-in rules'
-  );
-  if (!lateValidation.valid) return lateValidation;
-
-  const earlyValidation = validateRangeSet(
-    this.earlyOutRules?.shiftDurationRanges,
-    'Early-out rules'
-  );
-  if (!earlyValidation.valid) return earlyValidation;
-
-  return { valid: true };
-};
 
 autoEdgePermissionSettingsSchema.statics.getActiveSettings = async function () {
   return this.findOne({ isActive: true }).sort({ createdAt: -1 });

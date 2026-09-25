@@ -23,7 +23,7 @@ export type DepartmentOtDraft = {
   thresholdHours: number | null;
   roundUpIfFractionMinutesGte: number | null;
   autoCreateOtRequest: boolean | null;
-  otHourRanges: { minMinutes: number; maxMinutes: number; creditedMinutes: number; label?: string }[];
+  otHourRanges: { minMinutes: number; maxMinutes: number; creditedMinutes: number; label?: string; gender?: 'All' | 'Male' | 'Female' | 'Other' }[];
   defaultWorkingHoursPerDay: number | null;
   workingHoursPerDay: number | null;
   allowBackdated: boolean | null;
@@ -62,7 +62,14 @@ function draftFromApiOt(ot: Record<string, unknown> | null | undefined): Departm
           ? Number(ot.roundUpIfFractionMinutesGte)
           : null,
     autoCreateOtRequest: typeof ot.autoCreateOtRequest === 'boolean' ? ot.autoCreateOtRequest : null,
-    otHourRanges: Array.isArray(ot.otHourRanges) ? (ot.otHourRanges as DepartmentOtDraft['otHourRanges']) : [],
+    otHourRanges: Array.isArray(ot.otHourRanges)
+      ? (ot.otHourRanges as DepartmentOtDraft['otHourRanges']).map((r) => ({
+          ...r,
+          gender: (['All', 'Male', 'Female', 'Other'].includes(String(r.gender))
+            ? r.gender
+            : 'All') as 'All' | 'Male' | 'Female' | 'Other',
+        }))
+      : [],
     defaultWorkingHoursPerDay:
       typeof ot.defaultWorkingHoursPerDay === 'number'
         ? ot.defaultWorkingHoursPerDay

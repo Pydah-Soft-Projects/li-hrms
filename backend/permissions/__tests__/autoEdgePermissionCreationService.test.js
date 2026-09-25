@@ -27,6 +27,22 @@ describe('autoEdgePermissionCreationService helpers', () => {
     expect(deriveShiftDurationHours({ shiftStartTime: '21:00', shiftEndTime: '06:00' })).toBe(9);
   });
 
+  test('findMatchingRange prefers exact gender over All', () => {
+    const ranges = [
+      { minShiftHours: 8, maxShiftHours: 10, allowedMinutes: 20, gender: 'All' },
+      { minShiftHours: 8, maxShiftHours: 10, allowedMinutes: 45, gender: 'Female' },
+    ];
+    expect(findMatchingRange(ranges, 9, 'Female').allowedMinutes).toBe(45);
+    expect(findMatchingRange(ranges, 9, 'Male').allowedMinutes).toBe(20);
+  });
+
+  test('findMatchingRange does not use another gender slab when no All exists', () => {
+    const ranges = [
+      { minShiftHours: 8, maxShiftHours: 10, allowedMinutes: 45, gender: 'Female' },
+    ];
+    expect(findMatchingRange(ranges, 9, 'Male')).toBeNull();
+  });
+
   test('findMatchingRange matches configured shift duration range', () => {
     const range = findMatchingRange(
       [

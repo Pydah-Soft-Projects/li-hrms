@@ -9,12 +9,19 @@ export type OtHourRange = {
   maxMinutes: number;
   creditedMinutes: number;
   label?: string;
+  gender?: 'All' | 'Male' | 'Female' | 'Other';
 };
 
 type OtHourRangesEditorProps = {
   ranges: OtHourRange[];
   onChange: (ranges: OtHourRange[]) => void;
 };
+
+function normalizeGender(value?: string | null): OtHourRange['gender'] {
+  const v = String(value || '').trim();
+  if (v === 'Male' || v === 'Female' || v === 'Other' || v === 'All') return v;
+  return 'All';
+}
 
 function RangeField({
   label,
@@ -50,13 +57,19 @@ export function OtHourRangesEditor({ ranges, onChange }: OtHourRangesEditorProps
   };
 
   const addRange = () => {
-    onChange([...ranges, { minMinutes: 0, maxMinutes: 0, creditedMinutes: 0, label: '' }]);
+    onChange([
+      ...ranges,
+      { minMinutes: 0, maxMinutes: 0, creditedMinutes: 0, label: '', gender: 'All' },
+    ]);
   };
 
   return (
     <div className="space-y-3">
       <p className="text-[10px] font-bold uppercase tracking-tighter text-gray-500">Ranges (HH:MM)</p>
-      <p className="text-[10px] text-gray-500">Example: 00:30 to 01:00 consider as 01:00</p>
+      <p className="text-[10px] text-gray-500">
+        Example: 00:30 to 01:00 consider as 01:00. Set Gender to Male/Female for gender-specific slabs;
+        All is the fallback for everyone.
+      </p>
 
       <div className="space-y-3">
         {ranges.map((r, idx) => (
@@ -64,6 +77,21 @@ export function OtHourRangesEditor({ ranges, onChange }: OtHourRangesEditorProps
             key={idx}
             className="flex flex-wrap items-end gap-x-5 gap-y-3 rounded-lg border border-gray-100 bg-gray-50/70 p-4 dark:border-gray-800 dark:bg-slate-900/30"
           >
+            <div className="flex min-w-[7rem] flex-col gap-1.5">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Gender</span>
+              <select
+                value={normalizeGender(r.gender)}
+                onChange={(e) =>
+                  updateRange(idx, { gender: normalizeGender(e.target.value) })
+                }
+                className="h-9 rounded-md border border-gray-200 bg-white px-2 text-xs dark:border-gray-700 dark:bg-slate-900"
+              >
+                <option value="All">All</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
             <RangeField
               label="From"
               value={minutesToHHMM(r.minMinutes)}

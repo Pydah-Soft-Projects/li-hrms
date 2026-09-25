@@ -2,6 +2,7 @@ const Permission = require('../model/Permission');
 const { getMergedAutoEdgeConfig } = require('./autoEdgeConfigResolver');
 const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
+const { pickByGender, sanitizeSlabGender } = require('../../shared/utils/slabGender');
 
 const AUTO_SOURCE = 'auto_edge';
 const AUTO_PURPOSE = 'Auto-created by attendance late-in / early-out policy';
@@ -35,13 +36,14 @@ function deriveShiftDurationHours(shift) {
   return duration > 0 ? Math.round(duration * 100) / 100 : null;
 }
 
-function findMatchingRange(ranges, shiftDurationHours) {
+function findMatchingRange(ranges, shiftDurationHours, employeeGender = null) {
   if (!Array.isArray(ranges) || !Number.isFinite(shiftDurationHours)) return null;
-  return ranges.find((range) => {
+  const durationMatches = ranges.filter((range) => {
     const min = Number(range.minShiftHours);
     const max = Number(range.maxShiftHours);
     return Number.isFinite(min) && Number.isFinite(max) && shiftDurationHours >= min && shiftDurationHours <= max;
-  }) || null;
+  });
+  return pickByGender(durationMatches, employeeGender);
 }
 
 function getRuleSet(settings, permissionType) {
@@ -207,7 +209,7 @@ function getVerifiedStatus(permissionType) {
   return permissionType === 'late_in' ? 'checked_in' : 'checked_out';
 }
 
-function buildEligibleEdges(attendanceDaily, settings) {
+function buildEligibleEdges(attendanceDaily, settings, employeeGender = null) {
   const shifts = Array.isArray(attendanceDaily?.shifts) ? attendanceDaily.shifts : [];
   const edges = [];
 
@@ -224,7 +226,7 @@ function buildEligibleEdges(attendanceDaily, settings) {
       if (permissionType === 'early_out' && !shift?.outTime) continue;
 
       const shiftDurationHours = deriveShiftDurationHours(shift);
-      const matchedRange = findMatchingRange(ranges, shiftDurationHours);
+      const matchedRange = findMatchingRange(ranges, shiftDurationHours, employeeGender);
       if (!matchedRange) continue;
 
       const allowedMinutes = Number(matchedRange.allowedMinutes) || 0;
@@ -244,6 +246,7 @@ function buildEligibleEdges(attendanceDaily, settings) {
         shiftDurationHours,
         shift,
         matchedRange,
+        gender: sanitizeSlabGender(matchedRange.gender),
       });
     }
   }
@@ -330,6 +333,7 @@ async function createAutoPermissionForEdge({ attendanceDaily, employee, requeste
         minShiftHours: Number(edge.matchedRange.minShiftHours),
         maxShiftHours: Number(edge.matchedRange.maxShiftHours),
         description: edge.matchedRange.description || null,
+        gender: sanitizeSlabGender(edge.matchedRange.gender),
       },
       createdByService: 'autoEdgePermissionCreationService',
     },
@@ -450,7 +454,7 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
       return { success: true, created: 0, skippedReason: 'Auto edge permission settings disabled' };
     }
 
-    const eligibleEdges = buildEligibleEdges(attendanceDaily, settings);
+    const eligibleEdges = buildEligibleEdges(attendanceDaily, settings, employee.gender || null);
     if (!eligibleEdges.length) {
       return { success: true, created: 0, skippedReason: 'No eligible late-in / early-out edges' };
     }
