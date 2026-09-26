@@ -1561,9 +1561,12 @@ exports.updateOD = async (req, res) => {
       const userRole = req.user?.role;
       const targetDecision = (targetType === 'full_day' || targetType === 'half_day') ? targetType : null;
       if (targetDecision && ['manager', 'hod', 'hr', 'sub_admin', 'super_admin'].includes(userRole)) {
-        const matchingIdx = od.authorityConsent.findIndex(
-          (c) => c.stepRole === userRole || c.actionByRole === userRole || (c.actionBy && c.actionBy.toString() === req.user._id?.toString())
+        let matchingIdx = od.authorityConsent.findIndex(
+          (c) => c.stepRole === userRole || (c.actionBy && c.actionBy.toString() === req.user._id?.toString())
         );
+        if (matchingIdx === -1) {
+          matchingIdx = od.authorityConsent.findIndex((c) => c.actionByRole === userRole);
+        }
         if (matchingIdx !== -1) {
           od.authorityConsent[matchingIdx].decision = targetDecision;
           od.authorityConsent[matchingIdx].halfDayType = targetDecision === 'half_day' ? (req.body.halfDayType || od.halfDayType || 'first_half') : null;
