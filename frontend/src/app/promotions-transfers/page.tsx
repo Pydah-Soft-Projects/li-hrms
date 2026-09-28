@@ -442,14 +442,21 @@ export default function PromotionsTransfersPage() {
       return;
     }
 
+    const formatDateDDMMYYYY = (dStr: string) => {
+      if (!dStr) return '';
+      const [y, m, d] = dStr.split('-');
+      if (d && m && y) return `${d}/${m}/${y}`;
+      return dStr;
+    };
+
     const dateRangeLabel =
       printFromDate && printToDate
-        ? `${printFromDate} to ${printToDate}`
+        ? `${formatDateDDMMYYYY(printFromDate)} to ${formatDateDDMMYYYY(printToDate)}`
         : printFromDate
-        ? `From ${printFromDate}`
-        : printToDate
-        ? `Up to ${printToDate}`
-        : 'All Dates';
+          ? `From ${formatDateDDMMYYYY(printFromDate)}`
+          : printToDate
+            ? `Up to ${formatDateDDMMYYYY(printToDate)}`
+            : 'All Dates';
 
     const typeLabel =
       printTypeFilter === 'all'
@@ -491,13 +498,38 @@ export default function PromotionsTransfersPage() {
           detailsStr = `Increment: ${incAmt}<br/>New Gross: ${newSal}`;
         }
 
-        const createdDateStr = item.createdAt
-          ? new Date(item.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-          : '—';
-        const effectiveMonthStr =
-          item.effectivePayrollYear && item.effectivePayrollMonth
-            ? `${item.effectivePayrollMonth}/${item.effectivePayrollYear}`
-            : '—';
+        if (item.workflow?.approvalChain && item.workflow.approvalChain.length > 0) {
+          const chainSteps = item.workflow.approvalChain
+            .map((step) => {
+              const headline = promotionApprovalStepHeadline(step);
+              const statusBadge = (step.status || 'pending').toUpperCase();
+              const actionBy = step.actionByName
+                ? ` (${step.actionByName}${step.actionByRole ? ` - ${step.actionByRole}` : ''})`
+                : '';
+              const stepDate = step.updatedAt
+                ? ` · ${new Date(step.updatedAt).toLocaleDateString('en-GB', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric',
+                })} ${new Date(step.updatedAt).toLocaleTimeString('en-IN', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true,
+                })}`
+                : '';
+              const statusColor =
+                step.status === 'approved'
+                  ? '#16a34a'
+                  : step.status === 'rejected'
+                    ? '#dc2626'
+                    : '#2563eb';
+              return `<div style="font-size: 10px; color: #475569; margin-top: 2px;">
+                <strong>${headline}</strong>: <span style="color: ${statusColor}; font-weight: bold;">${statusBadge}</span>${actionBy}${stepDate}
+              </div>`;
+            })
+            .join('');
+          detailsStr += `<div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed #cbd5e1;">${chainSteps}</div>`;
+        }
 
         return `
           <tr>
@@ -506,8 +538,6 @@ export default function PromotionsTransfersPage() {
             <td style="padding: 8px; border: 1px solid #cbd5e1;">${empName}</td>
             <td style="padding: 8px; border: 1px solid #cbd5e1; font-weight: 600; color: #4f46e5;">${reqType}</td>
             <td style="padding: 8px; border: 1px solid #cbd5e1; font-size: 11px;">${detailsStr}</td>
-            <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">${effectiveMonthStr}</td>
-            <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">${createdDateStr}</td>
             <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold;">${status}</td>
           </tr>
         `;
@@ -571,7 +601,7 @@ export default function PromotionsTransfersPage() {
         <body>
           <div class="header">
             <h2>Promotions & Transfers Report</h2>
-            <span style="font-size: 12px; color: #64748b;">Printed on: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            <span style="font-size: 12px; color: #64748b;">Printed on: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
           </div>
           <div class="meta">
             <strong>Date Filter:</strong> ${dateRangeLabel} &nbsp;|&nbsp;
@@ -587,13 +617,11 @@ export default function PromotionsTransfersPage() {
                 <th>Employee Name</th>
                 <th>Type</th>
                 <th>Details</th>
-                <th style="text-align: center;">Pay Cycle</th>
-                <th style="text-align: center;">Created Date</th>
                 <th style="text-align: center;">Status</th>
               </tr>
             </thead>
             <tbody>
-              ${rowsHtml || '<tr><td colspan="8" style="text-align: center; padding: 24px; color: #94a3b8;">No records match the selected filters.</td></tr>'}
+              ${rowsHtml || '<tr><td colspan="6" style="text-align: center; padding: 24px; color: #94a3b8;">No records match the selected filters.</td></tr>'}
             </tbody>
           </table>
           <script>
@@ -807,7 +835,7 @@ export default function PromotionsTransfersPage() {
         const nextGross = Number(r.newGrossSalary);
         const prevGross = Number(r.employee.gross_salary) || 0;
         const delta = nextGross - prevGross;
-        
+
         if (nextGross <= 0) return false;
         if (type === 'promotion' && delta <= 0) return false;
         if (type === 'demotion' && delta >= 0) return false;
@@ -819,7 +847,7 @@ export default function PromotionsTransfersPage() {
         const prevGross = Number(r.employee.gross_salary);
         return Number.isFinite(prevGross);
       }
-      
+
       // For transfer, check if any org field changed relative to current
       const tDiv = r.toDivisionId;
       const tDept = r.toDepartmentId;
@@ -886,7 +914,7 @@ export default function PromotionsTransfersPage() {
             // Find if this row was one we tried to create
             const matched = toCreate.find(tc => tc.employee._id === r.employee._id);
             if (!matched) return true; // Keep rows we didn't touch
-            
+
             // If it was in toCreate, check if THAT specific request succeeded
             const idx = toCreate.indexOf(matched);
             const res = settled[idx];
@@ -919,16 +947,16 @@ export default function PromotionsTransfersPage() {
     }
     loadData();
     // Pre-load data needed for bulk operations and standard forms
-    api.getDivisions(true, undefined, true).then((r: any) => { if (r?.success && r?.data) setDivisions(r.data); }).catch(() => {});
-    api.getDepartments(true, undefined, true).then((r: any) => { if (r?.success && r?.data) setMasterDepartments(r.data); }).catch(() => {});
-    api.getAllDesignations(true).then((r: any) => { if (r?.success && r?.data) setAllDesignations(r.data); }).catch(() => {});
+    api.getDivisions(true, undefined, true).then((r: any) => { if (r?.success && r?.data) setDivisions(r.data); }).catch(() => { });
+    api.getDepartments(true, undefined, true).then((r: any) => { if (r?.success && r?.data) setMasterDepartments(r.data); }).catch(() => { });
+    api.getAllDesignations(true).then((r: any) => { if (r?.success && r?.data) setAllDesignations(r.data); }).catch(() => { });
     api
       .getPromotionTransferPayrollMonths({ past: 5, future: 5 })
       .then((r: any) => {
         if (r?.success && r?.data) setPayrollMonths(r.data);
         if (r?.success && r?.promotionPayroll) setPromotionPayroll(r.promotionPayroll);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [user, canView, loadData]);
 
   useEffect(() => {
@@ -1162,7 +1190,7 @@ export default function PromotionsTransfersPage() {
           const month = String(r.month);
           const totalDays = Number(r.totalDaysInMonth) || 0;
           const paidDays = Number(r?.attendance?.totalPaidDays) || 0;
-          
+
           const proratedPrev = totalDays > 0 ? (baseGross / totalDays) * paidDays : 0;
           const proratedNext = totalDays > 0 ? (nextGross / totalDays) * paidDays : 0;
           const proratedAmount = proratedNext - proratedPrev;
@@ -1436,7 +1464,7 @@ export default function PromotionsTransfersPage() {
               const month = String(r.month);
               const totalDays = Number(r.totalDaysInMonth) || 0;
               const paidDays = Number(r?.attendance?.totalPaidDays) || 0;
-              
+
               const proratedPrev = totalDays > 0 ? (prevG / totalDays) * paidDays : 0;
               const proratedNext = totalDays > 0 ? (nextG / totalDays) * paidDays : 0;
               const proratedAmount = proratedNext - proratedPrev;
@@ -1648,18 +1676,18 @@ export default function PromotionsTransfersPage() {
                           <tr key={row.employee._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors align-top">
                             <td className="px-3 py-4">
                               <div className="min-w-0" title={[String(row.employee.employee_name || '—'), row.employee.designation_id?.name || undefined, String(row.employee.emp_no || '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {row.employee.employee_name || '—'}
-  </div>
-  {row.employee.designation_id?.name || undefined ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {row.employee.designation_id?.name || undefined}
-    </div>
-  ) : null}
-  {row.employee.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{row.employee.emp_no}</div>
-  ) : null}
-</div>
+                                <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+                                  {row.employee.employee_name || '—'}
+                                </div>
+                                {row.employee.designation_id?.name || undefined ? (
+                                  <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+                                    {row.employee.designation_id?.name || undefined}
+                                  </div>
+                                ) : null}
+                                {row.employee.emp_no ? (
+                                  <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{row.employee.emp_no}</div>
+                                ) : null}
+                              </div>
                               <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 mt-2 flex items-center gap-1">
                                 <TrendingUp className="w-3 h-3" />
                                 Current Gross: ₹{formatSalary(row.employee.gross_salary)}
@@ -1818,11 +1846,10 @@ export default function PromotionsTransfersPage() {
           <button
             type="button"
             onClick={() => setTab('all')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium ${
-              tab === 'all'
+            className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === 'all'
                 ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200'
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-            }`}
+              }`}
           >
             All
           </button>
@@ -1830,11 +1857,10 @@ export default function PromotionsTransfersPage() {
             <button
               type="button"
               onClick={() => setTab('pending')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                tab === 'pending'
+              className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === 'pending'
                   ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-              }`}
+                }`}
             >
               Pending my action
             </button>
@@ -2155,11 +2181,10 @@ export default function PromotionsTransfersPage() {
                                 role="option"
                                 aria-selected={selectedEmpNo === e.emp_no}
                                 onClick={() => onEmpChange(e.emp_no)}
-                                className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
-                                  selectedEmpNo === e.emp_no
+                                className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${selectedEmpNo === e.emp_no
                                     ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-900 dark:text-indigo-200'
                                     : 'hover:bg-slate-50 dark:hover:bg-slate-800/80'
-                                }`}
+                                  }`}
                               >
                                 <span className="font-mono text-xs text-slate-600 dark:text-slate-400">{e.emp_no}</span>
                                 <span className="block font-medium text-slate-900 dark:text-white">{e.employee_name}</span>
@@ -2211,98 +2236,98 @@ export default function PromotionsTransfersPage() {
                         </div>
                       ) : (
                         <>
-                      <div className="px-3 py-2 flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800">
-                        <div>
-                          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                            Paid-days proration
+                          <div className="px-3 py-2 flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800">
+                            <div>
+                              <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                Paid-days proration
+                              </div>
+                              <div className="text-xs text-slate-600 dark:text-slate-300">
+                                {selectedMonthLabel} → {prorationFetchEndLabel}
+                                <span className="text-slate-400">
+                                  {prorationUsesSingleMonthOnly
+                                    ? ' (single month in range)'
+                                    : ' (through the month before the ongoing pay run — ongoing excluded)'}
+                                </span>
+                              </div>
+                            </div>
+                            {prorationLoading ? (
+                              <div className="text-xs text-slate-500 inline-flex items-center gap-2">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                Loading…
+                              </div>
+                            ) : null}
                           </div>
-                          <div className="text-xs text-slate-600 dark:text-slate-300">
-                            {selectedMonthLabel} → {prorationFetchEndLabel}
-                            <span className="text-slate-400">
-                              {prorationUsesSingleMonthOnly
-                                ? ' (single month in range)'
-                                : ' (through the month before the ongoing pay run — ongoing excluded)'}
-                            </span>
-                          </div>
-                        </div>
-                        {prorationLoading ? (
-                          <div className="text-xs text-slate-500 inline-flex items-center gap-2">
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            Loading…
-                          </div>
-                        ) : null}
-                      </div>
 
-                      {prorationRows.length === 0 && !prorationLoading ? (
-                        <div className="px-3 py-3 text-xs text-slate-500">
-                          No pay-register/payroll data found for this range.
-                        </div>
-                      ) : (
-                        <div className="max-h-56 overflow-y-auto overflow-x-auto">
-                          <table className="w-full text-xs">
-                            <thead className="sticky top-0 bg-white dark:bg-slate-900">
-                              <tr className="text-slate-500">
-                                <th className="text-left px-3 py-2 font-semibold">Month</th>
-                                <th className="text-left px-3 py-2 font-semibold">Paid days</th>
-                                <th className="text-right px-3 py-2 font-semibold">Paid (current)</th>
-                                <th className="text-right px-3 py-2 font-semibold">Extra pay</th>
-                                <th className="text-right px-3 py-2 font-semibold">Paid (after change)</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                              {prorationRows.map((r) => {
-                                const baseGross = Number(currentEmp?.gross_salary) || 0;
-                                let safeNewGross = baseGross;
-                                if (formType === 'increment') {
-                                  const inc = parseFloat(incrementAmountInput);
-                                  if (Number.isFinite(inc) && inc > 0) safeNewGross = baseGross + inc;
-                                } else {
-                                  const newGross = parseFloat(newGrossSalaryInput);
-                                  if (Number.isFinite(newGross)) safeNewGross = newGross;
-                                }
+                          {prorationRows.length === 0 && !prorationLoading ? (
+                            <div className="px-3 py-3 text-xs text-slate-500">
+                              No pay-register/payroll data found for this range.
+                            </div>
+                          ) : (
+                            <div className="max-h-56 overflow-y-auto overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead className="sticky top-0 bg-white dark:bg-slate-900">
+                                  <tr className="text-slate-500">
+                                    <th className="text-left px-3 py-2 font-semibold">Month</th>
+                                    <th className="text-left px-3 py-2 font-semibold">Paid days</th>
+                                    <th className="text-right px-3 py-2 font-semibold">Paid (current)</th>
+                                    <th className="text-right px-3 py-2 font-semibold">Extra pay</th>
+                                    <th className="text-right px-3 py-2 font-semibold">Paid (after change)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                  {prorationRows.map((r) => {
+                                    const baseGross = Number(currentEmp?.gross_salary) || 0;
+                                    let safeNewGross = baseGross;
+                                    if (formType === 'increment') {
+                                      const inc = parseFloat(incrementAmountInput);
+                                      if (Number.isFinite(inc) && inc > 0) safeNewGross = baseGross + inc;
+                                    } else {
+                                      const newGross = parseFloat(newGrossSalaryInput);
+                                      if (Number.isFinite(newGross)) safeNewGross = newGross;
+                                    }
 
-                                const paidDays = Number(r.paidDays) || 0;
-                                const totalDays = Number(r.totalDays) || 0;
-                                const paidCurrent = totalDays > 0 ? (baseGross / totalDays) * paidDays : 0;
-                                const paidAfter = totalDays > 0 ? (safeNewGross / totalDays) * paidDays : 0;
-                                return (
-                                  <tr key={r.month}>
-                                    <td className="px-3 py-2 font-mono">{r.month}</td>
-                                    <td className="px-3 py-2">
-                                      {r.paidDays}/{r.totalDays}
-                                    </td>
-                                    <td className="px-3 py-2 text-right">
-                                      ₹{paidCurrent.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                    </td>
-                                    <td className="px-3 py-2 text-right font-semibold">
-                                      {r.proratedAmount < 0 ? '-' : ''}₹
-                                      {Math.abs(r.proratedAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    const paidDays = Number(r.paidDays) || 0;
+                                    const totalDays = Number(r.totalDays) || 0;
+                                    const paidCurrent = totalDays > 0 ? (baseGross / totalDays) * paidDays : 0;
+                                    const paidAfter = totalDays > 0 ? (safeNewGross / totalDays) * paidDays : 0;
+                                    return (
+                                      <tr key={r.month}>
+                                        <td className="px-3 py-2 font-mono">{r.month}</td>
+                                        <td className="px-3 py-2">
+                                          {r.paidDays}/{r.totalDays}
+                                        </td>
+                                        <td className="px-3 py-2 text-right">
+                                          ₹{paidCurrent.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="px-3 py-2 text-right font-semibold">
+                                          {r.proratedAmount < 0 ? '-' : ''}₹
+                                          {Math.abs(r.proratedAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="px-3 py-2 text-right font-bold">
+                                          ₹{paidAfter.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                                <tfoot className="bg-slate-50 dark:bg-slate-800/40">
+                                  <tr>
+                                    <td className="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300" colSpan={2}>
+                                      Total (prorated)
                                     </td>
                                     <td className="px-3 py-2 text-right font-bold">
-                                      ₹{paidAfter.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                      {(() => {
+                                        const total = prorationRows.reduce((s, x) => s + (Number(x.proratedAmount) || 0), 0);
+                                        return `${total < 0 ? '-' : ''}₹${Math.abs(total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+                                      })()}
                                     </td>
+                                    <td className="px-3 py-2" />
+                                    <td className="px-3 py-2" />
                                   </tr>
-                                );
-                              })}
-                            </tbody>
-                            <tfoot className="bg-slate-50 dark:bg-slate-800/40">
-                              <tr>
-                                <td className="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300" colSpan={2}>
-                                  Total (prorated)
-                                </td>
-                                <td className="px-3 py-2 text-right font-bold">
-                                  {(() => {
-                                    const total = prorationRows.reduce((s, x) => s + (Number(x.proratedAmount) || 0), 0);
-                                    return `${total < 0 ? '-' : ''}₹${Math.abs(total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-                                  })()}
-                                </td>
-                                <td className="px-3 py-2" />
-                                <td className="px-3 py-2" />
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </div>
-                      )}
+                                </tfoot>
+                              </table>
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
@@ -2311,286 +2336,285 @@ export default function PromotionsTransfersPage() {
 
                 <div className="space-y-4">
 
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Request type</label>
-                <select
-                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
-                  value={formType}
-                  onChange={(e) => {
-                    const v = e.target.value as typeof formType;
-                    setFormType(v);
-                    if (v === 'increment') {
-                      setToDiv('');
-                      setToDept('');
-                      setToDesig('');
-                    }
-                  }}
-                >
-                  {allowedCreateTypes.includes('promotion') && <option value="promotion">Promotion</option>}
-                  {allowedCreateTypes.includes('demotion') && <option value="demotion">Demotion</option>}
-                  {allowedCreateTypes.includes('transfer') && <option value="transfer">Transfer</option>}
-                  {allowedCreateTypes.includes('increment') && <option value="increment">Increment</option>}
-                </select>
-              </div>
-
-              {formType !== 'transfer' && (
-                <>
                   <div>
-                    <label className="text-xs font-semibold text-slate-500 uppercase">Effective payroll month (cycle)</label>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Request type</label>
                     <select
                       className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
-                      value={selectedMonthLabel}
-                      onChange={(e) => setSelectedMonthLabel(e.target.value)}
+                      value={formType}
+                      onChange={(e) => {
+                        const v = e.target.value as typeof formType;
+                        setFormType(v);
+                        if (v === 'increment') {
+                          setToDiv('');
+                          setToDept('');
+                          setToDesig('');
+                        }
+                      }}
                     >
-                      <option value="">Select…</option>
-                      {payrollMonthsWithPaidDays.map((p) => (
-                        <option key={p.label} value={p.label}>
-                          {p.label}
-                          {p.periodRangeDisplay ? ` · ${p.periodRangeDisplay}` : ''}
-                          {p.isOngoing ? ' (ONGOING)' : ''}
-                          {p.paidDays != null && p.totalDaysInMonth != null
-                            ? ` — ${p.paidDays}/${p.totalDaysInMonth} paid days`
-                            : ''}
-                        </option>
-                      ))}
+                      {allowedCreateTypes.includes('promotion') && <option value="promotion">Promotion</option>}
+                      {allowedCreateTypes.includes('demotion') && <option value="demotion">Demotion</option>}
+                      {allowedCreateTypes.includes('transfer') && <option value="transfer">Transfer</option>}
+                      {allowedCreateTypes.includes('increment') && <option value="increment">Increment</option>}
                     </select>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Pay period dates use payroll start/end day from settings. Each value is the batch month id (YYYY-MM) for that run.
-                      {promotionPayroll?.containingRangeDisplay ? (
-                        <>
-                          {' '}
-                          Today in IST: <strong>{promotionPayroll.containingRangeDisplay}</strong>
-                          {promotionPayroll.containingKey ? (
-                            <span> (id {promotionPayroll.containingKey})</span>
-                          ) : null}
-                          {promotionPayroll.settingsStartDay != null && promotionPayroll.settingsEndDay != null ? (
-                            <span>
-                              {' '}
-                              — cycle {promotionPayroll.settingsStartDay}–{promotionPayroll.settingsEndDay} (day of month)
-                            </span>
-                          ) : null}
-                          .{' '}
-                        </>
-                      ) : null}
-                      {incompleteBacklogLabel &&
-                      incompleteBacklogLabel !== promotionPayroll?.containingKey ? (
-                        <span> Oldest open batch (backlog, if any): {incompleteBacklogLabel}.</span>
-                      ) : null}
-                      {paidDaysLoading ? ' Loading paid days…' : ''}
-                    </p>
                   </div>
-                  {formType === 'increment' ? (
-                    <div>
-                      <label className="text-xs font-semibold text-slate-500 uppercase">Increment amount (₹)</label>
-                      <input
-                        type="number"
-                        min={0}
-                        step={1}
-                        className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
-                        value={incrementAmountInput}
-                        onChange={(e) => setIncrementAmountInput(e.target.value)}
-                        placeholder="Amount to add to current gross"
-                      />
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        New gross is calculated as current gross plus this amount (you do not enter the full new gross).
-                      </p>
-                      {promotionComparison && promotionComparison.next != null && Number.isFinite(promotionComparison.next) && (
-                        <div className="mt-2 rounded-lg border border-indigo-100 dark:border-indigo-900/50 bg-indigo-50/60 dark:bg-indigo-950/30 px-3 py-2 text-xs space-y-1">
-                          <div className="flex justify-between gap-2">
-                            <span className="text-slate-500 dark:text-slate-400">Current gross</span>
-                            <span className="font-semibold text-slate-800 dark:text-slate-200">
-                              {promotionComparison.prev != null && Number.isFinite(promotionComparison.prev)
-                                ? formatSalary(promotionComparison.prev)
-                                : '—'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between gap-2">
-                            <span className="text-slate-500 dark:text-slate-400">New gross (after increment)</span>
-                            <span className="font-semibold text-indigo-700 dark:text-indigo-300">
-                              {formatSalary(promotionComparison.next)}
-                            </span>
-                          </div>
-                          {promotionComparison.delta != null && (
-                            <div className="flex justify-between gap-2 pt-1 border-t border-indigo-200/60 dark:border-indigo-800/60">
-                              <span className="text-slate-500 dark:text-slate-400">Increment</span>
-                              <span className="font-bold text-emerald-700 dark:text-emerald-400">
-                                +{formatSalary(promotionComparison.delta)}
-                              </span>
+
+                  {formType !== 'transfer' && (
+                    <>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Effective payroll month (cycle)</label>
+                        <select
+                          className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                          value={selectedMonthLabel}
+                          onChange={(e) => setSelectedMonthLabel(e.target.value)}
+                        >
+                          <option value="">Select…</option>
+                          {payrollMonthsWithPaidDays.map((p) => (
+                            <option key={p.label} value={p.label}>
+                              {p.label}
+                              {p.periodRangeDisplay ? ` · ${p.periodRangeDisplay}` : ''}
+                              {p.isOngoing ? ' (ONGOING)' : ''}
+                              {p.paidDays != null && p.totalDaysInMonth != null
+                                ? ` — ${p.paidDays}/${p.totalDaysInMonth} paid days`
+                                : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Pay period dates use payroll start/end day from settings. Each value is the batch month id (YYYY-MM) for that run.
+                          {promotionPayroll?.containingRangeDisplay ? (
+                            <>
+                              {' '}
+                              Today in IST: <strong>{promotionPayroll.containingRangeDisplay}</strong>
+                              {promotionPayroll.containingKey ? (
+                                <span> (id {promotionPayroll.containingKey})</span>
+                              ) : null}
+                              {promotionPayroll.settingsStartDay != null && promotionPayroll.settingsEndDay != null ? (
+                                <span>
+                                  {' '}
+                                  — cycle {promotionPayroll.settingsStartDay}–{promotionPayroll.settingsEndDay} (day of month)
+                                </span>
+                              ) : null}
+                              .{' '}
+                            </>
+                          ) : null}
+                          {incompleteBacklogLabel &&
+                            incompleteBacklogLabel !== promotionPayroll?.containingKey ? (
+                            <span> Oldest open batch (backlog, if any): {incompleteBacklogLabel}.</span>
+                          ) : null}
+                          {paidDaysLoading ? ' Loading paid days…' : ''}
+                        </p>
+                      </div>
+                      {formType === 'increment' ? (
+                        <div>
+                          <label className="text-xs font-semibold text-slate-500 uppercase">Increment amount (₹)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                            value={incrementAmountInput}
+                            onChange={(e) => setIncrementAmountInput(e.target.value)}
+                            placeholder="Amount to add to current gross"
+                          />
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            New gross is calculated as current gross plus this amount (you do not enter the full new gross).
+                          </p>
+                          {promotionComparison && promotionComparison.next != null && Number.isFinite(promotionComparison.next) && (
+                            <div className="mt-2 rounded-lg border border-indigo-100 dark:border-indigo-900/50 bg-indigo-50/60 dark:bg-indigo-950/30 px-3 py-2 text-xs space-y-1">
+                              <div className="flex justify-between gap-2">
+                                <span className="text-slate-500 dark:text-slate-400">Current gross</span>
+                                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                  {promotionComparison.prev != null && Number.isFinite(promotionComparison.prev)
+                                    ? formatSalary(promotionComparison.prev)
+                                    : '—'}
+                                </span>
+                              </div>
+                              <div className="flex justify-between gap-2">
+                                <span className="text-slate-500 dark:text-slate-400">New gross (after increment)</span>
+                                <span className="font-semibold text-indigo-700 dark:text-indigo-300">
+                                  {formatSalary(promotionComparison.next)}
+                                </span>
+                              </div>
+                              {promotionComparison.delta != null && (
+                                <div className="flex justify-between gap-2 pt-1 border-t border-indigo-200/60 dark:border-indigo-800/60">
+                                  <span className="text-slate-500 dark:text-slate-400">Increment</span>
+                                  <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                                    +{formatSalary(promotionComparison.delta)}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="text-xs font-semibold text-slate-500 uppercase">New gross salary</label>
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                            value={newGrossSalaryInput}
+                            onChange={(e) => setNewGrossSalaryInput(e.target.value)}
+                            placeholder="e.g. 85000"
+                          />
+                          {promotionComparison && Number.isFinite(promotionComparison.next) && (
+                            <div className="mt-2 rounded-lg border border-indigo-100 dark:border-indigo-900/50 bg-indigo-50/60 dark:bg-indigo-950/30 px-3 py-2 text-xs space-y-1">
+                              <div className="flex justify-between gap-2">
+                                <span className="text-slate-500 dark:text-slate-400">Current gross</span>
+                                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                  {promotionComparison.prev != null && Number.isFinite(promotionComparison.prev)
+                                    ? formatSalary(promotionComparison.prev)
+                                    : '—'}
+                                </span>
+                              </div>
+                              <div className="flex justify-between gap-2">
+                                <span className="text-slate-500 dark:text-slate-400">New gross</span>
+                                <span className="font-semibold text-indigo-700 dark:text-indigo-300">
+                                  {formatSalary(promotionComparison.next)}
+                                </span>
+                              </div>
+                              {promotionComparison.delta != null && (
+                                <div className="flex justify-between gap-2 pt-1 border-t border-indigo-200/60 dark:border-indigo-800/60">
+                                  <span className="text-slate-500 dark:text-slate-400">Change</span>
+                                  <span
+                                    className={`font-bold ${promotionComparison.delta >= 0
+                                        ? 'text-emerald-700 dark:text-emerald-400'
+                                        : 'text-amber-700 dark:text-amber-400'
+                                      }`}
+                                  >
+                                    {promotionComparison.delta >= 0 ? '+' : ''}
+                                    {formatSalary(promotionComparison.delta)}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
                       )}
-                    </div>
-                  ) : (
+
+                    </>
+                  )}
+
+                  {formType === 'transfer' && canCreatePromo && (
                     <div>
-                      <label className="text-xs font-semibold text-slate-500 uppercase">New gross salary</label>
+                      <label className="text-xs font-semibold text-slate-500 uppercase">Amount (optional)</label>
                       <input
                         type="number"
                         min={0}
                         step={1}
                         className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
                         value={newGrossSalaryInput}
-                        onChange={(e) => setNewGrossSalaryInput(e.target.value)}
-                        placeholder="e.g. 85000"
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewGrossSalaryInput(val);
+                          const num = parseFloat(val);
+                          if (Number.isFinite(num) && num > 0 && formType === 'transfer') {
+                            setFormType('promotion');
+                          }
+                        }}
+                        placeholder="Enter amount to convert this to a promotion"
                       />
-                      {promotionComparison && Number.isFinite(promotionComparison.next) && (
-                        <div className="mt-2 rounded-lg border border-indigo-100 dark:border-indigo-900/50 bg-indigo-50/60 dark:bg-indigo-950/30 px-3 py-2 text-xs space-y-1">
-                          <div className="flex justify-between gap-2">
-                            <span className="text-slate-500 dark:text-slate-400">Current gross</span>
-                            <span className="font-semibold text-slate-800 dark:text-slate-200">
-                              {promotionComparison.prev != null && Number.isFinite(promotionComparison.prev)
-                                ? formatSalary(promotionComparison.prev)
-                                : '—'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between gap-2">
-                            <span className="text-slate-500 dark:text-slate-400">New gross</span>
-                            <span className="font-semibold text-indigo-700 dark:text-indigo-300">
-                              {formatSalary(promotionComparison.next)}
-                            </span>
-                          </div>
-                          {promotionComparison.delta != null && (
-                            <div className="flex justify-between gap-2 pt-1 border-t border-indigo-200/60 dark:border-indigo-800/60">
-                              <span className="text-slate-500 dark:text-slate-400">Change</span>
-                              <span
-                                className={`font-bold ${
-                                  promotionComparison.delta >= 0
-                                    ? 'text-emerald-700 dark:text-emerald-400'
-                                    : 'text-amber-700 dark:text-amber-400'
-                                }`}
-                              >
-                                {promotionComparison.delta >= 0 ? '+' : ''}
-                                {formatSalary(promotionComparison.delta)}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        If you enter an amount greater than 0, this request will be treated as a promotion.
+                      </p>
                     </div>
                   )}
 
-                </>
-              )}
+                  {formType !== 'increment' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-500 uppercase">To division</label>
+                        <select
+                          className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                          value={toDiv}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setToDiv(v);
+                            setToDept('');
+                            void refreshModalDepartments(v, '');
+                          }}
+                        >
+                          <option value="">No change</option>
+                          {divisions.map((d) => (
+                            <option key={d._id} value={d._id}>
+                              {d.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-500 uppercase">To department</label>
+                        <select
+                          className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                          value={toDept}
+                          onChange={(e) => setToDept(e.target.value)}
+                        >
+                          <option value="">No change</option>
+                          {modalDepartments.map((d) => (
+                            <option key={d._id} value={d._id}>
+                              {d.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-500 uppercase">To designation</label>
+                        <select
+                          className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                          value={toDesig}
+                          onChange={(e) => setToDesig(e.target.value)}
+                        >
+                          <option value="">No change</option>
+                          {allDesignations.map((d) => (
+                            <option key={d._id} value={d._id}>
+                              {d.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
 
-              {formType === 'transfer' && canCreatePromo && (
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase">Amount (optional)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
-                    value={newGrossSalaryInput}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setNewGrossSalaryInput(val);
-                      const num = parseFloat(val);
-                      if (Number.isFinite(num) && num > 0 && formType === 'transfer') {
-                        setFormType('promotion');
-                      }
-                    }}
-                    placeholder="Enter amount to convert this to a promotion"
-                  />
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    If you enter an amount greater than 0, this request will be treated as a promotion.
-                  </p>
-                </div>
-              )}
+                  {(formType === 'transfer' ||
+                    (formType !== 'increment' &&
+                      currentEmp &&
+                      ((toDiv && toDiv !== normalizeId(currentEmp.division_id)) ||
+                        (toDept && toDept !== normalizeId(currentEmp.department_id))))) && (
+                      <div>
+                        <label className="text-xs font-semibold text-slate-500 uppercase">
+                          Effect date <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                          value={effectDate}
+                          onChange={(e) => setEffectDate(e.target.value)}
+                        />
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          From this date, attendance and payroll use the new division/department. Mid-month transfers split that month&apos;s payroll.
+                        </p>
+                      </div>
+                    )}
 
-              {formType !== 'increment' && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="text-xs font-semibold text-slate-500 uppercase">To division</label>
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
-                      value={toDiv}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setToDiv(v);
-                        setToDept('');
-                        void refreshModalDepartments(v, '');
-                      }}
-                    >
-                      <option value="">No change</option>
-                      {divisions.map((d) => (
-                        <option key={d._id} value={d._id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Remarks</label>
+                    <textarea
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm min-h-[72px]"
+                      value={remarks}
+                      onChange={(e) => setRemarks(e.target.value)}
+                    />
                   </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 uppercase">To department</label>
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
-                      value={toDept}
-                      onChange={(e) => setToDept(e.target.value)}
-                    >
-                      <option value="">No change</option>
-                      {modalDepartments.map((d) => (
-                        <option key={d._id} value={d._id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 uppercase">To designation</label>
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
-                      value={toDesig}
-                      onChange={(e) => setToDesig(e.target.value)}
-                    >
-                      <option value="">No change</option>
-                      {allDesignations.map((d) => (
-                        <option key={d._id} value={d._id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
 
-              {(formType === 'transfer' ||
-                (formType !== 'increment' &&
-                  currentEmp &&
-                  ((toDiv && toDiv !== normalizeId(currentEmp.division_id)) ||
-                    (toDept && toDept !== normalizeId(currentEmp.department_id))))) && (
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase">
-                    Effect date <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
-                    value={effectDate}
-                    onChange={(e) => setEffectDate(e.target.value)}
-                  />
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    From this date, attendance and payroll use the new division/department. Mid-month transfers split that month&apos;s payroll.
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Remarks</label>
-                <textarea
-                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm min-h-[72px]"
-                  value={remarks}
-                  onChange={(e) => setRemarks(e.target.value)}
-                />
-              </div>
-
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={submitRequest}
-                className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
-              >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                Submit
-              </button>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={submitRequest}
+                    className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                  >
+                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Submit
+                  </button>
                 </div>
               </div>
             </div>
@@ -2615,18 +2639,18 @@ export default function PromotionsTransfersPage() {
                   <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Employee</p>
                     <div className="min-w-0" title={[String(detail.employeeId?.employee_name || detail.emp_no || '—'), ((typeof detail.employeeId?.designation_id === 'object' && detail.employeeId?.designation_id?.name) ? String(detail.employeeId.designation_id.name) : (typeof detail.employeeId?.designation === 'object' && detail.employeeId?.designation?.name) ? String(detail.employeeId.designation.name) : ''), String(detail.emp_no || '')].filter(Boolean).join(' · ')}>
-  <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
-    {detail.employeeId?.employee_name || detail.emp_no || '—'}
-  </div>
-  {((typeof detail.employeeId?.designation_id === 'object' && detail.employeeId?.designation_id?.name) ? String(detail.employeeId.designation_id.name) : (typeof detail.employeeId?.designation === 'object' && detail.employeeId?.designation?.name) ? String(detail.employeeId.designation.name) : '') ? (
-    <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
-      {((typeof detail.employeeId?.designation_id === 'object' && detail.employeeId?.designation_id?.name) ? String(detail.employeeId.designation_id.name) : (typeof detail.employeeId?.designation === 'object' && detail.employeeId?.designation?.name) ? String(detail.employeeId.designation.name) : '')}
-    </div>
-  ) : null}
-  {detail.emp_no ? (
-    <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{detail.emp_no}</div>
-  ) : null}
-</div>
+                      <div className={`font-semibold truncate text-slate-900 dark:text-white text-sm`}>
+                        {detail.employeeId?.employee_name || detail.emp_no || '—'}
+                      </div>
+                      {((typeof detail.employeeId?.designation_id === 'object' && detail.employeeId?.designation_id?.name) ? String(detail.employeeId.designation_id.name) : (typeof detail.employeeId?.designation === 'object' && detail.employeeId?.designation?.name) ? String(detail.employeeId.designation.name) : '') ? (
+                        <div className="mt-1 truncate text-[9px] font-medium italic text-slate-600 dark:text-slate-400">
+                          {((typeof detail.employeeId?.designation_id === 'object' && detail.employeeId?.designation_id?.name) ? String(detail.employeeId.designation_id.name) : (typeof detail.employeeId?.designation === 'object' && detail.employeeId?.designation?.name) ? String(detail.employeeId.designation.name) : '')}
+                        </div>
+                      ) : null}
+                      {detail.emp_no ? (
+                        <div className="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400">{detail.emp_no}</div>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="flex justify-between gap-2">
                     <span className="text-slate-500">Type</span>
@@ -2639,64 +2663,64 @@ export default function PromotionsTransfersPage() {
                   {(detail.requestType === 'promotion' ||
                     detail.requestType === 'demotion' ||
                     detail.requestType === 'increment') && (
-                    <>
-                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3 space-y-2">
-                        <div className="flex justify-between gap-2">
-                          <span className="text-slate-500">Previous gross</span>
-                          <span className="font-medium">{formatSalary(detail.previousGrossSalary)}</span>
-                        </div>
-                        {detail.requestType === 'increment' && detail.incrementAmount != null && (
+                      <>
+                        <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3 space-y-2">
                           <div className="flex justify-between gap-2">
-                            <span className="text-slate-500">Increment amount</span>
-                            <span className="font-medium text-emerald-700 dark:text-emerald-400">
-                              +{formatSalary(detail.incrementAmount)}
+                            <span className="text-slate-500">Previous gross</span>
+                            <span className="font-medium">{formatSalary(detail.previousGrossSalary)}</span>
+                          </div>
+                          {detail.requestType === 'increment' && detail.incrementAmount != null && (
+                            <div className="flex justify-between gap-2">
+                              <span className="text-slate-500">Increment amount</span>
+                              <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                                +{formatSalary(detail.incrementAmount)}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex justify-between gap-2">
+                            <span className="text-slate-500">New gross</span>
+                            <span className="font-semibold text-indigo-700 dark:text-indigo-300 text-right">
+                              {detail.newGrossSalary != null ? (
+                                formatSalary(detail.newGrossSalary)
+                              ) : detail.incrementAmount != null ? (
+                                <span className="text-amber-800 dark:text-amber-200 text-xs font-normal">
+                                  +{formatSalary(detail.incrementAmount)} (derived on save)
+                                </span>
+                              ) : (
+                                '—'
+                              )}
                             </span>
                           </div>
-                        )}
-                        <div className="flex justify-between gap-2">
-                          <span className="text-slate-500">New gross</span>
-                          <span className="font-semibold text-indigo-700 dark:text-indigo-300 text-right">
-                            {detail.newGrossSalary != null ? (
-                              formatSalary(detail.newGrossSalary)
-                            ) : detail.incrementAmount != null ? (
-                              <span className="text-amber-800 dark:text-amber-200 text-xs font-normal">
-                                +{formatSalary(detail.incrementAmount)} (derived on save)
+                          {promotionDelta(detail.previousGrossSalary, detail.newGrossSalary) != null && (
+                            <div className="flex justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-600">
+                              <span className="text-slate-500">Comparison (change)</span>
+                              <span
+                                className={
+                                  promotionDelta(detail.previousGrossSalary, detail.newGrossSalary)! >= 0
+                                    ? 'font-bold text-emerald-700 dark:text-emerald-400'
+                                    : 'font-bold text-amber-700 dark:text-amber-400'
+                                }
+                              >
+                                {promotionDelta(detail.previousGrossSalary, detail.newGrossSalary)! >= 0 ? '+' : ''}
+                                {formatSalary(promotionDelta(detail.previousGrossSalary, detail.newGrossSalary)!)}
                               </span>
-                            ) : (
-                              '—'
-                            )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <span className="text-slate-500">Effective month</span>
+                          <span>
+                            {detail.effectivePayrollYear}-{String(detail.effectivePayrollMonth || '').padStart(2, '0')}
                           </span>
                         </div>
-                        {promotionDelta(detail.previousGrossSalary, detail.newGrossSalary) != null && (
-                          <div className="flex justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-600">
-                            <span className="text-slate-500">Comparison (change)</span>
-                            <span
-                              className={
-                                promotionDelta(detail.previousGrossSalary, detail.newGrossSalary)! >= 0
-                                  ? 'font-bold text-emerald-700 dark:text-emerald-400'
-                                  : 'font-bold text-amber-700 dark:text-amber-400'
-                              }
-                            >
-                              {promotionDelta(detail.previousGrossSalary, detail.newGrossSalary)! >= 0 ? '+' : ''}
-                              {formatSalary(promotionDelta(detail.previousGrossSalary, detail.newGrossSalary)!)}
-                            </span>
+                        {detail.requestType !== 'increment' && detail.proposedDesignationId?.name && (
+                          <div className="flex justify-between gap-2">
+                            <span className="text-slate-500">Proposed designation</span>
+                            <span className="text-right">{detail.proposedDesignationId.name}</span>
                           </div>
                         )}
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <span className="text-slate-500">Effective month</span>
-                        <span>
-                          {detail.effectivePayrollYear}-{String(detail.effectivePayrollMonth || '').padStart(2, '0')}
-                        </span>
-                      </div>
-                      {detail.requestType !== 'increment' && detail.proposedDesignationId?.name && (
-                        <div className="flex justify-between gap-2">
-                          <span className="text-slate-500">Proposed designation</span>
-                          <span className="text-right">{detail.proposedDesignationId.name}</span>
-                        </div>
-                      )}
-                    </>
-                  )}
+                      </>
+                    )}
                   {detail.requestType === 'transfer' && (
                     <div className="text-xs space-y-1 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg">
                       <div>
@@ -2865,7 +2889,7 @@ export default function PromotionsTransfersPage() {
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">From Date</label>
+                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">From Date (DD/MM/YYYY)</label>
                     <input
                       type="date"
                       value={printFromDate}
@@ -2874,7 +2898,7 @@ export default function PromotionsTransfersPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">To Date</label>
+                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">To Date (DD/MM/YYYY)</label>
                     <input
                       type="date"
                       value={printToDate}
