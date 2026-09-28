@@ -162,6 +162,35 @@ exports.getExpoPushStatus = async (req, res) => {
   }
 };
 
+async function resolveAllUserRecipientIds(reqUser) {
+  const ids = new Set();
+  if (reqUser?._id) ids.add(String(reqUser._id));
+  if (reqUser?.userId) ids.add(String(reqUser.userId));
+  if (reqUser?.employeeRef) ids.add(String(reqUser.employeeRef));
+
+  try {
+    if (reqUser?._id || reqUser?.employeeRef || reqUser?.employeeId) {
+      const userDocs = await User.find({
+        $or: [
+          ...(reqUser._id ? [{ _id: reqUser._id }] : []),
+          ...(reqUser.employeeRef ? [{ employeeRef: reqUser.employeeRef }, { _id: reqUser.employeeRef }] : []),
+          ...(reqUser._id ? [{ employeeRef: reqUser._id }] : []),
+          ...(reqUser.employeeId ? [{ employeeId: reqUser.employeeId }] : []),
+        ],
+      }).select('_id employeeRef').lean();
+
+      userDocs.forEach((u) => {
+        if (u._id) ids.add(String(u._id));
+        if (u.employeeRef) ids.add(String(u.employeeRef));
+      });
+    }
+  } catch (e) {
+    console.error('[notificationController] Error resolving recipient IDs:', e);
+  }
+
+  return Array.from(ids);
+}
+
 exports.getNotifications = async (req, res) => {
   try {
     const { page = 1, limit = 20, isRead, module } = req.query;
@@ -169,14 +198,31 @@ exports.getNotifications = async (req, res) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
     const skip = (pageNum - 1) * limitNum;
 
-    const filter = { recipientUserId: req.user._id };
+    const recipientIds = await resolveAllUserRecipientIds(req.user);
+    const filter = { recipientUserId: { $in: recipientIds } };
     if (typeof isRead !== 'undefined') filter.isRead = String(isRead) === 'true';
     if (module) filter.module = module;
 
-    const [data, total] = await Promise.all([
-      Notification.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limitNum).lean(),
-      Notification.countDocuments(filter),
-    ]);
+    const rawDocs = await Notification.find(filter).sort({ createdAt: -1 }).lean();
+
+    // Deduplicate by content key: title|message
+    const deduplicatedMap = new Map();
+    for (const doc of rawDocs) {
+      const key = `${(doc.title || '').trim().toLowerCase()}|${(doc.message || '').trim().toLowerCase()}`;
+      if (!deduplicatedMap.has(key)) {
+        deduplicatedMap.set(key, doc);
+      } else {
+        // If existing is read but doc is unread, prefer unread item
+        const existing = deduplicatedMap.get(key);
+        if (existing.isRead && !doc.isRead) {
+          deduplicatedMap.set(key, doc);
+        }
+      }
+    }
+
+    const deduplicatedList = Array.from(deduplicatedMap.values());
+    const total = deduplicatedList.length;
+    const data = deduplicatedList.slice(skip, skip + limitNum);
 
     res.status(200).json({
       success: true,
@@ -192,11 +238,19 @@ exports.getNotifications = async (req, res) => {
 
 exports.getUnreadCount = async (req, res) => {
   try {
-    const unreadCount = await Notification.countDocuments({
-      recipientUserId: req.user._id,
+    const recipientIds = await resolveAllUserRecipientIds(req.user);
+    const unreadDocs = await Notification.find({
+      recipientUserId: { $in: recipientIds },
       isRead: false,
-    });
-    res.status(200).json({ success: true, unreadCount });
+    }).lean();
+
+    const unreadKeys = new Set();
+    for (const doc of unreadDocs) {
+      const key = `${(doc.title || '').trim().toLowerCase()}|${(doc.message || '').trim().toLowerCase()}`;
+      unreadKeys.add(key);
+    }
+
+    res.status(200).json({ success: true, unreadCount: unreadKeys.size });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to load unread count', error: error.message });
   }
@@ -204,13 +258,23 @@ exports.getUnreadCount = async (req, res) => {
 
 exports.markAsRead = async (req, res) => {
   try {
-    const item = await Notification.findOneAndUpdate(
-      { _id: req.params.id, recipientUserId: req.user._id },
-      { $set: { isRead: true, readAt: new Date() } },
-      { new: true }
+    const recipientIds = await resolveAllUserRecipientIds(req.user);
+    const target = await Notification.findOne({ _id: req.params.id, recipientUserId: { $in: recipientIds } });
+    if (!target) return res.status(404).json({ success: false, message: 'Notification not found' });
+
+    // Mark target and any duplicate notifications with same title & message as read
+    await Notification.updateMany(
+      {
+        recipientUserId: { $in: recipientIds },
+        title: target.title,
+        message: target.message,
+      },
+      { $set: { isRead: true, readAt: new Date() } }
     );
-    if (!item) return res.status(404).json({ success: false, message: 'Notification not found' });
-    res.status(200).json({ success: true, data: item });
+
+    target.isRead = true;
+    target.readAt = new Date();
+    res.status(200).json({ success: true, data: target });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to mark notification read', error: error.message });
   }
@@ -218,8 +282,9 @@ exports.markAsRead = async (req, res) => {
 
 exports.markAllAsRead = async (req, res) => {
   try {
+    const recipientIds = await resolveAllUserRecipientIds(req.user);
     const result = await Notification.updateMany(
-      { recipientUserId: req.user._id, isRead: false },
+      { recipientUserId: { $in: recipientIds }, isRead: false },
       { $set: { isRead: true, readAt: new Date() } }
     );
     res.status(200).json({ success: true, updated: result.modifiedCount || 0 });

@@ -604,6 +604,8 @@ export interface InAppNotification {
   eventType: string;
   createdAt: string;
   isRead: boolean;
+  type?: string;
+  content?: string;
 }
 
 export interface NotificationUnreadCountResponse {
@@ -6968,4 +6970,69 @@ export const api = {
       body: JSON.stringify({ endpoint }),
     });
   },
+
+  // Communications API Methods
+  sendBroadcast: async (data: Record<string, any>) => {
+    return apiRequest<any>('/communications/send', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  getSmsTemplates: async (params?: { search?: string; category?: string; channel?: string; activeOnly?: boolean }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.append('search', params.search);
+    if (params?.category) query.append('category', params.category);
+    if (params?.channel) query.append('channel', params.channel);
+    if (params?.activeOnly) query.append('activeOnly', 'true');
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return apiRequest<any[]>(`/communications/templates${suffix}`, { method: 'GET' });
+  },
+
+  createSmsTemplate: async (data: Record<string, any>) => {
+    return apiRequest<any>('/communications/templates', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateSmsTemplate: async (id: string, data: Record<string, any>) => {
+    return apiRequest<any>(`/communications/templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteSmsTemplate: async (id: string) => {
+    return apiRequest<any>(`/communications/templates/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  getCommunicationReports: async (params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    status?: string;
+    channel?: string;
+    recipientType?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.page != null) query.append('page', String(params.page));
+    if (params?.limit != null) query.append('limit', String(params.limit));
+    if (params?.search) query.append('search', params.search);
+    if (params?.status) query.append('status', params.status);
+    if (params?.channel) query.append('channel', params.channel);
+    if (params?.recipientType) query.append('recipientType', params.recipientType);
+    if (params?.startDate) query.append('startDate', params.startDate);
+    if (params?.endDate) query.append('endDate', params.endDate);
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return apiRequest<any>(`/communications/reports${suffix}`, { method: 'GET' });
+  },
+
+  getCommunicationStats: async () => {
+    return apiRequest<any>('/communications/stats', { method: 'GET' });
+  }
 };

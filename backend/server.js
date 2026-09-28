@@ -201,6 +201,10 @@ app.use('/api/dashboard', dashboardRoutes);
 const notificationRoutes = require('./notifications/index.js');
 app.use('/api/notifications', notificationRoutes);
 
+// Communications (Bulk SMS, Templates, Broadcast & Reports) routes
+const communicationsRoutes = require('./communications/routes/communicationsRoutes.js');
+app.use('/api/communications', communicationsRoutes);
+
 // Mobile app usage analytics routes
 const mobileAnalyticsRoutes = require('./mobile-analytics/index.js');
 app.use('/api/mobile-analytics', mobileAnalyticsRoutes);

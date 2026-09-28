@@ -164,7 +164,17 @@ export default function SuperAdminDashboard() {
           api.getNotifications({ page: 1, limit: 15 }),
           api.getNotificationUnreadCount(),
         ]);
-        if (listRes?.success) setNotifications(listRes.data || []);
+        if (listRes?.success) {
+          const rawLoaded = listRes.data || [];
+          const seenKeys = new Set<string>();
+          const loaded = rawLoaded.filter((n: InAppNotification) => {
+            const key = `${(n.title || '').trim().toLowerCase()}|${(n.message || n.content || '').trim().toLowerCase()}`;
+            if (seenKeys.has(key)) return false;
+            seenKeys.add(key);
+            return true;
+          });
+          setNotifications(loaded);
+        }
         if (countRes?.success) {
           setUnreadCount(Number(countRes.unreadCount ?? countRes.data?.unreadCount ?? 0));
         }
@@ -180,7 +190,18 @@ export default function SuperAdminDashboard() {
   useEffect(() => {
     if (!socket) return;
     const onNew = (n: InAppNotification) => {
-      setNotifications((p) => [n, ...p].slice(0, 15));
+      setNotifications((prev) => {
+        const combined = [n, ...prev];
+        const seen = new Set<string>();
+        return combined
+          .filter((item) => {
+            const k = `${(item.title || '').trim().toLowerCase()}|${(item.message || item.content || '').trim().toLowerCase()}`;
+            if (seen.has(k)) return false;
+            seen.add(k);
+            return true;
+          })
+          .slice(0, 15);
+      });
       if (!n.isRead) setUnreadCount((c) => c + 1);
     };
     const onCount = (payload: { unreadCount: number }) => {

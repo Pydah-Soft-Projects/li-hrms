@@ -21,7 +21,8 @@ import {
   Bell,
   BellRing,
   X,
-  CheckCheck
+  CheckCheck,
+  Sparkles
 } from 'lucide-react';
 import { useSocket } from '@/contexts/SocketContext';
 import { useDashboardPushBell } from '@/hooks/useDashboardPushBell';
@@ -74,6 +75,7 @@ export default function DashboardPage() {
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [notificationLoading, setNotificationLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadBroadcastPopup, setUnreadBroadcastPopup] = useState<InAppNotification | null>(null);
   const { pushSubscribed } = useDashboardPushBell(!!user);
 
   useEffect(() => {
@@ -139,7 +141,29 @@ export default function DashboardPage() {
           api.getNotifications({ page: 1, limit: 25 }),
           api.getNotificationUnreadCount(),
         ]);
-        if (listRes?.success) setNotifications(listRes.data || []);
+        if (listRes?.success) {
+          const rawLoaded = listRes.data || [];
+          const seenKeys = new Set<string>();
+          const loaded = rawLoaded.filter((n) => {
+            const key = `${(n.title || '').trim().toLowerCase()}|${(n.message || n.content || '').trim().toLowerCase()}`;
+            if (seenKeys.has(key)) return false;
+            seenKeys.add(key);
+            return true;
+          });
+          setNotifications(loaded);
+          const unreadBroadcast = loaded.find(
+            (n: InAppNotification) =>
+              !n.isRead &&
+              (n.type === 'communications' ||
+                n.type === 'broadcast_message' ||
+                n.title?.toLowerCase().includes('announcement') ||
+                n.title?.toLowerCase().includes('broadcast') ||
+                n.message?.toLowerCase().includes('popup'))
+          );
+          if (unreadBroadcast) {
+            setUnreadBroadcastPopup(unreadBroadcast);
+          }
+        }
         if (countRes?.success) {
           setUnreadCount(Number(countRes.unreadCount ?? countRes.data?.unreadCount ?? 0));
         }
@@ -156,8 +180,28 @@ export default function DashboardPage() {
     if (!socket) return;
 
     const onNew = (n: InAppNotification) => {
-      setNotifications((prev) => [n, ...prev].slice(0, 25));
-      if (!n.isRead) setUnreadCount((c) => c + 1);
+      setNotifications((prev) => {
+        const combined = [n, ...prev];
+        const seen = new Set<string>();
+        return combined.filter((item) => {
+          const k = `${(item.title || '').trim().toLowerCase()}|${(item.message || item.content || '').trim().toLowerCase()}`;
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        }).slice(0, 25);
+      });
+      if (!n.isRead) {
+        setUnreadCount((c) => c + 1);
+        if (
+          n.type === 'communications' ||
+          n.type === 'broadcast_message' ||
+          n.title?.toLowerCase().includes('announcement') ||
+          n.title?.toLowerCase().includes('broadcast') ||
+          n.message?.toLowerCase().includes('popup')
+        ) {
+          setUnreadBroadcastPopup(n);
+        }
+      }
     };
     const onCount = (payload: { unreadCount: number }) => {
       setUnreadCount(Number(payload?.unreadCount || 0));
@@ -173,8 +217,15 @@ export default function DashboardPage() {
 
   const markOneRead = async (id: string) => {
     try {
+      const target = notifications.find((n) => n._id === id);
       await api.markNotificationRead(id);
-      setNotifications((prev) => prev.map((n) => (n._id === id ? { ...n, isRead: true } : n)));
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n._id === id || (target && `${(n.title || '').trim().toLowerCase()}|${(n.message || n.content || '').trim().toLowerCase()}` === `${(target.title || '').trim().toLowerCase()}|${(target.message || target.content || '').trim().toLowerCase()}`)
+            ? { ...n, isRead: true }
+            : n
+        )
+      );
       setUnreadCount((c) => Math.max(0, c - 1));
     } catch (err) {
       console.error('Failed to mark notification read:', err);
@@ -189,6 +240,26 @@ export default function DashboardPage() {
     } catch (err) {
       console.error('Failed to mark all read:', err);
     }
+  };
+
+  const handleCloseBroadcastPopup = async () => {
+    if (unreadBroadcastPopup?._id) {
+      try {
+        const targetKey = `${(unreadBroadcastPopup.title || '').trim().toLowerCase()}|${(unreadBroadcastPopup.message || unreadBroadcastPopup.content || '').trim().toLowerCase()}`;
+        await api.markNotificationRead(unreadBroadcastPopup._id);
+        setNotifications((prev) =>
+          prev.map((n) =>
+            n._id === unreadBroadcastPopup._id || `${(n.title || '').trim().toLowerCase()}|${(n.message || n.content || '').trim().toLowerCase()}` === targetKey
+              ? { ...n, isRead: true }
+              : n
+          )
+        );
+        setUnreadCount((c) => Math.max(0, c - 1));
+      } catch (err) {
+        console.error('Failed to mark broadcast popup read:', err);
+      }
+    }
+    setUnreadBroadcastPopup(null);
   };
 
   const userRole = user?.role || activeWorkspace?.type || 'employee';
@@ -208,7 +279,7 @@ export default function DashboardPage() {
     if (userRole === 'hod' || userRole === 'manager') {
       return <HODDashboard stats={stats} />;
     }
-    return <EmployeeDashboard stats={stats} />;
+    return <EmployeeDashboard stats={stats} notifications={notifications} markOneRead={markOneRead} />;
   };
 
   const isPresent = (data: any[] | null) => {
@@ -504,6 +575,62 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+      {/* In-App Broadcast Popup Modal for Logged In User */}
+      {unreadBroadcastPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl transition-all flex flex-col">
+            <div className="h-2 shrink-0 w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600" />
+            <div className="p-4 sm:p-6 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-500/20 shrink-0">
+                    <Sparkles className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="inline-block px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 bg-indigo-100/70 dark:bg-indigo-950/80 rounded-full mb-1.5 border border-indigo-200 dark:border-indigo-800">
+                      Important Announcement
+                    </span>
+                    <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight break-words">
+                      {unreadBroadcastPopup.title || 'Broadcast Notification'}
+                    </h3>
+                  </div>
+                </div>
+                <button
+                  onClick={handleCloseBroadcastPopup}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+                  aria-label="Close Announcement Modal"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 max-h-60 overflow-y-auto custom-scrollbar">
+                <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 leading-relaxed font-normal whitespace-pre-wrap break-words">
+                  {unreadBroadcastPopup.message || unreadBroadcastPopup.content}
+                </p>
+              </div>
+
+              <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-xs font-medium text-slate-400 dark:text-slate-500 text-center sm:text-left">
+                  {unreadBroadcastPopup.createdAt
+                    ? new Date(unreadBroadcastPopup.createdAt).toLocaleString(undefined, {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })
+                    : ''}
+                </span>
+                <button
+                  onClick={handleCloseBroadcastPopup}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 active:scale-95 shadow-lg shadow-indigo-500/25 transition-all flex items-center justify-center gap-2"
+                >
+                  <CheckCheck className="w-4 h-4" />
+                  Acknowledge & Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <TicketSupportBubble />
     </div>
   );
@@ -650,7 +777,15 @@ function HODDashboard({ stats }: { stats: DashboardStats }) {
 }
 
 // Employee Dashboard Component
-function EmployeeDashboard({ stats }: { stats: DashboardStats }) {
+function EmployeeDashboard({
+  stats,
+  notifications = [],
+  markOneRead,
+}: {
+  stats: DashboardStats;
+  notifications?: InAppNotification[];
+  markOneRead?: (id: string) => void;
+}) {
   const fyLabel = stats.financialYearRegister || '';
   const clPosted = stats.yearlyClCreditDaysPosted ?? null;
   const cclPosted = stats.yearlyCclCreditDaysPosted ?? null;
@@ -717,9 +852,74 @@ function EmployeeDashboard({ stats }: { stats: DashboardStats }) {
         ))}
       </ul>
     ) : null;
+      const isCreatedToday = (dateVal?: string | Date) => {
+    if (!dateVal) return false;
+    const d = new Date(dateVal);
+    const today = new Date();
+    return (
+      d.getDate() === today.getDate() &&
+      d.getMonth() === today.getMonth() &&
+      d.getFullYear() === today.getFullYear()
+    );
+  };
+
+  const latestTodayBroadcast = notifications.find(
+    (n) =>
+      (n.module === 'communications' ||
+        n.eventType === 'broadcast_message' ||
+        n.title?.toLowerCase().includes('announcement') ||
+        n.title?.toLowerCase().includes('broadcast') ||
+        n.message?.toLowerCase().includes('popup')) &&
+      isCreatedToday(n.createdAt)
+  );
 
   return (
     <div className="space-y-8">
+      {/* Minimal Broadcast Announcement Card for Today */}
+      {latestTodayBroadcast && (
+        <div className="relative overflow-hidden rounded-2xl border border-indigo-200/80 dark:border-indigo-900/60 bg-gradient-to-r from-indigo-50/80 via-purple-50/50 to-pink-50/30 dark:from-indigo-950/40 dark:via-purple-950/20 dark:to-slate-900/40 p-4 sm:p-5 shadow-sm transition-all hover:border-indigo-300 dark:hover:border-indigo-800">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3 min-w-0 flex-1">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-indigo-600/10 dark:bg-indigo-400/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 flex items-center justify-center shrink-0">
+                <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 bg-indigo-100/80 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800">
+                    Announcement Today
+                  </span>
+                  <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                    {latestTodayBroadcast.createdAt
+                      ? new Date(latestTodayBroadcast.createdAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : ''}
+                  </span>
+                </div>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-snug break-words">
+                  {latestTodayBroadcast.title || 'Announcement'}
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed whitespace-pre-wrap break-words line-clamp-2 sm:line-clamp-none">
+                  {latestTodayBroadcast.message || latestTodayBroadcast.content}
+                </p>
+              </div>
+            </div>
+
+            {!latestTodayBroadcast.isRead && markOneRead && (
+              <div className="shrink-0 flex sm:flex-col items-end justify-end">
+                <button
+                  onClick={() => markOneRead(latestTodayBroadcast._id)}
+                  className="w-full sm:w-auto px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 shadow-sm transition-all flex items-center justify-center gap-1.5"
+                >
+                  <CheckCheck className="w-3.5 h-3.5" />
+                  Acknowledge
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <DashboardCard
           title="Paid leave (register)"
@@ -788,13 +988,94 @@ function EmployeeDashboard({ stats }: { stats: DashboardStats }) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-        <div className="md:col-span-2 lg:col-span-3 p-4 md:p-8 rounded-2xl md:rounded-3xl bg-bg-surface/50 border border-border-base backdrop-blur-md shadow-sm h-fit">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
+        {/* Notifications & Announcements Feed */}
+        <div className="lg:col-span-2 p-4 md:p-6 rounded-2xl md:rounded-3xl bg-bg-surface/50 border border-border-base backdrop-blur-md shadow-sm h-fit space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base md:text-xl font-black text-text-primary flex items-center gap-2 md:gap-3">
+              <span className="w-1.5 md:w-2 h-4 md:h-6 bg-indigo-500 rounded-full" />
+              Notifications & Announcements
+            </h2>
+            {notifications.filter((n) => !n.isRead).length > 0 && (
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
+                {notifications.filter((n) => !n.isRead).length} unread
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1 custom-scrollbar">
+            {notifications.length === 0 ? (
+              <div className="p-6 text-center text-text-secondary text-xs font-medium bg-bg-base/30 rounded-2xl border border-border-base/40">
+                <Bell className="w-7 h-7 mx-auto mb-2 text-text-secondary/40" />
+                No notifications yet.
+              </div>
+            ) : (
+              notifications.map((n) => {
+                const isBroadcast =
+                  n.module === 'communications' ||
+                  n.eventType === 'broadcast_message' ||
+                  n.title?.toLowerCase().includes('announcement') ||
+                  n.title?.toLowerCase().includes('broadcast');
+
+                return (
+                  <div
+                    key={n._id}
+                    onClick={() => !n.isRead && markOneRead?.(n._id)}
+                    className={`p-3 md:p-3.5 rounded-xl md:rounded-2xl border transition-all cursor-pointer ${
+                      n.isRead
+                        ? 'bg-bg-base/40 border-border-base/60 hover:bg-bg-base/60'
+                        : 'bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-500/30 hover:border-indigo-500/50 shadow-sm'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={`px-2 py-0.5 rounded font-bold text-[9px] uppercase tracking-wider ${
+                            isBroadcast
+                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
+                              : n.module === 'leaves' || n.module === 'od'
+                              ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                              : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+                          }`}
+                        >
+                          {isBroadcast ? 'Announcement' : n.module?.replace('_', ' ') || 'Notice'}
+                        </span>
+                        <h4 className="font-bold text-text-primary text-xs md:text-sm">{n.title}</h4>
+                      </div>
+                      {!n.isRead && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0 mt-1" />
+                      )}
+                    </div>
+                    <p className="text-xs text-text-secondary mt-1.5 leading-relaxed whitespace-pre-wrap">
+                      {n.message}
+                    </p>
+                    <div className="flex items-center justify-between text-[10px] text-text-secondary/70 mt-2 pt-2 border-t border-border-base/30">
+                      <span>
+                        {new Date(n.createdAt).toLocaleString(undefined, {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })}
+                      </span>
+                      {!n.isRead && (
+                        <span className="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline">
+                          Mark as read
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* My Portal Card */}
+        <div className="p-4 md:p-8 rounded-2xl md:rounded-3xl bg-bg-surface/50 border border-border-base backdrop-blur-md shadow-sm h-fit">
           <h2 className="text-base md:text-xl font-black text-text-primary mb-4 md:mb-6 flex items-center gap-2 md:gap-3">
             <span className="w-1.5 md:w-2 h-4 md:h-6 bg-indigo-500 rounded-full" />
             My Portal
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
+          <div className="grid grid-cols-1 gap-2 md:gap-4">
             <QuickLink href="/leaves" label="Apply Absence" desc="Leave or OD request" icon={<Calendar />} color="indigo" />
             <QuickLink href="/attendance" label="Time Card" desc="Review daily logs" icon={<Clock />} color="blue" />
             <QuickLink href="/payslips" label="Earnings" desc="View monthly payslips" icon={<FileText />} color="teal" />

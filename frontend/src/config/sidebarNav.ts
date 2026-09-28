@@ -42,6 +42,7 @@ import {
   AlertOctagon,
   ClipboardCheck,
   FolderSearch,
+  MessageSquare,
 } from 'lucide-react';
 
 export type SidebarIcon = ComponentType<{ className?: string; style?: CSSProperties; strokeWidth?: number }>;
@@ -114,6 +115,7 @@ export const SIDEBAR_MODULE_ICONS: Record<string, SidebarIcon> = {
   PAYROLL: BadgeDollarSign,
   LOANS_SALARY_ADVANCE: PiggyBank,
   PAYROLL_TRANSACTIONS: Wallet,
+  COMMUNICATIONS: MessageSquare,
 };
 
 const SUPERADMIN_PREFIX = '/superadmin';
@@ -221,6 +223,14 @@ export const SUPERADMIN_NAV_CATEGORIES: SidebarNavCategory[] = [
     ],
   },
   {
+    code: 'COMMUNICATIONS_CATEGORY',
+    label: 'Communications',
+    icon: MessageSquare,
+    items: [
+      { code: 'COMMUNICATIONS', label: 'Communications', href: `${SUPERADMIN_PREFIX}/communications`, icon: MessageSquare },
+    ],
+  },
+  {
     code: 'SETTINGS',
     label: 'Settings',
     icon: Settings,
@@ -319,6 +329,14 @@ export const WORKSPACE_NAV_CATEGORIES: SidebarNavCategory[] = [
     ],
   },
   {
+    code: 'COMMUNICATIONS_CATEGORY',
+    label: 'Communications',
+    icon: MessageSquare,
+    items: [
+      { code: 'COMMUNICATIONS', label: 'Communications', href: '/communications', icon: MessageSquare },
+    ],
+  },
+  {
     code: 'SETTINGS',
     label: 'Settings',
     icon: Settings,
@@ -365,6 +383,7 @@ export const SIDEBAR_SHORT_LABELS: Record<string, string> = {
   STATUTORY_DEDUCTIONS: 'Stat',
   USERS: 'Users',
   REPORTS: 'Rpts',
+  COMMUNICATIONS: 'Comms',
   GENERAL_SETTINGS: 'Sets',
 };
 

@@ -71,6 +71,14 @@ export const MODULE_CATEGORIES = [
         ]
     },
     {
+        code: 'COMMUNICATIONS_CATEGORY',
+        name: 'Communications',
+        icon: '💬',
+        modules: [
+            { code: 'COMMUNICATIONS', label: 'Communications', href: '/communications' }
+        ]
+    },
+    {
         code: 'FINANCE_PAYROLL',
         name: 'Payroll',
         icon: '💰',
