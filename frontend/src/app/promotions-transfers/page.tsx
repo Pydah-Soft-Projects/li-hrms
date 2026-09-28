@@ -26,6 +26,8 @@ import {
   Eye,
   Trash2,
   Users,
+  Printer,
+  FileText,
 } from 'lucide-react';
 
 type PayrollMonthOption = {
@@ -400,6 +402,213 @@ export default function PromotionsTransfersPage() {
   const [headerToDept, setHeaderToDept] = useState('');
   const [headerToDesig, setHeaderToDesig] = useState('');
   const [headerRemarks, setHeaderRemarks] = useState('');
+
+  // Print modal state
+  const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [printFromDate, setPrintFromDate] = useState('');
+  const [printToDate, setPrintToDate] = useState('');
+  const [printTypeFilter, setPrintTypeFilter] = useState<'all' | 'promotion' | 'demotion' | 'transfer' | 'increment'>('all');
+  const [printStatusFilter, setPrintStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+
+  const printFilteredList = useMemo(() => {
+    return list.filter((item) => {
+      if (printTypeFilter !== 'all' && item.requestType !== printTypeFilter) {
+        return false;
+      }
+      if (printStatusFilter !== 'all' && item.status !== printStatusFilter) {
+        return false;
+      }
+      const itemDateStr = item.createdAt || '';
+      if (printFromDate) {
+        if (!itemDateStr) return false;
+        const itemDate = new Date(itemDateStr).setHours(0, 0, 0, 0);
+        const fromDate = new Date(printFromDate).setHours(0, 0, 0, 0);
+        if (itemDate < fromDate) return false;
+      }
+      if (printToDate) {
+        if (!itemDateStr) return false;
+        const itemDate = new Date(itemDateStr).setHours(23, 59, 59, 999);
+        const toDate = new Date(printToDate).setHours(23, 59, 59, 999);
+        if (itemDate > toDate) return false;
+      }
+      return true;
+    });
+  }, [list, printTypeFilter, printStatusFilter, printFromDate, printToDate]);
+
+  const handlePrint = () => {
+    const printWindow = window.open('', '_blank', 'width=1000,height=750');
+    if (!printWindow) {
+      toast.error('Pop-up blocked! Please allow pop-ups to print reports.');
+      return;
+    }
+
+    const dateRangeLabel =
+      printFromDate && printToDate
+        ? `${printFromDate} to ${printToDate}`
+        : printFromDate
+        ? `From ${printFromDate}`
+        : printToDate
+        ? `Up to ${printToDate}`
+        : 'All Dates';
+
+    const typeLabel =
+      printTypeFilter === 'all'
+        ? 'All Types'
+        : printTypeFilter.charAt(0).toUpperCase() + printTypeFilter.slice(1);
+
+    const statusLabel =
+      printStatusFilter === 'all'
+        ? 'All Statuses'
+        : printStatusFilter.charAt(0).toUpperCase() + printStatusFilter.slice(1);
+
+    const rowsHtml = printFilteredList
+      .map((item, idx) => {
+        const empName = item.employeeId?.employee_name || '—';
+        const empNo = item.emp_no || item.employeeId?.emp_no || '—';
+        const reqType = (item.requestType || '').toUpperCase();
+        const status = (item.status || '').toUpperCase();
+
+        let detailsStr = '';
+        if (item.requestType === 'promotion' || item.requestType === 'demotion') {
+          const fromDesig =
+            item.fromDesignationId?.name ||
+            item.employeeId?.designation_id?.name ||
+            item.employeeId?.designation?.name ||
+            '—';
+          const toDesig = item.proposedDesignationId?.name || item.toDesignationId?.name || '—';
+          const prevSal = item.previousGrossSalary != null ? `₹${item.previousGrossSalary.toLocaleString('en-IN')}` : '—';
+          const newSal = item.newGrossSalary != null ? `₹${item.newGrossSalary.toLocaleString('en-IN')}` : '—';
+          detailsStr = `Desig: ${fromDesig} → ${toDesig}<br/>Gross: ${prevSal} → ${newSal}`;
+        } else if (item.requestType === 'transfer') {
+          const fromDiv = item.fromDivisionId?.name || '—';
+          const fromDept = item.fromDepartmentId?.name || item.employeeId?.department_id?.name || '—';
+          const toDiv = item.toDivisionId?.name || '—';
+          const toDept = item.toDepartmentId?.name || '—';
+          detailsStr = `Dept: ${fromDept} (${fromDiv}) → ${toDept} (${toDiv})`;
+        } else if (item.requestType === 'increment') {
+          const incAmt = item.incrementAmount != null ? `+₹${item.incrementAmount.toLocaleString('en-IN')}` : '—';
+          const newSal = item.newGrossSalary != null ? `₹${item.newGrossSalary.toLocaleString('en-IN')}` : '—';
+          detailsStr = `Increment: ${incAmt}<br/>New Gross: ${newSal}`;
+        }
+
+        const createdDateStr = item.createdAt
+          ? new Date(item.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          : '—';
+        const effectiveMonthStr =
+          item.effectivePayrollYear && item.effectivePayrollMonth
+            ? `${item.effectivePayrollMonth}/${item.effectivePayrollYear}`
+            : '—';
+
+        return `
+          <tr>
+            <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">${idx + 1}</td>
+            <td style="padding: 8px; border: 1px solid #cbd5e1;"><strong>${empNo}</strong></td>
+            <td style="padding: 8px; border: 1px solid #cbd5e1;">${empName}</td>
+            <td style="padding: 8px; border: 1px solid #cbd5e1; font-weight: 600; color: #4f46e5;">${reqType}</td>
+            <td style="padding: 8px; border: 1px solid #cbd5e1; font-size: 11px;">${detailsStr}</td>
+            <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">${effectiveMonthStr}</td>
+            <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">${createdDateStr}</td>
+            <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold;">${status}</td>
+          </tr>
+        `;
+      })
+      .join('');
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Promotions & Transfers Report</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+              margin: 24px;
+              color: #0f172a;
+              background: #fff;
+            }
+            .header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              border-bottom: 2px solid #4f46e5;
+              padding-bottom: 12px;
+              margin-bottom: 16px;
+            }
+            h2 {
+              margin: 0;
+              color: #1e293b;
+              font-size: 22px;
+            }
+            .meta {
+              font-size: 12px;
+              color: #475569;
+              margin-bottom: 16px;
+              background: #f8fafc;
+              padding: 10px 14px;
+              border-radius: 8px;
+              border: 1px solid #e2e8f0;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 12px;
+            }
+            th {
+              background-color: #f1f5f9;
+              color: #334155;
+              padding: 10px 8px;
+              border: 1px solid #cbd5e1;
+              text-align: left;
+              text-transform: uppercase;
+              font-size: 10px;
+              letter-spacing: 0.5px;
+            }
+            @media print {
+              body { margin: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h2>Promotions & Transfers Report</h2>
+            <span style="font-size: 12px; color: #64748b;">Printed on: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+          </div>
+          <div class="meta">
+            <strong>Date Filter:</strong> ${dateRangeLabel} &nbsp;|&nbsp;
+            <strong>Request Type:</strong> ${typeLabel} &nbsp;|&nbsp;
+            <strong>Status:</strong> ${statusLabel} &nbsp;|&nbsp;
+            <strong>Total Records:</strong> ${printFilteredList.length}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 30px; text-align: center;">#</th>
+                <th>Emp No</th>
+                <th>Employee Name</th>
+                <th>Type</th>
+                <th>Details</th>
+                <th style="text-align: center;">Pay Cycle</th>
+                <th style="text-align: center;">Created Date</th>
+                <th style="text-align: center;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml || '<tr><td colspan="8" style="text-align: center; padding: 24px; color: #94a3b8;">No records match the selected filters.</td></tr>'}
+            </tbody>
+          </table>
+          <script>
+            window.onload = function() {
+              window.print();
+              window.onafterprint = function() { window.close(); };
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
 
   const isEmployee = (user?.role || '').toLowerCase() === 'employee';
 
@@ -1313,7 +1522,7 @@ export default function PromotionsTransfersPage() {
   }
 
   return (
-    <div className="p-2 sm:p-6 max-w-6xl mx-auto space-y-4">
+    <div className="p-2 sm:p-6 w-full space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -1324,16 +1533,26 @@ export default function PromotionsTransfersPage() {
             Payroll-cycle promotions and internal transfers with approval workflow.
           </p>
         </div>
-        {canCreate && (
+        <div className="flex items-center gap-2">
+          {canCreate && (
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white px-3.5 py-2 text-xs font-semibold hover:bg-indigo-700 sm:px-4 sm:py-2.5 sm:text-sm shadow-sm transition-all"
+            >
+              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              New request
+            </button>
+          )}
           <button
             type="button"
-            onClick={openCreateModal}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white px-3.5 py-2 text-xs font-semibold hover:bg-indigo-700 sm:px-4 sm:py-2.5 sm:text-sm"
+            onClick={() => setPrintModalOpen(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-800 text-white dark:bg-slate-700 dark:hover:bg-slate-600 px-3.5 py-2 text-xs font-semibold hover:bg-slate-900 sm:px-4 sm:py-2.5 sm:text-sm shadow-sm transition-all"
           >
-            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            New request
+            <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            Print
           </button>
-        )}
+        </div>
       </div>
 
       {/* Bulk create section */}
@@ -2609,6 +2828,148 @@ export default function PromotionsTransfersPage() {
                     )}
                   </div>
                 )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Print Filter Modal */}
+      {printModalOpen && (
+        <div className="fixed inset-0 z-[220] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                  <Printer className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Print Promotions & Transfers</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Select date range and filter criteria to generate print report.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPrintModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5 overflow-y-auto">
+              {/* Date Selection */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+                  1. Date Selection Range
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">From Date</label>
+                    <input
+                      type="date"
+                      value={printFromDate}
+                      onChange={(e) => setPrintFromDate(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">To Date</label>
+                    <input
+                      type="date"
+                      value={printToDate}
+                      onChange={(e) => setPrintToDate(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Request Type & Options Filter */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+                  2. Select Filter Option
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Request Type</label>
+                    <select
+                      value={printTypeFilter}
+                      onChange={(e) => setPrintTypeFilter(e.target.value as any)}
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    >
+                      <option value="all">All Request Types</option>
+                      <option value="promotion">Promotion</option>
+                      <option value="demotion">Demotion</option>
+                      <option value="transfer">Transfer</option>
+                      <option value="increment">Increment</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Approval Status</label>
+                    <select
+                      value={printStatusFilter}
+                      onChange={(e) => setPrintStatusFilter(e.target.value as any)}
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    >
+                      <option value="all">All Statuses</option>
+                      <option value="pending">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Preview Count & Matching Records */}
+              <div className="bg-indigo-50/50 dark:bg-indigo-950/20 rounded-xl p-3.5 border border-indigo-100 dark:border-indigo-900/30">
+                <div className="flex items-center justify-between text-xs font-semibold text-indigo-900 dark:text-indigo-200">
+                  <span>Filtered Data Preview</span>
+                  <span className="bg-indigo-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold">
+                    {printFilteredList.length} {printFilteredList.length === 1 ? 'record' : 'records'}
+                  </span>
+                </div>
+                {printFilteredList.length > 0 && (
+                  <div className="mt-2.5 max-h-36 overflow-y-auto rounded-lg border border-indigo-100 dark:border-indigo-900/40 bg-white dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800">
+                    {printFilteredList.slice(0, 10).map((r) => (
+                      <div key={r._id} className="p-2 text-[11px] flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-900 dark:text-white">{r.emp_no || r.employeeId?.emp_no}</span>
+                          <span className="text-slate-500">{r.employeeId?.employee_name}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="capitalize text-indigo-600 dark:text-indigo-400 font-semibold">{r.requestType}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium uppercase">{r.status}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {printFilteredList.length > 10 && (
+                      <div className="p-1.5 text-center text-[10px] text-slate-400 italic">
+                        + {printFilteredList.length - 10} more records will be printed
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+              <button
+                type="button"
+                onClick={() => setPrintModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handlePrint}
+                className="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition-all"
+              >
+                <Printer className="w-4 h-4" />
+                Print Report
+              </button>
             </div>
           </div>
         </div>
