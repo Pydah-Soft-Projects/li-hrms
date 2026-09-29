@@ -143,15 +143,6 @@ async function applyEdgePermissionAdjustmentsToShiftSegment({
       const permittedExit = resolvePermittedInstant(perm.permittedEdgeTime, date, shiftStart, overnight);
       if (!permittedExit) continue;
 
-      if (punchOut.getTime() < permittedExit.getTime()) {
-        pShift.isEarlyOut = true;
-        pShift.earlyOutMinutes = Math.round(
-          ((permittedExit.getTime() - punchOut.getTime()) / 60000) * 100
-        ) / 100;
-        earlyMin = Math.max(earlyMin, pShift.earlyOutMinutes);
-        continue;
-      }
-
       const preApprovedEarlyMin = Math.max(
         0,
         (shiftEndGraceDate.getTime() - permittedExit.getTime()) / 60000
@@ -159,6 +150,13 @@ async function applyEdgePermissionAdjustmentsToShiftSegment({
       const forgiven = Math.min(Math.max(earlyMin, 0), preApprovedEarlyMin);
       earlyMin = Math.max(0, earlyMin - forgiven);
       edgeHours += forgiven / 60;
+
+      if (punchOut.getTime() < permittedExit.getTime() - 60000) {
+        pShift.isEarlyOut = true;
+        pShift.earlyOutMinutes = Math.round(
+          ((permittedExit.getTime() - punchOut.getTime()) / 60000) * 100
+        ) / 100;
+      }
     }
   }
 
