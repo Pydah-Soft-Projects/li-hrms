@@ -491,6 +491,7 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
           edge,
         });
         created.push(permission);
+        shouldRefreshAttendance = true;
       } else {
         applyAutoPermissionEdgeFields(permission, attendanceDaily, edge);
         await permission.save();
