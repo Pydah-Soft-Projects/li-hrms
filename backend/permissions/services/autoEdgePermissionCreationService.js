@@ -274,15 +274,14 @@ async function resolveRequestedBy(employee) {
       { employeeRef: employee._id },
       { employeeId: String(employee.emp_no || '').toUpperCase() },
     ],
-    isActive: true,
+    isActive: { $ne: false },
   }).select('_id').lean();
   if (employeeUser?._id) return employeeUser._id;
 
   const systemUser = await User.findOne({
-    role: { $in: ['super_admin', 'sub_admin', 'hr'] },
-    isActive: true,
-  }).sort({ role: 1, createdAt: 1 }).select('_id').lean();
-  return systemUser?._id || null;
+    isActive: { $ne: false },
+  }).sort({ createdAt: 1 }).select('_id').lean();
+  return systemUser?._id || employee._id;
 }
 
 async function findExistingPermission({ employeeId, date, permissionType }) {

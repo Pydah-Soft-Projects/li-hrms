@@ -13,9 +13,20 @@ const escapeRegex = (value) => {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 };
 
+function normalizeDateStr(str) {
+  if (!str) return '';
+  const s = String(str).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{2}-\d{2}-\d{4}$/.test(s)) {
+    const [d, m, y] = s.split('-');
+    return `${y}-${m}-${d}`;
+  }
+  return s;
+}
+
 exports.generateAutoEdgePermissions = async (req, res) => {
   try {
-    const {
+    let {
       startDate,
       endDate,
       divisionId,
@@ -23,6 +34,9 @@ exports.generateAutoEdgePermissions = async (req, res) => {
       designationId,
       search,
     } = req.body || {};
+
+    startDate = normalizeDateStr(startDate);
+    endDate = normalizeDateStr(endDate);
 
     if (!startDate || !endDate) {
       return res.status(400).json({
