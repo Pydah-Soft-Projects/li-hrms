@@ -82,7 +82,22 @@ function getWorkedHalfFromShiftTimes(shifts) {
 
   const workedBeforeMid = inOffset < midOffset;
   const workedAfterMid = outOffset == null ? false : outOffset >= midOffset;
-  if (workedBeforeMid && workedAfterMid) return 'both';
+  if (workedBeforeMid && workedAfterMid) {
+    const firstHalfMinutes = Math.max(0, Math.min(outOffset, midOffset) - Math.max(inOffset, 0));
+    const secondHalfMinutes = Math.max(0, Math.min(outOffset, durationMins) - Math.max(inOffset, midOffset));
+    const firstHalfWindow = midOffset;
+    const secondHalfWindow = durationMins - midOffset;
+
+    const firstHalfSubstantial = firstHalfMinutes >= firstHalfWindow * 0.5;
+    const secondHalfSubstantial = secondHalfMinutes >= secondHalfWindow * 0.5;
+
+    if (firstHalfSubstantial && secondHalfSubstantial) {
+      return 'both';
+    }
+    if (firstHalfMinutes > secondHalfMinutes) return 'first_half';
+    if (secondHalfMinutes > firstHalfMinutes) return 'second_half';
+    return 'both';
+  }
   if (workedBeforeMid) return 'first_half';
   if (workedAfterMid) return 'second_half';
   return null;
