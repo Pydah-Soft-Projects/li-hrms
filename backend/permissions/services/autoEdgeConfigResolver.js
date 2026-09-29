@@ -49,7 +49,15 @@ async function getMergedAutoEdgeConfig(departmentId = null, divisionId = null) {
   const hasDiv = hasValidScopeId(divisionId);
   if (hasDept || hasDiv) {
     const mergedDept = await DepartmentSettings.getByDeptAndDiv(hasDept ? departmentId : null, hasDiv ? divisionId : null);
-    deptOverride = mergedDept?.permissions?.autoEdge || null;
+    const autoEdge = mergedDept?.permissions?.autoEdge;
+    if (
+      autoEdge &&
+      (autoEdge.isEnabled !== undefined ||
+        (Array.isArray(autoEdge.lateInRules?.shiftDurationRanges) && autoEdge.lateInRules.shiftDurationRanges.length > 0) ||
+        (Array.isArray(autoEdge.earlyOutRules?.shiftDurationRanges) && autoEdge.earlyOutRules.shiftDurationRanges.length > 0))
+    ) {
+      deptOverride = autoEdge;
+    }
   }
   const d = deptOverride || {};
 
