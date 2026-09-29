@@ -56,10 +56,24 @@ function isTypeEnabled(settings, permissionType) {
   return settings.applyFor === permissionType;
 }
 
-function getDetectedMinutes(shift, permissionType) {
-  return permissionType === 'late_in'
-    ? Number(shift?.lateInMinutes) || 0
-    : Number(shift?.earlyOutMinutes) || 0;
+const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
+
+function getDetectedMinutes(shift, permissionType, dateStr = null) {
+  if (permissionType === 'late_in') {
+    if (Number(shift?.lateInMinutes) > 0) return Number(shift.lateInMinutes);
+    if (shift?.inTime && shift?.shiftStartTime) {
+      const punchIn = shift.inTime instanceof Date ? shift.inTime : new Date(shift.inTime);
+      return calculateLateIn(punchIn, shift.shiftStartTime, 0, dateStr, 0) || 0;
+    }
+    return 0;
+  }
+
+  if (Number(shift?.earlyOutMinutes) > 0) return Number(shift.earlyOutMinutes);
+  if (shift?.outTime && shift?.shiftEndTime) {
+    const punchOut = shift.outTime instanceof Date ? shift.outTime : new Date(shift.outTime);
+    return calculateEarlyOut(punchOut, shift.shiftEndTime, shift.shiftStartTime, dateStr, 0) || 0;
+  }
+  return 0;
 }
 
 function getPermittedEdgeTime(shift, permissionType, allowedMinutes) {
@@ -220,7 +234,7 @@ function buildEligibleEdges(attendanceDaily, settings, employeeGender = null) {
     const ranges = ruleSet?.shiftDurationRanges || [];
 
     for (const shift of shifts) {
-      const detectedMinutes = getDetectedMinutes(shift, permissionType);
+      const detectedMinutes = getDetectedMinutes(shift, permissionType, attendanceDaily?.date);
       if (detectedMinutes <= 0) continue;
       if (permissionType === 'late_in' && !shift?.inTime) continue;
       if (permissionType === 'early_out' && !shift?.outTime) continue;
