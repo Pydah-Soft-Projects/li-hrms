@@ -245,7 +245,7 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
       date: date,
     }).populate('shiftId').populate('actualShiftId');
 
-    const effectiveRosteredShift = preScheduled?.actualShiftId || preScheduled?.shiftId;
+    const effectiveRosteredShift = preScheduled?.shiftId || preScheduled?.actualShiftId;
 
     if (preScheduled && effectiveRosteredShift) {
       rosteredShift = effectiveRosteredShift;
@@ -489,7 +489,7 @@ const getOrganizationalShiftsForContext = async ({
       }
     }
 
-    if (allCandidateShifts.size === 0 && division_id && employee.division_id) {
+    if (division_id && employee.division_id) {
       const div = employee.division_id;
       if (div.shifts && div.shifts.length > 0) {
         const filteredDivisionShifts = filterShiftsByEmployeeAttributes(
@@ -534,7 +534,7 @@ const getOrganizationalShiftsForContext = async ({
  * @param {String} date - Date string (YYYY-MM-DD) - the attendance date
  * @param {Number} toleranceHours - Maximum hours difference to consider (default 3 hours)
  */
-const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3) => {
+const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3, rosterStrictWhenPresent = true) => {
   const candidates = [];
   const toleranceMinutes = toleranceHours * 60;
   const preferredMaxDifference = 35;
@@ -575,9 +575,11 @@ const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3) => {
   }
 
   return candidates.sort((a, b) => {
-    // 1. HARD PRIORITY: Rostered Shift (Priority 1) always wins if it's a candidate
-    if (a.sourcePriority === 1 && b.sourcePriority !== 1) return -1;
-    if (a.sourcePriority !== 1 && b.sourcePriority === 1) return 1;
+    // 1. HARD PRIORITY: Rostered Shift (Priority 1) only hard-wins if rosterStrictWhenPresent is true
+    if (rosterStrictWhenPresent) {
+      if (a.sourcePriority === 1 && b.sourcePriority !== 1) return -1;
+      if (a.sourcePriority !== 1 && b.sourcePriority === 1) return 1;
+    }
 
     // 2. Standard proximity sorting for organizational/fallback shifts
     if (a.isPreferred && !b.isPreferred) return -1;
@@ -645,7 +647,7 @@ const isAmbiguousArrival = (inTime, candidateShifts, ambiguityThresholdMinutes =
 /**
  * Use out-time to disambiguate between candidate shifts
  */
-const disambiguateWithOutTime = (inTime, outTime, candidateShifts, date, toleranceMinutes = 60) => {
+const disambiguateWithOutTime = (inTime, outTime, candidateShifts, date, toleranceMinutes = 60, rosterStrictWhenPresent = true) => {
   if (!outTime || candidateShifts.length === 0) return null;
   if (candidateShifts.length === 1) return candidateShifts[0];
 
@@ -664,9 +666,9 @@ const disambiguateWithOutTime = (inTime, outTime, candidateShifts, date, toleran
     const outTimeDiffMs = Math.abs(outTime.getTime() - shiftEndDate.getTime());
     const outTimeScore = outTimeDiffMs / (1000 * 60);
 
-    // PRIORITY BOOST: If this is a rostered shift (Priority 1), reduce its score significantly.
+    // PRIORITY BOOST: If this is a rostered shift (Priority 1) and rosterStrict is enabled, reduce its score significantly.
     // This acts as a strong tie-breaker.
-    const priorityMultiplier = (candidate.sourcePriority === 1) ? 0.3 : 1.0;
+    const priorityMultiplier = (candidate.sourcePriority === 1 && rosterStrictWhenPresent) ? 0.3 : 1.0;
 
     const rawCombinedScore = (inTimeScore * 0.6) + (outTimeScore * 0.4);
     const combinedScore = rawCombinedScore * priorityMultiplier;
@@ -681,8 +683,8 @@ const disambiguateWithOutTime = (inTime, outTime, candidateShifts, date, toleran
     const second = scoredCandidates[1];
 
     // RULE 1: If the top match is a Rostered Shift (Priority 1) and the second is not,
-    // we take the roster match unless the second one is a "perfect" out-time match while the roster is way off.
-    if (top.sourcePriority === 1 && second.sourcePriority !== 1) {
+    // we take the roster match unless rosterStrict is false or the second one is much closer.
+    if (rosterStrictWhenPresent && top.sourcePriority === 1 && second.sourcePriority !== 1) {
       // Only stay confused if the second one is much closer to out-time (by 60+ mins)
       if (second.outTimeScore < top.outTimeScore - 60) return null;
       return top;
@@ -1024,7 +1026,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
     };
 
     // Step 1: Find candidate shifts by proximity (within 3 hours tolerance)
-    const candidateShifts = findCandidateShifts(inTime, shifts, date, 3);
+    const candidateShifts = findCandidateShifts(inTime, shifts, date, 3, shiftOptions.rosterStrictWhenPresent);
 
     // Step 2: If no candidates found, still try to match to nearest shift (fallback)
     if (candidateShifts.length === 0) {
@@ -1190,7 +1192,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
 
           // PRE-STEP: If exactly one candidate is Rostered (Priority 1), check if it's "reasonable"
           // If the rostered shift out-time match is within tolerance, prioritize it over stay confused.
-          const rosteredCandidate = candidateShifts.find(c => c.sourcePriority === 1);
+          const rosteredCandidate = shiftOptions.rosterStrictWhenPresent !== false ? candidateShifts.find(c => c.sourcePriority === 1) : null;
           if (rosteredCandidate) {
             const shiftEndDate = createDateWithOffset(date, rosteredCandidate.endTime);
             const shiftStartMinutes = timeToMinutes(rosteredCandidate.startTime);
@@ -1226,7 +1228,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
             }
           }
 
-          const bestMatch = disambiguateWithOutTime(inTime, outTime, candidateShifts, date);
+          const bestMatch = disambiguateWithOutTime(inTime, outTime, candidateShifts, date, 60, shiftOptions.rosterStrictWhenPresent);
 
           if (bestMatch) {
             const shift = shifts.find(s => s._id.toString() === bestMatch.shiftId.toString());
