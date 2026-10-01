@@ -13,6 +13,7 @@ import {
   Tag,
   Briefcase,
   UserCheck,
+  User,
   ArrowRight,
   Info,
   Clock3,
@@ -49,7 +50,8 @@ export interface ODDetailCardData {
   createdAt?: string | Date;
   approvedBy?: { name?: string; email?: string } | string | null;
   approvedAt?: string | Date;
-  appliedBy?: { _id?: string; employee_name?: string; first_name?: string; last_name?: string; emp_no?: string } | string | null;
+  appliedBy?: { _id?: string; employee_name?: string; first_name?: string; last_name?: string; emp_no?: string; name?: string; email?: string } | string | null;
+  assignedBy?: { _id?: string; name?: string; email?: string } | string | null;
   employeeId?: { _id?: string; employee_name?: string; first_name?: string; last_name?: string; emp_no?: string } | null;
   emp_no?: string;
   designation?: { name?: string };
@@ -682,8 +684,8 @@ export function ODDetailCard({ data, onSubmitOutClick, className = '', compact =
 
 
 
-        {/* Footer Metadata (Applied On & Approved By/On) */}
-        {(data.appliedAt || data.createdAt || data.approvedBy) && (
+        {/* Footer Metadata (Applied On, Applied By & Approved By/On) */}
+        {(data.appliedAt || data.createdAt || data.approvedBy || data.appliedBy !== undefined || data.assignedBy !== undefined) && (
           <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400 font-medium">
             {(data.appliedAt || data.createdAt) && (
               <div className="flex items-center gap-1.5">
@@ -694,6 +696,22 @@ export function ODDetailCard({ data, onSubmitOutClick, className = '', compact =
                 </span>
               </div>
             )}
+
+            <div className="flex items-center gap-1.5">
+              <User className="w-3.5 h-3.5 text-slate-400" />
+              <span>Applied By:</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                {(typeof data.assignedBy === 'object' && data.assignedBy?.name)
+                  ? data.assignedBy.name
+                  : (typeof data.appliedBy === 'object' && (data.appliedBy?.name || data.appliedBy?.employee_name))
+                  ? (data.appliedBy?.name || data.appliedBy?.employee_name)
+                  : data.appliedBy == null
+                  ? 'System'
+                  : typeof data.appliedBy === 'string'
+                  ? data.appliedBy
+                  : 'Self'}
+              </span>
+            </div>
 
             {data.approvedBy && (
               <div className="flex items-center gap-1.5">

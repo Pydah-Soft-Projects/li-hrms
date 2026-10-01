@@ -4646,6 +4646,7 @@ function LeavesPageContent() {
                       <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Dates</th>
                       <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Duration</th>
                       <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Status</th>
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Applied By</th>
                       <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -4666,14 +4667,17 @@ function LeavesPageContent() {
                           )}
                           <td className="px-6 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-700 rounded" /></td>
                           <td className="px-6 py-4"><div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded" /></td>
-                          <td className="px-6 py-4"><div className="h-6 w-16 bg-slate-200 dark:bg-slate-700 rounded" /></td>
-                          <td className="px-6 py-4"><div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-full" /></td>
-                          <td className="px-6 py-4"><div className="h-4 w-12 bg-slate-200 dark:bg-slate-700 rounded ml-auto" /></td>
+                          <td className="px-6 py-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                          <td className="px-6 py-4"><div className="h-4 w-28 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                          <td className="px-6 py-4 text-center"><div className="h-6 w-12 bg-slate-200 dark:bg-slate-700 rounded mx-auto" /></td>
+                          <td className="px-6 py-4 text-center"><div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto" /></td>
+                          <td className="px-6 py-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                          <td className="px-6 py-4 text-right"><div className="h-4 w-12 bg-slate-200 dark:bg-slate-700 rounded ml-auto" /></td>
                         </tr>
                       ))
                     ) : filteredLeaves.length === 0 ? (
                       <tr>
-                        <td colSpan={currentUser?.role !== 'employee' ? 6 : 5} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        <td colSpan={currentUser?.role !== 'employee' ? 9 : 8} className="px-6 py-10 text-center text-slate-500 text-sm">
                           No leave applications found
                         </td>
                       </tr>
@@ -4730,6 +4734,11 @@ function LeavesPageContent() {
                           </td>
                           <td className="px-6 py-3.5 text-center">
                             {renderStatusWithOrgContext(leave, leave.status?.replace('_', ' ') || '')}
+                          </td>
+                          <td className="px-6 py-3.5 whitespace-nowrap">
+                            <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                              {leave.appliedBy?.name || 'Self'}
+                            </span>
                           </td>
                           <td className="px-6 py-3.5 text-right">
                             <div className="flex items-center justify-end gap-2">
@@ -4817,6 +4826,9 @@ function LeavesPageContent() {
                           </span>
                         </div>
                       </div>
+                      <div className="mt-2.5 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                        <span>Applied by: <span className="font-semibold text-slate-700 dark:text-slate-300">{leave.appliedBy?.name || 'Self'}</span></span>
+                      </div>
                     </div>
                   ))
                 )}
@@ -4873,6 +4885,7 @@ function LeavesPageContent() {
                       <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Dates</th>
                       <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Duration</th>
                       <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Status</th>
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Applied By</th>
                       <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -4893,14 +4906,18 @@ function LeavesPageContent() {
                           )}
                           <td className="px-6 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-700 rounded" /></td>
                           <td className="px-6 py-4"><div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded" /></td>
-                          <td className="px-6 py-4"><div className="h-6 w-16 bg-slate-200 dark:bg-slate-700 rounded" /></td>
-                          <td className="px-6 py-4"><div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-full" /></td>
-                          <td className="px-6 py-4"><div className="h-4 w-12 bg-slate-200 dark:bg-slate-700 rounded ml-auto" /></td>
+                          <td className="px-6 py-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                          <td className="px-6 py-4"><div className="h-4 w-28 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                          <td className="px-6 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                          <td className="px-6 py-4 text-center"><div className="h-6 w-12 bg-slate-200 dark:bg-slate-700 rounded mx-auto" /></td>
+                          <td className="px-6 py-4 text-center"><div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto" /></td>
+                          <td className="px-6 py-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                          <td className="px-6 py-4 text-right"><div className="h-4 w-12 bg-slate-200 dark:bg-slate-700 rounded ml-auto" /></td>
                         </tr>
                       ))
                     ) : filteredODs.length === 0 ? (
                       <tr>
-                        <td colSpan={currentUser?.role !== 'employee' ? 7 : 6} className="px-6 py-10 text-center text-slate-500 text-sm italic">
+                        <td colSpan={currentUser?.role !== 'employee' ? 10 : 9} className="px-6 py-10 text-center text-slate-500 text-sm italic">
                           No OD applications found
                         </td>
                       </tr>
@@ -4960,6 +4977,11 @@ function LeavesPageContent() {
                           </td>
                           <td className="px-6 py-3.5 text-center">
                             {renderStatusWithOrgContext(od, formatOdLbl(od.status))}
+                          </td>
+                          <td className="px-6 py-3.5 whitespace-nowrap">
+                            <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                              {od.assignedBy?.name || od.appliedBy?.name || (od.appliedBy == null ? 'System' : 'Self')}
+                            </span>
                           </td>
                           <td className="px-6 py-3.5 text-right">
                             <div className="flex items-center justify-end gap-2">
@@ -5054,6 +5076,9 @@ function LeavesPageContent() {
                           </span>
                         </div>
                       </div>
+                      <div className="mt-2.5 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                        <span>Applied by: <span className="font-semibold text-slate-700 dark:text-slate-300">{od.assignedBy?.name || od.appliedBy?.name || (od.appliedBy == null ? 'System' : 'Self')}</span></span>
+                      </div>
                     </div>
                   ))
                 )}
@@ -5137,42 +5162,72 @@ function LeavesPageContent() {
                             <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Dates</th>
                             <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Days</th>
                             <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Status</th>
+                            <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Applied By</th>
                             <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                          {filteredPendingLeaves.map((leave) => (
-                            <tr key={leave._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer" onClick={() => openDetailDialog(leave, 'leave')}>
-                              <td className="px-6 py-3.5">
-                                                                <EmployeeIdentityFromRecord
-                                  record={leave as unknown as Record<string, unknown>}
-                                  lookups={{ divisions, departments, designations }}
-                                  size="md"
-                                  avatarTone="blue"
-                                />
-                              </td>
-                              <td className="px-6 py-3.5 text-center">
-                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">{leave.numberOfDays}d</span>
-                              </td>
-                              <td className="px-6 py-3.5 text-center">
-                                {renderStatusWithOrgContext(leave, formatLeaveLbl(leave.status), {
-                                  statusClassName: `inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${getStatusColor(leave.status)}`,
-                                })}
-                              </td>
-                              <td className="px-6 py-3.5 text-right">
-                                {canPerformAction(leave, 'leave') && hasManagePermission && (
-                                  <div className="flex items-center justify-end gap-1">
-                                    <button type="button" disabled={isRequestActionBusy('leave', leave._id)} onClick={(e) => { e.stopPropagation(); handleAction(leave._id, 'leave', 'approve'); }} className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-all disabled:opacity-50 disabled:pointer-events-none" title="Approve">
-                                      {isRequestActionBusy('leave', leave._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                                    </button>
-                                    <button type="button" disabled={isRequestActionBusy('leave', leave._id)} onClick={(e) => { e.stopPropagation(); handleAction(leave._id, 'leave', 'reject'); }} className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all disabled:opacity-50 disabled:pointer-events-none" title="Reject">
-                                      {isRequestActionBusy('leave', leave._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
-                                    </button>
-                                  </div>
-                                )}
+                          {filteredPendingLeaves.length === 0 ? (
+                            <tr>
+                              <td colSpan={9} className="px-6 py-10 text-center text-slate-500 text-sm">
+                                No pending leave applications found
                               </td>
                             </tr>
-                          ))}
+                          ) : (
+                            filteredPendingLeaves.map((leave) => (
+                              <tr key={leave._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer" onClick={() => openDetailDialog(leave, 'leave')}>
+                                <td className="px-6 py-3.5">
+                                  <EmployeeIdentityFromRecord
+                                    record={leave as unknown as Record<string, unknown>}
+                                    lookups={{ divisions, departments, designations }}
+                                    size="md"
+                                    avatarTone="blue"
+                                  />
+                                </td>
+                                <td className="px-6 py-3.5">
+                                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400">{getItemDivisionName(leave) || 'N/A'}</span>
+                                </td>
+                                <td className="px-6 py-3.5">
+                                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400">{getItemDepartmentName(leave) || 'N/A'}</span>
+                                </td>
+                                <td className="px-6 py-3.5">
+                                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300 capitalize">{leave.leaveType?.replace('_', ' ')}</span>
+                                </td>
+                                <td className="px-6 py-3.5 whitespace-nowrap">
+                                  <div className="text-sm text-slate-700 dark:text-slate-300">
+                                    <span className="font-medium">{formatDate(leave.fromDate)}</span>
+                                    {leave.fromDate !== leave.toDate && <span className="text-slate-400 mx-1.5">-</span>}
+                                    {leave.fromDate !== leave.toDate && <span>{formatDate(leave.toDate)}</span>}
+                                  </div>
+                                </td>
+                                <td className="px-6 py-3.5 text-center">
+                                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">{leave.numberOfDays}d</span>
+                                </td>
+                                <td className="px-6 py-3.5 text-center">
+                                  {renderStatusWithOrgContext(leave, formatLeaveLbl(leave.status), {
+                                    statusClassName: `inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${getStatusColor(leave.status)}`,
+                                  })}
+                                </td>
+                                <td className="px-6 py-3.5 whitespace-nowrap">
+                                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                    {leave.appliedBy?.name || 'Self'}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-3.5 text-right">
+                                  {canPerformAction(leave, 'leave') && hasManagePermission && (
+                                    <div className="flex items-center justify-end gap-1">
+                                      <button type="button" disabled={isRequestActionBusy('leave', leave._id)} onClick={(e) => { e.stopPropagation(); handleAction(leave._id, 'leave', 'approve'); }} className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-all disabled:opacity-50 disabled:pointer-events-none" title="Approve">
+                                        {isRequestActionBusy('leave', leave._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                      </button>
+                                      <button type="button" disabled={isRequestActionBusy('leave', leave._id)} onClick={(e) => { e.stopPropagation(); handleAction(leave._id, 'leave', 'reject'); }} className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all disabled:opacity-50 disabled:pointer-events-none" title="Reject">
+                                        {isRequestActionBusy('leave', leave._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
+                                      </button>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            ))
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -5240,6 +5295,10 @@ function LeavesPageContent() {
                                 {formatDate(leave.fromDate)}
                                 {leave.fromDate !== leave.toDate && ` - ${formatDate(leave.toDate)}`}
                               </span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">Applied By</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300">{leave.appliedBy?.name || 'Self'}</span>
                             </div>
                             {leave.purpose && (
                               <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
@@ -5310,42 +5369,72 @@ function LeavesPageContent() {
                             <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Dates</th>
                             <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Duration</th>
                             <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Status</th>
+                            <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Applied By</th>
                             <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                          {filteredPendingODs.map((od) => (
-                            <tr key={od._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer" onClick={() => openDetailDialog(od, 'od')}>
-                              <td className="px-6 py-3.5">
-                                                                <EmployeeIdentityFromRecord
-                                  record={od as unknown as Record<string, unknown>}
-                                  lookups={{ divisions, departments, designations }}
-                                  size="md"
-                                  avatarTone="violet"
-                                />
-                              </td>
-                              <td className="px-6 py-3.5 text-center">
-                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">{od.numberOfDays}d</span>
-                              </td>
-                              <td className="px-6 py-3.5 text-center">
-                                {renderStatusWithOrgContext(od, formatOdLbl(od.status), {
-                                  statusClassName: `inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${getStatusColor(od.status)}`,
-                                })}
-                              </td>
-                              <td className="px-6 py-3.5 text-right">
-                                {canPerformAction(od, 'od') && hasManagePermission && (
-                                  <div className="flex items-center justify-end gap-1">
-                                    <button type="button" disabled={isRequestActionBusy('od', od._id)} onClick={(e) => { e.stopPropagation(); handleAction(od._id, 'od', 'approve'); }} className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-all disabled:opacity-50 disabled:pointer-events-none" title="Approve">
-                                      {isRequestActionBusy('od', od._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                                    </button>
-                                    <button type="button" disabled={isRequestActionBusy('od', od._id)} onClick={(e) => { e.stopPropagation(); handleAction(od._id, 'od', 'reject'); }} className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all disabled:opacity-50 disabled:pointer-events-none" title="Reject">
-                                      {isRequestActionBusy('od', od._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
-                                    </button>
-                                  </div>
-                                )}
+                          {filteredPendingODs.length === 0 ? (
+                            <tr>
+                              <td colSpan={9} className="px-6 py-10 text-center text-slate-500 text-sm">
+                                No pending OD applications found
                               </td>
                             </tr>
-                          ))}
+                          ) : (
+                            filteredPendingODs.map((od) => (
+                              <tr key={od._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer" onClick={() => openDetailDialog(od, 'od')}>
+                                <td className="px-6 py-3.5">
+                                  <EmployeeIdentityFromRecord
+                                    record={od as unknown as Record<string, unknown>}
+                                    lookups={{ divisions, departments, designations }}
+                                    size="md"
+                                    avatarTone="violet"
+                                  />
+                                </td>
+                                <td className="px-6 py-3.5">
+                                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400">{getItemDivisionName(od) || 'N/A'}</span>
+                                </td>
+                                <td className="px-6 py-3.5">
+                                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400">{getItemDepartmentName(od) || 'N/A'}</span>
+                                </td>
+                                <td className="px-6 py-3.5">
+                                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300 capitalize">{od.odType?.replace('_', ' ')}</span>
+                                </td>
+                                <td className="px-6 py-3.5 whitespace-nowrap">
+                                  <div className="text-sm text-slate-700 dark:text-slate-300">
+                                    <span className="font-medium">{formatDate(od.fromDate)}</span>
+                                    {od.fromDate !== od.toDate && <span className="text-slate-400 mx-1.5">-</span>}
+                                    {od.fromDate !== od.toDate && <span>{formatDate(od.toDate)}</span>}
+                                  </div>
+                                </td>
+                                <td className="px-6 py-3.5 text-center">
+                                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">{od.numberOfDays}d</span>
+                                </td>
+                                <td className="px-6 py-3.5 text-center">
+                                  {renderStatusWithOrgContext(od, formatOdLbl(od.status), {
+                                    statusClassName: `inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${getStatusColor(od.status)}`,
+                                  })}
+                                </td>
+                                <td className="px-6 py-3.5 whitespace-nowrap">
+                                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                    {od.assignedBy?.name || od.appliedBy?.name || (od.appliedBy == null ? 'System' : 'Self')}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-3.5 text-right">
+                                  {canPerformAction(od, 'od') && hasManagePermission && (
+                                    <div className="flex items-center justify-end gap-1">
+                                      <button type="button" disabled={isRequestActionBusy('od', od._id)} onClick={(e) => { e.stopPropagation(); handleAction(od._id, 'od', 'approve'); }} className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-all disabled:opacity-50 disabled:pointer-events-none" title="Approve">
+                                        {isRequestActionBusy('od', od._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                      </button>
+                                      <button type="button" disabled={isRequestActionBusy('od', od._id)} onClick={(e) => { e.stopPropagation(); handleAction(od._id, 'od', 'reject'); }} className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all disabled:opacity-50 disabled:pointer-events-none" title="Reject">
+                                        {isRequestActionBusy('od', od._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
+                                      </button>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            ))
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -5411,6 +5500,10 @@ function LeavesPageContent() {
                                 {formatDate(od.fromDate)}
                                 {od.fromDate !== od.toDate && ` - ${formatDate(od.toDate)}`}
                               </span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">Applied By</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300">{od.assignedBy?.name || od.appliedBy?.name || (od.appliedBy == null ? 'System' : 'Self')}</span>
                             </div>
                             {od.purpose && (
                               <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
@@ -6435,7 +6528,9 @@ function LeavesPageContent() {
                               <h2 className="text-base sm:text-lg font-semibold tracking-wide text-white">Leave Application Details</h2>
                               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider bg-white/15 text-white border border-white/20 backdrop-blur-md">Leave</span>
                             </div>
-                            <p className="text-xs text-white/70 font-normal mt-0.5">Employee leave request record &amp; workflow status</p>
+                            <p className="text-xs text-white/70 font-normal mt-0.5">
+                              Employee leave request record &amp; workflow status · Applied by {(selectedItem as LeaveApplication).appliedBy?.name || 'Self'}
+                            </p>
                           </div>
                         </div>
                         <button type="button" onClick={() => setShowDetailDialog(false)}
@@ -6465,6 +6560,7 @@ function LeavesPageContent() {
                               {[selectedItem!.employeeId?.emp_no ?? selectedItem!.emp_no, getItemDesignationName(selectedItem)].filter(Boolean).join(' · ')}
                               {selectedItem!.department?.name && ` · ${selectedItem!.department.name}`}
                               {(selectedItem!.appliedAt || (selectedItem as any).createdAt) && ` · Applied ${new Date(selectedItem!.appliedAt || (selectedItem as any).createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+                              {` · Applied by: ${(selectedItem as any).assignedBy?.name || (selectedItem as any).appliedBy?.name || ((selectedItem as any).appliedBy == null ? 'System' : 'Self')}`}
                             </p>
                           </div>
                         </div>
@@ -6544,6 +6640,10 @@ function LeavesPageContent() {
                           <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium text-xs">
                             <Clock3 className="w-3.5 h-3.5 text-slate-400" />
                             Applied {formatDate((selectedItem! as any).createdAt || selectedItem!.appliedAt)}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-medium text-xs bg-slate-100 dark:bg-slate-700/60 px-2.5 py-1 rounded-lg">
+                            <span className="text-slate-400 uppercase text-[10px] font-bold">Applied By:</span>
+                            <span className="font-semibold">{(selectedItem as LeaveApplication).appliedBy?.name || 'Self'}</span>
                           </div>
                         </div>
                       </div>

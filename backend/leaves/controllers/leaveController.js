@@ -1545,6 +1545,7 @@ exports.getPendingApprovals = async (req, res) => {
         })
         .populate('department', 'name')
         .populate('designation', 'name')
+        .populate('appliedBy', 'name email')
         .sort({ appliedAt: -1 })
         .skip(skip)
         .limit(limitNum)
