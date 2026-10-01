@@ -10,9 +10,9 @@ router.use(protect);
 router.post('/', employeeUpdateController.createRequest);
 router.get('/my', employeeUpdateController.getMyRequests);
 
-// Superadmin routes
-router.get('/', authorize('super_admin', 'sub_admin'), employeeUpdateController.getRequests);
-router.put('/:id/approve', authorize('super_admin'), employeeUpdateController.approveRequest);
-router.put('/:id/reject', authorize('super_admin'), employeeUpdateController.rejectRequest);
+// Approver routes (Superadmin, Sub-admin, HR)
+router.get('/', authorize('super_admin', 'sub_admin', 'hr'), employeeUpdateController.getRequests);
+router.put('/:id/approve', authorize('super_admin', 'sub_admin', 'hr'), employeeUpdateController.approveRequest);
+router.put('/:id/reject', authorize('super_admin', 'sub_admin', 'hr'), employeeUpdateController.rejectRequest);
 
 module.exports = router;

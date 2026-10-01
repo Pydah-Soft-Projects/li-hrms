@@ -1,30 +1,9 @@
 import React from 'react';
-import { Edit2, Plus, ShieldCheck } from 'lucide-react';
+import { Edit2, Plus, ShieldCheck, ExternalLink } from 'lucide-react';
 import Spinner from '@/components/Spinner';
 
 interface UpdateRequestReviewModalProps {
-    request: {
-        _id: string;
-        emp_no: string;
-        status: string;
-        employeeId?: {
-            employee_name: string;
-            dynamicFields?: Record<string, unknown>;
-            [key: string]: unknown;
-        };
-        employee_id?: {
-            _id: string;
-            employee_name: string;
-            profilePhoto?: string;
-            emp_no: string;
-            dynamicFields?: Record<string, unknown>;
-        };
-        requestedChanges: Record<string, unknown>;
-        previousValues?: Record<string, unknown>;
-        createdBy?: {
-            name?: string;
-        };
-    };
+    request: any;
     rejectComments: string;
     setRejectComments: (comments: string) => void;
     processingUpdateRequest: boolean;
@@ -37,6 +16,7 @@ interface UpdateRequestReviewModalProps {
     departments?: any[];
     designations?: any[];
     employeeGroups?: any[];
+    readOnly?: boolean;
 }
 
 export default function UpdateRequestReviewModal({
@@ -53,6 +33,7 @@ export default function UpdateRequestReviewModal({
     departments = [],
     designations = [],
     employeeGroups = [],
+    readOnly = false,
 }: UpdateRequestReviewModalProps) {
     const [selectedFields, setSelectedFields] = React.useState<string[]>([]);
 
@@ -176,6 +157,40 @@ export default function UpdateRequestReviewModal({
             } catch (e) {
                 return val;
             }
+        }
+
+        // Image / Photo Check (URL, data URL, or photo/image field name)
+        const isPhotoField = ['profilephoto', 'profile_photo', 'photo', 'avatar', 'image'].includes(fieldName.toLowerCase()) ||
+            (typeof val === 'string' && (
+                /\.(jpg|jpeg|png|webp|gif|svg)(\?.*)?$/i.test(val) ||
+                /^https?:\/\/.*(s3|amazonaws|profiles|photos|images|avatar).*/i.test(val) ||
+                val.startsWith('data:image/')
+            ));
+
+        if (isPhotoField && typeof val === 'string' && (val.startsWith('http://') || val.startsWith('https://') || val.startsWith('/') || val.startsWith('data:image/'))) {
+            return (
+                <div className="flex items-center py-1" onClick={(e) => e.stopPropagation()}>
+                    <a
+                        href={val}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group/img relative block h-16 w-16 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm transition hover:scale-105 hover:border-indigo-400 hover:shadow-md dark:border-slate-700 dark:bg-slate-800"
+                        title="Click to open image in a new tab"
+                    >
+                        <img
+                            src={val}
+                            alt="Profile Photo"
+                            className="h-full w-full object-cover"
+                            onError={(e) => {
+                                (e.target as HTMLElement).style.display = 'none';
+                            }}
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition group-hover/img:opacity-100 text-white">
+                            <ExternalLink className="h-5 w-5" />
+                        </div>
+                    </a>
+                </div>
+            );
         }
 
         return String(val);
@@ -327,11 +342,11 @@ export default function UpdateRequestReviewModal({
 
                                 if (request.status === 'pending' && formattedOld === formattedNew) return null;
 
-                                return (
+                                 return (
                                     <div 
                                         key={field} 
-                                        onClick={() => request.status === 'pending' && toggleField(field)}
-                                        className={`group relative space-y-2 rounded-2xl border p-4 transition-all cursor-pointer ${
+                                        onClick={() => !readOnly && request.status === 'pending' && toggleField(field)}
+                                        className={`group relative space-y-2 rounded-2xl border p-4 transition-all ${!readOnly && request.status === 'pending' ? 'cursor-pointer' : 'cursor-default'} ${
                                             isSelected 
                                                 ? 'border-indigo-100 bg-indigo-50/30 dark:border-indigo-900/40 dark:bg-indigo-900/10 shadow-sm' 
                                                 : 'border-slate-100 bg-white dark:border-slate-800 dark:bg-transparent opacity-60 grayscale-[0.5]'
@@ -339,7 +354,7 @@ export default function UpdateRequestReviewModal({
                                     >
                                         <div className="flex items-center justify-between gap-2">
                                             <div className="flex items-center gap-2">
-                                                {request.status === 'pending' && (
+                                                {!readOnly && request.status === 'pending' && (
                                                     <div className={`flex h-5 w-5 items-center justify-center rounded-md border transition-all ${
                                                         isSelected 
                                                             ? 'border-indigo-500 bg-indigo-500 text-white' 
@@ -349,10 +364,10 @@ export default function UpdateRequestReviewModal({
                                                     </div>
                                                 )}
                                                 <span className={`text-[10px] font-black uppercase tracking-widest ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
-                                                    {getFieldLabel(field, formGroups)}
+                                                    {field.toLowerCase() === 'profilephoto' || field.toLowerCase() === 'profile_photo' ? 'Profile Photo' : getFieldLabel(field, formGroups)}
                                                 </span>
                                             </div>
-                                            {request.status === 'pending' && isSelected && <span className="text-[10px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">Selected for update</span>}
+                                            {!readOnly && request.status === 'pending' && isSelected && <span className="text-[10px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">Selected for update</span>}
                                         </div>
                                         <div className="grid grid-cols-2 gap-8">
                                             <div className={`text-sm ${typeof formattedOld === 'string' ? 'text-slate-500 line-through decoration-red-300/50' : ''}`}>
@@ -367,7 +382,7 @@ export default function UpdateRequestReviewModal({
                             })}
                     </div>
 
-                    {request.status === 'pending' && (
+                    {!readOnly && request.status === 'pending' && (
                         <div className="mt-8 border-t border-slate-100 pt-6 dark:border-slate-800">
                             <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
                                 Rejection Comments (Optional)
@@ -391,7 +406,7 @@ export default function UpdateRequestReviewModal({
                     >
                         Close
                     </button>
-                    {request.status === 'pending' && (
+                    {!readOnly && request.status === 'pending' && (
                         <>
                             <button
                                 onClick={() => onReject(request._id)}

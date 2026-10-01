@@ -40,10 +40,12 @@ import {
   Clock as LucideClock,
   ShieldCheck,
   CheckCircle,
-  Download
+  Download,
+  AlertTriangle
 } from 'lucide-react';
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
+import UpdateRequestReviewModal from '@/components/employee/UpdateRequestReviewModal';
 import WeekdayShiftScheduleDisplay from '@/components/WeekdayShiftScheduleDisplay';
 import { promoteWeekdayShiftScheduleOnRecord, shouldShowWeekdayShiftSection } from '@/lib/weekdayShiftSchedule';
 import { resolveEmployeeField } from '@/lib/resolveEmployeeField';
@@ -381,8 +383,12 @@ export default function EmployeesPage() {
       approvedFields: string[];
       rejectedFields: string[];
       comments?: string;
+      requestObject?: UpdateRequest;
     }>;
   } | null>(null);
+  const [selectedUpdateRequest, setSelectedUpdateRequest] = useState<UpdateRequest | null>(null);
+  const [updateRequestRejectComments, setUpdateRequestRejectComments] = useState('');
+  const [processingUpdateRequest, setProcessingUpdateRequest] = useState(false);
   const [showBankUpdateDialog, setShowBankUpdateDialog] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [selectedEmployeeForExport, setSelectedEmployeeForExport] = useState<Employee | null>(null);
@@ -478,6 +484,18 @@ export default function EmployeesPage() {
     // Regular users can only update their own profile without request
     return String(user.id) !== String(editingEmployee._id);
   }, [editingEmployee]);
+
+  const canManageUpdateRequests = useMemo(() => {
+    const user = auth.getUser() || currentUser;
+    if (!user) return false;
+    if (['super_admin', 'sub_admin', 'hr'].includes(user.role)) return true;
+    return user.featureControl?.includes('EMPLOYEES:manage') || user.featureControl?.includes('EMPLOYEES:verify');
+  }, [currentUser]);
+
+  const pendingUpdateForViewing = useMemo(() => {
+    if (!viewingEmployee) return null;
+    return updateRequests.find(r => r.emp_no === viewingEmployee.emp_no && r.status === 'pending') || null;
+  }, [viewingEmployee, updateRequests]);
 
   const { secondSalaryEnabled } = useSecondSalaryFeatureEnabled();
   const SENSITIVE_FIELDS_BASE = [
@@ -1499,14 +1517,75 @@ export default function EmployeesPage() {
   const loadUpdateRequests = async () => {
     try {
       setLoadingUpdateRequests(true);
-      const response = await api.getMyEmployeeUpdateRequests();
+      const user = auth.getUser();
+      const hasApproverRole = user && (['super_admin', 'sub_admin', 'hr'].includes(user.role) || user.featureControl?.includes('EMPLOYEES:manage') || user.featureControl?.includes('EMPLOYEES:verify'));
+      const response = hasApproverRole
+        ? await api.getEmployeeUpdateRequests()
+        : await api.getMyEmployeeUpdateRequests();
       if (response.success) {
-        setUpdateRequests((response.data || []) as UpdateRequest[]);
+        const rows = (response.data || []) as UpdateRequest[];
+        const sorted = [...rows].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setUpdateRequests(sorted);
       }
     } catch (err) {
       console.error('Error loading profile requests:', err);
     } finally {
       setLoadingUpdateRequests(false);
+    }
+  };
+
+  const handleApproveUpdateRequest = async (id: string, selectedFields?: string[]) => {
+    const result = await alertConfirm(
+      'Approve Changes?',
+      selectedFields && selectedFields.length > 0 
+        ? `Are you sure you want to approve these ${selectedFields.length} selected changes?`
+        : 'Are you sure you want to approve these changes? The employee profile will be updated immediately.'
+    );
+    if (!result.isConfirmed) return;
+
+    try {
+      setProcessingUpdateRequest(true);
+      const res = await api.approveEmployeeUpdateRequest(id, selectedFields);
+      if (res.success) {
+        await alertSuccess('Approved!', 'Request approved successfully');
+        setSelectedUpdateRequest(null);
+        setShowViewDialog(false);
+        setViewingEmployee(null);
+        loadUpdateRequests();
+        loadEmployees(currentPage);
+      } else {
+        await alertError('Failed', res.message || 'Failed to approve request');
+      }
+    } catch (err) {
+      await alertError('Error', 'An error occurred');
+    } finally {
+      setProcessingUpdateRequest(false);
+    }
+  };
+
+  const handleRejectUpdateRequest = async (id: string) => {
+    if (!updateRequestRejectComments.trim()) {
+      await alertError('Required', 'Please provide a reason for rejection');
+      return;
+    }
+
+    try {
+      setProcessingUpdateRequest(true);
+      const res = await api.rejectEmployeeUpdateRequest(id, updateRequestRejectComments);
+      if (res.success) {
+        await alertSuccess('Rejected', 'Request rejected');
+        setSelectedUpdateRequest(null);
+        setShowViewDialog(false);
+        setViewingEmployee(null);
+        setUpdateRequestRejectComments('');
+        loadUpdateRequests();
+      } else {
+        await alertError('Failed', res.message || 'Failed to reject request');
+      }
+    } catch (err) {
+      await alertError('Error', 'An error occurred');
+    } finally {
+      setProcessingUpdateRequest(false);
     }
   };
 
@@ -2552,6 +2631,7 @@ export default function EmployeesPage() {
       approvedFields: string[];
       rejectedFields: string[];
       comments?: string;
+      requestObject?: UpdateRequest;
     }>();
 
     const sorted = [...myProfileRequests].sort((a, b) => {
@@ -2578,12 +2658,17 @@ export default function EmployeesPage() {
           approvedFields: req.status === 'approved' ? fields : [],
           rejectedFields: req.status === 'rejected' ? fields : [],
           comments: req.comments,
+          requestObject: req,
         });
       } else {
-        if (req.status === 'pending') existing.pendingFields.push(...fields);
+        if (req.status === 'pending') {
+          existing.pendingFields.push(...fields);
+          existing.requestObject = req;
+        }
         if (req.status === 'approved') existing.approvedFields.push(...fields);
         if (req.status === 'rejected') existing.rejectedFields.push(...fields);
         if (!existing.comments && req.comments) existing.comments = req.comments;
+        if (!existing.requestObject) existing.requestObject = req;
       }
     });
 
@@ -2626,6 +2711,7 @@ export default function EmployeesPage() {
         approvedFields: string[];
         rejectedFields: string[];
         comments?: string;
+        requestObject?: UpdateRequest;
       }>;
       requestedFields: Set<string>;
       approvedFields: Set<string>;
@@ -2655,6 +2741,7 @@ export default function EmployeesPage() {
         approvedFields: item.approvedFields,
         rejectedFields: item.rejectedFields,
         comments: item.comments,
+        requestObject: item.requestObject,
       });
       item.pendingFields.forEach((f) => row.requestedFields.add(f));
       item.approvedFields.forEach((f) => {
@@ -4684,20 +4771,29 @@ export default function EmployeesPage() {
                         <td className="px-4 py-3 text-center">
                           <button
                             onClick={() => {
-                              setSelectedProfileHistoryEmployee({
-                                employeeName: row.employeeName,
-                                empNo: row.empNo,
-                                division: row.division,
-                                department: row.department,
-                                designation: row.designation,
-                                requests: row.requests,
-                              });
-                              setShowProfileHistoryDialog(true);
+                              const pendingReq = row.requests.find(r => r.pendingFields.length > 0)?.requestObject;
+                              const fallbackReq = row.requests[0]?.requestObject;
+                              const target = pendingReq || fallbackReq;
+                              if (target && canManageUpdateRequests) {
+                                setSelectedUpdateRequest(target);
+                                setUpdateRequestRejectComments('');
+                              } else {
+                                setSelectedProfileHistoryEmployee({
+                                  employeeName: row.employeeName,
+                                  empNo: row.empNo,
+                                  division: row.division,
+                                  department: row.department,
+                                  designation: row.designation,
+                                  requests: row.requests,
+                                });
+                                setShowProfileHistoryDialog(true);
+                              }
                             }}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-base bg-bg-base/50 text-indigo-500 hover:bg-indigo-500/10 transition-colors"
-                            title="View request history"
+                            className="inline-flex h-8 items-center gap-1.5 px-3 rounded-lg border border-border-base bg-bg-base/50 text-indigo-500 hover:bg-indigo-500/10 transition-colors text-xs font-bold"
+                            title={canManageUpdateRequests ? "Review request changes" : "View request history"}
                           >
                             <Eye className="h-4 w-4" />
+                            <span>{canManageUpdateRequests ? "Review" : "View"}</span>
                           </button>
                         </td>
                       </tr>
@@ -4734,9 +4830,24 @@ export default function EmployeesPage() {
             <div className="space-y-4">
               {selectedProfileHistoryEmployee.requests.map((req, idx) => (
                 <div key={req.key} className="rounded-2xl border border-border-base bg-bg-surface/40 p-4 space-y-3">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-text-secondary">
-                    Request #{idx + 1} • {new Date(req.requestedAt).toLocaleDateString()}
-                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-text-secondary">
+                      Request #{idx + 1} • {new Date(req.requestedAt).toLocaleDateString()}
+                    </p>
+                    {req.requestObject && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedUpdateRequest(req.requestObject!);
+                          setUpdateRequestRejectComments('');
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-600 hover:bg-indigo-100 transition-colors dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        {canManageUpdateRequests && req.pendingFields.length > 0 ? 'Review & Approve' : 'View Comparison'}
+                      </button>
+                    )}
+                  </div>
 
                   {req.pendingFields.length > 0 && (
                     <div>
@@ -6441,6 +6552,32 @@ export default function EmployeesPage() {
               </div>
 
               <div className="space-y-6">
+                {/* Pending Update Request Banner */}
+                {pendingUpdateForViewing && canManageUpdateRequests && (
+                  <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4 dark:border-indigo-900/40 dark:bg-indigo-950/20">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400">
+                        <AlertTriangle className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Action Required</h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">This employee has pending profile update requests.</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedUpdateRequest(pendingUpdateForViewing);
+                        setUpdateRequestRejectComments('');
+                      }}
+                      className="flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-xs font-bold text-indigo-600 shadow-sm transition hover:bg-slate-50 dark:bg-slate-800 dark:text-indigo-400 dark:hover:bg-slate-700"
+                    >
+                      <LucideClock className="h-4 w-4" />
+                      Review Profile Changes
+                    </button>
+                  </div>
+                )}
+
                 {/* Status Badge */}
                 <div className="flex items-center gap-2">
                   <span className={viewingEmployee.is_active !== false
@@ -7256,6 +7393,26 @@ export default function EmployeesPage() {
         employeeName={selectedEmployeeForExport?.employee_name}
         filters={employeeExportFilters}
       />
+
+      {/* Update Request Review Comparison Modal */}
+      {selectedUpdateRequest && (
+        <UpdateRequestReviewModal
+          request={selectedUpdateRequest}
+          rejectComments={updateRequestRejectComments}
+          setRejectComments={setUpdateRequestRejectComments}
+          processingUpdateRequest={processingUpdateRequest}
+          formGroups={formSettings}
+          getFieldLabel={getFieldLabel}
+          onApprove={handleApproveUpdateRequest}
+          onReject={handleRejectUpdateRequest}
+          onClose={() => setSelectedUpdateRequest(null)}
+          divisions={divisions}
+          departments={departments}
+          designations={designations as any}
+          employeeGroups={employeeGroups}
+          readOnly={!canManageUpdateRequests}
+        />
+      )}
       </div>
     </div>
   );
