@@ -196,6 +196,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   }, [isOpen, refreshLedgerTheme, updatePosition, options.length]);
 
   const toggleOption = (id: string) => {
+    if (!onChange) return;
     if (single) {
       onChange?.([String(id)]);
       setIsOpen(false);
@@ -209,6 +210,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   };
 
   const toggleAll = () => {
+    if (!onChange) return;
     if (selectedIds.length === options.length) {
       onChange?.([]);
     } else {

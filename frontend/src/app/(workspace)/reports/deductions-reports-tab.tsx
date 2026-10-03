@@ -10,6 +10,7 @@ import {
   Calendar,
   Loader2,
   FileText,
+  FileSpreadsheet,
   RefreshCw,
   ChevronLeft,
   ChevronRight,
@@ -183,7 +184,7 @@ export default function DeductionsReportsTab() {
 
     setLoading(true);
     try {
-      const res = await api.getPaysheetData({
+      let res = await api.getPaysheetData({
         month: selectedMonth,
         departmentId: selectedDepartment || undefined,
         divisionId: selectedDivision || undefined,
@@ -194,6 +195,23 @@ export default function DeductionsReportsTab() {
         source: 'existing',
         secondSalary: secondSalaryEnabled && paysheetKind === 'second_salary',
       });
+
+      if (!res?.success || !res?.data?.rows?.length) {
+        // Fallback to dynamic calculation if existing records are missing for this month
+        const calcRes = await api.getPaysheetData({
+          month: selectedMonth,
+          departmentId: selectedDepartment || undefined,
+          divisionId: selectedDivision || undefined,
+          designationId: selectedDesignation || undefined,
+          employee_group_id: selectedEmployeeGroup || undefined,
+          status: employmentStatus || undefined,
+          search: debouncedSearch || undefined,
+          secondSalary: secondSalaryEnabled && paysheetKind === 'second_salary',
+        });
+        if (calcRes?.success && calcRes?.data?.rows?.length) {
+          res = calcRes;
+        }
+      }
 
       if (res?.success && res?.data) {
         const nextHeaders = res.data.headers || [];
@@ -276,7 +294,7 @@ export default function DeductionsReportsTab() {
     setDeductionsExportModalOpen(true);
   };
 
-  const confirmExportDeductionsPdf = async () => {
+  const confirmExportDeductions = async (exportType: 'pdf' | 'excel' = 'pdf') => {
     if (!selectedMonth || !profile) {
       toast.error('Please select a month and ensure company profile is loaded');
       return;
@@ -305,11 +323,11 @@ export default function DeductionsReportsTab() {
         employee_group_id: selectedEmployeeGroup || undefined,
         status: employmentStatus || undefined,
         search: debouncedSearch || undefined,
-        source: 'existing' as const,
       };
 
       const { exported } = await exportDeductionsReportBundle(selectedMonth, profile, {
         format: deductionsExportFormat,
+        exportType,
         secondSalaryEnabled,
         filters: {
           department: departmentName,
@@ -318,10 +336,17 @@ export default function DeductionsReportsTab() {
           group: groupName,
         },
         fetchPaysheet: async (secondSalary) => {
-          const res = await api.getPaysheetData({
+          let res = await api.getPaysheetData({
             ...paysheetQuery,
+            source: 'existing',
             secondSalary,
           });
+          if (!res?.success || !res?.data?.rows?.length) {
+            res = await api.getPaysheetData({
+              ...paysheetQuery,
+              secondSalary,
+            });
+          }
           if (!res?.success || !res?.data) {
             return { headers: [], rows: [] };
           }
@@ -339,10 +364,11 @@ export default function DeductionsReportsTab() {
         return;
       }
 
+      const formatLabel = exportType === 'excel' ? 'Excel' : 'PDF';
       toast.success(
         exported.length === 2
-          ? 'Downloaded Regular and 2nd Salary deductions reports'
-          : `Downloaded ${exported[0]} deductions report`
+          ? `Downloaded Regular and 2nd Salary deductions ${formatLabel} reports`
+          : `Downloaded ${exported[0]} deductions ${formatLabel} report`
       );
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Failed to export deductions report';
@@ -557,17 +583,31 @@ export default function DeductionsReportsTab() {
             </button>
             <button
               type="button"
+              onClick={() => void confirmExportDeductions('excel')}
+              disabled={!selectedMonth || !hasData || exportingDeductions}
+              className="inline-flex items-center justify-center gap-2 h-9 px-3 rounded-lg bg-emerald-600 text-white text-xs font-semibold shadow-sm hover:opacity-90 disabled:opacity-50"
+              title="Export Deductions Report Excel"
+            >
+              {exportingDeductions ? (
+                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              ) : (
+                <FileSpreadsheet className="h-4 w-4 shrink-0" />
+              )}
+              Export Excel
+            </button>
+            <button
+              type="button"
               onClick={openDeductionsExportModal}
               disabled={!selectedMonth || !hasData || exportingDeductions}
               className="inline-flex items-center justify-center gap-2 h-9 px-3 rounded-lg bg-rose-600 text-white text-xs font-semibold shadow-sm hover:opacity-90 disabled:opacity-50"
-              title="Export Deductions Report PDF"
+              title="Export Deductions Report Options"
             >
               {exportingDeductions ? (
                 <Loader2 className="h-4 w-4 animate-spin shrink-0" />
               ) : (
                 <FileText className="h-4 w-4 shrink-0" />
               )}
-              {exportingDeductions ? 'Exporting…' : 'Export PDF'}
+              Export PDF
             </button>
           </div>
         </div>
@@ -844,7 +884,7 @@ export default function DeductionsReportsTab() {
               <button
                 type="button"
                 disabled={exportingDeductions}
-                onClick={() => void confirmExportDeductionsPdf()}
+                onClick={() => void confirmExportDeductions('pdf')}
                 className="inline-flex items-center gap-2 rounded-lg bg-rose-600 text-white px-4 py-2 text-xs font-semibold hover:opacity-90 disabled:opacity-50"
               >
                 {exportingDeductions ? (
