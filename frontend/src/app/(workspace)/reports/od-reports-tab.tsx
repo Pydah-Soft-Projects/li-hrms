@@ -40,11 +40,13 @@ export default function ODReportsTab() {
     const [employees, setEmployees] = useState<Employee[]>([]);
     
     const [designations, setDesignations] = useState<Designation[]>([]);
+    const [employeeGroups, setEmployeeGroups] = useState<{ _id: string; name: string }[]>([]);
     
     // Selection states
     const [divisionIds, setDivisionIds] = useState<string[]>([]);
     const [departmentIds, setDepartmentIds] = useState<string[]>([]);
     const [designationIds, setDesignationIds] = useState<string[]>([]);
+    const [groupIds, setGroupIds] = useState<string[]>([]);
     const [employeeIds, setEmployeeIds] = useState<string[]>([]);
     
     // Date/Mode states
@@ -81,14 +83,16 @@ export default function ODReportsTab() {
     const loadInitialFilters = async () => {
         setFetchingFilters(true);
         try {
-            const [divRes, desRes, settingRes, odSettingsRes] = await Promise.all([
+            const [divRes, desRes, groupRes, settingRes, odSettingsRes] = await Promise.all([
                 api.getDivisions(true),
                 api.getAllDesignations(),
+                api.getEmployeeGroups(true),
                 api.getSetting('payroll_cycle_start_day'),
                 api.getLeaveSettings('od'),
             ]);
             if (divRes.success) setDivisions(divRes.data || []);
             if (desRes.success) setDesignations(desRes.data || []);
+            if (groupRes?.success) setEmployeeGroups(groupRes.data || []);
             if (settingRes?.success && settingRes.data?.value) {
                 setPayrollStartDay(parseInt(settingRes.data.value));
             }
@@ -188,6 +192,7 @@ export default function ODReportsTab() {
         division: divisionIds,
         department: departmentIds,
         designation: designationIds,
+        group: groupIds,
         employeeId: employeeIds,
         status: statusFilter || undefined,
         leaveType: odTypeFilter || undefined,
@@ -207,6 +212,7 @@ export default function ODReportsTab() {
                 division: divisionIds.join(','),
                 department: departmentIds.join(','),
                 designation: designationIds.join(','),
+                ...(groupIds.length ? { group: groupIds.join(',') } : {}),
                 employeeId: employeeIds.join(',')
             }).toString();
 
@@ -231,6 +237,7 @@ export default function ODReportsTab() {
                 division: divisionIds.join(','),
                 department: departmentIds.join(','),
                 designation: designationIds.join(','),
+                ...(groupIds.length ? { group: groupIds.join(',') } : {}),
                 employeeId: employeeIds.join(',')
             }).toString();
 
@@ -249,12 +256,12 @@ export default function ODReportsTab() {
             fetchStats();
         }, 500);
         return () => clearTimeout(timer);
-    }, [divisionIds, departmentIds, designationIds, employeeIds, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery, statusFilter, odTypeFilter, page, payrollStartDay]);
+    }, [divisionIds, departmentIds, designationIds, groupIds, employeeIds, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery, statusFilter, odTypeFilter, page, payrollStartDay]);
 
     // Reset pagination on filter change
     useEffect(() => {
         setPage(1);
-    }, [divisionIds, departmentIds, designationIds, employeeIds, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery, statusFilter, odTypeFilter]);
+    }, [divisionIds, departmentIds, designationIds, groupIds, employeeIds, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery, statusFilter, odTypeFilter]);
 
     const handleExport = async () => {
         const toastId = toast.loading('Generating PDF report...');
@@ -365,6 +372,13 @@ export default function ODReportsTab() {
                             options={designations.map(d => ({ id: d._id, name: d.name }))}
                             selectedIds={designationIds}
                             onChange={setDesignationIds}
+                            loading={fetchingFilters}
+                        />
+                        <MultiSelect
+                            label="Group"
+                            options={employeeGroups.map(g => ({ id: g._id, name: g.name }))}
+                            selectedIds={groupIds}
+                            onChange={setGroupIds}
                             loading={fetchingFilters}
                         />
                         <MultiSelect

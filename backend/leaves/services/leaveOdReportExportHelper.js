@@ -19,6 +19,9 @@ const FIXED_HEADERS = [
 
 const FIXED_COL_WIDTHS = [26, 48, 90, 62, 62, 44, 78, 28, 46];
 
+// OD-specific column widths matching Image 2
+const OD_FIXED_COL_WIDTHS = [45, 90, 60, 55, 55, 50, 45, 70, 35, 35, 50];
+
 function toDisplayCase(value) {
   const s = String(value || '').trim();
   if (!s) return '';
@@ -40,11 +43,16 @@ function formatStageCell(step) {
   const statusDisplay = toDisplayCase(status) || 'Pending';
   if (!status || status === 'pending') return statusDisplay;
   const userName = step.actionByName || step.actionByRole || '-';
-  const dateTime = step.updatedAt ? dayjs(step.updatedAt).format('DD/MM/YYYY HH:mm') : '';
+  const dateTime = step.updatedAt ? dayjs(step.updatedAt).format('DD/MM/YYYY HH:mm') : (step.actionDate ? dayjs(step.actionDate).format('DD/MM/YYYY HH:mm') : '');
   return [statusDisplay, userName, dateTime].filter(Boolean).join('\n');
 }
 
-function getCellAlign(colIndex, stageCount) {
+function getCellAlign(colIndex, stageCount, isOd = false) {
+  if (isOd) {
+    if (colIndex === 1) return 'left'; // Name of Employee
+    if (colIndex >= 2 && colIndex <= 5) return 'left'; // Designation, Division, Department, Group
+    return 'center';
+  }
   const fixedCount = FIXED_HEADERS.length;
   const statusCol = fixedCount + stageCount;
   if (colIndex <= 2) return 'left';
@@ -82,25 +90,40 @@ async function resolveExportStageMeta(items, settingsType) {
 
   const stageLabels = [];
   for (let i = 0; i < stageCount; i++) {
-    let label = settingsSteps[i]?.stepName || settingsSteps[i]?.approverRole || `Stage ${i + 1}`;
+    let label = `Stage${i + 1}`;
+    if (settingsType !== 'od') {
+      label = settingsSteps[i]?.stepName || settingsSteps[i]?.approverRole || `Stage ${i + 1}`;
+    }
     for (const item of items || []) {
       const step = item.workflow?.approvalChain?.[i];
       if (step?.label && String(step.label).trim()) {
         label = String(step.label).trim();
         break;
       }
-      if (step?.role && String(step.role).trim()) {
+      if (step?.role && String(step.role).trim() && settingsType !== 'od') {
         label = toDisplayCase(step.role);
         break;
       }
     }
-    stageLabels.push(String(label).trim() || `Stage ${i + 1}`);
+    stageLabels.push(String(label).trim() || `Stage${i + 1}`);
   }
 
   return { stageCount, stageLabels };
 }
 
-function buildStageColumnWidths(stageCount, pageWidth = 782) {
+function buildStageColumnWidths(stageCount, pageWidth = 782, isOd = false) {
+  if (isOd) {
+    const fixedTotal = OD_FIXED_COL_WIDTHS.reduce((a, b) => a + b, 0);
+    const remaining = pageWidth - fixedTotal;
+    const stageWidth = Math.max(48, Math.floor(remaining / Math.max(stageCount, 1)));
+    let colWidths = [...OD_FIXED_COL_WIDTHS, ...Array(stageCount).fill(stageWidth)];
+    const total = colWidths.reduce((a, b) => a + b, 0);
+    if (total > pageWidth) {
+      const factor = pageWidth / total;
+      colWidths = colWidths.map((w) => Math.max(22, Math.floor(w * factor)));
+    }
+    return colWidths;
+  }
   const fixedTotal = FIXED_COL_WIDTHS.reduce((a, b) => a + b, 0);
   const statusWidth = 46;
   const remaining = pageWidth - fixedTotal - statusWidth;
@@ -114,7 +137,40 @@ function buildStageColumnWidths(stageCount, pageWidth = 782) {
   return colWidths;
 }
 
-function buildStageHeaderConfig(stageCount, stageLabels) {
+function buildStageHeaderConfig(stageCount, stageLabels, isOd = false) {
+  if (isOd) {
+    const mainHeaders = [
+      { label: 'EC No.', colSpan: 1, bgColor: '#2980b9', textColor: '#ffffff' },
+      { label: 'Name of the Employee', colSpan: 1, bgColor: '#2980b9', textColor: '#ffffff' },
+      { label: 'Designation', colSpan: 1, bgColor: '#2980b9', textColor: '#ffffff' },
+      { label: 'Division', colSpan: 1, bgColor: '#2980b9', textColor: '#ffffff' },
+      { label: 'Department', colSpan: 1, bgColor: '#2980b9', textColor: '#ffffff' },
+      { label: 'Group', colSpan: 1, bgColor: '#2980b9', textColor: '#ffffff' },
+      { label: 'OD Type', colSpan: 1, bgColor: '#2980b9', textColor: '#ffffff' },
+      { label: 'First Half/Second Half/Time OD', colSpan: 1, bgColor: '#2980b9', textColor: '#ffffff' },
+      { label: 'Time OD', colSpan: 2, bgColor: '#1e3a5f', textColor: '#ffffff' },
+      { label: 'Applied Date', colSpan: 1, bgColor: '#2980b9', textColor: '#ffffff' },
+      { label: 'approved date', colSpan: stageCount, bgColor: '#1e3a5f', textColor: '#ffffff' },
+    ];
+
+    const subHeaders = [
+      { label: '', colSpan: 1, bgColor: '#dbeafe', textColor: '#1e3a5f' },
+      { label: '', colSpan: 1, bgColor: '#dbeafe', textColor: '#1e3a5f' },
+      { label: '', colSpan: 1, bgColor: '#dbeafe', textColor: '#1e3a5f' },
+      { label: '', colSpan: 1, bgColor: '#dbeafe', textColor: '#1e3a5f' },
+      { label: '', colSpan: 1, bgColor: '#dbeafe', textColor: '#1e3a5f' },
+      { label: '', colSpan: 1, bgColor: '#dbeafe', textColor: '#1e3a5f' },
+      { label: '', colSpan: 1, bgColor: '#dbeafe', textColor: '#1e3a5f' },
+      { label: '', colSpan: 1, bgColor: '#dbeafe', textColor: '#1e3a5f' },
+      { label: 'From', colSpan: 1, bgColor: '#e0e7ff', textColor: '#312e81' },
+      { label: 'To', colSpan: 1, bgColor: '#e0e7ff', textColor: '#312e81' },
+      { label: '', colSpan: 1, bgColor: '#dbeafe', textColor: '#1e3a5f' },
+      ...stageLabels.map((label) => ({ label, colSpan: 1, bgColor: '#e0e7ff', textColor: '#312e81' })),
+    ];
+
+    return { mainHeaders, subHeaders };
+  }
+
   const mainHeaders = [
     ...FIXED_HEADERS.map((label) => ({ label, colSpan: 1, bgColor: '#2980b9', textColor: '#ffffff' })),
     { label: 'Stages', colSpan: stageCount, bgColor: '#1e3a5f', textColor: '#ffffff' },
@@ -130,6 +186,18 @@ function buildStageHeaderConfig(stageCount, stageLabels) {
   return { mainHeaders, subHeaders };
 }
 
+function getOdSlotType(item) {
+  if (item.odType_extended === 'hours' || item.odStartTime || item.odEndTime) {
+    return 'Time OD';
+  }
+  if (item.isHalfDay) {
+    if (item.halfDayType === 'first_half') return 'First Half';
+    if (item.halfDayType === 'second_half') return 'Second Half';
+    return 'Half Day';
+  }
+  return 'Full Day';
+}
+
 function buildApplicationDetailRow(item, options) {
   const {
     isOd,
@@ -138,6 +206,29 @@ function buildApplicationDetailRow(item, options) {
     formatDate,
     getCleanEmpName,
   } = options;
+
+  if (isOd) {
+    const emp = item.employeeId;
+    const row = [
+      emp?.emp_no || item.emp_no || '-',
+      getCleanEmpName(emp),
+      emp?.designation?.name || emp?.designation_id?.name || '-',
+      emp?.division?.name || emp?.division_id?.name || '-',
+      emp?.department?.name || emp?.department_id?.name || '-',
+      emp?.employee_group_id?.name || emp?.employee_group?.name || '-',
+      String(item.odType || '').replace(/_/g, ' '),
+      getOdSlotType(item),
+      item.odStartTime || '-',
+      item.odEndTime || '-',
+      formatAppliedDate(item.createdAt),
+    ];
+
+    const chain = item.workflow?.approvalChain || [];
+    for (let i = 0; i < stageCount; i++) {
+      row.push(formatStageCell(chain[i]));
+    }
+    return row;
+  }
 
   const row = [
     rowIndex + 1,
@@ -168,7 +259,8 @@ function drawMultiHeaderPdfTable(doc, headerConfig, rows, startX, startY, colWid
     cellPaddingX = 3,
     cellPaddingY = 3,
     lineBreak = true,
-    stageCount = Math.max(1, colWidths.length - FIXED_HEADERS.length - 1),
+    isOd = false,
+    stageCount = Math.max(1, colWidths.length - (isOd ? OD_FIXED_COL_WIDTHS.length : FIXED_HEADERS.length + 1)),
   } = options;
 
   let y = startY;
@@ -203,11 +295,13 @@ function drawMultiHeaderPdfTable(doc, headerConfig, rows, startX, startY, colWid
         doc.fillColor(headerObj.bgColor || '#dbeafe').rect(x, y, headerWidth, 16).fill();
         doc.strokeColor(borderColor).lineWidth(0.5).rect(x, y, headerWidth, 16).stroke();
         doc.fillColor(headerObj.textColor || '#1e3a5f').font('Helvetica-Bold').fontSize(fontSize - 0.5);
-        doc.text(String(headerObj.label), x + cellPaddingX, y + 3, {
-          width: Math.max(1, headerWidth - cellPaddingX * 2),
-          align: 'center',
-          lineBreak: false,
-        });
+        if (headerObj.label) {
+          doc.text(String(headerObj.label), x + cellPaddingX, y + 3, {
+            width: Math.max(1, headerWidth - cellPaddingX * 2),
+            align: 'center',
+            lineBreak: false,
+          });
+        }
         x += headerWidth;
       });
       y += 16;
@@ -224,7 +318,7 @@ function drawMultiHeaderPdfTable(doc, headerConfig, rows, startX, startY, colWid
       row.forEach((cell, index) => {
         const h = doc.heightOfString(String(cell ?? ''), {
           width: Math.max(1, colWidths[index] - cellPaddingX * 2),
-          align: getCellAlign(index, stageCount),
+          align: getCellAlign(index, stageCount, isOd),
         });
         rowHeight = Math.max(rowHeight, h + cellPaddingY * 2);
       });
@@ -246,7 +340,7 @@ function drawMultiHeaderPdfTable(doc, headerConfig, rows, startX, startY, colWid
       doc.fillColor('#334155').font('Helvetica').fontSize(fontSize);
       doc.text(String(cell ?? ''), x + cellPaddingX, y + cellPaddingY, {
         width: Math.max(1, colWidth - cellPaddingX * 2),
-        align: getCellAlign(index, stageCount),
+        align: getCellAlign(index, stageCount, isOd),
         lineBreak,
       });
       x += colWidth;
@@ -258,7 +352,61 @@ function drawMultiHeaderPdfTable(doc, headerConfig, rows, startX, startY, colWid
   return y;
 }
 
-function buildExcelSheetAoA(title, periodLine, dataRows, stageCount, stageLabels) {
+function buildExcelSheetAoA(title, periodLine, dataRows, stageCount, stageLabels, isOd = false, orgName = '') {
+  const titleRows = [];
+  if (orgName) titleRows.push([orgName]);
+  if (title) titleRows.push([title]);
+  if (periodLine) titleRows.push([periodLine]);
+
+  if (isOd) {
+    const fixedHeaders = [
+      'EC No.',
+      'Name of the Employee',
+      'Designation',
+      'Division',
+      'Department',
+      'Group',
+      'OD Type',
+      'First Half/Second Half/Time OD',
+    ];
+    const mainHeaderRow = [
+      ...fixedHeaders,
+      'Time OD',
+      '',
+      'Applied Date',
+      'approved date',
+    ];
+    for (let i = 1; i < stageCount; i++) mainHeaderRow.push('');
+
+    const subHeaderRow = [
+      '', '', '', '', '', '', '', '',
+      'From',
+      'To',
+      '',
+      ...stageLabels,
+    ];
+
+    const aoa = [...titleRows, mainHeaderRow, subHeaderRow, ...dataRows];
+    const rOffset = titleRows.length;
+
+    const totalCols = fixedHeaders.length + 2 + 1 + stageCount;
+    const merges = [];
+    titleRows.forEach((_, idx) => {
+      merges.push({ s: { r: idx, c: 0 }, e: { r: idx, c: totalCols - 1 } });
+    });
+
+    for (let c = 0; c < fixedHeaders.length; c++) {
+      merges.push({ s: { r: rOffset, c }, e: { r: rOffset + 1, c } });
+    }
+    merges.push({ s: { r: rOffset, c: 8 }, e: { r: rOffset, c: 9 } }); // Time OD (From, To)
+    merges.push({ s: { r: rOffset, c: 10 }, e: { r: rOffset + 1, c: 10 } }); // Applied Date
+    if (stageCount > 1) {
+      merges.push({ s: { r: rOffset, c: 11 }, e: { r: rOffset, c: 11 + stageCount - 1 } }); // approved date stages
+    }
+
+    return { aoa, merges };
+  }
+
   const fixedCount = FIXED_HEADERS.length;
   const stageStart = fixedCount;
   const statusCol = fixedCount + stageCount;
@@ -270,22 +418,28 @@ function buildExcelSheetAoA(title, periodLine, dataRows, stageCount, stageLabels
 
   const subHeaderRow = [...FIXED_HEADERS, ...stageLabels, 'Status'];
 
-  const aoa = [[title], [periodLine], mainHeaderRow, subHeaderRow, ...dataRows];
+  const aoa = [...titleRows, mainHeaderRow, subHeaderRow, ...dataRows];
+  const rOffset = titleRows.length;
 
   const merges = [];
+  titleRows.forEach((_, idx) => {
+    merges.push({ s: { r: idx, c: 0 }, e: { r: idx, c: statusCol } });
+  });
+
   for (let c = 0; c < fixedCount; c++) {
-    merges.push({ s: { r: 2, c }, e: { r: 3, c } });
+    merges.push({ s: { r: rOffset, c }, e: { r: rOffset + 1, c } });
   }
   if (stageCount > 1) {
-    merges.push({ s: { r: 2, c: stageStart }, e: { r: 2, c: stageStart + stageCount - 1 } });
+    merges.push({ s: { r: rOffset, c: stageStart }, e: { r: rOffset, c: stageStart + stageCount - 1 } });
   }
-  merges.push({ s: { r: 2, c: statusCol }, e: { r: 3, c: statusCol } });
+  merges.push({ s: { r: rOffset, c: statusCol }, e: { r: rOffset + 1, c: statusCol } });
 
   return { aoa, merges };
 }
 
 module.exports = {
   FIXED_HEADERS,
+  OD_FIXED_COL_WIDTHS,
   formatAppliedDate,
   formatStageCell,
   resolveExportStageMeta,
@@ -295,3 +449,4 @@ module.exports = {
   drawMultiHeaderPdfTable,
   buildExcelSheetAoA,
 };
+

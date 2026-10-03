@@ -1,3 +1,6 @@
+const dayjs = require('dayjs');
+const PDFDocument = require('pdfkit');
+const XLSX = require('xlsx');
 const Holiday = require('../model/Holiday');
 const HolidayGroup = require('../model/HolidayGroup');
 const HolidayHistory = require('../model/HolidayHistory');
@@ -1233,5 +1236,303 @@ exports.getHolidayActivity = async (req, res) => {
         res.status(200).json({ success: true, data: rows });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error fetching holiday activity', error: error.message });
+    }
+};
+
+// @desc    Export Holidays as PDF
+// @route   GET /api/holidays/export/pdf
+// @access  Private
+exports.exportHolidaysPDF = async (req, res) => {
+    try {
+        const actor = await loadHolidayActor(req);
+        const { year, fromDate, toDate, division, search } = req.query;
+        let query = { isActive: { $ne: false } };
+
+        if (year) {
+            query = { ...query, ...getHolidayYearMongoFilter(year) };
+        } else if (fromDate || toDate) {
+            query.date = {};
+            if (fromDate) query.date.$gte = new Date(fromDate);
+            if (toDate) query.date.$lte = new Date(toDate);
+        }
+
+        if (search && String(search).trim()) {
+            const regex = new RegExp(String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            query.name = regex;
+        }
+
+        let holidays = await Holiday.find(query)
+            .populate('targetGroupIds', 'name')
+            .populate('groupId', 'name')
+            .populate('divisionMapping.division', 'name code')
+            .populate('divisionMapping.departments', 'name code')
+            .populate('divisionMapping.employeeGroups', 'name code')
+            .sort({ date: 1 });
+
+        const isGlobalManager = canManageGlobal(actor);
+        if (!isGlobalManager && canManageHoliday(actor)) {
+            holidays = holidays.filter((h) => canViewHolidayRecord(actor, h));
+        }
+
+        if (division && division !== 'all') {
+            const divIds = String(division).split(',').filter(id => id && id !== 'all');
+            holidays = holidays.filter(h => {
+                if (h.scope === 'GLOBAL') return true;
+                if (h.groupId?.divisionMapping?.some(m => divIds.includes(String(m.division?._id || m.division)))) return true;
+                if (h.divisionMapping?.some(m => divIds.includes(String(m.division?._id || m.division)))) return true;
+                return false;
+            });
+        }
+
+        let headerOrgName = "PYDAH COLLEGE OF ENGINEERING & TECHNOLOGY";
+        if (division && division !== 'all') {
+            const divIds = String(division).split(',').filter(id => id && id !== 'all');
+            if (divIds.length > 0) {
+                const foundDivs = await Division.find({ _id: { $in: divIds } }).select('name').lean();
+                if (foundDivs.length > 0) {
+                    const names = foundDivs.map(d => d.name).filter(Boolean);
+                    if (names.length > 0) headerOrgName = names.join(', ').toUpperCase();
+                }
+            }
+        }
+
+        const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape', bufferPages: true });
+        const filename = `Holidays_Report_${year || 'All'}.pdf`;
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        doc.pipe(res);
+
+        const pageWidth = doc.page.width;
+        const margin = 30;
+
+        doc.font('Helvetica-Bold').fontSize(20).fillColor('#00008B').text(headerOrgName, { align: 'center' });
+        doc.moveDown(0.2);
+        doc.fontSize(14).fillColor('#000000').text("HOLIDAYS REPORT", { align: 'center' });
+        doc.moveDown(0.2);
+        doc.fontSize(8.5).font('Helvetica').fillColor('#333333').text(`Year: ${year || 'All'} | Total Holidays: ${holidays.length}`, { align: 'left' });
+        doc.moveTo(margin, doc.y + 5).lineTo(pageWidth - margin, doc.y + 5).strokeColor('#CCCCCC').stroke();
+        doc.moveDown(1.5);
+
+        let currentY = doc.y;
+        const headers = ['S.No', 'Date of Holiday', 'Day', 'Name of the Event', 'Applied Groups', 'Type', 'Slot', 'Status'];
+        const colWidths = [30, 85, 75, 180, 245, 60, 55, 50];
+
+        const rows = holidays.map((h, i) => {
+            const dateStr = h.date ? dayjs(h.date).format('DD/MM/YYYY') : '-';
+            const endDateStr = h.endDate ? ` to ${dayjs(h.endDate).format('DD/MM/YYYY')}` : '';
+            const dayName = h.date ? dayjs(h.date).format('dddd') : '-';
+
+            let appliedGroupsStr = 'Global (All)';
+            if (h.scope === 'GLOBAL') {
+                if (h.applicableTo === 'SPECIFIC_GROUPS' && h.targetGroupIds?.length > 0) {
+                    appliedGroupsStr = h.targetGroupIds.map(g => g.name || g).join(', ');
+                }
+            } else if (h.scope === 'GROUP') {
+                appliedGroupsStr = h.groupId?.name || 'Holiday Group';
+            } else if (h.scope === 'MAPPING') {
+                appliedGroupsStr = (h.divisionMapping || []).map(m => {
+                    const divName = m.division?.name || 'Division';
+                    const depts = (m.departments || []).map(d => d.name).join(', ');
+                    return depts ? `${divName} (${depts})` : divName;
+                }).join('; ') || 'Custom Scope';
+            }
+
+            const slot = h.rosterApplyMode === 'HALF_DAY' ? `Half Day (${h.halfDayType === 'second_half' ? '2nd' : '1st'})` : 'Full Day';
+            const status = h.isActive === false ? 'Inactive' : 'Active';
+
+            return [
+                i + 1,
+                `${dateStr}${endDateStr}`,
+                dayName,
+                h.name || '-',
+                appliedGroupsStr,
+                h.type || 'National',
+                slot,
+                status,
+            ];
+        });
+
+        const drawTable = (startTop) => {
+            let y = startTop;
+            const tableWidth = colWidths.reduce((a, b) => a + b, 0);
+
+            let x = margin;
+            headers.forEach((hdr, idx) => {
+                const w = colWidths[idx];
+                doc.fillColor('#1e3a5f').rect(x, y, w, 20).fill();
+                doc.strokeColor('#cbd5e1').lineWidth(0.5).rect(x, y, w, 20).stroke();
+                doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(7.5);
+                doc.text(hdr, x + 3, y + 6, { width: w - 6, align: 'center', lineBreak: false });
+                x += w;
+            });
+            y += 20;
+
+            rows.forEach((row, rIdx) => {
+                if (y > doc.page.height - 50) {
+                    doc.addPage();
+                    y = 40;
+                }
+                const bg = rIdx % 2 === 0 ? '#f8fafc' : '#ffffff';
+                doc.fillColor(bg).rect(margin, y, tableWidth, 22).fill();
+
+                let rx = margin;
+                row.forEach((cell, cIdx) => {
+                    const w = colWidths[cIdx];
+                    doc.strokeColor('#cbd5e1').lineWidth(0.5).rect(rx, y, w, 22).stroke();
+                    doc.fillColor('#334155').font('Helvetica').fontSize(7);
+                    const align = cIdx === 3 || cIdx === 4 ? 'left' : 'center';
+                    doc.text(String(cell), rx + 3, y + 6, { width: w - 6, align, lineBreak: false });
+                    rx += w;
+                });
+                y += 22;
+            });
+            return y;
+        };
+
+        currentY = drawTable(currentY);
+
+        const pages = doc.bufferedPageRange();
+        for (let i = 0; i < pages.count; i++) {
+            doc.switchToPage(i);
+            doc.fontSize(8).fillColor('#999999').text(
+                `Generated on ${new Date().toLocaleString()} | Page ${i + 1} of ${pages.count}`,
+                margin, doc.page.height - 30, { align: 'center', lineBreak: false }
+            );
+        }
+
+        doc.end();
+    } catch (err) {
+        console.error('Export Holidays PDF Error:', err);
+        if (!res.headersSent) {
+            res.status(500).json({ success: false, error: 'Failed to generate PDF' });
+        }
+    }
+};
+
+// @desc    Export Holidays as Excel
+// @route   GET /api/holidays/export/xlsx
+// @access  Private
+exports.exportHolidaysXLSX = async (req, res) => {
+    try {
+        const actor = await loadHolidayActor(req);
+        const { year, fromDate, toDate, division, search } = req.query;
+        let query = { isActive: { $ne: false } };
+
+        if (year) {
+            query = { ...query, ...getHolidayYearMongoFilter(year) };
+        } else if (fromDate || toDate) {
+            query.date = {};
+            if (fromDate) query.date.$gte = new Date(fromDate);
+            if (toDate) query.date.$lte = new Date(toDate);
+        }
+
+        if (search && String(search).trim()) {
+            const regex = new RegExp(String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            query.name = regex;
+        }
+
+        let holidays = await Holiday.find(query)
+            .populate('targetGroupIds', 'name')
+            .populate('groupId', 'name')
+            .populate('divisionMapping.division', 'name code')
+            .populate('divisionMapping.departments', 'name code')
+            .populate('divisionMapping.employeeGroups', 'name code')
+            .sort({ date: 1 });
+
+        const isGlobalManager = canManageGlobal(actor);
+        if (!isGlobalManager && canManageHoliday(actor)) {
+            holidays = holidays.filter((h) => canViewHolidayRecord(actor, h));
+        }
+
+        if (division && division !== 'all') {
+            const divIds = String(division).split(',').filter(id => id && id !== 'all');
+            holidays = holidays.filter(h => {
+                if (h.scope === 'GLOBAL') return true;
+                if (h.groupId?.divisionMapping?.some(m => divIds.includes(String(m.division?._id || m.division)))) return true;
+                if (h.divisionMapping?.some(m => divIds.includes(String(m.division?._id || m.division)))) return true;
+                return false;
+            });
+        }
+
+        let headerOrgName = "PYDAH COLLEGE OF ENGINEERING & TECHNOLOGY";
+        if (division && division !== 'all') {
+            const divIds = String(division).split(',').filter(id => id && id !== 'all');
+            if (divIds.length > 0) {
+                const foundDivs = await Division.find({ _id: { $in: divIds } }).select('name').lean();
+                if (foundDivs.length > 0) {
+                    const names = foundDivs.map(d => d.name).filter(Boolean);
+                    if (names.length > 0) headerOrgName = names.join(', ').toUpperCase();
+                }
+            }
+        }
+
+        const headers = ['S.No', 'Date of Holiday', 'Day', 'Name of the Event', 'Applied Groups', 'Type', 'Slot', 'Status'];
+
+        const dataRows = holidays.map((h, i) => {
+            const dateStr = h.date ? dayjs(h.date).format('DD/MM/YYYY') : '-';
+            const endDateStr = h.endDate ? ` to ${dayjs(h.endDate).format('DD/MM/YYYY')}` : '';
+            const dayName = h.date ? dayjs(h.date).format('dddd') : '-';
+
+            let appliedGroupsStr = 'Global (All)';
+            if (h.scope === 'GLOBAL') {
+                if (h.applicableTo === 'SPECIFIC_GROUPS' && h.targetGroupIds?.length > 0) {
+                    appliedGroupsStr = h.targetGroupIds.map(g => g.name || g).join(', ');
+                }
+            } else if (h.scope === 'GROUP') {
+                appliedGroupsStr = h.groupId?.name || 'Holiday Group';
+            } else if (h.scope === 'MAPPING') {
+                appliedGroupsStr = (h.divisionMapping || []).map(m => {
+                    const divName = m.division?.name || 'Division';
+                    const depts = (m.departments || []).map(d => d.name).join(', ');
+                    return depts ? `${divName} (${depts})` : divName;
+                }).join('; ') || 'Custom Scope';
+            }
+
+            const slot = h.rosterApplyMode === 'HALF_DAY' ? `Half Day (${h.halfDayType === 'second_half' ? '2nd' : '1st'})` : 'Full Day';
+            const status = h.isActive === false ? 'Inactive' : 'Active';
+
+            return [
+                i + 1,
+                `${dateStr}${endDateStr}`,
+                dayName,
+                h.name || '-',
+                appliedGroupsStr,
+                h.type || 'National',
+                slot,
+                status,
+            ];
+        });
+
+        const aoa = [
+            [headerOrgName],
+            ['HOLIDAYS REPORT'],
+            [`Year: ${year || 'All'} | Total Holidays: ${holidays.length}`],
+            headers,
+            ...dataRows
+        ];
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+        const merges = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
+            { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } },
+            { s: { r: 2, c: 0 }, e: { r: 2, c: headers.length - 1 } },
+        ];
+        ws['!merges'] = merges;
+
+        XLSX.utils.book_append_sheet(wb, ws, 'Holidays');
+        const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        const filename = `Holidays_Report_${year || 'All'}.xlsx`;
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(buf);
+    } catch (err) {
+        console.error('Export Holidays XLSX Error:', err);
+        if (!res.headersSent) {
+            res.status(500).json({ success: false, error: 'Failed to generate Excel report' });
+        }
     }
 };

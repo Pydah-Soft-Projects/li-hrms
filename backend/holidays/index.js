@@ -11,6 +11,10 @@ router.get('/groups', requireHolidayWrite, holidayController.getHolidayGroupsAdm
 router.post('/groups', requireHolidayGlobalManage, holidayController.saveHolidayGroup);
 router.delete('/groups/:id', requireHolidayGlobalManage, holidayController.deleteHolidayGroup);
 
+// Export routes
+router.get('/export/pdf', holidayController.exportHolidaysPDF);
+router.get('/export/xlsx', holidayController.exportHolidaysXLSX);
+
 // Admin routes (feature-based; see holidayAccess.js)
 router.get('/admin', requireHolidayWrite, holidayController.getAllHolidaysAdmin);
 router.post('/preview-impact', requireHolidayWrite, holidayController.previewHolidayImpact);
