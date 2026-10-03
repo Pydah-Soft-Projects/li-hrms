@@ -868,7 +868,7 @@ export async function generateDeductionsReportPdf(
     const periodLabel = `${params.month} ${params.year}`;
     const titleSuffix = params.salaryKindLabel ? ` (${params.salaryKindLabel})` : '';
     let y = 14;
-    const orgTitle = params.filters?.division || profile.companyName || 'Deductions Report';
+    const orgTitle = optionsOrgName(params.filters?.division, profile);
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
@@ -1159,7 +1159,7 @@ function optionsOrgName(selectedDivision?: string, profile?: CompanyProfile): st
     if (selectedDivision && String(selectedDivision).trim()) {
         return String(selectedDivision).trim();
     }
-    return profile?.companyName || 'Deductions Report';
+    return profile?.displayName || profile?.legalName || 'Deductions Report';
 }
 
 /** Export regular deductions PDF/Excel; also 2nd salary PDF/Excel when enabled and data exists. */
