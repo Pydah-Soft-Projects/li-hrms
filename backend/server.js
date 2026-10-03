@@ -209,6 +209,11 @@ app.use('/api/communications', communicationsRoutes);
 const mobileAnalyticsRoutes = require('./mobile-analytics/index.js');
 app.use('/api/mobile-analytics', mobileAnalyticsRoutes);
 
+// Transport database routes
+const transportRoutes = require('./transport/index.js');
+app.use('/api/transport', transportRoutes);
+
+
 
 // Job routes
 const jobRoutes = require('./shared/routes/jobRoutes');

@@ -13,11 +13,12 @@ import DeductionsReportsTab from './deductions-reports-tab';
 import ResignationReportsTab from './resignation-reports-tab';
 import ComplaintsReportsTab from './complaints-reports-tab';
 import HolidaysReportsTab from './holidays-reports-tab';
+import TransportReportsTab from './transport-reports-tab';
 import { auth } from '@/lib/auth';
 import { canViewReports, canViewFinancialReports, canViewResignation } from '@/lib/permissions';
-import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase, Wallet, Banknote, TrendingDown, GraduationCap, LogOut, AlertTriangle, Calendar } from 'lucide-react';
+import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase, Wallet, Banknote, TrendingDown, GraduationCap, LogOut, AlertTriangle, Calendar, Bus } from 'lucide-react';
 
-type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'deductions' | 'certifications' | 'resignations' | 'complaints' | 'holidays';
+type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'deductions' | 'certifications' | 'resignations' | 'complaints' | 'transport' | 'holidays';
 
 const TAB_CONFIG = {
   payroll: { label: 'Payroll', icon: CreditCard, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30', border: 'border-violet-500', activeBg: 'bg-violet-600' },
@@ -31,8 +32,10 @@ const TAB_CONFIG = {
   certifications: { label: 'Certifications', icon: GraduationCap, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30', border: 'border-violet-500', activeBg: 'bg-violet-600' },
   resignations: { label: 'Resignations', icon: LogOut, color: 'text-slate-800 dark:text-slate-200', bg: 'bg-slate-50 dark:bg-slate-800/30', border: 'border-slate-400', activeBg: 'bg-slate-800' },
   complaints: { label: 'Complaints', icon: AlertTriangle, color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-950/30', border: 'border-orange-500', activeBg: 'bg-orange-600' },
+  transport: { label: 'Transport', icon: Bus, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30', border: 'border-violet-500', activeBg: 'bg-violet-600' },
   holidays: { label: 'Holidays', icon: Calendar, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/30', border: 'border-emerald-500', activeBg: 'bg-emerald-600' },
 };
+
 
 export default function ReportsPage() {
   const searchParams = useSearchParams();
@@ -74,7 +77,7 @@ export default function ReportsPage() {
   tabs.push('attendance', 'biometric', 'leaves', 'od', 'certifications');
   if (hasResignationAccess) tabs.push('resignations');
   if (['hr', 'sub_admin', 'super_admin', 'hod'].includes(user?.role || '')) tabs.push('complaints');
-  tabs.push('holidays');
+  tabs.push('transport', 'holidays');
 
   const currentTab: TabType = tabs.includes(activeTab) ? activeTab : tabs[0];
 
@@ -85,7 +88,7 @@ export default function ReportsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">Reports & Analytics</h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Attendance, payroll, and biometric data consolidated</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Attendance, payroll, biometric, and transport data consolidated</p>
           </div>
         </div>
 
@@ -123,6 +126,7 @@ export default function ReportsPage() {
         {currentTab === 'certifications' && <CertificationReportsTab />}
         {currentTab === 'resignations' && <ResignationReportsTab />}
         {currentTab === 'complaints' && <ComplaintsReportsTab />}
+        {currentTab === 'transport' && <TransportReportsTab />}
         {currentTab === 'holidays' && <HolidaysReportsTab />}
       </div>
     </div>

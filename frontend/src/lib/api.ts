@@ -7114,5 +7114,76 @@ export const api = {
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
+  },
+
+  getTransportReports: async (params?: {
+    search?: string;
+    status?: string;
+    academicYear?: string;
+    page?: number;
+    limit?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.append('search', params.search);
+    if (params?.status) query.append('status', params.status);
+    if (params?.academicYear) query.append('academicYear', params.academicYear);
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.limit) query.append('limit', params.limit.toString());
+
+    return apiRequest<any>(`/transport/reports?${query.toString()}`, { method: 'GET' });
+  },
+
+  exportTransportReports: async (params?: {
+    search?: string;
+    status?: string;
+    academicYear?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.append('search', params.search);
+    if (params?.status) query.append('status', params.status);
+    if (params?.academicYear) query.append('academicYear', params.academicYear);
+
+    const token = auth.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE_URL}/transport/reports/export?${query.toString()}`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!res.ok) {
+      throw new Error('Failed to export Transport report');
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `Employee_Transport_Requests_${new Date().toISOString().split('T')[0]}.xlsx`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  },
+
+  getBusWiseReports: async (params?: {
+    date?: string;
+    search?: string;
+    onlyLate?: boolean;
+    page?: number;
+    limit?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.date) query.append('date', params.date);
+    if (params?.search) query.append('search', params.search);
+    if (params?.onlyLate !== undefined) query.append('onlyLate', params.onlyLate.toString());
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.limit) query.append('limit', params.limit.toString());
+
+    return apiRequest<any>(`/transport/bus-reports?${query.toString()}`, { method: 'GET' });
   }
 };
+
+export const reportsApi = api;
+
+
